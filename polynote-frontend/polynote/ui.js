@@ -5,6 +5,7 @@ import {} from './scala.js'
 import {} from './theme.js'
 import { LaTeXEditor } from './latex_editor.js'
 import { Toolbar } from './toolbar.js'
+import { UIEvent, UIEventTarget } from './ui_event.js'
 import { FakeSelect } from './fake_select.js'
 import { TextToolbar } from './text_editor.js'
 import { Cell, TextCell, CodeCell } from "./cell.js"
@@ -14,7 +15,6 @@ import * as messages from './messages.js'
 import { CompileErrors, Output, RuntimeError } from './result.js'
 import { Prefs, prefs } from './prefs.js'
 import { default as Diff } from './diff.js'
-
 
 const JsDiff = new Diff();
 
@@ -467,7 +467,7 @@ export class NotebookConfigUI extends EventTarget {
 
 }
 
-export class NotebookCellsUI extends EventTarget {
+export class NotebookCellsUI extends UIEventTarget {
     constructor() {
         super();
         this.configUI = new NotebookConfigUI();
@@ -527,12 +527,7 @@ export class NotebookCellsUI extends EventTarget {
         if (cell.editor && cell.editor.layout) {
             cell.editor.layout();
         }
-        cell.addEventListener('RunCell', (evt) => this.dispatchEvent(new CustomEvent('RunCell', {detail: evt.detail})));
-        cell.addEventListener('AdvanceCell', (evt) => this.dispatchEvent(new CustomEvent('AdvanceCell', {detail: evt.detail})));
-        cell.addEventListener('InsertCellAfter', (evt) => this.dispatchEvent(new CustomEvent('InsertCellAfter', {detail: evt.detail})));
-        cell.addEventListener('CompletionRequest', (evt) => this.dispatchEvent(new CustomEvent('CompletionRequest', {detail: evt.detail})));
-        cell.addEventListener('ParamHintRequest', (evt) => this.dispatchEvent(new CustomEvent('ParamHintRequest', {detail: evt.detail})));
-        cell.addEventListener('ContentChange', evt => this.dispatchEvent(new CustomEvent('ContentChange', {detail: evt.detail})));
+        cell.setEventParent(this);
     }
 
     setCellLanguage(cell, language) {
@@ -583,11 +578,18 @@ export class NotebookUI {
 
         this.cellUI.addEventListener('AdvanceCell', evt => {
             if (Cell.currentFocus) {
-                const next = Cell.currentFocus.container.nextSibling && cellUI.cells[Cell.currentFocus.container.nextSibling.id];
-                if (next) {
-                    next.focus();
+                if (evt.backward) {
+                    const prev = Cell.currentFocus.container.previousSibling && cellUI.cells[Cell.currentFocus.container.previousSibling.id];
+                    if (prev) {
+                        prev.focus();
+                    }
                 } else {
-                    this.cellUI.dispatchEvent(new CustomEvent('InsertCellAfter', {detail: { cellId: Cell.currentFocus.id }}));
+                    const next = Cell.currentFocus.container.nextSibling && cellUI.cells[Cell.currentFocus.container.nextSibling.id];
+                    if (next) {
+                        next.focus();
+                    } else {
+                        this.cellUI.dispatchEvent(new CustomEvent('InsertCellAfter', {detail: {cellId: Cell.currentFocus.id}}));
+                    }
                 }
             }
         });

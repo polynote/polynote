@@ -12,7 +12,10 @@ export class UIEvent extends CustomEvent {
     }
 
     copy() {
-        return new UIEvent(id, this.detail);
+        const c = new UIEvent(id, this.detail);
+        c.originalTarget = this.originalTarget;
+        Object.setPrototypeOf(c, this.constructor.prototype);
+        return c;
     }
 }
 
@@ -28,6 +31,7 @@ export class UIEventTarget extends EventTarget {
     }
 
     dispatchEvent(event) {
+        event.originalTarget = event.originalTarget || this;
         super.dispatchEvent(event);
         if(this.eventParent && !event.propagationStopped) {
             this.eventParent.dispatchEvent(event.copy());
@@ -62,6 +66,17 @@ export class UIEventTarget extends EventTarget {
     addEventChildren(children) {
         for (const child of children) {
             this.addEventChild(child);
+        }
+    }
+
+    removeAllListeners() {
+        for (const listenerType in this.listeners) {
+            if (this.listeners.hasOwnProperty(listenerType)) {
+                const listenersOfType = this.listeners[listenerType];
+                for (const listener of listenersOfType) {
+                    this.removeEventListener(listenerType, listener);
+                }
+            }
         }
     }
 }

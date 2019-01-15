@@ -3,11 +3,68 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import * as messages from "./messages.js";
 import {RichTextEditor} from "./text_editor.js";
 import {MainToolbar, mainToolbar} from "./ui.js";
+import {UIEvent, UIEventTarget} from "./ui_event.js"
 
-export class Cell extends EventTarget {
+export class CellEvent extends UIEvent {
+    constructor(eventId, cellId, otherDetails) {
+        const allDetails = otherDetails || {};
+        allDetails.cellId = cellId;
+        super(eventId, allDetails);
+    }
+
+    get cellId() { return this.detail.cellId }
+}
+
+export class RunCellEvent extends CellEvent {
+    constructor(cellId) {
+        super('RunCell', cellId);
+    }
+}
+
+export class ContentChangeEvent extends CellEvent {
+    constructor(cellId, edits, newContent) {
+        super('ContentChange', cellId, {edits: edits, newContent: newContent});
+    }
+
+    get edits() { return this.detail.edits }
+    get newContent() { return this.detail.newContent }
+}
+
+export class AdvanceCellEvent extends CellEvent {
+    constructor(cellId, backward) {
+        super('AdvanceCell', cellId, {backward: backward || false});
+    }
+}
+
+export class InsertCellEvent extends CellEvent {
+    constructor(cellId) {
+        super('InsertCellAfter', cellId);
+    }
+}
+
+export class CompletionRequest extends CellEvent {
+    constructor(cellId, pos, resolve, reject) {
+        super('CompletionRequest', cellId, {pos: pos, resolve: resolve, reject: reject});
+    }
+
+    get pos() { return this.detail.pos }
+    get resolve() { return this.detail.resolve }
+    get reject() { return this.detail.reject }
+}
+
+export class ParamHintRequest extends CellEvent {
+    constructor(cellId, pos, resolve, reject) {
+        super('ParamHintRequest', cellId, {pos: pos, resolve: resolve, reject: reject});
+    }
+
+    get pos() { return this.detail.pos }
+    get resolve() { return this.detail.resolve }
+    get reject() { return this.detail.reject }
+}
+
+export class Cell extends UIEventTarget {
     constructor(id, content, language) {
         super(id, content, language);
-        this.listeners = [];
         this.id = id;
         this.language = language;
 
@@ -29,15 +86,9 @@ export class Cell extends EventTarget {
 
         // TODO: this is incomplete (hook up all the run buttons etc)
         this.cellInput.querySelector('.run-cell').onclick = (evt) => {
-            this.dispatchEvent(new CustomEvent('RunCell', { detail: { cellId: this.id }}));
+            this.dispatchEvent(new RunCellEvent(this.id));
         }
 
-    }
-
-    // add an event listener that gets tracked and removed on dispose()
-    listenTo(target, type, listener, option) {
-        this.listeners.push([target, type, listener, option]);
-        target.addEventListener(type, listener, option);
     }
 
     focus() {
@@ -64,9 +115,7 @@ export class Cell extends EventTarget {
     }
 
     dispose() {
-        for (const listener of this.listeners) {
-            listener[0].removeEventListener(listener[1], listener[2], listener[3]);
-        }
+        this.removeAllListeners();
     }
 
     get content() {
@@ -112,35 +161,40 @@ export class CodeCell extends Cell {
         // TODO: this should probably only send the changes...
         this.editor.onDidChangeModelContent(event => {
 
+            // update the editor's height
             const lineCount = this.editor.getModel().getLineCount();
             if (lineCount !== this.lastLineCount) {
                 this.lastLineCount = lineCount;
                 this.editorEl.style.height = (this.lineHeight * lineCount) + "px";
                 this.editor.layout();
             }
-            this.dispatchEvent(new CustomEvent(
-                'ContentChange', {
-                    detail: {
-                        cellId: this.id,
-                        edits: event.changes.map(contentChange => new messages.ContentEdit(contentChange.rangeOffset, contentChange.rangeLength, contentChange.text)),
-                        newContent: this.editor.getValue()
-                    }
-                }));
+
+            const edits = event.changes.map(contentChange => new messages.ContentEdit(contentChange.rangeOffset, contentChange.rangeLength, contentChange.text));
+            this.dispatchEvent(new ContentChangeEvent(this.id, edits, this.editor.getValue()));
         });
 
         this.editor.getModel().cellInstance = this;
 
         this.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
-            this.dispatchEvent(new CustomEvent('RunCell', { detail: { cellId: this.id }}));
-            this.dispatchEvent(new CustomEvent('AdvanceCell', { detail: { cellId: this.id }}));
+            this.dispatchEvent(new RunCellEvent(this.id));
+            this.dispatchEvent(new AdvanceCellEvent(this.id));
         });
 
         this.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter, () => {
-            this.dispatchEvent(new CustomEvent('InsertCellAfter', { detail: { cellId: this.id }}));
-            this.dispatchEvent(new CustomEvent('RunCell', { detail: { cellId: this.id }}));
+            this.dispatchEvent(new InsertCellEvent(this.id));
+            this.dispatchEvent(new RunCellEvent(this.id));
         });
 
-        this.listenTo(window, 'resize', (evt) => this.editor.layout());
+        this.editor.addCommand(
+            monaco.KeyMod.WinCtrl | monaco.KeyCode.DownArrow,
+            () => this.dispatchEvent(new AdvanceCellEvent(this.id, false)));
+
+        this.editor.addCommand(
+            monaco.KeyMod.WinCtrl, monaco.KeyCode.UpArrow,
+            () => this.dispatchEvent(new AdvanceCellEvent(this.id, true)));
+
+        this.onWindowResize = (evt) => this.editor.layout();
+        window.addEventListener('resize', this.onWindowResize);
     }
 
 
@@ -281,29 +335,15 @@ export class CodeCell extends Cell {
     }
 
     requestCompletion(pos) {
-        return new Promise((resolve, reject) => {
-            this.dispatchEvent(new CustomEvent('CompletionRequest', {
-                detail: {
-                    id: this.id,
-                    pos: pos,
-                    resolve: resolve,
-                    reject: reject
-                }
-            }));
-        }) //.catch();
+        return new Promise(
+            (resolve, reject) => this.dispatchEvent(new CompletionRequest(this.id, pos, resolve, reject))
+        ) //.catch();
     }
 
     requestSignatureHelp(pos) {
-        return new Promise((resolve, reject) => {
-            this.dispatchEvent(new CustomEvent('ParamHintRequest', {
-                detail: {
-                    id: this.id,
-                    pos: pos,
-                    resolve: resolve,
-                    reject: reject
-                }
-            }));
-        }) //.catch();
+        return new Promise((resolve, reject) =>
+            this.dispatchEvent(new ParamHintRequest(this.id, pos, resolve, reject))
+        ) //.catch();
     }
 
     makeActive() {
@@ -322,6 +362,7 @@ export class CodeCell extends Cell {
 
     dispose() {
         super.dispose();
+        window.removeEventListener('resize', this.onWindowResize);
         this.editor.dispose();
     }
 
@@ -400,14 +441,7 @@ export class TextCell extends Cell {
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.dispatchEvent(new CustomEvent(
-                'ContentChange', {
-                    detail: {
-                        cellId: this.id,
-                        edits: edits,
-                        newContent: newContent
-                    }
-                }));
+            this.dispatchEvent(new ContentChangeEvent(this.id, edits, newContent));
         }
     }
 
@@ -416,9 +450,9 @@ export class TextCell extends Cell {
             if (evt.shiftKey) {
                 evt.preventDefault();
                 if (evt.ctrlKey) {
-                    this.dispatchEvent(new CustomEvent('InsertCellAfter', {detail: {cellId: this.id}}));
+                    this.dispatchEvent(new InsertCellEvent(this.id));
                 } else {
-                    this.dispatchEvent(new CustomEvent('AdvanceCell', {detail: {cellId: this.id}}));
+                    this.dispatchEvent(new AdvanceCellEvent(this.id));
                 }
             }
         }

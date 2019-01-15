@@ -1,5 +1,6 @@
 package polynote.kernel.lang.scal
 
+import cats.data.Ior
 import cats.syntax.either._
 import polynote.kernel.EmptyCell
 import polynote.kernel.util.KernelReporter
@@ -68,16 +69,23 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     transformer.transform(tree)
   }
 
-  private lazy val unitParser = global.newUnitParser(code, id)
-
-  // the trees that came out of the parser, whether or not there were parse errors (i.e. incomplete statements)
-  private lazy val parsedTrees = Either.catchNonFatal(unitParser.parseStats()).flatMap {
-    case Nil => Left(EmptyCell)
-    case trees => Right(trees)
-  }
+  private lazy val unitParser = global.newUnitParser(code, s"$id-stats")
 
   // the parsed trees, but only successful if there weren't any parse errors
-  lazy val parsed: Either[Throwable, List[Tree]] = reporter.attempt(parsedTrees).flatMap(identity)
+  lazy val parsed: Ior[Throwable, List[Tree]] = reporter.attemptIor(unitParser.parseStats())
+
+  lazy val successfulParse: Either[Throwable, List[Tree]] = parsed match {
+    case Ior.Both(err, _) => Left(err)
+    case Ior.Right(trees) => Right(trees)
+    case Ior.Left(err) => Left(err)
+  }
+
+  // the trees that came out of the parser, ignoring any parse errors
+  private lazy val parsedTrees = parsed match {
+    case Ior.Both(_, trees) => Right(trees)
+    case Ior.Right(trees) => Right(trees)
+    case Ior.Left(err) => Left(err)
+  }
 
   private lazy val executionId = global.currentRunId
 
@@ -348,18 +356,22 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     }
   }.right.getOrElse(Nil)
 
-  lazy val compiledModule: Either[Throwable, interpreter.global.Symbol] = compileUnit.flatMap { unit =>
-    withCompiler {
-      global.demandNewCompilerRun()
-      val run = new global.Run()
-      unit.body = global.resetAttrs(unit.body)
-      reporter.attempt(run.compileUnits(List(unit), run.namerPhase))
-    }.flatMap(identity).flatMap { _ =>
-      withCompiler(unit.body.asInstanceOf[global.PackageDef].stats.head.symbol.module)
-    }
-  }.leftFlatMap {
-    case EmptyCell => Right(global.NoSymbol)
-    case err => Left(err)
+  lazy val compiledModule: Either[Throwable, interpreter.global.Symbol] = successfulParse.flatMap {
+    _ =>
+      compileUnit.flatMap { unit =>
+        withCompiler {
+          global.demandNewCompilerRun()
+          val run = new global.Run()
+          unit.body = global.resetAttrs(unit.body)
+          reporter.attempt(run.compileUnits(List(unit), run.namerPhase))
+        }.flatMap(identity).flatMap {
+          _ =>
+            withCompiler(unit.body.asInstanceOf[global.PackageDef].stats.head.symbol.module)
+        }
+      }.leftFlatMap {
+        case EmptyCell => Right(global.NoSymbol)
+        case err => Left(err)
+      }
   }
 
   def compile: Either[Throwable, interpreter.global.Symbol] = compiledModule

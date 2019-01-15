@@ -1,5 +1,6 @@
 package polynote.kernel.util
 
+import cats.data.Ior
 import polynote.kernel.{CompileErrors, KernelReport, Pos}
 
 import scala.collection.mutable.ListBuffer
@@ -46,6 +47,26 @@ case class KernelReporter(settings: Settings) extends AbstractReporter {
     } catch {
       case err: Throwable =>
         Left(err)
+    } finally {
+      restoreState(state)
+    }
+  }
+
+  def attemptIor[T](fn: => T): Ior[Throwable, T] = _reports.synchronized {
+    val state = captureState
+    reset()
+
+    try {
+      val result = Ior.right(fn)
+
+      if (hasErrors)
+        result.putLeft(CompileErrors(_reports.filter(_.severity == ERROR.id).toList))
+      else
+        result
+
+    } catch {
+      case err: Throwable =>
+        Ior.Left(err)
     } finally {
       restoreState(state)
     }

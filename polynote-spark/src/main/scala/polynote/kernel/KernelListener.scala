@@ -58,6 +58,7 @@ class KernelListener(statusUpdates: Topic[IO, KernelStatusUpdate]) extends Spark
   override def onTaskStart(taskStart: SparkListenerTaskStart): Unit = ()
   override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = taskEnd.reason match {
     case Success =>
+      stageTasksCompleted.putIfAbsent(taskEnd.stageId, 0)
       stageTasksCompleted.computeIfPresent(taskEnd.stageId, new BiFunction[Int, Int, Int] {
         override def apply(t: Int, u: Int): Int = u + 1
       })
