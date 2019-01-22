@@ -4,6 +4,9 @@ import * as messages from "./messages.js";
 import {RichTextEditor} from "./text_editor.js";
 import {MainToolbar, mainToolbar} from "./ui.js";
 import {UIEvent, UIEventTarget} from "./ui_event.js"
+import { default as Diff } from './diff.js'
+
+const JsDiff = new Diff();
 
 export class CellEvent extends UIEvent {
     constructor(eventId, cellId, otherDetails) {
@@ -21,6 +24,12 @@ export class RunCellEvent extends CellEvent {
     }
 }
 
+export class BeforeCellRunEvent extends CellEvent {
+    constructor(cellId) {
+        super('BeforeCellRun', cellId);
+    }
+}
+
 export class ContentChangeEvent extends CellEvent {
     constructor(cellId, edits, newContent) {
         super('ContentChange', cellId, {edits: edits, newContent: newContent});
@@ -34,6 +43,8 @@ export class AdvanceCellEvent extends CellEvent {
     constructor(cellId, backward) {
         super('AdvanceCell', cellId, {backward: backward || false});
     }
+
+    get backward() { return this.detail.backward; }
 }
 
 export class InsertCellEvent extends CellEvent {
@@ -44,7 +55,7 @@ export class InsertCellEvent extends CellEvent {
 
 export class CompletionRequest extends CellEvent {
     constructor(cellId, pos, resolve, reject) {
-        super('CompletionRequest', cellId, {pos: pos, resolve: resolve, reject: reject});
+        super('CompletionRequest', cellId, {id: cellId, pos: pos, resolve: resolve, reject: reject});
     }
 
     get pos() { return this.detail.pos }
@@ -54,7 +65,7 @@ export class CompletionRequest extends CellEvent {
 
 export class ParamHintRequest extends CellEvent {
     constructor(cellId, pos, resolve, reject) {
-        super('ParamHintRequest', cellId, {pos: pos, resolve: resolve, reject: reject});
+        super('ParamHintRequest', cellId, {id: cellId, pos: pos, resolve: resolve, reject: reject});
     }
 
     get pos() { return this.detail.pos }
@@ -121,6 +132,11 @@ export class Cell extends UIEventTarget {
     get content() {
         return "";
     }
+
+    setLanguage(language) {
+        this.container.classList.replace(this.language, language);
+        this.language = language;
+    }
 }
 
 export class CodeCell extends Cell {
@@ -169,6 +185,10 @@ export class CodeCell extends Cell {
                 this.editor.layout();
             }
 
+            // clear the markers on edit
+            // TODO: there might be non-error markers, or might otherwise want to be smarter about clearing markers
+            monaco.editor.setModelMarkers(this.editor.getModel(), this.id, []);
+
             const edits = event.changes.map(contentChange => new messages.ContentEdit(contentChange.rangeOffset, contentChange.rangeLength, contentChange.text));
             this.dispatchEvent(new ContentChangeEvent(this.id, edits, this.editor.getValue()));
         });
@@ -180,21 +200,27 @@ export class CodeCell extends Cell {
             this.dispatchEvent(new AdvanceCellEvent(this.id));
         });
 
-        this.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter, () => {
+        this.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             this.dispatchEvent(new InsertCellEvent(this.id));
             this.dispatchEvent(new RunCellEvent(this.id));
         });
 
         this.editor.addCommand(
-            monaco.KeyMod.WinCtrl | monaco.KeyCode.DownArrow,
+            monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown,
             () => this.dispatchEvent(new AdvanceCellEvent(this.id, false)));
 
         this.editor.addCommand(
-            monaco.KeyMod.WinCtrl, monaco.KeyCode.UpArrow,
+            monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp,
             () => this.dispatchEvent(new AdvanceCellEvent(this.id, true)));
 
         this.onWindowResize = (evt) => this.editor.layout();
         window.addEventListener('resize', this.onWindowResize);
+
+        this.addEventListener('BeforeCellRun', evt => {
+            if (evt.detail.cellId === this.id) {
+                this.setErrors([]);
+            }
+        })
     }
 
 
@@ -454,6 +480,12 @@ export class TextCell extends Cell {
                 } else {
                     this.dispatchEvent(new AdvanceCellEvent(this.id));
                 }
+            }
+        } else if (evt.metaKey) {
+            if (evt.key === 'PageDown') {
+                this.dispatchEvent(new AdvanceCellEvent(this.id, false));
+            } else if (evt.key === 'PageUp') {
+                this.dispatchEvent(new AdvanceCellEvent(this.id, true));
             }
         }
     }

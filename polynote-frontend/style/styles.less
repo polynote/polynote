@@ -254,7 +254,7 @@ body {
 }
 
 .cell-container {
-  margin: 1em;
+  margin: 1em 0;
   border-width: 1px 1px 1px 8px;
   border-color: transparent;
   border-style: solid;
@@ -308,6 +308,19 @@ body {
 
   &.text-cell {
 
+    &.active {
+      .cell-input {
+        border-left-color: #f5f5f5;
+        .markdown-body {
+          border-left-color: #e1e1e1;
+        }
+      }
+    }
+
+    .cell-input {
+      border-left: 42px solid transparent;
+    }
+
     .cell-input-tools {
       display: none;
     }
@@ -329,6 +342,8 @@ body {
       font-size: 16px;
       line-height: 1.5;
       word-wrap: break-word;
+      border-left: 1px solid transparent;
+      outline: none;
     }
 
     .markdown-body .pl-c {
@@ -1298,7 +1313,7 @@ button {
       color: #AA0000;
     }
 
-    .connect {
+    .connect, .kill {
       display: none !important;
     }
 
@@ -1442,7 +1457,7 @@ button {
   border-radius: 6px;
   background-color: @ui-background;
   padding: 1em;
-  margin: 1em;
+  /*margin: 1em;*/
   color: @ui-background-dark;
 
   &.open {

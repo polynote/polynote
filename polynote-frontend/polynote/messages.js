@@ -5,7 +5,7 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32, bool
 } from './codec.js'
 
-import { Result } from './result.js'
+import { Result, KernelErrorWithCause } from './result.js'
 
 export class Message {
     static decode(data) {
@@ -25,19 +25,18 @@ export class Error extends Message {
     static get msgTypeId() { return 0; }
 
     static unapply(inst) {
-        return [inst.code, inst.message, inst.stackTrace];
+        return [inst.code, inst.error];
     }
 
-    constructor(code, message, stackTrace) {
-        super(code, message, stackTrace);
+    constructor(code, error) {
+        super(code, error);
         this.code = code;
-        this.message = message;
-        this.stackTrace = stackTrace;
+        this.error = error;
         Object.freeze(this);
     }
 }
 
-Error.codec = combined(uint16, shortStr, optional(str)).to(Error);
+Error.codec = combined(uint16, KernelErrorWithCause.codec).to(Error);
 
 export class LoadNotebook extends Message {
     static get msgTypeId() { return 1; }
@@ -180,18 +179,18 @@ export class RunCell extends Message {
     static get msgTypeId() { return 3; }
 
     static unapply(inst) {
-        return [inst.notebook, inst.id];
+        return [inst.notebook, inst.ids];
     }
 
-    constructor(notebook, id) {
-        super(notebook, id);
+    constructor(notebook, ids) {
+        super(notebook, ids);
         this.notebook = notebook;
-        this.id = id;
+        this.ids = ids;
         Object.freeze(this);
     }
 }
 
-RunCell.codec = combined(shortStr, tinyStr).to(RunCell);
+RunCell.codec = combined(shortStr, arrayCodec(uint16, tinyStr)).to(RunCell);
 
 export class CellResult extends Message {
     static get msgTypeId() { return 4; }
@@ -549,6 +548,7 @@ export class StartKernel extends Message {
     static get NoRestart() { return 0; }
     static get WarmRestart() { return 1; }
     static get ColdRestart() { return 2; }
+    static get Kill() { return 3; }
 }
 
 StartKernel.codec = combined(shortStr, uint8).to(StartKernel);

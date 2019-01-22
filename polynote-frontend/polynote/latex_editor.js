@@ -1,12 +1,13 @@
-import {div, span, textbox} from "./tags.js";
+import {div, span, textbox, para} from "./tags.js";
 import { TextCell } from "./cell.js"
 
 export class LaTeXEditor extends EventTarget {
-    constructor(outputEl, parentEl, deleteOnCancel) {
+    constructor(outputEl, parentEl, deleteOnCancel, displayMode) {
         super();
         this.outputEl = outputEl;
         this.parentEl = parentEl;
         this.deleteOnCancel = deleteOnCancel;
+        this.displayMode = displayMode || false;
 
         let editorParent = outputEl;
         while (!editorParent.cell && editorParent !== parentEl) {
@@ -45,7 +46,7 @@ export class LaTeXEditor extends EventTarget {
         let el = this.outputEl;
 
         while (el && el !== this.parentEl) {
-            targetX += (el.offsetLeft || 0);
+            targetX += (el.offsetLeft || 0) + ((el.offsetWidth - el.clientWidth));
             targetY += (el.offsetTop || 0);
             el = el.offsetParent;
         }
@@ -54,6 +55,10 @@ export class LaTeXEditor extends EventTarget {
         this.el.style.width = width + 'px';
 
         const midpoint = containerWidth / 2;
+
+        if (this.displayMode) {
+            targetX = midpoint;
+        }
 
         const left = Math.min(containerWidth - width, Math.max(0, Math.round(targetX - width / 2)));
         pointerOffset = targetX - left;
@@ -73,10 +78,10 @@ export class LaTeXEditor extends EventTarget {
         try {
             this.valid = false;
             try {
-                katex.render(texSource, this.fakeEl);
+                katex.render(texSource, this.fakeEl, { displayMode: this.displayMode });
             } catch (e) {
                 if (e instanceof katex.ParseError) {
-                    katex.render(texSource, this.fakeEl, { throwOnError: false });
+                    katex.render(texSource, this.fakeEl, { throwOnError: false, displayMode: this.displayMode });
                 }
                 throw e;
             }
@@ -104,12 +109,15 @@ export class LaTeXEditor extends EventTarget {
                 this.fakeEl.childNodes[0].setAttribute('contenteditable', 'false');
             }
             this.outputEl.innerHTML = this.fakeEl.innerHTML;
+            if (this.outputEl.hasAttribute('data-tex-source')) {
+                this.outputEl.setAttribute('data-tex-source', this.input.value);
+            }
 
             // move caret to end of inserted equation
-            const space = document.createTextNode(" ");
+            const space = this.displayMode ? para([], [document.createElement('br')]) : span([], [" "]);
             this.outputEl.parentNode.insertBefore(space, this.outputEl.nextSibling);
 
-            document.getSelection().setBaseAndExtent(space, 1, space, 1);
+            document.getSelection().setBaseAndExtent(space, 0, space, space.textContent.length);
             document.getSelection().collapseToEnd();
 
             const cell = this.editorParent && this.editorParent.cell;
@@ -141,8 +149,11 @@ export class LaTeXEditor extends EventTarget {
 
         // TODO: this should be a function
         let notebookParent = selection.baseNode;
+        let currentKatexEl = null;
         while (notebookParent && (notebookParent.nodeType !== 1 || !(notebookParent.classList.contains('notebook-cells')))) {
             notebookParent = notebookParent.parentNode;
+            if (notebookParent.hasAttribute && notebookParent.hasAttribute('data-tex-source'))
+                currentKatexEl = notebookParent;
         }
 
         if (!notebookParent) {
@@ -150,25 +161,21 @@ export class LaTeXEditor extends EventTarget {
             return;
         }
 
-        let el = null;
+        let el = currentKatexEl;
         let deleteOnCancel = false;
-
-
-        if (selection.focusNode && selection.focusNode.childNodes) {
-            for (let i = 0; i < selection.focusNode.childNodes.length; i++) {
-                const node = selection.focusNode.childNodes[i];
-                if (node.nodeType === 1 && selection.containsNode(node, false) && (node.classList.contains('katex') || node.classList.contains('katex-block'))) {
-                    el = node;
-                    break;
-                }
-            }
-        }
+        let displayMode = (el && (el.classList.contains('katex-block') || el.classList.contains('katex-display')));
 
         if (!el) {
-            document.execCommand('insertHTML', false, `<span>&nbsp;</span>`);
-            el = document.getSelection().baseNode.parentNode;
+            if (selection.focusNode.tagName && selection.focusNode.tagName.toLowerCase() === "p" && selection.focusNode.textContent === "") {
+                displayMode = true;
+                el = selection.focusNode;
+            } else {
+                document.execCommand('insertHTML', false, `<span>&nbsp;</span>`);
+                el = document.getSelection().baseNode.parentNode;
+            }
+
             deleteOnCancel = true;
         }
-        return new LaTeXEditor(el, notebookParent, deleteOnCancel);
+        return new LaTeXEditor(el, notebookParent, deleteOnCancel, displayMode);
     }
 }

@@ -28,6 +28,6 @@ class SparkPolyKernelRouter(
     settings: Settings,
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
-  ): SparkPolyKernel = SparkPolyKernel(notebookRef, deps, subKernels, statusUpdates, extraClassPath, settings, parentClassLoader)
+  ): IO[SparkPolyKernel] = IO.pure(SparkPolyKernel(notebookRef, deps, subKernels, statusUpdates, extraClassPath, settings, parentClassLoader))
 
 }

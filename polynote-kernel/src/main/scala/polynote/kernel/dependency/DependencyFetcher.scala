@@ -55,27 +55,29 @@ class CoursierFetcher extends DependencyFetcher[IO] {
   private val resolutionCacheFile = "resolution-cache"
   private lazy val resolutionCachePath = Cache.default.toPath.resolve(resolutionCacheFile)
 
-  private def loadResolutionCache: IO[ProjectCache] = IO.pure(resolutionCachePath).flatMap {
-    path => IO(path.toFile.exists()).flatMap {
-      case true => IO(new RandomAccessFile(path.toFile, "r")).map(_.getChannel.lock(0, Long.MaxValue, true)).bracket {
-          lock => IO(new ObjectInputStream(Channels.newInputStream(lock.channel()))).bracket {
-            is => IO(Option(is.readObject())).flatMap(obj => IO(obj.map(_.asInstanceOf[ProjectCache]).getOrElse(Map.empty)))
-          }(is => IO(lock.close()) *> IO(is.close()))
-        }(lock => IO(if (lock.isValid) lock.release()))
-      case false => IO.raiseError(new FileNotFoundException(path.toString))
-    }
-  }.handleErrorWith[ProjectCache](err => IO(err.printStackTrace()).map(_ => Map.empty))
+  private def loadResolutionCache: IO[ProjectCache] = IO.pure(Map.empty)
+//    IO.pure(resolutionCachePath).flatMap {
+//    path => IO(path.toFile.exists()).flatMap {
+//      case true => IO(new RandomAccessFile(path.toFile, "r")).map(_.getChannel.lock(0, Long.MaxValue, true)).bracket {
+//          lock => IO(new ObjectInputStream(Channels.newInputStream(lock.channel()))).bracket {
+//            is => IO(Option(is.readObject())).flatMap(obj => IO(obj.map(_.asInstanceOf[ProjectCache]).getOrElse(Map.empty)))
+//          }(is => IO(lock.close()) *> IO(is.close()))
+//        }(lock => IO(if (lock.isValid) lock.release()))
+//      case false => IO.raiseError(new FileNotFoundException(path.toString))
+//    }
+//  }.handleErrorWith[ProjectCache](err => IO(err.printStackTrace()).map(_ => Map.empty))
 
-  private def saveResolutionCache(cache: ProjectCache): IO[Unit] = IO.pure(resolutionCachePath).flatMap {
-    path => loadResolutionCache.flatMap {
-          existingCache => IO(new RandomAccessFile(path.toFile, "rw")).map(_.getChannel.lock(0, Long.MaxValue, true)).bracket {
-            lock =>
-              IO(new ObjectOutputStream(Channels.newOutputStream(lock.channel()))).bracket {
-              os => IO(os.writeObject(existingCache ++ cache))
-            }(os =>  IO(lock.release()) *> IO(os.close()))
-        }(lock => IO(if (lock.isValid) lock.release()))
-      }
-  }
+  private def saveResolutionCache(cache: ProjectCache): IO[Unit] = IO.unit
+//    IO.pure(resolutionCachePath).flatMap {
+//    path => loadResolutionCache.flatMap {
+//          existingCache => IO(new RandomAccessFile(path.toFile, "rw")).map(_.getChannel.lock(0, Long.MaxValue, true)).bracket {
+//            lock =>
+//              IO(new ObjectOutputStream(Channels.newOutputStream(lock.channel()))).bracket {
+//              os => IO(os.writeObject(existingCache ++ cache))
+//            }(os =>  IO(lock.release()) *> IO(os.close()))
+//        }(lock => IO(if (lock.isValid) lock.release()))
+//      }
+//  }
 
   private def resolution(dependencies: List[DependencyConfigs]): IO[Resolution] = loadResolutionCache.map {
     projectCache =>
@@ -88,7 +90,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
               case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.default, Classifier(classifier), ver)
               case Array(org, name, typ, config, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration(config), Classifier(classifier), ver)
             }
-            Dependency(Module(org, name), ver, config, Attributes(typ, classifier))
+            Dependency(Module(org, name), ver, config, Attributes(typ, classifier), transitive = classifier.value != "all")
 
         }.toSet,
         projectCache = projectCache,

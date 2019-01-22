@@ -38,8 +38,14 @@ abstract class MessageCompanion[T](msgId: Byte) {
   implicit final val discriminator: Discriminator[Message, T, Byte] = Discriminator(msgId)
 }
 
-final case class Error(code: Int, message: ShortString, stackTrace: Option[String]) extends Message
-object Error extends MessageCompanion[Error](0)
+final case class Error(code: Int, error: Throwable) extends Message
+
+object Error extends MessageCompanion[Error](0) {
+  implicit val codec: Codec[Error] = (uint16 ~ RuntimeError.throwableWithCausesCodec).xmap(
+    t => Error(t._1, t._2),
+    e => (e.code, e.error)
+  )
+}
 
 final case class LoadNotebook(path: ShortString) extends Message
 object LoadNotebook extends MessageCompanion[LoadNotebook](1)
@@ -88,25 +94,22 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
 }
 object Notebook extends MessageCompanion[Notebook](2)
 
-final case class RunCell(notebook: ShortString, id: TinyString) extends Message
+final case class RunCell(notebook: ShortString, id: ShortList[TinyString]) extends Message
 object RunCell extends MessageCompanion[RunCell](3)
 
 final case class CellResult(notebook: ShortString, id: TinyString, result: Result) extends Message
 object CellResult extends MessageCompanion[CellResult](4)
 
 final case class ContentEdit(pos: Int, length: Int, content: String) {
-  // TODO: should use some kind of finger tree for the content instead of strings
-  def applyTo(str: String): String = str.splitAt(pos) match {
-    case (before, after) => before + content + after.drop(length)
-  }
-
   def applyTo(rope: Rope): Rope = if (length > 0) rope.delete(pos + 1, length).insertAt(pos, Rope(content)) else rope.insertAt(pos, Rope(content))
 }
 
-final case class UpdateCell(notebook: ShortString, id: TinyString, content: ShortList[ContentEdit]) extends Message
+sealed trait NotebookUpdate
+
+final case class UpdateCell(notebook: ShortString, id: TinyString, content: ShortList[ContentEdit]) extends Message with NotebookUpdate
 object UpdateCell extends MessageCompanion[UpdateCell](5)
 
-final case class InsertCell(notebook: ShortString, cell: NotebookCell, after: Option[TinyString]) extends Message
+final case class InsertCell(notebook: ShortString, cell: NotebookCell, after: Option[TinyString]) extends Message with NotebookUpdate
 object InsertCell extends MessageCompanion[InsertCell](6)
 
 final case class CompletionsAt(notebook: ShortString, id: TinyString, pos: Int, completions: ShortList[Completion]) extends Message
@@ -118,7 +121,7 @@ object ParametersAt extends MessageCompanion[ParametersAt](8)
 final case class KernelStatus(notebook: ShortString, update: KernelStatusUpdate) extends Message
 object KernelStatus extends MessageCompanion[KernelStatus](9)
 
-final case class UpdateConfig(notebook: ShortString, config: NotebookConfig) extends Message
+final case class UpdateConfig(notebook: ShortString, config: NotebookConfig) extends Message with NotebookUpdate
 object UpdateConfig extends MessageCompanion[UpdateConfig](10)
 
 final case class SetCellLanguage(notebook: ShortString, id: TinyString, language: TinyString) extends Message
@@ -130,6 +133,7 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
   final val NoRestart = 0.toByte
   final val WarmRestart = 1.toByte
   final val ColdRestart = 2.toByte
+  final val Kill = 3.toByte
 }
 
 final case class ListNotebooks(paths: List[ShortString]) extends Message
@@ -138,5 +142,5 @@ object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 final case class CreateNotebook(path: ShortString) extends Message
 object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
-final case class DeleteCell(notebook: ShortString, id: TinyString) extends Message
+final case class DeleteCell(notebook: ShortString, id: TinyString) extends Message with NotebookUpdate
 object DeleteCell extends MessageCompanion[DeleteCell](15)

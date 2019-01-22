@@ -12,7 +12,7 @@ export class UIEvent extends CustomEvent {
     }
 
     copy() {
-        const c = new UIEvent(id, this.detail);
+        const c = new UIEvent(this.type, this.detail);
         c.originalTarget = this.originalTarget;
         Object.setPrototypeOf(c, this.constructor.prototype);
         return c;

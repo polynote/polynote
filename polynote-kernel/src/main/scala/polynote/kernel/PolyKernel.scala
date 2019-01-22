@@ -119,32 +119,32 @@ class PolyKernel private[kernel] (
       oq =>
           val oqSome = new EnqueueSome(oq)
           withKernel(id) {
-          (notebook, cell, kernel) =>
-            val prevCellIds = prevCells(notebook, id)
-            taskQueue.runTaskIO(id, id, s"Running $id") {
-              taskInfo =>
-                polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
-                polynote.runtime.Runtime.setProgressSetter {
-                  (progress, detail) =>
-                    val newDetail = Option(detail).getOrElse(taskInfo.detail)
-                    statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
-                }
-                kernel.runCode(
-                  id,
-                  findAvailableSymbols(prevCellIds, kernel),
-                  prevCellIds,
-                  cell.content.toString,
-                  oqSome,
-                  statusUpdates
-                ).handleErrorWith {
-                  case errs@CompileErrors(_) =>
-                    oqSome.enqueue1(errs)
-                  case err@RuntimeError(_) =>
-                    oqSome.enqueue1(err)
-                  case err =>
-                    oqSome.enqueue1(RuntimeError(err))
-                }.guarantee(oq.enqueue1(None))
-            }
+            (notebook, cell, kernel) =>
+              val prevCellIds = prevCells(notebook, id)
+              taskQueue.runTaskIO(id, id, s"Running $id") {
+                taskInfo =>
+                  polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
+                  polynote.runtime.Runtime.setProgressSetter {
+                    (progress, detail) =>
+                      val newDetail = Option(detail).getOrElse(taskInfo.detail)
+                      statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
+                  }
+                  kernel.runCode(
+                    id,
+                    findAvailableSymbols(prevCellIds, kernel),
+                    prevCellIds,
+                    cell.content.toString,
+                    oqSome,
+                    statusUpdates
+                  ).handleErrorWith {
+                    case errs@CompileErrors(_) =>
+                      oqSome.enqueue1(errs)
+                    case err@RuntimeError(_) =>
+                      oqSome.enqueue1(err)
+                    case err =>
+                      oqSome.enqueue1(RuntimeError(err))
+                  }.guarantee(oq.enqueue1(None))
+              }
         }.flatten.uncancelable.start.map {
           fiber => oq.dequeue.unNoneTerminate
         }
@@ -179,6 +179,8 @@ class PolyKernel private[kernel] (
   def idle(): IO[Boolean] = taskQueue.currentTask.map(_.isEmpty)
 
   def init: IO[Unit] = IO.unit
+
+  def shutdown(): IO[Unit] = IO.unit
 
 }
 

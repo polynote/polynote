@@ -18,7 +18,7 @@ module.exports = {
     new MonacoWebpackPlugin({
 	    languages: ['clojure', 'java', 'markdown', 'python', 'r', 'ruby', 'json', 'sql', 'swift']
     }),
-    new CopyWebpackPlugin(['index.html', { from: 'style', to: 'style' }])
+    new CopyWebpackPlugin(['index.html', { from: 'style', to: 'style' }, {from: 'latex-editor.html', to: 'latex-editor.html'}])
   ],
   mode: "development"
 };

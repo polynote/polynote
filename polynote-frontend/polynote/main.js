@@ -219,7 +219,7 @@ const md = require('markdown-it');
               options.displayMode = true;
               try{
                   // modified - add contenteditable=false
-                  return `<p class='katex-block' contenteditable='false' data-tex-source="${escapeHtml(latex)}">" + katex.renderToString(latex, options) + "</p>`;
+                  return `<p class='katex-block' contenteditable='false' data-tex-source="${escapeHtml(latex)}">` + katex.renderToString(latex, options) + "</p>";
               }
               catch(error){
                   if(options.throwOnError){ console.log(error); }

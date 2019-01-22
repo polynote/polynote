@@ -1,5 +1,7 @@
 package polynote.kernel.util
 
+import java.util.concurrent.ConcurrentHashMap
+
 import cats.effect.concurrent.Deferred
 import cats.effect.{ContextShift, IO}
 import fs2.Stream
@@ -8,6 +10,7 @@ import polynote.kernel.{KernelStatusUpdate, SymbolInfo, UpdatedSymbols}
 import polynote.kernel.lang.LanguageKernel
 
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 import scala.tools.nsc.interactive.Global
 
 final class RuntimeSymbolTable(
@@ -18,7 +21,7 @@ final class RuntimeSymbolTable(
 ) extends Serializable {
   import global.{Type, TermName, Symbol}
 
-  private val currentSymbolTable: mutable.HashMap[TermName, RuntimeValue] = new mutable.HashMap()
+  private val currentSymbolTable: ConcurrentHashMap[TermName, RuntimeValue] = new ConcurrentHashMap()
   private val disposed = ReadySignal()
 
   private val runtimeMirror = scala.reflect.runtime.universe.runtimeMirror(classLoader)
@@ -41,9 +44,9 @@ final class RuntimeSymbolTable(
       RuntimeValue(TermName("kernel"), polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, "$Predef")
     ).unsafeRunSync()
 
-  def currentTerms: Seq[RuntimeValue] = currentSymbolTable.values.toSeq
+  def currentTerms: Seq[RuntimeValue] = currentSymbolTable.values.asScala.toSeq
 
-  def subscribe(maxQueued: Int = 32): Stream[IO, RuntimeValue] = newSymbols.subscribe(maxQueued).interruptWhen(disposed())
+  def subscribe(maxQueued: Int = 32): Stream[IO, (RuntimeValue, Int)] = newSymbols.subscribeSize(maxQueued).interruptWhen(disposed())
 
   private def putValue(value: RuntimeValue): Unit = {
     currentSymbolTable.put(value.name, value)
@@ -68,6 +71,8 @@ final class RuntimeSymbolTable(
         rv =>
           putValue(rv)
       }
+    }.flatMap {
+      _ => Stream.emits(values).to(newSymbols.publish).compile.drain
     }.flatMap {
       _ => statusUpdates.publish1(UpdatedSymbols(
         values.map(rv => SymbolInfo(rv.name.decodedName.toString, rv.typeString, rv.valueString, Nil)), Nil

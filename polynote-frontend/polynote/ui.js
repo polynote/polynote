@@ -8,15 +8,13 @@ import { Toolbar } from './toolbar.js'
 import { UIEvent, UIEventTarget } from './ui_event.js'
 import { FakeSelect } from './fake_select.js'
 import { TextToolbar } from './text_editor.js'
-import { Cell, TextCell, CodeCell } from "./cell.js"
+import { Cell, TextCell, CodeCell, BeforeCellRunEvent } from "./cell.js"
 import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, dropdown } from './tags.js'
 import { TaskStatus } from './messages.js';
 import * as messages from './messages.js'
 import { CompileErrors, Output, RuntimeError } from './result.js'
 import { Prefs, prefs } from './prefs.js'
-import { default as Diff } from './diff.js'
 
-const JsDiff = new Diff();
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -299,8 +297,9 @@ export class KernelUI extends EventTarget {
                 span(['status'], ['●']),
                 'Kernel',
                 span(['buttons'], [
-                  iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.dispatchEvent(new CustomEvent('Connect'))),
-                  iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.dispatchEvent(new CustomEvent('StartKernel')))
+                  iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect()),
+                  iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.startKernel()),
+                  iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => this.killKernel())
                 ])
             ]),
             div(['ui-panel-content'], [
@@ -308,6 +307,20 @@ export class KernelUI extends EventTarget {
                 this.tasks.el
             ])
         ]);
+    }
+
+    connect() {
+        this.dispatchEvent(new CustomEvent('Connect'))
+    }
+
+    startKernel() {
+        this.dispatchEvent(new CustomEvent('StartKernel'))
+    }
+
+    killKernel() {
+        if (confirm("Kill running kernel? State will be lost.")) {
+            this.dispatchEvent(new CustomEvent('KillKernel'))
+        }
     }
 
     setKernelState(state) {
@@ -556,7 +569,7 @@ export class NotebookCellsUI extends UIEventTarget {
         } else {
             // already a code cell, change the language
             monaco.editor.setModelLanguage(currentCell.editor.getModel(), language);
-            currentCell.language = language;
+            currentCell.setLanguage(language);
         }
     }
 }
@@ -612,7 +625,16 @@ export class NotebookUI {
         });
 
         this.cellUI.addEventListener('RunCell', (evt) => {
-            const cellId = evt.detail.cellId;
+            let cellId = evt.detail.cellId;
+            if (!(cellId instanceof Array)) {
+                cellId = [cellId];
+            }
+            cellId.forEach(id => {
+               const cell = this.cellUI.cells[id];
+               if (cell) {
+                   cell.dispatchEvent(new BeforeCellRunEvent(id));
+               }
+            });
             this.socket.send(new messages.RunCell(path, cellId));
         });
 
@@ -706,6 +728,10 @@ export class NotebookUI {
            this.socket.send(new messages.StartKernel(path, messages.StartKernel.NoRestart));
         });
 
+        this.kernelUI.addEventListener('KillKernel', evt => {
+           this.socket.send(new messages.StartKernel(path, messages.StartKernel.Kill));
+        });
+
         socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
         socket.addMessageListener(messages.KernelStatus, (path, update) => {
@@ -721,11 +747,6 @@ export class NotebookUI {
                     case messages.UpdatedTasks:
                         update.tasks.forEach(taskInfo => {
                             //console.log(taskInfo);
-                            const isRerunning = this.cellUI.cells[taskInfo.id] && this.kernelUI.tasks.taskStatus(taskInfo.id) === TaskStatus.Queued && taskInfo.status !== TaskStatus.Queued
-                            const firstRun = this.cellUI.cells[taskInfo.id] && this.kernelUI.tasks.taskStatus(taskInfo.id) === undefined
-                            if (isRerunning || firstRun) {
-                                this.cellUI.cells[taskInfo.id].setErrors([]);
-                            }
                             this.kernelUI.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
                         });
                         break;
@@ -740,6 +761,11 @@ export class NotebookUI {
         socket.addEventListener('close', evt => {
             this.kernelUI.setKernelState('disconnected');
             socket.addEventListener('open', evt => this.socket.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false))));
+        });
+
+        socket.addMessageListener(messages.Error, (code, err) => {
+            // TODO: show this in the UI
+            console.log("Kernel error:", err);
         });
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
@@ -1079,31 +1105,21 @@ export class MainUI extends SplitView {
 
         // TODO: part of toolbar cleanup
             document.querySelector('.run-all').addEventListener('click', evt => {
-                const cells = this.currentNotebook.querySelectorAll('.cell-container.code-cell');
-                for (const cellContainer of [...cells]) {
-                    if (cellContainer.id) {
-                        this.socket.send(new messages.RunCell(this.currentNotebookPath, cellContainer.id));
-                    }
-                }
+                this.runCells(this.currentNotebook.querySelectorAll('.cell-container.code-cell'))
             });
 
             document.querySelector('.run-cell.to-cursor').addEventListener('click', evt => {
-                const cells = this.currentNotebook.querySelectorAll('.cell-container.code-cell');
+                const cells = [...this.currentNotebook.querySelectorAll('.cell-container.code-cell')];
                 const notebookUI = this.currentNotebook.cellsUI;
-                const activeCell = Cell.currentFocus.id;
-                if (!notebookUI.cells[activeCell] || notebookUI.cells[activeCell] !== Cell.currentFocus) {
+                const activeCell = Cell.currentFocus;
+
+                const activeCellIndex = cells.indexOf(activeCell);
+                if (activeCellIndex < 0) {
                     console.log("Active cell is not part of current notebook?");
                     return;
                 }
 
-                for (const cellContainer of [...cells]) {
-                    if (cellContainer.id) {
-                        this.socket.send(new messages.RunCell(this.currentNotebookPath, cellContainer.id));
-                    }
-                    if (cellContainer.id === activeCell) {
-                        return;
-                    }
-                }
+                this.runCells(cells.slice(0, activeCellIndex + 1));
             });
 
             document.querySelector('.insert-cell-below').addEventListener('click', evt => {
@@ -1140,6 +1156,20 @@ export class MainUI extends SplitView {
 
             notebookUI.dispatchEvent(new CustomEvent('DeleteCell', { detail: {cellId: activeCell }}));
         });
+    }
+
+    runCells(cellContainers) {
+        const ids = [];
+        [...cellContainers].forEach(container => {
+            if (container.cell && container.id) {
+                ids.push(container.id);
+                container.cell.dispatchEvent(new BeforeCellRunEvent(container.id));
+            }
+        });
+
+        if (ids.length) {
+            this.socket.send(new messages.RunCell(this.currentNotebookPath, ids));
+        }
     }
 
     loadNotebook(path) {

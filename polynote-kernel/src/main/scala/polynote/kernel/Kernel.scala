@@ -23,6 +23,8 @@ abstract class Kernel[F[_]](val statusUpdates: Topic[F, KernelStatusUpdate]) {
 
   def init: F[Unit]
 
+  def shutdown(): F[Unit]
+
   def runCell(id: String): F[Stream[F, Result]]
 
   def completionsAt(id: String, pos: Int): F[List[Completion]]

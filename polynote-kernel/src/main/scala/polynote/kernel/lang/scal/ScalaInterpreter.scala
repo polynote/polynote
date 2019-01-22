@@ -52,9 +52,6 @@ class ScalaInterpreter(
 
   protected val previousSources: mutable.HashMap[String, ScalaSource[this.type]] = new mutable.HashMap()
 
-  //private val imports: StringBuilder = new StringBuilder
-  protected val externalVals = new mutable.HashMap[String, String]
-
   protected val importToRuntime: Importer[runtime.universe.type, global.type] =
     runtime.universe.internal.createImporter(global)
 
@@ -85,27 +82,6 @@ class ScalaInterpreter(
   protected lazy val notebookPackageSymbol = global.internal.newModuleAndClassSymbol(global.rootMirror.RootPackage, notebookPackageName)
 
   protected def isPredefSymbol(name: global.TermName): Boolean = name string_== "kernel"
-
-  // listen for new symbols in the symbol table, and import them
-  symbolTable.subscribe().evalMap {
-    case rv if isPredefSymbol(rv.name) => IO.unit
-    case rv =>
-      import global.{ValDef, DefDef, Modifiers, TypeTree, Flag, Apply, Select, TermName, Literal, Constant, reify}
-      val decodedName = rv.name.decodedName.toString
-      val escapedName = decodedName.toString.replace("\\", "\\\\").replace("`", "\\`")
-
-      val tree = DefDef(
-        Modifiers(Flag.PRIVATE), rv.name, Nil, Nil, TypeTree(rv.scalaType),
-        Apply(Select(reify(polynote.runtime.Runtime).tree, TermName("getValue")), List(Literal(Constant(decodedName))))
-      )
-
-      val treeStr = global.showCode(tree)
-
-      IO {
-        externalVals.put(decodedName, treeStr)
-        ()
-      }
-  }.interruptWhen(shutdownSignal()).compile.drain.start.unsafeRunAsyncAndForget()
 
   def predefCode: Option[String] = Some("val kernel = polynote.runtime.Runtime")
 

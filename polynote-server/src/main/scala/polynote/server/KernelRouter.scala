@@ -18,7 +18,7 @@ import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.python.PythonInterpreter
 import polynote.kernel._
 import polynote.kernel.lang.LanguageKernel
-import polynote.messages.{Notebook, NotebookConfig, TinyMap}
+import polynote.messages.{KernelStatus, Notebook, NotebookConfig, ShortString, TinyMap}
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
@@ -39,6 +39,7 @@ abstract class KernelRouter[F[_]](implicit F: Monad[F]) {
   // create and cache a new kernel for the notebook, even if one is already cached (discards existing kernel)
   def createKernel(notebookRef: Ref[F, Notebook], taskInfo: TaskInfo, statusUpdates: Topic[F, KernelStatusUpdate]): F[Kernel[F]]
 
+  def shutdownKernel(path: String): F[Boolean]
 }
 
 class PolyKernelRouter(
@@ -65,7 +66,7 @@ class PolyKernelRouter(
     settings: Settings,
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
-  ): PolyKernel = PolyKernel(notebookRef, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader)
+  ): IO[PolyKernel] = IO.pure(PolyKernel(notebookRef, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader))
 
   override def createKernel(notebookRef: Ref[IO, Notebook], taskInfo: TaskInfo, statusUpdates: Topic[IO, KernelStatusUpdate]): IO[Kernel[IO]] = for {
     notebook <- notebookRef.get
@@ -74,11 +75,20 @@ class PolyKernelRouter(
     deps     <- fetchDependencies(config, statusUpdates)
     numDeps   = deps.values.map(_.size).sum
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = (numDeps.toDouble / (numDeps + 1) * 255).toByte) :: Nil))
-    kernel    = mkKernel(notebookRef, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader)
+    kernel   <- mkKernel(notebookRef, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader)
     _         = kernels.put(notebook.path, kernel)
     _        <- kernel.init
     _        <- statusUpdates.publish1(KernelBusyState(busy = false, alive = true))
   } yield kernel
+
+  override def shutdownKernel(path: String): IO[Boolean] = getKernel(path).map {
+    kernel => for {
+      _ <- kernel.shutdown()
+      _ <- kernel.statusUpdates.publish1(KernelBusyState(busy = false, alive = false))
+      _ <- IO(kernels.remove(path))
+    } yield true
+  }.getOrElse(IO.pure(false))
+
 
   private def fetchDependencies(config: NotebookConfig, statusUpdates: Topic[IO, KernelStatusUpdate]) = {
     val dependenciesTask = TaskInfo("Dependencies", "Fetch dependencies", "Resolving dependencies", TaskStatus.Running)

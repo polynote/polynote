@@ -78,7 +78,10 @@ export const htmlToMarkdown = (function () {
                         break;
 
                     case 'span':
-                        if (node.hasAttribute('data-tex-source')) {
+                        if (node.hasAttribute('data-tex-source') && (node.classList.contains('katex-display') || node.classList.contains('katex-block'))) {
+                            accum += '$$' + node.getAttribute('data-tex-source') + '$$\n';
+                        }
+                        else if (node.hasAttribute('data-tex-source')) {
                             // inline TeX source
                             accum += '$' + node.getAttribute('data-tex-source') + '$';
                         } else {
@@ -96,7 +99,6 @@ export const htmlToMarkdown = (function () {
                             stack.reverse().forEach(mod => accum += mod);
                         }
                         break;
-
                     default:
                         accum += node.outerHTML;
                 }
@@ -143,7 +145,15 @@ export const htmlToMarkdown = (function () {
         }
 
         function convertBlock(node) {
-            const inside = [...node.childNodes].map(convert).join('');
+            let inside = '';
+            if (node.hasAttribute('data-tex-source') && (node.classList.contains('katex-display') || node.classList.contains('katex-block'))) {
+               inside = '$$' + node.getAttribute('data-tex-source') + '$$';
+            } else if (node.hasAttribute('data-tex-source')) {
+                // inline TeX source
+                inside = '$' + node.getAttribute('data-tex-source') + '$';
+            } else {
+                inside = [...node.childNodes].map(convert).join('');
+            }
 
             switch(node.nodeName.toLowerCase()) {
                 case 'h1': return atx(inside, 1);

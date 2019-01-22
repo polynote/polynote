@@ -78,10 +78,10 @@ class SocketSession(
             .handleErrorWith {
               err =>
                 val re = err match {
-                  case re @ RuntimeError(_) => re
+                  case RuntimeError(e) => e
                   case e => RuntimeError(e)
                 }
-                Stream.eval(logError(err).map(_ => CellResult(ShortString(""), TinyString(""), re)))
+                Stream.eval(logError(re).map(_ => Error(0, re)))
             }
             //.evalTap(logMessage)
             .evalMap(toFrame).handleErrorWith {
@@ -159,6 +159,7 @@ class SocketSession(
       updates <- IO.pure(prevKernel.statusUpdates)
       taskInfo = TaskInfo("kernel", "Restart", "Kernel restarting", TaskStatus.Running)
       _       <- updates.publish1(UpdatedTasks(taskInfo :: Nil))
+      _       <- prevKernel.shutdown()
       _       <- updates.publish1(KernelBusyState(busy = true, alive = false))
       kernel  <- router.createKernel(ref, taskInfo, updates)
       _       <- updates.publish1(UpdatedTasks(taskInfo.copy(status = TaskStatus.Complete, progress = 255.toByte) :: Nil))
@@ -231,23 +232,29 @@ class SocketSession(
       } yield Stream.empty
 
 
-    case RunCell(path, id) =>
+    case RunCell(path, ids) =>
       val buf = new WindowBuffer[Result](1000)
-      for {
+      val runAll = for {
         notebook <- IO.fromEither(getNotebookRef(path))
         kernel   <- getKernel(notebook, oq)
-        results  <- kernel.runCell(id)
+        resultss <- ids.map(id => kernel.runCell(id).map(id -> _)).sequence
+      } yield for {
+        (id, results) <- resultss
       } yield results.evalMap {
         result =>
           IO(buf.add(result)) >> IO.pure(CellResult(path, id, result))
       }.onFinalize(updateNotebook(path)(nb => nb.updateCell(id)(_.copy(results = ShortList(buf.toList)))).map(_ => ()))
+
+      runAll.map {
+        all => Stream.emits(all).flatten
+      }
 
 
     case req@CompletionsAt(notebook, id, pos, _) =>
       router.getKernel(notebook).fold(IO.pure(req)) {
         kernel => kernel.completionsAt(id, pos).map {
           result => req.copy(completions = ShortList(result))
-        }.handleError(err => req)
+        }.handleErrorWith(err => IO(err.printStackTrace(System.err)).map(_ => req))
       }.map {
         result =>
           Stream.emit(result)
@@ -289,11 +296,15 @@ class SocketSession(
         restarted   <- forceRestartKernel(notebook, oq).getOrElse(getKernel(notebookRef, oq))
       } yield kernelStatusInfo(path, restarted)
 
+    case StartKernel(path, StartKernel.Kill) =>
+      router.shutdownKernel(path).map(_ => Stream.empty)
+
+
     case other =>
       IO.pure(Stream.empty)
   }
 
-  def badMsgErr(msg: WebSocketFrame) = Error(1, ShortString(s"Received bad message frame ${truncate(msg.toString, 32)}"), None)
+  def badMsgErr(msg: WebSocketFrame) = Error(1, new RuntimeException(s"Received bad message frame ${truncate(msg.toString, 32)}"))
 
   def truncate(str: String, len: Int): String = if (str.length < len) str else str.substring(0, len - 4) + "..."
 

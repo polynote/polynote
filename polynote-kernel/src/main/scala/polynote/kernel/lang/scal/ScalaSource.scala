@@ -39,7 +39,8 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       val pos = tree.children.foldLeft(new RangePosition(sourceFile, parentPos.start, parentPos.point, parentPos.end)) {
         (currentPos, child) =>
           val captured = ensurePositions(sourceFile, child, currentPos)
-          currentPos.withStart(captured.end).asInstanceOf[RangePosition]
+          val end = math.max(captured.end, currentPos.end)
+          new RangePosition(sourceFile, end, end, end)
       }
       tree.setPos(pos)
       pos
@@ -69,7 +70,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     transformer.transform(tree)
   }
 
-  private lazy val unitParser = global.newUnitParser(code, s"$id-stats")
+  private lazy val unitParser = global.newUnitParser(code, id)
 
   // the parsed trees, but only successful if there weren't any parse errors
   lazy val parsed: Ior[Throwable, List[Tree]] = reporter.attemptIor(unitParser.parseStats())
@@ -134,7 +135,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       val externalVals = availableSymbols
         .filterNot(_.source contains interpreter)
         .toList.map {
-          case sym: interpreter.global.Symbol =>
+          sym =>
             val name = sym.name.asInstanceOf[interpreter.global.TermName]
             val typ = sym.scalaType.asInstanceOf[interpreter.global.Type]
             atPos(beginning)(
@@ -224,7 +225,9 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     for {
       unit <- compileUnit
       tree <- quickTyped
-    } yield treesAtPos(tree, Position.offset(unit.source, offset)).headOption
+    } yield treesAtPos(tree, Position.offset(unit.source, offset)).find {
+      tree => tree.tpe != null && tree.tpe != global.NoType
+    }
   }
 
   // All enclosing trees of the given position, after typing
@@ -263,13 +266,13 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
               case _ => qual.tpe
             }
             val allImplicits = new global.analyzer.ImplicitSearch(qual, global.definitions.functionType(List(ownerTpe), global.definitions.AnyTpe), isView = true, context0 = context).allImplicits
-            val scope = context.scope.cloneScope
+            val implicitScope = scope.cloneScope
             allImplicits.foreach {
               result =>
                 val members = result.tree.tpe.finalResultType.members
-                members.foreach(scope.enterIfNew)
+                members.foreach(implicitScope.enterIfNew)
             }
-            scope
+            implicitScope
         }.right.getOrElse{
           scope
         }
@@ -287,7 +290,6 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
           case (_, syms) => syms.head
         }
 
-      // Pretty sure this is useless... monaco probably knows about all the idents already?
       case global.Ident(name: global.Name) =>
         for {
           context    <- getContext(tree)

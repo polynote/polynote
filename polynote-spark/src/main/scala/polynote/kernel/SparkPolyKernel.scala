@@ -9,6 +9,7 @@ import java.util.function.BiFunction
 import cats.effect.IO
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.syntax.flatMap._
+import cats.syntax.apply._
 import fs2.concurrent.Topic
 import org.apache.spark.{SparkConf, Success}
 import org.apache.spark.rdd.RDD
@@ -102,6 +103,7 @@ class SparkPolyKernel(
     taskInfo => IO(session) >> IO.unit
   }
 
+  override def shutdown(): IO[Unit] = super.shutdown() *> IO(session.stop())
 }
 
 object SparkPolyKernel {
