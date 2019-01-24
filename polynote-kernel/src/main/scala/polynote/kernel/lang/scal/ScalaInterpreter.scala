@@ -97,7 +97,6 @@ class ScalaInterpreter(
     statusUpdates: Topic[IO, KernelStatusUpdate]
   ): IO[Unit] = {
     val originalOut = System.out
-    val done = Deferred.unsafe[IO, Unit]
     val source = new ScalaSource[this.type](this)(cell, visibleSymbols.toSet, previousCells.collect(previousSources).toList, code)
     interpreterLock.acquire.bracket { _ =>
       IO.fromEither(source.compile).flatMap {

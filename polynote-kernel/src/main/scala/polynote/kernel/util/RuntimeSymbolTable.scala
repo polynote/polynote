@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicLong
 import cats.effect.concurrent.Deferred
 import cats.effect.{ContextShift, IO}
 import fs2.Stream
-import fs2.concurrent.Topic
+import fs2.concurrent.{SignallingRef, Topic}
 import polynote.kernel.{KernelStatusUpdate, SymbolInfo, UpdatedSymbols}
 import polynote.kernel.lang.LanguageKernel
 
@@ -45,9 +45,9 @@ final class RuntimeSymbolTable(
       RuntimeValue(TermName("kernel"), polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, "$Predef")
     ).unsafeRunSync()
 
-  private val awaitingDelivery = new AtomicLong(0)
+  private val awaitingDelivery = SignallingRef[IO, Int](0).unsafeRunSync()
 
-  def drain(): IO[Unit] = Stream.repeatEval(IO(awaitingDelivery.get())).takeWhile(_ > 0).compile.drain
+  def drain(): IO[Unit] = (Stream.eval(awaitingDelivery.get) ++ awaitingDelivery.discrete).takeWhile(_ > 0).compile.drain
 
   def currentTerms: Seq[RuntimeValue] = currentSymbolTable.values.asScala.toSeq
 
@@ -55,7 +55,7 @@ final class RuntimeSymbolTable(
     newSymbols.subscribeSize(maxQueued).interruptWhen(disposed()).evalMap {
       case t @ (rv, i) => fn(rv).map {
         _ =>
-          awaitingDelivery.decrementAndGet()
+          awaitingDelivery.update(_ - 1)
           t
       }
     }
@@ -72,7 +72,7 @@ final class RuntimeSymbolTable(
     for {
       _    <- IO(putValue(rv))
       subs <- newSymbols.subscribers.get
-      _    <- IO(awaitingDelivery.addAndGet(subs.toLong))
+      _    <- IO(awaitingDelivery.update(_ + subs))
       _    <- newSymbols.publish1(rv)
       _    <- statusUpdates.publish1(UpdatedSymbols(SymbolInfo(name.decodedName.toString, rv.typeString, rv.valueString, Nil) :: Nil, Nil))
     } yield ()
@@ -87,7 +87,7 @@ final class RuntimeSymbolTable(
     }.flatMap {
       _ => for {
         subs <- newSymbols.subscribers.get
-        _    <- IO(awaitingDelivery.addAndGet(subs * values.length))
+        _    <- IO(awaitingDelivery.update(_ + (subs * values.length)))
         _    <- Stream.emits(values).to(newSymbols.publish).compile.drain
       } yield ()
     }.flatMap {

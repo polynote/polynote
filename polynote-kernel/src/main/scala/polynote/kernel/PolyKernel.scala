@@ -9,6 +9,7 @@ import cats.effect.concurrent.{Ref, Semaphore}
 import cats.effect.internals.IOContextShift
 import cats.syntax.either._
 import cats.syntax.flatMap._
+import cats.syntax.apply._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, Topic}
 import org.log4s.{Logger, getLogger}
@@ -115,7 +116,7 @@ class PolyKernel private[kernel] (
 
   def runCell(id: String): IO[fs2.Stream[IO, Result]] = {
     val done = ReadySignal()
-    Queue.unbounded[IO, Option[Result]].flatMap {
+    symbolTable.drain() *> Queue.unbounded[IO, Option[Result]].flatMap {
       oq =>
           val oqSome = new EnqueueSome(oq)
           withKernel(id) {
@@ -143,7 +144,7 @@ class PolyKernel private[kernel] (
                       oqSome.enqueue1(err)
                     case err =>
                       oqSome.enqueue1(RuntimeError(err))
-                  }.guarantee(oq.enqueue1(None))
+                  }.guarantee(oq.enqueue1(None)) *> symbolTable.drain()
               }
         }.flatten.uncancelable.start.map {
           fiber => oq.dequeue.unNoneTerminate

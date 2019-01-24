@@ -45,8 +45,6 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
 
   private val shift: ContextShift[IO] = IOContextShift(executionContext)
 
-  private val pendingSymbols = new AtomicInteger(0)
-
   def withJep[T](t: => T): IO[T] = shift.evalOn(executionContext)(IO.delay(t))
 
   private val jep = jepExecutor.submit {
@@ -72,13 +70,13 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     //       Should that be fixed? Maybe we could build a new locals dict during runCode?
     // TODO: Can there be some special treatment for function values to make them Callable in python?
     // TODO: Instead of doing this, can we somehow just make the symbol table a Python scope?
-    symbolTable.subscribe().evalMap {
-      case (value, pending) => withJep {
+    symbolTable.subscribe() {
+      value => withJep {
         if (!value.source.contains(this)) {
           jep.set(value.name.toString, value.value)
         }
-      } *> IO(pendingSymbols.set(pending))
-    }.compile.last.start.unsafeRunAsyncAndForget()
+      }
+    }.compile.drain.unsafeRunAsyncAndForget()
 
     withJep {
       val terms = symbolTable.currentTerms
@@ -118,16 +116,9 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     code: String,
     out: Enqueue[IO, Result],
     statusUpdates: Topic[IO, KernelStatusUpdate]
-  ): IO[Unit] = {
+  ): IO[Unit] = if (code.trim().isEmpty) IO.unit else {
     val stdout = new PythonDisplayHook(out)
     withJep {
-      // drain externally queued symbols, wait at most 1 second
-      var waited = 0
-      while (pendingSymbols.get() > 0 && waited < 1000) {
-        waited += 100
-        Thread.sleep(100)
-      }
-
 
       jep.set("__polynote_displayhook__", stdout)
       jep.eval("import sys\n")

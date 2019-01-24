@@ -91,6 +91,10 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
   }
 
   def addCell(cell: NotebookCell): Notebook = copy(cells = ShortList(cells :+ cell))
+
+  def setResults(id: String, results: List[Result]): Notebook = updateCell(TinyString(id)) {
+    cell => cell.copy(results = ShortList(results))
+  }
 }
 object Notebook extends MessageCompanion[Notebook](2)
 

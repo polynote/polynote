@@ -233,21 +233,17 @@ class SocketSession(
 
 
     case RunCell(path, ids) =>
-      val buf = new WindowBuffer[Result](1000)
-      val runAll = for {
+      def runOne(kernel: Kernel[IO], id: String) = {
+        val buf = new WindowBuffer[Result](1000)
+        Stream.eval(kernel.runCell(id)).flatten.evalMap {
+          result => IO(buf.add(result)) >> IO.pure(CellResult(path, id, result))
+        }.onFinalize(updateNotebook(path)(_.setResults(id, buf.toList)).as(()))
+      }
+
+      for {
         notebook <- IO.fromEither(getNotebookRef(path))
         kernel   <- getKernel(notebook, oq)
-        resultss <- ids.map(id => kernel.runCell(id).map(id -> _)).sequence
-      } yield for {
-        (id, results) <- resultss
-      } yield results.evalMap {
-        result =>
-          IO(buf.add(result)) >> IO.pure(CellResult(path, id, result))
-      }.onFinalize(updateNotebook(path)(nb => nb.updateCell(id)(_.copy(results = ShortList(buf.toList)))).map(_ => ()))
-
-      runAll.map {
-        all => Stream.emits(all).flatten
-      }
+      } yield Stream.emits(ids.map(runOne(kernel, _))).flatten
 
 
     case req@CompletionsAt(notebook, id, pos, _) =>
