@@ -3,7 +3,7 @@ package polynote.kernel.lang.scal
 import java.io.{File, PrintStream}
 import java.util.concurrent.{Executor, Executors, ThreadFactory}
 
-import cats.effect.concurrent.Deferred
+import cats.effect.concurrent.{Deferred, Semaphore}
 import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
 import cats.syntax.all._
@@ -44,7 +44,10 @@ class ScalaInterpreter(
       thread
     }
   })
+
   protected implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutorService(executor))
+
+  private val interpreterLock = Semaphore[IO](1).unsafeRunSync()
 
   protected val shutdownSignal = ReadySignal()
 
@@ -96,117 +99,119 @@ class ScalaInterpreter(
     val originalOut = System.out
     val done = Deferred.unsafe[IO, Unit]
     val source = new ScalaSource[this.type](this)(cell, visibleSymbols.toSet, previousCells.collect(previousSources).toList, code)
-    IO.fromEither(source.compile).flatMap {
-      case global.NoSymbol => IO.unit
-      case sym =>
+    interpreterLock.acquire.bracket { _ =>
+      IO.fromEither(source.compile).flatMap {
+        case global.NoSymbol => IO.unit
+        case sym =>
 
-        val symType = sym.asModule.toType
-        val run = IO(importToRuntime.importSymbol(sym)).flatMap {
-          runtimeSym =>
+          val symType = sym.asModule.toType
+          val run = IO(importToRuntime.importSymbol(sym)).flatMap {
+            runtimeSym =>
 
-            val moduleMirror = try runtimeMirror.reflectModule(runtimeSym.asModule) catch {
-              case err: ExceptionInInitializerError => throw new RuntimeError(err.getCause)
-              case err: Throwable =>
-                throw new RuntimeError(err) // could be linkage errors which won't get handled by IO#handleErrorWith
-            }
+              val moduleMirror = try runtimeMirror.reflectModule(runtimeSym.asModule) catch {
+                case err: ExceptionInInitializerError => throw new RuntimeError(err.getCause)
+                case err: Throwable =>
+                  throw new RuntimeError(err) // could be linkage errors which won't get handled by IO#handleErrorWith
+              }
 
-            val instMirror = try runtimeMirror.reflect(moduleMirror.instance) catch {
-              case err: ExceptionInInitializerError => throw new RuntimeError(err.getCause)
-              case err: Throwable =>
-                throw new RuntimeError(err)
-            }
+              val instMirror = try runtimeMirror.reflect(moduleMirror.instance) catch {
+                case err: ExceptionInInitializerError => throw new RuntimeError(err.getCause)
+                case err: Throwable =>
+                  throw new RuntimeError(err)
+              }
 
-            val runtimeType = instMirror.symbol.info
+              val runtimeType = instMirror.symbol.info
 
-            // collect term definitions and values from the cell's object, and publish them to the symbol table
-            // TODO: We probably also want to publish some output for types, like "Defined class Foo" or "Defined type alias Bar".
-            //       But the class story is still WIP (i.e. we might want to pull them out of cells into the notebook package)
-            val syms = symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor).collect {
+              // collect term definitions and values from the cell's object, and publish them to the symbol table
+              // TODO: We probably also want to publish some output for types, like "Defined class Foo" or "Defined type alias Bar".
+              //       But the class story is still WIP (i.e. we might want to pull them out of cells into the notebook package)
+              val syms = symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor).collect {
 
-              case accessor if accessor.isGetter || (accessor.isMethod && !accessor.isOverloaded && accessor.asMethod.paramLists.isEmpty && accessor.isStable) =>
-                // if the decl is a val, evaluate it and push it to the symbol table
-                val name = accessor.decodedName.toString
-                val tpe = global.exitingTyper(accessor.info.resultType)
-                val method = runtimeType.decl(scala.reflect.runtime.universe.TermName(name)).asMethod
-                val owner = method.owner
+                case accessor if accessor.isGetter || (accessor.isMethod && !accessor.isOverloaded && accessor.asMethod.paramLists.isEmpty && accessor.isStable) =>
+                  // if the decl is a val, evaluate it and push it to the symbol table
+                  val name = accessor.decodedName.toString
+                  val tpe = global.exitingTyper(accessor.info.resultType)
+                  val method = runtimeType.decl(scala.reflect.runtime.universe.TermName(name)).asMethod
+                  val owner = method.owner
 
-                // invoke the accessor for its side effect(s), even if it returns Unit
-                val value = instMirror
-                  .reflectMethod(method)
-                  .apply()
+                  // invoke the accessor for its side effect(s), even if it returns Unit
+                  val value = instMirror
+                    .reflectMethod(method)
+                    .apply()
 
-                // don't publish if the type is Unit
-                if (accessor.info.finalResultType <:< global.typeOf[Unit])
-                  None
-                else
-                  Some(symbolTable.RuntimeValue(accessor.name.toTermName, value, tpe, Some(this), cell))
+                  // don't publish if the type is Unit
+                  if (accessor.info.finalResultType <:< global.typeOf[Unit])
+                    None
+                  else
+                    Some(symbolTable.RuntimeValue(accessor.name.toTermName, value, tpe, Some(this), cell))
 
-              case method if method.isMethod =>
-                // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
-                // The Scala interpreter uses the original method, but other interpreters can use the function.
-                val runtimeMethod = runtimeType.decl(runtime.universe.TermName(method.nameString)).asMethod
-                val fnSymbol = if (runtimeMethod.isOverloaded) {
-                  out.enqueue1(
-                    CompileErrors(
-                      KernelReport(
-                        new Pos(sym.pos),
-                        s"Warning: overloads of method ${method.nameString} may not be available to some kernels",
-                        KernelReport.Warning) :: Nil)
-                  ).unsafeRunAsyncAndForget()
-                  runtimeMethod.alternatives.head.asMethod
-                } else runtimeMethod.asMethod
+                case method if method.isMethod =>
+                  // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
+                  // The Scala interpreter uses the original method, but other interpreters can use the function.
+                  val runtimeMethod = runtimeType.decl(runtime.universe.TermName(method.nameString)).asMethod
+                  val fnSymbol = if (runtimeMethod.isOverloaded) {
+                    out.enqueue1(
+                      CompileErrors(
+                        KernelReport(
+                          new Pos(sym.pos),
+                          s"Warning: overloads of method ${method.nameString} may not be available to some kernels",
+                          KernelReport.Warning) :: Nil)
+                    ).unsafeRunAsyncAndForget()
+                    runtimeMethod.alternatives.head.asMethod
+                  } else runtimeMethod.asMethod
 
-                // The function delegates to the method via reflection, which isn't good, but the Scala kernel doesn't
-                // use it anyway, and other interpreters would have to use reflection anyhow
-                val methodMirror = instMirror.reflectMethod(fnSymbol)
-                val (runtimeFn, fnType) = {
-                  import runtime.universe._
-                  val args = fnSymbol.paramLists.headOption.map(_.map(arg => ValDef(Modifiers(), TermName(arg.name.toString), TypeTree(arg.info), EmptyTree))).toList
-                  val fnArgs = args.flatten.map(param => Ident(param.name))
+                  // The function delegates to the method via reflection, which isn't good, but the Scala kernel doesn't
+                  // use it anyway, and other interpreters would have to use reflection anyhow
+                  val methodMirror = instMirror.reflectMethod(fnSymbol)
+                  val (runtimeFn, fnType) = {
+                    import runtime.universe._
+                    val args = fnSymbol.paramLists.headOption.map(_.map(arg => ValDef(Modifiers(), TermName(arg.name.toString), TypeTree(arg.info), EmptyTree))).toList
+                    val fnArgs = args.flatten.map(param => Ident(param.name))
 
-                  // eta-expand if necessary
-                  val call = fnSymbol.paramLists.size match {
-                    case 0 => q"$fnSymbol"
-                    case 1 => q"$fnSymbol(..$fnArgs)"
-                    case _ => q"$fnSymbol(..$fnArgs) _"
+                    // eta-expand if necessary
+                    val call = fnSymbol.paramLists.size match {
+                      case 0 => q"$fnSymbol"
+                      case 1 => q"$fnSymbol(..$fnArgs)"
+                      case _ => q"$fnSymbol(..$fnArgs) _"
+                    }
+                    val tree = Function(args.flatten, call)
+                    val typ = runtimeTools.typecheck(tree).tpe
+                    runtimeTools.eval(tree) -> typ
                   }
-                  val tree = Function(args.flatten, call)
-                  val typ = runtimeTools.typecheck(tree).tpe
-                  runtimeTools.eval(tree) -> typ
-                }
-                val fnMirror = runtimeMirror.reflect(runtimeFn)
+                  val fnMirror = runtimeMirror.reflect(runtimeFn)
 
-                Some(symbolTable.RuntimeValue(method.name.toTermName, runtimeFn, importFromRuntime.importType(fnType), Some(this), cell))
+                  Some(symbolTable.RuntimeValue(method.name.toTermName, runtimeFn, importFromRuntime.importType(fnType), Some(this), cell))
 
-            }.flatten
+              }.flatten
 
-            (symbolTable.publishAll(syms), syms.map(rv => out.enqueue1(Output("text/plain; rel=decl", s"${rv.name.toString}: ${rv.typeString} = ${rv.valueString}"))).sequence).parMapN((_, _) => ())
-        }
+              (symbolTable.publishAll(syms), syms.map(rv => out.enqueue1(Output("text/plain; rel=decl", s"${rv.name.toString}: ${rv.typeString} = ${rv.valueString}"))).sequence).parMapN((_, _) => ())
+          }
 
-        val saveSource = IO.delay[Unit](previousSources.put(cell, source))
+          val saveSource = IO.delay[Unit](previousSources.put(cell, source))
 
-        val eval = Queue.unbounded[IO, Option[Chunk[Byte]]].map(new QueueOutputStream(_)).bracket {
-          stdOut =>
-            val results = stdOut.queue.dequeue
-              .unNoneTerminate
-              .flatMap(Stream.chunk)
-              .through(fs2.text.utf8Decode)
-              .map(Output("text/plain; rel=stdout", _))
+          val eval = Queue.unbounded[IO, Option[Chunk[Byte]]].map(new QueueOutputStream(_)).bracket {
+            stdOut =>
+              val results = stdOut.queue.dequeue
+                .unNoneTerminate
+                .flatMap(Stream.chunk)
+                .through(fs2.text.utf8Decode)
+                .map(Output("text/plain; rel=stdout", _))
 
-            for {
-              _      <- IO(System.setOut(new PrintStream(stdOut)))
-              pub    <- results.to(out.enqueue).compile.drain.start
-              fiber  <- run.start
-              _      <- fiber.join
-              _       = stdOut.flush()
-              _      <- saveSource
-              _      <- IO(stdOut.close())
-              _      <- pub.join
-            } yield ()
-        }(stdOut => IO(stdOut.close()))
+              for {
+                _      <- IO(System.setOut(new PrintStream(stdOut)))
+                pub    <- results.to(out.enqueue).compile.drain.start
+                fiber  <- run.start
+                _      <- fiber.join
+                _       = stdOut.flush()
+                _      <- saveSource
+                _      <- IO(stdOut.close())
+                _      <- pub.join
+              } yield ()
+          }(stdOut => IO(stdOut.close()))
 
-        eval.guarantee(IO(System.setOut(originalOut)))
-    }
+          eval.guarantee(IO(System.setOut(originalOut)))
+      }
+    }(_ => interpreterLock.release)
   }
 
   override def completionsAt(

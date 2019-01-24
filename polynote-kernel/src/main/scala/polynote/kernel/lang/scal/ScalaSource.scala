@@ -212,6 +212,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
   } yield tree
 
   // The deepest enclosing tree of the given position, after typing
+  // attempts to find a tree that has a type, but otherwise returns the deepest tree
   def typedTreeAt(offset: Int): Either[Throwable, Option[global.Tree]] = {
     def treesAtPos(tree: Tree, targetPos: Position): List[Tree] = if (tree.pos.properlyIncludes(targetPos)) {
       tree.children.collect {
@@ -225,8 +226,11 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     for {
       unit <- compileUnit
       tree <- quickTyped
-    } yield treesAtPos(tree, Position.offset(unit.source, offset)).find {
-      tree => tree.tpe != null && tree.tpe != global.NoType
+    } yield {
+      val trees = treesAtPos(tree, Position.offset(unit.source, offset))
+      trees.find {
+        tree => tree.tpe != null && tree.tpe != global.NoType
+      } orElse trees.headOption
     }
   }
 

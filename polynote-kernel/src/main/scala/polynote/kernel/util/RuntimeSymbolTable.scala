@@ -1,6 +1,7 @@
 package polynote.kernel.util
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 import cats.effect.concurrent.Deferred
 import cats.effect.{ContextShift, IO}
@@ -44,9 +45,20 @@ final class RuntimeSymbolTable(
       RuntimeValue(TermName("kernel"), polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, "$Predef")
     ).unsafeRunSync()
 
+  private val awaitingDelivery = new AtomicLong(0)
+
+  def drain(): IO[Unit] = Stream.repeatEval(IO(awaitingDelivery.get())).takeWhile(_ > 0).compile.drain
+
   def currentTerms: Seq[RuntimeValue] = currentSymbolTable.values.asScala.toSeq
 
-  def subscribe(maxQueued: Int = 32): Stream[IO, (RuntimeValue, Int)] = newSymbols.subscribeSize(maxQueued).interruptWhen(disposed())
+  def subscribe(maxQueued: Int = 32)(fn: RuntimeValue => IO[Unit]): Stream[IO, (RuntimeValue, Int)] =
+    newSymbols.subscribeSize(maxQueued).interruptWhen(disposed()).evalMap {
+      case t @ (rv, i) => fn(rv).map {
+        _ =>
+          awaitingDelivery.decrementAndGet()
+          t
+      }
+    }
 
   private def putValue(value: RuntimeValue): Unit = {
     currentSymbolTable.put(value.name, value)
@@ -57,12 +69,13 @@ final class RuntimeSymbolTable(
 
   def publish(source: LanguageKernel[IO], sourceCellId: String)(name: TermName, value: Any, staticType: Option[global.Type]): IO[Unit] = {
     val rv = RuntimeValue(name, value, typeOf(value, staticType), Some(source), sourceCellId)
-    IO(putValue(rv)).flatMap {
-      _ => newSymbols.publish1(rv).flatMap {
-        _ =>
-          statusUpdates.publish1(UpdatedSymbols(SymbolInfo(name.decodedName.toString, rv.typeString, rv.valueString, Nil) :: Nil, Nil))
-      }
-    }
+    for {
+      _    <- IO(putValue(rv))
+      subs <- newSymbols.subscribers.get
+      _    <- IO(awaitingDelivery.addAndGet(subs.toLong))
+      _    <- newSymbols.publish1(rv)
+      _    <- statusUpdates.publish1(UpdatedSymbols(SymbolInfo(name.decodedName.toString, rv.typeString, rv.valueString, Nil) :: Nil, Nil))
+    } yield ()
   }
 
   def publishAll(values: List[RuntimeValue]): IO[Unit] = {
@@ -72,7 +85,11 @@ final class RuntimeSymbolTable(
           putValue(rv)
       }
     }.flatMap {
-      _ => Stream.emits(values).to(newSymbols.publish).compile.drain
+      _ => for {
+        subs <- newSymbols.subscribers.get
+        _    <- IO(awaitingDelivery.addAndGet(subs * values.length))
+        _    <- Stream.emits(values).to(newSymbols.publish).compile.drain
+      } yield ()
     }.flatMap {
       _ => statusUpdates.publish1(UpdatedSymbols(
         values.map(rv => SymbolInfo(rv.name.decodedName.toString, rv.typeString, rv.valueString, Nil)), Nil
