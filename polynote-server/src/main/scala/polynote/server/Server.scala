@@ -57,14 +57,33 @@ trait Server extends IOApp with Http4sDsl[IO] {
 
   Ok.apply("foo")
 
-  def run(args: List[String]): IO[ExitCode] = BlazeBuilder[IO]
-    .bindHttp(8192, "0.0.0.0")
-    .withWebSockets(true)
-    .mountService(route, "/")
-    .serve
-    .compile
-    .toList
-    .map(_.head)
+  def run(args: List[String]): IO[ExitCode] = {
+    // note, by default our bdas genie script sets log4j.configuration to a nonexistent log4j config. We should either
+    // create that config or remove that setting. Until then, be sure to add `--driver-java-options "-Dlog4j.configuration=log4j.properties"
+    // to your `spark-submit` call.
+    logger.info(
+      """
+        |
+        |  _____      _                   _
+        | |  __ \    | |                 | |
+        | | |__) |__ | |_   _ _ __   ___ | |_ ___
+        | |  ___/ _ \| | | | | '_ \ / _ \| __/ _ \
+        | | |  | (_) | | |_| | | | | (_) | ||  __/
+        | |_|   \___/|_|\__, |_| |_|\___/ \__\___|
+        |                __/ |
+        |               |___/
+        |
+      """.stripMargin)
+
+    BlazeBuilder[IO]
+      .bindHttp(8192, "0.0.0.0")
+      .withWebSockets(true)
+      .mountService(route, "/")
+      .serve
+      .compile
+      .toList
+      .map(_.head)
+  }
 
 }
 
