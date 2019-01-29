@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-source shared.sh
+DIR=$(dirname "$0")
+source ${DIR}/shared.sh
 
 echo "Executing Polynote remotely. Note that if you lose connection to the server Polynote will stop running."
 
