@@ -329,7 +329,7 @@ export class CodeCell extends Cell {
 
     addResult(contentType, content) {
         this.cellOutput.classList.add('output');
-        const contentTypeParts = contentType.split(';').map(str => str.replace(/(^\s+|\s+$)/g));
+        const contentTypeParts = contentType.split(';').map(str => str.replace(/(^\s+|\s+$)/g, ""));
         const mimeType = contentTypeParts.shift();
         const args = {};
         contentTypeParts.forEach(part => {
@@ -338,19 +338,38 @@ export class CodeCell extends Cell {
         });
 
         const rel = args.rel || 'none';
-        this.cellOutputDisplay.appendChild(
-            div(['output'], [CodeCell.parseContent(content, mimeType)]).attr('rel', rel).attr('mime-type', mimeType)
-        );
+        const self = this;
+        CodeCell.parseContent(content, mimeType).then(function(result) {
+            self.cellOutputDisplay.appendChild(
+                div(['output'], result).attr('rel', rel).attr('mime-type', mimeType)
+            );
+        }).catch(function(err) {
+            self.cellOutputDisplay.appendChild(
+                div(['output'], err)
+            );
+        });
+    }
+
+    static colorize(content, lang) {
+        return monaco.editor.colorize(content, lang, {}).then(function(result) {
+            const node = div(['result'], []);
+            node.innerHTML = result;
+            return node
+        });
     }
 
     static parseContent(content, mimeType) {
         switch(mimeType) {
             case "text/plain":
-                return document.createTextNode(content);
+                return Promise.resolve(document.createTextNode(content));
+            case "text/scala":
+                return this.colorize(content, "scala")
+            case "text/python":
+                return this.colorize(content, "python")
             default:
                 const node = div(['result'], []);
                 node.innerHTML = content;
-                return node;
+                return Promise.resolve(node);
         }
     }
 

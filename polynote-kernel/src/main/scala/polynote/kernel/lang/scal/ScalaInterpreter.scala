@@ -183,7 +183,7 @@ class ScalaInterpreter(
 
               }.flatten
 
-              (symbolTable.publishAll(syms), syms.map(rv => out.enqueue1(Output("text/plain; rel=decl", s"${rv.name.toString}: ${rv.typeString} = ${rv.valueString}"))).sequence).parMapN((_, _) => ())
+              (symbolTable.publishAll(syms), syms.map(rv => out.enqueue1(Output("text/scala; rel=decl", s"${rv.name.toString}: ${rv.typeString} = ${rv.valueString}"))).sequence).parMapN((_, _) => ())
           }
 
           val saveSource = IO.delay[Unit](previousSources.put(cell, source))
@@ -194,7 +194,7 @@ class ScalaInterpreter(
                 .unNoneTerminate
                 .flatMap(Stream.chunk)
                 .through(fs2.text.utf8Decode)
-                .map(Output("text/plain; rel=stdout", _))
+                .map(Output("text/scala; rel=stdout", _))
 
               for {
                 _      <- IO(System.setOut(new PrintStream(stdOut)))

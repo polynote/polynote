@@ -86,7 +86,8 @@ object JupyterOutput {
       args.get("rel") match {
         case Some(name) if mime == "text/plain" => Stream(name, content.linesWithSeparators.toList)
         case Some("output") => DisplayData(Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), None)
-        case None => ExecuteResult(execId, Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), None)
+        case Some(_) | None => // do we want to do anything with the rel value?
+          ExecuteResult(execId, Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), None)
       }
 
     case e @ CompileErrors(errs) =>
