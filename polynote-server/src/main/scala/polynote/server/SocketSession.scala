@@ -112,7 +112,7 @@ class SocketSession(
       updates  = ref.discrete
       _        = { notebookUpdates.put(path, updates); () }
       writer  <- updates.evalMap { nb =>
-        // TODO: this code runs every time the nb is updated, maybe it should be moved somewhere more obbvious?
+        // TODO: this code runs every time the nb is updated, maybe it should be moved somewhere more obvious?
         // TODO: bubble error up to user?
         repository.saveNotebook(path, nb).handleErrorWith { err =>
           logError(err)
