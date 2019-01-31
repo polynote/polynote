@@ -42,7 +42,7 @@ sealed abstract class Rope {
   }
 
   def delete(start: Int, length: Int): Rope = {
-    val (r1, r2) = splitAt(start - 1)
+    val (r1, r2) = splitAt(start)
     val (_, r3) = r2.splitAt(length)
     r1 + r3
   }
@@ -58,18 +58,25 @@ sealed abstract class Rope {
   def +(c: Char): Rope =
     this + RopeLeaf(Array(c))
 
+  // should this match String's substring(beginIndex, endIndex) API?
   def substring(start: Int, length: Int): Rope = {
-    val (_, r1) = splitAt(start - 1)
+    val (_, r1) = splitAt(start)
     val (r2, _) = r1.splitAt(length)
     r2
   }
 
   def substring(start: Int): Rope = {
-    val (_, r1) = splitAt(start - 1)
+    val (_, r1) = splitAt(start)
     r1
   }
 
   def toString: String
+
+  override def equals(obj: Any): Boolean = obj match {
+    case r: Rope => this.size == r.size && this.toString == r.toString
+    case s: String => s == this.toString
+    case somethingElse => super.equals(somethingElse)
+  }
 
   def map(f: Char => Char): Rope
 
@@ -102,8 +109,8 @@ object Rope {
   def apply(a: Array[Char]): Rope =
     if (a == null || a.isEmpty) {
       RopeEmpty
-    } else if (a.size > 2048) {
-      val (a1, a2) = a.splitAt(a.size / 2)
+    } else if (a.length > thresh) {
+      val (a1, a2) = a.splitAt(a.length / 2)
       Rope(a1) + Rope(a2)
     } else {
       RopeLeaf(a)
@@ -135,6 +142,8 @@ object Rope {
   implicit val encoder: Encoder[Rope] = Encoder.encodeString.contramap(_.toString)
   implicit val decoder: Decoder[Rope] = Decoder.decodeString.map(Rope.apply)
   implicit val codec: Codec[Rope] = scodec.codecs.implicits.implicitStringCodec.xmap(Rope.apply, _.toString)
+
+  val thresh = 2048
 
 }
 
@@ -192,12 +201,12 @@ private final case class RopeConcat(left: Rope, right: Rope) extends Rope {
     1 + math.max(left.depth, right.depth)
 
   def charAt(idx: Int): Char =
-    if (idx < 0)
+    if (idx < 0 || idx >= size)
       throw new StringIndexOutOfBoundsException(f"String index out of range: $idx")
-    else if (idx >= size)
-      right.charAt(idx - size)
-    else
+    else if (idx < left.size)
       left.charAt(idx)
+    else
+      right.charAt(idx - left.size)
 
   def splitAt(idx: Int): (Rope, Rope) =
     if (idx < 0) {
@@ -216,7 +225,7 @@ private final case class RopeConcat(left: Rope, right: Rope) extends Rope {
     (right, that) match {
       case (_, RopeEmpty) =>
         this
-      case (RopeLeaf(rightValue), RopeLeaf(thatValue)) if rightValue.size + thatValue.size <= 2048 =>
+      case (RopeLeaf(rightValue), RopeLeaf(thatValue)) if rightValue.length + thatValue.length <= Rope.thresh =>
         Rope.balance(left + Rope(rightValue ++ thatValue))
       case _ =>
         Rope.balance(RopeConcat(this, that))
@@ -256,7 +265,7 @@ private final case class RopeConcat(left: Rope, right: Rope) extends Rope {
 private final case class RopeLeaf(value: Array[Char]) extends Rope {
 
   val size =
-    value.size
+    value.length
 
   val depth =
     0
@@ -273,7 +282,7 @@ private final case class RopeLeaf(value: Array[Char]) extends Rope {
     that match {
       case RopeEmpty =>
         this
-      case RopeLeaf(thatValue) if this.value.size + thatValue.size <= 2048 =>
+      case RopeLeaf(thatValue) if this.value.length + thatValue.length <= Rope.thresh =>
         Rope(this.value ++ thatValue)
       case _ =>
         Rope.balance(RopeConcat(this, that))
