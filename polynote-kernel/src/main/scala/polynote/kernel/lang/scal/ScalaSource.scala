@@ -101,7 +101,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
           val pos = t.pos.withStart(t.pos.end)
           (Some(accessorName), trees.dropRight(1) :+
             global.ValDef(global.Modifiers(), accessorName, tpt, global.Ident(name).setPos(pos)).setPos(pos))
-        case expr: global.TermTree =>
+        case expr if expr.isTerm =>
           val accessorName = global.TermName(s"res$id")
           (Some(accessorName), trees.dropRight(1) :+
             global.ValDef(global.Modifiers(), accessorName, global.TypeTree(global.NoType), expr).setPos(expr.pos))
