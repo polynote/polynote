@@ -338,8 +338,9 @@ export class CodeCell extends Cell {
         });
 
         const rel = args.rel || 'none';
+        const lang = args.lang || null;
         const self = this;
-        CodeCell.parseContent(content, mimeType).then(function(result) {
+        CodeCell.parseContent(content, mimeType, lang).then(function(result) {
             self.cellOutputDisplay.appendChild(
                 div(['output'], result).attr('rel', rel).attr('mime-type', mimeType)
             );
@@ -358,14 +359,14 @@ export class CodeCell extends Cell {
         });
     }
 
-    static parseContent(content, mimeType) {
+    static parseContent(content, mimeType, lang) {
         switch(mimeType) {
             case "text/plain":
-                return Promise.resolve(document.createTextNode(content));
-            case "text/scala":
-                return this.colorize(content, "scala")
-            case "text/python":
-                return this.colorize(content, "python")
+                if (lang !== null) {
+                    return this.colorize(content, lang)
+                } else {
+                    return Promise.resolve(document.createTextNode(content));
+                }
             default:
                 const node = div(['result'], []);
                 node.innerHTML = content;

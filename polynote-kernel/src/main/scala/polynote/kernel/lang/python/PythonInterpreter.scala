@@ -264,7 +264,7 @@ object PythonInterpreter {
 class PythonDisplayHook(out: Enqueue[IO, Result]) {
   private var current = ""
   def output(str: String): Unit =
-    if (str != null) out.enqueue1(Output("text/python", str)).unsafeRunSync()
+    if (str != null) out.enqueue1(Output("text/plain; lang=python", str)).unsafeRunSync()
 
   def write(str: String): Unit = synchronized {
     current = current + str
