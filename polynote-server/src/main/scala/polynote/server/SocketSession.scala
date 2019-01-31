@@ -111,7 +111,13 @@ class SocketSession(
       _        = notebooks.put(path, ref)
       updates  = ref.discrete
       _        = { notebookUpdates.put(path, updates); () }
-      writer  <- updates.evalMap(nb => repository.saveNotebook(path, nb)).compile.drain.start
+      writer  <- updates.evalMap { nb =>
+        // TODO: this code runs every time the nb is updated, maybe it should be moved somewhere more obvious?
+        // TODO: bubble error up to user?
+        repository.saveNotebook(path, nb).handleErrorWith { err =>
+          logError(err)
+        }
+      }.compile.drain.start
       _        = { writers.put(path, writer); () }
     } yield loaded
   } {
