@@ -18,7 +18,11 @@ const config = {
     ["(", ")"],
     ["[", "]"],
     ['"""', '"""'],
-  ]
+  ],
+  "comments": {
+    "blockComment": ["/*", "*/"],
+    "lineComment": "//"
+  }
 };
 
 const tokenizer = {
