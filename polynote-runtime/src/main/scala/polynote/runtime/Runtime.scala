@@ -16,6 +16,9 @@ object Runtime {
     def content(contentType: String, content: String): Unit = displayer(contentType, content)
   }
 
+  // for Python
+  def getDisplay = display
+
   def setProgress(progress: Double, detail: String): Unit = progressSetter(progress, detail)
 
   private var displayer: (String, String) => Unit = (_, _) => println("Display publisher is not correctly configured.")
