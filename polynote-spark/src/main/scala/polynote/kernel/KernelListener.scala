@@ -16,30 +16,11 @@ class KernelListener(statusUpdates: Topic[IO, KernelStatusUpdate]) extends Spark
 
   private def stageTaskId(stageInfo: StageInfo) = s"Stage ${stageInfo.stageId}"
 
-  private def cleanupStages(jobId: Int): Unit = {
-    if (jobStageIds.contains(jobId)) {
-      jobStageIds.getOrDefault(jobId, Set.empty).foreach {
-        stageId =>
-          Option(stageInfos.remove(stageId)).foreach {
-            stageInfo =>
-              statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), "", "", TaskStatus.Complete, 255.toByte) :: Nil)).unsafeRunAsyncAndForget()
-          }
-      }
-    }
-  }
 
-  override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = stageSubmitted match {
-    case SparkListenerStageSubmitted(stageInfo, _) =>
-      stageInfos.put(stageInfo.stageId, stageInfo)
-      statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), s"Stage ${stageInfo.stageId}", stageInfo.name, TaskStatus.Running) :: Nil)).unsafeRunAsyncAndForget()
-  }
-
-  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = stageCompleted match {
-    case SparkListenerStageCompleted(stageInfo) =>
-      stageInfos.remove(stageInfo.stageId)
-      statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), "", "", TaskStatus.Complete, 255.toByte) :: Nil)).unsafeRunAsyncAndForget()
-  }
-
+  /**
+    * When a job is started, it jots down all of the stages that belong to that job.
+    * The for each stage, it stores the stage info under that job ID, and publishes a queued status for the stage.
+    */
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = jobStart match {
     case SparkListenerJobStart(jobId, time, jobStages, properties) =>
       cleanupStages(jobId)
@@ -53,9 +34,54 @@ class KernelListener(statusUpdates: Topic[IO, KernelStatusUpdate]) extends Spark
       }
   }
 
+  /**
+    * @see [[cleanupStages()]]
+    */
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = cleanupStages(jobEnd.jobId)
 
+  /**
+    * When a job finishes, it checks whether there are any stages still tracked under the job ID. If so, it
+    * cleans them up and publishes a Complete status for each of them.
+    */
+  private def cleanupStages(jobId: Int): Unit = {
+    if (jobStageIds.contains(jobId)) {
+      jobStageIds.getOrDefault(jobId, Set.empty).foreach {
+        stageId =>
+          Option(stageInfos.remove(stageId)).foreach {
+            stageInfo =>
+              statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), "", "", TaskStatus.Complete, 255.toByte) :: Nil)).unsafeRunAsyncAndForget()
+          }
+      }
+    }
+  }
+
+  /**
+    * When a stage starts, it publishes a Running status for that stage.
+    */
+  override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = stageSubmitted match {
+    case SparkListenerStageSubmitted(stageInfo, _) =>
+      stageInfos.put(stageInfo.stageId, stageInfo)
+      statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), s"Stage ${stageInfo.stageId}", stageInfo.name, TaskStatus.Running) :: Nil)).unsafeRunAsyncAndForget()
+  }
+
+  /**
+    * When a stage finishes, it publishes a Complete status for the stage.
+    */
+  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = stageCompleted match {
+    case SparkListenerStageCompleted(stageInfo) =>
+      stageInfos.remove(stageInfo.stageId)
+      statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), "", "", TaskStatus.Complete, 255.toByte) :: Nil)).unsafeRunAsyncAndForget()
+  }
+
+  /**
+    * Nothing to be done when a task starts (we're not publishing status messages for individual tasks)
+    */
   override def onTaskStart(taskStart: SparkListenerTaskStart): Unit = ()
+
+  /**
+    * When a task completes, it increments the number of completed tasks for the stage, and recomputes the progress.
+    * Then it publishes a new Running status with the new progress.
+    */
   override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = taskEnd.reason match {
     case Success =>
       stageTasksCompleted.putIfAbsent(taskEnd.stageId, 0)
