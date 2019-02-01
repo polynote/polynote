@@ -105,7 +105,7 @@ final case class CellResult(notebook: ShortString, id: TinyString, result: Resul
 object CellResult extends MessageCompanion[CellResult](4)
 
 final case class ContentEdit(pos: Int, length: Int, content: String) {
-  def applyTo(rope: Rope): Rope = if (length > 0) rope.delete(pos + 1, length).insertAt(pos, Rope(content)) else rope.insertAt(pos, Rope(content))
+  def applyTo(rope: Rope): Rope = if (length > 0) rope.delete(pos, length).insertAt(pos, Rope(content)) else rope.insertAt(pos, Rope(content))
 }
 
 sealed trait NotebookUpdate
