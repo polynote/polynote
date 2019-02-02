@@ -194,7 +194,7 @@ class ScalaInterpreter(
                 .unNoneTerminate
                 .flatMap(Stream.chunk)
                 .through(fs2.text.utf8Decode)
-                .map(Output("text/plain; rel=stdout; lang=scala", _))
+                .map(Output("text/plain; rel=stdout", _))
 
               for {
                 _      <- IO(System.setOut(new PrintStream(stdOut)))

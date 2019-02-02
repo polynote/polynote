@@ -63,8 +63,17 @@ object JupyterOutput {
 
     def convertData(data: Map[String, Json], metadata: Option[JsonObject]) = metadata.flatMap(_("rel").flatMap(_.asString)) match {
       case Some("compiler_errors") => data("application/json").as[CompileErrors].fold(_ => CompileErrors(Nil), identity)
-      case rel =>
-        val relStr = rel.map(r => s"; rel=$r").getOrElse("")
+      case _ =>
+
+        val relStr = (
+          for {
+            json <- metadata.toSeq
+            k <- json.keys
+            jsonV <- json(k)
+            v <- jsonV.asString
+          } yield s"$k=$v"
+        ).mkString("; ", " ", "")
+
         data.head match {
           case (mime, content) => Output(s"$mime$relStr", jsonToStr(content))
         }
@@ -84,10 +93,11 @@ object JupyterOutput {
       val (mime, args) = Output.parseContentType(contentType)
 
       args.get("rel") match {
-        case Some(name) if mime == "text/plain" => Stream(name, content.linesWithSeparators.toList)
+        case Some(name) if mime == "text/plain" && name == "stdout" => Stream(name, content.linesWithSeparators.toList)
         case Some("output") => DisplayData(Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), None)
-        case Some(_) | None => // do we want to do anything with the rel value?
-          ExecuteResult(execId, Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), None)
+        case _ =>
+          val metadata = args.get("lang").map(l => Map("lang" -> l).asJsonObject)
+          ExecuteResult(execId, Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), metadata)
       }
 
     case e @ CompileErrors(errs) =>
