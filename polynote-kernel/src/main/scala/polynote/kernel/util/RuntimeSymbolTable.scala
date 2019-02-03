@@ -39,9 +39,13 @@ final class RuntimeSymbolTable(
   }
 
   private val newSymbols: Topic[IO, RuntimeValue] =
-    Topic[IO, RuntimeValue](
-      RuntimeValue(TermName("kernel"), polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, "$Predef")
-    ).unsafeRunSync()
+    Topic[IO, RuntimeValue]{
+      val kernel = RuntimeValue(TermName("kernel"), polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, "$Predef")
+      // make sure this is actually in the symbol table.
+      // TODO: is there a better way to set this value?
+      putValue(kernel)
+      kernel
+    }.unsafeRunSync()
 
   private val awaitingDelivery = SignallingRef[IO, Int](0).unsafeRunSync()
 
@@ -49,13 +53,18 @@ final class RuntimeSymbolTable(
 
   def currentTerms: Seq[RuntimeValue] = currentSymbolTable.values.asScala.toSeq
 
-  def subscribe(maxQueued: Int = 32)(fn: RuntimeValue => IO[Unit]): Stream[IO, (RuntimeValue, Int)] =
+  def subscribe(subscriber: Option[Any] = None, maxQueued: Int = 32)(fn: RuntimeValue => IO[Unit]): Stream[IO, (RuntimeValue, Int)] =
     newSymbols.subscribeSize(maxQueued).interruptWhen(disposed()).evalMap {
-      case t @ (rv, i) => fn(rv).map {
-        _ =>
+      case t @ (rv, i) =>
+        val res = subscriber match {
+          case Some(source) if rv.source.contains(source) => IO.unit // don't send messages back to own source
+          case _ => fn(rv)
+        }
+
+        res.map { _ =>
           awaitingDelivery.update(_ - 1)
           t
-      }
+        }
     }
 
   private def putValue(value: RuntimeValue): Unit = {

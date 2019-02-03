@@ -47,7 +47,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
   private val jep = jepExecutor.submit {
     new Callable[Jep] {
       def call(): Jep = {
-        val jep = new Jep(new JepConfig().addSharedModules("numpy").setInteractive(true))
+        val jep = new Jep(new JepConfig().addSharedModules("numpy").setInteractive(false))
 //        jep.eval(
 //          """def __polynote_export_value__(d, k):
 //            |  globals().update({ "__polynote_exported__": d[k] })
@@ -69,8 +69,10 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     // TODO: Instead of doing this, can we somehow just make the symbol table a Python scope?
     symbolTable.subscribe() {
       value => withJep {
-        if (!value.source.contains(this)) {
-          jep.set(value.name.toString, value.value)
+        value.value match {
+          case polynote.runtime.Runtime => // pass
+          case _ =>
+            jep.set(value.name.toString, value.value)
         }
       }
     }.compile.drain.unsafeRunAsyncAndForget()
@@ -78,7 +80,29 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     withJep {
       val terms = symbolTable.currentTerms
       terms.foreach {
-        value => jep.set(value.name.toString, value.value)
+        value =>
+          value.value match {
+            case polynote.runtime.Runtime =>
+              // hijack the kernel and wrap it in a pyobject so we can set the display
+              jep.set("__kernel_ref", polynote.runtime.Runtime)
+              jep.eval(
+                """
+                  |class KernelProxy(object):
+                  |    def __init__(self, ref):
+                  |        self.ref = ref
+                  |
+                  |    def __getattr__(self, name):
+                  |        return getattr(self.ref, name)
+                """.stripMargin.trim)
+              jep.eval("kernel = KernelProxy(__kernel_ref)")
+              val pykernel = jep.getValue("kernel", classOf[PyObject])
+              pykernel.setAttr("display", polynote.runtime.Runtime.display)
+              jep.eval("del kernel")
+              jep.set("kernel", pykernel)
+              jep.eval("del __kernel_ref")
+            case _ =>
+              jep.set(value.name.toString, value.value)
+          }
       }
     }.unsafeRunSync()
 
