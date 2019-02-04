@@ -10,6 +10,7 @@ import cats.instances.list._
 import cats.~>
 import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
+import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebsocketBits._
 import org.log4s.getLogger
@@ -45,7 +46,7 @@ class SocketSession(
   private def logMessage(message: Message): IO[Unit]= IO(logger.info(message.toString))
   private def logError(error: Throwable): IO[Unit] = IO(logger.error(error)(error.getMessage))
 
-  lazy val toResponse = (inbound, outbound).parMapN {
+  lazy val toResponse: IO[Response[IO]] = (inbound, outbound).parMapN {
     (iq, oq) =>
       val fromClient = iq.enqueue
 
