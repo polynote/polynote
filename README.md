@@ -61,6 +61,17 @@ The best place to start would be to run `installAndRun.sh`:
 
     env REMOTE_HOST=me.myhost.mytld ./scripts/installAndRun.sh
 
+#### Dependencies
+
+The scripts won't install anything on your local machine, so you will need to make sure you have: 
+
+- Assuming you have [homebrew](https://docs.brew.sh/Installation) (including the `xcode-select --install` step)
+- [sbt](https://www.scala-sbt.org/1.x/docs/Installing-sbt-on-Mac.html) `brew install sbt`
+- [npm](https://www.npmjs.com/get-npm) `brew install npm`
+  - Inside the `polynote-frontend` dir:
+    - [webpack](https://webpack.js.org/) `npm install webpack` 
+    - [markdown-it](https://www.npmjs.com/package/markdown-it) `npm install markdown-it`
+    
 ## Documentation
 
 TODO
