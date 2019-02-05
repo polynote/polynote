@@ -17,7 +17,7 @@ import scala.tools.nsc.interactive.Global
 final class RuntimeSymbolTable(
   val global: Global,
   val classLoader: ClassLoader,
-  statusUpdates: Topic[IO, KernelStatusUpdate])(implicit
+  statusUpdates: Publish[IO, KernelStatusUpdate])(implicit
   contextShift: ContextShift[IO]
 ) extends Serializable {
   import global.{Type, TermName, Symbol}

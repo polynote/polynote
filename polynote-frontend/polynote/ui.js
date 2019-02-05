@@ -585,8 +585,11 @@ export class NotebookUI {
         this.cellUI = cellUI;
         this.kernelUI = kernelUI;
 
+        this.globalVersion = 0;
+        this.localVersion = 0;
+
         this.cellUI.addEventListener('UpdatedConfig', evt => {
-            this.socket.send(new messages.UpdateConfig(path, evt.detail.config));
+            this.socket.send(new messages.UpdateConfig(path, this.globalVersion, this.localVersion++, evt.detail.config));
         });
 
         this.cellUI.addEventListener('AdvanceCell', evt => {
@@ -611,7 +614,7 @@ export class NotebookUI {
            const current = this.cellUI.cells[evt.detail.cellId] || this.cellUI.cells[this.cellUI.el.querySelector('.cell-container').id];
            const nextId = "Cell" + this.cellUI.cellCount;
            const newCell = current.language === 'text' ? new TextCell(nextId, '', 'text') : new CodeCell(nextId, '', current.language);
-           this.socket.send(new messages.InsertCell(path, new messages.NotebookCell(newCell.id, newCell.language, ''), current.id));
+           this.socket.send(new messages.InsertCell(path, this.globalVersion, this.localVersion++, new messages.NotebookCell(newCell.id, newCell.language, ''), current.id));
            this.cellUI.insertCell(newCell, current);
            newCell.focus();
         });
@@ -619,7 +622,7 @@ export class NotebookUI {
         this.cellUI.addEventListener('DeleteCell', evt => {
             const current = this.cellUI.cells[evt.detail.cellId];
             if (current) {
-                this.socket.send(new messages.DeleteCell(path, current.id));
+                this.socket.send(new messages.DeleteCell(path, this.globalVersion, this.localVersion++, current.id));
                 this.cellUI.removeCell(current.id);
             }
         });
@@ -639,7 +642,7 @@ export class NotebookUI {
         });
 
         this.cellUI.addEventListener('ContentChange', (evt) => {
-            this.socket.send(new messages.UpdateCell(path, evt.detail.cellId, evt.detail.edits));
+            this.socket.send(new messages.UpdateCell(path, this.globalVersion, this.localVersion++, evt.detail.cellId, evt.detail.edits));
         });
 
         this.cellUI.addEventListener('CompletionRequest', (evt) => {
@@ -758,6 +761,12 @@ export class NotebookUI {
             }
         });
 
+        socket.addMessageListener(messages.UpdateCell, (path, globalVersion, localVersion, id, edits) => {
+            this.globalVersion = globalVersion;
+            // TODO: rebase the edits from localVersion to this.localVersion, and update the cell
+            console.log(globalVersion, localVersion, this.localVersion, edits);
+        });
+
         socket.addEventListener('close', evt => {
             this.kernelUI.setKernelState('disconnected');
             socket.addEventListener('open', evt => this.socket.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false))));
@@ -792,7 +801,7 @@ export class NotebookUI {
             if (Cell.currentFocus && cellUI.cells[Cell.currentFocus.id] && cellUI.cells[Cell.currentFocus.id].language !== setLanguage) {
                 const id = Cell.currentFocus.id;
                 cellUI.setCellLanguage(Cell.currentFocus, setLanguage);
-                socket.send(new messages.SetCellLanguage(path, id, setLanguage));
+                socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
             }
         })
     }

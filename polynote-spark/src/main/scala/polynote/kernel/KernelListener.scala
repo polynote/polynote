@@ -7,8 +7,9 @@ import cats.effect.IO
 import fs2.concurrent.Topic
 import org.apache.spark.Success
 import org.apache.spark.scheduler._
+import polynote.kernel.util.Publish
 
-class KernelListener(statusUpdates: Topic[IO, KernelStatusUpdate]) extends SparkListener {
+class KernelListener(statusUpdates: Publish[IO, KernelStatusUpdate]) extends SparkListener {
 
   private val jobStageIds = new ConcurrentHashMap[Int, Set[Int]]
   private val stageInfos = new ConcurrentHashMap[Int, StageInfo]()

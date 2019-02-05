@@ -17,9 +17,7 @@ import scala.util.Try
   *
   * @see [[polynote.kernel.lang.LanguageKernel]]
   */
-abstract class Kernel[F[_]](val statusUpdates: Topic[F, KernelStatusUpdate]) {
-
-  def notebookRef: Ref[F, Notebook]
+abstract class Kernel[F[_]] {
 
   def init: F[Unit]
 

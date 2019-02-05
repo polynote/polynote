@@ -23,8 +23,8 @@ import coursier.util.{EitherT, Gather, Monad, Schedulable}
 import coursier.core._
 import coursier.maven.MavenRepository.toBaseVersion
 import coursier.{Attributes, Cache, Dependency, Fetch, FileError, MavenRepository, Module, ModuleName, Organization, ProjectCache, Repository, Resolution}
-import fs2.concurrent.Topic
 import polynote.config.{DependencyConfigs, RepositoryConfig, ivy, maven}
+import polynote.kernel.util.Publish
 import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 import polynote.messages.TinyString
 
@@ -37,7 +37,7 @@ trait DependencyFetcher[F[_]] {
     repositories: List[RepositoryConfig],
     dependencies: List[DependencyConfigs],
     taskInfo: TaskInfo,
-    statusUpdates: Topic[F, KernelStatusUpdate]
+    statusUpdates: Publish[F, KernelStatusUpdate]
   ): F[List[(String, F[File])]]
 
 }
@@ -111,7 +111,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     repos => (Cache.ivy2Local :: Cache.ivy2Cache :: repos) :+ MavenRepository("https://repo1.maven.org/maven2")
   }
 
-  private def cacheFilesList(resolved: Resolution, statusUpdates: Topic[IO, KernelStatusUpdate]): List[(String, IO[File])] = {
+  private def cacheFilesList(resolved: Resolution, statusUpdates: Publish[IO, KernelStatusUpdate]): List[(String, IO[File])] = {
     val logger = new Cache.Logger {
       private val size = new mutable.HashMap[String, Long]()
 
@@ -155,7 +155,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     resolution: Resolution,
     fetch: Fetch.Metadata[IO],
     taskInfo: TaskInfo,
-    statusUpdates: Topic[IO, KernelStatusUpdate],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
     maxIterations: Int = 100
   ) = {
     // reimplements ResolutionProcess.run, so we can update the iteration progress
@@ -184,7 +184,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     repositories: List[RepositoryConfig],
     dependencies: List[DependencyConfigs],
     taskInfo: TaskInfo,
-    statusUpdates: Topic[IO, KernelStatusUpdate]
+    statusUpdates: Publish[IO, KernelStatusUpdate]
   ): IO[List[(String, IO[File])]] = for {
     repos <- IO.fromEither(repos(repositories))
     res   <- resolution(dependencies)

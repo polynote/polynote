@@ -12,7 +12,7 @@ import fs2.{Chunk, Stream}
 import fs2.concurrent.{Enqueue, Queue, Topic}
 import polynote.kernel._
 import polynote.kernel.lang.LanguageKernel
-import polynote.kernel.util.{KernelReporter, QueueOutputStream, ReadySignal, RuntimeSymbolTable}
+import polynote.kernel.util._
 import polynote.messages.{ShortList, ShortString, TinyList, TinyString}
 
 import scala.collection.mutable
@@ -94,7 +94,7 @@ class ScalaInterpreter(
     previousCells: Seq[String],
     code: String,
     out: Enqueue[IO, Result],
-    statusUpdates: Topic[IO, KernelStatusUpdate]
+    statusUpdates: Publish[IO, KernelStatusUpdate]
   ): IO[Unit] = {
     val originalOut = System.out
     val source = new ScalaSource[this.type](this)(cell, visibleSymbols.toSet, previousCells.collect(previousSources).toList, code)
