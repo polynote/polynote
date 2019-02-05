@@ -38,7 +38,7 @@ object Generators {
 
   // to really cover ground on testing the rope, we can arbitrarily fragment the rope's structure by
   // applying a bunch of edits to it
-  implicit val arbRobe: Arbitrary[Rope] = Arbitrary(genEdits.map(_._3))
+  implicit val arbRope: Arbitrary[Rope] = Arbitrary(genEdits.map(_._3))
 
   def genCell(id: String): Gen[NotebookCell] = for {
     lang <- Gen.oneOf[TinyString]("text", "scala", "python")
