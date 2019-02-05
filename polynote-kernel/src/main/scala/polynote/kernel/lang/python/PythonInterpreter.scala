@@ -4,25 +4,23 @@ package python
 import java.io.File
 import java.util.concurrent.{Callable, ExecutorService, Executors, ThreadFactory}
 
-import scala.collection.JavaConverters._
 import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
-import cats.syntax.apply._
-import fs2.Stream
 import fs2.concurrent.Enqueue
 import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
-import polynote.messages.{ShortList, ShortString, TinyList, TinyString}
+import polynote.messages.{ShortString, TinyList, TinyString}
 
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
 class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKernel[IO] {
 
   val predefCode: Option[String] = None
 
-  override def shutdown(): IO[Unit] = shutdownSignal.complete
+  override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
 
   private def newSingleThread(name: String): ExecutorService = Executors.newSingleThreadExecutor {
     new ThreadFactory {
@@ -75,7 +73,10 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
             jep.set(value.name.toString, value.value)
         }
       }
-    }.compile.drain.unsafeRunAsyncAndForget()
+    }.interruptWhen(signal())
+      .compile
+      .drain
+      .unsafeRunAsyncAndForget()
 
     withJep {
       val terms = symbolTable.currentTerms

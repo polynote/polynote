@@ -82,7 +82,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
       vars("y") shouldEqual 2
       vars("restest") shouldEqual 3
 
-      outputs shouldEqual mutable.ArrayBuffer("text/plain" -> "restest = 3")
+      outputs shouldEqual mutable.ArrayBuffer("text/plain; lang=python" -> "restest = 3")
     }
   }
 
@@ -99,7 +99,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
       vars("y") shouldEqual 2
       vars("answer") shouldEqual 3
 
-      outputs shouldEqual mutable.ArrayBuffer("text/plain" -> "1 + 2 = 3")
+      outputs shouldEqual mutable.ArrayBuffer("text/plain; lang=python" -> "1 + 2 = 3")
     }
 
   }
@@ -113,7 +113,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
       vars should have size 1
       vars("kernel") shouldEqual polynote.runtime.Runtime
 
-      outputs shouldEqual mutable.ArrayBuffer("text/plain" -> "Do you like muffins?")
+      outputs shouldEqual mutable.ArrayBuffer("text/plain; lang=python" -> "Do you like muffins?")
     }
   }
 
@@ -129,18 +129,23 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
         out =>
           Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap {
             statusUpdates =>
-              symbolTable.subscribe()(_ => IO.unit).map(_._1).interruptWhen {
-                (interp.runCode("test", Nil, Nil, code, out, statusUpdates) *> symbolTable.drain()).attempt
-              }.compile.toList.map {
-                vars =>
-                  val namedVars = vars.map(v => v.name.toString -> v.value).toMap
+              for {
+                // publishes to symbol table as a side-effect
+                // TODO: for unit tests we want to hook directly to runCode without bouncing off symbolTable
+                _ <- interp.runCode("test", Nil, Nil, code, out, statusUpdates).attempt
+                // make sure everything has been processed
+                _ <- symbolTable.drain()
+                // these are the vars runCode published
+                vars = symbolTable.currentTerms
+              } yield {
+                val namedVars = vars.map(v => v.name.toString -> v.value).toMap
 
-                  assertion(namedVars, displayed)
+                assertion(namedVars, displayed)
+                polynote.runtime.Runtime.clear()
+                interp.shutdown()
               }
           }
       }
-      symbolTable.close()
-      interp.shutdown()
     }.unsafeRunSync()
   }
 }
