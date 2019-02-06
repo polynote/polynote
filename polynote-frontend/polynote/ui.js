@@ -12,7 +12,7 @@ import { Cell, TextCell, CodeCell, BeforeCellRunEvent } from "./cell.js"
 import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, dropdown } from './tags.js'
 import { TaskStatus } from './messages.js';
 import * as messages from './messages.js'
-import { CompileErrors, Output, RuntimeError } from './result.js'
+import { CompileErrors, Output, RuntimeError, ClearResults } from './result.js'
 import { Prefs, prefs } from './prefs.js'
 
 
@@ -789,6 +789,8 @@ export class NotebookUI {
                         cell.setRuntimeError(result.error);
                     } else if (result instanceof Output) {
                         cell.addResult(result.contentType, result.content);
+                    } else if (result instanceof ClearResults) {
+                        cell.clearResult();
                     }
                 }
                 //console.log("Cell result:", path, id, result);

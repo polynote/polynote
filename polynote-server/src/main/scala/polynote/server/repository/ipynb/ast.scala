@@ -5,7 +5,7 @@ import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.syntax._
 import polynote.data.Rope
 import polynote.kernel.RuntimeError.RecoveredException
-import polynote.kernel.{CompileErrors, Output, Result, RuntimeError}
+import polynote.kernel._
 import polynote.messages.{CellMetadata, Notebook, NotebookCell, NotebookConfig, ShortList, ShortString}
 
 sealed trait JupyterCellType
@@ -88,16 +88,18 @@ object JupyterOutput {
     }
   }
 
-  def fromResult(result: Result, execId: Int): JupyterOutput = result match {
+  def fromResult(result: Result, execId: Int): Seq[JupyterOutput] = result match {
     case Output(contentType, content) =>
       val (mime, args) = Output.parseContentType(contentType)
 
-      args.get("rel") match {
-        case Some(name) if mime == "text/plain" && name == "stdout" => Stream(name, content.linesWithSeparators.toList)
-        case Some("output") => DisplayData(Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), None)
-        case _ =>
-          val metadata = args.get("lang").map(l => Map("lang" -> l).asJsonObject)
-          ExecuteResult(execId, Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), metadata)
+      List {
+        args.get("rel") match {
+          case Some(name) if mime == "text/plain" && name == "stdout" => Stream(name, content.linesWithSeparators.toList)
+          case Some("output") => DisplayData(Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), None)
+          case _ =>
+            val metadata = args.get("lang").map(l => Map("lang" -> l).asJsonObject)
+            ExecuteResult(execId, Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), metadata)
+        }
       }
 
     case e @ CompileErrors(errs) =>
@@ -106,14 +108,16 @@ object JupyterOutput {
         Map(
           "application/json" -> e.asJson,
           "text/plain" -> Json.arr(errs.map(_.toString).map(Json.fromString): _*)),
-        Some(JsonObject("rel" -> Json.fromString("compiler_errors"))))
+        Some(JsonObject("rel" -> Json.fromString("compiler_errors")))) :: Nil
 
     case e @ RuntimeError(err) =>
       val (typ, msg) = err match {
         case RecoveredException(msg, typ) => (typ, msg)
         case err => (err.getClass.getName, err.getMessage)
       }
-      Error(typ, Option(msg).getOrElse(""), Nil)
+      Error(typ, Option(msg).getOrElse(""), Nil) :: Nil
+
+    case ClearResults() => Nil
   }
 }
 
@@ -173,7 +177,7 @@ object JupyterCell {
       }
     }
 
-    val outputs = cell.results.map(JupyterOutput.fromResult(_, executionCount.getOrElse(-1)))
+    val outputs = cell.results.flatMap(JupyterOutput.fromResult(_, executionCount.getOrElse(-1)))
 
     JupyterCell(cellType, executionCount, meta, Some(cell.language), contentLines, Some(outputs))
   }
