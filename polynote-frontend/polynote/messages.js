@@ -2,7 +2,7 @@
 
 import {
     DataReader, DataWriter, Codec, combined, arrayCodec, discriminated, optional, mapCodec,
-    str, shortStr, tinyStr, uint8, uint16, int32, bool
+    str, shortStr, tinyStr, uint8, uint16, int32, uint32, bool
 } from './codec.js'
 
 import { Result, KernelErrorWithCause } from './result.js'
@@ -212,12 +212,12 @@ CellResult.codec = combined(shortStr, tinyStr, Result.codec).to(CellResult);
 
 export class ContentEdit {
     static unapply(inst) {
-        return [inst.pos, inst.length, inst.content];
+        return [inst.pos, inst.deleteLength, inst.content];
     }
 
-    constructor(pos, length, content) {
+    constructor(pos, deleteLength, content) {
         this.pos = pos;
-        this.length = length;
+        this.deleteLength = deleteLength;
         this.content = content;
     }
 }
@@ -228,37 +228,41 @@ export class UpdateCell extends Message {
     static get msgTypeId() { return 5; }
 
     static unapply(inst) {
-        return [inst.notebook, inst.id, inst.edits];
+        return [inst.notebook, inst.globalVersion, inst.localVersion, inst.id, inst.edits];
     }
 
-    constructor(notebook, id, edits) {
-        super(notebook, id, edits);
+    constructor(notebook, globalVersion, localVersion, id, edits) {
+        super(notebook, globalVersion, localVersion, id, edits);
         this.notebook = notebook;
+        this.globalVersion = globalVersion;
+        this.localVersion = localVersion;
         this.id = id;
         this.edits = edits;
         Object.freeze(this);
     }
 }
 
-UpdateCell.codec = combined(shortStr, tinyStr, arrayCodec(uint16, ContentEdit.codec)).to(UpdateCell);
+UpdateCell.codec = combined(shortStr, uint32, uint32, tinyStr, arrayCodec(uint16, ContentEdit.codec)).to(UpdateCell);
 
 export class InsertCell extends Message {
     static get msgTypeId() { return 6; }
 
     static unapply(inst) {
-        return [inst.notebook, inst.cell, inst.after];
+        return [inst.notebook, inst.globalVersion, inst.localVersion, inst.cell, inst.after];
     }
 
-    constructor(notebook, cell, after) {
-        super(notebook, cell, after);
+    constructor(notebook, globalVersion, localVersion, cell, after) {
+        super(notebook, globalVersion, localVersion, cell, after);
         this.notebook = notebook;
+        this.globalVersion = globalVersion;
+        this.localVersion = localVersion;
         this.cell = cell;
         this.after = after;
         Object.freeze(this);
     }
 }
 
-InsertCell.codec = combined(shortStr, NotebookCell.codec, optional(tinyStr)).to(InsertCell);
+InsertCell.codec = combined(shortStr, uint32, uint32, NotebookCell.codec, optional(tinyStr)).to(InsertCell);
 
 export class ParamInfo {
     static unapply(inst) {
@@ -502,35 +506,39 @@ KernelStatus.codec = combined(shortStr, KernelStatusUpdate.codec).to(KernelStatu
 export class UpdateConfig extends Message {
     static get msgTypeId() { return 10; }
     static unapply(inst) {
-        return [inst.path, inst.config];
+        return [inst.path, inst.globalVersion, inst.localVersion, inst.config];
     }
 
-    constructor(path, config) {
-        super(path, config);
+    constructor(path, globalVersion, localVersion, config) {
+        super(path, globalVersion, localVersion, config);
+        this.globalVersion = globalVersion;
+        this.localVersion = localVersion;
         this.path = path;
         this.config = config;
         Object.freeze(this);
     }
 }
 
-UpdateConfig.codec = combined(shortStr, NotebookConfig.codec).to(UpdateConfig);
+UpdateConfig.codec = combined(shortStr, uint32, uint32, NotebookConfig.codec).to(UpdateConfig);
 
 export class SetCellLanguage extends Message {
     static get msgTypeId() { return 11; }
     static unapply(inst) {
-        return [inst.path, inst.id, inst.language];
+        return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.language];
     }
 
-    constructor(path, id, language) {
-        super(path, id, language);
+    constructor(path, globalVersion, localVersion, id, language) {
+        super(path, globalVersion, localVersion, id, language);
         this.path = path;
+        this.globalVersion = globalVersion;
+        this.localVersion = localVersion;
         this.id = id;
         this.language = language;
         Object.freeze(this);
     }
 }
 
-SetCellLanguage.codec = combined(shortStr, tinyStr, tinyStr).to(SetCellLanguage);
+SetCellLanguage.codec = combined(shortStr, uint32, uint32, tinyStr, tinyStr).to(SetCellLanguage);
 
 export class StartKernel extends Message {
     static get msgTypeId() { return 12; }
@@ -586,18 +594,20 @@ CreateNotebook.codec = combined(shortStr).to(CreateNotebook);
 export class DeleteCell extends Message {
     static get msgTypeId() { return 15; }
     static unapply(inst) {
-        return [inst.path, inst.id];
+        return [inst.path, inst.globalVersion, inst.localVersion, inst.id];
     }
 
-    constructor(path, id) {
-        super(path, id);
+    constructor(path, globalVersion, localVersion, id) {
+        super(path, globalVersion, localVersion, id);
         this.path = path;
+        this.globalVersion = globalVersion;
+        this.localVersion = localVersion;
         this.id = id;
         Object.freeze(this);
     }
 }
 
-DeleteCell.codec = combined(shortStr, tinyStr).to(DeleteCell);
+DeleteCell.codec = combined(shortStr, uint32, uint32, tinyStr).to(DeleteCell);
 
 Message.codecs = [
     Error,           // 0

@@ -2,21 +2,18 @@ package polynote.kernel.lang
 package python
 
 import java.io.File
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{Callable, ExecutorService, Executors, ThreadFactory}
-
-import cats.effect.concurrent.Deferred
 
 import scala.collection.JavaConverters._
 import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
 import cats.syntax.apply._
 import fs2.Stream
-import fs2.concurrent.{Enqueue, Queue, Signal, Topic}
+import fs2.concurrent.Enqueue
 import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig}
 import polynote.kernel._
-import polynote.kernel.util.{ReadySignal, RuntimeSymbolTable}
+import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
 import polynote.messages.{ShortList, ShortString, TinyList, TinyString}
 
 import scala.concurrent.ExecutionContext
@@ -115,7 +112,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     previousCells: Seq[String],
     code: String,
     out: Enqueue[IO, Result],
-    statusUpdates: Topic[IO, KernelStatusUpdate]
+    statusUpdates: Publish[IO, KernelStatusUpdate]
   ): IO[Unit] = if (code.trim().isEmpty) IO.unit else {
     val stdout = new PythonDisplayHook(out)
     withJep {

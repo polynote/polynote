@@ -11,7 +11,7 @@ import cats.syntax.either._
 import cats.syntax.flatMap._
 import cats.syntax.apply._
 import fs2.Stream
-import fs2.concurrent.{Enqueue, Queue, Topic}
+import fs2.concurrent.{Enqueue, Queue}
 import org.log4s.{Logger, getLogger}
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageKernel
@@ -27,19 +27,17 @@ import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
 
 class PolyKernel private[kernel] (
-  private val notebook: Ref[IO, Notebook],
+  private val getNotebook: () => IO[Notebook],
   val global: Global,
   val outputDir: AbstractFile,
   dependencies: Map[String, List[(String, File)]],
-  override val statusUpdates: Topic[IO, KernelStatusUpdate],
+  val statusUpdates: Publish[IO, KernelStatusUpdate],
   extraClassPath: Seq[URL],
   subKernels: Map[String, LanguageKernel.Factory[IO]] = Map.empty,
   parentClassLoader: ClassLoader = classOf[PolyKernel].getClassLoader
-) extends Kernel[IO](statusUpdates) {
+) extends Kernel[IO] {
 
   protected val logger: Logger = getLogger
-
-  def notebookRef: Ref[IO, Notebook] = notebook
 
   protected implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
 
@@ -103,7 +101,7 @@ class PolyKernel private[kernel] (
   }
 
   protected def withKernel[A](cellId: String)(fn: (Notebook, NotebookCell, LanguageKernel[IO]) => A): IO[A] = for {
-    notebook <- notebook.get
+    notebook <- getNotebook()
     cell     <- IO.fromEither(Either.fromOption(notebook.cells.find(_.id == cellId), new NoSuchElementException(s"Cell $cellId does not exist")))
     kernel   <- getKernel(cell.language)
   } yield fn(notebook, cell, kernel)
@@ -241,10 +239,10 @@ object PolyKernel {
   }
 
   def apply(
-    notebook: Ref[IO, Notebook],
+    getNotebook: () => IO[Notebook],
     dependencies: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageKernel.Factory[IO]],
-    statusUpdates: Topic[IO, KernelStatusUpdate],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,
     outputDir: AbstractFile = defaultOutputDir,
@@ -254,7 +252,7 @@ object PolyKernel {
     val GlobalInfo(global, classPath) = mkGlobal(dependencies, baseSettings, extraClassPath, outputDir)
 
     val kernel = new PolyKernel(
-      notebook,
+      getNotebook,
       global,
       outputDir,
       dependencies,

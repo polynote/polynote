@@ -17,8 +17,11 @@
 package polynote.data
 
 import io.circe.{Decoder, Encoder}
-import polynote.messages.ShortString
+import polynote.messages.{ContentEdit, ShortString}
 import scodec.Codec
+
+import scala.collection.immutable.Queue
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 /** Rope data structure as a binary tree of character arrays.
   *  First described in `Ropes: an Alternative to Strings`
@@ -35,6 +38,10 @@ sealed abstract class Rope {
   def charAt(idx: Int): Char
 
   def splitAt(idx: Int): (Rope, Rope)
+
+  def withEdit(edit: ContentEdit): Rope = edit.applyTo(this)
+
+  def withEdits(edits: List[ContentEdit]): Rope = edits.foldLeft(this)(_ withEdit _)
 
   def insertAt(idx: Int, that: Rope): Rope = {
     val (r1, r2) = splitAt(idx)

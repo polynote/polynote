@@ -5,17 +5,15 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.collection.JavaConverters._
 import cats.syntax.all._
 import cats.instances.list._
-import cats.effect.concurrent.{Deferred, MVar, Ref, Semaphore}
-import cats.effect.{Concurrent, ContextShift, Fiber, IO}
-import fs2.Stream
-import fs2.concurrent.Topic
+import cats.effect.concurrent.{Ref, Semaphore}
+import cats.effect.{ContextShift, Fiber, IO}
 import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 
 /**
   * A task queue in which one task can be running concurrently. Announces task status to `statusUpdates`.
   */
 class TaskQueue(
-  statusUpdates: Topic[IO, KernelStatusUpdate],
+  statusUpdates: Publish[IO, KernelStatusUpdate],
   semaphore: Semaphore[IO],
   currentTaskRef: Ref[IO, Option[TaskQueue.Running]])(implicit
   contextShift: ContextShift[IO]
@@ -99,13 +97,8 @@ class TaskQueue(
         _       = waitingTasks.remove(id)
         done    = ReadySignal()
         join    = fiber.join.guarantee(currentTaskRef.set(None)).guarantee(done.complete)
-        update <- statusUpdates.subscribe(32)
-          .collect { case UpdatedTasks(tasks) => tasks.filter(ti => ti.id == id && ti.status != TaskStatus.Complete) }
-          .flatMap(Stream.emits)
-          .evalMap[IO, Unit](updated => currentTaskRef.update(opt => opt.filter(_.taskInfo.id == id).map(_.copy(taskInfo = updated)).orElse(opt)))
-          .interruptWhen[IO](done()).compile.drain.start
+        // TODO: need to track out-of-band updates to the current task
         result <- fiber.join.guarantee(currentTaskRef.set(None)).guarantee(done.complete)
-        _      <- update.join
       } yield result
     } {
       _ => semaphore.release
@@ -131,7 +124,7 @@ object TaskQueue {
   private case class Queued(taskInfo: TaskInfo, io: IO[Any])
   private case class Running(taskInfo: TaskInfo, fiber: Fiber[IO, Any])
 
-  def apply(statusUpdates: Topic[IO, KernelStatusUpdate])(implicit contextShift: ContextShift[IO]): IO[TaskQueue] = for {
+  def apply(statusUpdates: Publish[IO, KernelStatusUpdate])(implicit contextShift: ContextShift[IO]): IO[TaskQueue] = for {
     semaphore <- Semaphore[IO](1)
     ref       <- Ref[IO].of[Option[Running]](None)
   } yield new TaskQueue(statusUpdates, semaphore, ref)

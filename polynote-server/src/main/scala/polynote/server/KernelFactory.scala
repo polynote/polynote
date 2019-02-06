@@ -1,96 +1,65 @@
 package polynote.server
 
 import java.io.File
-import java.nio.file.Files
-import java.util.concurrent.Executors
 
-import cats.{Applicative, Monad}
-import cats.effect.{ContextShift, IO}
-import cats.effect.concurrent.{MVar, Ref}
-import cats.syntax.functor._
-import cats.syntax.flatMap._
-import cats.syntax.parallel._
+import cats.effect.{ContextShift, Fiber, IO}
+import cats.effect.concurrent.Ref
 import cats.instances.list._
-import cats.effect.internals.IOContextShift
+import cats.syntax.parallel._
+import fs2.Stream
 import fs2.concurrent.Topic
-import polynote.config.RepositoryConfig
 import polynote.kernel.dependency.DependencyFetcher
-import polynote.kernel.lang.python.PythonInterpreter
-import polynote.kernel._
 import polynote.kernel.lang.LanguageKernel
-import polynote.messages.{KernelStatus, Notebook, NotebookConfig, ShortString, TinyMap}
+import polynote.kernel._
+import polynote.kernel.util.{Publish, ReadySignal}
+import polynote.messages.{Notebook, NotebookConfig, TinyMap}
 
-import scala.collection.mutable
-import scala.concurrent.ExecutionContext
-import scala.reflect.io.{AbstractFile, VirtualDirectory}
+import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
 
-abstract class KernelRouter[F[_]](implicit F: Monad[F]) {
+trait KernelFactory[F[_]] {
 
-  // return the cached kernel for the notebook, or create one if there is no cached kernel
-  def getOrCreateKernel(notebookRef: Ref[F, Notebook], taskInfo: TaskInfo, statusUpdates: Topic[F, KernelStatusUpdate]): F[Kernel[F]] =
-    notebookRef.get.flatMap {
-      notebook => getKernel(notebook.path).map(F.pure).getOrElse(createKernel(notebookRef, taskInfo, statusUpdates))
-    }
+  def launchKernel(getNotebook: () => F[Notebook], statusUpdates: Publish[F, KernelStatusUpdate]): F[Kernel[F]]
 
-  // get the cached kernel for the notebook, if it exists
-  def getKernel(path: String): Option[Kernel[F]]
-
-  // create and cache a new kernel for the notebook, even if one is already cached (discards existing kernel)
-  def createKernel(notebookRef: Ref[F, Notebook], taskInfo: TaskInfo, statusUpdates: Topic[F, KernelStatusUpdate]): F[Kernel[F]]
-
-  def shutdownKernel(path: String): F[Boolean]
 }
 
-class PolyKernelRouter(
+class IOKernelFactory(
   dependencyFetchers: Map[String, DependencyFetcher[IO]],
   subKernels: Map[String, LanguageKernel.Factory[IO]])(implicit
-  downloadContext: ContextShift[IO]
-) extends KernelRouter[IO] {
-
-  private val kernels = new mutable.HashMap[String, PolyKernel]
+  contextShift: ContextShift[IO]
+) extends KernelFactory[IO] {
 
   protected def settings: scala.tools.nsc.Settings = PolyKernel.defaultBaseSettings
   protected def outputDir: scala.reflect.io.AbstractFile = PolyKernel.defaultOutputDir
   protected def parentClassLoader: ClassLoader = PolyKernel.defaultParentClassLoader
   protected def extraClassPath: List[File] = Nil
 
-  override def getKernel(path: String): Option[Kernel[IO]] = kernels.get(path)
-
   protected def mkKernel(
-    notebookRef: Ref[IO, Notebook],
+    getNotebook: () => IO[Notebook],
     deps: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageKernel.Factory[IO]],
-    statusUpdates: Topic[IO, KernelStatusUpdate],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     settings: Settings,
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
-  ): IO[PolyKernel] = IO.pure(PolyKernel(notebookRef, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader))
+  ): IO[PolyKernel] = IO.pure(PolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader))
 
-  override def createKernel(notebookRef: Ref[IO, Notebook], taskInfo: TaskInfo, statusUpdates: Topic[IO, KernelStatusUpdate]): IO[Kernel[IO]] = for {
-    notebook <- notebookRef.get
+  override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate]): IO[Kernel[IO]] = for {
+    notebook <- getNotebook()
+    path      = notebook.path
     config    = notebook.config.getOrElse(NotebookConfig(None, None))
-    _        <- statusUpdates.publish1(KernelBusyState(busy = true, alive = true))
+    taskInfo  = TaskInfo("kernel", "Start", "Kernel starting", TaskStatus.Running)
     deps     <- fetchDependencies(config, statusUpdates)
     numDeps   = deps.values.map(_.size).sum
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = (numDeps.toDouble / (numDeps + 1) * 255).toByte) :: Nil))
-    kernel   <- mkKernel(notebookRef, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader)
-    _         = kernels.put(notebook.path, kernel)
+    kernel   <- mkKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader)
     _        <- kernel.init
+    _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = 255.toByte, status = TaskStatus.Complete) :: Nil))
     _        <- statusUpdates.publish1(KernelBusyState(busy = false, alive = true))
   } yield kernel
 
-  override def shutdownKernel(path: String): IO[Boolean] = getKernel(path).map {
-    kernel => for {
-      _ <- kernel.shutdown()
-      _ <- kernel.statusUpdates.publish1(KernelBusyState(busy = false, alive = false))
-      _ <- IO(kernels.remove(path))
-    } yield true
-  }.getOrElse(IO.pure(false))
-
-
-  private def fetchDependencies(config: NotebookConfig, statusUpdates: Topic[IO, KernelStatusUpdate]) = {
+  private def fetchDependencies(config: NotebookConfig, statusUpdates: Publish[IO, KernelStatusUpdate]) = {
     val dependenciesTask = TaskInfo("Dependencies", "Fetch dependencies", "Resolving dependencies", TaskStatus.Running)
     for {
       _       <- statusUpdates.publish1(UpdatedTasks(dependenciesTask :: Nil))
@@ -101,7 +70,7 @@ class PolyKernelRouter(
     } yield fetched
   }
 
-  private def resolveDependencies(config: NotebookConfig, taskInfo: TaskInfo, statusUpdates: Topic[IO, KernelStatusUpdate]) = {
+  private def resolveDependencies(config: NotebookConfig, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]) = {
     val fetch = config.dependencies.toList
       .flatMap(_.toList)
       .flatMap {
@@ -126,7 +95,7 @@ class PolyKernelRouter(
     System.err.println(err.getMessage)
   }.map(_ => None)
 
-  private def downloadDependencies(deps: List[(String, String, IO[File])], taskInfo: TaskInfo, statusUpdates: Topic[IO, KernelStatusUpdate]) = {
+  private def downloadDependencies(deps: List[(String, String, IO[File])], taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]) = {
     val completedCounter = Ref.unsafe[IO, Int](0)
     val numDeps = deps.size
     deps.map {

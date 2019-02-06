@@ -36,10 +36,9 @@ trait Server extends IOApp with Http4sDsl[IO] {
       (accum, next) => accum ++ next.languageKernels
     }
 
-  protected val router = new PolyKernelRouter(
-    Map("scala" -> dependencyFetcher),
-    subKernels
-  )
+  protected val kernelFactory = new IOKernelFactory(Map("scala" -> dependencyFetcher), subKernels)
+
+  protected val notebookManager = new IONotebookManager(repository, kernelFactory)
 
   def serveFile(path: String, req: Request[IO])(implicit syncIO: Sync[IO]): IO[Response[IO]] = {
     StaticFile.fromResource(path, executionContext, Some(req)).getOrElseF(NotFound())
@@ -47,7 +46,7 @@ trait Server extends IOApp with Http4sDsl[IO] {
 
   def route(implicit timer: Timer[IO]): HttpRoutes[IO] = {
     HttpRoutes.of[IO] {
-      case GET -> Root / "ws" => new SocketSession(repository, router).toResponse
+      case GET -> Root / "ws" => new SocketSession(notebookManager).toResponse
       case req @ GET -> Root  => serveFile(indexFile, req)
       case req @ GET -> Root / "notebook" / _ => serveFile(indexFile, req)
       case req @ GET -> path  =>

@@ -18,6 +18,7 @@ import org.apache.spark.sql.SparkSession
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageKernel
+import polynote.kernel.util.Publish
 import polynote.messages.Notebook
 
 import scala.reflect.internal.util.AbstractFileClassLoader
@@ -27,15 +28,15 @@ import scala.tools.nsc.interactive.Global
 
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
 class SparkPolyKernel(
-  notebook: Ref[IO, Notebook],
+  getNotebook: () => IO[Notebook],
   global: Global,
   dependencies: Map[String, List[(String, File)]],
-  statusUpdates: Topic[IO, KernelStatusUpdate],
+  statusUpdates: Publish[IO, KernelStatusUpdate],
   extraClassPath: Seq[URL],
   outputPath: Path,
   subKernels: Map[String, LanguageKernel.Factory[IO]] = Map.empty,
   parentClassLoader: ClassLoader = classOf[SparkPolyKernel].getClassLoader
-) extends PolyKernel(notebook, global, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, extraClassPath, subKernels, parentClassLoader) {
+) extends PolyKernel(getNotebook, global, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, extraClassPath, subKernels, parentClassLoader) {
 
   private lazy val dependencyJars = classOf[polynote.runtime.ScalaCell].getProtectionDomain.getCodeSource.getLocation :: {
     // dependencies which have characters like "+" in them get mangled... de-mangle them into a temp directory for adding to spark
@@ -108,16 +109,16 @@ class SparkPolyKernel(
 
 object SparkPolyKernel {
   def apply(
-    notebook: Ref[IO, Notebook],
+    getNotebook: () => IO[Notebook],
     dependencies: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageKernel.Factory[IO]],
-    statusUpdates: Topic[IO, KernelStatusUpdate],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,
     parentClassLoader: ClassLoader = defaultParentClassLoader
   ): SparkPolyKernel = {
 
-    val notebookFilename = notebook.get.map {
+    val notebookFilename = getNotebook().map {
       nb => new File(nb.path).getName
     }.unsafeRunSync()
 
@@ -135,7 +136,7 @@ object SparkPolyKernel {
     val GlobalInfo(global, classPath) = mkGlobal(dependencies, baseSettings, extraClassPath ++ sparkClasspath, outputDir)
 
     val kernel = new SparkPolyKernel(
-      notebook,
+      getNotebook,
       global,
       dependencies,
       statusUpdates,

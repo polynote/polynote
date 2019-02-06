@@ -1,9 +1,7 @@
 package polynote.kernel.util
 
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
-import cats.effect.concurrent.Deferred
 import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{SignallingRef, Topic}
@@ -17,7 +15,7 @@ import scala.tools.nsc.interactive.Global
 final class RuntimeSymbolTable(
   val global: Global,
   val classLoader: ClassLoader,
-  statusUpdates: Topic[IO, KernelStatusUpdate])(implicit
+  statusUpdates: Publish[IO, KernelStatusUpdate])(implicit
   contextShift: ContextShift[IO]
 ) extends Serializable {
   import global.{Type, TermName, Symbol}

@@ -83,9 +83,11 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
 
   // the trees that came out of the parser, ignoring any parse errors
   private lazy val parsedTrees = parsed match {
-    case Ior.Both(_, trees) => Right(trees)
-    case Ior.Right(trees) => Right(trees)
-    case Ior.Left(err) => Left(err)
+    case Ior.Both(_, trees) if trees.nonEmpty => Right(trees)
+    case Ior.Both(_, _)                       => Left(EmptyCell)
+    case Ior.Right(trees) if trees.nonEmpty   => Right(trees)
+    case Ior.Right(_)                         => Left(EmptyCell)
+    case Ior.Left(err)                        => Left(err)
   }
 
   private lazy val executionId = global.currentRunId
