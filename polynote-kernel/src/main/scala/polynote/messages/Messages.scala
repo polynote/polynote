@@ -12,6 +12,8 @@ import io.circe.generic.semiauto._
 import polynote.config.{DependencyConfigs, RepositoryConfig}
 import polynote.data.Rope
 
+import scala.collection.immutable.Queue
+
 sealed trait Message
 
 object Message {
@@ -91,11 +93,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
   }
 
   def editCell(id: String, edits: List[ContentEdit]): Notebook = updateCell(id) {
-    cell => cell.updateContent {
-      content => edits.foldLeft(content) {
-        (accum, next) => next.applyTo(accum)
-      }
-    }
+    cell => cell.updateContent(_.withEdits(edits))
   }
 
   def addCell(cell: NotebookCell): Notebook = copy(cells = ShortList(cells :+ cell))
@@ -127,6 +125,7 @@ object RunCell extends MessageCompanion[RunCell](3)
 final case class CellResult(notebook: ShortString, id: TinyString, result: Result) extends Message
 object CellResult extends MessageCompanion[CellResult](4)
 
+
 /**
   * A ContentEdit at a position deletes some amount (possibly nothing) after that position, and then inserts some
   * content (possibly empty) at that position.
@@ -148,27 +147,34 @@ final case class ContentEdit(pos: Int, deleteLength: Int, content: String) {
     // if the other edit is entirely after this edit, nothing to do
     case ContentEdit(otherPos, _, _) if otherPos >= pos + deleteLength => this
 
-    // if the other edit affects the region that was replaced by this edit, then they conflict
-    // we want the minimal edit that replaces the entire conflict region
-    case ContentEdit(otherPos, otherDeleteLength, otherContent) =>
+    // if this edit's deletion is completely inside that edit's deletion, then just insert my content after theirs
+    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos <= pos && otherPos + otherDeleteLength >= pos + deleteLength =>
+      ContentEdit(otherPos + otherContent.length, 0, content)
 
-      // start at the earlier position
-      val start = math.min(pos, otherPos)
+    // If that edit's deletion is completely inside this edit's deletion, we'll subsume their edit into ours
+    // TODO: This one would be better if it could be split into two edits, but that complicates the API. What if rebase were on UpdateCell instead?
+    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos >= pos && otherPos + otherDeleteLength < pos + deleteLength =>
+      val (before, after) = content.splitAt(otherPos - pos)
+      ContentEdit(pos, deleteLength + (otherContent.length - otherDeleteLength), before + otherContent + after)
 
-      // They deleted to this position
-      val theirTarget = otherPos + otherDeleteLength
+    // Overlaps with other edit, with theirs starting before mine – they already deleted part of what I was going to
+    // Track the point until which I was going to delete, and delete from the end of their content up to that point
+    // And insert my content after theirs.
+    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos <= pos =>
 
-      // I would have deleted up to this position...
-      val myTarget = pos + deleteLength
+      // they already deleted this much of what I was going to delete
+      val alreadyDeleted = math.max(0, otherPos + otherDeleteLength - pos)
 
-      // So I should delete this much extra
-      val deleteExtra = math.max(0, myTarget - theirTarget) + math.max(0, otherPos - pos)
+      ContentEdit(otherPos + otherContent.length, deleteLength - alreadyDeleted, content)
 
-      val combinedContent = if (otherPos <= pos) otherContent + content else content + otherContent
-
-      ContentEdit(start, otherContent.length + deleteExtra, combinedContent)
+    // Overlaps with other edit, with mine starting before theirs. Delete up to their insertion point, and then
+    // insert my content before theirs.
+    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos > pos =>
+      ContentEdit(pos, otherPos - pos, content)
   }
 }
+
+
 
 sealed trait NotebookUpdate extends Message {
   def globalVersion: Int

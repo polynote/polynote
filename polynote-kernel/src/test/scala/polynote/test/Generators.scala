@@ -22,19 +22,23 @@ object Generators {
     content <- Gen.asciiPrintableStr
   } yield ContentEdit(0, 0, content)
 
-  // generate an initial string, and a bunch of edits to apply to it.
-  val genEdits = for {
-    init  <- genRope
+  def genEdits(init: Rope) = for {
     size  <- Gen.size
     count <- Gen.choose(0, size)
     (finalRope, edits) <- (0 until count).foldLeft(Gen.const((init, Queue.empty[ContentEdit]))) {
       (g, _) => g.flatMap {
         case (rope, edits) => genEdit(rope.size).map {
-          edit => (edit.applyTo(rope), edits enqueue edit)
+          edit => (rope.withEdit(edit), edits enqueue edit)
         }
       }
     }
-  } yield (init, edits.toList, finalRope)
+  } yield (edits.toList, finalRope)
+
+  // generate an initial string, and a bunch of edits to apply to it.
+  val genEdits = for {
+    init               <- genRope
+    (edits, finalRope) <- genEdits(init)
+  } yield (init, edits, finalRope)
 
   // to really cover ground on testing the rope, we can arbitrarily fragment the rope's structure by
   // applying a bunch of edits to it
