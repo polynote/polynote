@@ -142,21 +142,21 @@ final case class ContentEdit(pos: Int, deleteLength: Int, content: String) {
   // when applied after the given edit instead.
   def rebase(other: ContentEdit): ContentEdit = other match {
     // if the other edit is entirely before this edit, just shift this edit by the length delta
-    case ContentEdit(otherPos, otherLength, otherContent) if otherPos + otherLength <= pos =>
-      copy(pos = pos + otherContent.length - otherLength)
+    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos + otherDeleteLength <= pos =>
+      copy(pos = pos + otherContent.length - otherDeleteLength)
 
     // if the other edit is entirely after this edit, nothing to do
     case ContentEdit(otherPos, _, _) if otherPos >= pos + deleteLength => this
 
     // if the other edit affects the region that was replaced by this edit, then they conflict
     // we want the minimal edit that replaces the entire conflict region
-    case ContentEdit(otherPos, otherLength, otherContent) =>
+    case ContentEdit(otherPos, otherDeleteLength, otherContent) =>
 
       // start at the earlier position
       val start = math.min(pos, otherPos)
 
       // They deleted to this position
-      val theirTarget = otherPos + otherLength
+      val theirTarget = otherPos + otherDeleteLength
 
       // I would have deleted up to this position...
       val myTarget = pos + deleteLength
