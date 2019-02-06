@@ -65,7 +65,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     //       Should that be fixed? Maybe we could build a new locals dict during runCode?
     // TODO: Can there be some special treatment for function values to make them Callable in python?
     // TODO: Instead of doing this, can we somehow just make the symbol table a Python scope?
-    symbolTable.subscribe() {
+    symbolTable.subscribe(Option(this)) {
       value => withJep {
         value.value match {
           case polynote.runtime.Runtime => // pass
