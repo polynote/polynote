@@ -117,7 +117,7 @@ class PolyKernel private[kernel] (
     symbolTable.drain() *> Queue.unbounded[IO, Option[Result]].flatMap {
       oq =>
           val oqSome = new EnqueueSome(oq)
-          withKernel(id) {
+          oq.enqueue1(Some(ClearResults())) *> withKernel(id) {
             (notebook, cell, kernel) =>
               val prevCellIds = prevCells(notebook, id)
               taskQueue.runTaskIO(id, id, s"Running $id") {

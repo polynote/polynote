@@ -107,6 +107,8 @@ class MarkdownNotebookRepository(
           }
           }</ul>
       </div>.toString()
+
+    case ClearResults() => ""
   }
 
   private def htmlToResult(html: scala.xml.Elem, id: String): Option[Result] = html.attribute("class").map(_.head.value.toString).flatMap {
