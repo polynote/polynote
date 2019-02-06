@@ -212,12 +212,12 @@ CellResult.codec = combined(shortStr, tinyStr, Result.codec).to(CellResult);
 
 export class ContentEdit {
     static unapply(inst) {
-        return [inst.pos, inst.length, inst.content];
+        return [inst.pos, inst.deleteLength, inst.content];
     }
 
-    constructor(pos, length, content) {
+    constructor(pos, deleteLength, content) {
         this.pos = pos;
-        this.length = length;
+        this.deleteLength = deleteLength;
         this.content = content;
     }
 }

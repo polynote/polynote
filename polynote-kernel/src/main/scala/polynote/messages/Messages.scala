@@ -127,8 +127,16 @@ object RunCell extends MessageCompanion[RunCell](3)
 final case class CellResult(notebook: ShortString, id: TinyString, result: Result) extends Message
 object CellResult extends MessageCompanion[CellResult](4)
 
-final case class ContentEdit(pos: Int, length: Int, content: String) {
-  def applyTo(rope: Rope): Rope = if (length > 0) rope.delete(pos, length).insertAt(pos, Rope(content)) else rope.insertAt(pos, Rope(content))
+/**
+  * A ContentEdit at a position deletes some amount (possibly nothing) after that position, and then inserts some
+  * content (possibly empty) at that position.
+  *
+  * @param pos          The position at which the edit occurs
+  * @param deleteLength The number of characters to delete after the given position
+  * @param content      The content to insert
+  */
+final case class ContentEdit(pos: Int, deleteLength: Int, content: String) {
+  def applyTo(rope: Rope): Rope = if (deleteLength > 0) rope.delete(pos, deleteLength).insertAt(pos, Rope(content)) else rope.insertAt(pos, Rope(content))
 
   // Given another edit which occured after this edit, create an edit that will be equivalent to applying this edit
   // when applied after the given edit instead.
@@ -138,7 +146,7 @@ final case class ContentEdit(pos: Int, length: Int, content: String) {
       copy(pos = pos + otherContent.length - otherLength)
 
     // if the other edit is entirely after this edit, nothing to do
-    case ContentEdit(otherPos, _, _) if otherPos >= pos + length => this
+    case ContentEdit(otherPos, _, _) if otherPos >= pos + deleteLength => this
 
     // if the other edit affects the region that was replaced by this edit, then they conflict
     // we want the minimal edit that replaces the entire conflict region
@@ -151,7 +159,7 @@ final case class ContentEdit(pos: Int, length: Int, content: String) {
       val theirTarget = otherPos + otherLength
 
       // I would have deleted up to this position...
-      val myTarget = pos + length
+      val myTarget = pos + deleteLength
 
       // So I should delete this much extra
       val deleteExtra = math.max(0, myTarget - theirTarget) + math.max(0, otherPos - pos)
