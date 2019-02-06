@@ -97,14 +97,8 @@ class TaskQueue(
         _       = waitingTasks.remove(id)
         done    = ReadySignal()
         join    = fiber.join.guarantee(currentTaskRef.set(None)).guarantee(done.complete)
-// TODO: another way of doing the below
-//        update <- statusUpdates.subscribe(32)
-//          .collect { case UpdatedTasks(tasks) => tasks.filter(ti => ti.id == id && ti.status != TaskStatus.Complete) }
-//          .flatMap(Stream.emits)
-//          .evalMap[IO, Unit](updated => currentTaskRef.update(opt => opt.filter(_.taskInfo.id == id).map(_.copy(taskInfo = updated)).orElse(opt)))
-//          .interruptWhen[IO](done()).compile.drain.start
+        // TODO: need to track out-of-band updates to the current task
         result <- fiber.join.guarantee(currentTaskRef.set(None)).guarantee(done.complete)
-//        _      <- update.join
       } yield result
     } {
       _ => semaphore.release
