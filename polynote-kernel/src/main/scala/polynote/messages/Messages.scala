@@ -134,7 +134,7 @@ final case class ContentEdit(pos: Int, length: Int, content: String) {
   // when applied after the given edit instead.
   def rebase(other: ContentEdit): ContentEdit = other match {
     // if the other edit is entirely before this edit, just shift this edit by the length delta
-    case ContentEdit(otherPos, otherLength, otherContent) if otherPos < pos && (otherPos + otherLength < pos) =>
+    case ContentEdit(otherPos, otherLength, otherContent) if otherPos + otherLength <= pos =>
       copy(pos = pos + otherContent.length - otherLength)
 
     // if the other edit is entirely after this edit, nothing to do

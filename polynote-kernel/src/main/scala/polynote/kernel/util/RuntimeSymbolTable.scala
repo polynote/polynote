@@ -1,9 +1,7 @@
 package polynote.kernel.util
 
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
-import cats.effect.concurrent.Deferred
 import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{SignallingRef, Topic}
