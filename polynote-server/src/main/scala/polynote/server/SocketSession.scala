@@ -144,6 +144,7 @@ class SocketSession(
       getNotebook(path, oq).flatMap {
         notebookRef => notebookRef.runCells(ids)
       }
+      // TODO: do we need to emit a kernel status here any more?
 
 
     case req@CompletionsAt(notebook, id, pos, _) =>
