@@ -20,7 +20,7 @@ val commonSettings = Seq(
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.7"),
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
-  },
+  }
 )
 
 val `polynote-runtime` = project.settings(
