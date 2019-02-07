@@ -1,5 +1,7 @@
 name := "polynote"
 
+lazy val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
+
 val commonSettings = Seq(
   version := "0.1.0-SNAPSHOT",
   scalaVersion := "2.11.11",
@@ -15,7 +17,10 @@ val commonSettings = Seq(
       val oldStrategy = (assemblyMergeStrategy in assembly).value
       oldStrategy(x)
   },
-  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.7")
+  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.7"),
+  buildUI := {
+    sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
+  },
 )
 
 val `polynote-runtime` = project.settings(
