@@ -5,18 +5,15 @@ import org.scalatest._
 import polynote.kernel.Output
 import polynote.kernel.lang.KernelSpec
 
-import scala.collection.mutable
-
 
 class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
 
   "The python kernel" should "be able to display html using the kernel runtime reference" in {
     assertPythonOutput("kernel.display.html('hi')") { case (vars, output, displayed) =>
-      val kernel = vars("kernel")
-      kernel shouldEqual polynote.runtime.Runtime
-      val (mime, html) = displayed.head
-      mime shouldEqual "text/html"
-      html shouldEqual "hi"
+      vars.toSeq should contain only "kernel" -> polynote.runtime.Runtime
+
+      output shouldBe empty
+      displayed should contain only "text/html" -> "hi"
     }
   }
 
@@ -36,6 +33,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         |m2 = {'hm': m, 'humm': m}
       """.stripMargin
     assertPythonOutput(code) { case (vars, output, displayed) =>
+      //TODO: can we figure out a nicer way to test this?
       vars("x") shouldEqual 1
       vars("y") shouldEqual "foo"
       vars("A") shouldBe a[PyCallable]
@@ -51,6 +49,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         "hm" -> Map(1 -> "foo", "foo" -> 100, "hey!" ->  List(100, List(1, "foo", Map("sup?" -> "nm"), false))),
         "humm" -> Map(1 -> "foo", "foo" -> 100, "hey!" ->  List(100, List(1, "foo", Map("sup?" -> "nm"), false))))
 
+      output shouldBe empty
       displayed shouldBe empty
     }
   }
@@ -63,11 +62,15 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         |x + y
       """.stripMargin
     assertPythonOutput(code) { case (vars, output, displayed) =>
-      vars("x") shouldEqual 1
-      vars("y") shouldEqual 2
-      vars("restest") shouldEqual 3
+      vars.toSeq should contain theSameElementsAs Seq(
+        "kernel" -> polynote.runtime.Runtime,
+        "x" -> 1,
+        "y" -> 2,
+        "restest" -> 3
+      )
 
-//      displayed shouldEqual mutable.ArrayBuffer("text/plain; lang=python" -> "restest = 3")
+      output should contain only Output("text/plain; rel=decl; lang=python", "restest = 3")
+      displayed shouldBe empty
     }
   }
 
@@ -78,13 +81,22 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         |y = 2
         |print("{} + {} = {}".format(x, y, x + y))
         |answer = x + y
+        |answer
       """.stripMargin
     assertPythonOutput(code) { case (vars, output, displayed) =>
-      vars("x") shouldEqual 1
-      vars("y") shouldEqual 2
-      vars("answer") shouldEqual 3
+      vars.toSeq should contain theSameElementsAs Seq(
+        "kernel" -> polynote.runtime.Runtime,
+        "x" -> 1,
+        "y" -> 2,
+        "answer" -> 3,
+        "restest" -> 3
+      )
 
-      output should contain (Output("text/plain; rel=stdout", "1 + 2 = 3"))
+      output should contain theSameElementsAs Seq(
+        Output("text/plain; rel=stdout", "1 + 2 = 3"),
+        Output("text/plain; rel=decl; lang=python", "restest = 3")
+      )
+      displayed shouldBe empty
     }
 
   }
@@ -95,10 +107,10 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         |print("Do you like muffins?")
       """.stripMargin
     assertPythonOutput(code) { case (vars, output, displayed) =>
-      vars should have size 1
-      vars("kernel") shouldEqual polynote.runtime.Runtime
+      vars.toSeq should contain only "kernel" -> polynote.runtime.Runtime
 
-      output should contain (Output("text/plain; rel=stdout", "Do you like muffins?"))
+      output should contain  only Output("text/plain; rel=stdout", "Do you like muffins?")
+      displayed shouldBe empty
     }
   }
 }

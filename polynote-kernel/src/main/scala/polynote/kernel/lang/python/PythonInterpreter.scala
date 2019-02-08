@@ -12,7 +12,6 @@ import jep.{Jep, JepConfig}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
 import polynote.messages.{ShortString, TinyList, TinyString}
-import cats.implicits._
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
@@ -51,6 +50,11 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
           value.value match {
             case polynote.runtime.Runtime =>
               // hijack the kernel and wrap it in a pyobject so we can set the display
+              // we need to do this because it looks like jep doesn't handle the Runtime.display object properly
+              // (maybe because it doesn't fully support Scala).
+              // we need to create a new Python class that proxies the runtime object so that we can use
+              // grab it as a PyObject from jep. We need a PyObject so we can use setAttr.
+              // Then we can set the `display` attribute to the display object ourselves.
               jep.set("__kernel_ref", polynote.runtime.Runtime)
               jep.eval(
                 """

@@ -186,7 +186,12 @@ class ScalaInterpreter(
 
               }.flatten
 
-              (symbolTable.publishAll(syms), syms.map(rv => out.enqueue1(Output("text/plain; rel=decl; lang=scala", s"${rv.name.toString}: ${rv.typeString} = ${rv.valueString}"))).sequence).parMapN((_, _) => ())
+              (
+                symbolTable.publishAll(syms),
+                syms
+                  .filter(_.name.startsWith("res")) // TODO: is there any better way to make sure we only output undeclared results? Also, we probably want this to be configurable eventually
+                  .map(rv => out.enqueue1(Output("text/plain; rel=decl; lang=scala", s"${rv.name.toString}: ${rv.typeString} = ${rv.valueString}"))).sequence).parMapN((_, _) => ()
+              )
           }
 
           val saveSource = IO.delay[Unit](previousSources.put(cell, source))
@@ -199,16 +204,19 @@ class ScalaInterpreter(
                 .through(fs2.text.utf8Decode)
                 .map(Output("text/plain; rel=stdout", _))
 
-              val captureStdOut = IO {
+              // we need to capture and release *on the thread that is executing the code* because Console.setOut is set **per thread**!
+              val runWithCapturedStdout = IO {
                 val newOut = new PrintStream(stdOut)
                 System.setOut(newOut)
                 Console.setOut(newOut)
-              }
+              }.bracket(_ => run) ( _ => IO {
+                System.setOut(originalOut)
+                Console.setOut(originalOut)
+              })
 
               for {
-                _      <- captureStdOut
                 pub    <- results.to(out.enqueue).compile.drain.start
-                fiber  <- run.start
+                fiber  <- runWithCapturedStdout.start
                 _      <- fiber.join
                 _       = stdOut.flush()
                 _      <- saveSource
@@ -218,6 +226,7 @@ class ScalaInterpreter(
           }(stdOut => IO(stdOut.close()))
 
           eval.guarantee(IO {
+            // this might not be necessary now that we are resetting stdout in the bracket above
             System.setOut(originalOut)
             Console.setOut(originalOut)
           })
