@@ -86,7 +86,10 @@ class ScalaInterpreter(
 
   protected def isPredefSymbol(name: global.TermName): Boolean = name string_== "kernel"
 
+  // TODO: we want to get rid of predef and load `kernel` from the RST (whatever that ends up being)
   def predefCode: Option[String] = Some("val kernel = polynote.runtime.Runtime")
+
+  override def init(): IO[Unit] = IO.unit // pass for now
 
   override def runCode(
     cell: String,
@@ -196,8 +199,14 @@ class ScalaInterpreter(
                 .through(fs2.text.utf8Decode)
                 .map(Output("text/plain; rel=stdout", _))
 
+              val captureStdOut = IO {
+                val newOut = new PrintStream(stdOut)
+                System.setOut(newOut)
+                Console.setOut(newOut)
+              }
+
               for {
-                _      <- IO(System.setOut(new PrintStream(stdOut)))
+                _      <- captureStdOut
                 pub    <- results.to(out.enqueue).compile.drain.start
                 fiber  <- run.start
                 _      <- fiber.join
@@ -208,7 +217,10 @@ class ScalaInterpreter(
               } yield ()
           }(stdOut => IO(stdOut.close()))
 
-          eval.guarantee(IO(System.setOut(originalOut)))
+          eval.guarantee(IO {
+            System.setOut(originalOut)
+            Console.setOut(originalOut)
+          })
       }
     }(_ => interpreterLock.release)
   }

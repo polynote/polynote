@@ -12,6 +12,7 @@ import jep.{Jep, JepConfig}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
 import polynote.messages.{ShortString, TinyList, TinyString}
+import cats.implicits._
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
@@ -22,62 +23,27 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
 
-  private def newSingleThread(name: String): ExecutorService = Executors.newSingleThreadExecutor {
-    new ThreadFactory {
-      def newThread(r: Runnable): Thread = {
-        val thread = new Thread(r)
-        thread.setDaemon(true)
-        thread.setName(name)
-        thread
-      }
-    }
-  }
+  override def init(): IO[Unit] = {
+    implicit val s: ContextShift[IO] = listenerShift
 
-  private val jepExecutor = newSingleThread("JEP execution thread")
-  private val externalListener = newSingleThread("Python symbol listener")
+      // note: leaving old TODOs in case they might still be useful?
+      // TODO: The downside of doing this eagerly is that Python code won't forbid using symbols defined in later cells.
+      //       Should that be fixed? Maybe we could build a new locals dict during runCode?
+      // TODO: Can there be some special treatment for function values to make them Callable in python?
+      // TODO: Instead of doing this, can we somehow just make the symbol table a Python scope?
 
-  private val executionContext = ExecutionContext.fromExecutor(jepExecutor)
-
-  private val shift: ContextShift[IO] = IOContextShift(executionContext)
-
-  def withJep[T](t: => T): IO[T] = shift.evalOn(executionContext)(IO.delay(t))
-
-  private val jep = jepExecutor.submit {
-    new Callable[Jep] {
-      def call(): Jep = {
-        val jep = new Jep(new JepConfig().addSharedModules("numpy").setInteractive(false))
-//        jep.eval(
-//          """def __polynote_export_value__(d, k):
-//            |  globals().update({ "__polynote_exported__": d[k] })
-//          """.stripMargin)
-        jep
-      }
-    }
-  }.get()
-
-  private val shutdownSignal = {
-    // in a block to contain the implicit
-    implicit val listenerShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutor(externalListener))
-    val signal = ReadySignal()
-
-    // push external symbols to Jep
-    // TODO: The downside of doing this eagerly is that Python code won't forbid using symbols defined in later cells.
-    //       Should that be fixed? Maybe we could build a new locals dict during runCode?
-    // TODO: Can there be some special treatment for function values to make them Callable in python?
-    // TODO: Instead of doing this, can we somehow just make the symbol table a Python scope?
+    // watch for new symbols and push 'em to Jep
     symbolTable.subscribe(Option(this)) {
       value => withJep {
         value.value match {
-          case polynote.runtime.Runtime => // pass
+          case polynote.runtime.Runtime => // pass (already handled above)
           case _ =>
             jep.set(value.name.toString, value.value)
         }
       }
-    }.interruptWhen(signal())
-      .compile
-      .drain
-      .unsafeRunAsyncAndForget()
+    }.interruptWhen(shutdownSignal()).compile.drain.unsafeRunAsyncAndForget()
 
+    // make sure to grab any symbols that have already been created
     withJep {
       val terms = symbolTable.currentTerms
       terms.foreach {
@@ -105,10 +71,44 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
               jep.set(value.name.toString, value.value)
           }
       }
-    }.unsafeRunSync()
-
-    signal
+    }
   }
+
+  private def newSingleThread(name: String): ExecutorService = Executors.newSingleThreadExecutor {
+    new ThreadFactory {
+      def newThread(r: Runnable): Thread = {
+        val thread = new Thread(r)
+        thread.setDaemon(true)
+        thread.setName(name)
+        thread
+      }
+    }
+  }
+
+  private val jepExecutor = newSingleThread("JEP execution thread")
+  private val externalListener = newSingleThread("Python symbol listener")
+
+  private val executionContext = ExecutionContext.fromExecutor(jepExecutor)
+
+  private val shift: ContextShift[IO] = IOContextShift(executionContext)
+  val listenerShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutor(externalListener))
+
+  def withJep[T](t: => T): IO[T] = shift.evalOn(executionContext)(IO.delay(t))
+
+  private val jep = jepExecutor.submit {
+    new Callable[Jep] {
+      def call(): Jep = {
+        val jep = new Jep(new JepConfig().addSharedModules("numpy").setInteractive(false))
+//        jep.eval(
+//          """def __polynote_export_value__(d, k):
+//            |  globals().update({ "__polynote_exported__": d[k] })
+//          """.stripMargin)
+        jep
+      }
+    }
+  }.get()
+
+  private val shutdownSignal = ReadySignal()(listenerShift)
 
   // TODO: This is kind of a slow way to do this conversion, as it will result in a lot of JNI calls, but it is
   //       necessary to work around https://github.com/ninia/jep/issues/43 until that gets resolved. We don't want
@@ -171,24 +171,26 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
       val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 
       // TODO: We talked about potentially creating an `Out` map, inspired by ipython, instead of these resCell# vars
-      if (newDecls.last == resultName){
+      val maybeOutput = if (newDecls.last == resultName){
         val hasLastValue = jep.getValue(s"$resultName != None", classOf[java.lang.Boolean])
         if (hasLastValue) {
-          stdout.flush()
-          stdout.write(s"$resultName = ${jep.getValue(s"str(${newDecls.last})", classOf[String])}\n")
-          stdout.flush()
-        }
-      }
+          Option(Output("text/plain; rel=decl; lang=python", s"$resultName = ${jep.getValue(s"repr(${newDecls.last})", classOf[String])}"))
+        } else None
+      } else None
 
-      getPyResults(newDecls)
+      (getPyResults(newDecls), maybeOutput)
 
     }.flatMap {
-      resultDict =>
-        //val types = jep.getValue("""[type(dict.get(__polynote_locals__, x)).__name__ for x in dict.keys(__polynote_locals__) if not x.startswith("__")]""")
-        //val resultDict = jep.getValue("__polynote_locals__", classOf[java.util.HashMap[String, Any]])
-        symbolTable.publishAll(resultDict.toList.filterNot(_._2 == null).map {
+      case (resultDict, maybeOutput) =>
+        val symbolPub = symbolTable.publishAll(resultDict.toList.filterNot(_._2 == null).map {
           case (name, value) => symbolTable.RuntimeValue(name, value, Some(this), cell)
         })
+
+        maybeOutput
+          .map(o => out.enqueue1(o))
+          .getOrElse(IO.unit)
+          .flatMap( _ => symbolPub)
+
     }.flatMap {
       _ => IO(stdout.flush())
     }
@@ -303,7 +305,8 @@ object PythonInterpreter {
 class PythonDisplayHook(out: Enqueue[IO, Result]) {
   private var current = ""
   def output(str: String): Unit =
-    if (str != null && str.nonEmpty) polynote.runtime.Runtime.display.content("text/plain; lang=python", str)
+    if (str != null && str.nonEmpty)
+      out.enqueue1(Output("text/plain; rel=stdout", str)).unsafeRunAsyncAndForget() // TODO: probably should do better than this
 
   def write(str: String): Unit = synchronized {
     current = current + str

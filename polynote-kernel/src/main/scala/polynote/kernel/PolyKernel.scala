@@ -14,6 +14,7 @@ import fs2.concurrent.{Enqueue, Queue, Topic}
 import org.log4s.{Logger, getLogger}
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageKernel
+import polynote.kernel.util.GlobalInfo
 import polynote.kernel.util.{RuntimeSymbolTable, _}
 import polynote.messages.{Notebook, NotebookCell}
 
@@ -26,13 +27,11 @@ import scala.tools.nsc.interactive.Global
 
 class PolyKernel private[kernel] (
   private val getNotebook: () => IO[Notebook],
-  val global: Global,
+  val globalInfo: GlobalInfo,
   val outputDir: AbstractFile,
   dependencies: Map[String, List[(String, File)]],
   val statusUpdates: Publish[IO, KernelStatusUpdate],
-  extraClassPath: Seq[URL],
-  subKernels: Map[String, LanguageKernel.Factory[IO]] = Map.empty,
-  parentClassLoader: ClassLoader = classOf[PolyKernel].getClassLoader
+  subKernels: Map[String, LanguageKernel.Factory[IO]] = Map.empty
 ) extends Kernel[IO] {
 
   protected val logger: Logger = getLogger
@@ -42,33 +41,11 @@ class PolyKernel private[kernel] (
   private val launchingKernel = Semaphore[IO](1).unsafeRunSync()
   private val kernels = new ConcurrentHashMap[String, LanguageKernel[IO]]()
 
-  final protected def dependencyClassPath: Seq[URL] = dependencies.toSeq.flatMap(_._2).collect {
-    case (_, file) if (file.getName endsWith ".jar") && file.exists() => file.toURI.toURL
-  }
-
-  /**
-    * @return The complete classpath, including dependencies and extraClassPath
-    */
-  final protected def classPath: Seq[URL] = dependencyClassPath ++ extraClassPath
-
-  /**
-    * The class loader which loads the dependencies
-    */
-  protected lazy val dependencyClassLoader: URLClassLoader =
-    new LimitedSharingClassLoader(
-      "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus)\\.",
-      dependencyClassPath,
-      parentClassLoader)
-
-  /**
-    * The class loader which loads the JVM-based notebook cell classes
-    */
-  protected lazy val notebookClassLoader: AbstractFileClassLoader = new AbstractFileClassLoader(outputDir, dependencyClassLoader)
 
   /**
     * The symbol table, which stores all the currently existing runtime values
     */
-  protected lazy val symbolTable = new RuntimeSymbolTable(global, notebookClassLoader, statusUpdates)
+  protected lazy val symbolTable = new RuntimeSymbolTable(globalInfo, statusUpdates)
 
   /**
     * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
@@ -76,7 +53,7 @@ class PolyKernel private[kernel] (
   protected lazy val taskQueue: TaskQueue = TaskQueue(statusUpdates).unsafeRunSync()
 
   private def runPredef(kernel: LanguageKernel[IO], language: String): IO[Unit] =
-    kernel.predefCode.fold(IO.unit) {
+    kernel.predefCode.fold(kernel.init()) {
       code => for {
         oq <- Queue.unbounded[IO, Result]
         _  <- taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => kernel.runCode("Predef", Nil, Nil, code, oq, statusUpdates))
@@ -187,53 +164,9 @@ object PolyKernel {
   def defaultOutputDir: AbstractFile = new VirtualDirectory("(memory)", None)
   def defaultParentClassLoader: ClassLoader = getClass.getClassLoader
 
-  final case class GlobalInfo(global: Global, classPath: List[File])
-
   final class EnqueueSome[F[_], A](queue: Queue[F, Option[A]]) extends Enqueue[F, A] {
     def enqueue1(a: A): F[Unit] = queue.enqueue1(Some(a))
     def offer1(a: A): F[Boolean] = queue.offer1(Some(a))
-  }
-
-  def mkGlobal(
-    dependencies: Map[String, List[(String, File)]],
-    baseSettings: Settings,
-    extraClassPath: List[File],
-    outputDir: AbstractFile
-  ): GlobalInfo = {
-
-    val settings = baseSettings.copy()
-    val jars = dependencies.toList.flatMap(_._2).collect {
-      case (_, file) if file.getName endsWith ".jar" => file
-    }
-    val requiredPaths = List(pathOf(classOf[List[_]]), pathOf(polynote.runtime.Runtime.getClass), pathOf(classOf[scala.reflect.runtime.JavaUniverse]), pathOf(classOf[scala.tools.nsc.Global])).map {
-      case url if url.getProtocol == "file" => new File(url.getPath)
-      case url => throw new IllegalStateException(s"Required path $url must be a local file, not ${url.getProtocol}")
-    }
-
-    val classPath = jars ++ requiredPaths ++ extraClassPath
-    settings.classpath.append(classPath.map(_.getCanonicalPath).mkString(File.pathSeparator))
-
-    settings.Yrangepos.value = true
-    try {
-      settings.YpartialUnification.value = true
-    } catch {
-      case err: Throwable =>  // not on Scala 2.11.11+ - that's OK, just won't get partial unification
-    }
-    settings.exposeEmptyPackage.value = true
-    settings.Ymacroexpand.value = settings.MacroExpand.Normal
-    settings.outputDirs.setSingleOutput(outputDir)
-    settings.YpresentationAnyThread.value = true
-
-    val reporter = KernelReporter(settings)
-
-    val global = new Global(settings, reporter)
-
-    // Not sure why this has to be done, but otherwise the compiler eats it
-    global.ask {
-      () => new global.Run().compileSources(List(new BatchSourceFile("<init>", "class $repl_$init { }")))
-    }
-
-    GlobalInfo(global, classPath)
   }
 
   def apply(
@@ -247,23 +180,15 @@ object PolyKernel {
     parentClassLoader: ClassLoader = defaultParentClassLoader
   ): PolyKernel = {
 
-    val GlobalInfo(global, classPath) = mkGlobal(dependencies, baseSettings, extraClassPath, outputDir)
+    val globalInfo = GlobalInfo(dependencies, baseSettings, extraClassPath, outputDir, parentClassLoader)
 
-    val kernel = new PolyKernel(
+    new PolyKernel(
       getNotebook,
-      global,
+      globalInfo,
       outputDir,
       dependencies,
       statusUpdates,
-      classPath.map(_.toURI.toURL),
-      subKernels,
-      parentClassLoader
+      subKernels
     )
-
-    //global.extendCompilerClassPath(kernel.classPath: _*)
-
-    kernel
   }
-
-
 }

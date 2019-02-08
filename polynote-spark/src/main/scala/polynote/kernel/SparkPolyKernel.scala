@@ -18,7 +18,8 @@ import org.apache.spark.sql.SparkSession
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageKernel
-import polynote.kernel.util.Publish
+import polynote.kernel.util.GlobalInfo
+import polynote.kernel.util.{GlobalInfo, Publish, RuntimeSymbolTable}
 import polynote.messages.Notebook
 
 import scala.reflect.internal.util.AbstractFileClassLoader
@@ -29,14 +30,15 @@ import scala.tools.nsc.interactive.Global
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
 class SparkPolyKernel(
   getNotebook: () => IO[Notebook],
-  global: Global,
+  globalInfo: GlobalInfo,
   dependencies: Map[String, List[(String, File)]],
   statusUpdates: Publish[IO, KernelStatusUpdate],
-  extraClassPath: Seq[URL],
   outputPath: Path,
   subKernels: Map[String, LanguageKernel.Factory[IO]] = Map.empty,
-  parentClassLoader: ClassLoader = classOf[SparkPolyKernel].getClassLoader
-) extends PolyKernel(getNotebook, global, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, extraClassPath, subKernels, parentClassLoader) {
+  parentClassLoader: ClassLoader
+) extends PolyKernel(getNotebook, globalInfo, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels) {
+
+  val global = globalInfo.global
 
   private lazy val dependencyJars = classOf[polynote.runtime.ScalaCell].getProtectionDomain.getCodeSource.getLocation :: {
     // dependencies which have characters like "+" in them get mangled... de-mangle them into a temp directory for adding to spark
@@ -57,9 +59,11 @@ class SparkPolyKernel(
 
   private val realOutputPath = Deferred.unsafe[IO, AbstractFile]
 
-  override protected lazy val notebookClassLoader: AbstractFileClassLoader = realOutputPath.get.map {
+  // TODO: any better way to handle this?
+  override protected lazy val symbolTable = realOutputPath.get.map {
     outputDir =>
-      new AbstractFileClassLoader(outputDir, dependencyClassLoader)
+      val updatedClassLoader = GlobalInfo.genNotebookClassLoader(dependencies, globalInfo.classPath, outputDir, parentClassLoader)
+      new RuntimeSymbolTable(GlobalInfo(globalInfo.global, globalInfo.classPath, updatedClassLoader), statusUpdates)
   }.unsafeRunSync()
 
   // initialize the session, and add task listener
@@ -133,14 +137,13 @@ object SparkPolyKernel {
       .map(new File(_))
       .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
 
-    val GlobalInfo(global, classPath) = mkGlobal(dependencies, baseSettings, extraClassPath ++ sparkClasspath, outputDir)
+    val globalInfo = GlobalInfo(dependencies, baseSettings, extraClassPath, outputDir, parentClassLoader)
 
     val kernel = new SparkPolyKernel(
       getNotebook,
-      global,
+      globalInfo,
       dependencies,
       statusUpdates,
-      classPath.map(_.toURI.toURL),
       outputPath,
       subKernels,
       parentClassLoader
