@@ -220,12 +220,6 @@ export class CodeCell extends Cell {
 
         this.onWindowResize = (evt) => this.editor.layout();
         window.addEventListener('resize', this.onWindowResize);
-
-        this.addEventListener('BeforeCellRun', evt => {
-            if (evt.detail.cellId === this.id) {
-                this.setErrors([]);
-            }
-        })
     }
 
 
@@ -380,9 +374,7 @@ export class CodeCell extends Cell {
     }
 
     clearResult() {
-        this.cellOutputDisplay.innerHTML = '';
-        this.cellOutput.classList.remove('errors');
-        this.cellOutput.classList.remove('output');
+        this.setErrors([]);
     }
 
     requestCompletion(pos) {

@@ -4,25 +4,23 @@ package python
 import java.io.File
 import java.util.concurrent.{Callable, ExecutorService, Executors, ThreadFactory}
 
-import scala.collection.JavaConverters._
 import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
-import cats.syntax.apply._
-import fs2.Stream
 import fs2.concurrent.Enqueue
 import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
-import polynote.messages.{ShortList, ShortString, TinyList, TinyString}
+import polynote.messages.{ShortString, TinyList, TinyString}
 
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
 class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKernel[IO] {
 
   val predefCode: Option[String] = None
 
-  override def shutdown(): IO[Unit] = shutdownSignal.complete
+  override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
 
   private def newSingleThread(name: String): ExecutorService = Executors.newSingleThreadExecutor {
     new ThreadFactory {
@@ -47,7 +45,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
   private val jep = jepExecutor.submit {
     new Callable[Jep] {
       def call(): Jep = {
-        val jep = new Jep(new JepConfig().addSharedModules("numpy").setInteractive(true))
+        val jep = new Jep(new JepConfig().addSharedModules("numpy").setInteractive(false))
 //        jep.eval(
 //          """def __polynote_export_value__(d, k):
 //            |  globals().update({ "__polynote_exported__": d[k] })
@@ -67,18 +65,45 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     //       Should that be fixed? Maybe we could build a new locals dict during runCode?
     // TODO: Can there be some special treatment for function values to make them Callable in python?
     // TODO: Instead of doing this, can we somehow just make the symbol table a Python scope?
-    symbolTable.subscribe() {
+    symbolTable.subscribe(Option(this)) {
       value => withJep {
-        if (!value.source.contains(this)) {
-          jep.set(value.name.toString, value.value)
+        value.value match {
+          case polynote.runtime.Runtime => // pass
+          case _ =>
+            jep.set(value.name.toString, value.value)
         }
       }
-    }.compile.drain.unsafeRunAsyncAndForget()
+    }.interruptWhen(signal())
+      .compile
+      .drain
+      .unsafeRunAsyncAndForget()
 
     withJep {
       val terms = symbolTable.currentTerms
       terms.foreach {
-        value => jep.set(value.name.toString, value.value)
+        value =>
+          value.value match {
+            case polynote.runtime.Runtime =>
+              // hijack the kernel and wrap it in a pyobject so we can set the display
+              jep.set("__kernel_ref", polynote.runtime.Runtime)
+              jep.eval(
+                """
+                  |class KernelProxy(object):
+                  |    def __init__(self, ref):
+                  |        self.ref = ref
+                  |
+                  |    def __getattr__(self, name):
+                  |        return getattr(self.ref, name)
+                """.stripMargin.trim)
+              jep.eval("kernel = KernelProxy(__kernel_ref)")
+              val pykernel = jep.getValue("kernel", classOf[PyObject])
+              pykernel.setAttr("display", polynote.runtime.Runtime.display)
+              jep.eval("del kernel")
+              jep.set("kernel", pykernel)
+              jep.eval("del __kernel_ref")
+            case _ =>
+              jep.set(value.name.toString, value.value)
+          }
       }
     }.unsafeRunSync()
 
@@ -132,41 +157,30 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
       jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
       val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
 
-      if (lastIsExpr) {
+      val resultName = s"res$cell"
+      val maybeModifiedCode = if (lastIsExpr) {
         val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
         val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
-        if (prevCode.nonEmpty) {
-          jep.set("__polynote_code__", prevCode.mkString)
-          jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
-          jep.eval("globals().update(__polynote_locals__)\n")
+
+        (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
+      } else code
+
+      jep.set("__polynote_code__", maybeModifiedCode)
+      jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
+      jep.eval("globals().update(__polynote_locals__)")
+      val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
+
+      // TODO: We talked about potentially creating an `Out` map, inspired by ipython, instead of these resCell# vars
+      if (newDecls.last == resultName){
+        val hasLastValue = jep.getValue(s"$resultName != None", classOf[java.lang.Boolean])
+        if (hasLastValue) {
+          stdout.flush()
+          stdout.write(s"$resultName = ${jep.getValue(s"str(${newDecls.last})", classOf[String])}\n")
+          stdout.flush()
         }
-        val name = s"res$cell"
-        jep.eval(s"$name = (${lastCode.mkString})\n")
-        val resultType = jep.getValue(s"type($name).__name__", classOf[String])
-        val typedResult = resultType match {
-          case "int" => jep.getValue(name, classOf[java.lang.Number]).longValue()
-          case "float" => jep.getValue(name, classOf[java.lang.Number]).doubleValue()
-          case "str" => jep.getValue(name, classOf[String])
-          case "dict" => jep.getValue(name, classOf[java.util.HashMap[String, Any]]).asScala.toMap
-          case "list" => jep.getValue(name, classOf[java.util.List[Any]]).asScala.toList
-          case "PyJObject" => jep.getValue(name)
-          case _ => jep.getValue(name, classOf[PyObject])
-        }
-        stdout.flush()
-        stdout.write(jep.getValue(s"str($name)", classOf[String]) + "\n")
-        stdout.flush()
-        jep.getValue(
-          """{ n:v for n,v in __polynote_locals__.items() if not type(v).__name__ == "module" }""",
-          classOf[java.util.HashMap[String, Any]]
-        ).asScala + (name -> typedResult)
-      } else {
-        jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
-        jep.eval("globals().update(__polynote_locals__)")
-        jep.getValue(
-          """{ n:v for n,v in __polynote_locals__.items() if not type(v).__name__ == "module" }""",
-          classOf[java.util.HashMap[String, Any]]
-        ).asScala
       }
+
+      getPyResults(newDecls)
 
     }.flatMap {
       resultDict =>
@@ -178,6 +192,34 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     }.flatMap {
       _ => IO(stdout.flush())
     }
+  }
+
+  def getPyResults(decls: Seq[String]): Map[String, Any] = {
+    decls.map { name =>
+      val resultType = jep.getValue(s"type($name).__name__", classOf[String])
+      val typedResult = resultType match {
+        case "int" => jep.getValue(name, classOf[java.lang.Number]).longValue()
+        case "float" => jep.getValue(name, classOf[java.lang.Number]).doubleValue()
+        case "str" => jep.getValue(name, classOf[String])
+        case "bool" => jep.getValue(name, classOf[java.lang.Boolean])
+        case "tuple" => getPyResults(Seq(s"list($name)"))
+        case "dict" =>
+          val numElements = jep.getValue(s"len($name)", classOf[java.lang.Number]).longValue()
+          val keyElems = (0L until numElements).map(n => s"list($name.items())[$n][0]")
+          val valElems = (0L until numElements).map(n => s"list($name.items())[$n][1]")
+
+          val keys = getPyResults(keyElems).values
+          val values = getPyResults(valElems).values
+          keys.zip(values).toMap
+        case "list" =>
+          val numElements = jep.getValue(s"len($name)", classOf[java.lang.Number]).longValue()
+          val elems = (0L until numElements).map(n => s"$name[$n]")
+          getPyResults(elems).values.toList
+        case "PyJObject" => jep.getValue(name)
+        case _ => jep.getValue(name, classOf[PyObject])
+      }
+      name -> typedResult
+    }.toMap
   }
 
   override def completionsAt(
@@ -261,7 +303,7 @@ object PythonInterpreter {
 class PythonDisplayHook(out: Enqueue[IO, Result]) {
   private var current = ""
   def output(str: String): Unit =
-    if (str != null) out.enqueue1(Output("text/plain; lang=python", str)).unsafeRunSync()
+    if (str != null && str.nonEmpty) polynote.runtime.Runtime.display.content("text/plain; lang=python", str)
 
   def write(str: String): Unit = synchronized {
     current = current + str

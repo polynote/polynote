@@ -4,24 +4,22 @@ import java.io.File
 import java.net.URL
 import java.util.concurrent.{ConcurrentHashMap, Executors}
 
-import cats.effect.{ContextShift, IO}
 import cats.effect.concurrent.{Ref, Semaphore}
 import cats.effect.internals.IOContextShift
+import cats.effect.{ContextShift, IO}
+import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.flatMap._
-import cats.syntax.apply._
-import fs2.Stream
-import fs2.concurrent.{Enqueue, Queue}
+import fs2.concurrent.{Enqueue, Queue, Topic}
 import org.log4s.{Logger, getLogger}
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageKernel
-import polynote.kernel.util._
+import polynote.kernel.util.{RuntimeSymbolTable, _}
 import polynote.messages.{Notebook, NotebookCell}
 
-import scala.collection.mutable
 import scala.concurrent.ExecutionContext
-import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
+import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
@@ -117,7 +115,7 @@ class PolyKernel private[kernel] (
     symbolTable.drain() *> Queue.unbounded[IO, Option[Result]].flatMap {
       oq =>
           val oqSome = new EnqueueSome(oq)
-          withKernel(id) {
+          oq.enqueue1(Some(ClearResults())) *> withKernel(id) {
             (notebook, cell, kernel) =>
               val prevCellIds = prevCells(notebook, id)
               taskQueue.runTaskIO(id, id, s"Running $id") {

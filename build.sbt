@@ -8,6 +8,7 @@ val commonSettings = Seq(
     "-language:higherKinds",
     "-unchecked"
   ),
+  fork := true,
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
     case x =>

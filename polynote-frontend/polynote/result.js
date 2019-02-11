@@ -13,10 +13,6 @@ export class Result {
     static encode(msg) {
         return Codec.encode(Result.codec, msg);
     }
-
-    encode() {
-        return Message.encode(this);
-    }
 }
 
 export class Output extends Result {
@@ -177,10 +173,30 @@ export class RuntimeError extends Result {
 
 RuntimeError.codec = combined(KernelErrorWithCause.codec).to(RuntimeError);
 
+export class ClearResults extends Result {
+    static get msgTypeId() { return 3; }
+
+    static unapply(inst) {
+        return [];
+    }
+
+    constructor() {
+        super();
+        Object.freeze(this);
+    }
+}
+
+ClearResults.instance = new ClearResults();
+ClearResults.codec = Object.freeze({
+  encode: (value, writer) => undefined,
+  decode: (reader) => ClearResults.instance
+});
+
 Result.codecs = [
   Output,
   CompileErrors,
   RuntimeError,
+  ClearResults
 ];
 
 Result.codec = discriminated(

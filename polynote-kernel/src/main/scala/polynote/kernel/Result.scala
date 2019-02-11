@@ -2,13 +2,13 @@ package polynote.kernel
 
 import java.nio.charset.{Charset, StandardCharsets}
 
-import scodec.{Attempt, Codec, Err}
+import scodec.{Attempt, Codec, DecodeResult, Err}
 import scodec.codecs._
 import scodec.codecs.implicits._
 import shapeless.cachedImplicit
-
-import io.circe.{Encoder, Decoder}
+import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
+import scodec.bits.BitVector
 
 import scala.collection.mutable.ListBuffer
 
@@ -125,6 +125,11 @@ object RuntimeError extends ResultCompanion[RuntimeError](2) {
 
   implicit val codec: Codec[RuntimeError] = throwableWithCausesCodec.as[RuntimeError]
 }
+
+
+final case class ClearResults() extends Result
+
+object ClearResults extends ResultCompanion[ClearResults](3)
 
 sealed trait Result
 

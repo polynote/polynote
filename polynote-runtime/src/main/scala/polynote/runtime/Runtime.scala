@@ -26,4 +26,6 @@ object Runtime {
 
   def setProgressSetter(fn: (Double,String) => Unit): Unit = progressSetter = fn
 
+  def clear(): Unit = externalValues.clear()
+
 }
