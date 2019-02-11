@@ -188,8 +188,13 @@ export class CodeCell extends Cell {
             // clear the markers on edit
             // TODO: there might be non-error markers, or might otherwise want to be smarter about clearing markers
             monaco.editor.setModelMarkers(this.editor.getModel(), this.id, []);
-
-            const edits = event.changes.map(contentChange => new messages.ContentEdit(contentChange.rangeOffset, contentChange.rangeLength, contentChange.text));
+            const edits = event.changes.flatMap((contentChange) => {
+                if (contentChange.rangeLength) {
+                    return [new messages.Delete(contentChange.rangeOffset, contentChange.rangeLength), new messages.Insert(contentChange.rangeOffset, contentChange.text)];
+                } else {
+                    return [new messages.Insert(contentChange.rangeOffset, contentChange.text)];
+                }
+            });
             this.dispatchEvent(new ContentChangeEvent(this.id, edits, this.editor.getValue()));
         });
 
@@ -456,30 +461,16 @@ export class TextCell extends Cell {
                 i++;
             }
 
-            // the edits have to be applied in order - pos is stateful wrt the edits that have been seen.
-            // we'll take at most one deletion and one addition as a single edit.
-            let text = "";
-            let len = 0;
             if (i < diff.length) {
-                if (diff[i].added) {
-                    while (i < diff.length && diff[i].added) {
-                        text = text + diff[i].value;
-                        i++;
-                    }
-                    edits.push(new messages.ContentEdit(pos, 0, text));
+                const d = diff[i];
+                const text = d.value;
+                if (d.added) {
+                    edits.push(new messages.Insert(pos, text));
                     pos += text.length;
-                } else if (diff[i].removed) {
-                    while (i < diff.length && diff[i].removed) {
-                        len += diff[i].value.length;
-                        i++;
-                    }
-                    while (i < diff.length && diff[i].added) {
-                        text = text + diff[i].value;
-                        i++;
-                    }
-                    edits.push(new messages.ContentEdit(pos, len, text));
-                    pos += text.length;
+                } else if (d.removed) {
+                    edits.push(new messages.Delete(pos, text.length));
                 }
+                i++;
             }
         }
         const prevContent = this.lastContent;

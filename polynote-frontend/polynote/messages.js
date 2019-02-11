@@ -210,19 +210,52 @@ export class CellResult extends Message {
 
 CellResult.codec = combined(shortStr, tinyStr, Result.codec).to(CellResult);
 
+
 export class ContentEdit {
+
+}
+
+export class Insert extends ContentEdit {
+    static get msgTypeId() { return 0; }
+
     static unapply(inst) {
-        return [inst.pos, inst.deleteLength, inst.content];
+        return [inst.pos, inst.content];
     }
 
-    constructor(pos, deleteLength, content) {
+    constructor(pos, content) {
+        super(pos, content);
         this.pos = pos;
-        this.deleteLength = deleteLength;
         this.content = content;
+        Object.freeze(this);
     }
 }
 
-ContentEdit.codec = combined(int32, int32, str).to(ContentEdit);
+Insert.codec = combined(int32, str).to(Insert);
+
+export class Delete extends ContentEdit {
+    static get msgTypeId() { return 1; }
+
+    static unapply(inst) {
+        return [inst.pos, inst.length];
+    }
+
+    constructor(pos, length) {
+        super(pos, length);
+        this.pos = pos;
+        this.length = length;
+        Object.freeze(this)
+    }
+}
+
+Delete.codec = combined(int32, int32).to(Delete);
+
+ContentEdit.codecs = [Insert, Delete];
+
+ContentEdit.codec = discriminated(
+    uint8,
+    msgTypeId => ContentEdit.codecs[msgTypeId].codec,
+    msg => msg.constructor.msgTypeId
+);
 
 export class UpdateCell extends Message {
     static get msgTypeId() { return 5; }

@@ -791,7 +791,6 @@ export class NotebookUI {
                         cell.addResult(result.contentType, result.content);
                     }
                 }
-                //console.log("Cell result:", path, id, result);
             }
         });
 

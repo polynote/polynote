@@ -12,7 +12,7 @@ import io.circe.generic.semiauto._
 import polynote.config.{DependencyConfigs, RepositoryConfig}
 import polynote.data.Rope
 
-import scala.collection.immutable.Queue
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 sealed trait Message
 
@@ -92,7 +92,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
     case cell => cell
   }
 
-  def editCell(id: String, edits: List[ContentEdit]): Notebook = updateCell(id) {
+  def editCell(id: String, edits: ContentEdits): Notebook = updateCell(id) {
     cell => cell.updateContent(_.withEdits(edits))
   }
 
@@ -126,55 +126,175 @@ final case class CellResult(notebook: ShortString, id: TinyString, result: Resul
 object CellResult extends MessageCompanion[CellResult](4)
 
 
-/**
-  * A ContentEdit at a position deletes some amount (possibly nothing) after that position, and then inserts some
-  * content (possibly empty) at that position.
-  *
-  * @param pos          The position at which the edit occurs
-  * @param deleteLength The number of characters to delete after the given position
-  * @param content      The content to insert
-  */
-final case class ContentEdit(pos: Int, deleteLength: Int, content: String) {
-  def applyTo(rope: Rope): Rope = if (deleteLength > 0) rope.delete(pos, deleteLength).insertAt(pos, Rope(content)) else rope.insertAt(pos, Rope(content))
+sealed trait ContentEdit {
+  def pos: Int
+  def lengthDelta: Int
 
-  // Given another edit which occured after this edit, create an edit that will be equivalent to applying this edit
-  // when applied after the given edit instead.
-  def rebase(other: ContentEdit): ContentEdit = other match {
-    // if the other edit is entirely before this edit, just shift this edit by the length delta
-    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos + otherDeleteLength <= pos =>
-      copy(pos = pos + otherContent.length - otherDeleteLength)
+  def rebase(other: ContentEdits): ContentEdits = ContentEdits(ShortList(ContentEdit.rebaseAll(this, other.edits)._1))
 
-    // if the other edit is entirely after this edit, nothing to do
-    case ContentEdit(otherPos, _, _) if otherPos >= pos + deleteLength => this
+  def applyTo(rope: Rope): Rope = this match {
+    case Insert(pos, content) => rope.insertAt(pos, Rope(content))
+    case Delete(pos, length)  => rope.delete(pos, length)
+  }
 
-    // if this edit's deletion is completely inside that edit's deletion, then just insert my content after theirs
-    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos <= pos && otherPos + otherDeleteLength >= pos + deleteLength =>
-      ContentEdit(otherPos + otherContent.length, 0, content)
+  def nonEmpty: Boolean
+}
 
-    // If that edit's deletion is completely inside this edit's deletion, we'll subsume their edit into ours
-    // TODO: This one would be better if it could be split into two edits, but that complicates the API. What if rebase were on UpdateCell instead?
-    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos >= pos && otherPos + otherDeleteLength < pos + deleteLength =>
-      val (before, after) = content.splitAt(otherPos - pos)
-      ContentEdit(pos, deleteLength + (otherContent.length - otherDeleteLength), before + otherContent + after)
+final case class Insert(pos: Int, content: String) extends ContentEdit {
+  def lengthDelta: Int = content.length
 
-    // Overlaps with other edit, with theirs starting before mine – they already deleted part of what I was going to
-    // Track the point until which I was going to delete, and delete from the end of their content up to that point
-    // And insert my content after theirs.
-    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos <= pos =>
+  def nonEmpty: Boolean = content.nonEmpty
 
-      // they already deleted this much of what I was going to delete
-      val alreadyDeleted = math.max(0, otherPos + otherDeleteLength - pos)
+  override def toString: String = s"""Insert($pos, "$content")"""
+}
 
-      ContentEdit(otherPos + otherContent.length, deleteLength - alreadyDeleted, content)
+object Insert {
+  implicit val insertTag: Discriminator[ContentEdit, Insert, Byte] = Discriminator(0)
+}
 
-    // Overlaps with other edit, with mine starting before theirs. Delete up to their insertion point, and then
-    // insert my content before theirs.
-    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos > pos =>
-      ContentEdit(pos, otherPos - pos, content)
+final case class Delete(pos: Int, length: Int) extends ContentEdit {
+  override def lengthDelta: Int = -length
+
+  override def nonEmpty: Boolean = length != 0
+}
+
+object Delete {
+  implicit val deleteTag: Discriminator[ContentEdit, Delete, Byte] = Discriminator(1)
+}
+
+object ContentEdit {
+  implicit val discriminated: Discriminated[ContentEdit, Byte] = Discriminated(byte)
+
+  // rebase a onto b and b onto a
+  def rebase(a: ContentEdit, b: ContentEdit): (List[ContentEdit], List[ContentEdit]) = (a, b) match {
+
+    // if A is before A, or A and B are at the same spot but (A is shorter than B or equal in length but lexically before B)
+    // then A comes before B.
+    case (winner @ Insert(pos1, content1), Insert(pos2, content2)) if
+      (pos1 < pos2) ||
+        (pos1 == pos2 &&
+          (content1.length < content2.length || (content1.length == content2.length && content1 < content2))) =>
+            List(winner) -> List(Insert(pos2 + content1.length, content2))
+
+    // Otherwise insert B comes before insert A
+    case (Insert(pos1, content1), winner @ Insert(_, content2)) =>
+      List(Insert(pos1 + content2.length, content1)) -> List(winner)
+
+    // If an insert comes before a delete, the delete moves forward by its length
+    case (winner @ Insert(iPos, content), Delete(dPos, dLength)) if iPos <= dPos =>
+      List(winner) -> List(Delete(dPos + content.length, dLength))
+
+    case (Delete(dPos, dLength), winner @ Insert(iPos, content)) if iPos <= dPos =>
+      List(Delete(dPos + content.length, dLength)) -> List(winner)
+
+    // insert is in the middle of delete; delete has to split into before-insert and after-insert parts
+    // and insert has to move back to where the delete started
+    case (Insert(iPos, content), Delete(dPos, dLength)) if iPos < dPos + dLength =>
+      val beforeLength = iPos - dPos
+      List(Insert(dPos, content)) -> List(Delete(dPos, beforeLength), Delete(dPos + content.length, dLength - beforeLength))
+
+    case (Delete(dPos, dLength), Insert(iPos, content)) if iPos < dPos + dLength =>
+      val beforeLength = iPos - dPos
+      List(Delete(dPos, beforeLength), Delete(dPos + content.length, dLength - beforeLength)) -> List(Insert(dPos, content))
+
+    // insert is after delete - insert has to move back by deletion length
+    case (Insert(iPos, content), del @ Delete(dPos, dLength)) =>
+      List(Insert(iPos - dLength, content)) -> List(del)
+
+    case (del @ Delete(dPos, dLength), Insert(iPos, content)) =>
+      List(del) -> List(Insert(iPos - dLength, content))
+
+    // delete A comes entirely before delete B;  move B back by A's length
+    case (winner @ Delete(pos1, length1), Delete(pos2, length2)) if pos1 + length1 <= pos2 =>
+      List(winner) -> List(Delete(pos2 - length1, length2))
+
+    // delete B comes entirely before delete A; move A back by B's length
+    case (Delete(pos1, length1), winner @ Delete(pos2, length2)) if pos2 + length2 <= pos1 =>
+      List(Delete(pos1 - length2, length1)) -> List(winner)
+
+    // B is entirely within A; A should shorten by B's length and B should disappear
+    case (Delete(pos1, length1), Delete(pos2, length2)) if pos2 >= pos1 && pos2 + length2 <= pos1 + length1 =>
+      List(Delete(pos1, length1 - length2)) -> Nil
+
+    // A is entirely within B; opposite of above
+    case (Delete(pos1, length1), Delete(pos2, length2)) if pos1 >= pos2 && pos1 + length1 <= pos2 + length2 =>
+      Nil -> List(Delete(pos2, length2 - length1))
+
+    // delete B starts in the middle of delete A; A should stop where B starts, and B should move to where A starts and shorten itself by the overlap
+    case (Delete(pos1, length1), Delete(pos2, length2)) if pos2 > pos1 =>
+      val overlap = pos1 + length1 - pos2
+      List(Delete(pos1, length1 - overlap)) -> List(Delete(pos1, length2 - overlap))
+
+    // delete A starts in the middle of B; opposite of above
+    case (Delete(pos1, length1), Delete(pos2, length2)) if pos1 > pos2 =>
+      val overlap = pos2 + length2 - pos1
+      List(Delete(pos2, length1 - overlap)) -> List(Delete(pos2, length2 - overlap))
+  }
+
+  // rebase edit onto all of edits, and all of edits onto edit
+  def rebaseAll(edit: ContentEdit, edits: Seq[ContentEdit]): (List[ContentEdit], List[ContentEdit]) = {
+    val rebasedOther = ListBuffer[ContentEdit]()
+    val rebasedEdit = edits.foldLeft(List(edit)) {
+      (as, b) =>
+        var bs = List(b)
+        val rebasedAs = as.flatMap {
+          a =>
+            bs match {
+              case Nil => List(a)
+              case one :: Nil =>
+                val rebased = rebase(a, one)
+                bs = rebased._2
+                rebased._1
+              case more =>
+                val rebased = rebaseAll(a, more)
+                bs = rebased._1
+                rebased._1
+            }
+        }
+        rebasedOther ++= bs
+        rebasedAs
+    }
+    rebasedEdit -> rebasedOther.toList
   }
 }
 
+/**
+  * Represents a sequence of [[ContentEdit]]s. Each edit in the sequence must be based upon (or independent of) the
+  * edits before it.
+  */
+final case class ContentEdits(edits: ShortList[ContentEdit]) extends AnyVal {
+  def applyTo(rope: Rope): Rope = rope.withEdits(this)
 
+  /**
+    * Given another set of edits which would act upon the same content as this set of edits, produce a new set of edits
+    * which would have the same effect as this set of edits but are based upon the given edits.
+    */
+  def rebase(other: ContentEdits): ContentEdits = {
+    // each edit in this set must be rebased to all the edits in the other set.
+    // but we also have to track how the other edits are affected by each subsequent edit in this set, so that
+    // the edits after it know how to rebase.
+    val result = new ListBuffer[ContentEdit]
+    val iter = edits.iterator.filter(_.nonEmpty)
+    var otherEdits: List[ContentEdit] = other.edits
+
+    while (iter.hasNext) {
+      val edit = iter.next()
+      val (rebasedEdit, rebasedOther) = ContentEdit.rebaseAll(edit, otherEdits)
+      result ++= rebasedEdit
+      otherEdits = rebasedOther
+    }
+    ContentEdits(ShortList(result.toList))
+//    ContentEdits(ShortList(edits.flatMap(_.rebase(other).edits)))
+  }
+
+  def rebase(other: ContentEdit): ContentEdits = rebase(ContentEdits(other))
+
+  def size: Int = edits.size
+}
+
+object ContentEdits {
+  def apply(edits: ContentEdit*): ContentEdits = ContentEdits(ShortList(edits.toList))
+}
 
 sealed trait NotebookUpdate extends Message {
   def globalVersion: Int
@@ -197,10 +317,8 @@ sealed trait NotebookUpdate extends Message {
 
     case (u@UpdateCell(_, _, _, id1, edits1), UpdateCell(_, _, _, id2, edits2)) if id1 == id2 =>
       // we both tried to edit the same cell. Transform first edits so they apply to the document state as it exists after the second edits are already applied.
-      val rebasedEdits1 = edits1.map {
-        edit => edits2.foldLeft(edit)((e1, e2) => e1.rebase(e2))
-      }
-      u.copy(edits = ShortList(rebasedEdits1))
+
+      u.copy(edits = edits1.rebase(edits2))
 
     // all other cases should be independent (TODO: they're not yet, though)
     case _ => this
@@ -215,7 +333,7 @@ object NotebookUpdate {
   }
 }
 
-final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: TinyString, edits: ShortList[ContentEdit]) extends Message with NotebookUpdate
+final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: TinyString, edits: ContentEdits) extends Message with NotebookUpdate
 object UpdateCell extends MessageCompanion[UpdateCell](5)
 
 final case class InsertCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cell: NotebookCell, after: Option[TinyString]) extends Message with NotebookUpdate
