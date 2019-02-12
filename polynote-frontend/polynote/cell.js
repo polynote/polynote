@@ -569,7 +569,7 @@ export class TextCell extends Cell {
     }
 
     applyEdits(edits) {
-        // TODO
+        // TODO: implement applyEdits for TextCell once rich text editor is figured out
         super.applyEdits(edits);
     }
 }
