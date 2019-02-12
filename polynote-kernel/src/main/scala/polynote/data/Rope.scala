@@ -40,7 +40,7 @@ sealed abstract class Rope {
   def splitAt(idx: Int): (Rope, Rope)
 
   def withEdit(edit: ContentEdit): Rope = edit.applyTo(this)
-  
+
   def withEdits(edits: ContentEdits): Rope = edits.edits.foldLeft(this)(_ withEdit _)
 
   def insertAt(idx: Int, that: Rope): Rope = {
