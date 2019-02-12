@@ -15,11 +15,12 @@ import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebsocketBits._
 import org.log4s.getLogger
 import polynote.kernel._
-import polynote.kernel.util.WindowBuffer
+import polynote.kernel.util.{ReadySignal, WindowBuffer}
 import polynote.messages._
 import polynote.server.repository.NotebookRepository
 
 import scala.concurrent.duration._
+import scala.collection.JavaConverters._
 
 class SocketSession(
   notebookManager: NotebookManager[IO],
@@ -30,11 +31,7 @@ class SocketSession(
 ) {
 
   private val name: String = "Anonymous"  // TODO
-
-  private val inbound = Queue.bounded[IO, WebSocketFrame](inBufferLength)
-  private val outbound = Queue.bounded[IO, Message](outBufferLength)
   private[this] val logger = getLogger
-
   private val loadingNotebook = Semaphore[IO](1).unsafeRunSync()
   private val notebooks = new ConcurrentHashMap[String, NotebookRef[IO]]()
 
@@ -45,11 +42,28 @@ class SocketSession(
   private def logMessage(message: Message): IO[Unit]= IO(logger.info(message.toString))
   private def logError(error: Throwable): IO[Unit] = IO(logger.error(error)(error.getMessage))
 
-  lazy val toResponse: IO[Response[IO]] = (inbound, outbound).parMapN {
-    (iq, oq) =>
+  private val closeSignal = ReadySignal()
+
+  private def shutdown(): IO[Unit] = {
+
+    def closeNotebooks = notebooks.values.asScala.toList.map(_.close()).parSequence.as(())
+
+    for {
+      _ <- closeNotebooks
+      _ <- closeSignal.complete
+    } yield ()
+  }
+
+  lazy val toResponse: IO[Response[IO]] = {
+    for {
+      iq <- Queue.bounded[IO, WebSocketFrame](inBufferLength)
+      oq <- Queue.bounded[IO, Message](outBufferLength)
+    } yield {
+
       val fromClient = iq.enqueue
 
       // TODO: handle continuations/non-final?
+
 
       /**
         * The evaluation semantics here are tricky. respond() is going to return a suspension which contains a
@@ -61,20 +75,24 @@ class SocketSession(
         *       its own stream?
         */
       val responses = iq.dequeue.evalMap {
+
         case Binary(bytes, true) => Message.decode[IO](bytes).flatMap {
           message => respond(message, oq).start
         }
 
+        case Close(data) => IO.pure(Stream.eval(shutdown()).drain).start
+
         case other => IO.pure(Stream.emit(badMsgErr(other))).start
+
       }.evalMap {
         fiber => fiber.join.uncancelable
-      }
+      }.interruptWhen(closeSignal())
 
       val toClient: Stream[IO, WebSocketFrame] =
         Stream.awakeEvery[IO](10.seconds).map {
           d => Text("Ping!")  // Websocket is supposed to have its own keepalives, but this seems to prevent the connection from dying all the time while idle.
         }.merge {
-          Stream(oq.dequeue, responses.parJoinUnbounded).parJoinUnbounded
+          Stream(oq.dequeue.interruptWhen(closeSignal()), responses.parJoinUnbounded).parJoinUnbounded
             .handleErrorWith {
               err =>
                 val re = err match {
@@ -85,12 +103,13 @@ class SocketSession(
             }
             //.evalTap(logMessage)
             .evalMap(toFrame).handleErrorWith {
-              err =>
-                Stream.eval(logError(err)).drain
-            }
-        }
+            err =>
+              Stream.eval(logError(err)).drain
+          }
+        }.interruptWhen(closeSignal())
 
       WebSocketBuilder[IO].build(toClient, fromClient)
+    }
   }.flatten
 
   private def getNotebook(path: String, oq: Queue[IO, Message]) = loadingNotebook.acquire.bracket { _ =>

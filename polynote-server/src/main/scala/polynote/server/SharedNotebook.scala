@@ -81,7 +81,7 @@ class IOSharedNotebook(
   // listen to the stream of updates and apply them in order, each one incrementing the global version
   updates.dequeue.unNoneTerminate.zipWithIndex.evalMap {
     case ((subscriberId, update, versionPromise), version) =>
-      val newGlobalVersion = (version % Int.MaxValue).toInt
+      val newGlobalVersion = (version % Int.MaxValue).toInt + 1
       updateBuffer.add(newGlobalVersion, update)
       applyUpdate(newGlobalVersion, subscriberId, update, versionPromise)
   }.compile.drain.unsafeRunAsyncAndForget()
@@ -136,16 +136,24 @@ class IOSharedNotebook(
   private val nextSubscriberId = new AtomicInteger(0)
 
   def open(name: String, oq: Enqueue[IO, Message]): IO[NotebookRef[IO]] = for {
-    subscriberId <- IO(nextSubscriberId.getAndIncrement())
-    subscriber    = new Subscriber(subscriberId, name, oq)
-    _            <- IO { subscribers.put(subscriberId, subscriber); () }
+    subscriberId    <- IO(nextSubscriberId.getAndIncrement())
+    foreignUpdates   = updatesTopic.subscribe(1024).unNone.filter(_._2 != subscriberId)
+    currentNotebook <- ref.get
+    subscriber       = new Subscriber(subscriberId, name, oq, foreignUpdates, currentNotebook._1)
+    _               <- IO { subscribers.put(subscriberId, subscriber); () }
   } yield subscriber
 
   def versions: Stream[IO, (GlobalVersion, Notebook)] = ref.discrete
 
-  class Subscriber(subscriberId: Int, name: String, oq: Enqueue[IO, Message]) extends NotebookRef[IO] {
+  class Subscriber(
+    subscriberId: Int,
+    name: String,
+    oq: Enqueue[IO, Message],
+    foreignUpdates: Stream[IO, (GlobalVersion, SubscriberId, NotebookUpdate)],
+    initialVersion: GlobalVersion
+  ) extends NotebookRef[IO] {
     private val lastLocalVersion = new AtomicInteger(0)
-    private val lastGlobalVersion = new AtomicInteger(0)
+    private val lastGlobalVersion = new AtomicInteger(initialVersion)
 
     private val closeSignal = ReadySignal()
 
@@ -162,20 +170,22 @@ class IOSharedNotebook(
 
 
     // listen for foreign updates, transform them appropriately, and sink to foreignEdits queue
-    private val updateFiber = updatesTopic.subscribe(1024).interruptWhen(closeSignal()).unNone.filter(_._2 != subscriberId).evalMap {
+    private val updateFiber = foreignUpdates.interruptWhen(closeSignal()).evalMap {
       case (globalVersion, _, update) =>
         val knownGlobalVersion = lastGlobalVersion.get()
 
         if (globalVersion < knownGlobalVersion) {
           // this edit should come before other edits I've already seen - transform it up to knownGlobalVersion
-          IO.pure(transformUpdate(update, knownGlobalVersion).withVersions(knownGlobalVersion, lastLocalVersion.get()))
+          IO.pure(Some(transformUpdate(update, knownGlobalVersion).withVersions(knownGlobalVersion, lastLocalVersion.get())))
         } else if (globalVersion > knownGlobalVersion) {
           // this edit should come after the last global version I've seen - client will transform locally if necessary
-          IO.pure(update.withVersions(globalVersion, lastLocalVersion.get()))
+          IO.pure(Some(update.withVersions(globalVersion, lastLocalVersion.get())))
         } else {
-          // something has gone terribly wrong.
-          IO.raiseError(new IllegalStateException(s"Duplicate global version $globalVersion"))
+          // already know about this version
+          IO.pure(None)
         }
+    }.unNone.evalTap {
+      update => IO(lastLocalVersion.incrementAndGet()).as(()) // this update will increment their local version
     }.covaryOutput[Message].to(oq.enqueue).compile.drain.start.unsafeRunSync()
 
     val path: String = IOSharedNotebook.this.path
@@ -189,7 +199,11 @@ class IOSharedNotebook(
       } yield version
     }
 
-    override def close(): IO[Unit] = closeSignal.complete.flatMap(_ => updateFiber.join)
+    override def close(): IO[Unit] = for {
+      _ <- closeSignal.complete
+      _ <- IO(subscribers.remove(subscriberId))
+      _ <- updateFiber.join
+    } yield ()
 
     override def isKernelStarted: IO[Boolean] = kernelRef.get.map(_.nonEmpty)
 
@@ -234,7 +248,7 @@ object IOSharedNotebook {
   type GlobalVersion = Int
 
   def apply(path: String, initial: Notebook, kernelFactory: KernelFactory[IO])(implicit contextShift: ContextShift[IO]): IO[IOSharedNotebook] = for {
-    ref          <- SignallingRef[IO, (GlobalVersion, Notebook)](-1 -> initial)
+    ref          <- SignallingRef[IO, (GlobalVersion, Notebook)](0 -> initial)
     kernel       <- Ref[IO].of[Option[Kernel[IO]]](None)
     updates      <- Queue.unbounded[IO, Option[(SubscriberId, NotebookUpdate, Deferred[IO, GlobalVersion])]]
     updatesTopic <- Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]](None)

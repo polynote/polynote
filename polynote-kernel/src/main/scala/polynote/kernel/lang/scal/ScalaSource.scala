@@ -312,7 +312,9 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
             .toList.sortBy(_.isPackageClass)(Ordering.Boolean.reverse)
           global.NoType -> syms
         }
-      case other => Either.left(new RuntimeException("Cannot complete tree at given position"))
+      case other =>
+        // no completions available for that tree
+        Right(global.NoType -> Nil)
     }
 
     for {

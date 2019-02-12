@@ -236,7 +236,7 @@ object ContentEdit {
     val rebasedOther = ListBuffer[ContentEdit]()
     val rebasedEdit = edits.foldLeft(List(edit)) {
       (as, b) =>
-        var bs = List(b)
+        var bs = List(b)  // tracks the other edit rebased onto `as`, which is `edit` as it rebases through `edits`.
         val rebasedAs = as.flatMap {
           a =>
             bs match {
