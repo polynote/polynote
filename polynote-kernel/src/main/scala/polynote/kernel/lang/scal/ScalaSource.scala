@@ -312,6 +312,9 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
             .toList.sortBy(_.isPackageClass)(Ordering.Boolean.reverse)
           global.NoType -> syms
         }
+      // we are trying to define something, so presumably completions aren't useful here?
+      case maybeDefinition if maybeDefinition.isDef =>
+        Right(global.NoType -> Nil)
       case other => Either.left(new RuntimeException("Cannot complete tree at given position"))
     }
 
