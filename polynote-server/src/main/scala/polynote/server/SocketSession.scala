@@ -170,7 +170,7 @@ class SocketSession(
       for {
         notebookRef <- getNotebook(notebook, oq)
         kernel      <- notebookRef.getKernel
-        completions <- kernel.completionsAt(id, pos)
+        completions <- kernel.completionsAt(id, pos).handleErrorWith(err => IO(err.printStackTrace(System.err)).map(_ => Nil))
       } yield Stream.emit(req.copy(completions = ShortList(completions)))
 
     case req@ParametersAt(notebook, id, pos, _) =>
