@@ -1,37 +1,19 @@
 package polynote.kernel.lang.python
 
-import java.io.{BufferedReader, InputStreamReader, PrintWriter}
-import java.util.concurrent.Executors
-
-import cats.effect.internals.IOContextShift
-import cats.effect.{ContextShift, IO}
-import cats.syntax.apply._
-import fs2.concurrent.{Queue, Topic}
 import jep.python.{PyCallable, PyObject}
 import org.scalatest._
-import polynote.kernel.util.RuntimeSymbolTable
-import polynote.kernel.{KernelStatusUpdate, Result, UpdatedTasks}
-
-import scala.collection.mutable
-import scala.concurrent.ExecutionContext
-import scala.tools.nsc.Settings
-import scala.tools.nsc.interactive.Global
-import scala.tools.nsc.reporters.ConsoleReporter
+import polynote.kernel.Output
+import polynote.kernel.lang.KernelSpec
 
 
-class PythonInterpreterSpec extends FlatSpec with Matchers {
-  val settings = new Settings()
-  settings.classpath.append(System.getProperty("java.class.path"))
-  settings.YpresentationAnyThread.value = true
-  implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
+class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
 
   "The python kernel" should "be able to display html using the kernel runtime reference" in {
-    assertOutput("kernel.display.html('hi')") { (vars, outputs) =>
-      val kernel = vars("kernel")
-      kernel shouldEqual polynote.runtime.Runtime
-      val (mime, html) = outputs.head
-      mime shouldEqual "text/html"
-      html shouldEqual "hi"
+    assertPythonOutput("kernel.display.html('hi')") { case (vars, output, displayed) =>
+      vars.toSeq should contain only "kernel" -> polynote.runtime.Runtime
+
+      output shouldBe empty
+      displayed should contain only "text/html" -> "hi"
     }
   }
 
@@ -50,7 +32,8 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
         |m = {x: y, y: 100, 'hey!': l2}
         |m2 = {'hm': m, 'humm': m}
       """.stripMargin
-    assertOutput(code) { (vars, outputs) =>
+    assertPythonOutput(code) { case (vars, output, displayed) =>
+      //TODO: can we figure out a nicer way to test this?
       vars("x") shouldEqual 1
       vars("y") shouldEqual "foo"
       vars("A") shouldBe a[PyCallable]
@@ -66,7 +49,8 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
         "hm" -> Map(1 -> "foo", "foo" -> 100, "hey!" ->  List(100, List(1, "foo", Map("sup?" -> "nm"), false))),
         "humm" -> Map(1 -> "foo", "foo" -> 100, "hey!" ->  List(100, List(1, "foo", Map("sup?" -> "nm"), false))))
 
-      outputs shouldBe empty
+      output shouldBe empty
+      displayed shouldBe empty
     }
   }
 
@@ -77,12 +61,16 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
         |y = 2
         |x + y
       """.stripMargin
-    assertOutput(code) { (vars, outputs) =>
-      vars("x") shouldEqual 1
-      vars("y") shouldEqual 2
-      vars("restest") shouldEqual 3
+    assertPythonOutput(code) { case (vars, output, displayed) =>
+      vars.toSeq should contain theSameElementsAs Seq(
+        "kernel" -> polynote.runtime.Runtime,
+        "x" -> 1,
+        "y" -> 2,
+        "restest" -> 3
+      )
 
-      outputs shouldEqual mutable.ArrayBuffer("text/plain; lang=python" -> "restest = 3")
+      output should contain only Output("text/plain; rel=decl; lang=python", "restest = 3")
+      displayed shouldBe empty
     }
   }
 
@@ -93,13 +81,22 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
         |y = 2
         |print("{} + {} = {}".format(x, y, x + y))
         |answer = x + y
+        |answer
       """.stripMargin
-    assertOutput(code) { (vars, outputs) =>
-      vars("x") shouldEqual 1
-      vars("y") shouldEqual 2
-      vars("answer") shouldEqual 3
+    assertPythonOutput(code) { case (vars, output, displayed) =>
+      vars.toSeq should contain theSameElementsAs Seq(
+        "kernel" -> polynote.runtime.Runtime,
+        "x" -> 1,
+        "y" -> 2,
+        "answer" -> 3,
+        "restest" -> 3
+      )
 
-      outputs shouldEqual mutable.ArrayBuffer("text/plain; lang=python" -> "1 + 2 = 3")
+      output should contain theSameElementsAs Seq(
+        Output("text/plain; rel=stdout", "1 + 2 = 3"),
+        Output("text/plain; rel=decl; lang=python", "restest = 3")
+      )
+      displayed shouldBe empty
     }
 
   }
@@ -109,43 +106,11 @@ class PythonInterpreterSpec extends FlatSpec with Matchers {
       """
         |print("Do you like muffins?")
       """.stripMargin
-    assertOutput(code) { (vars, outputs) =>
-      vars should have size 1
-      vars("kernel") shouldEqual polynote.runtime.Runtime
+    assertPythonOutput(code) { case (vars, output, displayed) =>
+      vars.toSeq should contain only "kernel" -> polynote.runtime.Runtime
 
-      outputs shouldEqual mutable.ArrayBuffer("text/plain; lang=python" -> "Do you like muffins?")
+      output should contain  only Output("text/plain; rel=stdout", "Do you like muffins?")
+      displayed shouldBe empty
     }
-  }
-
-  // TODO: we should consider refactoring the interpreter to improve testability so we don't need all this setup here.
-  def assertOutput(code: String)(assertion: (Map[String, Any], Seq[(String, String)]) => Unit): Unit = {
-    Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap { updates =>
-      val symbolTable = new RuntimeSymbolTable(new Global(settings, new ConsoleReporter(settings, new BufferedReader(new InputStreamReader(System.in)), new PrintWriter(System.out))), getClass.getClassLoader, updates)
-      val interp = new PythonInterpreter(symbolTable)
-      val displayed = mutable.ArrayBuffer.empty[(String, String)]
-      polynote.runtime.Runtime.setDisplayer((mimeType, input) => displayed.append((mimeType, input)))
-
-      Queue.unbounded[IO, Result].flatMap {
-        out =>
-          Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap {
-            statusUpdates =>
-              for {
-                // publishes to symbol table as a side-effect
-                // TODO: for unit tests we want to hook directly to runCode without bouncing off symbolTable
-                _ <- interp.runCode("test", Nil, Nil, code, out, statusUpdates).attempt
-                // make sure everything has been processed
-                _ <- symbolTable.drain()
-                // these are the vars runCode published
-                vars = symbolTable.currentTerms
-              } yield {
-                val namedVars = vars.map(v => v.name.toString -> v.value).toMap
-
-                assertion(namedVars, displayed)
-                polynote.runtime.Runtime.clear()
-                interp.shutdown()
-              }
-          }
-      }
-    }.unsafeRunSync()
   }
 }

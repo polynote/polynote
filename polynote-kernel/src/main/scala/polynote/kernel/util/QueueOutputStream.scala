@@ -17,9 +17,8 @@ class QueueOutputStream(
   private val closed = new AtomicBoolean(false)
 
   def write(b: Int): Unit = buf.synchronized {
-    if (!buf.hasRemaining || b == '\n')
-      flush()
-    buf.put(b.toByte)
+    if (!buf.hasRemaining || b == '\n') flush()
+    else buf.put(b.toByte)
   }
 
   override def flush(): Unit = {

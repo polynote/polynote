@@ -6,13 +6,14 @@ import cats.syntax.apply._
 import cats.effect.{ExitCode, IO, IOApp}
 import fs2.concurrent.{Queue, Topic}
 import jep.python.PyObject
-import polynote.kernel.util.RuntimeSymbolTable
+import polynote.kernel.util.{GlobalInfo, RuntimeSymbolTable}
 import polynote.kernel.{KernelStatusUpdate, Output, Result, UpdatedTasks}
 
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
 import scala.tools.nsc.reporters.ConsoleReporter
 import scala.collection.JavaConverters._
+import scala.reflect.internal.util.AbstractFileClassLoader
 
 object PythonInterpreterTest extends IOApp {
   def run(args: List[String]): IO[ExitCode] = Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap { updates =>
@@ -20,7 +21,10 @@ object PythonInterpreterTest extends IOApp {
     val settings = new Settings()
     settings.classpath.append(System.getProperty("java.class.path"))
     settings.YpresentationAnyThread.value = true
-    val symbolTable = new RuntimeSymbolTable(new Global(settings, new ConsoleReporter(settings, new BufferedReader(new InputStreamReader(System.in)), new PrintWriter(System.out))), getClass.getClassLoader, updates)
+    val global = new Global(settings, new ConsoleReporter(settings, new BufferedReader(new InputStreamReader(System.in)), new PrintWriter(System.out)))
+    val classLoader = new AbstractFileClassLoader(GlobalInfo.defaultOutputDir, GlobalInfo.defaultParentClassLoader)
+    val globalInfo = GlobalInfo(global, Nil, classLoader)
+    val symbolTable = new RuntimeSymbolTable(globalInfo, updates)
     val interp = new PythonInterpreter(symbolTable)
 
     val code =

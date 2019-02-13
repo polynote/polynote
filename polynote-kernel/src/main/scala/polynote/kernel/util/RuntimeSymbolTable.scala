@@ -10,14 +10,18 @@ import polynote.kernel.lang.LanguageKernel
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
+import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.tools.nsc.interactive.Global
 
 final class RuntimeSymbolTable(
-  val global: Global,
-  val classLoader: ClassLoader,
+  globalInfo: GlobalInfo,
   statusUpdates: Publish[IO, KernelStatusUpdate])(implicit
   contextShift: ContextShift[IO]
 ) extends Serializable {
+
+  val global: Global = globalInfo.global
+  val classLoader: AbstractFileClassLoader = globalInfo.classLoader
+
   import global.{Type, TermName, Symbol}
 
   private val currentSymbolTable: ConcurrentHashMap[TermName, RuntimeValue] = new ConcurrentHashMap()

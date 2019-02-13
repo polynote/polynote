@@ -146,7 +146,6 @@ class SocketSession(
       }
       // TODO: do we need to emit a kernel status here any more?
 
-
     case req@CompletionsAt(notebook, id, pos, _) =>
       for {
         notebookRef <- getNotebook(notebook, oq)

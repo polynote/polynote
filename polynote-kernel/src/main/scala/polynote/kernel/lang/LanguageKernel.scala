@@ -2,8 +2,8 @@ package polynote.kernel.lang
 
 import java.io.File
 
-import polynote.kernel._
 import fs2.concurrent.{Enqueue, Queue}
+import polynote.kernel._
 import polynote.kernel.util.{Publish, RuntimeSymbolTable, SymbolDecl}
 
 /**
@@ -51,6 +51,11 @@ trait LanguageKernel[F[_]] {
     * @param pos The position (character offset) within the code string at which parameter hints are requested
     */
   def parametersAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): F[Option[Signatures]]
+
+  /**
+    * Initialize the kernel (if necessary)
+    */
+  def init(): F[Unit]
 
   /**
     * Terminate the language kernel
