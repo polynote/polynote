@@ -73,7 +73,10 @@ export class SocketSession extends EventTarget {
 
                 for (var handler of this.messageListeners) {
                     if (msg instanceof handler[0]) {
-                        handler[1].apply(null, msg.constructor.unapply(msg))
+                        const result = handler[1].apply(null, msg.constructor.unapply(msg));
+                        if (handler[2] && result === false) {
+                            this.removeMessageListener(handler);
+                        }
                     }
                 }
             } else {
@@ -82,14 +85,14 @@ export class SocketSession extends EventTarget {
         }
     }
 
-    addMessageListener(msgType, fn) {
-        const handler = [msgType, fn];
+    addMessageListener(msgType, fn, removeWhenFalse) {
+        const handler = [msgType, fn, removeWhenFalse];
         this.messageListeners.push(handler);
         return handler;
     }
 
     removeMessageListener(handlerOrType, fn) {
-        var handler;
+        let handler;
         if (handlerOrType instanceof Array) {
             handler = handlerOrType;
         } else {
@@ -100,6 +103,10 @@ export class SocketSession extends EventTarget {
         if (index >= 0) {
             this.messageListeners.splice(index, 1);
         }
+    }
+
+    listenOnceFor(msgType, fn) {
+        return this.addMessageListener(msgType, fn, true);
     }
 
     close() {

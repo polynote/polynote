@@ -10,6 +10,7 @@ import cats.syntax.all._
 import cats.instances.list._
 import fs2.{Chunk, Stream}
 import fs2.concurrent.{Enqueue, Queue, Topic}
+import org.log4s.getLogger
 import polynote.kernel._
 import polynote.kernel.lang.LanguageKernel
 import polynote.kernel.util._
@@ -25,6 +26,7 @@ class ScalaInterpreter(
 ) extends LanguageKernel[IO] {
 
   val global: symbolTable.global.type = symbolTable.global
+  private val logger = getLogger
 
   import global.{Type, Tree}
 
@@ -258,7 +260,7 @@ class ScalaInterpreter(
         val symTypeStr = if (sym.isMethod) formatType(symType.finalResultType) else ""
         Completion(TinyString(name), tParams, params, ShortString(symTypeStr), completionType(sym))
       }
-    }
+    }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(Nil))
 
   override def parametersAt(
     cell: String,
@@ -304,7 +306,7 @@ class ScalaInterpreter(
         }
         Option(Signatures(hints.flatMap(_.toList), 0, n.toByte))
       case _ => None
-    }
+    }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(None))
 
 
 

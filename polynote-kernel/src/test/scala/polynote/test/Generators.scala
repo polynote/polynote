@@ -3,7 +3,7 @@ package polynote.test
 import org.scalacheck.{Arbitrary, Gen}
 import Arbitrary.arbitrary
 import polynote.data.Rope
-import polynote.messages.{ContentEdit, NotebookCell, TinyString}
+import polynote.messages.{ContentEdit, ContentEdits, Delete, Insert, NotebookCell, TinyString, ShortList}
 
 import scala.collection.immutable.Queue
 
@@ -12,29 +12,37 @@ object Generators {
 
   val genRope: Gen[Rope] = Gen.asciiPrintableStr.map(Rope.apply)  // TODO: use arbitrary[String]
 
-  def genEdit(len: Int): Gen[ContentEdit] = if (len > 0) {
-    for {
-      pos <- Gen.choose(0, len - 1)
-      len <- Gen.choose(0, len - pos)
-      content <- Gen.asciiPrintableStr
-    } yield ContentEdit(pos, len, content)
-  } else for {
-    content <- Gen.asciiPrintableStr
-  } yield ContentEdit(0, 0, content)
+  def genDelete(docLen: Int): Gen[Delete] = for {
+    pos <- Gen.choose(0, docLen - 1)
+    len <- Gen.choose(1, docLen - pos)
+  } yield Delete(pos, len)
 
-  // generate an initial string, and a bunch of edits to apply to it.
-  val genEdits = for {
-    init  <- genRope
+  def genInsert(docLen: Int): Gen[Insert] = for {
+    pos <- Gen.choose(0, docLen - 1)
+    str <- Gen.asciiPrintableStr
+  } yield Insert(pos, str)
+
+  def genEdit(len: Int): Gen[ContentEdit] = if (len > 0) {
+    Gen.oneOf(genDelete(len), genInsert(len))
+  } else Gen.asciiPrintableStr.map(Insert(0, _))
+
+  def genEditsFor(init: Rope) = for {
     size  <- Gen.size
     count <- Gen.choose(0, size)
     (finalRope, edits) <- (0 until count).foldLeft(Gen.const((init, Queue.empty[ContentEdit]))) {
       (g, _) => g.flatMap {
         case (rope, edits) => genEdit(rope.size).map {
-          edit => (edit.applyTo(rope), edits enqueue edit)
+          edit => (rope.withEdit(edit), edits enqueue edit)
         }
       }
     }
-  } yield (init, edits.toList, finalRope)
+  } yield (ContentEdits(ShortList(edits.toList)), finalRope)
+
+  // generate an initial string, and a bunch of edits to apply to it.
+  val genEdits = for {
+    init               <- genRope
+    (edits, finalRope) <- genEditsFor(init)
+  } yield (init, edits, finalRope)
 
   // to really cover ground on testing the rope, we can arbitrarily fragment the rope's structure by
   // applying a bunch of edits to it

@@ -137,6 +137,10 @@ export class Cell extends UIEventTarget {
         this.container.classList.replace(this.language, language);
         this.language = language;
     }
+
+    applyEdits(edits) {
+        throw "applyEdits not implemented for this cell type";
+    }
 }
 
 export class CodeCell extends Cell {
@@ -174,24 +178,7 @@ export class CodeCell extends Cell {
         this.lastLineCount = this.editor.getModel().getLineCount();
         this.lineHeight = this.editor.getConfiguration().lineHeight;
 
-        // TODO: this should probably only send the changes...
-        this.editor.onDidChangeModelContent(event => {
-
-            // update the editor's height
-            const lineCount = this.editor.getModel().getLineCount();
-            if (lineCount !== this.lastLineCount) {
-                this.lastLineCount = lineCount;
-                this.editorEl.style.height = (this.lineHeight * lineCount) + "px";
-                this.editor.layout();
-            }
-
-            // clear the markers on edit
-            // TODO: there might be non-error markers, or might otherwise want to be smarter about clearing markers
-            monaco.editor.setModelMarkers(this.editor.getModel(), this.id, []);
-
-            const edits = event.changes.map(contentChange => new messages.ContentEdit(contentChange.rangeOffset, contentChange.rangeLength, contentChange.text));
-            this.dispatchEvent(new ContentChangeEvent(this.id, edits, this.editor.getValue()));
-        });
+        this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
         this.editor.getModel().cellInstance = this;
 
@@ -215,6 +202,35 @@ export class CodeCell extends Cell {
 
         this.onWindowResize = (evt) => this.editor.layout();
         window.addEventListener('resize', this.onWindowResize);
+    }
+
+    onChangeModelContent(event) {
+        this.updateEditorHeight();
+        if (this.applyingServerEdits)
+            return;
+
+        // clear the markers on edit
+        // TODO: there might be non-error markers, or might otherwise want to be smarter about clearing markers
+        monaco.editor.setModelMarkers(this.editor.getModel(), this.id, []);
+        const edits = event.changes.flatMap((contentChange) => {
+            if (contentChange.rangeLength && contentChange.text.length) {
+                return [new messages.Delete(contentChange.rangeOffset, contentChange.rangeLength), new messages.Insert(contentChange.rangeOffset, contentChange.text)];
+            } else if (contentChange.rangeLength) {
+              return [new messages.Delete(contentChange.rangeOffset, contentChange.rangeLength)];
+            } else if (contentChange.text.length) {
+                return [new messages.Insert(contentChange.rangeOffset, contentChange.text)];
+            } else return [];
+        });
+        this.dispatchEvent(new ContentChangeEvent(this.id, edits, this.editor.getValue()));
+    }
+
+    updateEditorHeight() {
+        const lineCount = this.editor.getModel().getLineCount();
+        if (lineCount !== this.lastLineCount) {
+            this.lastLineCount = lineCount;
+            this.editorEl.style.height = (this.lineHeight * lineCount) + "px";
+            this.editor.layout();
+        }
     }
 
 
@@ -407,6 +423,52 @@ export class CodeCell extends Cell {
     get content() {
         return this.editor.getValue();
     }
+
+    applyEdits(edits) {
+        // can't listen to these edits or they'll be sent to the server again
+        // TODO: is there a better way to silently apply these edits? This seems like a hack; only works because of
+        //       single-threaded JS, which I don't know whether workers impact that assumption (JS)
+        this.applyingServerEdits = true;
+
+        try {
+            const monacoEdits = [];
+            const model = this.editor.getModel();
+            edits.forEach((edit) => {
+                if (edit.isEmpty()) {
+                    return;
+                }
+
+                const pos = model.getPositionAt(edit.pos);
+                if (edit instanceof messages.Delete) {
+                    const endPos = model.getPositionAt(edit.pos + edit.length);
+                    monacoEdits.push({
+                        range: new monaco.Range(pos.lineNumber, pos.column, endPos.lineNumber, endPos.column),
+                        text: null
+                    });
+                } else if (edit instanceof messages.Insert) {
+                    monacoEdits.push({
+                        range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
+                        text: edit.content,
+                        forceMoveMarkers: true
+                    });
+                }
+            });
+
+            //this.editor.getModel().applyEdits(monacoEdits);
+            // TODO: above API call won't put the edits on the undo stack. Should other people's edits go on my undo stack?
+            //       below calls implement that. It is weird to have other peoples' edits in your undo stack, but it
+            //       also gets weird when they aren't – your undos get out of sync with the document.
+            //       Maybe there's something different that can be done with undo stops – I don't really know what they
+            //       are because it's not well documented (JS)
+            this.editor.pushUndoStop();
+            this.editor.executeEdits("Anonymous", monacoEdits);
+            this.editor.pushUndoStop();
+            // TODO: should show some UI thing to indicate whose edits they are, rather than just having them appear
+        } finally {
+            this.applyingServerEdits = false;
+        }
+        // this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
+    }
 }
 
 export class TextCell extends Cell {
@@ -448,30 +510,16 @@ export class TextCell extends Cell {
                 i++;
             }
 
-            // the edits have to be applied in order - pos is stateful wrt the edits that have been seen.
-            // we'll take at most one deletion and one addition as a single edit.
-            let text = "";
-            let len = 0;
             if (i < diff.length) {
-                if (diff[i].added) {
-                    while (i < diff.length && diff[i].added) {
-                        text = text + diff[i].value;
-                        i++;
-                    }
-                    edits.push(new messages.ContentEdit(pos, 0, text));
+                const d = diff[i];
+                const text = d.value;
+                if (d.added) {
+                    edits.push(new messages.Insert(pos, text));
                     pos += text.length;
-                } else if (diff[i].removed) {
-                    while (i < diff.length && diff[i].removed) {
-                        len += diff[i].value.length;
-                        i++;
-                    }
-                    while (i < diff.length && diff[i].added) {
-                        text = text + diff[i].value;
-                        i++;
-                    }
-                    edits.push(new messages.ContentEdit(pos, len, text));
-                    pos += text.length;
+                } else if (d.removed) {
+                    edits.push(new messages.Delete(pos, text.length));
                 }
+                i++;
             }
         }
         const prevContent = this.lastContent;
@@ -518,5 +566,10 @@ export class TextCell extends Cell {
 
     get content() {
         return this.editor.markdownContent;
+    }
+
+    applyEdits(edits) {
+        // TODO: implement applyEdits for TextCell once rich text editor is figured out
+        super.applyEdits(edits);
     }
 }

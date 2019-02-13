@@ -12,6 +12,8 @@ import io.circe.generic.semiauto._
 import polynote.config.{DependencyConfigs, RepositoryConfig}
 import polynote.data.Rope
 
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+
 sealed trait Message
 
 object Message {
@@ -90,12 +92,8 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
     case cell => cell
   }
 
-  def editCell(id: String, edits: List[ContentEdit]): Notebook = updateCell(id) {
-    cell => cell.updateContent {
-      content => edits.foldLeft(content) {
-        (accum, next) => next.applyTo(accum)
-      }
-    }
+  def editCell(id: String, edits: ContentEdits): Notebook = updateCell(id) {
+    cell => cell.updateContent(_.withEdits(edits))
   }
 
   def addCell(cell: NotebookCell): Notebook = copy(cells = ShortList(cells :+ cell))
@@ -119,6 +117,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
     cell => cell.copy(results = ShortList(results))
   }
 }
+
 object Notebook extends MessageCompanion[Notebook](2)
 
 final case class RunCell(notebook: ShortString, id: ShortList[TinyString]) extends Message
@@ -126,49 +125,6 @@ object RunCell extends MessageCompanion[RunCell](3)
 
 final case class CellResult(notebook: ShortString, id: TinyString, result: Result) extends Message
 object CellResult extends MessageCompanion[CellResult](4)
-
-/**
-  * A ContentEdit at a position deletes some amount (possibly nothing) after that position, and then inserts some
-  * content (possibly empty) at that position.
-  *
-  * @param pos          The position at which the edit occurs
-  * @param deleteLength The number of characters to delete after the given position
-  * @param content      The content to insert
-  */
-final case class ContentEdit(pos: Int, deleteLength: Int, content: String) {
-  def applyTo(rope: Rope): Rope = if (deleteLength > 0) rope.delete(pos, deleteLength).insertAt(pos, Rope(content)) else rope.insertAt(pos, Rope(content))
-
-  // Given another edit which occured after this edit, create an edit that will be equivalent to applying this edit
-  // when applied after the given edit instead.
-  def rebase(other: ContentEdit): ContentEdit = other match {
-    // if the other edit is entirely before this edit, just shift this edit by the length delta
-    case ContentEdit(otherPos, otherDeleteLength, otherContent) if otherPos + otherDeleteLength <= pos =>
-      copy(pos = pos + otherContent.length - otherDeleteLength)
-
-    // if the other edit is entirely after this edit, nothing to do
-    case ContentEdit(otherPos, _, _) if otherPos >= pos + deleteLength => this
-
-    // if the other edit affects the region that was replaced by this edit, then they conflict
-    // we want the minimal edit that replaces the entire conflict region
-    case ContentEdit(otherPos, otherDeleteLength, otherContent) =>
-
-      // start at the earlier position
-      val start = math.min(pos, otherPos)
-
-      // They deleted to this position
-      val theirTarget = otherPos + otherDeleteLength
-
-      // I would have deleted up to this position...
-      val myTarget = pos + deleteLength
-
-      // So I should delete this much extra
-      val deleteExtra = math.max(0, myTarget - theirTarget) + math.max(0, otherPos - pos)
-
-      val combinedContent = if (otherPos <= pos) otherContent + content else content + otherContent
-
-      ContentEdit(start, otherContent.length + deleteExtra, combinedContent)
-  }
-}
 
 sealed trait NotebookUpdate extends Message {
   def globalVersion: Int
@@ -191,10 +147,8 @@ sealed trait NotebookUpdate extends Message {
 
     case (u@UpdateCell(_, _, _, id1, edits1), UpdateCell(_, _, _, id2, edits2)) if id1 == id2 =>
       // we both tried to edit the same cell. Transform first edits so they apply to the document state as it exists after the second edits are already applied.
-      val rebasedEdits1 = edits1.map {
-        edit => edits2.foldLeft(edit)((e1, e2) => e1.rebase(e2))
-      }
-      u.copy(edits = ShortList(rebasedEdits1))
+
+      u.copy(edits = edits1.rebase(edits2))
 
     // all other cases should be independent (TODO: they're not yet, though)
     case _ => this
@@ -209,7 +163,7 @@ object NotebookUpdate {
   }
 }
 
-final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: TinyString, edits: ShortList[ContentEdit]) extends Message with NotebookUpdate
+final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: TinyString, edits: ContentEdits) extends Message with NotebookUpdate
 object UpdateCell extends MessageCompanion[UpdateCell](5)
 
 final case class InsertCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cell: NotebookCell, after: Option[TinyString]) extends Message with NotebookUpdate

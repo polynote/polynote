@@ -574,6 +574,52 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 }
 
+class EditBuffer {
+
+    constructor() {
+        this.versions = [];
+    }
+
+    /**
+     * Add edits corresponding to a version. The version should always increase.
+     * @param version The version corresponding to the edits
+     * @param edits   The edits
+     */
+    push(version, edits) {
+        this.versions.push({version, edits});
+    }
+
+    /**
+     * Discard edits with versions before the given version
+     * @param until The earliest version to keep
+     */
+    discard(until) {
+        while (this.versions.length > 0 && this.versions[0].version < until) {
+            this.versions.shift();
+        }
+    }
+
+    /**
+     * Retrieve edits corresponding to a range of versions from the buffer
+     *
+     * @param from The start version, exclusive
+     * @param to   The end version, inclusive
+     * @returns {Array}
+     */
+    range(from, to) {
+        let i = 0;
+        while (i < this.versions.length && this.versions[i].version <= from) {
+            i++;
+        }
+        const edits = [];
+        while (i < this.versions.length && this.versions[i].version <= to) {
+            edits.push(...this.versions[i].edits);
+            i++;
+        }
+        return edits;
+    }
+}
+
 export class NotebookUI {
     constructor(path, socket) {  // TODO: Maybe UI shouldn't talk directly to session? I dunno...
         let cellUI = new NotebookCellsUI();
@@ -587,6 +633,8 @@ export class NotebookUI {
 
         this.globalVersion = 0;
         this.localVersion = 0;
+
+        this.editBuffer = new EditBuffer();
 
         this.cellUI.addEventListener('UpdatedConfig', evt => {
             this.socket.send(new messages.UpdateConfig(path, this.globalVersion, this.localVersion++, evt.detail.config));
@@ -642,7 +690,8 @@ export class NotebookUI {
         });
 
         this.cellUI.addEventListener('ContentChange', (evt) => {
-            this.socket.send(new messages.UpdateCell(path, this.globalVersion, this.localVersion++, evt.detail.cellId, evt.detail.edits));
+            this.socket.send(new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits));
+            this.editBuffer.push(this.localVersion, evt.detail.edits);
         });
 
         this.cellUI.addEventListener('CompletionRequest', (evt) => {
@@ -762,8 +811,30 @@ export class NotebookUI {
         });
 
         socket.addMessageListener(messages.UpdateCell, (path, globalVersion, localVersion, id, edits) => {
-            this.globalVersion = globalVersion;
-            // TODO: rebase the edits from localVersion to this.localVersion, and update the cell
+            if (globalVersion >= this.globalVersion) {
+                this.globalVersion = globalVersion;
+                let rebasedEdits = edits;
+
+                if (localVersion < this.localVersion) {
+                    const editsBefore = this.editBuffer.range(localVersion, this.localVersion);
+                    rebasedEdits = messages.ContentEdit.rebaseEdits(edits, editsBefore);
+                } else if (localVersion > this.localVersion) {
+                    console.error("Local version from server is after client's. Something's wrong.")
+                }
+
+                this.localVersion++;
+
+                const cell = this.cellUI.cells[id];
+
+                if (cell) {
+                    cell.applyEdits(rebasedEdits);
+                    this.editBuffer.push(this.localVersion, rebasedEdits);
+                }
+
+                // discard edits before the local version from server – it will handle rebasing at least until that point
+                this.editBuffer.discard(localVersion);
+
+            }
             console.log(globalVersion, localVersion, this.localVersion, edits);
         });
 
@@ -793,7 +864,6 @@ export class NotebookUI {
                         cell.clearResult();
                     }
                 }
-                //console.log("Cell result:", path, id, result);
             }
         });
 

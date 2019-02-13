@@ -17,7 +17,7 @@
 package polynote.data
 
 import io.circe.{Decoder, Encoder}
-import polynote.messages.{ContentEdit, ShortString}
+import polynote.messages.{ContentEdit, ContentEdits, ShortString}
 import scodec.Codec
 
 import scala.collection.immutable.Queue
@@ -41,7 +41,7 @@ sealed abstract class Rope {
 
   def withEdit(edit: ContentEdit): Rope = edit.applyTo(this)
 
-  def withEdits(edits: List[ContentEdit]): Rope = edits.foldLeft(this)(_ withEdit _)
+  def withEdits(edits: ContentEdits): Rope = edits.edits.foldLeft(this)(_ withEdit _)
 
   def insertAt(idx: Int, that: Rope): Rope = {
     val (r1, r2) = splitAt(idx)
