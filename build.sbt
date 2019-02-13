@@ -10,6 +10,10 @@ val commonSettings = Seq(
     "-language:higherKinds",
     "-unchecked"
   ),
+  libraryDependencies ++= Seq(
+    "org.scalatest" %% "scalatest" % "3.0.5" % "test",
+    "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
+  ),
   fork := true,
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
@@ -41,9 +45,7 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-generic" % "0.10.0",
     "io.get-coursier" %% "coursier" % "1.1.0-M9",
     "io.get-coursier" %% "coursier-cache" % "1.1.0-M9",
-    "black.ninia" % "jep" % "3.8.2",
-    "org.scalatest" %% "scalatest" % "3.0.5" % "test",
-    "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
+    "black.ninia" % "jep" % "3.8.2"
   )
 ).dependsOn(`polynote-runtime`)
 
