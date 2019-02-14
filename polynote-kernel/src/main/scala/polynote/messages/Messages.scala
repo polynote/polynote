@@ -201,3 +201,8 @@ object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
 final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: TinyString) extends Message with NotebookUpdate
 object DeleteCell extends MessageCompanion[DeleteCell](15)
+
+final case class ServerHandshake(
+  interpreters: TinyMap[TinyString, TinyString]
+) extends Message
+object ServerHandshake extends MessageCompanion[ServerHandshake](16)

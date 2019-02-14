@@ -1,4 +1,5 @@
 import { UIEvent, UIEventTarget } from './ui_event.js'
+import { button } from './tags.js'
 
 export class SelectionChangedEvent extends UIEvent {
     constructor(changedFromEl, changedToEl, changedFromIndex, changedToIndex) {
@@ -41,7 +42,11 @@ export class FakeSelect extends UIEventTarget {
             });
         }
 
-        this.options = [...element.getElementsByTagName("button")];
+        this.updateOptions();
+    }
+
+    updateOptions() {
+        this.options = [...this.element.getElementsByTagName("button")];
         for (const option of this.options) {
             if (option.classList.contains('selected')) {
                 this.selectedElement = option;
@@ -57,6 +62,24 @@ export class FakeSelect extends UIEventTarget {
         if (this.selectedElement) {
             this.value = this.selectedElement.value;
         }
+    }
+
+    addOption(text, value) {
+        if (typeof(text) === "string")
+            text = document.createTextNode(text);
+        const b = button([], {type: 'button', value: value}, text);
+        this.element.appendChild(b);
+        this.options.push(b);
+        this.setupOption(b);
+    }
+
+    removeOption(option) {
+        const index = this.options.indexOf(option);
+
+        if (index < 0) return;
+
+        this.options.splice(index, 1);
+        option.parentNode.removeChild(option);
     }
 
     setupOption(option) {

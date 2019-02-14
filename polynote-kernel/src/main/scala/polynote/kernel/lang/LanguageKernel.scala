@@ -67,6 +67,7 @@ trait LanguageKernel[F[_]] {
 object LanguageKernel {
 
   trait Factory[F[_]] {
+    def languageName: String
     def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageKernel[F]
   }
 

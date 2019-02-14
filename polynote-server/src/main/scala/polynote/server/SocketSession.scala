@@ -108,7 +108,7 @@ class SocketSession(
           }
         }.interruptWhen(closeSignal())
 
-      WebSocketBuilder[IO].build(toClient, fromClient)
+      WebSocketBuilder[IO].build(toClient, fromClient) <* oq.enqueue1(handshake)
     }
   }.flatten
 
@@ -123,6 +123,8 @@ class SocketSession(
     }
   }(_ => loadingNotebook.release)
 
+  private def handshake: ServerHandshake =
+    ServerHandshake(notebookManager.interpreterNames.asInstanceOf[TinyMap[TinyString, TinyString]])
 
   def respond(message: Message, oq: Queue[IO, Message]): IO[Stream[IO, Message]] = message match {
     case ListNotebooks(_) =>
