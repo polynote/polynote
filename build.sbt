@@ -23,7 +23,7 @@ val commonSettings = Seq(
   }
 )
 
-val `polynote-runtime` = project.settings(
+lazy val `polynote-runtime` = project.settings(
   commonSettings
 )
 
@@ -64,7 +64,14 @@ val `polynote-server` = project.settings(
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
 ) dependsOn `polynote-kernel`
 
-val `polynote-spark` = project.settings(
+def copyRuntimeJar(targetDir: File, file: File) = {
+    val targetFile = targetDir / "polynote-runtime.jar"
+    targetDir.mkdirs()
+    java.nio.file.Files.copy(file.toPath, targetFile.toPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    Seq(targetFile)
+}
+
+lazy val `polynote-spark` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
@@ -73,7 +80,8 @@ val `polynote-spark` = project.settings(
     "org.apache.spark" %% "spark-sql" % "2.1.1" % "test",
     "org.apache.spark" %% "spark-repl" % "2.1.1" % "test",
   ),
-  assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false)
+  assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false),
+  resourceGenerators in Compile += Def.task { copyRuntimeJar((resourceManaged in Compile).value, (packageBin in (`polynote-runtime`, Compile)).value) }.taskValue
 ) dependsOn `polynote-server`
 
 val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`)
