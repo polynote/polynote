@@ -36,7 +36,7 @@ trait Server extends IOApp with Http4sDsl[IO] {
       (accum, next) => accum ++ next.languageKernels
     }
 
-  protected val kernelFactory = new IOKernelFactory(Map("scala" -> dependencyFetcher), subKernels)
+  protected lazy val kernelFactory: KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), subKernels)
 
   protected val notebookManager = new IONotebookManager(repository, kernelFactory)
 

@@ -1,8 +1,9 @@
 package polynote.kernel
 
 import java.io.File
-import java.net.{URL, URLDecoder}
-import java.nio.file.{Files, Path}
+import java.net.{JarURLConnection, URL, URLDecoder}
+import java.nio.file.{FileSystems, Files, Path, StandardCopyOption}
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
@@ -40,16 +41,38 @@ class SparkPolyKernel(
 
   val global = globalInfo.global
 
-  private lazy val dependencyJars = classOf[polynote.runtime.ScalaCell].getProtectionDomain.getCodeSource.getLocation :: {
+  private def runtimeJar(tmp: Path) = {
+    val resourceURL = getClass.getClassLoader.getResource("polynote-runtime.jar")
+    resourceURL.getProtocol match {
+      case "jar" =>
+        val jarConn = resourceURL.openConnection().asInstanceOf[JarURLConnection]
+        val jarFS = FileSystems.newFileSystem(
+          jarConn.getJarFileURL.toURI,
+          Collections.emptyMap[String, Any]
+        )
+        val inPath = jarFS.getPath(jarConn.getEntryName)
+        val runtimeJar = new File(tmp.toFile, "polynote-runtime.jar").toPath
+        Files.copy(inPath, runtimeJar, StandardCopyOption.REPLACE_EXISTING)
+        runtimeJar
+
+      case "file" =>
+        new File(resourceURL.getPath).toPath
+    }
+  }
+
+  private lazy val dependencyJars = {
     // dependencies which have characters like "+" in them get mangled... de-mangle them into a temp directory for adding to spark
     val tmp = Files.createTempDirectory("dependencies")
     tmp.toFile.deleteOnExit()
+
     val jars = for {
       namedFiles <- dependencies.values.toList
       (_, file) <- namedFiles if file.getName endsWith ".jar"
     } yield file -> tmp.resolve(URLDecoder.decode(file.getName, "utf-8"))
 
-    jars.map {
+
+
+    runtimeJar(tmp) :: jars.map {
       case (file, path) =>
         val copied = Files.copy(file.toPath, path)
         copied.toFile.deleteOnExit()
@@ -137,7 +160,7 @@ object SparkPolyKernel {
       .map(new File(_))
       .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
 
-    val globalInfo = GlobalInfo(dependencies, baseSettings, extraClassPath, outputDir, parentClassLoader)
+    val globalInfo = GlobalInfo(dependencies, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
 
     val kernel = new SparkPolyKernel(
       getNotebook,
