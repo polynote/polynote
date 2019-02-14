@@ -1,3 +1,9 @@
 language: scala
 scala:
    - 2.11.11
+
+before_install:
+   - sudo apt-get install python3
+   - sudo pip3 install numpy scipy ipython nbconvert
+   - sudo pip3 install jep
+   - export LD_LIBRARY_PATH=`pip3 show jep |grep "^Location:" |cut -d ':' -f 2 |cut -d ' ' -f 2`/jep:$LD_LIBRARY_PATH
