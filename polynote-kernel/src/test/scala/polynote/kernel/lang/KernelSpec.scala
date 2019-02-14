@@ -53,7 +53,7 @@ trait KernelSpec {
               statusUpdates =>
 
                 // without this, symbolTable.drain() doesn't do anything
-                symbolTable.subscribe()(_ => IO.unit)
+                symbolTable.subscribe()(_ => IO.unit).prefetch
 
                 for {
                   // publishes to symbol table as a side-effect
