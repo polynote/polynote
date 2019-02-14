@@ -2,9 +2,10 @@ package polynote.kernel.lang
 
 import java.io.File
 
-import fs2.concurrent.{Enqueue, Queue}
+import fs2.Stream
 import polynote.kernel._
-import polynote.kernel.util.{Publish, RuntimeSymbolTable, SymbolDecl}
+import polynote.kernel.context.{RuntimeContext, SymbolDecl}
+import polynote.kernel.util.{Publish, RuntimeSymbolTable}
 
 /**
   * The LanguageKernel runs code in a given language.
@@ -12,50 +13,37 @@ import polynote.kernel.util.{Publish, RuntimeSymbolTable, SymbolDecl}
 trait LanguageKernel[F[_]] {
 
   // LanguageKernel is expected to have a reference to the shared runtime symbol table of a notebook
-  val symbolTable: RuntimeSymbolTable
+  val runtimeContext: RuntimeContext
 
-  final type Decl = SymbolDecl[F, symbolTable.global.type]
-
-  def predefCode: Option[String]
+  final type Decl = SymbolDecl[F, runtimeContext.globalInfo.global.type]
 
   /**
     * Run the given code.
     *
-    * @param cell           The identifier string of the cell for the code being run
-    * @param visibleSymbols A list of symbols defined in cells "before" the given code, which are visible to it
-    * @param previousCells  The identifier strings of the cells "before" this code, for stateful language kernels
-    * @param code           The code string to run
-    * @param out            A [[Queue]] which should receive [[Result]] value(s) describing the output(s) from running the code
-    * @param statusUpdates  A [[Publish]] which should receive [[KernelStatusUpdate]]s describing changes in runtime status
-    *                       from running the cell, such as newly defined symbols, subtask progress, etc
+    * @param cell                The identifier string of the cell for the code being run
+    * @param runtimeContextView  A View into the runtime context for this particular cell
+    * @param code                The code string to run
+    * @return                    A Tuple of Streams: (results, new runtime symbols, maybe a cell return value)
     */
   def runCode(
     cell: String,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
-    code: String,
-    out: Enqueue[F, Result],
-    statusUpdates: Publish[F, KernelStatusUpdate]
-  ): F[Unit]
+    runtimeContextView: runtimeContext.RuntimeContextView, // TODO: this could just be the parent cell id...
+    code: String
+  ): F[(Stream[F, Result], runtimeContext.RuntimeContextEntry)]
 
   /**
     * Ask for completions (if applicable) at the given position in the given code string
     *
     * @param pos The position (character offset) within the code string at which completions are requested
     */
-  def completionsAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): F[List[Completion]]
+  def completionsAt(cell: String, runtimeContextView: runtimeContext.RuntimeContextView, code: String, pos: Int): F[List[Completion]]
 
   /**
     * Ask for parameter signatures (if applicable) at the given position in the given code string
     *
     * @param pos The position (character offset) within the code string at which parameter hints are requested
     */
-  def parametersAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): F[Option[Signatures]]
-
-  /**
-    * Initialize the kernel (if necessary)
-    */
-  def init(): F[Unit]
+  def parametersAt(cell: String, runtimeContextView: runtimeContext.RuntimeContextView, code: String, pos: Int): F[Option[Signatures]]
 
   /**
     * Terminate the language kernel
@@ -68,7 +56,7 @@ object LanguageKernel {
 
   trait Factory[F[_]] {
     def languageName: String
-    def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageKernel[F]
+    def apply(dependencies: List[(String, File)], runtimeContext: RuntimeContext): LanguageKernel[F]
   }
 
 }

@@ -17,9 +17,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.SparkSession
 import polynote.kernel.PolyKernel._
+import polynote.kernel.context.GlobalInfo
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageKernel
-import polynote.kernel.util.GlobalInfo
 import polynote.kernel.util.{GlobalInfo, Publish, RuntimeSymbolTable}
 import polynote.messages.Notebook
 

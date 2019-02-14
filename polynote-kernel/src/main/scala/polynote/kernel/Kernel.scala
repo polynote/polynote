@@ -29,8 +29,6 @@ abstract class Kernel[F[_]] {
 
   def parametersAt(cell: String, offset: Int): F[Option[Signatures]]
 
-  def currentSymbols(): F[List[SymbolInfo]]
-
   def currentTasks(): F[List[TaskInfo]]
 
   def idle(): F[Boolean]

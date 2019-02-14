@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{SignallingRef, Topic}
+import polynote.kernel.context.{GlobalInfo, SymbolDecl}
 import polynote.kernel.{KernelStatusUpdate, SymbolInfo, UpdatedSymbols}
 import polynote.kernel.lang.LanguageKernel
 

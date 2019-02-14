@@ -3,6 +3,7 @@ package polynote.kernel.lang.scal
 import cats.data.Ior
 import cats.syntax.either._
 import polynote.kernel.EmptyCell
+import polynote.kernel.context.InterpreterContext
 import polynote.kernel.util.KernelReporter
 
 import scala.annotation.tailrec
@@ -19,8 +20,10 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
   availableSymbols: Set[Interpreter#Decl],
   previousSources: List[ScalaSource[Interpreter]],
   code: String
-) {
-  import interpreter.{global, notebookPackage}
+) extends InterpreterContext {
+
+  import interpreter.runtimeContext.globalInfo.global
+  import interpreter.notebookPackage
   import global.{Type, Tree, atPos}
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
@@ -138,8 +141,8 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
         .filterNot(_.source contains interpreter)
         .toList.map {
           sym =>
-            val name = sym.name.asInstanceOf[interpreter.global.TermName]
-            val typ = sym.scalaType.asInstanceOf[interpreter.global.Type]
+            val name = sym.name.asInstanceOf[global.TermName]
+            val typ = sym.scalaType.asInstanceOf[global.Type]
             atPos(beginning)(
               global.DefDef(
                 global.Modifiers(global.Flag.PRIVATE),
@@ -358,7 +361,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     } yield result
   }
 
-  lazy val directImports: List[interpreter.global.Tree] = {
+  lazy val directImports: List[global.Tree] = {
     for {
       stats <- parsed
     } yield stats.collect {
@@ -366,7 +369,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     }
   }.right.getOrElse(Nil)
 
-  lazy val compiledModule: Either[Throwable, interpreter.global.Symbol] = successfulParse.flatMap {
+  lazy val compiledModule: Either[Throwable, global.Symbol] = successfulParse.flatMap {
     _ =>
       compileUnit.flatMap { unit =>
         withCompiler {
@@ -384,6 +387,6 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       }
   }
 
-  def compile: Either[Throwable, interpreter.global.Symbol] = compiledModule
+  def compile: Either[Throwable, global.Symbol] = compiledModule
 
 }

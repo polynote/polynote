@@ -6,77 +6,22 @@ import java.util.concurrent.{Callable, ExecutorService, Executors, ThreadFactory
 
 import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
-import fs2.concurrent.Enqueue
+import fs2.Stream
+import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig}
+import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
+import polynote.kernel.context.RuntimeContext
 import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
 import polynote.messages.{ShortString, TinyList, TinyString}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
-class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKernel[IO] {
-
-  val predefCode: Option[String] = None
+class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKernel[IO] {
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
-
-  override def init(): IO[Unit] = {
-    implicit val s: ContextShift[IO] = listenerShift
-
-      // note: leaving old TODOs in case they might still be useful?
-      // TODO: The downside of doing this eagerly is that Python code won't forbid using symbols defined in later cells.
-      //       Should that be fixed? Maybe we could build a new locals dict during runCode?
-      // TODO: Can there be some special treatment for function values to make them Callable in python?
-      // TODO: Instead of doing this, can we somehow just make the symbol table a Python scope?
-
-    // watch for new symbols and push 'em to Jep
-    symbolTable.subscribe(Option(this)) {
-      value => withJep {
-        value.value match {
-          case polynote.runtime.Runtime => // pass (already handled above)
-          case _ =>
-            jep.set(value.name.toString, value.value)
-        }
-      }
-    }.interruptWhen(shutdownSignal()).compile.drain.unsafeRunAsyncAndForget()
-
-    // make sure to grab any symbols that have already been created
-    withJep {
-      val terms = symbolTable.currentTerms
-      terms.foreach {
-        value =>
-          value.value match {
-            case polynote.runtime.Runtime =>
-              // hijack the kernel and wrap it in a pyobject so we can set the display
-              // we need to do this because it looks like jep doesn't handle the Runtime.display object properly
-              // (maybe because it doesn't fully support Scala).
-              // we need to create a new Python class that proxies the runtime object so that we can use
-              // grab it as a PyObject from jep. We need a PyObject so we can use setAttr.
-              // Then we can set the `display` attribute to the display object ourselves.
-              jep.set("__kernel_ref", polynote.runtime.Runtime)
-              jep.eval(
-                """
-                  |class KernelProxy(object):
-                  |    def __init__(self, ref):
-                  |        self.ref = ref
-                  |
-                  |    def __getattr__(self, name):
-                  |        return getattr(self.ref, name)
-                """.stripMargin.trim)
-              jep.eval("kernel = KernelProxy(__kernel_ref)")
-              val pykernel = jep.getValue("kernel", classOf[PyObject])
-              pykernel.setAttr("display", polynote.runtime.Runtime.display)
-              jep.eval("del kernel")
-              jep.set("kernel", pykernel)
-              jep.eval("del __kernel_ref")
-            case _ =>
-              jep.set(value.name.toString, value.value)
-          }
-      }
-    }
-  }
 
   private def newSingleThread(name: String): ExecutorService = Executors.newSingleThreadExecutor {
     new ThreadFactory {
@@ -137,87 +82,119 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
 
   override def runCode(
     cell: String,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
-    code: String,
-    out: Enqueue[IO, Result],
-    statusUpdates: Publish[IO, KernelStatusUpdate]
-  ): IO[Unit] = if (code.trim().isEmpty) IO.unit else {
-    import symbolTable.global
+    runtimeContextView: runtimeContext.RuntimeContextView,
+    code: String
+  ): IO[(Stream[IO, Result], runtimeContext.RuntimeContextEntry)] = {
+    val prevCellId = Option(runtimeContextView.parentEntry.cellId)
+    if (code.trim().isEmpty) {
+      IO.pure((
+        Stream.empty,
+        runtimeContext.RuntimeContextEntry(cell, prevCellId, Map.empty, None, None)
+      ))
+    } else {
 
-    val stdout = new PythonDisplayHook(out)
+      implicit val iShift: ContextShift[IO] = shift
 
-    global.demandNewCompilerRun()
-    val run = new global.Run()
-    global.newCompilationUnit("", cell)
+      def exec(stdout: PythonDisplayHook, globalDict: Map[String, Any]): IO[(Option[Output], Map[String, runtimeContext.globalInfo.RuntimeValue], Option[runtimeContext.globalInfo.RuntimeValue])] = {
+        import runtimeContext.globalInfo.global
 
-    withJep {
+        global.demandNewCompilerRun()
+        val run = new global.Run()
+        global.newCompilationUnit("", cell)
 
-      jep.set("__polynote_displayhook__", stdout)
-      jep.eval("import sys\n")
-      jep.eval("import ast\n")
-      jep.eval("sys.displayhook = __polynote_displayhook__.output\n")
-      jep.eval("sys.stdout = __polynote_displayhook__\n")
-      jep.eval("__polynote_locals__ = {}\n")
-      jep.set("__polynote_code__", code)
-      jep.set("__polynote_cell__", cell)
+        withJep {
 
-      // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
-      // TODO: should probably just use ipython to evaluate it instead
-      jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
-      jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
-      val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
+          jep.set("__polynote_displayhook__", stdout)
+          jep.eval("import sys\n")
+          jep.eval("import ast\n")
+          jep.eval("sys.displayhook = __polynote_displayhook__.output\n")
+          jep.eval("sys.stdout = __polynote_displayhook__\n")
+          jep.eval("__polynote_locals__ = {}\n")
 
-      val resultName = s"res$cell"
-      val maybeModifiedCode = if (lastIsExpr) {
-        val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
-        val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
+          // TODO: maybe we need to add some more globals stuff here
+          // globals needs to be a dict but if we send a Map to jep it becomes a pyjmap, so we need to populate a dict
+          jep.eval("__polynote_globals__ = {}")
+          globalDict.foreach {
+            case (k, v) =>
+              jep.set(s"__tmp_$k", v)
+              jep.eval(s"__polynote_globals__.update({'$k': __tmp_$k})")
+              jep.eval(s"del __tmp_$k")
+          }
 
-        (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
-      } else code
+          jep.set("__polynote_code__", code)
+          jep.set("__polynote_cell__", cell)
 
-      jep.set("__polynote_code__", maybeModifiedCode)
-      jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
-      jep.eval("globals().update(__polynote_locals__)")
-      val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
+          // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
+          // TODO: should probably just use ipython to evaluate it instead
+          jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
+          jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
+          val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
+
+          val resultName = s"res$cell"
+          val maybeModifiedCode = if (lastIsExpr) {
+            val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
+            val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
+
+            (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
+          } else code
+
+          jep.set("__polynote_code__", maybeModifiedCode)
+          jep.eval("exec(__polynote_code__, __polynote_globals__, __polynote_locals__)\n")
+          jep.eval("globals().update(__polynote_locals__)") // still need to update globals so we can eval stuff
+          val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 
       // TODO: We talked about potentially creating an `Out` map, inspired by ipython, instead of these resCell# vars
-      val maybeOutput = if (lastIsExpr) {
+      val (maybeOutput, maybeReturns) = if (lastIsExpr) {
         val hasLastValue = jep.getValue(s"$resultName != None", classOf[java.lang.Boolean])
         if (hasLastValue) {
-          Option(Output("text/plain; rel=decl; lang=python", s"$resultName = ${jep.getValue(s"repr($resultName)", classOf[String])}"))
-        } else None
-      } else None
+          (
+            Option(Output("text/plain; rel=decl; lang=python", s"$resultName = ${jep.getValue(s"repr(${newDecls.last})", classOf[String])}")),
+            Option(runtimeContext.globalInfo.RuntimeValue(resultName, jep.getValue(resultName), Some(this), cell))
+          )
+        } else (None, None)
+      } else (None, None)
 
-      (getPyResults(newDecls, cell), maybeOutput)
+          val symbolDict = getPyResults(newDecls, cell).filterNot { case (k, v) => k == resultName || v == null }
 
-    }.flatMap {
-      case (resultDict, maybeOutput) =>
-        val symbolPub = symbolTable.publishAll(resultDict.filterNot(_._2.value == null).values.toList)
+          val symbols = symbolDict.map {
+            case (name, value) => name -> runtimeContext.globalInfo.RuntimeValue(name, value, Some(this), cell)
+          }
 
-        maybeOutput
-          .map(o => out.enqueue1(o))
-          .getOrElse(IO.unit)
-          .flatMap( _ => symbolPub)
+          (maybeOutput, symbols, maybeReturns)
+        }
+      }
 
-    }.flatMap {
-      _ => IO(stdout.flush())
+      Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
+        val eval = for {
+          globalDict <- symbolsToPythonDict(runtimeContextView.visibleSymbols)
+          resultQ = new EnqueueSome(maybeResultQ)
+          stdout = new PythonDisplayHook(resultQ)
+          execResult <- exec(stdout, globalDict)
+          (maybeOutput, symbols, maybeReturns) = execResult
+          _ <- IO(stdout.flush())
+          _ <- Stream.emits(maybeOutput.toSeq).to(resultQ.enqueue).compile.toVector
+        } yield {
+
+          (maybeResultQ.dequeue.unNoneTerminate, runtimeContext.RuntimeContextEntry(cell, prevCellId, symbols, None, maybeReturns))
+        }
+        eval.guarantee(maybeResultQ.enqueue1(None))
+      }
     }
   }
 
-  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, symbolTable.RuntimeValue] =
+  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, runtimeContext.globalInfo.RuntimeValue] =
     decls.map {
       name => name -> {
         getPyResult(name) match {
-          case (value, Some(typ)) => symbolTable.RuntimeValue(symbolTable.global.TermName(name), value, typ, Some(this), sourceCellId)
-          case (value, _) => symbolTable.RuntimeValue(name, value, Some(this), sourceCellId)
+          case (value, Some(typ)) => runtimeContext.globalInfo.RuntimeValue(runtimeContext.globalInfo.global.TermName(name), value, typ, Some(this), sourceCellId)
+          case (value, _) => runtimeContext.globalInfo.RuntimeValue(name, value, Some(this), sourceCellId)
         }
       }
     }.toMap
 
-  def getPyResult(accessor: String): (Any, Option[symbolTable.global.Type]) = {
+  def getPyResult(accessor: String): (Any, Option[runtimeContext.globalInfo.global.Type]) = {
     val resultType = jep.getValue(s"type($accessor).__name__", classOf[String])
-    import symbolTable.global.{typeOf, weakTypeOf}
+    import runtimeContext.globalInfo.global.{typeOf, weakTypeOf}
     resultType match {
       case "int" => jep.getValue(accessor, classOf[java.lang.Number]).longValue() -> Some(typeOf[Long])
       case "float" => jep.getValue(accessor, classOf[java.lang.Number]).doubleValue() -> Some(typeOf[Double])
@@ -232,15 +209,15 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
         val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
         val (elems, types) = (0L until numElements).map(n => getPyResult(s"$accessor[$n]")).toList.unzip
 
-        val listType = symbolTable.global.ask {
+        val listType = runtimeContext.globalInfo.global.ask {
           () =>
             val lubType = types.flatten.toList match {
               case Nil      => typeOf[Any]
-              case typeList => try symbolTable.global.lub(typeList) catch {
+              case typeList => try runtimeContext.globalInfo.global.lub(typeList) catch {
                 case err: Throwable => typeOf[Any]
               }
             }
-            symbolTable.global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
+            runtimeContext.globalInfo.global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
         }
 
         elems -> Some(listType)
@@ -251,10 +228,52 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     }
   }
 
+  def symbolsToPythonDict(symbols: Seq[runtimeContext.globalInfo.RuntimeValue]): IO[Map[String, Any]] = withJep {
+    symbols.map {
+      case runtimeContext.globalInfo.RuntimeValue(name, value, _, _, _) =>
+        value match {
+          case polynote.runtime.Runtime =>
+            // hijack the kernel and wrap it in a pyobject so we can set the display
+            // we need to do this because it looks like jep doesn't handle the Runtime.display object properly
+            // (maybe because it doesn't fully support Scala).
+            // we need to create a new Python class that proxies the runtime object so that we can use
+            // grab it as a PyObject from jep. We need a PyObject so we can use setAttr.
+            // Then we can set the `display` attribute to the display object ourselves.
+
+            // put Runtime ref into python-land
+            jep.set("__kernel_ref", polynote.runtime.Runtime)
+            // define our proxy object
+            jep.eval(
+              """
+                |class KernelProxy(object):
+                |    def __init__(self, ref):
+                |        self.ref = ref
+                |
+                |    def __getattr__(self, name):
+                |        return getattr(self.ref, name)
+              """.stripMargin.trim)
+            // create an instance of our proxy which delegates to runtime
+            jep.eval("__kp = KernelProxy(__kernel_ref)")
+            // pull the proxy out as a PyObject so we can mess with it
+            val pykernel = jep.getValue("__kp", classOf[PyObject])
+            // set the display attribute!
+            pykernel.setAttr("display", polynote.runtime.Runtime.display)
+
+            // clean up after ourselves
+            jep.eval("del __kp")
+            jep.eval("del __kernel_ref")
+
+            // return the converted kernel reference so we can use it
+            "kernel" -> pykernel
+          case _ =>
+            name.toString -> value
+        }
+    }.toMap
+  }
+
   override def completionsAt(
     cell: String,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    runtimeContextView: runtimeContext.RuntimeContextView,
     code: String,
     pos: Int
   ): IO[List[Completion]] = withJep {
@@ -311,8 +330,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
   // TODO: can parameter hints be implemented for python?
   override def parametersAt(
     cell: String,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    runtimeContextView: runtimeContext.RuntimeContextView,
     code: String,
     pos: Int
   ): IO[Option[Signatures]] = IO.pure(None)
@@ -322,8 +340,8 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
 object PythonInterpreter {
   class Factory extends LanguageKernel.Factory[IO] {
     override val languageName: String = "Python"
-    override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): PythonInterpreter =
-      new PythonInterpreter(symbolTable)
+    override def apply(dependencies: List[(String, File)], runtimeContext: RuntimeContext): PythonInterpreter =
+      new PythonInterpreter(runtimeContext)
   }
 
   def factory(): Factory = new Factory()

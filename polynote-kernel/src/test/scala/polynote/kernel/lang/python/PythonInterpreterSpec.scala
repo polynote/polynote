@@ -10,8 +10,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
 
   "The python kernel" should "be able to display html using the kernel runtime reference" in {
     assertPythonOutput("kernel.display.html('hi')") { case (vars, output, displayed) =>
-      vars.toSeq should contain only "kernel" -> polynote.runtime.Runtime
-
+      vars shouldBe empty
       output shouldBe empty
       displayed should contain only "text/html" -> "hi"
     }
@@ -37,9 +36,9 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       vars("x") shouldEqual 1
       vars("y") shouldEqual "foo"
       vars("A") shouldBe a[PyCallable]
-      vars("A").toString shouldEqual "<class '__main__.A'>"
+      vars("A").toString shouldEqual "<class 'A'>"
       vars("z") shouldBe a[PyObject]
-      vars("z").toString should startWith("<__main__.A object")
+      vars("z").toString should startWith("<A object")
       vars("d") shouldBe a[PyObject]
       vars("d").toString shouldEqual "2019-02-03 00:00:00"
       vars("l") shouldEqual List(1, "foo", Map("sup?" -> "nm"), false)
@@ -63,7 +62,6 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       """.stripMargin
     assertPythonOutput(code) { case (vars, output, displayed) =>
       vars.toSeq should contain theSameElementsAs Seq(
-        "kernel" -> polynote.runtime.Runtime,
         "x" -> 1,
         "y" -> 2,
         "restest" -> 3
@@ -85,7 +83,6 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       """.stripMargin
     assertPythonOutput(code) { case (vars, output, displayed) =>
       vars.toSeq should contain theSameElementsAs Seq(
-        "kernel" -> polynote.runtime.Runtime,
         "x" -> 1,
         "y" -> 2,
         "answer" -> 3,
@@ -107,8 +104,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         |print("Do you like muffins?")
       """.stripMargin
     assertPythonOutput(code) { case (vars, output, displayed) =>
-      vars.toSeq should contain only "kernel" -> polynote.runtime.Runtime
-
+      vars shouldBe empty
       output should contain  only Output("text/plain; rel=stdout", "Do you like muffins?")
       displayed shouldBe empty
     }
