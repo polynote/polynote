@@ -232,10 +232,6 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
         val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
         val (elems, types) = (0L until numElements).map(n => getPyResult(s"$accessor[$n]")).toList.unzip
 
-
-
-        // TODO: below doesn't work... complains about PythonInterpreter not being in compiler classpath. Should it be?
-        //val listType = symbolTable.global.appliedType(typeOf[List[_]].typeConstructor, lubType)
         val listType = symbolTable.global.ask {
           () =>
             val lubType = types.flatten.toList match {
