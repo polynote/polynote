@@ -8,6 +8,8 @@ import cats.effect.{ContextShift, Fiber, IO}
 import cats.effect.concurrent.Semaphore
 import polynote.server.repository.NotebookRepository
 
+import scala.collection.immutable.SortedMap
+
 /**
   * This is how the sessions interact with notebooks. The sessions don't think about writing changes etc. They'll
   * open a [[SharedNotebook]] and from there get a [[NotebookRef]] in exchange for an output queue. Their interactions
@@ -20,6 +22,8 @@ abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
   def listNotebooks(): F[List[String]]
 
   def createNotebook(path: String): F[String]
+
+  def interpreterNames: Map[String, String]
 
 }
 
@@ -50,6 +54,9 @@ class IONotebookManager(
         } yield notebook
     }
   }(_ => loadingNotebook.release)
+
+  override lazy val interpreterNames: Map[String, String] = SortedMap.empty[String, String] ++
+    kernelFactory.interpreters.mapValues(_.languageName)
 
   def getNotebook(path: String): IO[SharedNotebook[IO]] = notebooks.synchronized {
     Option(notebooks.get(path)) match {

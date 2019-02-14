@@ -353,6 +353,7 @@ class ScalaInterpreter(
 
 object ScalaInterpreter {
   class Factory() extends LanguageKernel.Factory[IO] {
+    override val languageName: String = "Scala"
     override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageKernel[IO] =
       new ScalaInterpreter(symbolTable)
   }

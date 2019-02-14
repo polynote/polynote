@@ -25,7 +25,7 @@ export class MainToolbar extends EventTarget {
         this.element = el;
         el.addEventListener('mousedown', (evt) => evt.preventDefault());
         // TODO: clean up toolbar code
-        MainToolbar.cellTypeSelector = new FakeSelect(document.getElementById('Toolbar-Cell-Language'));
+        MainToolbar.cellTypeSelector = this.cellTypeSelector = new FakeSelect(document.getElementById('Toolbar-Cell-Language'));
 
         this.addEventListener("ContextChanged", evt => this.onContextChanged(evt));
     }
@@ -49,6 +49,18 @@ export class MainToolbar extends EventTarget {
                 break;
             }
             i++;
+        }
+    }
+
+    setInterpreters(interpreters) {
+        while (this.cellTypeSelector.options.length > 1) {
+            this.cellTypeSelector.removeOption(this.cellTypeSelector.options[1]);
+        }
+
+        for (const languageId in interpreters) {
+            if (interpreters.hasOwnProperty(languageId)) {
+                this.cellTypeSelector.addOption(interpreters[languageId], languageId);
+            }
         }
     }
 }
@@ -1164,13 +1176,12 @@ export class MainUI extends SplitView {
 
         this.socket = socket;
 
-        const listingListener = (items) => {
-            socket.removeMessageListener(messages.ListNotebooks, listingListener);
-            this.left.setItems(items);
-        };
-
-        socket.addMessageListener(messages.ListNotebooks, listingListener);
+        socket.listenOnceFor(messages.ListNotebooks, (items) => this.left.setItems(items));
         socket.send(new messages.ListNotebooks([]));
+
+        socket.listenOnceFor(messages.ServerHandshake, (interpreters) => {
+            mainToolbar.setInterpreters(interpreters);
+        });
 
         window.addEventListener('popstate', evt => {
            if (evt.state && evt.state.notebook) {

@@ -21,11 +21,12 @@ trait KernelFactory[F[_]] {
 
   def launchKernel(getNotebook: () => F[Notebook], statusUpdates: Publish[F, KernelStatusUpdate]): F[Kernel[F]]
 
+  def interpreters: Map[String, LanguageKernel.Factory[F]]
 }
 
 class IOKernelFactory(
   dependencyFetchers: Map[String, DependencyFetcher[IO]],
-  subKernels: Map[String, LanguageKernel.Factory[IO]])(implicit
+  val interpreters: Map[String, LanguageKernel.Factory[IO]])(implicit
   contextShift: ContextShift[IO]
 ) extends KernelFactory[IO] {
 
@@ -53,7 +54,7 @@ class IOKernelFactory(
     deps     <- fetchDependencies(config, statusUpdates)
     numDeps   = deps.values.map(_.size).sum
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = (numDeps.toDouble / (numDeps + 1) * 255).toByte) :: Nil))
-    kernel   <- mkKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader)
+    kernel   <- mkKernel(getNotebook, deps, interpreters, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader)
     _        <- kernel.init
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = 255.toByte, status = TaskStatus.Complete) :: Nil))
     _        <- statusUpdates.publish1(KernelBusyState(busy = false, alive = true))

@@ -733,6 +733,21 @@ export class DeleteCell extends Message {
 
 DeleteCell.codec = combined(shortStr, uint32, uint32, tinyStr).to(DeleteCell);
 
+export class ServerHandshake extends Message {
+    static get msgTypeId() { return 16; }
+    static unapply(inst) {
+        return [inst.interpreters];
+    }
+
+    constructor(interpreters) {
+        super(interpreters);
+        this.interpreters = interpreters;
+        Object.freeze(this);
+    }
+}
+
+ServerHandshake.codec = combined(mapCodec(uint8, tinyStr, tinyStr)).to(ServerHandshake);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -750,6 +765,7 @@ Message.codecs = [
     ListNotebooks,   // 13
     CreateNotebook,  // 14
     DeleteCell,      // 15
+    ServerHandshake, // 16
 ];
 
 
