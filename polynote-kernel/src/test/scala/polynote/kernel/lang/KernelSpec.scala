@@ -45,31 +45,33 @@ trait KernelSpec {
       polynote.runtime.Runtime.setDisplayer((mimeType, input) => displayed.append((mimeType, input)))
 
       // TODO: we should get the results of out as well so we can capture output (or maybe interpreters shouldn't even be writing to out!!)
-      Queue.unbounded[IO, Option[Result]].flatMap {
-        out =>
-          val oqSome = new EnqueueSome(out)
-          Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap {
-            statusUpdates =>
-              for {
-                // publishes to symbol table as a side-effect
-                // TODO: ideally we wouldn't need to run predef specially
-                _ <- interp.runCode("test", symbolTable.currentTerms.map(_.asInstanceOf[interp.Decl]), Nil, code, oqSome, statusUpdates)
-                // make sure everything has been processed
-                _ <- symbolTable.drain()
-                _ <- out.enqueue1(None) // terminate the queue
-                // these are the vars runCode published
-                vars = symbolTable.currentTerms
-              } yield {
-                val namedVars = vars.map(v => v.name.toString -> v.value).toMap
+      interp.init().bracket { _ =>
+        Queue.unbounded[IO, Option[Result]].flatMap {
+          out =>
+            val oqSome = new EnqueueSome(out)
+            Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap {
+              statusUpdates =>
 
-                val output = out.dequeue.unNoneTerminate.compile.toVector.unsafeRunSync()
+                // without this, symbolTable.drain() doesn't do anything
+                symbolTable.subscribe()(_ => IO.unit)
 
-                assertion(namedVars, output, displayed)
-                polynote.runtime.Runtime.clear()
-                interp.shutdown()
+                for {
+                  // publishes to symbol table as a side-effect
+                  // TODO: ideally we wouldn't need to run predef specially
+                  _      <- interp.runCode("test", symbolTable.currentTerms.map(_.asInstanceOf[interp.Decl]), Nil, code, oqSome, statusUpdates)
+
+                  // make sure everything has been processed
+                  _      <- symbolTable.drain()
+                  _      <- out.enqueue1(None) // terminate the queue
+                  output <- out.dequeue.unNoneTerminate.compile.toVector
+                } yield {
+                  // these are the vars runCode published
+                  val namedVars = symbolTable.currentTerms.map(v => v.name.toString -> v.value).toMap
+                  assertion(namedVars, output, displayed)
+                  polynote.runtime.Runtime.clear()}
               }
-          }
-      }
+            }
+      }(_ => interp.shutdown())
     }.unsafeRunSync()
   }
 }
