@@ -129,7 +129,7 @@ class ScalaInterpreter(
               // collect term definitions and values from the cell's object, and publish them to the symbol table
               // TODO: We probably also want to publish some output for types, like "Defined class Foo" or "Defined type alias Bar".
               //       But the class story is still WIP (i.e. we might want to pull them out of cells into the notebook package)
-              val syms = symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor).collect {
+              val syms = symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor && !d.isSetter).collect {
 
                 case accessor if accessor.isGetter || (accessor.isMethod && !accessor.isOverloaded && accessor.asMethod.paramLists.isEmpty && accessor.isStable) =>
                   // if the decl is a val, evaluate it and push it to the symbol table
