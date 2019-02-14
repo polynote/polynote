@@ -143,7 +143,14 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     out: Enqueue[IO, Result],
     statusUpdates: Publish[IO, KernelStatusUpdate]
   ): IO[Unit] = if (code.trim().isEmpty) IO.unit else {
+    import symbolTable.global
+
     val stdout = new PythonDisplayHook(out)
+
+    global.demandNewCompilerRun()
+    val run = new global.Run()
+    global.newCompilationUnit("", cell)
+
     withJep {
 
       jep.set("__polynote_displayhook__", stdout)
@@ -182,13 +189,11 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
         } else None
       } else None
 
-      (getPyResults(newDecls), maybeOutput)
+      (getPyResults(newDecls, cell), maybeOutput)
 
     }.flatMap {
       case (resultDict, maybeOutput) =>
-        val symbolPub = symbolTable.publishAll(resultDict.toList.filterNot(_._2 == null).map {
-          case (name, value) => symbolTable.RuntimeValue(name, value, Some(this), cell)
-        })
+        val symbolPub = symbolTable.publishAll(resultDict.filterNot(_._2.value == null).values.toList)
 
         maybeOutput
           .map(o => out.enqueue1(o))
@@ -200,32 +205,50 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     }
   }
 
-  def getPyResults(decls: Seq[String]): Map[String, Any] = {
-    decls.map { name =>
-      val resultType = jep.getValue(s"type($name).__name__", classOf[String])
-      val typedResult = resultType match {
-        case "int" => jep.getValue(name, classOf[java.lang.Number]).longValue()
-        case "float" => jep.getValue(name, classOf[java.lang.Number]).doubleValue()
-        case "str" => jep.getValue(name, classOf[String])
-        case "bool" => jep.getValue(name, classOf[java.lang.Boolean])
-        case "tuple" => getPyResults(Seq(s"list($name)"))
-        case "dict" =>
-          val numElements = jep.getValue(s"len($name)", classOf[java.lang.Number]).longValue()
-          val keyElems = (0L until numElements).map(n => s"list($name.items())[$n][0]")
-          val valElems = (0L until numElements).map(n => s"list($name.items())[$n][1]")
-
-          val keys = getPyResults(keyElems).values
-          val values = getPyResults(valElems).values
-          keys.zip(values).toMap
-        case "list" =>
-          val numElements = jep.getValue(s"len($name)", classOf[java.lang.Number]).longValue()
-          val elems = (0L until numElements).map(n => s"$name[$n]")
-          getPyResults(elems).values.toList
-        case "PyJObject" => jep.getValue(name)
-        case _ => jep.getValue(name, classOf[PyObject])
+  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, symbolTable.RuntimeValue] =
+    decls.map {
+      name => name -> {
+        getPyResult(name) match {
+          case (value, Some(typ)) => symbolTable.RuntimeValue(symbolTable.global.TermName(name), value, typ, Some(this), sourceCellId)
+          case (value, _) => symbolTable.RuntimeValue(name, value, Some(this), sourceCellId)
+        }
       }
-      name -> typedResult
     }.toMap
+
+  def getPyResult(accessor: String): (Any, Option[symbolTable.global.Type]) = {
+    val resultType = jep.getValue(s"type($accessor).__name__", classOf[String])
+    import symbolTable.global.{typeOf, weakTypeOf}
+    resultType match {
+      case "int" => jep.getValue(accessor, classOf[java.lang.Number]).longValue() -> Some(typeOf[Long])
+      case "float" => jep.getValue(accessor, classOf[java.lang.Number]).doubleValue() -> Some(typeOf[Double])
+      case "str" => jep.getValue(accessor, classOf[String]) -> Some(typeOf[String])
+      case "bool" => jep.getValue(accessor, classOf[java.lang.Boolean]).booleanValue() -> Some(typeOf[Boolean])
+      case "tuple" => getPyResult(s"list($accessor)")
+      case "dict" =>
+        val keys = getPyResult(s"list($accessor.keys())")._1.asInstanceOf[List[Any]]
+        val values = getPyResult(s"list($accessor.values())")._1.asInstanceOf[List[Any]]
+        keys.zip(values).toMap -> Some(typeOf[Map[Any, Any]])
+      case "list" =>
+        val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
+        val (elems, types) = (0L until numElements).map(n => getPyResult(s"$accessor[$n]")).toList.unzip
+
+        val listType = symbolTable.global.ask {
+          () =>
+            val lubType = types.flatten.toList match {
+              case Nil      => typeOf[Any]
+              case typeList => try symbolTable.global.lub(typeList) catch {
+                case err: Throwable => typeOf[Any]
+              }
+            }
+            symbolTable.global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
+        }
+
+        elems -> Some(listType)
+      case "PyJObject" =>
+        jep.getValue(accessor) -> Some(typeOf[AnyRef])
+      case _ =>
+        jep.getValue(accessor, classOf[PyObject]) -> Some(typeOf[PyObject])
+    }
   }
 
   override def completionsAt(

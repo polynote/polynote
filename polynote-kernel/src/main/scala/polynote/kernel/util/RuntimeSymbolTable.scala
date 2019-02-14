@@ -33,12 +33,13 @@ final class RuntimeSymbolTable(
   private val cellIds: mutable.TreeSet[String] = new mutable.TreeSet()
 
   private def typeOf(value: Any, staticType: Option[Type]): Type = staticType.getOrElse {
-    try {
-      importFromRuntime.importType {
-        runtimeMirror.reflect(value).symbol.asType.toType
-      }
-    } catch {
-      case err: Throwable => global.NoType
+    val instMirror = runtimeMirror.reflect(value)
+    val importedSym = importFromRuntime.importSymbol(instMirror.symbol)
+
+    importedSym.toType match {
+      case typ if typ.takesTypeArgs =>
+        global.appliedType(typ, List.fill(typ.typeParams.size)(global.typeOf[Any]))
+      case typ => typ.widen
     }
   }
 
@@ -52,6 +53,13 @@ final class RuntimeSymbolTable(
     }.unsafeRunSync()
 
   private val awaitingDelivery = SignallingRef[IO, Int](0).unsafeRunSync()
+
+  def importType(typ: scala.reflect.runtime.universe.Type): Type = try {
+    importFromRuntime.importType(typ)
+  } catch {
+    case err: Throwable => global.NoType
+  }
+
 
   def drain(): IO[Unit] = (Stream.eval(awaitingDelivery.get) ++ awaitingDelivery.discrete).takeWhile(_ > 0).compile.drain
 
@@ -155,6 +163,7 @@ final class RuntimeSymbolTable(
       global.TermName(name), value, typeOf(value, None), source, sourceCell
     )
   }
+
 }
 
 /**
