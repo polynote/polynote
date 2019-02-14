@@ -10,7 +10,8 @@ val commonSettings = Seq(
     "-language:higherKinds",
     "-unchecked"
   ),
-  fork := true,
+  fork in Test := true,
+  javaOptions in Test += s"-Djava.library.path=${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}",
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
     case x =>
