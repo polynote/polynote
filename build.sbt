@@ -10,11 +10,12 @@ val commonSettings = Seq(
     "-language:higherKinds",
     "-unchecked"
   ),
+  fork in Test := true,
+  javaOptions in Test += s"-Djava.library.path=${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}",
   libraryDependencies ++= Seq(
     "org.scalatest" %% "scalatest" % "3.0.5" % "test",
     "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
   ),
-  fork := true,
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
     case x =>
@@ -80,4 +81,4 @@ val `polynote-spark` = project.settings(
   assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false)
 ) dependsOn `polynote-server`
 
-val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`)
+val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`)

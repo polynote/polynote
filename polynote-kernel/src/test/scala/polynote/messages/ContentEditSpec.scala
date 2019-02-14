@@ -101,9 +101,6 @@ class ContentEditSpec extends FreeSpec with Matchers with GeneratorDrivenPropert
             Delete(17,1)
           )
 
-          println(edits.rebase(edit))
-
-
           initial.withEdit(edit).withEdits(edits.rebase(edit)).toString shouldEqual
             initial.withEdits(edits).withEdits(edit.rebase(edits)).toString
         }
@@ -135,9 +132,6 @@ class ContentEditSpec extends FreeSpec with Matchers with GeneratorDrivenPropert
             Delete(7, 0),
             Delete(8, 3)
           )
-
-          println(edits.rebase(edit))
-          println(edit.rebase(edits))
 
           initial.withEdit(edit).withEdits(edits.rebase(edit)).toString shouldEqual
             initial.withEdits(edits).withEdits(edit.rebase(edits)).toString
@@ -217,8 +211,6 @@ class ContentEditSpec extends FreeSpec with Matchers with GeneratorDrivenPropert
             Delete(3, 5),
             Delete(0, 1)
           )
-
-          println(edits.rebase(edit))
 
           initial.withEdit(edit).withEdits(edits.rebase(edit)).toString shouldEqual
             initial.withEdits(edits).withEdits(edit.rebase(edits)).toString
