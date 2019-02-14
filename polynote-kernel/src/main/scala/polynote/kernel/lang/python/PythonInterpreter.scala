@@ -322,11 +322,11 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
 object PythonInterpreter {
   class Factory extends LanguageKernel.Factory[IO] {
     override val languageName: String = "Python"
-    override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageKernel[IO] =
+    override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): PythonInterpreter =
       new PythonInterpreter(symbolTable)
   }
 
-  def factory(): LanguageKernel.Factory[IO] = new Factory()
+  def factory(): Factory = new Factory()
 
 }
 

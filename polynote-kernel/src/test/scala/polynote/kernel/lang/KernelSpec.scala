@@ -10,7 +10,7 @@ import fs2.concurrent.{Queue, Topic}
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.python.PythonInterpreter
 import polynote.kernel.lang.scal.ScalaInterpreter
-import polynote.kernel.util.{GlobalInfo, KernelReporter, RuntimeSymbolTable}
+import polynote.kernel.util.{GlobalInfo, KernelReporter, ReadySignal, RuntimeSymbolTable}
 import polynote.kernel.{KernelStatusUpdate, PolyKernel, Result, UpdatedTasks}
 
 import scala.collection.mutable
@@ -28,19 +28,25 @@ trait KernelSpec {
   implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
 
   def assertPythonOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
-    assertOutput((rst: RuntimeSymbolTable) => PythonInterpreter.factory()(Nil, rst), code)(assertion)
+    assertOutputWith((rst: RuntimeSymbolTable) => PythonInterpreter.factory()(Nil, rst), code) {
+      (interp, vars, output, displayed) => interp.withJep(assertion(vars, output, displayed))
+    }
   }
 
   def assertScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
     assertOutput((rst: RuntimeSymbolTable) => ScalaInterpreter.factory()(Nil, rst), code)(assertion)
   }
 
+  def assertOutput[K <: LanguageKernel[IO]](mkInterp: RuntimeSymbolTable => K, code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit =
+    assertOutputWith(mkInterp, code) {
+      (_, vars, output, displayed) => IO(assertion(vars, output, displayed))
+    }
+
   // TODO: for unit tests we'd ideally want to hook directly to runCode without needing all this!
-  def assertOutput(mkInterp: RuntimeSymbolTable => LanguageKernel[IO], code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
+  def assertOutputWith[K <: LanguageKernel[IO]](mkInterp: RuntimeSymbolTable => K, code: String)(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {
     Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap { updates =>
       val symbolTable = new RuntimeSymbolTable(GlobalInfo(Map.empty, Nil), updates)
       val interp = mkInterp(symbolTable)
-      interp.init().unsafeRunSync()
       val displayed = mutable.ArrayBuffer.empty[(String, String)]
       polynote.runtime.Runtime.setDisplayer((mimeType, input) => displayed.append((mimeType, input)))
 
@@ -53,22 +59,24 @@ trait KernelSpec {
               statusUpdates =>
 
                 // without this, symbolTable.drain() doesn't do anything
-                symbolTable.subscribe()(_ => IO.unit).prefetch
+                symbolTable.subscribe()(_ => IO.unit)
+                val done = ReadySignal()
 
                 for {
                   // publishes to symbol table as a side-effect
                   // TODO: ideally we wouldn't need to run predef specially
+                  symsF  <- symbolTable.subscribe()(_ => IO.unit).map(_._1).interruptWhen(done()).compile.toVector.start
                   _      <- interp.runCode("test", symbolTable.currentTerms.map(_.asInstanceOf[interp.Decl]), Nil, code, oqSome, statusUpdates)
 
                   // make sure everything has been processed
                   _      <- symbolTable.drain()
                   _      <- out.enqueue1(None) // terminate the queue
                   output <- out.dequeue.unNoneTerminate.compile.toVector
-                } yield {
-                  // these are the vars runCode published
-                  val namedVars = symbolTable.currentTerms.map(v => v.name.toString -> v.value).toMap
-                  assertion(namedVars, output, displayed)
-                  polynote.runtime.Runtime.clear()}
+                  _      <- done.complete
+                  vars   <- symsF.join
+                  namedVars = symbolTable.currentTerms.map(v => v.name.toString -> v.value).toMap
+                  result <- assertion(interp, namedVars, output, displayed) *> IO(polynote.runtime.Runtime.clear())
+                } yield ()
               }
             }
       }(_ => interp.shutdown())
