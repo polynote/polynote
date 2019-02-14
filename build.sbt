@@ -12,6 +12,10 @@ val commonSettings = Seq(
   ),
   fork in Test := true,
   javaOptions in Test += s"-Djava.library.path=${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}",
+  libraryDependencies ++= Seq(
+    "org.scalatest" %% "scalatest" % "3.0.5" % "test",
+    "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
+  ),
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
     case x =>
@@ -25,7 +29,10 @@ val commonSettings = Seq(
 )
 
 val `polynote-runtime` = project.settings(
-  commonSettings
+  commonSettings,
+  libraryDependencies ++= Seq(
+    "black.ninia" % "jep" % "3.8.2"
+  )
 )
 
 val `polynote-kernel` = project.settings(
@@ -41,10 +48,7 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-yaml" % "0.9.0",
     "io.circe" %% "circe-generic" % "0.10.0",
     "io.get-coursier" %% "coursier" % "1.1.0-M9",
-    "io.get-coursier" %% "coursier-cache" % "1.1.0-M9",
-    "black.ninia" % "jep" % "3.8.2",
-    "org.scalatest" %% "scalatest" % "3.0.5" % "test",
-    "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
+    "io.get-coursier" %% "coursier-cache" % "1.1.0-M9"
   )
 ).dependsOn(`polynote-runtime`)
 

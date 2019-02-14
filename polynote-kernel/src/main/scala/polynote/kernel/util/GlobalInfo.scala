@@ -59,7 +59,13 @@ object GlobalInfo {
     val jars = dependencies.toList.flatMap(_._2).collect {
       case (_, file) if file.getName endsWith ".jar" => file
     }
-    val requiredPaths = List(pathOf(classOf[List[_]]), pathOf(polynote.runtime.Runtime.getClass), pathOf(classOf[scala.reflect.runtime.JavaUniverse]), pathOf(classOf[scala.tools.nsc.Global])).map {
+    val requiredPaths = List(
+      pathOf(classOf[List[_]]),
+      pathOf(polynote.runtime.Runtime.getClass),
+      pathOf(classOf[scala.reflect.runtime.JavaUniverse]),
+      pathOf(classOf[scala.tools.nsc.Global]),
+      pathOf(classOf[jep.python.PyObject])
+    ).distinct.map {
       case url if url.getProtocol == "file" => new File(url.getPath)
       case url => throw new IllegalStateException(s"Required path $url must be a local file, not ${url.getProtocol}")
     }

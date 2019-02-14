@@ -1,6 +1,6 @@
 package polynote.server.repository.ipynb
 
-import io.circe.{Decoder, Encoder, Json, JsonObject}
+import io.circe._
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.syntax._
 import polynote.data.Rope
@@ -131,7 +131,10 @@ final case class JupyterCell(
 )
 
 object JupyterCell {
-  implicit val encoder: Encoder[JupyterCell] = deriveEncoder[JupyterCell]
+  implicit val encoder: ObjectEncoder[JupyterCell] = deriveEncoder[JupyterCell].contramapObject[JupyterCell] {
+    cell => if (cell.metadata.isEmpty) cell.copy(metadata = Some(JsonObject.empty)) else cell
+  }
+
   implicit val decoder: Decoder[JupyterCell] = deriveDecoder[JupyterCell]
 
   def toNotebookCell(cell: JupyterCell, index: Int): NotebookCell = {
