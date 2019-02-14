@@ -76,4 +76,4 @@ val `polynote-spark` = project.settings(
   assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false)
 ) dependsOn `polynote-server`
 
-val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`)
+val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`)
