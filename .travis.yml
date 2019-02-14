@@ -16,3 +16,4 @@ cache:
       - $HOME/.sbt
       - $HOME/.ivy2
       - $HOME/.m2
+      - $HOME/.local/lib/python3.4/site-packages
