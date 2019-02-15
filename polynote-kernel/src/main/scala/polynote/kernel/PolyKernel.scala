@@ -58,7 +58,10 @@ class PolyKernel private[kernel] (
         oq <- Queue.unbounded[IO, Result]
         _  <- taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => kernel.runCode("Predef", Nil, Nil, code, oq, statusUpdates))
       } yield ()
-  }
+    }.handleErrorWith {
+      err =>
+        IO(logger.error(err)(err.getMessage)) *> IO.raiseError(err)
+    }
 
   protected def getKernel(language: String): IO[LanguageKernel[IO]] = Option(kernels.get(language)).map(IO.pure).getOrElse {
     launchingKernel.acquire.bracket { _ =>
