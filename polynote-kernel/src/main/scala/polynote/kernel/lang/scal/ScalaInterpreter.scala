@@ -13,7 +13,7 @@ import fs2.concurrent.{Enqueue, Queue, Topic}
 import org.log4s.getLogger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
-import polynote.kernel.context.RuntimeContext
+import polynote.kernel.context.{GlobalInfo, RuntimeContext}
 import polynote.kernel.lang.LanguageKernel
 import polynote.kernel.util._
 import polynote.messages.{ShortList, ShortString, TinyList, TinyString}
@@ -24,11 +24,8 @@ import scala.reflect.runtime
 import scala.tools.nsc.interactive.Global
 import scala.tools.reflect.ToolBox
 
-class ScalaInterpreter(
-  val runtimeContext: RuntimeContext
-) extends LanguageKernel[IO] {
+class ScalaInterpreter(val globalInfo: GlobalInfo) extends LanguageKernel[IO, GlobalInfo] {
 
-  import runtimeContext.globalInfo
   import globalInfo.global
 
   private val logger = getLogger
@@ -99,12 +96,11 @@ class ScalaInterpreter(
 
   override def runCode(
     cell: String,
-    runtimeContextView: runtimeContext.RuntimeContextView,
+    runtimeContext: RuntimeContext[GlobalInfo],
     code: String
-  ): IO[(Stream[IO, Result], runtimeContext.RuntimeContextEntry)] = {
+  ): IO[(Stream[IO, Result], IO[RuntimeContext[GlobalInfo]])] = {
     val originalOut = System.out
-    val prevCellId = Option(runtimeContextView.parentEntry.cellId)
-    val source = new ScalaSource[this.type](this)(cell, runtimeContextView.visibleSymbols.toSet, runtimeContextView.availableContext[ScalaSource[this.type]].toList, code)
+    val source = new ScalaSource[this.type](this)(cell, runtimeContext.visibleSymbols.toSet, runtimeContext.availableContext[ScalaSource[this.type]].toList, code)
     interpreterLock.acquire.bracket { _ =>
       Queue.unbounded[IO,Option[Result]].flatMap { maybeResultQ =>
         val resultQ = new EnqueueSome(maybeResultQ)
@@ -112,7 +108,7 @@ class ScalaInterpreter(
           case global.NoSymbol =>
             IO.pure((
               Stream.empty,
-              runtimeContext.RuntimeContextEntry(cell, prevCellId, Map.empty, None, None)
+              IO(RuntimeContext(cell, globalInfo, Option(runtimeContext), Map.empty, None, None))
             ))
 
           case sym =>
@@ -236,7 +232,9 @@ class ScalaInterpreter(
                   _ <- pub.join
                 } yield {
                   val symbolMap = symbols.map(rt => rt.name.toString -> rt).toMap
-                  (maybeResultQ.dequeue.unNoneTerminate, runtimeContext.RuntimeContextEntry(cell, prevCellId, symbolMap, Option(source), maybeReturns))
+                  // TODO: this IO isn't really useful. How can we return the Stream and IO before we are ready?
+                  val newCtx = IO(RuntimeContext(cell, globalInfo, Option(runtimeContext), symbolMap, Option(source), maybeReturns))
+                  (maybeResultQ.dequeue.unNoneTerminate, newCtx)
                 }
             }(stdOut => IO(stdOut.close()))
 
@@ -253,11 +251,11 @@ class ScalaInterpreter(
 
   override def completionsAt(
     cell: String,
-    runtimeContextView: runtimeContext.RuntimeContextView,
+    runtimeContext: RuntimeContext[GlobalInfo],
     code: String,
     pos: Int
   ): IO[List[Completion]] =
-    IO.fromEither(new ScalaSource[this.type](this)(cell, runtimeContextView.visibleSymbols.toSet, runtimeContextView.availableContext[ScalaSource[this.type]].toList, code).completionsAt(pos)).map {
+    IO.fromEither(new ScalaSource[this.type](this)(cell, runtimeContext.visibleSymbols.toSet, runtimeContext.availableContext[ScalaSource[this.type]].toList, code).completionsAt(pos)).map {
       case (typ, completions) => completions.map { sym =>
         val name = sym.name.decodedName.toString
         val symType = sym.typeSignatureIn(typ)
@@ -278,11 +276,11 @@ class ScalaInterpreter(
 
   override def parametersAt(
     cell: String,
-    runtimeContextView: runtimeContext.RuntimeContextView,
+    runtimeContext: RuntimeContext[GlobalInfo],
     code: String,
     pos: Int
   ): IO[Option[Signatures]] =
-    IO.fromEither(new ScalaSource[this.type](this)(cell, runtimeContextView.visibleSymbols.toSet, runtimeContextView.availableContext[ScalaSource[this.type]].toList, code).signatureAt(pos)).map {
+    IO.fromEither(new ScalaSource[this.type](this)(cell, runtimeContext.visibleSymbols.toSet, runtimeContext.availableContext[ScalaSource[this.type]].toList, code).signatureAt(pos)).map {
       case (typ: global.MethodType, syms, n, d) =>
         val hints = syms.map {
           sym =>
@@ -365,11 +363,11 @@ class ScalaInterpreter(
 }
 
 object ScalaInterpreter {
-  class Factory() extends LanguageKernel.Factory[IO] {
+  class Factory() extends LanguageKernel.Factory[IO, GlobalInfo] {
     override val languageName: String = "Scala"
-    override def apply(dependencies: List[(String, File)], runtimeContext: RuntimeContext): LanguageKernel[IO] =
-      new ScalaInterpreter(runtimeContext)
+    override def apply(dependencies: List[(String, File)], globalInfo: GlobalInfo): LanguageKernel[IO, GlobalInfo] =
+      new ScalaInterpreter(globalInfo)
   }
 
-  def factory(): LanguageKernel.Factory[IO] = new Factory()
+  def factory(): LanguageKernel.Factory[IO, GlobalInfo] = new Factory()
 }

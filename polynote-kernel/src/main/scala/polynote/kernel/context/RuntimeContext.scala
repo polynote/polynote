@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.collection.immutable.Queue
 import scala.collection.{TraversableLike, immutable, mutable}
 import scala.reflect.ClassTag
+import scala.tools.nsc.interactive.Global
 
 /**
   * RuntimeContext keeps track of the results of running each cell, and enforces reproducibility by specifying the
@@ -56,18 +57,16 @@ import scala.reflect.ClassTag
   *   Zeppelin would work), because the RuntimeContextView for cell4 would just be [(cell1, (cell1, (x -> 1, y -> 2)))].
   *   This ensures that notebooks will always work properly when shared with others.
   */
-class RuntimeContext(val globalInfo: GlobalInfo) extends Serializable {
 
-  case class RuntimeContextEntry(
+  case class RuntimeContext[G <: GlobalInfo](
     cellId: String,
-    previousCellId: Option[String],
-    symbols: Map[String, globalInfo.RuntimeValue],
+    globalInfo: G,
+    previousCell: Option[RuntimeContext[G]],
+    symbols: Map[String, G#RuntimeValue],
     interpreterContext: Option[InterpreterContext],
-    maybeResult: Option[globalInfo.RuntimeValue]
-  )
-
-  class RuntimeContextView(val parentEntry: RuntimeContextEntry) {
-    def visibleSymbols: Seq[globalInfo.RuntimeValue] = collect(_.symbols.values).toSeq.distinct :+ out // make sure to add the output map
+    maybeResult: Option[G#RuntimeValue]
+  ) {
+    def visibleSymbols: Seq[G#RuntimeValue] = collect(_.symbols.values).toSeq.distinct :+ out // make sure to add the output map
 
     def availableContext[T <: InterpreterContext: ClassTag]: Seq[T] = collect[Option[T]] { entry =>
       Seq(entry.interpreterContext.collect {
@@ -76,31 +75,23 @@ class RuntimeContext(val globalInfo: GlobalInfo) extends Serializable {
     }.toSeq.flatten.distinct
 
     // TODO: is this even useful on its own or should we fold it into `out`
-    def resultMap: Map[String, globalInfo.RuntimeValue] = collect { entry =>
+    def resultMap: Map[String, G#RuntimeValue] = collect { entry =>
       entry.maybeResult.map(r => entry.cellId -> r)
     }.toMap
 
     // TODO: this will be accessible as Out[cell1], do we want it to be Out[1] instead (like iPython)
     def out: globalInfo.RuntimeValue = globalInfo.RuntimeValue("Out", resultMap.mapValues(_.value), None, "")
 
-    def collect[T](f: RuntimeContextEntry => Iterable[T]): Iterable[T] = parentEntry.previousCellId match {
-      case Some(prev) => getContextFor(prev).collect(f) ++ f(parentEntry)
-      case None => f(parentEntry)
+    def collect[T](f: RuntimeContext[G] => Iterable[T]): Iterable[T] = previousCell match {
+      case Some(prev) => prev.collect(f) ++ f(this)
+      case None => f(this)
     }
   }
 
-  private val currentContext = new ConcurrentHashMap[/* cellId */ String, RuntimeContextEntry]()
-
-  def insertEntry(entry: RuntimeContextEntry): Unit = currentContext.put(entry.cellId, entry)
-
-  def removeEntry(cellId: String): Unit = currentContext.remove(cellId)
-
-  def getContextFor(cellId: String): RuntimeContextView = Option(currentContext.get(cellId)).map(new RuntimeContextView(_)).getOrElse(getPredefContext)
-
-  def getPredefContext: RuntimeContextView = new RuntimeContextView(predefContext)
-
-  lazy val predefContext: RuntimeContextEntry = {
+object RuntimeContext {
+  def getPredefContext[G <: GlobalInfo](globalInfo: G): RuntimeContext[G] = {
     import globalInfo.global
+
     val symbols = Map("kernel" -> globalInfo.RuntimeValue(
       global.TermName("kernel"),
       polynote.runtime.Runtime,
@@ -108,11 +99,9 @@ class RuntimeContext(val globalInfo: GlobalInfo) extends Serializable {
       None,
       "$Predef")
     )
-    RuntimeContextEntry("$Predef", None, symbols, None, None)
+    RuntimeContext[G]("$Predef", globalInfo, None, symbols, None, None)
   }
 }
-
-
 
 // interpreter-specific contextual info
 trait InterpreterContext

@@ -11,6 +11,7 @@ import fs2.concurrent.Topic
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageKernel
 import polynote.kernel._
+import polynote.kernel.context.GlobalInfo
 import polynote.kernel.util.{Publish, ReadySignal}
 import polynote.messages.{Notebook, NotebookConfig, TinyMap}
 
@@ -21,12 +22,12 @@ trait KernelFactory[F[_]] {
 
   def launchKernel(getNotebook: () => F[Notebook], statusUpdates: Publish[F, KernelStatusUpdate]): F[Kernel[F]]
 
-  def interpreters: Map[String, LanguageKernel.Factory[F]]
+  def interpreters: Map[String, LanguageKernel.Factory[F, GlobalInfo]]
 }
 
 class IOKernelFactory(
   dependencyFetchers: Map[String, DependencyFetcher[IO]],
-  val interpreters: Map[String, LanguageKernel.Factory[IO]])(implicit
+  val interpreters: Map[String, LanguageKernel.Factory[IO, GlobalInfo]])(implicit
   contextShift: ContextShift[IO]
 ) extends KernelFactory[IO] {
 
@@ -38,7 +39,7 @@ class IOKernelFactory(
   protected def mkKernel(
     getNotebook: () => IO[Notebook],
     deps: Map[String, List[(String, File)]],
-    subKernels: Map[String, LanguageKernel.Factory[IO]],
+    subKernels: Map[String, LanguageKernel.Factory[IO, GlobalInfo]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     settings: Settings,

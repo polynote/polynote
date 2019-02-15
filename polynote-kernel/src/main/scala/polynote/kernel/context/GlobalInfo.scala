@@ -15,6 +15,7 @@ import scala.tools.nsc.interactive.Global
 
 final case class GlobalInfo(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
 
+  type GlobalProxy = global.type
   import global.{Symbol, TermName, Type}
 
   private val runtimeMirror = scala.reflect.runtime.universe.runtimeMirror(classLoader)
@@ -54,12 +55,12 @@ final case class GlobalInfo(global: Global, classPath: List[File], classLoader: 
   }
 
   sealed case class RuntimeValue(
-    name: TermName,
+    name: GlobalProxy#TermName,
     value: Any,
-    scalaType: global.Type,
-    source: Option[LanguageKernel[IO]],
+    scalaType: GlobalProxy#Type,
+    source: Option[LanguageKernel[IO, GlobalInfo]],
     sourceCellId: String
-  ) extends SymbolDecl[IO, global.type] {
+  ) extends SymbolDecl[IO, GlobalInfo] {
     lazy val typeString: String = formatType(scalaType)
     lazy val valueString: String = value.toString match {
       case str if str.length > 64 => str.substring(0, 64)
@@ -71,7 +72,7 @@ final case class GlobalInfo(global: Global, classPath: List[File], classLoader: 
   }
 
   object RuntimeValue {
-    def apply(name: String, value: Any, source: Option[LanguageKernel[IO]], sourceCell: String): RuntimeValue = RuntimeValue(
+    def apply(name: String, value: Any, source: Option[LanguageKernel[IO, GlobalInfo]], sourceCell: String): RuntimeValue = RuntimeValue(
       global.TermName(name), value, typeOf(value, None), source, sourceCell
     )
   }
@@ -168,9 +169,9 @@ object GlobalInfo {
 /**
   * A symbol defined in a notebook cell
   */
-trait SymbolDecl[F[_], G <: Global] {
-  def name: G#TermName
-  def source: Option[LanguageKernel[F]]
+trait SymbolDecl[F[_], G <: GlobalInfo] {
+  def name: G#GlobalProxy#TermName
+  def source: Option[LanguageKernel[F, G]]
   def sourceCellId: String
-  def scalaType: G#Type
+  def scalaType: G#GlobalProxy#Type
 }

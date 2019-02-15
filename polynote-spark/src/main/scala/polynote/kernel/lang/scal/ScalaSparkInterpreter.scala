@@ -4,10 +4,11 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.IO
+import polynote.kernel.context.GlobalInfo
 import polynote.kernel.lang.LanguageKernel
-import polynote.kernel.util.RuntimeSymbolTable
 
-class ScalaSparkInterpreter(symbolTable: RuntimeSymbolTable) extends ScalaInterpreter(symbolTable) {
+class ScalaSparkInterpreter(override val globalInfo: GlobalInfo) extends ScalaInterpreter(globalInfo) {
+  import globalInfo.global
 
   // need a unique package, in case of a shared spark session
   override protected lazy val notebookPackageName = global.TermName(s"$$notebook${ScalaSparkInterpreter.nextNotebookId}")
@@ -28,12 +29,12 @@ object ScalaSparkInterpreter {
   private val notebookCounter = new AtomicInteger(0)
   private def nextNotebookId = notebookCounter.getAndIncrement()
 
-  class Factory extends LanguageKernel.Factory[IO] {
+  class Factory() extends LanguageKernel.Factory[IO, GlobalInfo] {
     override val languageName: String = "Scala"
-    override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageKernel[IO] =
-      new ScalaSparkInterpreter(symbolTable)
+    override def apply(dependencies: List[(String, File)], globalInfo: GlobalInfo): LanguageKernel[IO, GlobalInfo] =
+      new ScalaSparkInterpreter(globalInfo)
   }
 
-  def factory(): LanguageKernel.Factory[IO] = new Factory
+  def factory(): LanguageKernel.Factory[IO, GlobalInfo] = new Factory()
 
 }

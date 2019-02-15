@@ -3,6 +3,7 @@ package polynote.server
 import java.io.File
 
 import cats.effect.IO
+import polynote.kernel.context.GlobalInfo
 import polynote.kernel.{KernelStatusUpdate, PolyKernel, SparkPolyKernel}
 import polynote.kernel.lang.LanguageKernel
 import polynote.kernel.util.Publish
@@ -16,7 +17,7 @@ object SparkServer extends Server {
     override protected def mkKernel(
       getNotebook: () => IO[Notebook],
       deps: Map[String, List[(String, File)]],
-      subKernels: Map[String, LanguageKernel.Factory[IO]],
+      subKernels: Map[String, LanguageKernel.Factory[IO, GlobalInfo]],
       statusUpdates: Publish[IO, KernelStatusUpdate],
       extraClassPath: List[File],
       settings: Settings,

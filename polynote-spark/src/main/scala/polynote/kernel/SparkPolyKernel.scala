@@ -20,7 +20,7 @@ import polynote.kernel.PolyKernel._
 import polynote.kernel.context.GlobalInfo
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageKernel
-import polynote.kernel.util.{GlobalInfo, Publish, RuntimeSymbolTable}
+import polynote.kernel.util.{Publish}
 import polynote.messages.Notebook
 
 import scala.reflect.internal.util.AbstractFileClassLoader
@@ -35,7 +35,7 @@ class SparkPolyKernel(
   dependencies: Map[String, List[(String, File)]],
   statusUpdates: Publish[IO, KernelStatusUpdate],
   outputPath: Path,
-  subKernels: Map[String, LanguageKernel.Factory[IO]] = Map.empty,
+  subKernels: Map[String, LanguageKernel.Factory[IO, GlobalInfo]] = Map.empty,
   parentClassLoader: ClassLoader
 ) extends PolyKernel(getNotebook, globalInfo, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels) {
 
@@ -82,12 +82,7 @@ class SparkPolyKernel(
 
   private val realOutputPath = Deferred.unsafe[IO, AbstractFile]
 
-  // TODO: any better way to handle this?
-  override protected lazy val symbolTable = realOutputPath.get.map {
-    outputDir =>
-      val updatedClassLoader = GlobalInfo.genNotebookClassLoader(dependencies, globalInfo.classPath, outputDir, parentClassLoader)
-      new RuntimeSymbolTable(GlobalInfo(globalInfo.global, globalInfo.classPath, updatedClassLoader), statusUpdates)
-  }.unsafeRunSync()
+  //TODO: Does PolyKernel need to do something with runtimeContext?
 
   // initialize the session, and add task listener
   private lazy val sparkListener = new KernelListener(statusUpdates)
@@ -138,7 +133,7 @@ object SparkPolyKernel {
   def apply(
     getNotebook: () => IO[Notebook],
     dependencies: Map[String, List[(String, File)]],
-    subKernels: Map[String, LanguageKernel.Factory[IO]],
+    subKernels: Map[String, LanguageKernel.Factory[IO, GlobalInfo]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,

@@ -12,14 +12,14 @@ import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig}
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
-import polynote.kernel.context.RuntimeContext
-import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
+import polynote.kernel.context.{GlobalInfo, RuntimeContext}
+import polynote.kernel.util.{Publish, ReadySignal}
 import polynote.messages.{ShortString, TinyList, TinyString}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
-class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKernel[IO] {
+class PythonInterpreter(val globalInfo: GlobalInfo) extends LanguageKernel[IO, GlobalInfo] {
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
 
@@ -82,20 +82,19 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
 
   override def runCode(
     cell: String,
-    runtimeContextView: runtimeContext.RuntimeContextView,
+    runtimeContext: RuntimeContext[GlobalInfo],
     code: String
-  ): IO[(Stream[IO, Result], runtimeContext.RuntimeContextEntry)] = {
-    val prevCellId = Option(runtimeContextView.parentEntry.cellId)
+  ): IO[(Stream[IO, Result], IO[RuntimeContext[GlobalInfo]])] = {
     if (code.trim().isEmpty) {
       IO.pure((
         Stream.empty,
-        runtimeContext.RuntimeContextEntry(cell, prevCellId, Map.empty, None, None)
+        IO(RuntimeContext(cell, globalInfo, Option(runtimeContext), Map.empty, None, None))
       ))
     } else {
 
       implicit val iShift: ContextShift[IO] = shift
 
-      def exec(stdout: PythonDisplayHook, globalDict: Map[String, Any]): IO[(Option[Output], Map[String, runtimeContext.globalInfo.RuntimeValue], Option[runtimeContext.globalInfo.RuntimeValue])] = {
+      def exec(stdout: PythonDisplayHook, globalDict: Map[String, Any]): IO[(Option[Output], Map[String, globalInfo.RuntimeValue], Option[globalInfo.RuntimeValue])] = {
         import runtimeContext.globalInfo.global
 
         global.demandNewCompilerRun()
@@ -149,7 +148,7 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
         if (hasLastValue) {
           (
             Option(Output("text/plain; rel=decl; lang=python", s"$resultName = ${jep.getValue(s"repr(${newDecls.last})", classOf[String])}")),
-            Option(runtimeContext.globalInfo.RuntimeValue(resultName, jep.getValue(resultName), Some(this), cell))
+            Option(globalInfo.RuntimeValue(resultName, jep.getValue(resultName), Some(this), cell))
           )
         } else (None, None)
       } else (None, None)
@@ -157,7 +156,7 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
           val symbolDict = getPyResults(newDecls, cell).filterNot { case (k, v) => k == resultName || v == null }
 
           val symbols = symbolDict.map {
-            case (name, value) => name -> runtimeContext.globalInfo.RuntimeValue(name, value, Some(this), cell)
+            case (name, value) => name -> globalInfo.RuntimeValue(name, value, Some(this), cell)
           }
 
           (maybeOutput, symbols, maybeReturns)
@@ -166,7 +165,7 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
 
       Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
         val eval = for {
-          globalDict <- symbolsToPythonDict(runtimeContextView.visibleSymbols)
+          globalDict <- symbolsToPythonDict(runtimeContext.visibleSymbols)
           resultQ = new EnqueueSome(maybeResultQ)
           stdout = new PythonDisplayHook(resultQ)
           execResult <- exec(stdout, globalDict)
@@ -175,26 +174,29 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
           _ <- Stream.emits(maybeOutput.toSeq).to(resultQ.enqueue).compile.toVector
         } yield {
 
-          (maybeResultQ.dequeue.unNoneTerminate, runtimeContext.RuntimeContextEntry(cell, prevCellId, symbols, None, maybeReturns))
+
+          // TODO: this IO isn't really useful. How can we return the Stream and IO before we are ready?
+          val newCtx = IO(RuntimeContext(cell, globalInfo, Option(runtimeContext), symbols, None, maybeReturns))
+          (maybeResultQ.dequeue.unNoneTerminate, newCtx)
         }
         eval.guarantee(maybeResultQ.enqueue1(None))
       }
     }
   }
 
-  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, runtimeContext.globalInfo.RuntimeValue] =
+  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, GlobalInfo#RuntimeValue] =
     decls.map {
       name => name -> {
         getPyResult(name) match {
-          case (value, Some(typ)) => runtimeContext.globalInfo.RuntimeValue(runtimeContext.globalInfo.global.TermName(name), value, typ, Some(this), sourceCellId)
-          case (value, _) => runtimeContext.globalInfo.RuntimeValue(name, value, Some(this), sourceCellId)
+          case (value, Some(typ)) => globalInfo.RuntimeValue(globalInfo.global.TermName(name), value, typ, Some(this), sourceCellId)
+          case (value, _) => globalInfo.RuntimeValue(name, value, Some(this), sourceCellId)
         }
       }
     }.toMap
 
-  def getPyResult(accessor: String): (Any, Option[runtimeContext.globalInfo.global.Type]) = {
+  def getPyResult(accessor: String): (Any, Option[globalInfo.global.Type]) = {
     val resultType = jep.getValue(s"type($accessor).__name__", classOf[String])
-    import runtimeContext.globalInfo.global.{typeOf, weakTypeOf}
+    import globalInfo.global.{typeOf, weakTypeOf}
     resultType match {
       case "int" => jep.getValue(accessor, classOf[java.lang.Number]).longValue() -> Some(typeOf[Long])
       case "float" => jep.getValue(accessor, classOf[java.lang.Number]).doubleValue() -> Some(typeOf[Double])
@@ -209,15 +211,15 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
         val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
         val (elems, types) = (0L until numElements).map(n => getPyResult(s"$accessor[$n]")).toList.unzip
 
-        val listType = runtimeContext.globalInfo.global.ask {
+        val listType = globalInfo.global.ask {
           () =>
             val lubType = types.flatten.toList match {
               case Nil      => typeOf[Any]
-              case typeList => try runtimeContext.globalInfo.global.lub(typeList) catch {
+              case typeList => try globalInfo.global.lub(typeList) catch {
                 case err: Throwable => typeOf[Any]
               }
             }
-            runtimeContext.globalInfo.global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
+            globalInfo.global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
         }
 
         elems -> Some(listType)
@@ -228,9 +230,9 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
     }
   }
 
-  def symbolsToPythonDict(symbols: Seq[runtimeContext.globalInfo.RuntimeValue]): IO[Map[String, Any]] = withJep {
+  def symbolsToPythonDict(symbols: Seq[GlobalInfo#RuntimeValue]): IO[Map[String, Any]] = withJep {
     symbols.map {
-      case runtimeContext.globalInfo.RuntimeValue(name, value, _, _, _) =>
+      case globalInfo.RuntimeValue(name, value, _, _, _) =>
         value match {
           case polynote.runtime.Runtime =>
             // hijack the kernel and wrap it in a pyobject so we can set the display
@@ -273,7 +275,7 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
 
   override def completionsAt(
     cell: String,
-    runtimeContextView: runtimeContext.RuntimeContextView,
+    runtimeContext: RuntimeContext[GlobalInfo],
     code: String,
     pos: Int
   ): IO[List[Completion]] = withJep {
@@ -330,7 +332,7 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
   // TODO: can parameter hints be implemented for python?
   override def parametersAt(
     cell: String,
-    runtimeContextView: runtimeContext.RuntimeContextView,
+    runtimeContext: RuntimeContext[GlobalInfo],
     code: String,
     pos: Int
   ): IO[Option[Signatures]] = IO.pure(None)
@@ -338,10 +340,10 @@ class PythonInterpreter(val runtimeContext: RuntimeContext) extends LanguageKern
 }
 
 object PythonInterpreter {
-  class Factory extends LanguageKernel.Factory[IO] {
+  class Factory extends LanguageKernel.Factory[IO, GlobalInfo] {
     override val languageName: String = "Python"
-    override def apply(dependencies: List[(String, File)], runtimeContext: RuntimeContext): PythonInterpreter =
-      new PythonInterpreter(runtimeContext)
+    override def apply(dependencies: List[(String, File)], globalInfo: GlobalInfo): LanguageKernel[IO, GlobalInfo] =
+      new PythonInterpreter(globalInfo)
   }
 
   def factory(): Factory = new Factory()

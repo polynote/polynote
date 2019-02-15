@@ -1,9 +1,10 @@
 package polynote.kernel.lang.scal
 
 import cats.data.Ior
+import cats.effect.IO
 import cats.syntax.either._
 import polynote.kernel.EmptyCell
-import polynote.kernel.context.InterpreterContext
+import polynote.kernel.context.{GlobalInfo, InterpreterContext, SymbolDecl}
 import polynote.kernel.util.KernelReporter
 
 import scala.annotation.tailrec
@@ -17,12 +18,12 @@ import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFi
   */
 class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)(
   id: String,
-  availableSymbols: Set[Interpreter#Decl],
+  availableSymbols: Set[SymbolDecl[IO, GlobalInfo]],
   previousSources: List[ScalaSource[Interpreter]],
   code: String
 ) extends InterpreterContext {
 
-  import interpreter.runtimeContext.globalInfo.global
+  import interpreter.globalInfo.global
   import interpreter.notebookPackage
   import global.{Type, Tree, atPos}
 
