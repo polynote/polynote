@@ -9,7 +9,7 @@ import polynote.kernel.context.{GlobalInfo, RuntimeContext, SymbolDecl}
 /**
   * The LanguageKernel runs code in a given language.
   */
-trait LanguageKernel[F[_], G <: GlobalInfo] {
+trait LanguageKernel[F[_]] {
 
   /**
     * Run the given code.
@@ -21,23 +21,23 @@ trait LanguageKernel[F[_], G <: GlobalInfo] {
     */
   def runCode(
     cell: String,
-    runtimeContext: RuntimeContext[G], // TODO: this could just be the parent cell id...
+    runtimeContext: RuntimeContext,
     code: String
-  ): F[(Stream[F, Result], F[RuntimeContext[G]])]
+  ): F[(Stream[F, Result], F[RuntimeContext])]
 
   /**
     * Ask for completions (if applicable) at the given position in the given code string
     *
     * @param pos The position (character offset) within the code string at which completions are requested
     */
-  def completionsAt(cell: String, runtimeContext: RuntimeContext[G], code: String, pos: Int): F[List[Completion]]
+  def completionsAt(cell: String, runtimeContext: RuntimeContext, code: String, pos: Int): F[List[Completion]]
 
   /**
     * Ask for parameter signatures (if applicable) at the given position in the given code string
     *
     * @param pos The position (character offset) within the code string at which parameter hints are requested
     */
-  def parametersAt(cell: String, runtimeContext: RuntimeContext[G], code: String, pos: Int): F[Option[Signatures]]
+  def parametersAt(cell: String, runtimeContext: RuntimeContext, code: String, pos: Int): F[Option[Signatures]]
 
   /**
     * Terminate the language kernel
@@ -48,9 +48,9 @@ trait LanguageKernel[F[_], G <: GlobalInfo] {
 
 object LanguageKernel {
 
-  trait Factory[F[_], G <: GlobalInfo] {
+  trait Factory[F[_]] {
     def languageName: String
-    def apply(dependencies: List[(String, File)], globalInfo: G): LanguageKernel[F, G]
+    def apply(dependencies: List[(String, File)], globalInfo: GlobalInfo): LanguageKernel[F]
   }
 
 }

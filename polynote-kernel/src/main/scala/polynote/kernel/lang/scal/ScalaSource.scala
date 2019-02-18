@@ -18,7 +18,7 @@ import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFi
   */
 class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)(
   id: String,
-  availableSymbols: Set[SymbolDecl[IO, GlobalInfo]],
+  availableSymbols: Set[SymbolDecl[IO]],
   previousSources: List[ScalaSource[Interpreter]],
   code: String
 ) extends InterpreterContext {
@@ -142,8 +142,8 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
         .filterNot(_.source contains interpreter)
         .toList.map {
           sym =>
-            val name = sym.name.asInstanceOf[global.TermName]
-            val typ = sym.scalaType.asInstanceOf[global.Type]
+            val name = global.TermName(sym.name)
+            val typ = sym.scalaType(global)
             atPos(beginning)(
               global.DefDef(
                 global.Modifiers(global.Flag.PRIVATE),

@@ -7,6 +7,7 @@ import cats.effect.IO
 import polynote.kernel.lang.LanguageKernel
 import polynote.kernel.util._
 
+import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
@@ -55,12 +56,12 @@ final case class GlobalInfo(global: Global, classPath: List[File], classLoader: 
   }
 
   sealed case class RuntimeValue(
-    name: GlobalProxy#TermName,
+    name: String,
     value: Any,
-    scalaType: GlobalProxy#Type,
-    source: Option[LanguageKernel[IO, GlobalInfo]],
+    scalaType: global.Type,
+    source: Option[LanguageKernel[IO]],
     sourceCellId: String
-  ) extends SymbolDecl[IO, GlobalInfo] {
+  ) extends SymbolDecl[IO] {
     lazy val typeString: String = formatType(scalaType)
     lazy val valueString: String = value.toString match {
       case str if str.length > 64 => str.substring(0, 64)
@@ -69,11 +70,17 @@ final case class GlobalInfo(global: Global, classPath: List[File], classLoader: 
 
     // don't need to hash everything to determine hash code; name collisions are less common than hash comparisons
     override def hashCode(): Int = name.hashCode()
+
+    override def scalaType(g: Global): g.Type = if (g eq global) {
+      g.typeOf[scalaType.type] // will this work...?
+    } else throw new Exception("should never happen yikes !!!!")
+
+    override def getValue: Option[Any] = Option(value)
   }
 
   object RuntimeValue {
-    def apply(name: String, value: Any, source: Option[LanguageKernel[IO, GlobalInfo]], sourceCell: String): RuntimeValue = RuntimeValue(
-      global.TermName(name), value, typeOf(value, None), source, sourceCell
+    def apply(name: String, value: Any, source: Option[LanguageKernel[IO]], sourceCell: String): RuntimeValue = RuntimeValue(
+      name, value, typeOf(value, None), source, sourceCell
     )
   }
 }
@@ -169,9 +176,10 @@ object GlobalInfo {
 /**
   * A symbol defined in a notebook cell
   */
-trait SymbolDecl[F[_], G <: GlobalInfo] {
-  def name: G#GlobalProxy#TermName
-  def source: Option[LanguageKernel[F, G]]
+trait SymbolDecl[F[_]] {
+  def name: String
+  def source: Option[LanguageKernel[F]]
   def sourceCellId: String
-  def scalaType: G#GlobalProxy#Type
+  def scalaType(g: Global): g.Type
+  def getValue: Option[Any]
 }

@@ -2,10 +2,13 @@ package polynote.kernel.context
 
 import java.util.concurrent.ConcurrentHashMap
 
+import cats.effect.IO
+
 import scala.collection.immutable.Queue
 import scala.collection.{TraversableLike, immutable, mutable}
 import scala.reflect.ClassTag
 import scala.tools.nsc.interactive.Global
+import scala.reflect.runtime.universe._
 
 /**
   * RuntimeContext keeps track of the results of running each cell, and enforces reproducibility by specifying the
@@ -58,15 +61,15 @@ import scala.tools.nsc.interactive.Global
   *   This ensures that notebooks will always work properly when shared with others.
   */
 
-  case class RuntimeContext[G <: GlobalInfo](
+  case class RuntimeContext(
     cellId: String,
-    globalInfo: G,
-    previousCell: Option[RuntimeContext[G]],
-    symbols: Map[String, G#RuntimeValue],
+    globalInfo: GlobalInfo,
+    previousCell: Option[RuntimeContext],
+    symbols: Map[/* cellId */ String, SymbolDecl[IO]], // TODO: should we make this an F[_] rather than an IO?
     interpreterContext: Option[InterpreterContext],
-    maybeResult: Option[G#RuntimeValue]
+    maybeResult: Option[SymbolDecl[IO]]
   ) {
-    def visibleSymbols: Seq[G#RuntimeValue] = collect(_.symbols.values).toSeq.distinct :+ out // make sure to add the output map
+    def visibleSymbols: Seq[SymbolDecl[IO]] = pickLastDistinctRTV(collect(_.symbols.values)).distinct :+ out // make sure to add the output map
 
     def availableContext[T <: InterpreterContext: ClassTag]: Seq[T] = collect[Option[T]] { entry =>
       Seq(entry.interpreterContext.collect {
@@ -75,16 +78,37 @@ import scala.tools.nsc.interactive.Global
     }.toSeq.flatten.distinct
 
     // TODO: is this even useful on its own or should we fold it into `out`
-    def resultMap: Map[String, G#RuntimeValue] = collect { entry =>
+    def resultMap: Map[String, SymbolDecl[IO]] = collect { entry =>
       entry.maybeResult.map(r => entry.cellId -> r)
     }.toMap
 
     // TODO: this will be accessible as Out[cell1], do we want it to be Out[1] instead (like iPython)
-    def out: globalInfo.RuntimeValue = globalInfo.RuntimeValue("Out", resultMap.mapValues(_.value), None, "")
+    def out: SymbolDecl[IO] = {
+      import globalInfo.global
+      globalInfo.RuntimeValue("Out", resultMap.flatMap(x => x._2.getValue.map(v => x._1 -> v)), global.typeOf[immutable.Map[java.lang.String, Any]], None, "")
+    }
 
-    def collect[T](f: RuntimeContext[G] => Iterable[T]): Iterable[T] = previousCell match {
+    def collect[T](f: RuntimeContext => Iterable[T]): Iterable[T] = previousCell match {
       case Some(prev) => prev.collect(f) ++ f(this)
       case None => f(this)
+    }
+
+    private def pickLastDistinctRTV(rtvs: Iterable[SymbolDecl[IO]]): Seq[SymbolDecl[IO]] = {
+      rtvs.foldLeft(Seq.empty[SymbolDecl[IO]]) {
+        case (acc, next) =>
+          val idx = acc.indexWhere(_.name == next.name)
+          if (idx == -1) acc :+ next else {
+            val (l, r) = acc.splitAt(idx)
+            (l :+ next) ++ r.drop(1)
+          }
+      }
+    }
+
+    def delete(deleteCellId: String): Option[RuntimeContext] = {
+      if (cellId == deleteCellId)
+        previousCell
+      else
+        Option(copy(previousCell = previousCell.flatMap(_.delete(deleteCellId))))
     }
   }
 

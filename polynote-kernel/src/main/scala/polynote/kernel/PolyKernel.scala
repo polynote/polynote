@@ -75,6 +75,8 @@ class PolyKernel private[kernel] (
     predef.cellId -> predef
   }
 
+  private val rc = Ref.of[IO, RuntimeContext]
+
   def runCell(id: String): IO[fs2.Stream[IO, Result]] = {
     val done = ReadySignal()
     Queue.unbounded[IO, Option[Result]].flatMap {
