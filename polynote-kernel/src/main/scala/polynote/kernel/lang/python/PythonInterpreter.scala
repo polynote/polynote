@@ -6,9 +6,11 @@ import java.util.concurrent.{Callable, ExecutorService, Executors, ThreadFactory
 
 import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
-import fs2.concurrent.Enqueue
+import fs2.Stream
+import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig}
+import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
 import polynote.messages.{ShortString, TinyList, TinyString}
@@ -37,7 +39,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
         value.value match {
           case polynote.runtime.Runtime => // pass (already handled above)
           case _ =>
-            jep.set(value.name.toString, value.value)
+            jep.set(value.name, value.value)
         }
       }
     }.interruptWhen(shutdownSignal()).compile.drain.unsafeRunAsyncAndForget()
@@ -72,7 +74,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
               jep.set("kernel", pykernel)
               jep.eval("del __kernel_ref")
             case _ =>
-              jep.set(value.name.toString, value.value)
+              jep.set(value.name, value.value)
           }
       }
     }
@@ -139,69 +141,80 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     cell: String,
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
-    code: String,
-    out: Enqueue[IO, Result],
-    statusUpdates: Publish[IO, KernelStatusUpdate]
-  ): IO[Unit] = if (code.trim().isEmpty) IO.unit else {
+    code: String
+  ): IO[Stream[IO, RunWrapper]] = if (code.trim().isEmpty) IO.pure(Stream.empty) else {
     import symbolTable.global
-
-    val stdout = new PythonDisplayHook(out)
 
 //    global.demandNewCompilerRun()
     val run = new global.Run()
     global.newCompilationUnit("", cell)
 
-    withJep {
+    val shiftEffect = IO.ioConcurrentEffect(shift) // TODO: we can also create an implicit shift instead of doing this, which is better?
+    Queue.unbounded[IO, Option[RunWrapper]](shiftEffect).flatMap { maybeResultQ =>
 
-      jep.set("__polynote_displayhook__", stdout)
-      jep.eval("import sys\n")
-      jep.eval("import ast\n")
-      jep.eval("sys.displayhook = __polynote_displayhook__.output\n")
-      jep.eval("sys.stdout = __polynote_displayhook__\n")
-      jep.eval("__polynote_locals__ = {}\n")
-      jep.set("__polynote_code__", code)
-      jep.set("__polynote_cell__", cell)
+      val resultQ = new EnqueueSome(maybeResultQ)
 
-      // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
-      // TODO: should probably just use ipython to evaluate it instead
-      jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
-      jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
-      val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
+      val stdout = new PythonDisplayHook(resultQ)
 
-      val resultName = s"res$cell"
-      val maybeModifiedCode = if (lastIsExpr) {
-        val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
-        val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
 
-        (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
-      } else code
+      withJep {
 
-      jep.set("__polynote_code__", maybeModifiedCode)
-      jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
-      jep.eval("globals().update(__polynote_locals__)")
-      val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
+        jep.set("__polynote_displayhook__", stdout)
+        jep.eval("import sys\n")
+        jep.eval("import ast\n")
+        jep.eval("sys.displayhook = __polynote_displayhook__.output\n")
+        jep.eval("sys.stdout = __polynote_displayhook__\n")
+        jep.eval("__polynote_locals__ = {}\n")
+        jep.set("__polynote_code__", code)
+        jep.set("__polynote_cell__", cell)
 
-      // TODO: We talked about potentially creating an `Out` map, inspired by ipython, instead of these resCell# vars
-      val maybeOutput = if (lastIsExpr) {
-        val hasLastValue = jep.getValue(s"$resultName != None", classOf[java.lang.Boolean])
-        if (hasLastValue) {
-          Option(Output("text/plain; rel=decl; lang=python", s"$resultName = ${jep.getValue(s"repr($resultName)", classOf[String])}"))
+        // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
+        // TODO: should probably just use ipython to evaluate it instead
+        jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
+        jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
+        val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
+
+        val resultName = s"res$cell"
+        val maybeModifiedCode = if (lastIsExpr) {
+          val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
+          val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
+
+          (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
+        } else code
+
+        jep.set("__polynote_code__", maybeModifiedCode)
+        jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
+        jep.eval("globals().update(__polynote_locals__)")
+        val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
+
+        // TODO: We talked about potentially creating an `Out` map, inspired by ipython, instead of these resCell# vars
+        val maybeOutput = if (lastIsExpr) {
+          val hasLastValue = jep.getValue(s"$resultName != None", classOf[java.lang.Boolean])
+          if (hasLastValue) {
+            Option(Output("text/plain; rel=decl; lang=python", s"$resultName = ${jep.getValue(s"repr($resultName)", classOf[String])}"))
+          } else None
         } else None
-      } else None
 
-      (getPyResults(newDecls, cell), maybeOutput)
+        (getPyResults(newDecls, cell).filterNot(_._2.value == null).values.map(WrapSymbol), maybeOutput)
+      }.flatMap { case (resultSymbols, maybeOutput) =>
 
-    }.flatMap {
-      case (resultDict, maybeOutput) =>
-        val symbolPub = symbolTable.publishAll(resultDict.filterNot(_._2.value == null).values.toList)
+        for {
+          // send the final output to resultQ
+          _ <- maybeOutput.map(resultQ.enqueue1(_)).getOrElse(IO.unit)
+          // send all symbols to resultQ
+          _ <- Stream.emits(resultSymbols.toSeq).to(resultQ.enqueue).compile.drain
+          // make sure to flush stdout
+          _ <- IO(stdout.flush())
+        } yield {
 
-        maybeOutput
-          .map(o => out.enqueue1(o))
-          .getOrElse(IO.unit)
-          .flatMap( _ => symbolPub)
-
-    }.flatMap {
-      _ => IO(stdout.flush())
+          // resultQ will be in this approximate order (not that it should matter I hope):
+          //    1. stdout while running the cell
+          //    2. The symbols defined in the cell
+          //    3. The final output (if any) of the cell
+          //    4. Anything that might come out of stdout being flushed (probably nothing)
+          maybeResultQ.dequeue.unNoneTerminate
+        }
+      }.guarantee(maybeResultQ.enqueue1(None))
     }
   }
 
@@ -209,7 +222,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     decls.map {
       name => name -> {
         getPyResult(name) match {
-          case (value, Some(typ)) => symbolTable.RuntimeValue(symbolTable.global.TermName(name), value, typ, Some(this), sourceCellId)
+          case (value, Some(typ)) => symbolTable.RuntimeValue(name, value, typ, Some(this), sourceCellId)
           case (value, _) => symbolTable.RuntimeValue(name, value, Some(this), sourceCellId)
         }
       }
@@ -330,7 +343,7 @@ object PythonInterpreter {
 
 }
 
-class PythonDisplayHook(out: Enqueue[IO, Result]) {
+class PythonDisplayHook(out: Enqueue[IO, RunWrapper]) {
   private var current = ""
   def output(str: String): Unit =
     if (str != null && str.nonEmpty)

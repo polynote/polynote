@@ -2,12 +2,14 @@ package polynote.kernel
 
 import java.nio.charset.{Charset, StandardCharsets}
 
+import cats.effect.IO
 import scodec.{Attempt, Codec, DecodeResult, Err}
 import scodec.codecs._
 import scodec.codecs.implicits._
 import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
+import polynote.kernel.util.SymbolDecl
 import scodec.bits.BitVector
 
 import scala.collection.mutable.ListBuffer
@@ -136,4 +138,14 @@ sealed trait Result
 object Result {
   implicit val discriminated: Discriminated[Result, Byte] = Discriminated(byte)
   implicit val codec: Codec[Result] = cachedImplicit
+}
+
+// Wrap symbol and results so we can handle Symbols without needing to add another Result.
+// We don't want to add a new Result because we don't plan on encoding these symbols. TODO: or should we just make WrapSymbol a Result?
+trait RunWrapper
+final case class WrapSymbol(symbol: SymbolDecl[IO]) extends RunWrapper
+final case class WrapResult(result: Result) extends RunWrapper
+
+object RunWrapper {
+  implicit def result2CellResult(result: Result): WrapResult = WrapResult(result)
 }

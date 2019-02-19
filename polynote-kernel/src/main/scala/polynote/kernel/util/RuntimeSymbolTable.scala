@@ -45,7 +45,7 @@ final class RuntimeSymbolTable(
 
   private val newSymbols: Topic[IO, RuntimeValue] =
     Topic[IO, RuntimeValue]{
-      val kernel = RuntimeValue(TermName("kernel"), polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, "$Predef")
+      val kernel = RuntimeValue("kernel", polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, "$Predef")
       // make sure this is actually in the symbol table.
       // TODO: is there a better way to set this value?
       putValue(kernel)
@@ -80,20 +80,20 @@ final class RuntimeSymbolTable(
     }
 
   private def putValue(value: RuntimeValue): Unit = {
-    currentSymbolTable.put(value.name, value)
-    polynote.runtime.Runtime.putValue(value.name.toString, value.value)
+    currentSymbolTable.put(global.TermName(value.name), value)
+    polynote.runtime.Runtime.putValue(value.name, value.value)
 
     cellIds.add(value.sourceCellId)
   }
 
-  def publish(source: LanguageKernel[IO], sourceCellId: String)(name: TermName, value: Any, staticType: Option[global.Type]): IO[Unit] = {
+  def publish(source: LanguageKernel[IO], sourceCellId: String)(name: String, value: Any, staticType: Option[global.Type]): IO[Unit] = {
     val rv = RuntimeValue(name, value, typeOf(value, staticType), Some(source), sourceCellId)
     for {
       _    <- IO(putValue(rv))
       subs <- newSymbols.subscribers.get
       _    <- IO(awaitingDelivery.update(_ + subs))
       _    <- newSymbols.publish1(rv)
-      _    <- statusUpdates.publish1(UpdatedSymbols(SymbolInfo(name.decodedName.toString, rv.typeString, rv.valueString, Nil) :: Nil, Nil))
+      _    <- statusUpdates.publish1(UpdatedSymbols(SymbolInfo(name.toString, rv.typeString, rv.valueString, Nil) :: Nil, Nil))
     } yield ()
   }
 
@@ -111,7 +111,7 @@ final class RuntimeSymbolTable(
       } yield ()
     }.flatMap {
       _ => statusUpdates.publish1(UpdatedSymbols(
-        values.map(rv => SymbolInfo(rv.name.decodedName.toString, rv.typeString, rv.valueString, Nil)), Nil
+        values.map(rv => SymbolInfo(rv.name, rv.typeString, rv.valueString, Nil)), Nil
       ))
     }
   }
@@ -142,17 +142,23 @@ final class RuntimeSymbolTable(
   }
 
   sealed case class RuntimeValue(
-    name: TermName,
+    name: String,
     value: Any,
-    scalaType: global.Type,
+    scalaTypeHolder: global.Type,
     source: Option[LanguageKernel[IO]],
     sourceCellId: String
-  ) extends SymbolDecl[IO, global.type] {
-    lazy val typeString: String = formatType(scalaType)
+  ) extends SymbolDecl[IO] {
+    lazy val typeString: String = formatType(scalaTypeHolder)
     lazy val valueString: String = value.toString match {
       case str if str.length > 64 => str.substring(0, 64)
       case str => str
     }
+
+    override def scalaType(g: Global): g.Type = if (g eq global) {
+      scalaTypeHolder.asInstanceOf[g.Type] // this is safe because we have established that the globals are the same
+    } else throw new Exception("should never happen")
+
+    override def getValue: Option[Any] = Option(value)
 
     // don't need to hash everything to determine hash code; name collisions are less common than hash comparisons
     override def hashCode(): Int = name.hashCode()
@@ -160,8 +166,14 @@ final class RuntimeSymbolTable(
 
   object RuntimeValue {
     def apply(name: String, value: Any, source: Option[LanguageKernel[IO]], sourceCell: String): RuntimeValue = RuntimeValue(
-      global.TermName(name), value, typeOf(value, None), source, sourceCell
+      name, value, typeOf(value, None), source, sourceCell
     )
+
+    def fromSymbolDecl(symbolDecl: SymbolDecl[IO]): Option[RuntimeValue] = {
+      symbolDecl.getValue.map { value =>
+        apply(symbolDecl.name, value, symbolDecl.source, symbolDecl.sourceCellId)
+      }
+    }
   }
 
 }
@@ -169,9 +181,10 @@ final class RuntimeSymbolTable(
 /**
   * A symbol defined in a notebook cell
   */
-trait SymbolDecl[F[_], G <: Global] {
-  def name: G#TermName
+trait SymbolDecl[F[_]] {
+  def name: String
   def source: Option[LanguageKernel[F]]
   def sourceCellId: String
-  def scalaType: G#Type
+  def scalaType(g: Global): g.Type
+  def getValue: Option[Any]
 }

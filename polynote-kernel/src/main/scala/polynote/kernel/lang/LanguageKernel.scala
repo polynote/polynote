@@ -2,6 +2,7 @@ package polynote.kernel.lang
 
 import java.io.File
 
+import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, RuntimeSymbolTable, SymbolDecl}
@@ -14,7 +15,7 @@ trait LanguageKernel[F[_]] {
   // LanguageKernel is expected to have a reference to the shared runtime symbol table of a notebook
   val symbolTable: RuntimeSymbolTable
 
-  final type Decl = SymbolDecl[F, symbolTable.global.type]
+  final type Decl = SymbolDecl[F]
 
   def predefCode: Option[String]
 
@@ -25,18 +26,15 @@ trait LanguageKernel[F[_]] {
     * @param visibleSymbols A list of symbols defined in cells "before" the given code, which are visible to it
     * @param previousCells  The identifier strings of the cells "before" this code, for stateful language kernels
     * @param code           The code string to run
-    * @param out            A [[Queue]] which should receive [[Result]] value(s) describing the output(s) from running the code
-    * @param statusUpdates  A [[Publish]] which should receive [[KernelStatusUpdate]]s describing changes in runtime status
-    *                       from running the cell, such as newly defined symbols, subtask progress, etc
+    * @return An [[F]] that returns a [[Stream]] which will contain [[RunWrapper]] value(s) containing anything that
+    *         resulted from running the code.
     */
   def runCode(
     cell: String,
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
-    code: String,
-    out: Enqueue[F, Result],
-    statusUpdates: Publish[F, KernelStatusUpdate]
-  ): F[Unit]
+    code: String
+  ): F[Stream[F, RunWrapper]]
 
   /**
     * Ask for completions (if applicable) at the given position in the given code string
