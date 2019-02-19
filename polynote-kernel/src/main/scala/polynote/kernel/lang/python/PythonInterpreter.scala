@@ -147,7 +147,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
 
     val stdout = new PythonDisplayHook(out)
 
-    global.demandNewCompilerRun()
+//    global.demandNewCompilerRun()
     val run = new global.Run()
     global.newCompilationUnit("", cell)
 
