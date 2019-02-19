@@ -27,6 +27,9 @@ trait KernelSpec {
 
   implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
 
+  // TODO: sharing globalInfo across all tests is a terrible way to approximate running multiple cells of a notebook...
+  val globalInfo = GlobalInfo(Map.empty, Nil)
+
   def assertPythonOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
     assertOutputWith((rst: RuntimeSymbolTable) => PythonInterpreter.factory()(Nil, rst), code) {
       (interp, vars, output, displayed) => interp.withJep(assertion(vars, output, displayed))
@@ -45,7 +48,7 @@ trait KernelSpec {
   // TODO: for unit tests we'd ideally want to hook directly to runCode without needing all this!
   def assertOutputWith[K <: LanguageKernel[IO]](mkInterp: RuntimeSymbolTable => K, code: String)(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {
     Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap { updates =>
-      val symbolTable = new RuntimeSymbolTable(GlobalInfo(Map.empty, Nil), updates)
+      val symbolTable = new RuntimeSymbolTable(globalInfo, updates)
       val interp = mkInterp(symbolTable)
       val displayed = mutable.ArrayBuffer.empty[(String, String)]
       polynote.runtime.Runtime.setDisplayer((mimeType, input) => displayed.append((mimeType, input)))
