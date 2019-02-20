@@ -175,7 +175,7 @@ export class KernelTasksUI {
                 heading.appendChild(document.createTextNode(label));
                 task.labelText = label;
             }
-            if (task.detailText !== detail) {
+            if (task.detailText !== detail && typeof(detail) === "string") {
                 const detailEl = task.querySelector('.detail');
                 detailEl.innerHTML = '';
                 detailEl.appendChild(document.createTextNode(detail));
@@ -865,10 +865,11 @@ export class NotebookUI {
             ]);
             this.kernelUI.tasks.updateTask(id, "Kernel Error", message, TaskStatus.Error, 0);
 
-            // clean up message
-            socket.addEventListener('message', () => {
+            // clean up (assuming that running another cell means users are done with this error)
+            socket.addMessageListener(messages.CellResult, () => {
                 this.kernelUI.tasks.updateTask(id, "Kernel Error", message, TaskStatus.Complete, 100);
-            })
+                return false // make sure to remove the listener
+            }, true)
         });
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
