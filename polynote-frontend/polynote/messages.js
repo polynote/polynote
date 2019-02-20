@@ -546,7 +546,8 @@ UpdatedSymbols.codec = combined(arrayCodec(uint8, SymbolInfo.codec), arrayCodec(
 export const TaskStatus = Object.freeze({
     Complete: 0,
     Running: 1,
-    Queued: 2
+    Queued: 2,
+    Error: 3
 });
 
 export class TaskInfo {

@@ -140,8 +140,12 @@ class SocketSession(
 
     case CreateNotebook(path) =>
       notebookManager.createNotebook(path).map {
-        actualPath => Stream.emit(CreateNotebook(ShortString(actualPath)))
-      }
+        actualPath => CreateNotebook(ShortString(actualPath))
+      }.attempt.map {
+        // TODO: is there somewhere more universal we can put this mapping?
+        case Left(throwable) => Error(0, throwable)
+        case Right(m) => m
+      }.map(Stream.emit)
 
 
     case upConfig @ UpdateConfig(path, _, _, config) =>

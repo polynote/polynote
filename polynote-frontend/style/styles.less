@@ -1331,7 +1331,6 @@ button {
       box-sizing: border-box;
       padding: 8px;
       margin: 4px 0;
-      height: 100px;
       background: white;
 
       h4 {
@@ -1360,6 +1359,15 @@ button {
           display: block;
           margin-top: 1em;
         }
+      }
+
+      &.error {
+        .progress {
+          display: none;
+        }
+
+        background-color: #ffeef0;
+        border: 1px solid #cc0000;
       }
     }
 

@@ -856,8 +856,19 @@ export class NotebookUI {
         });
 
         socket.addMessageListener(messages.Error, (code, err) => {
-            // TODO: show this in the UI
+            // TODO: show this better in the UI
             console.log("Kernel error:", err);
+            const id = "KernelError";
+            const message = div(["message"], [
+                para([], `${err.className}: ${err.message}`),
+                para([], "Please see the console for more details.")
+            ]);
+            this.kernelUI.tasks.updateTask(id, "Kernel Error", message, TaskStatus.Error, 0);
+
+            // clean up message
+            socket.addEventListener('message', () => {
+                this.kernelUI.tasks.updateTask(id, "Kernel Error", message, TaskStatus.Complete, 100);
+            })
         });
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
