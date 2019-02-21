@@ -54,10 +54,9 @@ trait SharedNotebook[F[_]] {
     * Open a reference to this shared notebook.
     *
     * @param name A string identifying who is opening the notebook (i.e. their username or email)
-    * @param oq   A queue to which messages to the subscriber (such as notifications of foreign updates) will be submitted
     * @return A [[NotebookRef]] which the caller can use to send updates to the shared notebook
     */
-  def open(name: String, oq: Enqueue[F, Message]): F[NotebookRef[F]]
+  def open(name: String): F[NotebookRef[F]]
 
   def versions: Stream[F, (Int, Notebook)]
 }
@@ -135,11 +134,11 @@ class IOSharedNotebook(
   private val subscribers = new ConcurrentHashMap[Int, Subscriber]()
   private val nextSubscriberId = new AtomicInteger(0)
 
-  def open(name: String, oq: Enqueue[IO, Message]): IO[NotebookRef[IO]] = for {
+  def open(name: String): IO[NotebookRef[IO]] = for {
     subscriberId    <- IO(nextSubscriberId.getAndIncrement())
     foreignUpdates   = updatesTopic.subscribe(1024).unNone.filter(_._2 != subscriberId)
     currentNotebook <- ref.get
-    subscriber       = new Subscriber(subscriberId, name, oq, foreignUpdates, currentNotebook._1)
+    subscriber       = new Subscriber(subscriberId, name, foreignUpdates, currentNotebook._1)
     _               <- IO { subscribers.put(subscriberId, subscriber); () }
   } yield subscriber
 
@@ -148,7 +147,6 @@ class IOSharedNotebook(
   class Subscriber(
     subscriberId: Int,
     name: String,
-    oq: Enqueue[IO, Message],
     foreignUpdates: Stream[IO, (GlobalVersion, SubscriberId, NotebookUpdate)],
     initialVersion: GlobalVersion
   ) extends NotebookRef[IO] {
@@ -164,29 +162,26 @@ class IOSharedNotebook(
 
     def lastKnownGlobalVersion: Int = lastGlobalVersion.get()
 
-    // listen for output messages / status updates, and publish them to my client
-    outputMessages.subscribe(1024).interruptWhen(closeSignal())
-      .to(oq.enqueue).compile.drain.unsafeRunAsyncAndForget()
+    val messages: Stream[IO, Message] = Stream.emits(Seq(
+      outputMessages.subscribe(1024),
+      foreignUpdates.interruptWhen(closeSignal()).evalMap {
+        case (globalVersion, _, update) =>
+          val knownGlobalVersion = lastGlobalVersion.get()
 
+          if (globalVersion < knownGlobalVersion) {
+            // this edit should come before other edits I've already seen - transform it up to knownGlobalVersion
+            IO.pure(Some(transformUpdate(update, knownGlobalVersion).withVersions(knownGlobalVersion, lastLocalVersion.get())))
+          } else if (globalVersion > knownGlobalVersion) {
+            // this edit should come after the last global version I've seen - client will transform locally if necessary
+            IO.pure(Some(update.withVersions(globalVersion, lastLocalVersion.get())))
+          } else {
+            // already know about this version
+            IO.pure(None)
+          }
+      }.unNone.evalTap {
+        update => IO(lastLocalVersion.incrementAndGet()).as(()) // this update will increment their local version
+      }.covaryOutput[Message])).parJoinUnbounded.interruptWhen(closeSignal())
 
-    // listen for foreign updates, transform them appropriately, and sink to foreignEdits queue
-    private val updateFiber = foreignUpdates.interruptWhen(closeSignal()).evalMap {
-      case (globalVersion, _, update) =>
-        val knownGlobalVersion = lastGlobalVersion.get()
-
-        if (globalVersion < knownGlobalVersion) {
-          // this edit should come before other edits I've already seen - transform it up to knownGlobalVersion
-          IO.pure(Some(transformUpdate(update, knownGlobalVersion).withVersions(knownGlobalVersion, lastLocalVersion.get())))
-        } else if (globalVersion > knownGlobalVersion) {
-          // this edit should come after the last global version I've seen - client will transform locally if necessary
-          IO.pure(Some(update.withVersions(globalVersion, lastLocalVersion.get())))
-        } else {
-          // already know about this version
-          IO.pure(None)
-        }
-    }.unNone.evalTap {
-      update => IO(lastLocalVersion.incrementAndGet()).as(()) // this update will increment their local version
-    }.covaryOutput[Message].to(oq.enqueue).compile.drain.start.unsafeRunSync()
 
     val path: String = IOSharedNotebook.this.path
 
@@ -202,7 +197,6 @@ class IOSharedNotebook(
     override def close(): IO[Unit] = for {
       _ <- closeSignal.complete
       _ <- IO(subscribers.remove(subscriberId))
-      _ <- updateFiber.join
     } yield ()
 
     override def isKernelStarted: IO[Boolean] = kernelRef.get.map(_.nonEmpty)
@@ -295,5 +289,7 @@ abstract class NotebookRef[F[_] : Monad] {
   }
 
   def runCells(ids: List[String]): F[Stream[F, Message]]
+
+  def messages: Stream[F, Message]
 
 }
