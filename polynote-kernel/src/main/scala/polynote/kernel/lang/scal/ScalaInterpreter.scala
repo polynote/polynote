@@ -47,7 +47,7 @@ class ScalaInterpreter(
     }
   })
 
-  protected implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutorService(executor))
+  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(executor))
 
   private val interpreterLock = Semaphore[IO](1).unsafeRunSync()
 

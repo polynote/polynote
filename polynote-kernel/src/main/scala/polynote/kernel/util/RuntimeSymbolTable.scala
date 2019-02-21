@@ -90,7 +90,7 @@ final class RuntimeSymbolTable(
     val rv = RuntimeValue(name, value, typeOf(value, staticType), Some(source), sourceCellId)
     for {
       _    <- IO(putValue(rv))
-      subs <- newSymbols.subscribers.get
+      subs <- newSymbols.subscribers.head.compile.lastOrError
       _    <- IO(awaitingDelivery.update(_ + subs))
       _    <- newSymbols.publish1(rv)
       _    <- statusUpdates.publish1(UpdatedSymbols(SymbolInfo(name.decodedName.toString, rv.typeString, rv.valueString, Nil) :: Nil, Nil))
@@ -105,7 +105,7 @@ final class RuntimeSymbolTable(
       }
     }.flatMap {
       _ => for {
-        subs <- newSymbols.subscribers.get
+        subs <- newSymbols.subscribers.head.compile.lastOrError
         _    <- IO(awaitingDelivery.update(_ + (subs * values.length)))
         _    <- Stream.emits(values).to(newSymbols.publish).compile.drain
       } yield ()

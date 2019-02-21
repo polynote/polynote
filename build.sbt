@@ -2,6 +2,12 @@ name := "polynote"
 
 lazy val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
 
+val versions = new {
+  val http4s     = "0.20.0-M6"
+  val fs2        = "1.0.3"
+  val catsEffect = "1.2.0"
+}
+
 val commonSettings = Seq(
   version := "0.1.0-SNAPSHOT",
   scalaVersion := "2.11.11",
@@ -41,8 +47,8 @@ val `polynote-kernel` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
-    "org.typelevel" %% "cats-effect" % "1.0.0",
-    "co.fs2" %% "fs2-io" % "1.0.0-M5",
+    "org.typelevel" %% "cats-effect" % versions.catsEffect,
+    "co.fs2" %% "fs2-io" % versions.fs2,
     "org.log4s" %% "log4s" % "1.6.1",
     "org.scodec" %% "scodec-core" % "1.10.3",
     "io.circe" %% "circe-yaml" % "0.9.0",
@@ -56,9 +62,9 @@ val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.http4s" %% "http4s-core" % "0.19.0-M2",
-    "org.http4s" %% "http4s-dsl" % "0.19.0-M2",
-    "org.http4s" %% "http4s-blaze-server" % "0.19.0-M2",
+    "org.http4s" %% "http4s-core" % versions.http4s,
+    "org.http4s" %% "http4s-dsl" % versions.http4s,
+    "org.http4s" %% "http4s-blaze-server" % versions.http4s,
     "org.scodec" %% "scodec-core" % "1.10.3",
     "io.circe" %% "circe-generic-extras" % "0.10.0",
     "io.circe" %% "circe-parser" % "0.10.0",
