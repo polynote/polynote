@@ -60,8 +60,12 @@ trait Server extends IOApp with Http4sDsl[IO] {
     // note, by default our bdas genie script sets log4j.configuration to a nonexistent log4j config. We should either
     // create that config or remove that setting. Until then, be sure to add `--driver-java-options "-Dlog4j.configuration=log4j.properties"
     // to your `spark-submit` call.
+
+    val port = 8192 // TODO: replace with proper config eventually
+    val hostname = s"http://${java.net.InetAddress.getLocalHost.getHostAddress}:$port"
+
     logger.info(
-      """
+      raw"""
         |
         |  _____      _                   _
         | |  __ \    | |                 | |
@@ -72,10 +76,13 @@ trait Server extends IOApp with Http4sDsl[IO] {
         |                __/ |
         |               |___/
         |
+        |
+        | Running on $hostname
+        |
       """.stripMargin)
 
     BlazeBuilder[IO]
-      .bindHttp(8192, "0.0.0.0")
+      .bindHttp(port, "0.0.0.0")
       .withWebSockets(true)
       .mountService(route, "/")
       .serve
