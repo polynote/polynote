@@ -18,7 +18,7 @@ final class ReadySignal(implicit contextShift: ContextShift[IO]) {
 object ReadySignal {
   def apply()(implicit contextShift: ContextShift[IO]): ReadySignal = new ReadySignal
   def apply(executor: Executor): ReadySignal = {
-    implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutor(executor))
+    implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutor(executor))
     new ReadySignal
   }
 }

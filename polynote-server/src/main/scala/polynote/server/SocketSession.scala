@@ -12,7 +12,7 @@ import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
 import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
-import org.http4s.websocket.WebsocketBits._
+import org.http4s.websocket.WebSocketFrame, WebSocketFrame._
 import org.log4s.getLogger
 import polynote.kernel._
 import polynote.kernel.util.{ReadySignal, WindowBuffer}
@@ -36,7 +36,7 @@ class SocketSession(
   private val notebooks = new ConcurrentHashMap[String, NotebookRef[IO]]()
 
   private def toFrame(message: Message) = {
-    Message.encode[IO](message).map(bits => Binary(bits.toByteArray))
+    Message.encode[IO](message).map(bits => Binary(bits.toByteVector))
   }
 
   private def logMessage(message: Message): IO[Unit]= IO(logger.info(message.toString))
@@ -108,7 +108,7 @@ class SocketSession(
           }
         }.interruptWhen(closeSignal())
 
-      WebSocketBuilder[IO].build(toClient, fromClient) <* oq.enqueue1(handshake)
+      WebSocketBuilder[IO].build(toClient, fromClient, onClose = IO.delay(shutdown()).flatten) <* oq.enqueue1(handshake)
     }
   }.flatten
 

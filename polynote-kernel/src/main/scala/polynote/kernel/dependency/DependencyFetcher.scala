@@ -47,7 +47,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
   import CoursierFetcher._, instances._
 
   private implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
-  private implicit val contextShift: ContextShift[IO] =  IOContextShift(executionContext)
+  private implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   val artifactTypes = coursier.core.Resolution.defaultTypes - Type.testJar

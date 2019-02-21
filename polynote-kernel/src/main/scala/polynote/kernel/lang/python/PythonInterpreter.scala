@@ -94,8 +94,8 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
 
   private val executionContext = ExecutionContext.fromExecutor(jepExecutor)
 
-  private val shift: ContextShift[IO] = IOContextShift(executionContext)
-  val listenerShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutor(externalListener))
+  private val shift: ContextShift[IO] = IO.contextShift(executionContext)
+  private val listenerShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutor(externalListener))
 
   def withJep[T](t: => T): IO[T] = shift.evalOn(executionContext)(IO.delay(t))
 

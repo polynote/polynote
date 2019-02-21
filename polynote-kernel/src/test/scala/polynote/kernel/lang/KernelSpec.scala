@@ -25,7 +25,7 @@ trait KernelSpec {
   settings.classpath.append(System.getProperty("java.class.path"))
   settings.YpresentationAnyThread.value = true
 
-  implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
+  implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
 
   // TODO: sharing globalInfo across all tests is a terrible way to approximate running multiple cells of a notebook...
   val globalInfo = GlobalInfo(Map.empty, Nil)
