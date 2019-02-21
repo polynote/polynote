@@ -41,17 +41,18 @@ class SparkPolyKernel(
 
   val global = globalInfo.global
 
+  val polynoteRuntimeJar = "polynote-runtime.jar"
+
   private def runtimeJar(tmp: Path) = {
-    val resourceURL = getClass.getClassLoader.getResource("polynote-runtime.jar")
+    val resourceURL = getClass.getClassLoader.getResource(polynoteRuntimeJar)
     resourceURL.getProtocol match {
       case "jar" =>
-        val jarConn = resourceURL.openConnection().asInstanceOf[JarURLConnection]
         val jarFS = FileSystems.newFileSystem(
-          jarConn.getJarFileURL.toURI,
+          resourceURL.toURI,
           Collections.emptyMap[String, Any]
         )
-        val inPath = jarFS.getPath(jarConn.getEntryName)
-        val runtimeJar = new File(tmp.toFile, "polynote-runtime.jar").toPath
+        val inPath = jarFS.getPath(polynoteRuntimeJar)
+        val runtimeJar = new File(tmp.toFile, polynoteRuntimeJar).toPath
         Files.copy(inPath, runtimeJar, StandardCopyOption.REPLACE_EXISTING)
         runtimeJar
 
