@@ -1,13 +1,12 @@
 package polynote.kernel
 
 import cats.effect.concurrent.Ref
-import io.circe.{Decoder, Encoder}
+import fs2.Stream
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
-import polynote.messages.{ContentEdit, Notebook, ShortString, TinyList, TinyString}
+import io.circe.{Decoder, Encoder}
+import polynote.messages.{ShortString, TinyList, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
-import fs2.Stream
-import fs2.concurrent.Topic
 
 import scala.reflect.internal.util.Position
 import scala.util.Try
@@ -169,17 +168,20 @@ object TaskStatus {
   final case object Complete extends TaskStatus
   final case object Queued extends TaskStatus
   final case object Running extends TaskStatus
+  final case object Error extends TaskStatus
 
   val fromByte: PartialFunction[Byte, TaskStatus] = {
     case 0 => Complete
     case 1 => Running
     case 2 => Queued
+    case 3 => Error
   }
 
   def toByte(taskStatus: TaskStatus): Byte = taskStatus match {
     case Complete => 0
     case Running => 1
     case Queued => 2
+    case Error => 3
   }
 
   implicit val codec: Codec[TaskStatus] = byte.exmap(
