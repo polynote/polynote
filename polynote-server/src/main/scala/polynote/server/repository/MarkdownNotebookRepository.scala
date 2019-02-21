@@ -111,7 +111,7 @@ class MarkdownNotebookRepository(
     case ClearResults() => ""
   }
 
-  private def htmlToResult(html: scala.xml.Elem, id: String): Option[Result] = html.attribute("class").map(_.head.value.toString).flatMap {
+  private def htmlToResult(html: scala.xml.Elem, id: String): Option[Result] = html.attribute("class").map(_.head.text).flatMap {
     case "output" =>
       val rel = html.attribute("rel").flatMap(_.headOption.map(_.toString))
       val mime = html.attribute("mime-type").flatMap(_.headOption.map(_.toString)).map {

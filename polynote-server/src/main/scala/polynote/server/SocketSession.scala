@@ -9,10 +9,11 @@ import cats.syntax.all._
 import cats.instances.list._
 import cats.~>
 import fs2.Stream
-import fs2.concurrent.{Queue, SignallingRef, Topic}
+import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
 import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
-import org.http4s.websocket.WebsocketBits._
+import org.http4s.websocket.WebSocketFrame
+import WebSocketFrame._
 import org.log4s.getLogger
 import polynote.kernel._
 import polynote.kernel.util.{ReadySignal, WindowBuffer}
@@ -24,8 +25,7 @@ import scala.collection.JavaConverters._
 
 class SocketSession(
   notebookManager: NotebookManager[IO],
-  inBufferLength: Int = 100,
-  outBufferLength: Int = 100)(implicit
+  oq: Queue[IO, Message])(implicit
   contextShift: ContextShift[IO],
   timer: Timer[IO]
 ) {
@@ -36,7 +36,7 @@ class SocketSession(
   private val notebooks = new ConcurrentHashMap[String, NotebookRef[IO]]()
 
   private def toFrame(message: Message) = {
-    Message.encode[IO](message).map(bits => Binary(bits.toByteArray))
+    Message.encode[IO](message).map(bits => Binary(bits.toByteVector))
   }
 
   private def logMessage(message: Message): IO[Unit]= IO(logger.info(message.toString))
@@ -54,17 +54,8 @@ class SocketSession(
     } yield ()
   }
 
-  lazy val toResponse: IO[Response[IO]] = {
-    for {
-      iq <- Queue.bounded[IO, WebSocketFrame](inBufferLength)
-      oq <- Queue.bounded[IO, Message](outBufferLength)
-    } yield {
-
-      val fromClient = iq.enqueue
-
-      // TODO: handle continuations/non-final?
-
-
+  lazy val toResponse: IO[Response[IO]] = Queue.unbounded[IO, WebSocketFrame].flatMap {
+    iq =>
       /**
         * The evaluation semantics here are tricky. respond() is going to return a suspension which contains a
         * Stream with its own suspensions. We want to allow both the outer suspensions and the inner suspensions
@@ -77,7 +68,7 @@ class SocketSession(
       val responses = iq.dequeue.evalMap {
 
         case Binary(bytes, true) => Message.decode[IO](bytes).flatMap {
-          message => respond(message, oq).start
+          message => respond(message).start
         }
 
         case Close(data) => IO.pure(Stream.eval(shutdown()).drain).start
@@ -108,17 +99,17 @@ class SocketSession(
           }
         }.interruptWhen(closeSignal())
 
-      WebSocketBuilder[IO].build(toClient, fromClient) <* oq.enqueue1(handshake)
-    }
-  }.flatten
+      WebSocketBuilder[IO].build(toClient, iq.enqueue, onClose = IO.delay(shutdown()).flatten) <* oq.enqueue1(handshake)
+  }
 
-  private def getNotebook(path: String, oq: Queue[IO, Message]) = loadingNotebook.acquire.bracket { _ =>
+  private def getNotebook(path: String) = loadingNotebook.acquire.bracket { _ =>
     Option(notebooks.get(path)).map(IO.pure).getOrElse {
       notebookManager.getNotebook(path).flatMap {
-        sharedNotebook =>
-          sharedNotebook.open(name, oq).flatMap {
-            notebookRef => IO { notebooks.put(path, notebookRef); () }.as(notebookRef)
-          }
+        sharedNotebook => for {
+          notebookRef <- sharedNotebook.open(name)
+          _            = notebooks.put(path, notebookRef)
+          _           <- notebookRef.messages.interruptWhen(closeSignal()).through(oq.enqueue).compile.drain.start
+        } yield notebookRef
       }
     }
   }(_ => loadingNotebook.release)
@@ -126,26 +117,30 @@ class SocketSession(
   private def handshake: ServerHandshake =
     ServerHandshake(notebookManager.interpreterNames.asInstanceOf[TinyMap[TinyString, TinyString]])
 
-  def respond(message: Message, oq: Queue[IO, Message]): IO[Stream[IO, Message]] = message match {
+  def respond(message: Message): IO[Stream[IO, Message]] = message match {
     case ListNotebooks(_) =>
       notebookManager.listNotebooks().map {
         notebooks => Stream.emit(ListNotebooks(notebooks.asInstanceOf[List[ShortString]]))
       }
 
     case LoadNotebook(path) =>
-      getNotebook(path, oq).map {
+      getNotebook(path).map {
         notebookRef =>
           Stream.eval(notebookRef.get) ++ Stream.eval(notebookRef.currentStatus).map(KernelStatus(path, _))
       }
 
     case CreateNotebook(path) =>
       notebookManager.createNotebook(path).map {
-        actualPath => Stream.emit(CreateNotebook(ShortString(actualPath)))
-      }
+        actualPath => CreateNotebook(ShortString(actualPath))
+      }.attempt.map {
+        // TODO: is there somewhere more universal we can put this mapping?
+        case Left(throwable) => Error(0, throwable)
+        case Right(m) => m
+      }.map(Stream.emit)
 
 
     case upConfig @ UpdateConfig(path, _, _, config) =>
-      getNotebook(path, oq).flatMap {
+      getNotebook(path).flatMap {
         notebookRef => notebookRef.update(upConfig).flatMap {
           globalVersion =>
             notebookRef.isKernelStarted.flatMap {
@@ -157,39 +152,39 @@ class SocketSession(
 
 
     case NotebookUpdate(update) =>
-      getNotebook(update.notebook, oq).flatMap {
+      getNotebook(update.notebook).flatMap {
         notebookRef => notebookRef.update(update).map(globalVersion => Stream.empty) // TODO: notify client of global version
       }
 
     case RunCell(path, ids) =>
-      getNotebook(path, oq).flatMap {
+      getNotebook(path).flatMap {
         notebookRef => notebookRef.runCells(ids)
       }
       // TODO: do we need to emit a kernel status here any more?
 
     case req@CompletionsAt(notebook, id, pos, _) =>
       for {
-        notebookRef <- getNotebook(notebook, oq)
+        notebookRef <- getNotebook(notebook)
         kernel      <- notebookRef.getKernel
         completions <- kernel.completionsAt(id, pos).handleErrorWith(err => IO(err.printStackTrace(System.err)).map(_ => Nil))
       } yield Stream.emit(req.copy(completions = ShortList(completions)))
 
     case req@ParametersAt(notebook, id, pos, _) =>
       for {
-        notebookRef <- getNotebook(notebook, oq)
+        notebookRef <- getNotebook(notebook)
         kernel      <- notebookRef.getKernel
         parameters  <- kernel.parametersAt(id, pos)
       } yield Stream.emit(req.copy(signatures = parameters))
 
     case KernelStatus(path, _) =>
       for {
-        notebookRef <- getNotebook(path, oq)
+        notebookRef <- getNotebook(path)
         status      <- notebookRef.currentStatus
       } yield Stream.emit(KernelStatus(path, status))
 
     case StartKernel(path, StartKernel.NoRestart) =>
       for {
-        notebookRef <- getNotebook(path, oq)
+        notebookRef <- getNotebook(path)
         kernel      <- notebookRef.getKernel
         status      <- notebookRef.currentStatus
       } yield Stream.emit(KernelStatus(path, status))
@@ -197,14 +192,14 @@ class SocketSession(
     case StartKernel(path, StartKernel.WarmRestart) => ??? // TODO
     case StartKernel(path, StartKernel.ColdRestart) =>
       for {
-        notebookRef <- getNotebook(path, oq)
+        notebookRef <- getNotebook(path)
         _           <- notebookRef.restartKernel()
         status      <- notebookRef.currentStatus
       } yield Stream.emit(KernelStatus(path, status))
 
     case StartKernel(path, StartKernel.Kill) =>
       for {
-        notebookRef <- getNotebook(path, oq)
+        notebookRef <- getNotebook(path)
         _           <- notebookRef.shutdownKernel()
         status      <- notebookRef.currentStatus
       } yield Stream.emit(KernelStatus(path, status))
@@ -217,5 +212,17 @@ class SocketSession(
   def badMsgErr(msg: WebSocketFrame) = Error(1, new RuntimeException(s"Received bad message frame ${truncate(msg.toString, 32)}"))
 
   def truncate(str: String, len: Int): String = if (str.length < len) str else str.substring(0, len - 4) + "..."
+
+}
+
+object SocketSession {
+
+  def apply(
+    notebookManager: NotebookManager[IO])(implicit
+    contextShift: ContextShift[IO],
+    timer: Timer[IO]
+  ): IO[SocketSession] = Queue.unbounded[IO, Message].map {
+    oq => new SocketSession(notebookManager, oq)
+  }
 
 }

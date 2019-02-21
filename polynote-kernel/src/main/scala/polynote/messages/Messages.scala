@@ -5,7 +5,7 @@ import cats.syntax.either._
 import io.circe.{Decoder, Encoder}
 import polynote.kernel._
 import scodec.Codec
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.codecs.implicits._
 import io.circe.generic.semiauto._
@@ -21,8 +21,8 @@ object Message {
 
   val codec: Codec[Message] = Codec[Message]
 
-  def decode[F[_]](bytes: Array[Byte])(implicit F: MonadError[F, Throwable]): F[Message] = F.fromEither {
-    codec.decode(BitVector(bytes)).toEither
+  def decode[F[_]](bytes: ByteVector)(implicit F: MonadError[F, Throwable]): F[Message] = F.fromEither {
+    codec.decode(bytes.toBitVector).toEither
       .map(_.value)
       .leftMap {
         err => new Exception(err.messageWithContext)
@@ -30,7 +30,7 @@ object Message {
   }
 
   def encode[F[_]](msg: Message)(implicit F: MonadError[F, Throwable]): F[BitVector] = F.fromEither {
-    codec.encode(msg).toEither.map(_.value).leftMap {
+    codec.encode(msg).toEither.leftMap {
       err => new Exception(err.messageWithContext)
     }
   }
