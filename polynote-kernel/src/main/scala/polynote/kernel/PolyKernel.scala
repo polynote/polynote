@@ -10,6 +10,7 @@ import cats.effect.{ContextShift, IO}
 import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.flatMap._
+import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, Topic}
 import org.log4s.{Logger, getLogger}
 import polynote.kernel.PolyKernel.EnqueueSome
@@ -52,12 +53,17 @@ class PolyKernel private[kernel] (
     */
   protected lazy val taskQueue: TaskQueue = TaskQueue(statusUpdates).unsafeRunSync()
 
+  // TODO: duplicates logic from runCell
   private def runPredef(kernel: LanguageKernel[IO], language: String): IO[Unit] =
     kernel.predefCode.fold(kernel.init()) {
       code => for {
-        oq <- Queue.unbounded[IO, Result]
-        _  <- taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => kernel.runCode("Predef", Nil, Nil, code, oq, statusUpdates))
-      } yield ()
+        results  <- taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => kernel.runCode("Predef", Nil, Nil, code))
+      } yield {
+        results.evalMap {
+          case WrapSymbol(symbol) => symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList)
+          case _ => IO.unit
+        }.compile.drain
+      }
   }
 
   protected def getKernel(language: String): IO[LanguageKernel[IO]] = Option(kernels.get(language)).map(IO.pure).getOrElse {
@@ -107,10 +113,16 @@ class PolyKernel private[kernel] (
                     id,
                     findAvailableSymbols(prevCellIds, kernel),
                     prevCellIds,
-                    cell.content.toString,
-                    oqSome,
-                    statusUpdates
-                  ).handleErrorWith {
+                    cell.content.toString
+                  ).flatMap { results =>
+                    // unpack Results while publishing then discarding symbols
+                    results
+                      .evalMap {
+                        case WrapSymbol(symbol) =>
+                          symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList)
+                        case WrapResult(result) => oqSome.enqueue1(result)
+                      }.compile.drain
+                  }.handleErrorWith {
                     case errs@CompileErrors(_) =>
                       oqSome.enqueue1(errs)
                     case err@RuntimeError(_) =>
@@ -140,7 +152,7 @@ class PolyKernel private[kernel] (
   def currentSymbols(): IO[List[SymbolInfo]] = IO {
     symbolTable.currentTerms.toList.map {
       case v @ symbolTable.RuntimeValue(name, value, scalaType, _, _) => SymbolInfo(
-        name.decodedName.toString,
+        name,
         v.typeString,
         v.valueString,
         Nil

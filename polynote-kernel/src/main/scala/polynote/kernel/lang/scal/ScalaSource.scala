@@ -138,8 +138,8 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
         .filterNot(_.source contains interpreter)
         .toList.map {
           sym =>
-            val name = sym.name.asInstanceOf[interpreter.global.TermName]
-            val typ = sym.scalaType.asInstanceOf[interpreter.global.Type]
+            val name = global.TermName(sym.name)
+            val typ = sym.scalaType(global)
             atPos(beginning)(
               global.DefDef(
                 global.Modifiers(global.Flag.PRIVATE),
