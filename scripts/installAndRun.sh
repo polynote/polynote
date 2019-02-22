@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 set -e # fail on errors
-set -x # print commands
 
 DIR=$(dirname "$0")
 source ${DIR}/shared.sh
@@ -20,6 +19,8 @@ case "${choice}" in
     no|No   ) echo "Good idea, check out the script and come back to me"; exit 1;;
     *       ) echo "Invalid input, please answer yes or no"; exit 2;;
 esac
+
+set -x # print subsequent commands
 
 # Step 1: Set up remote machine
 ssh ${REMOTE_USER}@${REMOTE_HOST} mkdir -p ${REMOTE_DIR}/notebooks || true
