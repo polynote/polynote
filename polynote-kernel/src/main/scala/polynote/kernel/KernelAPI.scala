@@ -38,6 +38,8 @@ trait KernelAPI[F[_]] {
 
   def idle(): F[Boolean]
 
+  def info: F[Option[KernelInfo]]
+
 }
 
 // TODO: should just make a codec for Position? To avoid extra object?
@@ -209,3 +211,6 @@ object UpdatedTasks extends KernelStatusUpdateCompanion[UpdatedTasks](1)
 
 final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelStatusUpdate
 object KernelBusyState extends KernelStatusUpdateCompanion[KernelBusyState](2)
+
+final case class KernelInfo(content: String) extends KernelStatusUpdate
+object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3)

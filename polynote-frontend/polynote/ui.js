@@ -196,6 +196,26 @@ export class KernelTasksUI {
     }
 }
 
+export class KernelInfoUI {
+    constructor() {
+        this.el = div(['kernel-info'], [
+            h3([], ['Info']),
+            this.infoEl = div(['info-container'], [])
+        ]);
+        this.el.style.display = "none";
+    }
+
+    setInfo(content) {
+        this.el.style.display = "block";
+        console.log(`Set display on ${this.el}`)
+        this.infoEl.innerHTML = content
+    }
+
+    removeInfo() {
+        this.infoEl.innerHTML = ""
+    }
+}
+
 export class SplitView {
     constructor(id, left, center, right) {
         this.left = left;
@@ -301,6 +321,7 @@ export class SplitView {
 export class KernelUI extends EventTarget {
     constructor(socket) {
         super();
+        this.info = new KernelInfoUI();
         this.symbols = new KernelSymbolsUI();
         this.tasks = new KernelTasksUI();
         this.socket = socket;
@@ -315,6 +336,7 @@ export class KernelUI extends EventTarget {
                 ])
             ]),
             div(['ui-panel-content'], [
+                this.info.el,
                 this.symbols.el,
                 this.tasks.el
             ])
@@ -811,6 +833,11 @@ export class NotebookUI {
                     case messages.KernelBusyState:
                         const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
                         this.kernelUI.setKernelState(state);
+                        break;
+
+                    case messages.KernelInfo:
+                        this.kernelUI.info.setInfo(update.content);
+                        break;
                 }
             }
         });

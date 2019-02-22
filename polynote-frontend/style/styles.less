@@ -1267,8 +1267,8 @@ button {
   border-left: 1px solid @ui-border;
 
   > .ui-panel-content {
-    grid-template-areas: "symbols" "tasks";
-    grid-template-rows: auto 1fr;
+    grid-template-areas: "info" "symbols" "tasks";
+    grid-template-rows:   auto   auto      1fr;
   }
 
   h2 {
@@ -1445,6 +1445,16 @@ button {
           font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
         }
       }
+    }
+  }
+
+  .kernel-info {
+    position: relative;
+    grid-area: info;
+
+    .info-container {
+      padding: 4px;
+      background-color: white;
     }
   }
 }

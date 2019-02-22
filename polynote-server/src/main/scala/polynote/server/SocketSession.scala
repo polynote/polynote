@@ -129,7 +129,8 @@ class SocketSession(
           Stream.eval(notebookRef.get) ++
             Stream.eval(notebookRef.currentSymbols()).flatMap(results => Stream.emits(results).map(rv => CellResult(path, rv.sourceCell, rv))) ++
             Stream.eval(notebookRef.currentTasks()).map(tasks => KernelStatus(path, UpdatedTasks(tasks))) ++
-            Stream.eval(notebookRef.currentStatus).map(KernelStatus(path, _))
+            Stream.eval(notebookRef.currentStatus).map(KernelStatus(path, _)) ++
+            Stream.eval(notebookRef.getInfo).map(info => info.map(KernelStatus(path, _))).unNone
       }
 
     case CreateNotebook(path) =>
