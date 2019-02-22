@@ -95,6 +95,9 @@ class SparkPolyKernel(
   private lazy val session = {
     val conf = new SparkConf(loadDefaults = true)
     conf.setIfMissing("spark.master", "local[*]")
+    if (conf.get("spark.master") == "local[*]") {
+      conf.set("spark.driver.host", "127.0.0.1")
+    }
     conf.setJars(dependencyJars.map(_.toString))
     conf.set("spark.repl.class.outputDir", outputPath.toString)
 
@@ -129,7 +132,7 @@ class SparkPolyKernel(
   }
 
   override val init: IO[Unit] = super.init >> taskQueue.runTaskIO("spark", "Spark session", "Starting Spark session...") {
-    taskInfo => IO(session) >> IO.unit
+    taskInfo => IO(session).handleErrorWith(err => IO(logger.error(err)(err.getMessage)) *> IO.raiseError(err)) >> IO.unit
   }
 
   override def shutdown(): IO[Unit] = super.shutdown() *> IO(session.stop())

@@ -1364,6 +1364,7 @@ const textToolbar = new TextToolbar('Toolbar-Text', {
 document.addEventListener('selectionchange', (evt) => textToolbar.action(evt));
 
 
+// TODO: move all these to happen when server handshake gives list of languages
 monaco.languages.registerCompletionItemProvider('scala', {
   triggerCharacters: ['.'],
   provideCompletionItems: (doc, pos, context, cancelToken) => {
@@ -1383,4 +1384,11 @@ monaco.languages.registerSignatureHelpProvider('scala', {
   provideSignatureHelp: (doc, pos, cancelToken, context) => {
       return doc.cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
   }
+});
+
+monaco.languages.registerCompletionItemProvider('sql', {
+    triggerCharacters: ['.'],
+    provideCompletionItems: (doc, pos, context, cancelToken) => {
+        return doc.cellInstance.requestCompletion(doc.getOffsetAt(pos));
+    }
 });
