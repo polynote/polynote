@@ -34,7 +34,7 @@ trait LanguageKernel[F[_]] {
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
     code: String
-  ): F[Stream[F, RunWrapper]]
+  ): F[Stream[F, Result]]
 
   /**
     * Ask for completions (if applicable) at the given position in the given code string

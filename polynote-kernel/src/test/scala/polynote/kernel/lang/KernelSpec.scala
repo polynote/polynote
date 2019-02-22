@@ -65,11 +65,11 @@ trait KernelSpec {
         symsF   <- symbolTable.subscribe()(_ => IO.unit).map(_._1).interruptWhen(done()).compile.toVector.start
         results <- interp.runCode("test", symbolTable.currentTerms.map(_.asInstanceOf[interp.Decl]), Nil, code)
         output  <- results.evalMap {
-            case WrapSymbol(symbol) =>
-              symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList).map { _ =>
+            case v: ResultValue =>
+              symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp) :: Nil).map { _ =>
                 None
               }
-            case WrapResult(result) =>
+            case result =>
               IO.pure(result).map(Option(_))
           }.unNone.compile.toVector
         // make  sure everything has been processed

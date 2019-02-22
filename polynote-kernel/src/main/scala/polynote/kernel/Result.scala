@@ -10,9 +10,11 @@ import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import polynote.kernel.util.SymbolDecl
+import polynote.messages.{TinyList, TinyString, tinyStringCodec, tinyListCodec}
 import scodec.bits.BitVector
 
 import scala.collection.mutable.ListBuffer
+import scala.reflect.api.Universe
 
 sealed abstract class ResultCompanion[T <: Result](msgId: Byte) {
   implicit val discriminator: Discriminator[Result, T, Byte] = Discriminator(msgId)
@@ -133,19 +135,32 @@ final case class ClearResults() extends Result
 
 object ClearResults extends ResultCompanion[ClearResults](3)
 
+// TODO: fix the naming of these classes
+final case class ResultValue(
+  name: TinyString,
+  typeName: String,
+  reprs: TinyList[ValueRepr],
+  sourceCell: TinyString,
+  value: Any,
+  scalaType: Universe#Type
+) extends Result
+
+object ResultValue extends ResultCompanion[ResultValue](4) {
+
+  // manual codec - we'll never encode nor decode `value` nor `scalaType`.
+  implicit val codec: Codec[ResultValue] = (tinyStringCodec ~ string(StandardCharsets.UTF_8) ~ tinyListCodec[ValueRepr] ~ tinyStringCodec).xmap(
+    _ match {
+      case (((name, typeName), reprs), sourceCell) => ResultValue(name, typeName, reprs, sourceCell, None, scala.reflect.runtime.universe.NoType)
+    },
+    v => (((v.name, v.typeName), v.reprs), v.sourceCell)
+  )
+
+}
+
+
 sealed trait Result
 
 object Result {
   implicit val discriminated: Discriminated[Result, Byte] = Discriminated(byte)
   implicit val codec: Codec[Result] = cachedImplicit
-}
-
-// Wrap symbol and results so we can handle Symbols without needing to add another Result.
-// We don't want to add a new Result because we don't plan on encoding these symbols. TODO: or should we just make WrapSymbol a Result?
-trait RunWrapper
-final case class WrapSymbol(symbol: SymbolDecl[IO]) extends RunWrapper
-final case class WrapResult(result: Result) extends RunWrapper
-
-object RunWrapper {
-  implicit def result2CellResult(result: Result): WrapResult = WrapResult(result)
 }

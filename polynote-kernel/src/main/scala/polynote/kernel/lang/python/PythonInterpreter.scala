@@ -142,7 +142,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
     code: String
-  ): IO[Stream[IO, RunWrapper]] = if (code.trim().isEmpty) IO.pure(Stream.empty) else {
+  ): IO[Stream[IO, Result]] = if (code.trim().isEmpty) IO.pure(Stream.empty) else {
     import symbolTable.global
 
 //    global.demandNewCompilerRun()
@@ -150,7 +150,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     global.newCompilationUnit("", cell)
 
     val shiftEffect = IO.ioConcurrentEffect(shift) // TODO: we can also create an implicit shift instead of doing this, which is better?
-    Queue.unbounded[IO, Option[RunWrapper]](shiftEffect).flatMap { maybeResultQ =>
+    Queue.unbounded[IO, Option[Result]](shiftEffect).flatMap { maybeResultQ =>
 
       val resultQ = new EnqueueSome(maybeResultQ)
 
@@ -195,7 +195,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
           } else None
         } else None
 
-        (getPyResults(newDecls, cell).filterNot(_._2.value == null).values.map(WrapSymbol), maybeOutput)
+        (getPyResults(newDecls, cell).filterNot(_._2.value == null).values, maybeOutput)
       }.flatMap { case (resultSymbols, maybeOutput) =>
 
         for {
@@ -218,12 +218,14 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     }
   }
 
-  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, symbolTable.RuntimeValue] =
+  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, ResultValue] =
     decls.map {
       name => name -> {
         getPyResult(name) match {
-          case (value, Some(typ)) => symbolTable.RuntimeValue(name, value, typ, Some(this), sourceCellId)
-          case (value, _) => symbolTable.RuntimeValue(name, value, Some(this), sourceCellId)
+          case (value, Some(typ)) => ResultValue(name, symbolTable.formatType(typ), Nil, sourceCellId, value, typ)
+          case (value, _) =>
+            val typ = symbolTable.typeOf(value, None)
+            ResultValue(name, symbolTable.formatType(typ), Nil, sourceCellId, value, typ)
         }
       }
     }.toMap
@@ -343,7 +345,7 @@ object PythonInterpreter {
 
 }
 
-class PythonDisplayHook(out: Enqueue[IO, RunWrapper]) {
+class PythonDisplayHook(out: Enqueue[IO, Result]) {
   private var current = ""
   def output(str: String): Unit =
     if (str != null && str.nonEmpty)

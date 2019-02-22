@@ -99,7 +99,7 @@ class ScalaInterpreter(
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
     code: String
-  ): IO[Stream[IO, RunWrapper]] = {
+  ): IO[Stream[IO, Result]] = {
     val originalOut = System.out
 
     val source = new ScalaSource[this.type](this)(cell, visibleSymbols.toSet, previousCells.collect(previousSources).toList, code)
@@ -108,7 +108,7 @@ class ScalaInterpreter(
         case global.NoSymbol => IO.pure(Stream.empty)
         case sym =>
 
-          Queue.unbounded[IO, Option[RunWrapper]].flatMap { maybeResultQ =>
+          Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
             val resultQ = new EnqueueSome(maybeResultQ)
 
             val symType = sym.asModule.toType
@@ -150,7 +150,7 @@ class ScalaInterpreter(
                     if (accessor.info.finalResultType <:< global.typeOf[Unit])
                       None
                     else
-                      Some(symbolTable.RuntimeValue(accessor.name.toTermName.toString, value, tpe, Some(this), cell))
+                      Some(ResultValue(accessor.name.toString, symbolTable.formatType(tpe), Nil, cell, value, tpe))
 
                   case method if method.isMethod =>
                     // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
@@ -187,18 +187,21 @@ class ScalaInterpreter(
                     }
                     val fnMirror = runtimeMirror.reflect(runtimeFn)
 
-                    Some(symbolTable.RuntimeValue(method.name.toTermName.toString, runtimeFn, importFromRuntime.importType(fnType), Some(this), cell))
+                    val methodType = importFromRuntime.importType(fnType)
+                    val typeStr = symbolTable.formatType(methodType)
+                    Some(ResultValue(method.name.toString, typeStr, Nil, cell, runtimeFn, methodType))
 
                 }.flatten
 
                 val maybeOutput = syms.find(_.name.startsWith("res"))
 
+                def stringRepr(value: ResultValue): TinyString = // TODO: from reprs?
+                  Option(value).map(_.toString).getOrElse("")
+
                 maybeOutput
-                  .map(rv => resultQ.enqueue1(Output("text/plain; rel=decl; lang=scala", s"${rv.name.toString}: ${rv.typeString} = ${rv.valueString}")))
+                  .map(rv => resultQ.enqueue1(Output("text/plain; rel=decl; lang=scala", s"${rv.name}: ${rv.typeName} = ${stringRepr(rv)}")))
                   .getOrElse(IO.unit)
-                  .map { _ =>
-                    syms.map(WrapSymbol(_))
-                  }
+                  .as(syms)
             }
 
             val saveSource = IO.delay[Unit](previousSources.put(cell, source))
@@ -209,7 +212,7 @@ class ScalaInterpreter(
                   .unNoneTerminate
                   .flatMap(Stream.chunk)
                   .through(fs2.text.utf8Decode)
-                  .map(o => WrapResult(Output("text/plain; rel=stdout", o)))
+                  .map(o => Output("text/plain; rel=stdout", o))
 
                 // we need to capture and release *on the thread that is executing the code* because Console.setOut is set **per thread**!
                 val runWithCapturedStdout = IO {

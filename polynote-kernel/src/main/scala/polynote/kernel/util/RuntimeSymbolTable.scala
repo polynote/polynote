@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{SignallingRef, Topic}
-import polynote.kernel.{KernelStatusUpdate, SymbolInfo, UpdatedSymbols}
+import polynote.kernel.{KernelStatusUpdate, ResultValue, SymbolInfo, UpdatedSymbols}
 import polynote.kernel.lang.LanguageKernel
 
 import scala.collection.mutable
@@ -32,7 +32,7 @@ final class RuntimeSymbolTable(
 
   private val cellIds: mutable.TreeSet[String] = new mutable.TreeSet()
 
-  private def typeOf(value: Any, staticType: Option[Type]): Type = staticType.getOrElse {
+  def typeOf(value: Any, staticType: Option[Type]): Type = staticType.getOrElse {
     val instMirror = runtimeMirror.reflect(value)
     val importedSym = importFromRuntime.importSymbol(instMirror.symbol)
 
@@ -173,6 +173,11 @@ final class RuntimeSymbolTable(
       symbolDecl.getValue.map { value =>
         apply(symbolDecl.name, value, symbolDecl.source, symbolDecl.sourceCellId)
       }
+    }
+
+    def fromResultValue(resultValue: ResultValue, source: LanguageKernel[IO]): RuntimeValue = resultValue match {
+      case ResultValue(name, typeName, reprs, sourceCell, value, scalaType) =>
+        apply(name, value, scalaType.asInstanceOf[global.Type], Option(source), sourceCell)
     }
   }
 

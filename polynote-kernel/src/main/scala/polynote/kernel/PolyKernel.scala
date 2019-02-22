@@ -59,8 +59,8 @@ class PolyKernel private[kernel] (
     kernel.predefCode.fold(kernel.init()) {
       code => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => kernel.runCode("Predef", Nil, Nil, code)).flatMap {
         results => results.evalMap {
-          case WrapSymbol(symbol) =>
-            symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList)
+          case v: ResultValue =>
+            symbolTable.publishAll(List(symbolTable.RuntimeValue.fromResultValue(v, kernel)))
           case _ => IO.unit
         }.compile.drain
       }
@@ -118,9 +118,9 @@ class PolyKernel private[kernel] (
                       cell.content.toString
                     ).map {
                       results => results.evalMap {
-                        case WrapSymbol(symbol) =>
-                          symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList).as(None)
-                        case WrapResult(result) =>
+                        case v: ResultValue =>
+                          symbolTable.publishAll(List(symbolTable.RuntimeValue.fromResultValue(v, kernel))).as(None)
+                        case result =>
                           IO.pure(Some(result))
                       }.unNone
                     }.handleErrorWith {

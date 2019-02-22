@@ -48,7 +48,7 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
 
   private def dropTempViews(views: List[String]): IO[Unit] = views.map(name => IO(spark.catalog.dropTempView(name))).sequence.as(())
 
-  private def outputDataFrame(df: DataFrame): IO[WrapResult] = IO {
+  private def outputDataFrame(df: DataFrame): IO[Result] = IO {
     // TODO: We should have a way of just sending raw tabular data to the client for it to display and maybe plot!
     //       But we'd have to write some actual content to the notebook file... maybe Output could take multiple
     //       representations of the content and each representation could be possibly written to the notebook and
@@ -83,23 +83,23 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
          |</table>""".stripMargin
     )
 
-  }.handleErrorWith(err => IO.pure(RuntimeError(err))).map(WrapResult.apply)
+  }.handleErrorWith(err => IO.pure(RuntimeError(err)))
 
   override def runCode(
     cell: String,
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
     code: String
-  ): IO[fs2.Stream[IO, RunWrapper]] = {
+  ): IO[fs2.Stream[IO, Result]] = {
     val compilerRun = new symbolTable.global.Run
     val run = for {
       _           <- symbolTable.drain()
       parseResult <- IO.fromEither(parser.parse(cell, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
       resultDF    <- registerTempViews(parseResult.tableIdentifiers).sequence.bracket(_ => IO(spark.sql(code)))(dropTempViews)
-      cellResult   = WrapSymbol(symbolTable.RuntimeValue(s"res$cell", resultDF, symbolTable.global.typeOf[DataFrame], Some(this), cell))
+      cellResult   = ResultValue(s"res$cell", "DataFrame", Nil, cell, resultDF, symbolTable.global.typeOf[DataFrame])
     } yield Stream.emit(cellResult) ++ Stream.eval(outputDataFrame(resultDF))
 
-    run.handleErrorWith(err => IO.pure(Stream.emit(WrapResult(RuntimeError(err)))))
+    run.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))
   }
 
   override def completionsAt(
