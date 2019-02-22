@@ -10,6 +10,7 @@ import cats.effect.{ContextShift, IO}
 import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.flatMap._
+import cats.syntax.functor._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, Topic}
 import org.log4s.{Logger, getLogger}
@@ -56,15 +57,14 @@ class PolyKernel private[kernel] (
   // TODO: duplicates logic from runCell
   private def runPredef(kernel: LanguageKernel[IO], language: String): IO[Unit] =
     kernel.predefCode.fold(kernel.init()) {
-      code => for {
-        results  <- taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => kernel.runCode("Predef", Nil, Nil, code))
-      } yield {
-        results.evalMap {
-          case WrapSymbol(symbol) => symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList)
+      code => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => kernel.runCode("Predef", Nil, Nil, code)).flatMap {
+        results => results.evalMap {
+          case WrapSymbol(symbol) =>
+            symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList)
           case _ => IO.unit
         }.compile.drain
       }
-  }
+    }
 
   protected def getKernel(language: String): IO[LanguageKernel[IO]] = Option(kernels.get(language)).map(IO.pure).getOrElse {
     launchingKernel.acquire.bracket { _ =>
@@ -95,45 +95,43 @@ class PolyKernel private[kernel] (
 
   def runCell(id: String): IO[fs2.Stream[IO, Result]] = {
     val done = ReadySignal()
-    symbolTable.drain() *> Queue.unbounded[IO, Option[Result]].flatMap {
+    symbolTable.drain() *> Queue.unbounded[IO, Option[Result]].map {
       oq =>
           val oqSome = new EnqueueSome(oq)
-          oq.enqueue1(Some(ClearResults())) *> withKernel(id) {
-            (notebook, cell, kernel) =>
-              val prevCellIds = prevCells(notebook, id)
-              taskQueue.runTaskIO(id, id, s"Running $id") {
-                taskInfo =>
-                  polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
-                  polynote.runtime.Runtime.setProgressSetter {
-                    (progress, detail) =>
-                      val newDetail = Option(detail).getOrElse(taskInfo.detail)
-                      statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
-                  }
-                  kernel.runCode(
-                    id,
-                    findAvailableSymbols(prevCellIds, kernel),
-                    prevCellIds,
-                    cell.content.toString
-                  ).flatMap { results =>
-                    // unpack Results while publishing then discarding symbols
-                    results
-                      .evalMap {
+          val cellResults = Stream.eval {
+            withKernel(id) {
+              (notebook, cell, kernel) =>
+                val prevCellIds = prevCells(notebook, id)
+                taskQueue.runTaskIO(id, id, s"Running $id") {
+                  taskInfo =>
+                    // TODO: should this be something the interpreter has to do? Without this we wouldn't even need to allocate a queue here
+                    polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
+                    polynote.runtime.Runtime.setProgressSetter {
+                      (progress, detail) =>
+                        val newDetail = Option(detail).getOrElse(taskInfo.detail)
+                        statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
+                    }
+                    kernel.runCode(
+                      id,
+                      findAvailableSymbols(prevCellIds, kernel),
+                      prevCellIds,
+                      cell.content.toString
+                    ).map {
+                      results => results.evalMap {
                         case WrapSymbol(symbol) =>
-                          symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList)
-                        case WrapResult(result) => oqSome.enqueue1(result)
-                      }.compile.drain
-                  }.handleErrorWith {
-                    case errs@CompileErrors(_) =>
-                      oqSome.enqueue1(errs)
-                    case err@RuntimeError(_) =>
-                      oqSome.enqueue1(err)
-                    case err =>
-                      oqSome.enqueue1(RuntimeError(err))
-                  }.guarantee(oq.enqueue1(None)) *> symbolTable.drain()
-              }
-        }.flatten.uncancelable.start.map {
-          fiber => oq.dequeue.unNoneTerminate
-        }
+                          symbolTable.publishAll(symbolTable.RuntimeValue.fromSymbolDecl(symbol).toList).as(None)
+                        case WrapResult(result) =>
+                          IO.pure(Some(result))
+                      }.unNone
+                    }.handleErrorWith {
+                      case errs@CompileErrors(_) => IO.pure(Stream.emit(errs))
+                      case err@RuntimeError(_) => IO.pure(Stream.emit(err))
+                      case err => IO.pure(Stream.emit(RuntimeError(err)))
+                    }.guarantee(oq.enqueue1(None)) <* symbolTable.drain()
+                }
+            }.flatten.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))
+          }
+        Stream.emit(ClearResults()) ++ Stream(cellResults.flatten, oq.dequeue.unNoneTerminate).parJoinUnbounded
     }
   }
 

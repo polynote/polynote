@@ -3,10 +3,11 @@ package polynote.kernel.lang.sql
 import java.io.File
 
 import cats.instances.list._
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
 import cats.syntax.traverse._
 import cats.syntax.functor._
-import fs2.concurrent.Enqueue
+import fs2.Stream
+import fs2.concurrent.{Enqueue, Queue}
 import org.apache.spark.sql.catalyst.parser.{SqlBaseBaseVisitor, SqlBaseParser}
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser.SingleStatementContext
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
@@ -19,6 +20,8 @@ import scala.collection.mutable
 
 class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKernel[IO] {
 
+  private implicit val contextShift: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.Implicits.global)
+
   def predefCode: Option[String] = None
 
   private val spark = SparkSession.builder().getOrCreate()
@@ -28,7 +31,7 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
   private lazy val datasetType = symbolTable.global.typeOf[Dataset[Any]].typeConstructor
 
   private def dataFrames[D <: Decl](symbols: Seq[D]) = symbols.collect {
-    case rv if rv.scalaType.dealiasWiden.typeConstructor <:< datasetType => rv
+    case rv if rv.scalaType(symbolTable.global).dealiasWiden.typeConstructor <:< datasetType => rv
   }.toList
 
   private def registerTempViews(identifiers: List[Parser.TableIdentifier]) = {
@@ -43,9 +46,9 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
     }
   }
 
-  private def dropTempViews(views: List[String]) = views.map(name => IO(spark.catalog.dropTempView(name))).sequence.as(())
+  private def dropTempViews(views: List[String]): IO[Unit] = views.map(name => IO(spark.catalog.dropTempView(name))).sequence.as(())
 
-  private def outputDataFrame(df: DataFrame, out: Enqueue[IO, Result]) = {
+  private def outputDataFrame(df: DataFrame): IO[WrapResult] = IO {
     // TODO: We should have a way of just sending raw tabular data to the client for it to display and maybe plot!
     //       But we'd have to write some actual content to the notebook file... maybe Output could take multiple
     //       representations of the content and each representation could be possibly written to the notebook and
@@ -71,36 +74,35 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
       row => row.toSeq.view.map(_.toString).map(escape).mkString("<td>", "</td><td>", "</td>")
     }.mkString("<tbody><tr>", "</tr><tr>", "</tr></tbody>")
 
-    out.enqueue1(
-      Output(
-        "text/html",
-        s"""<table>
-           |  <caption>Showing ${rows.length} of $count rows</caption>
-           |  $heading
-           |  $body
-           |</table>""".stripMargin
-      )
+    Output(
+      "text/html",
+      s"""<table>
+         |  <caption>Showing ${rows.length} of $count rows</caption>
+         |  $heading
+         |  $body
+         |</table>""".stripMargin
     )
-  }
 
-  def runCode(
+  }.handleErrorWith(err => IO.pure(RuntimeError(err))).map(WrapResult.apply)
+
+  override def runCode(
     cell: String,
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
-    code: String,
-    out: Enqueue[IO, Result],
-    statusUpdates: Publish[IO, KernelStatusUpdate]
-  ): IO[Unit] = for {
-    _           <- IO(symbolTable.global.demandNewCompilerRun())
-    run          = new symbolTable.global.Run
-    _           <- symbolTable.drain()
-    parseResult <- IO.fromEither(parser.parse(cell, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
-    resultDF    <- registerTempViews(parseResult.tableIdentifiers).sequence.bracket(_ => IO(spark.sql(code)))(dropTempViews)
-    _           <- symbolTable.publish(this, cell)(symbolTable.global.TermName(s"res$cell"), resultDF, Some(symbolTable.global.typeOf[DataFrame]))
-    _           <- outputDataFrame(resultDF, out)
-  } yield ()
+    code: String
+  ): IO[fs2.Stream[IO, RunWrapper]] = {
+    val compilerRun = new symbolTable.global.Run
+    val run = for {
+      _           <- symbolTable.drain()
+      parseResult <- IO.fromEither(parser.parse(cell, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
+      resultDF    <- registerTempViews(parseResult.tableIdentifiers).sequence.bracket(_ => IO(spark.sql(code)))(dropTempViews)
+      cellResult   = WrapSymbol(symbolTable.RuntimeValue(s"res$cell", resultDF, symbolTable.global.typeOf[DataFrame], Some(this), cell))
+    } yield Stream.emit(cellResult) ++ Stream.eval(outputDataFrame(resultDF))
 
-  def completionsAt(
+    run.handleErrorWith(err => IO.pure(Stream.emit(WrapResult(RuntimeError(err)))))
+  }
+
+  override def completionsAt(
     cell: String,
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
@@ -118,12 +120,12 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
     } yield completeAtPos(parseResult.statement)
   }
 
-  def parametersAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): IO[Option[Signatures]] =
+  override def parametersAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): IO[Option[Signatures]] =
     IO(None) // TODO: could we generate parameter hints for spark's builtin functions?
 
-  def init(): IO[Unit] = IO.unit
+  override def init(): IO[Unit] = IO.unit
 
-  def shutdown(): IO[Unit] = IO.unit
+  override def shutdown(): IO[Unit] = IO.unit
 
   private lazy val databaseNames = spark.catalog.listDatabases().map(_.name).collect()
 
