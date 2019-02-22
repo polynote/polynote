@@ -30,7 +30,7 @@ class SocketSessionSpec extends FreeSpec with Matchers {
       implicit val timer: Timer[IO] = IO.timer(ExecutionContext.global)
       val ss = new SocketSession(nbManager)
       val response = sendMessage(ss, StartKernel(ShortString("test"), StartKernel.NoRestart)).flatMap(_.compile.toVector).unsafeRunSync()
-      response shouldEqual KernelStatus(ShortString("test"), KernelBusyState(false, true))
+      response.head shouldEqual KernelStatus(ShortString("test"), KernelBusyState(false, true))
     }
   }
 
