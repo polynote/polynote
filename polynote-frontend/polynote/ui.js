@@ -1304,7 +1304,7 @@ export class MainUI extends SplitView {
     }
 
     createNotebook(evt) {
-        const notebookPath = prompt("Enter the path to the new notebook");
+        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension)");
         if (notebookPath) {
             const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
                 this.socket.removeMessageListener(handler);

@@ -48,7 +48,7 @@ trait Server extends IOApp with Http4sDsl[IO] {
     HttpRoutes.of[IO] {
       case GET -> Root / "ws" => SocketSession(notebookManager).flatMap(_.toResponse)
       case req @ GET -> Root  => serveFile(indexFile, req)
-      case req @ GET -> Root / "notebook" / _ => serveFile(indexFile, req)
+      case req @ GET -> "notebook" /: _ => serveFile(indexFile, req)
       case req @ GET -> path  =>
         serveFile(path.toString, req)
     }

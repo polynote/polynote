@@ -28,19 +28,25 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   def chunkSize: Int
   def executionContext: ExecutionContext
 
-  protected def pathOf(notebook: String): Path = path.resolve(notebook)
+  protected def pathOf(relativePath: String): Path = path.resolve(relativePath)
 
   protected def loadString(path: String)(implicit contextShift: ContextShift[IO]): IO[String] = for {
-    content <- readBytes(java.nio.file.Files.newInputStream(pathOf(path)), chunkSize, executionContext)
+    content <- readBytes(Files.newInputStream(pathOf(path)), chunkSize, executionContext)
   } yield new String(content.toArray, StandardCharsets.UTF_8)
 
-  def writeString(path: String, content: String): IO[Unit] = IO {
-    java.nio.file.Files.write(pathOf(path), content.getBytes(StandardCharsets.UTF_8))
+  def writeString(relativePath: String, content: String): IO[Unit] = IO {
+    val nbPath = pathOf(relativePath)
+
+    if (nbPath.getParent != this.path) {
+      Files.createDirectories(nbPath.getParent)
+    }
+
+    Files.write(pathOf(relativePath), content.getBytes(StandardCharsets.UTF_8))
   }.map(_ => ())
 
   protected def defaultExtension: String
 
-  protected def validNotebook(file: Path): Boolean = file.toString.endsWith(s".$defaultExtension")
+  protected def validNotebook(path: Path): Boolean = path.toString.endsWith(s".$defaultExtension")
   protected def maxDepth: Int = 4
 
   def listNotebooks(): IO[List[String]] =
@@ -55,9 +61,17 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     IO(repoPath.toFile.exists())
   }
 
-  def createNotebook(path: String): IO[String] = {
+  def relativeDepth(relativePath: String): Int = {
+
+    val fullPath = pathOf(relativePath).iterator().asScala
+    val nbPath = path.iterator().asScala
+
+    fullPath.dropWhile(elem => nbPath.contains(elem)).length
+  }
+
+  def createNotebook(relativePath: String): IO[String] = {
     val ext = s".$defaultExtension"
-    val noExtPath = path.replaceFirst("""^/+""", "").stripSuffix(ext)
+    val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
 
     val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
@@ -69,10 +83,14 @@ trait FileBasedRepository extends NotebookRepository[IO] {
       None
     )
 
-    notebookExists(extPath).flatMap {
-      case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
-      case false => saveNotebook(extPath, emptyNotebook).map {
-        _ => extPath
+    if (relativeDepth(relativePath) > maxDepth) {
+      IO.raiseError(new IllegalArgumentException(s"Input path ($relativePath) too deep, maxDepth is $maxDepth"))
+    } else {
+      notebookExists(extPath).flatMap {
+        case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
+        case false => saveNotebook(extPath, emptyNotebook).map {
+          _ => extPath
+        }
       }
     }
   }
