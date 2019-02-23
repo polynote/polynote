@@ -84,6 +84,8 @@ package object messages {
   else
     map.asInstanceOf[TinyMap[A, B]]
 
+  def TinyMap[A, B](t: (A, B)*): TinyMap[A, B] = TinyMap(Map(t: _*))
+
   implicit def tinyMapCodec[A, B](implicit ca: Lazy[Codec[A]], cb: Lazy[Codec[B]]): Codec[TinyMap[A, B]] =
     listOfN(uint8, ca.value ~ cb.value).xmap(l => TinyMap(l.toMap), m => m.toList)
 

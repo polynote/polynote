@@ -614,7 +614,7 @@ export class KernelInfo extends KernelStatusUpdate {
     }
 }
 
-KernelInfo.codec = combined(str).to(KernelInfo);
+KernelInfo.codec = combined(mapCodec(uint8, shortStr, str)).to(KernelInfo);
 
 KernelStatusUpdate.codecs = [
     UpdatedSymbols,   // 0

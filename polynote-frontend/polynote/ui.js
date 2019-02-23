@@ -202,17 +202,52 @@ export class KernelInfoUI {
             h3([], ['Info']),
             this.infoEl = div(['info-container'], [])
         ]);
-        this.el.style.display = "none";
+        this.info = new Map();
+
+        this.toggleVisible();
     }
 
-    setInfo(content) {
-        this.el.style.display = "block";
-        console.log(`Set display on ${this.el}`)
-        this.infoEl.innerHTML = content
+    updateInfo(content) {
+        for (const [key, val] of Object.entries(content)) {
+            if (val.size === 0) { // empty val is a proxy for removing key
+                this.removeInfo(key);
+            } else {
+                this.addInfo(key, val);
+            }
+        }
     }
 
-    removeInfo() {
-        this.infoEl.innerHTML = ""
+    addInfo(key, value) {
+        this.info.set(key, value);
+        this.toggleVisible()
+    }
+
+    removeInfo(key) {
+        this.info.delete(key);
+        this.toggleVisible()
+    }
+
+    toggleVisible() {
+        if (this.info.size === 0) {
+            this.el.style.display = "none";
+        } else {
+            this.renderInfo();
+            this.el.style.display = "block";
+        }
+    }
+
+    renderInfo() {
+        this.infoEl.innerHTML = "";
+        for (const [k, v] of this.info) {
+            console.log(`rendering ${k}, ${v}`);
+            const val = div(['info-value'], []);
+            val.innerHTML = v;
+            const el = div(['info-item'], [
+                div(['info-key'], [k]),
+                val
+            ]);
+            this.infoEl.appendChild(el);
+        }
     }
 }
 
@@ -836,7 +871,7 @@ export class NotebookUI {
                         break;
 
                     case messages.KernelInfo:
-                        this.kernelUI.info.setInfo(update.content);
+                        this.kernelUI.info.updateInfo(update.content);
                         break;
                 }
             }

@@ -21,7 +21,7 @@ import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
 import polynote.kernel.util.{KernelContext, Publish, RuntimeSymbolTable}
-import polynote.messages.Notebook
+import polynote.messages._
 
 import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.reflect.io.{AbstractFile, Directory, PlainDirectory, VirtualDirectory}
@@ -139,7 +139,7 @@ class SparkPolyKernel(
 
   override def info: IO[Option[KernelInfo]] = IO(session).map { sess =>
     sess.sparkContext.uiWebUrl.map { url =>
-      KernelInfo(s"""Spark Web UI: <a href="$url">$url</a>""")
+      KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url">$url</a>"""))
     }
   }
 
