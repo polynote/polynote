@@ -196,15 +196,29 @@ export class KernelTasksUI {
     }
 }
 
+// TODO: how can we remember collapsed state across sessions?
 export class KernelInfoUI {
     constructor() {
         this.el = div(['kernel-info'], [
-            h3([], ['Info']),
-            this.infoEl = div(['info-container'], [])
+            this.toggleEl = h3(['toggle'], ['...']).click(evt => this.toggleCollapse()),
+            h3(['title'], ['Info']),
+            this.infoEl = div(['info-container'], []),
         ]);
         this.info = new Map();
 
-        this.toggleVisible();
+        this.toggleVisibility();
+    }
+
+    toggleCollapse() {
+        if (this.toggleEl.classList.contains('collapsed')) {
+            this.toggleEl.classList.remove('collapsed')
+            this.infoEl.style.display = null;
+            this.el.querySelector(".title").style.display = null;
+        } else {
+            this.toggleEl.classList.add('collapsed')
+            this.infoEl.style.display = "none";
+            this.el.querySelector(".title").style.display = "none";
+        }
     }
 
     updateInfo(content) {
@@ -219,15 +233,15 @@ export class KernelInfoUI {
 
     addInfo(key, value) {
         this.info.set(key, value);
-        this.toggleVisible()
+        this.toggleVisibility()
     }
 
     removeInfo(key) {
         this.info.delete(key);
-        this.toggleVisible()
+        this.toggleVisibility()
     }
 
-    toggleVisible() {
+    toggleVisibility() {
         if (this.info.size === 0) {
             this.el.style.display = "none";
         } else {

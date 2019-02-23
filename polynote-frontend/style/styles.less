@@ -1257,7 +1257,7 @@ button {
   display: grid;
 
   .ui-panel-content {
-    display: grid;
+    display: inline-block;
     grid-area: body;
   }
 }
@@ -1451,6 +1451,16 @@ button {
   .kernel-info {
     position: relative;
     grid-area: info;
+    z-index: 1;
+
+    .toggle {
+      float: right;
+    }
+
+    .collapsed {
+      background-color: lightgrey;
+      box-shadow: 4px 0px 0px #e0e6ec inset;
+    }
 
     .info-container {
       padding: 4px;
