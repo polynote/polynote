@@ -20,7 +20,8 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
   previousSources: List[ScalaSource[Interpreter]],
   code: String
 ) {
-  import interpreter.{global, notebookPackage}
+  import interpreter.symbolTable.kernelContext.global
+  import interpreter.notebookPackage
   import global.{Type, Tree, atPos}
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
@@ -358,7 +359,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     } yield result
   }
 
-  lazy val directImports: List[interpreter.global.Tree] = {
+  lazy val directImports: List[global.Tree] = {
     for {
       stats <- parsed
     } yield stats.collect {
@@ -366,7 +367,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     }
   }.right.getOrElse(Nil)
 
-  lazy val compiledModule: Either[Throwable, interpreter.global.Symbol] = successfulParse.flatMap {
+  lazy val compiledModule: Either[Throwable, global.Symbol] = successfulParse.flatMap {
     _ =>
       compileUnit.flatMap { unit =>
         withCompiler {
@@ -384,6 +385,6 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       }
   }
 
-  def compile: Either[Throwable, interpreter.global.Symbol] = compiledModule
+  def compile: Either[Throwable, global.Symbol] = compiledModule
 
 }

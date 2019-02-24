@@ -9,7 +9,7 @@ import cats.syntax.parallel._
 import fs2.Stream
 import fs2.concurrent.Topic
 import polynote.kernel.dependency.DependencyFetcher
-import polynote.kernel.lang.LanguageKernel
+import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal}
 import polynote.messages.{Notebook, NotebookConfig, TinyMap}
@@ -19,14 +19,14 @@ import scala.tools.nsc.Settings
 
 trait KernelFactory[F[_]] {
 
-  def launchKernel(getNotebook: () => F[Notebook], statusUpdates: Publish[F, KernelStatusUpdate]): F[Kernel[F]]
+  def launchKernel(getNotebook: () => F[Notebook], statusUpdates: Publish[F, KernelStatusUpdate]): F[KernelAPI[F]]
 
-  def interpreters: Map[String, LanguageKernel.Factory[F]]
+  def interpreters: Map[String, LanguageInterpreter.Factory[F]]
 }
 
 class IOKernelFactory(
   dependencyFetchers: Map[String, DependencyFetcher[IO]],
-  val interpreters: Map[String, LanguageKernel.Factory[IO]])(implicit
+  val interpreters: Map[String, LanguageInterpreter.Factory[IO]])(implicit
   contextShift: ContextShift[IO]
 ) extends KernelFactory[IO] {
 
@@ -38,7 +38,7 @@ class IOKernelFactory(
   protected def mkKernel(
     getNotebook: () => IO[Notebook],
     deps: Map[String, List[(String, File)]],
-    subKernels: Map[String, LanguageKernel.Factory[IO]],
+    subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     settings: Settings,
@@ -46,7 +46,7 @@ class IOKernelFactory(
     parentClassLoader: ClassLoader
   ): IO[PolyKernel] = IO.pure(PolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader))
 
-  override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate]): IO[Kernel[IO]] = for {
+  override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate]): IO[KernelAPI[IO]] = for {
     notebook <- getNotebook()
     path      = notebook.path
     config    = notebook.config.getOrElse(NotebookConfig(None, None))

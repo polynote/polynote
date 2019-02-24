@@ -24,5 +24,5 @@ final case class StructType(
   fields: List[StructField]
 ) extends DataType
 
-final case class OptionalType(underlying: DataType) extends DataType
+final case class OptionalType(element: DataType) extends DataType
 final case class ArrayType(element: DataType) extends DataType

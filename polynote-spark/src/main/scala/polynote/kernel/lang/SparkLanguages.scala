@@ -5,7 +5,7 @@ import polynote.kernel.lang.sql.SparkSqlInterpreter
 
 class SparkLanguages extends LanguageKernelService {
   def priority: Int = 1
-  def languageKernels: Map[String, LanguageKernel.Factory[IO]] = Map(
+  def languageKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map(
     "scala" -> ScalaSparkInterpreter.factory(),
     "sql" -> SparkSqlInterpreter.factory()
   )

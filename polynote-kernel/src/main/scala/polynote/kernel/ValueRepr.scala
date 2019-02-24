@@ -4,7 +4,7 @@ import polynote.runtime._
 import scodec.{Codec, codecs}
 import codecs.{Discriminated, Discriminator, byte}
 import scodec.bits.ByteVector
-import scodec.codecs.implicits._
+import scodec.codecs.implicits.{implicitByteVectorCodec => _, _}
 import shapeless.cachedImplicit
 
 abstract class ValueReprCompanion[T](msgId: Byte) {
@@ -46,20 +46,22 @@ object HTMLRepr extends ValueReprCompanion[HTMLRepr](1)
 /**
   * A binary representation of a value, encoded in Polynote's format (TODO)
   */
-final case class DataRepr(dataType: DataType, encodedData: ByteVector) extends ValueRepr
+final case class DataRepr(dataType: DataType, data: ByteVector) extends ValueRepr
 object DataRepr extends ValueReprCompanion[DataRepr](2)
 
 /**
   * An identifier for a "lazy" value. It won't be evaluated until the client asks for it by its handle.
+  * We use Ints for the handle, because JS needs to store the handle, and it can't store Long. We just can't have
+  * more than 2^32^ different handles... I think there would be bigger issues at that point.
   */
-final case class LazyDataRepr(handle: Long, dataType: DataType) extends ValueRepr
+final case class LazyDataRepr(handle: Int, dataType: DataType) extends ValueRepr
 object LazyDataRepr extends ValueReprCompanion[LazyDataRepr](3)
 
 /**
   * An identifier for an "updating" value. The server may push one or more binary representations of it over time, and
   * when there won't be anymore updates, the server will push a message indicating this.
   */
-final case class UpdatingDataRepr(handle: Long, dataType: DataType) extends ValueRepr
+final case class UpdatingDataRepr(handle: Int, dataType: DataType) extends ValueRepr
 object UpdatingDataRepr extends ValueReprCompanion[UpdatingDataRepr](4)
 
 /**
@@ -70,13 +72,16 @@ object UpdatingDataRepr extends ValueReprCompanion[UpdatingDataRepr](4)
   * The server will only push values when requested to do so by the client – the client can either pull chunks of values,
   * or it can ask the server to push all values as they become available.
   */
-final case class StreamingDataRepr(handle: Long, dataType: DataType) extends ValueRepr
+final case class StreamingDataRepr(handle: Int, dataType: DataType, knownSize: Option[Int]) extends ValueRepr
 object StreamingDataRepr extends ValueReprCompanion[StreamingDataRepr](5)
 
 sealed trait ValueRepr
 object ValueRepr {
   import DataTypeCodec.dataTypeCodec
   implicit val discriminated: Discriminated[ValueRepr, Byte] = Discriminated(byte)
+
+  // we want to use 32-bit lengths for byte vectors
+  implicit val byteVectorCodec: Codec[ByteVector] = codecs.variableSizeBytesLong(codecs.uint32, codecs.bytes)
   implicit val codec: Codec[ValueRepr] = cachedImplicit
 }
 

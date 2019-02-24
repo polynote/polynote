@@ -11,14 +11,16 @@ import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
+import cats.syntax.traverse._
+import cats.instances.list._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, Topic}
 import org.log4s.{Logger, getLogger}
 import polynote.kernel.PolyKernel.EnqueueSome
-import polynote.kernel.lang.LanguageKernel
-import polynote.kernel.util.GlobalInfo
+import polynote.kernel.lang.LanguageInterpreter
+import polynote.kernel.util.KernelContext
 import polynote.kernel.util.{RuntimeSymbolTable, _}
-import polynote.messages.{Notebook, NotebookCell}
+import polynote.messages.{CellResult, Notebook, NotebookCell}
 
 import scala.concurrent.ExecutionContext
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
@@ -29,25 +31,25 @@ import scala.tools.nsc.interactive.Global
 
 class PolyKernel private[kernel] (
   private val getNotebook: () => IO[Notebook],
-  val globalInfo: GlobalInfo,
+  val kernelContext: KernelContext,
   val outputDir: AbstractFile,
   dependencies: Map[String, List[(String, File)]],
   val statusUpdates: Publish[IO, KernelStatusUpdate],
-  subKernels: Map[String, LanguageKernel.Factory[IO]] = Map.empty
-) extends Kernel[IO] {
+  subKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty
+) extends KernelAPI[IO] {
 
   protected val logger: Logger = getLogger
 
   protected implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
 
-  private val launchingKernel = Semaphore[IO](1).unsafeRunSync()
-  private val kernels = new ConcurrentHashMap[String, LanguageKernel[IO]]()
+  private val launchingInterpreter = Semaphore[IO](1).unsafeRunSync()
+  private val interpreters = new ConcurrentHashMap[String, LanguageInterpreter[IO]]()
 
 
   /**
     * The symbol table, which stores all the currently existing runtime values
     */
-  protected lazy val symbolTable = new RuntimeSymbolTable(globalInfo, statusUpdates)
+  protected lazy val symbolTable = new RuntimeSymbolTable(kernelContext, statusUpdates)
 
   /**
     * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
@@ -55,52 +57,83 @@ class PolyKernel private[kernel] (
   protected lazy val taskQueue: TaskQueue = TaskQueue(statusUpdates).unsafeRunSync()
 
   // TODO: duplicates logic from runCell
-  private def runPredef(kernel: LanguageKernel[IO], language: String): IO[Unit] =
-    kernel.predefCode.fold(kernel.init()) {
-      code => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => kernel.runCode("Predef", Nil, Nil, code)).flatMap {
-        results => results.evalMap {
-          case v: ResultValue =>
-            symbolTable.publishAll(List(symbolTable.RuntimeValue.fromResultValue(v, kernel)))
-          case _ => IO.unit
-        }.compile.drain
+  private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
+    interp.init() *> {
+      interp.predefCode match {
+        case Some(code) => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode("Predef", Nil, Nil, code)).map {
+          results => results.collect {
+            case v: ResultValue => v
+          }.evalTap {
+            v => symbolTable.publishAll(List(symbolTable.RuntimeValue.fromResultValue(v, interp)))
+          }
+        }
+
+        case None => IO.pure(Stream.empty)
       }
     }
 
-  protected def getKernel(language: String): IO[LanguageKernel[IO]] = Option(kernels.get(language)).map(IO.pure).getOrElse {
-    launchingKernel.acquire.bracket { _ =>
-      Option(kernels.get(language)).map(IO.pure).getOrElse {
-        for {
-          factory <- IO.fromEither(Either.fromOption(subKernels.get(language), new RuntimeException(s"No kernel for language $language")))
-          kernel  <- taskQueue.runTask(s"Kernel$$$language", s"Starting $language kernel")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
-          _        = kernels.put(language, kernel)
-          _       <- runPredef(kernel, language)
-        } yield kernel
-      }
-    } {
-      _ => launchingKernel.release
-    }
+  protected def getInterpreter(language: String): Option[LanguageInterpreter[IO]] = Option(interpreters.get(language))
+
+  protected def getOrLaunchInterpreter(language: String): IO[(LanguageInterpreter[IO], Stream[IO, Result])] =
+    Option(interpreters.get(language))
+      .map(interp => IO.pure(interp -> Stream.empty))
+      .getOrElse {
+        launchingInterpreter.acquire.bracket { _ =>
+          Option(interpreters.get(language)).map(interp => IO.pure(interp -> Stream.empty)).getOrElse {
+            for {
+              factory <- IO.fromEither(Either.fromOption(subKernels.get(language), new RuntimeException(s"No interpreter for language $language")))
+              interp  <- taskQueue.runTask(s"Kernel$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
+              _        = interpreters.put(language, interp)
+              results  <- runPredef(interp, language)
+            } yield (interp, results)
+          }
+        } {
+          _ => launchingInterpreter.release
+        }
   }
 
-  protected def withKernel[A](cellId: String)(fn: (Notebook, NotebookCell, LanguageKernel[IO]) => A): IO[A] = for {
+  /**
+    * Perform a task upon a notebook cell, if the interpreter for that cell has already been launched. If the interpreter
+    * hasn't been launched, the action won't be performed and the result will be None.
+    */
+  protected def withLaunchedInterpreter[A](cellId: String)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO]) => IO[A]): IO[Option[A]] = for {
     notebook <- getNotebook()
-    cell     <- IO.fromEither(Either.fromOption(notebook.cells.find(_.id == cellId), new NoSuchElementException(s"Cell $cellId does not exist")))
-    kernel   <- getKernel(cell.language)
-  } yield fn(notebook, cell, kernel)
+    cell     <- IO(notebook.cell(cellId))
+    interp    = getInterpreter(cell.language)
+    result   <- interp.fold(IO.pure(Option.empty[A]))(interp => fn(notebook, cell, interp).map(result => Option(result)))
+  } yield result
+
+  /**
+    * Perform a task upon a notebook cell, launching the interpreter if necessary. Since this may result in the interpreter's
+    * predef code being executed, and that might produce results, the caller must be prepared to handle the result stream
+    * (which is passed into the given task)
+    */
+  protected def withInterpreter[A](cellId: String)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO], Stream[IO, Result]) => IO[A]): IO[A] = for {
+    notebook <- getNotebook()
+    cell     <- IO(notebook.cell(cellId))
+    launch   <- getOrLaunchInterpreter(cell.language)
+    (interp, predefResults) = launch
+    result   <- fn(notebook, cell, interp, predefResults)
+  } yield result
 
   private def prevCells(notebook: Notebook, id: String) = "Predef" :: notebook.cells.view.takeWhile(_.id != id).map(_.id).toList
 
-  protected def findAvailableSymbols(prevCells: List[String], kernel: LanguageKernel[IO]): Seq[kernel.Decl] = {
-    symbolTable.currentTerms.filter(v => prevCells.contains(v.sourceCellId)).asInstanceOf[Seq[kernel.Decl]]
+  protected def findAvailableSymbols(prevCells: List[String], interp: LanguageInterpreter[IO]): Seq[interp.Decl] = {
+    symbolTable.currentTerms.filter(v => prevCells.contains(v.sourceCellId)).asInstanceOf[Seq[interp.Decl]]
   }
 
-  def runCell(id: String): IO[fs2.Stream[IO, Result]] = {
+  def startInterpreterFor(cellId: String): IO[Stream[IO, Result]] = withInterpreter(cellId) {
+    (_, _, _, results) => IO.pure(results)
+  }
+
+  def runCell(id: String): IO[Stream[IO, Result]] = {
     val done = ReadySignal()
-    symbolTable.drain() *> Queue.unbounded[IO, Option[Result]].map {
+    Queue.unbounded[IO, Option[Result]].map {
       oq =>
           val oqSome = new EnqueueSome(oq)
           val cellResults = Stream.eval {
-            withKernel(id) {
-              (notebook, cell, kernel) =>
+            withInterpreter(id) {
+              (notebook, cell, interp, predefResults) =>
                 val prevCellIds = prevCells(notebook, id)
                 taskQueue.runTaskIO(id, id, s"Running $id") {
                   taskInfo =>
@@ -111,51 +144,51 @@ class PolyKernel private[kernel] (
                         val newDetail = Option(detail).getOrElse(taskInfo.detail)
                         statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
                     }
-                    kernel.runCode(
+
+                    symbolTable.drain() *> interp.runCode(
                       id,
-                      findAvailableSymbols(prevCellIds, kernel),
+                      findAvailableSymbols(prevCellIds, interp),
                       prevCellIds,
                       cell.content.toString
                     ).map {
-                      results => results.evalMap {
+                      results => predefResults merge results.evalMap {
                         case v: ResultValue =>
-                          symbolTable.publishAll(List(symbolTable.RuntimeValue.fromResultValue(v, kernel))).as(None)
+                          symbolTable.publishAll(List(symbolTable.RuntimeValue.fromResultValue(v, interp))).as(v)
                         case result =>
-                          IO.pure(Some(result))
-                      }.unNone
+                          IO.pure(result)
+                      }
                     }.handleErrorWith {
                       case errs@CompileErrors(_) => IO.pure(Stream.emit(errs))
                       case err@RuntimeError(_) => IO.pure(Stream.emit(err))
                       case err => IO.pure(Stream.emit(RuntimeError(err)))
                     }.guarantee(oq.enqueue1(None)) <* symbolTable.drain()
                 }
-            }.flatten.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))
+            }.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))
           }
         Stream.emit(ClearResults()) ++ Stream(cellResults.flatten, oq.dequeue.unNoneTerminate).parJoinUnbounded
     }
   }
 
-  def completionsAt(id: String, pos: Int): IO[List[Completion]] = withKernel(id) {
-    (notebook, cell, kernel) =>
-      val prevCellIds = prevCells(notebook, id)
-      kernel.completionsAt(id, findAvailableSymbols(prevCellIds, kernel), prevCellIds, cell.content.toString, pos)
-  }.flatMap(identity)
+  def runCells(ids: List[String]): IO[Stream[IO, CellResult]] = getNotebook().map {
+    notebook => Stream.emits(ids).evalMap {
+      id => runCell(id).map(results => results.map(result => CellResult(notebook.path, id, result)))
+    }.flatten // TODO: better control execution order of tasks, and use parJoinUnbounded instead
+  }
 
-  def parametersAt(id: String, pos: Int): IO[Option[Signatures]] = withKernel(id) {
-    (notebook, cell, kernel) =>
+  def completionsAt(id: String, pos: Int): IO[List[Completion]] = withLaunchedInterpreter(id) {
+    (notebook, cell, interp) =>
       val prevCellIds = prevCells(notebook, id)
-      kernel.parametersAt(id, findAvailableSymbols(prevCellIds, kernel), prevCellIds, cell.content.toString, pos)
-  }.flatMap(identity)
+      interp.completionsAt(id, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
+  }.map(_.getOrElse(Nil))
 
-  def currentSymbols(): IO[List[SymbolInfo]] = IO {
-    symbolTable.currentTerms.toList.map {
-      case v @ symbolTable.RuntimeValue(name, value, scalaType, _, _) => SymbolInfo(
-        name,
-        v.typeString,
-        v.valueString,
-        Nil
-      )
-    }
+  def parametersAt(id: String, pos: Int): IO[Option[Signatures]] = withLaunchedInterpreter(id) {
+    (notebook, cell, interp) =>
+      val prevCellIds = prevCells(notebook, id)
+      interp.parametersAt(id, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
+  }.map(_.flatten)
+
+  def currentSymbols(): IO[List[ResultValue]] = IO {
+    symbolTable.currentTerms.toList.map(_.toResultValue)
   }
 
   def currentTasks(): IO[List[TaskInfo]] = taskQueue.allTasks
@@ -182,7 +215,7 @@ object PolyKernel {
   def apply(
     getNotebook: () => IO[Notebook],
     dependencies: Map[String, List[(String, File)]],
-    subKernels: Map[String, LanguageKernel.Factory[IO]],
+    subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,
@@ -190,11 +223,11 @@ object PolyKernel {
     parentClassLoader: ClassLoader = defaultParentClassLoader
   ): PolyKernel = {
 
-    val globalInfo = GlobalInfo(dependencies, baseSettings, extraClassPath, outputDir, parentClassLoader)
+    val kernelContext = KernelContext(dependencies, baseSettings, extraClassPath, outputDir, parentClassLoader)
 
     new PolyKernel(
       getNotebook,
-      globalInfo,
+      kernelContext,
       outputDir,
       dependencies,
       statusUpdates,

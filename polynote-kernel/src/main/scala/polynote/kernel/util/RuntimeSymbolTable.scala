@@ -5,8 +5,8 @@ import java.util.concurrent.ConcurrentHashMap
 import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{SignallingRef, Topic}
-import polynote.kernel.{KernelStatusUpdate, ResultValue, SymbolInfo, UpdatedSymbols}
-import polynote.kernel.lang.LanguageKernel
+import polynote.kernel.{KernelStatusUpdate, ResultValue}
+import polynote.kernel.lang.LanguageInterpreter
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
@@ -14,34 +14,20 @@ import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.tools.nsc.interactive.Global
 
 final class RuntimeSymbolTable(
-  globalInfo: GlobalInfo,
+  val kernelContext: KernelContext,
   statusUpdates: Publish[IO, KernelStatusUpdate])(implicit
   contextShift: ContextShift[IO]
 ) extends Serializable {
 
-  val global: Global = globalInfo.global
-  val classLoader: AbstractFileClassLoader = globalInfo.classLoader
-
+  import kernelContext.global
   import global.{Type, TermName, Symbol}
 
   private val currentSymbolTable: ConcurrentHashMap[TermName, RuntimeValue] = new ConcurrentHashMap()
   private val disposed = ReadySignal()
 
-  private val runtimeMirror = scala.reflect.runtime.universe.runtimeMirror(classLoader)
-  private val importFromRuntime = global.internal.createImporter(scala.reflect.runtime.universe)
-
   private val cellIds: mutable.TreeSet[String] = new mutable.TreeSet()
 
-  def typeOf(value: Any, staticType: Option[Type]): Type = staticType.getOrElse {
-    val instMirror = runtimeMirror.reflect(value)
-    val importedSym = importFromRuntime.importSymbol(instMirror.symbol)
-
-    importedSym.toType match {
-      case typ if typ.takesTypeArgs =>
-        global.appliedType(typ, List.fill(typ.typeParams.size)(global.typeOf[Any]))
-      case typ => typ.widen
-    }
-  }
+  def typeOf(value: Any, staticType: Option[Type]): Type = staticType.getOrElse(kernelContext.inferType(value).asInstanceOf[global.Type])
 
   private val newSymbols: Topic[IO, RuntimeValue] =
     Topic[IO, RuntimeValue]{
@@ -53,13 +39,6 @@ final class RuntimeSymbolTable(
     }.unsafeRunSync()
 
   private val awaitingDelivery = SignallingRef[IO, Int](0).unsafeRunSync()
-
-  def importType(typ: scala.reflect.runtime.universe.Type): Type = try {
-    importFromRuntime.importType(typ)
-  } catch {
-    case err: Throwable => global.NoType
-  }
-
 
   def drain(): IO[Unit] = (Stream.eval(awaitingDelivery.get) ++ awaitingDelivery.discrete).takeWhile(_ > 0).compile.drain
 
@@ -86,14 +65,13 @@ final class RuntimeSymbolTable(
     cellIds.add(value.sourceCellId)
   }
 
-  def publish(source: LanguageKernel[IO], sourceCellId: String)(name: String, value: Any, staticType: Option[global.Type]): IO[Unit] = {
+  def publish(source: LanguageInterpreter[IO], sourceCellId: String)(name: String, value: Any, staticType: Option[global.Type]): IO[Unit] = {
     val rv = RuntimeValue(name, value, typeOf(value, staticType), Some(source), sourceCellId)
     for {
       _    <- IO(putValue(rv))
       subs <- newSymbols.subscribers.head.compile.lastOrError
       _    <- IO(awaitingDelivery.update(_ + subs))
       _    <- newSymbols.publish1(rv)
-      _    <- statusUpdates.publish1(UpdatedSymbols(SymbolInfo(name.toString, rv.typeString, rv.valueString, Nil) :: Nil, Nil))
     } yield ()
   }
 
@@ -109,46 +87,21 @@ final class RuntimeSymbolTable(
         _    <- IO(awaitingDelivery.update(_ + (subs * values.length)))
         _    <- Stream.emits(values).to(newSymbols.publish).compile.drain
       } yield ()
-    }.flatMap {
-      _ => statusUpdates.publish1(UpdatedSymbols(
-        values.map(rv => SymbolInfo(rv.name, rv.typeString, rv.valueString, Nil)), Nil
-      ))
     }
   }
 
   def close(): Unit = disposed.completeSync()
 
-  def formatType(typ: global.Type): String = typ match {
-    case mt @ global.MethodType(params: List[Symbol], result: Type) =>
-      val paramStr = params.map {
-        sym => s"${sym.nameString}: ${formatType(sym.typeSignatureIn(mt))}"
-      }.mkString(", ")
-      val resultType = formatType(result)
-      s"($paramStr) => $resultType"
-    case global.NoType => "<Unknown>"
-    case _ =>
-      val typName = typ.typeSymbolDirect.name
-      val typNameStr = typ.typeSymbolDirect.nameString
-      typ.typeArgs.map(formatType) match {
-        case Nil => typNameStr
-        case a if typNameStr == "<byname>" => s"=> $a"
-        case a :: b :: Nil if typName.isOperatorName => s"$a $typNameStr $b"
-        case a :: b :: Nil if typ.typeSymbol.owner.nameString == "scala" && (typNameStr == "Function1") =>
-          s"$a => $b"
-        case args if typ.typeSymbol.owner.nameString == "scala" && (typNameStr startsWith "Function") =>
-          s"(${args.dropRight(1).mkString(",")}) => ${args.last}"
-        case args => s"$typName[${args.mkString(", ")}]"
-      }
-  }
+  def formatType(typ: global.Type): String = kernelContext.formatType(typ)
 
   sealed case class RuntimeValue(
     name: String,
     value: Any,
     scalaTypeHolder: global.Type,
-    source: Option[LanguageKernel[IO]],
+    source: Option[LanguageInterpreter[IO]],
     sourceCellId: String
   ) extends SymbolDecl[IO] {
-    lazy val typeString: String = formatType(scalaTypeHolder)
+    lazy val typeString: String = kernelContext.formatType(scalaTypeHolder)
     lazy val valueString: String = value.toString match {
       case str if str.length > 64 => str.substring(0, 64)
       case str => str
@@ -162,10 +115,12 @@ final class RuntimeSymbolTable(
 
     // don't need to hash everything to determine hash code; name collisions are less common than hash comparisons
     override def hashCode(): Int = name.hashCode()
+
+    def toResultValue: ResultValue = ResultValue(kernelContext)(name, scalaTypeHolder, value, sourceCellId)
   }
 
   object RuntimeValue {
-    def apply(name: String, value: Any, source: Option[LanguageKernel[IO]], sourceCell: String): RuntimeValue = RuntimeValue(
+    def apply(name: String, value: Any, source: Option[LanguageInterpreter[IO]], sourceCell: String): RuntimeValue = RuntimeValue(
       name, value, typeOf(value, None), source, sourceCell
     )
 
@@ -175,7 +130,7 @@ final class RuntimeSymbolTable(
       }
     }
 
-    def fromResultValue(resultValue: ResultValue, source: LanguageKernel[IO]): RuntimeValue = resultValue match {
+    def fromResultValue(resultValue: ResultValue, source: LanguageInterpreter[IO]): RuntimeValue = resultValue match {
       case ResultValue(name, typeName, reprs, sourceCell, value, scalaType) =>
         apply(name, value, scalaType.asInstanceOf[global.Type], Option(source), sourceCell)
     }
@@ -188,7 +143,7 @@ final class RuntimeSymbolTable(
   */
 trait SymbolDecl[F[_]] {
   def name: String
-  def source: Option[LanguageKernel[F]]
+  def source: Option[LanguageInterpreter[F]]
   def sourceCellId: String
   def scalaType(g: Global): g.Type
   def getValue: Option[Any]

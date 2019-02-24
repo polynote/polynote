@@ -9,7 +9,7 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeBuilder
 import org.log4s.getLogger
 import polynote.kernel.dependency.CoursierFetcher
-import polynote.kernel.lang.{LanguageKernel, LanguageKernelService}
+import polynote.kernel.lang.{LanguageInterpreter, LanguageKernelService}
 import polynote.server.repository.ipynb.IPythonNotebookRepository
 
 import scala.collection.JavaConverters._
@@ -32,7 +32,7 @@ trait Server extends IOApp with Http4sDsl[IO] {
 
   protected val subKernels = ServiceLoader.load(classOf[LanguageKernelService]).iterator.asScala.toSeq
     .sortBy(_.priority)
-    .foldLeft(Map.empty[String, LanguageKernel.Factory[IO]]) {
+    .foldLeft(Map.empty[String, LanguageInterpreter.Factory[IO]]) {
       (accum, next) => accum ++ next.languageKernels
     }
 

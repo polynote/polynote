@@ -12,7 +12,7 @@ import { Cell, TextCell, CodeCell, BeforeCellRunEvent } from "./cell.js"
 import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, dropdown } from './tags.js'
 import { TaskStatus } from './messages.js';
 import * as messages from './messages.js'
-import { CompileErrors, Output, RuntimeError, ClearResults } from './result.js'
+import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from './result.js'
 import { Prefs, prefs } from './prefs.js'
 
 
@@ -801,13 +801,6 @@ export class NotebookUI {
         socket.addMessageListener(messages.KernelStatus, (path, update) => {
             if (path === this.path) {
                 switch (update.constructor) {
-                    case messages.UpdatedSymbols:
-                        update.newOrUpdated.forEach(symbolInfo => {
-                            this.kernelUI.symbols.setSymbolInfo(symbolInfo.name, symbolInfo.typeName, symbolInfo.valueText);
-                        });
-                        update.removed.forEach(name => ui.kernelUI.symbols.removeSymbol(name));
-                        break;
-
                     case messages.UpdatedTasks:
                         update.tasks.forEach(taskInfo => {
                             //console.log(taskInfo);
@@ -887,6 +880,10 @@ export class NotebookUI {
                     } else if (result instanceof ClearResults) {
                         cell.clearResult();
                     }
+                }
+
+                if (result instanceof ResultValue) {
+                    this.kernelUI.symbols.setSymbolInfo(result.name, result.typeName, result.valueText);
                 }
             }
         });

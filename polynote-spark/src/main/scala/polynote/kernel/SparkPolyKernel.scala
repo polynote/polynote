@@ -18,9 +18,9 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.SparkSession
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
-import polynote.kernel.lang.LanguageKernel
-import polynote.kernel.util.GlobalInfo
-import polynote.kernel.util.{GlobalInfo, Publish, RuntimeSymbolTable}
+import polynote.kernel.lang.LanguageInterpreter
+import polynote.kernel.util.KernelContext
+import polynote.kernel.util.{KernelContext, Publish, RuntimeSymbolTable}
 import polynote.messages.Notebook
 
 import scala.reflect.internal.util.AbstractFileClassLoader
@@ -31,15 +31,15 @@ import scala.tools.nsc.interactive.Global
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
 class SparkPolyKernel(
   getNotebook: () => IO[Notebook],
-  globalInfo: GlobalInfo,
+  kernelContext: KernelContext,
   dependencies: Map[String, List[(String, File)]],
   statusUpdates: Publish[IO, KernelStatusUpdate],
   outputPath: Path,
-  subKernels: Map[String, LanguageKernel.Factory[IO]] = Map.empty,
+  subKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
   parentClassLoader: ClassLoader
-) extends PolyKernel(getNotebook, globalInfo, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels) {
+) extends PolyKernel(getNotebook, kernelContext, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels) {
 
-  val global = globalInfo.global
+  val global = kernelContext.global
 
   val polynoteRuntimeJar = "polynote-runtime.jar"
 
@@ -86,8 +86,8 @@ class SparkPolyKernel(
   // TODO: any better way to handle this?
   override protected lazy val symbolTable = realOutputPath.get.map {
     outputDir =>
-      val updatedClassLoader = GlobalInfo.genNotebookClassLoader(dependencies, globalInfo.classPath, outputDir, parentClassLoader)
-      new RuntimeSymbolTable(GlobalInfo(globalInfo.global, globalInfo.classPath, updatedClassLoader), statusUpdates)
+      val updatedClassLoader = KernelContext.genNotebookClassLoader(dependencies, kernelContext.classPath, outputDir, parentClassLoader)
+      new RuntimeSymbolTable(KernelContext(kernelContext.global, kernelContext.classPath, updatedClassLoader), statusUpdates)
   }.unsafeRunSync()
 
   // initialize the session, and add task listener
@@ -142,7 +142,7 @@ object SparkPolyKernel {
   def apply(
     getNotebook: () => IO[Notebook],
     dependencies: Map[String, List[(String, File)]],
-    subKernels: Map[String, LanguageKernel.Factory[IO]],
+    subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,
@@ -164,11 +164,11 @@ object SparkPolyKernel {
       .map(new File(_))
       .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
 
-    val globalInfo = GlobalInfo(dependencies, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
+    val kernelContext = KernelContext(dependencies, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
 
     val kernel = new SparkPolyKernel(
       getNotebook,
-      globalInfo,
+      kernelContext,
       dependencies,
       statusUpdates,
       outputPath,

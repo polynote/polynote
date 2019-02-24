@@ -13,7 +13,7 @@ import fs2.concurrent.{Enqueue, Queue, Topic}
 import org.log4s.getLogger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
-import polynote.kernel.lang.LanguageKernel
+import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util._
 import polynote.messages.{CellResult, ShortList, ShortString, TinyList, TinyString}
 
@@ -24,9 +24,10 @@ import scala.tools.reflect.ToolBox
 
 class ScalaInterpreter(
   val symbolTable: RuntimeSymbolTable
-) extends LanguageKernel[IO] {
+) extends LanguageInterpreter[IO] {
 
-  val global: symbolTable.global.type = symbolTable.global
+  import symbolTable.kernelContext
+  import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime}
   private val logger = getLogger
 
   import global.{Type, Tree}
@@ -43,7 +44,7 @@ class ScalaInterpreter(
   private val executor = Executors.newCachedThreadPool(new ThreadFactory {
     def newThread(r: Runnable): Thread = {
       val thread = new Thread(r)
-      thread.setContextClassLoader(symbolTable.classLoader)
+      thread.setContextClassLoader(kernelContext.classLoader)
       thread
     }
   })
@@ -57,31 +58,6 @@ class ScalaInterpreter(
   override def shutdown(): IO[Unit] = shutdownSignal.complete
 
   protected val previousSources: mutable.HashMap[String, ScalaSource[this.type]] = new mutable.HashMap()
-
-  protected val importToRuntime: Importer[runtime.universe.type, global.type] =
-    runtime.universe.internal.createImporter(global)
-
-  protected val importFromRuntime: Importer[global.type, runtime.universe.type] =
-    global.internal.createImporter(scala.reflect.runtime.universe)
-
-  protected val runtimeMirror: runtime.universe.Mirror =
-    scala.reflect.runtime.universe.runtimeMirror(symbolTable.classLoader)
-
-  // the ToolBox is only used to eta-expand methods into runtime functions via eval()
-  // it's not exactly the cleanest way to do that, but it deals with 22 arities for us
-  protected object toolsFrontEnd extends scala.tools.reflect.FrontEnd {
-    var currentOutputs: Queue[IO, Result] = _
-
-    def display(info: Info): Unit = if (currentOutputs != null) {
-      currentOutputs.enqueue1(CompileErrors(
-        KernelReport(new Pos(info.pos), info.msg, info.severity.id) :: Nil
-      )).unsafeRunAsyncAndForget()
-    }
-
-    def interactive(): Unit = ()
-  }
-
-  protected val runtimeTools = runtimeMirror.mkToolBox(toolsFrontEnd)
 
   protected lazy val notebookPackageName = global.TermName("$notebook")
   def notebookPackage = global.Ident(notebookPackageName)
@@ -150,7 +126,7 @@ class ScalaInterpreter(
                     if (accessor.info.finalResultType <:< global.typeOf[Unit])
                       None
                     else
-                      Some(ResultValue(accessor.name.toString, symbolTable.formatType(tpe), Nil, cell, value, tpe))
+                      Some(ResultValue(kernelContext)(accessor.name.toString, tpe, value, cell))
 
                   case method if method.isMethod =>
                     // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
@@ -169,7 +145,6 @@ class ScalaInterpreter(
 
                     // The function delegates to the method via reflection, which isn't good, but the Scala kernel doesn't
                     // use it anyway, and other interpreters would have to use reflection anyhow
-                    val methodMirror = instMirror.reflectMethod(fnSymbol)
                     val (runtimeFn, fnType) = {
                       import runtime.universe._
                       val args = fnSymbol.paramLists.headOption.map(_.map(arg => ValDef(Modifiers(), TermName(arg.name.toString), TypeTree(arg.info), EmptyTree))).toList
@@ -185,18 +160,15 @@ class ScalaInterpreter(
                       val typ = runtimeTools.typecheck(tree).tpe
                       runtimeTools.eval(tree) -> typ
                     }
-                    val fnMirror = runtimeMirror.reflect(runtimeFn)
-
                     val methodType = importFromRuntime.importType(fnType)
-                    val typeStr = symbolTable.formatType(methodType)
-                    Some(ResultValue(method.name.toString, typeStr, Nil, cell, runtimeFn, methodType))
+                    Some(ResultValue(kernelContext)(method.name.toString, methodType, runtimeFn, cell))
 
                 }.flatten
 
                 val maybeOutput = syms.find(_.name.startsWith("res"))
 
                 def stringRepr(value: ResultValue): TinyString = // TODO: from reprs?
-                  Option(value).map(_.toString).getOrElse("")
+                  Option(value).map(_.value).flatMap(Option(_)).map(_.toString).getOrElse("")
 
                 maybeOutput
                   .map(rv => resultQ.enqueue1(Output("text/plain; rel=decl; lang=scala", s"${rv.name}: ${rv.typeName} = ${stringRepr(rv)}")))
@@ -366,11 +338,11 @@ class ScalaInterpreter(
 }
 
 object ScalaInterpreter {
-  class Factory() extends LanguageKernel.Factory[IO] {
+  class Factory() extends LanguageInterpreter.Factory[IO] {
     override val languageName: String = "Scala"
-    override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageKernel[IO] =
+    override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageInterpreter[IO] =
       new ScalaInterpreter(symbolTable)
   }
 
-  def factory(): LanguageKernel.Factory[IO] = new Factory()
+  def factory(): LanguageInterpreter.Factory[IO] = new Factory()
 }

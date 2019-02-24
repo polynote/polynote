@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import cats.Monad
 import cats.effect.concurrent.{Deferred, Ref, Semaphore}
 import cats.effect.{Concurrent, ContextShift, IO}
+import cats.syntax.apply._
 import cats.syntax.functor._
 import cats.syntax.flatMap._
 import fs2.Stream
@@ -65,7 +66,7 @@ trait SharedNotebook[F[_]] {
 class IOSharedNotebook(
   val path: String,
   ref: SignallingRef[IO, (GlobalVersion, Notebook)],            // the Int is the global version, which can wrap around back to zero if necessary
-  kernelRef: Ref[IO, Option[Kernel[IO]]],
+  kernelRef: Ref[IO, Option[KernelAPI[IO]]],
   updates: Queue[IO, Option[(SubscriberId, NotebookUpdate, Deferred[IO, GlobalVersion])]],   // the canonical series of edits
   updatesTopic: Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]],  // a subscribe-able channel for watching updates,
   kernelFactory: KernelFactory[IO],
@@ -85,7 +86,7 @@ class IOSharedNotebook(
       applyUpdate(newGlobalVersion, subscriberId, update, versionPromise)
   }.compile.drain.unsafeRunAsyncAndForget()
 
-  private def ensureKernel(): IO[Kernel[IO]] = kernelLock.acquire.bracket { _ =>
+  private def ensureKernel(): IO[KernelAPI[IO]] = kernelLock.acquire.bracket { _ =>
     kernelRef.get.flatMap {
       case None => kernelFactory.launchKernel(() => ref.get.map(_._2), statusUpdates).flatMap {
         kernel => kernelRef.set(Some(kernel)).as(kernel)
@@ -201,9 +202,8 @@ class IOSharedNotebook(
 
     override def isKernelStarted: IO[Boolean] = kernelRef.get.map(_.nonEmpty)
 
-    override def getKernel: IO[Kernel[IO]] = ensureKernel()
 
-    override def shutdownKernel(): IO[Unit] = kernelLock.acquire.bracket { _ =>
+    override def shutdown(): IO[Unit] = kernelLock.acquire.bracket { _ =>
       kernelRef.get.flatMap {
         case None => IO.unit
         case Some(kernel) => kernel.shutdown().flatMap {
@@ -212,25 +212,56 @@ class IOSharedNotebook(
       }
     }(_ => kernelLock.release)
 
-    override def runCells(ids: List[String]): IO[Stream[IO, Message]] = {
-
-      def runOne(kernel: Kernel[IO], id: String) = {
-        val buf = new WindowBuffer[Result](1000)
-        Stream.eval(IO.delay(kernel.runCell(id)).flatten).flatten.evalMap {
-          result => IO(buf.add(result)) >> IO.pure(CellResult(ShortString(path), TinyString(id), result))
-        }.evalTap(outputMessages.publish1).onFinalize {
-          ref.update {
-            case (ver, nb) => ver -> nb.setResults(id, buf.toList)
-          }
-        }.drain // the outputs already get published, so we can't really return them in a stream as well...
+    override def runCells(ids: List[String]): IO[Stream[IO, CellResult]] =
+      ensureKernel().map {
+        kernel => Stream.emits(ids).evalMap {
+          id => runCell(id).map(results => results.map(result => CellResult(ShortString(path), id, result)))
+        }.flatten
       }
 
-      for {
-        kernel <- getKernel
-        runs    = Stream.emits(ids).flatMap(runOne(kernel, _))
-      } yield runs
+    def startKernel(): IO[Unit] = ensureKernel().as(())
+
+    def init: IO[Unit] = ensureKernel().flatMap(_.init)
+
+    private def withInterpreterLaunch[A](cellId: String)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
+      kernel        <- ensureKernel()
+      predefResults <- kernel.startInterpreterFor(cellId)
+      _             <- predefResults.map(result => CellResult(ShortString(path), "Predef", result)).through(outputMessages.publish).compile.drain
+      result        <- fn(kernel)
+    } yield result
+
+    private def ifKernelStarted[A](yes: KernelAPI[IO] => IO[A], no: => A): IO[A] = isKernelStarted.flatMap {
+      case true  => ensureKernel().flatMap(yes)
+      case false => IO(no)
     }
 
+    def startInterpreterFor(id: String): IO[Stream[IO, Result]] = ensureKernel().flatMap(_.startInterpreterFor(id))
+
+    def runCell(id: String): IO[Stream[IO, Result]] = withInterpreterLaunch(id) {
+      kernel =>
+        val buf = new WindowBuffer[Result](1000)
+        kernel.runCell(id).map {
+          results => results.evalTap {
+            result => IO(buf.add(result)) *> outputMessages.publish1(CellResult(ShortString(path), id, result))
+          }.onFinalize {
+            ref.update {
+              case (ver, nb) => ver -> nb.setResults(id, buf.toList)
+            }
+          }
+        }
+    }
+
+    def completionsAt(cellId: String, pos: Int): IO[List[Completion]] =
+      withInterpreterLaunch(cellId)(_.completionsAt(cellId, pos))
+
+    def parametersAt(cellId: String, offset: Int): IO[Option[Signatures]] =
+      withInterpreterLaunch(cellId)(_.parametersAt(cellId, offset))
+
+    def currentSymbols(): IO[List[ResultValue]] = ifKernelStarted(_.currentSymbols(), Nil)
+
+    def currentTasks(): IO[List[TaskInfo]] = ifKernelStarted(_.currentTasks(), Nil)
+
+    def idle(): IO[Boolean] = ifKernelStarted(_.idle(), false)
   }
 
 }
@@ -243,7 +274,7 @@ object IOSharedNotebook {
 
   def apply(path: String, initial: Notebook, kernelFactory: KernelFactory[IO])(implicit contextShift: ContextShift[IO]): IO[IOSharedNotebook] = for {
     ref          <- SignallingRef[IO, (GlobalVersion, Notebook)](0 -> initial)
-    kernel       <- Ref[IO].of[Option[Kernel[IO]]](None)
+    kernel       <- Ref[IO].of[Option[KernelAPI[IO]]](None)
     updates      <- Queue.unbounded[IO, Option[(SubscriberId, NotebookUpdate, Deferred[IO, GlobalVersion])]]
     updatesTopic <- Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]](None)
     outputMessages <- Topic[IO, Message](KernelStatus(ShortString(path), KernelBusyState(busy = false, alive = false)))
@@ -251,7 +282,7 @@ object IOSharedNotebook {
   } yield new IOSharedNotebook(path, ref, kernel, updates, updatesTopic, kernelFactory, outputMessages, kernelLock)
 }
 
-abstract class NotebookRef[F[_] : Monad] {
+abstract class NotebookRef[F[_]](implicit F: Monad[F]) extends KernelAPI[F] {
 
   def path: String
 
@@ -270,25 +301,20 @@ abstract class NotebookRef[F[_] : Monad] {
 
   def isKernelStarted: F[Boolean]
 
-  def getKernel: F[Kernel[F]]
+  def startKernel(): F[Unit]
 
   def currentStatus: F[KernelBusyState] = isKernelStarted.flatMap {
     case true => for {
-      kernel <- getKernel
-      idle   <- kernel.idle()
+      idle   <- idle()
     } yield KernelBusyState(!idle, alive = true)
 
     case false => Monad[F].pure(KernelBusyState(busy = false, alive = false))
   }
 
-  def shutdownKernel(): F[Unit]
-
-  def restartKernel(): F[Kernel[F]] = isKernelStarted.flatMap {
-    case true => shutdownKernel().flatMap(_ => getKernel)
-    case false => getKernel
+  def restartKernel(): F[Unit] = isKernelStarted.flatMap {
+    case true => shutdown() *> startKernel()
+    case false => F.unit
   }
-
-  def runCells(ids: List[String]): F[Stream[F, Message]]
 
   def messages: Stream[F, Message]
 

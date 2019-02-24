@@ -5,6 +5,8 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32
 } from './codec.js'
 
+import { ValueRepr, StringRepr } from './value_repr.js'
+
 export class Result {
     static decode(data) {
         return Codec.decode(Result.codec, data);
@@ -192,11 +194,39 @@ ClearResults.codec = Object.freeze({
   decode: (reader) => ClearResults.instance
 });
 
+export class ResultValue extends Result {
+    static get msgTypeId() { return 4; }
+
+    static unapply(inst) {
+        return [inst.name, inst.typeName, inst.reprs, inst.sourceCell];
+    }
+
+    constructor(name, typeName, reprs, sourceCell) {
+        super(name, typeName, reprs, sourceCell);
+        this.name = name;
+        this.typeName = typeName;
+        if (reprs instanceof Array) { // conditional is so IntelliJ knows it's an array. Dem completions.
+            this.reprs = reprs;
+        }
+        this.sourceCell = sourceCell;
+        Object.freeze(this);
+    }
+
+    get valueText() {
+        const index = this.reprs.findIndex(repr => repr instanceof StringRepr);
+        if (index < 0) return "";
+        return this.reprs[index].string;
+    }
+}
+
+ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), tinyStr).to(ResultValue);
+
 Result.codecs = [
   Output,
   CompileErrors,
   RuntimeError,
-  ClearResults
+  ClearResults,
+  ResultValue
 ];
 
 Result.codec = discriminated(

@@ -10,7 +10,7 @@ import polynote.kernel.util.{Publish, RuntimeSymbolTable, SymbolDecl}
 /**
   * The LanguageKernel runs code in a given language.
   */
-trait LanguageKernel[F[_]] {
+trait LanguageInterpreter[F[_]] {
 
   // LanguageKernel is expected to have a reference to the shared runtime symbol table of a notebook
   val symbolTable: RuntimeSymbolTable
@@ -26,7 +26,7 @@ trait LanguageKernel[F[_]] {
     * @param visibleSymbols A list of symbols defined in cells "before" the given code, which are visible to it
     * @param previousCells  The identifier strings of the cells "before" this code, for stateful language kernels
     * @param code           The code string to run
-    * @return An [[F]] that returns a [[Stream]] which will contain [[RunWrapper]] value(s) containing anything that
+    * @return An [[F]] that returns a [[Stream]] which will contain [[Result]] value(s) containing anything that
     *         resulted from running the code.
     */
   def runCode(
@@ -62,11 +62,11 @@ trait LanguageKernel[F[_]] {
 
 }
 
-object LanguageKernel {
+object LanguageInterpreter {
 
   trait Factory[F[_]] {
     def languageName: String
-    def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageKernel[F]
+    def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageInterpreter[F]
   }
 
 }
