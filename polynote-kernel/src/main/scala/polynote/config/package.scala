@@ -1,6 +1,6 @@
 package polynote
 
-import io.circe.{Decoder, Encoder}
+import io.circe.{Decoder, ObjectEncoder}
 import polynote.messages.{TinyList, TinyMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import io.circe.generic.semiauto._
@@ -37,7 +37,7 @@ package object config {
   object RepositoryConfig {
 
     implicit val discriminated: Discriminated[RepositoryConfig, Byte] = Discriminated(byte)
-    implicit val encoder: Encoder[RepositoryConfig] = deriveEncoder
+    implicit val encoder: ObjectEncoder[RepositoryConfig] = deriveEncoder
     implicit val decoder: Decoder[RepositoryConfig] = deriveDecoder
   }
 

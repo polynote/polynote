@@ -14,6 +14,7 @@ import io.circe.yaml.Printer
 import polynote.data.Rope
 import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
+import polynote.server.ServerConfig
 
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
@@ -23,6 +24,7 @@ import scala.concurrent.ExecutionContext
 
 class MarkdownNotebookRepository(
   val path: Path,
+  val serverConfig: ServerConfig,
   val chunkSize: Int = 8192,
   val executionContext: ExecutionContext = ExecutionContext.global)(implicit
   contextShift: ContextShift[IO]

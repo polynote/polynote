@@ -11,7 +11,7 @@ import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
 
 object SparkServer extends Server {
-  override protected lazy val kernelFactory: KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), subKernels) {
+  override protected lazy val kernelFactory: KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters) {
     override protected def mkKernel(
       getNotebook: () => IO[Notebook],
       deps: Map[String, List[(String, File)]],

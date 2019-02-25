@@ -28,6 +28,7 @@ abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
 }
 
 class IONotebookManager(
+  serverConfig: ServerConfig,
   repository: NotebookRepository[IO],
   kernelFactory: KernelFactory[IO])(implicit
   contextShift: ContextShift[IO]
