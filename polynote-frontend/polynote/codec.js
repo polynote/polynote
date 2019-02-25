@@ -77,6 +77,14 @@ export class DataReader {
         this.offset = end;
         return str;
     }
+
+    readBuffer() {
+        const len = this.readUint32();
+        const end = this.offset + len;
+        const buf = this.buffer.buffer.slice(this.offset, end);
+        this.offset = end;
+        return buf;
+    }
 }
 
 export class DataWriter {
@@ -139,7 +147,7 @@ export class DataWriter {
     writeFloat64(value) {
         this.ensureBufSize(this.buffer.byteLength + 8);
         this.dataView.setFloat32(this.offset, value);
-        this.offset == 8;
+        this.offset += 8;
     }
 
     writeString(value) {
@@ -169,6 +177,16 @@ export class DataWriter {
         }
         new Uint8Array(this.buffer, this.offset, bytes.length).set(bytes);
         this.offset += bytes.length;
+    }
+
+    writeBuffer(value) {
+        if (value instanceof ArrayBuffer) {
+            const len = value.byteLength;
+            this.ensureBufSize(this.buffer.byteLength + len + 4);
+            this.writeUint32(value.byteLength);
+            this.offset += 4;
+            new Uint8Array(this.buffer, this.offset, len).set(value);
+        }
     }
 
     finish() {
@@ -257,12 +275,17 @@ export const float64 = Object.freeze({
 
 export const bool = Object.freeze({
     encode: (value, writer) => value ? writer.writeUint8(255) : writer.writeUint8(0),
-    decode: (reader) => reader.readUint8() ? true : false
-})
+    decode: (reader) => !!reader.readUint8()
+});
 
 export const nullCodec = Object.freeze({
     encode: (value, writer) => undefined,
     decode: (reader) => null
+});
+
+export const bufferCodec = Object.freeze({
+    encode: (value, writer) => writer.writeBuffer(value),
+    decode: (reader) => reader.readBuffer()
 });
 
 class CombinedCodec {

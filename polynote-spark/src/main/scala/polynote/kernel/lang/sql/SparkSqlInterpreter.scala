@@ -12,13 +12,15 @@ import org.apache.spark.sql.catalyst.parser.{SqlBaseBaseVisitor, SqlBaseParser}
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser.SingleStatementContext
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import polynote.kernel._
-import polynote.kernel.lang.LanguageKernel
+import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.{Publish, RuntimeSymbolTable}
 import polynote.messages.{ShortString, TinyList, TinyString}
 
 import scala.collection.mutable
 
-class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKernel[IO] {
+class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInterpreter[IO] {
+
+  import symbolTable.kernelContext, kernelContext.global
 
   private implicit val contextShift: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.Implicits.global)
 
@@ -28,10 +30,10 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
   import spark.implicits._
   private val parser = new Parser
 
-  private lazy val datasetType = symbolTable.global.typeOf[Dataset[Any]].typeConstructor
+  private lazy val datasetType = global.typeOf[Dataset[Any]].typeConstructor
 
   private def dataFrames[D <: Decl](symbols: Seq[D]) = symbols.collect {
-    case rv if rv.scalaType(symbolTable.global).dealiasWiden.typeConstructor <:< datasetType => rv
+    case rv if rv.scalaType(global).dealiasWiden.typeConstructor <:< datasetType => rv
   }.toList
 
   private def registerTempViews(identifiers: List[Parser.TableIdentifier]) = {
@@ -48,7 +50,7 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
 
   private def dropTempViews(views: List[String]): IO[Unit] = views.map(name => IO(spark.catalog.dropTempView(name))).sequence.as(())
 
-  private def outputDataFrame(df: DataFrame): IO[WrapResult] = IO {
+  private def outputDataFrame(df: DataFrame): IO[Result] = IO {
     // TODO: We should have a way of just sending raw tabular data to the client for it to display and maybe plot!
     //       But we'd have to write some actual content to the notebook file... maybe Output could take multiple
     //       representations of the content and each representation could be possibly written to the notebook and
@@ -83,23 +85,23 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
          |</table>""".stripMargin
     )
 
-  }.handleErrorWith(err => IO.pure(RuntimeError(err))).map(WrapResult.apply)
+  }.handleErrorWith(err => IO.pure(RuntimeError(err)))
 
   override def runCode(
     cell: String,
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
     code: String
-  ): IO[fs2.Stream[IO, RunWrapper]] = {
-    val compilerRun = new symbolTable.global.Run
+  ): IO[fs2.Stream[IO, Result]] = {
+    val compilerRun = new global.Run
     val run = for {
       _           <- symbolTable.drain()
       parseResult <- IO.fromEither(parser.parse(cell, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
       resultDF    <- registerTempViews(parseResult.tableIdentifiers).sequence.bracket(_ => IO(spark.sql(code)))(dropTempViews)
-      cellResult   = WrapSymbol(symbolTable.RuntimeValue(s"res$cell", resultDF, symbolTable.global.typeOf[DataFrame], Some(this), cell))
+      cellResult   = ResultValue(kernelContext)(s"res$cell", global.typeOf[DataFrame], resultDF, cell)
     } yield Stream.emit(cellResult) ++ Stream.eval(outputDataFrame(resultDF))
 
-    run.handleErrorWith(err => IO.pure(Stream.emit(WrapResult(RuntimeError(err)))))
+    run.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))
   }
 
   override def completionsAt(
@@ -174,9 +176,9 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageK
 }
 
 object SparkSqlInterpreter {
-  class Factory extends LanguageKernel.Factory[IO] {
+  class Factory extends LanguageInterpreter.Factory[IO] {
     def languageName: String = "SQL"
-    def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageKernel[IO] = new SparkSqlInterpreter(symbolTable)
+    def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageInterpreter[IO] = new SparkSqlInterpreter(symbolTable)
   }
 
   def factory(): Factory = new Factory

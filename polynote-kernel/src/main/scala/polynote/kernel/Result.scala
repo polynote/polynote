@@ -9,10 +9,13 @@ import scodec.codecs.implicits._
 import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
-import polynote.kernel.util.SymbolDecl
+import polynote.kernel.util.{KernelContext, SymbolDecl}
+import polynote.messages.{TinyList, TinyString, tinyListCodec, tinyStringCodec, truncateTinyString}
 import scodec.bits.BitVector
 
 import scala.collection.mutable.ListBuffer
+import scala.reflect.api.Universe
+import scala.tools.nsc.interactive.Global
 
 sealed abstract class ResultCompanion[T <: Result](msgId: Byte) {
   implicit val discriminator: Discriminator[Result, T, Byte] = Discriminator(msgId)
@@ -133,19 +136,56 @@ final case class ClearResults() extends Result
 
 object ClearResults extends ResultCompanion[ClearResults](3)
 
+// TODO: fix the naming of these classes
+final case class ResultValue(
+  name: TinyString,
+  typeName: TinyString,
+  reprs: TinyList[ValueRepr],
+  sourceCell: TinyString,
+  value: Any,
+  scalaType: Universe#Type
+) extends Result
+
+object ResultValue extends ResultCompanion[ResultValue](4) {
+
+  def apply(ctx: KernelContext)(name: String, typ: Universe#Type, value: Any, sourceCell: String): ResultValue = {
+    val globalType = try typ.asInstanceOf[ctx.global.Type] catch {
+      case err: ClassCastException => throw new RuntimeException(s"Type $typ is being used in a foreign kernel", err)
+    }
+
+    val typeStr = ctx.formatType(globalType)
+    ResultValue(name, typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ)
+  }
+
+  def apply(ctx: KernelContext, name: String, value: Any, sourceCell: String): ResultValue =
+    apply(ctx)(name, ctx.inferType(value), value, sourceCell)
+
+  // manual codec - we'll never encode nor decode `value` nor `scalaType`.
+  /*
+      Note: We could have a valid decoding with:
+
+              _ match {
+                case (((name, typeName), reprs), sourceCell) =>
+                  ResultValue(name, typeName, reprs, sourceCell, None, scala.reflect.runtime.universe.NoType)
+              }
+
+      but it seems prudent to raise an alarm if we're trying to decode a ResultValue, because we shouldn't be. Maybe
+      at some point if there is a client-side interpreter (i.e. JavaScript up in your browser) this would be a thing?
+   */
+  implicit val codec: Codec[ResultValue] = (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec[ValueRepr] ~ tinyStringCodec).xmap(
+    _ => throw new UnsupportedOperationException(
+      s"Shouldn't be decoding a ${classOf[ResultValue].getSimpleName} on the server!"
+      // the reflection is so this message can participate in refactoring of ResultValue's name, which is likely.
+    ),
+    v => (((v.name, v.typeName), v.reprs), v.sourceCell)
+  )
+
+}
+
+
 sealed trait Result
 
 object Result {
   implicit val discriminated: Discriminated[Result, Byte] = Discriminated(byte)
   implicit val codec: Codec[Result] = cachedImplicit
-}
-
-// Wrap symbol and results so we can handle Symbols without needing to add another Result.
-// We don't want to add a new Result because we don't plan on encoding these symbols. TODO: or should we just make WrapSymbol a Result?
-trait RunWrapper
-final case class WrapSymbol(symbol: SymbolDecl[IO]) extends RunWrapper
-final case class WrapResult(result: Result) extends RunWrapper
-
-object RunWrapper {
-  implicit def result2CellResult(result: Result): WrapResult = WrapResult(result)
 }

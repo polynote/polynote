@@ -18,7 +18,9 @@ import polynote.messages.{ShortString, TinyList, TinyString}
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
-class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKernel[IO] {
+class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInterpreter[IO] {
+  import symbolTable.kernelContext
+  import kernelContext.global
 
   val predefCode: Option[String] = None
 
@@ -142,15 +144,12 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     visibleSymbols: Seq[Decl],
     previousCells: Seq[String],
     code: String
-  ): IO[Stream[IO, RunWrapper]] = if (code.trim().isEmpty) IO.pure(Stream.empty) else {
-    import symbolTable.global
-
-//    global.demandNewCompilerRun()
+  ): IO[Stream[IO, Result]] = if (code.trim().isEmpty) IO.pure(Stream.empty) else {
     val run = new global.Run()
     global.newCompilationUnit("", cell)
 
     val shiftEffect = IO.ioConcurrentEffect(shift) // TODO: we can also create an implicit shift instead of doing this, which is better?
-    Queue.unbounded[IO, Option[RunWrapper]](shiftEffect).flatMap { maybeResultQ =>
+    Queue.unbounded[IO, Option[Result]](shiftEffect).flatMap { maybeResultQ =>
 
       val resultQ = new EnqueueSome(maybeResultQ)
 
@@ -195,7 +194,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
           } else None
         } else None
 
-        (getPyResults(newDecls, cell).filterNot(_._2.value == null).values.map(WrapSymbol), maybeOutput)
+        (getPyResults(newDecls, cell).filterNot(_._2.value == null).values, maybeOutput)
       }.flatMap { case (resultSymbols, maybeOutput) =>
 
         for {
@@ -218,19 +217,22 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
     }
   }
 
-  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, symbolTable.RuntimeValue] =
+  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, ResultValue] =
     decls.map {
       name => name -> {
         getPyResult(name) match {
-          case (value, Some(typ)) => symbolTable.RuntimeValue(name, value, typ, Some(this), sourceCellId)
-          case (value, _) => symbolTable.RuntimeValue(name, value, Some(this), sourceCellId)
+          case (value, Some(typ)) =>
+            ResultValue(kernelContext)(name, typ, value, sourceCellId)
+          case (value, _) =>
+            val typ = kernelContext.inferType(value)
+            ResultValue(kernelContext)(name, typ, value, sourceCellId)
         }
       }
     }.toMap
 
-  def getPyResult(accessor: String): (Any, Option[symbolTable.global.Type]) = {
+  def getPyResult(accessor: String): (Any, Option[global.Type]) = {
     val resultType = jep.getValue(s"type($accessor).__name__", classOf[String])
-    import symbolTable.global.{typeOf, weakTypeOf}
+    import global.{typeOf, weakTypeOf}
     resultType match {
       case "int" => jep.getValue(accessor, classOf[java.lang.Number]).longValue() -> Some(typeOf[Long])
       case "float" => jep.getValue(accessor, classOf[java.lang.Number]).doubleValue() -> Some(typeOf[Double])
@@ -245,15 +247,15 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
         val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
         val (elems, types) = (0L until numElements).map(n => getPyResult(s"$accessor[$n]")).toList.unzip
 
-        val listType = symbolTable.global.ask {
+        val listType = global.ask {
           () =>
             val lubType = types.flatten.toList match {
               case Nil      => typeOf[Any]
-              case typeList => try symbolTable.global.lub(typeList) catch {
+              case typeList => try global.lub(typeList) catch {
                 case err: Throwable => typeOf[Any]
               }
             }
-            symbolTable.global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
+            global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
         }
 
         elems -> Some(listType)
@@ -333,7 +335,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageKer
 }
 
 object PythonInterpreter {
-  class Factory extends LanguageKernel.Factory[IO] {
+  class Factory extends LanguageInterpreter.Factory[IO] {
     override val languageName: String = "Python"
     override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): PythonInterpreter =
       new PythonInterpreter(symbolTable)
@@ -343,7 +345,7 @@ object PythonInterpreter {
 
 }
 
-class PythonDisplayHook(out: Enqueue[IO, RunWrapper]) {
+class PythonDisplayHook(out: Enqueue[IO, Result]) {
   private var current = ""
   def output(str: String): Unit =
     if (str != null && str.nonEmpty)

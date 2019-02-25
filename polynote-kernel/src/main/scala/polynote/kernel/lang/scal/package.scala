@@ -7,6 +7,4 @@ import scala.reflect.api.Universe
   */
 package object scal {
 
-  type Importer[To <: Universe, From <: Universe] = To#Importer { val from: From }
-
 }

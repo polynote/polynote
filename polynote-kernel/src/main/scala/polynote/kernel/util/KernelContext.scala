@@ -3,15 +3,74 @@ package polynote.kernel.util
 import java.io.File
 import java.net.URL
 
+import polynote.kernel.{StringRepr, ValueRepr}
+import polynote.messages.truncateTinyString
+
 import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
+import scala.reflect.runtime
+import scala.reflect.runtime.universe
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
+import scala.tools.reflect.ToolBox
 
-final case class GlobalInfo(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader)
+final case class KernelContext(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
+  import global.{Type, Symbol}
 
-object GlobalInfo {
+  val runtimeMirror: universe.Mirror = scala.reflect.runtime.universe.runtimeMirror(classLoader)
+
+  val importToRuntime: Importer[runtime.universe.type, global.type] = runtime.universe.internal.createImporter(global)
+
+  val importFromRuntime: Importer[global.type, runtime.universe.type] = global.internal.createImporter(scala.reflect.runtime.universe)
+
+  val runtimeTools: ToolBox[universe.type] = runtimeMirror.mkToolBox()
+
+  def inferType(value: Any): global.Type = {
+    val instMirror = runtimeMirror.reflect(value)
+    val importedSym = importFromRuntime.importSymbol(instMirror.symbol)
+
+    importedSym.toType match {
+      case typ if typ.takesTypeArgs =>
+        global.appliedType(typ, List.fill(typ.typeParams.size)(global.typeOf[Any]))
+      case typ => typ.widen
+    }
+  }
+
+  def formatType(typ: global.Type): String = global.ask { () =>
+    typ match {
+      case mt @ global.MethodType(params: List[Symbol], result: global.Type) =>
+        val paramStr = params.map {
+          sym => s"${sym.nameString}: ${formatType(sym.typeSignatureIn(mt))}"
+        }.mkString(", ")
+        val resultType = formatType(result)
+        s"($paramStr) => $resultType"
+      case global.NoType => "<Unknown>"
+      case _ =>
+        val typName = typ.typeSymbolDirect.name
+        val typNameStr = typ.typeSymbolDirect.nameString
+        typ.typeArgs.map(formatType) match {
+          case Nil => typNameStr
+          case a if typNameStr == "<byname>" => s"=> $a"
+          case a :: b :: Nil if typName.isOperatorName => s"$a $typNameStr $b"
+          case a :: b :: Nil if typ.typeSymbol.owner.nameString == "scala" && (typNameStr == "Function1") =>
+            s"$a => $b"
+          case args if typ.typeSymbol.owner.nameString == "scala" && (typNameStr startsWith "Function") =>
+            s"(${args.dropRight(1).mkString(",")}) => ${args.last}"
+          case args => s"$typName[${args.mkString(", ")}]"
+        }
+    }
+  }
+
+  def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = {
+    val stringRepr = StringRepr(truncateTinyString(Option(value).map(_.toString).getOrElse("")))
+    // TODO: look up representations, i.e. with a typeclass (may have to push ValueRepr to polynote-runtime)
+    List(stringRepr)
+  }
+
+}
+
+object KernelContext {
   def defaultBaseSettings: Settings = new Settings()
   def defaultOutputDir: AbstractFile = new VirtualDirectory("(memory)", None)
   def defaultParentClassLoader: ClassLoader = getClass.getClassLoader
@@ -45,7 +104,7 @@ object GlobalInfo {
   def apply(
     dependencies: Map[String, List[(String, File)]],
     extraClassPath: List[File]
-  ): GlobalInfo = apply(dependencies, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader)
+  ): KernelContext = apply(dependencies, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader)
 
   def apply(
     dependencies: Map[String, List[(String, File)]],
@@ -53,7 +112,7 @@ object GlobalInfo {
     extraClassPath: List[File],
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
-  ): GlobalInfo = {
+  ): KernelContext = {
 
     val settings = baseSettings.copy()
     val jars = dependencies.toList.flatMap(_._2).collect {
@@ -95,6 +154,6 @@ object GlobalInfo {
 
     val notebookClassLoader = genNotebookClassLoader(dependencies, extraClassPath, outputDir, parentClassLoader)
 
-    GlobalInfo(global, classPath, notebookClassLoader)
+    KernelContext(global, classPath, notebookClassLoader)
   }
 }

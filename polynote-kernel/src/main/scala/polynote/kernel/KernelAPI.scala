@@ -4,7 +4,7 @@ import cats.effect.concurrent.Ref
 import fs2.Stream
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
-import polynote.messages.{ShortString, TinyList, TinyString}
+import polynote.messages.{CellResult, ShortString, TinyList, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
 
@@ -14,21 +14,25 @@ import scala.util.Try
 /**
   * The Kernel is expected to reference cells by their notebook ID; it will have a [[Ref]] to the [[polynote.messages.Notebook]].
   *
-  * @see [[polynote.kernel.lang.LanguageKernel]]
+  * @see [[polynote.kernel.lang.LanguageInterpreter]]
   */
-abstract class Kernel[F[_]] {
+trait KernelAPI[F[_]] {
 
   def init: F[Unit]
 
   def shutdown(): F[Unit]
 
+  def startInterpreterFor(id: String): F[Stream[F, Result]]
+
   def runCell(id: String): F[Stream[F, Result]]
+
+  def runCells(ids: List[String]): F[Stream[F, CellResult]]
 
   def completionsAt(id: String, pos: Int): F[List[Completion]]
 
   def parametersAt(cell: String, offset: Int): F[Option[Signatures]]
 
-  def currentSymbols(): F[List[SymbolInfo]]
+  def currentSymbols(): F[List[ResultValue]]
 
   def currentTasks(): F[List[TaskInfo]]
 

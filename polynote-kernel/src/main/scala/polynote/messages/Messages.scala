@@ -116,6 +116,10 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
   def setResults(id: String, results: List[Result]): Notebook = updateCell(TinyString(id)) {
     cell => cell.copy(results = ShortList(results))
   }
+
+  def getCell(id: String): Option[NotebookCell] = cells.find(_.id == id)
+
+  def cell(id: String): NotebookCell = getCell(id).getOrElse(throw new NoSuchElementException(s"Cell $id does not exist"))
 }
 
 object Notebook extends MessageCompanion[Notebook](2)

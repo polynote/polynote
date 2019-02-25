@@ -118,6 +118,7 @@ object JupyterOutput {
       Error(typ, Option(msg).getOrElse(""), Nil) :: Nil
 
     case ClearResults() => Nil
+    case ResultValue(_, _, _, _, _, _) => Nil // TODO
   }
 }
 

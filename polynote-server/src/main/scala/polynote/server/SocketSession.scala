@@ -126,7 +126,10 @@ class SocketSession(
     case LoadNotebook(path) =>
       getNotebook(path).map {
         notebookRef =>
-          Stream.eval(notebookRef.get) ++ Stream.eval(notebookRef.currentStatus).map(KernelStatus(path, _))
+          Stream.eval(notebookRef.get) ++
+            Stream.eval(notebookRef.currentSymbols()).flatMap(results => Stream.emits(results).map(rv => CellResult(path, rv.sourceCell, rv))) ++
+            Stream.eval(notebookRef.currentTasks()).map(tasks => KernelStatus(path, UpdatedTasks(tasks))) ++
+            Stream.eval(notebookRef.currentStatus).map(KernelStatus(path, _))
       }
 
     case CreateNotebook(path) =>
@@ -158,22 +161,20 @@ class SocketSession(
 
     case RunCell(path, ids) =>
       getNotebook(path).flatMap {
-        notebookRef => notebookRef.runCells(ids)
+        notebookRef => notebookRef.runCells(ids).map(_.drain) // we throw away the messages because they already come through the notebook's messages stream
       }
       // TODO: do we need to emit a kernel status here any more?
 
     case req@CompletionsAt(notebook, id, pos, _) =>
       for {
         notebookRef <- getNotebook(notebook)
-        kernel      <- notebookRef.getKernel
-        completions <- kernel.completionsAt(id, pos).handleErrorWith(err => IO(err.printStackTrace(System.err)).map(_ => Nil))
+        completions <- notebookRef.completionsAt(id, pos).handleErrorWith(err => IO(err.printStackTrace(System.err)).map(_ => Nil))
       } yield Stream.emit(req.copy(completions = ShortList(completions)))
 
     case req@ParametersAt(notebook, id, pos, _) =>
       for {
         notebookRef <- getNotebook(notebook)
-        kernel      <- notebookRef.getKernel
-        parameters  <- kernel.parametersAt(id, pos)
+        parameters  <- notebookRef.parametersAt(id, pos)
       } yield Stream.emit(req.copy(signatures = parameters))
 
     case KernelStatus(path, _) =>
@@ -185,7 +186,6 @@ class SocketSession(
     case StartKernel(path, StartKernel.NoRestart) =>
       for {
         notebookRef <- getNotebook(path)
-        kernel      <- notebookRef.getKernel
         status      <- notebookRef.currentStatus
       } yield Stream.emit(KernelStatus(path, status))
 
@@ -200,7 +200,7 @@ class SocketSession(
     case StartKernel(path, StartKernel.Kill) =>
       for {
         notebookRef <- getNotebook(path)
-        _           <- notebookRef.shutdownKernel()
+        _           <- notebookRef.shutdown()
         status      <- notebookRef.currentStatus
       } yield Stream.emit(KernelStatus(path, status))
 
