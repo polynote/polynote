@@ -66,7 +66,7 @@ trait KernelSpec {
         results <- interp.runCode("test", symbolTable.currentTerms.map(_.asInstanceOf[interp.Decl]), Nil, code)
         output  <- results.evalMap {
             case v: ResultValue =>
-              symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp) :: Nil).map { _ =>
+              symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp).toList).map { _ =>
                 None
               }
             case result =>

@@ -5,7 +5,7 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32
 } from './codec.js'
 
-import { ValueRepr, StringRepr } from './value_repr.js'
+import { ValueRepr, StringRepr, MIMERepr } from './value_repr.js'
 
 export class Result {
     static decode(data) {
@@ -216,6 +216,23 @@ export class ResultValue extends Result {
         const index = this.reprs.findIndex(repr => repr instanceof StringRepr);
         if (index < 0) return "";
         return this.reprs[index].string;
+    }
+
+    /**
+     * Get a default MIME type and string, for display purposes
+     */
+    get displayRepr() {
+        // TODO: make this smarter
+        let index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/html"));
+        if (index < 0)
+            index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/"));
+
+        if (index < 0) {
+            return ["text/plain", this.valueText];
+        } else {
+            return MIMERepr.unapply(this.reprs[index]);
+        }
+
     }
 }
 

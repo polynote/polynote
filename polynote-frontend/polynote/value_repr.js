@@ -25,21 +25,22 @@ export class StringRepr extends ValueRepr {
 
 StringRepr.codec = combined(str).to(StringRepr);
 
-export class HTMLRepr extends ValueRepr {
+export class MIMERepr extends ValueRepr {
     static get msgTypeId() { return 1; }
 
     static unapply(inst) {
-        return [inst.html];
+        return [inst.mimeType, inst.content];
     }
 
-    constructor(html) {
-        super(html);
-        this.html = html;
+    constructor(mimeType, content) {
+        super(mimeType, content);
+        this.mimeType = mimeType;
+        this.content = content;
         Object.freeze(this);
     }
 }
 
-HTMLRepr.codec = combined(str).to(HTMLRepr);
+MIMERepr.codec = combined(str, str).to(MIMERepr);
 
 export class DataRepr extends ValueRepr {
     static get msgTypeId() { return 2; }
@@ -112,7 +113,7 @@ StreamingDataRepr.codec = combined(int32, DataType.codec, uint32).to(StreamingDa
 
 ValueRepr.codecs = [
     StringRepr,        // 0
-    HTMLRepr,          // 1
+    MIMERepr,          // 1
     DataRepr,          // 2
     LazyDataRepr,      // 3
     UpdatingDataRepr,  // 4
