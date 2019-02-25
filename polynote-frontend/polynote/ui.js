@@ -879,6 +879,9 @@ export class NotebookUI {
                         cell.addResult(result.contentType, result.content);
                     } else if (result instanceof ClearResults) {
                         cell.clearResult();
+                    } else if (result instanceof ResultValue) {
+                        const [mime, content] = result.displayRepr;
+                        cell.addResult(mime, content);
                     }
                 }
 
@@ -929,6 +932,9 @@ export class NotebookUI {
                             cell.setRuntimeError(result.error)
                         } else if (result instanceof Output) {
                             cell.addResult(result.contentType, result.content)
+                        } else if (result instanceof ResultValue) {
+                            const [mime, content] = result.displayRepr;
+                            cell.addResult(mime, content);
                         }
                     }
                 )

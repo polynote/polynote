@@ -144,7 +144,12 @@ final case class ResultValue(
   sourceCell: TinyString,
   value: Any,
   scalaType: Universe#Type
-) extends Result
+) extends Result {
+
+  // TODO: better way to handle "the result" of the cell. Maybe name should be optional?
+  def isCellResult: Boolean = name startsWith "res"
+
+}
 
 object ResultValue extends ResultCompanion[ResultValue](4) {
 

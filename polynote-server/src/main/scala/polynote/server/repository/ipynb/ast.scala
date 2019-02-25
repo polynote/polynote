@@ -58,7 +58,7 @@ object JupyterOutput {
   implicit val encoder: Encoder[JupyterOutput] = extras.semiauto.deriveEncoder[JupyterOutput]
   implicit val decoder: Decoder[JupyterOutput] = extras.semiauto.deriveDecoder[JupyterOutput]
 
-  def toResult(result: JupyterOutput): Result = {
+  def toResult(cellId: String)(result: JupyterOutput): Result = {
     def jsonToStr(json: Json): String = json.fold("", _.toString, _.toString, _.toString, _.map(jsonToStr).mkString, _.toString)
 
     def convertData(data: Map[String, Json], metadata: Option[JsonObject]) = metadata.flatMap(_("rel").flatMap(_.asString)) match {
@@ -82,7 +82,15 @@ object JupyterOutput {
     result match {
       case Stream(name, text) => Output(s"text/plain; rel=$name", text.mkString)
       case DisplayData(data, metadata) => convertData(data, metadata)
-      case ExecuteResult(_, data, metadata) => convertData(data, metadata)
+      case ExecuteResult(_, data, metadata) =>
+        val meta = metadata.map(_.toMap).getOrElse(Map.empty)
+        val name = meta.get("name").flatMap(_.asString).getOrElse("")
+        val typ  = meta.get("type").flatMap(_.asString).getOrElse("")
+        val reprs = data.toList.map {
+          case ("text/plain", json) => StringRepr(jsonToStr(json))
+          case (mime, json) => MIMERepr(mime, jsonToStr(json))
+        }
+        ResultValue(name, typ, reprs, cellId, (), scala.reflect.runtime.universe.NoType)
       case Error(typ, message, trace) =>
         RuntimeError(RecoveredException(message, typ))
     }
@@ -95,10 +103,7 @@ object JupyterOutput {
       List {
         args.get("rel") match {
           case Some(name) if mime == "text/plain" && name == "stdout" => Stream(name, content.linesWithSeparators.toList)
-          case Some("output") => DisplayData(Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), None)
-          case _ =>
-            val metadata = args.get("lang").map(l => Map("lang" -> l).asJsonObject)
-            ExecuteResult(execId, Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), metadata)
+          case _ => DisplayData(Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), args.get("lang").map(l => Map("lang" -> l).asJsonObject))
         }
       }
 
@@ -118,7 +123,15 @@ object JupyterOutput {
       Error(typ, Option(msg).getOrElse(""), Nil) :: Nil
 
     case ClearResults() => Nil
-    case ResultValue(_, _, _, _, _, _) => Nil // TODO
+    case rv @ ResultValue(name, typeName, reprs, _, _, _) if rv.isCellResult =>
+      reprs.collect {
+        case StringRepr(str) => "text/plain" -> Json.arr(str.linesWithSeparators.toSeq.map(_.asJson): _*)
+        case MIMERepr(mimeType, content) => mimeType -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)
+      } match {
+        case results => List(ExecuteResult(execId, results.toMap, Some(JsonObject("name" -> name.asJson, "type" -> typeName.asJson))))
+      }
+
+    case ResultValue(_, _, _, _, _, _) => Nil
   }
 }
 
@@ -154,7 +167,7 @@ object JupyterCell {
         CellMetadata(disabled, hideSource, hideOutput)
     }.getOrElse(CellMetadata())
 
-    NotebookCell(id, language, Rope(cell.source.mkString), ShortList(cell.outputs.getOrElse(Nil).map(JupyterOutput.toResult)), meta)
+    NotebookCell(id, language, Rope(cell.source.mkString), ShortList(cell.outputs.getOrElse(Nil).map(JupyterOutput.toResult(id))), meta)
   }
 
   private val CellIdPattern = """Cell(\d+)""".r

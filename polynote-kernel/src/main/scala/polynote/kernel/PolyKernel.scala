@@ -64,7 +64,7 @@ class PolyKernel private[kernel] (
           results => results.collect {
             case v: ResultValue => v
           }.evalTap {
-            v => symbolTable.publishAll(List(symbolTable.RuntimeValue.fromResultValue(v, interp)))
+            v => symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp).toList)
           }
         }
 
@@ -153,7 +153,7 @@ class PolyKernel private[kernel] (
                     ).map {
                       results => predefResults merge results.evalMap {
                         case v: ResultValue =>
-                          symbolTable.publishAll(List(symbolTable.RuntimeValue.fromResultValue(v, interp))).as(v)
+                          symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp).toList).as(v)
                         case result =>
                           IO.pure(result)
                       }

@@ -38,10 +38,10 @@ final case class StringRepr(string: String) extends ValueRepr
 object StringRepr extends ValueReprCompanion[StringRepr](0)
 
 /**
-  * An HTML representation of a value
+  * A MIME representation of a value. Binary values must be base64-encoded.
   */
-final case class HTMLRepr(html: String) extends ValueRepr
-object HTMLRepr extends ValueReprCompanion[HTMLRepr](1)
+final case class MIMERepr(mimeType: String, content: String) extends ValueRepr
+object MIMERepr extends ValueReprCompanion[MIMERepr](1)
 
 /**
   * A binary representation of a value, encoded in Polynote's format (TODO)

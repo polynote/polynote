@@ -127,9 +127,10 @@ final class RuntimeSymbolTable(
       }
     }
 
-    def fromResultValue(resultValue: ResultValue, source: LanguageInterpreter[IO]): RuntimeValue = resultValue match {
+    def fromResultValue(resultValue: ResultValue, source: LanguageInterpreter[IO]): Option[RuntimeValue] = resultValue match {
+      case ResultValue(_, _, _, _, Unit, _) => None
       case ResultValue(name, typeName, reprs, sourceCell, value, scalaType) =>
-        apply(name, value, scalaType.asInstanceOf[global.Type], Option(source), sourceCell)
+        Some(apply(name, value, scalaType.asInstanceOf[global.Type], Option(source), sourceCell))
     }
   }
 
