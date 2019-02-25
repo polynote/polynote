@@ -262,6 +262,8 @@ class IOSharedNotebook(
     def currentTasks(): IO[List[TaskInfo]] = ifKernelStarted(_.currentTasks(), Nil)
 
     def idle(): IO[Boolean] = ifKernelStarted(_.idle(), false)
+
+    override def info: IO[Option[KernelInfo]] = ifKernelStarted(_.info, None)
   }
 
 }

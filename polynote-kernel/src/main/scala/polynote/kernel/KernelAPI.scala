@@ -4,7 +4,7 @@ import cats.effect.concurrent.Ref
 import fs2.Stream
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
-import polynote.messages.{CellResult, ShortString, TinyList, TinyString}
+import polynote.messages.{CellResult, ShortString, TinyList, TinyMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
 
@@ -37,6 +37,8 @@ trait KernelAPI[F[_]] {
   def currentTasks(): F[List[TaskInfo]]
 
   def idle(): F[Boolean]
+
+  def info: F[Option[KernelInfo]]
 
 }
 
@@ -209,3 +211,7 @@ object UpdatedTasks extends KernelStatusUpdateCompanion[UpdatedTasks](1)
 
 final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelStatusUpdate
 object KernelBusyState extends KernelStatusUpdateCompanion[KernelBusyState](2)
+
+//                                           key          html
+final case class KernelInfo(content: TinyMap[ShortString, String]) extends KernelStatusUpdate
+object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3)

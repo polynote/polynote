@@ -600,10 +600,27 @@ export class KernelBusyState extends KernelStatusUpdate {
 
 KernelBusyState.codec = combined(bool, bool).to(KernelBusyState);
 
+export class KernelInfo extends KernelStatusUpdate {
+    static get msgTypeId() { return 3; }
+
+    static unapply(inst) {
+        return [inst.content];
+    }
+
+    constructor(content) {
+        super(content);
+        this.content = content;
+        Object.freeze(this);
+    }
+}
+
+KernelInfo.codec = combined(mapCodec(uint8, shortStr, str)).to(KernelInfo);
+
 KernelStatusUpdate.codecs = [
     UpdatedSymbols,   // 0
     UpdatedTasks,     // 1
     KernelBusyState,  // 2
+    KernelInfo,       // 3
 ];
 
 KernelStatusUpdate.codec = discriminated(

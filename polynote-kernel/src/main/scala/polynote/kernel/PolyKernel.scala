@@ -199,6 +199,8 @@ class PolyKernel private[kernel] (
 
   def shutdown(): IO[Unit] = IO.unit
 
+  def info: IO[Option[KernelInfo]] = IO.pure(None)
+
 }
 
 object PolyKernel {

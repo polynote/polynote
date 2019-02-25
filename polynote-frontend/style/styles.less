@@ -1257,7 +1257,7 @@ button {
   display: grid;
 
   .ui-panel-content {
-    display: grid;
+    display: inline-block;
     grid-area: body;
   }
 }
@@ -1267,8 +1267,8 @@ button {
   border-left: 1px solid @ui-border;
 
   > .ui-panel-content {
-    grid-template-areas: "symbols" "tasks";
-    grid-template-rows: auto 1fr;
+    grid-template-areas: "info" "symbols" "tasks";
+    grid-template-rows:   auto   auto      1fr;
   }
 
   h2 {
@@ -1443,6 +1443,35 @@ button {
 
         .name, .type {
           font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+        }
+      }
+    }
+  }
+
+  .kernel-info {
+    position: relative;
+    grid-area: info;
+    z-index: 1;
+
+    .toggle {
+      float: right;
+      cursor: default;
+    }
+
+    .collapsed {
+      background-color: lightgrey;
+      box-shadow: 4px 0px 0px #e0e6ec inset;
+    }
+
+    .info-container {
+      padding: 4px;
+      background-color: white;
+
+      .info-item {
+        display: flex;
+
+        .info-key {
+          margin-right: 2px;
         }
       }
     }

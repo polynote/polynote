@@ -21,7 +21,7 @@ import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
 import polynote.kernel.util.{KernelContext, Publish, RuntimeSymbolTable}
-import polynote.messages.Notebook
+import polynote.messages._
 
 import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.reflect.io.{AbstractFile, Directory, PlainDirectory, VirtualDirectory}
@@ -132,7 +132,15 @@ class SparkPolyKernel(
   }
 
   override val init: IO[Unit] = super.init >> taskQueue.runTaskIO("spark", "Spark session", "Starting Spark session...") {
-    taskInfo => IO(session).handleErrorWith(err => IO(logger.error(err)(err.getMessage)) *> IO.raiseError(err)) >> IO.unit
+    taskInfo => IO(session).handleErrorWith(err => IO(logger.error(err)(err.getMessage)) *> IO.raiseError(err)) >> info.flatMap { update =>
+      update.map(statusUpdates.publish1).getOrElse(IO.unit)
+    }
+  }
+
+  override def info: IO[Option[KernelInfo]] = IO(session).map { sess =>
+    sess.sparkContext.uiWebUrl.map { url =>
+      KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url">$url</a>"""))
+    }
   }
 
   override def shutdown(): IO[Unit] = super.shutdown() *> IO(session.stop())

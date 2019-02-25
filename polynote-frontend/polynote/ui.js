@@ -196,6 +196,75 @@ export class KernelTasksUI {
     }
 }
 
+// TODO: how can we remember collapsed state across sessions?
+export class KernelInfoUI {
+    constructor() {
+        this.el = div(['kernel-info'], [
+            this.toggleEl = h3(['toggle'], ['...']).click(evt => this.toggleCollapse()),
+            h3(['title'], ['Info']),
+            this.infoEl = div(['info-container'], []),
+        ]);
+        this.info = new Map();
+
+        this.toggleVisibility();
+    }
+
+    toggleCollapse() {
+        if (this.toggleEl.classList.contains('collapsed')) {
+            this.toggleEl.classList.remove('collapsed')
+            this.infoEl.style.display = null;
+            this.el.querySelector(".title").style.display = null;
+        } else {
+            this.toggleEl.classList.add('collapsed')
+            this.infoEl.style.display = "none";
+            this.el.querySelector(".title").style.display = "none";
+        }
+    }
+
+    updateInfo(content) {
+        for (const [key, val] of Object.entries(content)) {
+            if (val.size === 0) { // empty val is a proxy for removing key
+                this.removeInfo(key);
+            } else {
+                this.addInfo(key, val);
+            }
+        }
+    }
+
+    addInfo(key, value) {
+        this.info.set(key, value);
+        this.toggleVisibility()
+    }
+
+    removeInfo(key) {
+        this.info.delete(key);
+        this.toggleVisibility()
+    }
+
+    toggleVisibility() {
+        if (this.info.size === 0) {
+            this.el.style.display = "none";
+        } else {
+            this.renderInfo();
+            this.el.style.display = "block";
+        }
+    }
+
+    renderInfo() {
+        this.infoEl.innerHTML = "";
+        for (const [k, v] of this.info) {
+            console.log(`rendering ${k}, ${v}`);
+            const val = div(['info-value'], []);
+            val.innerHTML = v;
+            const el = div(['info-item'], [
+                div(['info-key'], [k]),
+                val
+            ]);
+            this.infoEl.appendChild(el);
+        }
+    }
+}
+
 export class SplitView {
     constructor(id, left, center, right) {
         this.left = left;
@@ -301,6 +370,7 @@ export class SplitView {
 export class KernelUI extends EventTarget {
     constructor(socket) {
         super();
+        this.info = new KernelInfoUI();
         this.symbols = new KernelSymbolsUI();
         this.tasks = new KernelTasksUI();
         this.socket = socket;
@@ -315,6 +385,7 @@ export class KernelUI extends EventTarget {
                 ])
             ]),
             div(['ui-panel-content'], [
+                this.info.el,
                 this.symbols.el,
                 this.tasks.el
             ])
@@ -811,6 +882,11 @@ export class NotebookUI {
                     case messages.KernelBusyState:
                         const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
                         this.kernelUI.setKernelState(state);
+                        break;
+
+                    case messages.KernelInfo:
+                        this.kernelUI.info.updateInfo(update.content);
+                        break;
                 }
             }
         });
