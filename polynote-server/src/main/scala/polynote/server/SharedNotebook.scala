@@ -262,6 +262,8 @@ class IOSharedNotebook(
     def currentTasks(): IO[List[TaskInfo]] = ifKernelStarted(_.currentTasks(), Nil)
 
     def idle(): IO[Boolean] = ifKernelStarted(_.idle(), false)
+
+    override def info: IO[Option[KernelInfo]] = ifKernelStarted(_.info, None)
   }
 
 }
@@ -314,11 +316,6 @@ abstract class NotebookRef[F[_]](implicit F: Monad[F]) extends KernelAPI[F] {
   def restartKernel(): F[Unit] = isKernelStarted.flatMap {
     case true => shutdown() *> startKernel()
     case false => F.unit
-  }
-
-  def getInfo: F[Option[KernelInfo]] = isKernelStarted.flatMap {
-    case true => getKernel.flatMap(_.info)
-    case false => Monad[F].pure(None)
   }
 
   def messages: Stream[F, Message]
