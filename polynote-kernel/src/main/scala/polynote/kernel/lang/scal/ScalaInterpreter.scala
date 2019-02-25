@@ -30,17 +30,6 @@ class ScalaInterpreter(
   import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime}
   private val logger = getLogger
 
-  import global.{Type, Tree}
-
-  // an Executor which runs tasks on the presentation compiler thread (if not already on that thread)
-//  private val compilerExecutor = new Executor {
-//    def execute(command: Runnable): Unit = if (global.onCompilerThread)
-//      command.run()
-//    else
-//      global.ask(() => command.run())
-//  }
-//
-//  protected implicit val contextShift: ContextShift[IO] = IOContextShift(ExecutionContext.fromExecutor(compilerExecutor))
   private val executor = Executors.newCachedThreadPool(new ThreadFactory {
     def newThread(r: Runnable): Thread = {
       val thread = new Thread(r)

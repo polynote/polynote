@@ -5,14 +5,14 @@ import polynote.kernel.lang.python.PythonInterpreter
 import polynote.kernel.lang.scal.ScalaInterpreter
 
 
-trait LanguageKernelService {
+trait LanguageInterpreterService {
   def priority: Int
-  def languageKernels: Map[String, LanguageInterpreter.Factory[IO]]
+  def interpreters: Map[String, LanguageInterpreter.Factory[IO]]
 }
 
-class CoreLanguages extends LanguageKernelService {
+class CoreLanguages extends LanguageInterpreterService {
   val priority = 0
-  override def languageKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map(
+  override def interpreters: Map[String, LanguageInterpreter.Factory[IO]] = Map(
     "scala" -> ScalaInterpreter.factory(),
     "python" -> PythonInterpreter.factory())
 }

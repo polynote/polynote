@@ -8,11 +8,12 @@ import polynote.kernel._
 import polynote.kernel.util.{Publish, RuntimeSymbolTable, SymbolDecl}
 
 /**
-  * The LanguageKernel runs code in a given language.
+  * The LanguageInterpreter runs code in a given language.
   */
 trait LanguageInterpreter[F[_]] {
 
-  // LanguageKernel is expected to have a reference to the shared runtime symbol table of a notebook
+  // LanguageInterpreter is expected to have a reference to the shared runtime symbol table of a notebook
+  // TODO: eliminate this
   val symbolTable: RuntimeSymbolTable
 
   final type Decl = SymbolDecl[F]

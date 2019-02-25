@@ -224,15 +224,15 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
           case (value, Some(typ)) =>
             ResultValue(kernelContext)(name, typ, value, sourceCellId)
           case (value, _) =>
-            val typ = symbolTable.typeOf(value, None)
+            val typ = kernelContext.inferType(value)
             ResultValue(kernelContext)(name, typ, value, sourceCellId)
         }
       }
     }.toMap
 
-  def getPyResult(accessor: String): (Any, Option[kernelContext.global.Type]) = {
+  def getPyResult(accessor: String): (Any, Option[global.Type]) = {
     val resultType = jep.getValue(s"type($accessor).__name__", classOf[String])
-    import kernelContext.global.{typeOf, weakTypeOf}
+    import global.{typeOf, weakTypeOf}
     resultType match {
       case "int" => jep.getValue(accessor, classOf[java.lang.Number]).longValue() -> Some(typeOf[Long])
       case "float" => jep.getValue(accessor, classOf[java.lang.Number]).doubleValue() -> Some(typeOf[Double])
@@ -251,11 +251,11 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
           () =>
             val lubType = types.flatten.toList match {
               case Nil      => typeOf[Any]
-              case typeList => try kernelContext.global.lub(typeList) catch {
+              case typeList => try global.lub(typeList) catch {
                 case err: Throwable => typeOf[Any]
               }
             }
-            kernelContext.global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
+            global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
         }
 
         elems -> Some(listType)

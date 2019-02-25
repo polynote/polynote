@@ -10,7 +10,6 @@ import polynote.kernel.lang.LanguageInterpreter
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
-import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.tools.nsc.interactive.Global
 
 final class RuntimeSymbolTable(
@@ -26,8 +25,6 @@ final class RuntimeSymbolTable(
   private val disposed = ReadySignal()
 
   private val cellIds: mutable.TreeSet[String] = new mutable.TreeSet()
-
-  def typeOf(value: Any, staticType: Option[Type]): Type = staticType.getOrElse(kernelContext.inferType(value).asInstanceOf[global.Type])
 
   private val newSymbols: Topic[IO, RuntimeValue] =
     Topic[IO, RuntimeValue]{
@@ -66,7 +63,7 @@ final class RuntimeSymbolTable(
   }
 
   def publish(source: LanguageInterpreter[IO], sourceCellId: String)(name: String, value: Any, staticType: Option[global.Type]): IO[Unit] = {
-    val rv = RuntimeValue(name, value, typeOf(value, staticType), Some(source), sourceCellId)
+    val rv = RuntimeValue(name, value, staticType.getOrElse(kernelContext.inferType(value)), Some(source), sourceCellId)
     for {
       _    <- IO(putValue(rv))
       subs <- newSymbols.subscribers.head.compile.lastOrError
@@ -121,7 +118,7 @@ final class RuntimeSymbolTable(
 
   object RuntimeValue {
     def apply(name: String, value: Any, source: Option[LanguageInterpreter[IO]], sourceCell: String): RuntimeValue = RuntimeValue(
-      name, value, typeOf(value, None), source, sourceCell
+      name, value, kernelContext.inferType(value), source, sourceCell
     )
 
     def fromSymbolDecl(symbolDecl: SymbolDecl[IO]): Option[RuntimeValue] = {

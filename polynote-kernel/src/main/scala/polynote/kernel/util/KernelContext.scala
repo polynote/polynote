@@ -26,7 +26,7 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
 
   val runtimeTools: ToolBox[universe.type] = runtimeMirror.mkToolBox()
 
-  def inferType(value: Any): Type = {
+  def inferType(value: Any): global.Type = {
     val instMirror = runtimeMirror.reflect(value)
     val importedSym = importFromRuntime.importSymbol(instMirror.symbol)
 

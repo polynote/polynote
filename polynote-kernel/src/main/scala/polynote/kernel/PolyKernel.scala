@@ -35,7 +35,7 @@ class PolyKernel private[kernel] (
   val outputDir: AbstractFile,
   dependencies: Map[String, List[(String, File)]],
   val statusUpdates: Publish[IO, KernelStatusUpdate],
-  subKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty
+  availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty
 ) extends KernelAPI[IO] {
 
   protected val logger: Logger = getLogger
@@ -75,14 +75,14 @@ class PolyKernel private[kernel] (
   protected def getInterpreter(language: String): Option[LanguageInterpreter[IO]] = Option(interpreters.get(language))
 
   protected def getOrLaunchInterpreter(language: String): IO[(LanguageInterpreter[IO], Stream[IO, Result])] =
-    Option(interpreters.get(language))
+    getInterpreter(language)
       .map(interp => IO.pure(interp -> Stream.empty))
       .getOrElse {
         launchingInterpreter.acquire.bracket { _ =>
           Option(interpreters.get(language)).map(interp => IO.pure(interp -> Stream.empty)).getOrElse {
             for {
-              factory <- IO.fromEither(Either.fromOption(subKernels.get(language), new RuntimeException(s"No interpreter for language $language")))
-              interp  <- taskQueue.runTask(s"Kernel$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
+              factory <- IO.fromEither(Either.fromOption(availableInterpreters.get(language), new RuntimeException(s"No interpreter for language $language")))
+              interp  <- taskQueue.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
               _        = interpreters.put(language, interp)
               results  <- runPredef(interp, language)
             } yield (interp, results)
@@ -215,7 +215,7 @@ object PolyKernel {
   def apply(
     getNotebook: () => IO[Notebook],
     dependencies: Map[String, List[(String, File)]],
-    subKernels: Map[String, LanguageInterpreter.Factory[IO]],
+    availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,
@@ -231,7 +231,7 @@ object PolyKernel {
       outputDir,
       dependencies,
       statusUpdates,
-      subKernels
+      availableInterpreters
     )
   }
 }

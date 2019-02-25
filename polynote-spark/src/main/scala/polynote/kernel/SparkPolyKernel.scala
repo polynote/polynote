@@ -31,15 +31,15 @@ import scala.tools.nsc.interactive.Global
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
 class SparkPolyKernel(
   getNotebook: () => IO[Notebook],
-  kernelContext: KernelContext,
+  ctx: KernelContext,
   dependencies: Map[String, List[(String, File)]],
   statusUpdates: Publish[IO, KernelStatusUpdate],
   outputPath: Path,
   subKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
   parentClassLoader: ClassLoader
-) extends PolyKernel(getNotebook, kernelContext, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels) {
+) extends PolyKernel(getNotebook, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels) {
 
-  val global = kernelContext.global
+  import kernelContext.global
 
   val polynoteRuntimeJar = "polynote-runtime.jar"
 
@@ -87,7 +87,7 @@ class SparkPolyKernel(
   override protected lazy val symbolTable = realOutputPath.get.map {
     outputDir =>
       val updatedClassLoader = KernelContext.genNotebookClassLoader(dependencies, kernelContext.classPath, outputDir, parentClassLoader)
-      new RuntimeSymbolTable(KernelContext(kernelContext.global, kernelContext.classPath, updatedClassLoader), statusUpdates)
+      new RuntimeSymbolTable(kernelContext.copy(classLoader = updatedClassLoader), statusUpdates)
   }.unsafeRunSync()
 
   // initialize the session, and add task listener
