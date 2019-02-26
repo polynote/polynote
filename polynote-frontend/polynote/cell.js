@@ -1,6 +1,7 @@
-import {blockquote, div, iconButton, span, tag} from "./tags.js";
+import {blockquote, div, iconButton, span, tag, button} from "./tags.js";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import * as messages from "./messages.js";
+import { ResultValue } from "./result.js"
 import {RichTextEditor} from "./text_editor.js";
 import {MainToolbar, mainToolbar} from "./ui.js";
 import {UIEvent, UIEventTarget} from "./ui_event.js"
@@ -79,16 +80,19 @@ export class Cell extends UIEventTarget {
         this.id = id;
         this.language = language;
 
+        this.cellIndex = id.match(/^Cell(\d+)$/)[1];
+
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
                 div(['cell-input-tools'], [
-                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
+                    div(['run-cell', 'in-ident'], [span(['icon', 'fas'], ''), `In (${this.cellIndex}):`]),
+                    //iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
                 this.editorEl = div(['cell-input-editor'], [])
             ]),
             this.cellOutput = div(['cell-output'], [
-                div(['cell-output-tools'], []),
+                this.cellOutputTools = div(['cell-output-tools'], []),
                 this.cellOutputDisplay = div(['cell-output-display'], [])
             ])
         ]).withId(id);
@@ -162,6 +166,8 @@ export class CodeCell extends Cell {
             fontLigatures: true,
             contextmenu: false,
             fixedOverflowWidgets: true,
+            lineNumbers: false, // TODO: preferences to enable line numbers
+            lineDecorationsWidth: 0,
         });
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
@@ -260,6 +266,7 @@ export class CodeCell extends Cell {
         // clear the display
         this.cellOutputDisplay.innerHTML = '';
         if (reports.length) {
+            this.container.classList.add('error');
             this.cellOutput.classList.add('errors');
             this.cellOutputDisplay.appendChild(
                 div(
@@ -320,6 +327,8 @@ export class CodeCell extends Cell {
             ])
         );
 
+        this.container.classList.add('error');
+
         if (cellLine !== null && cellLine >= 0) {
             const model = this.editor.getModel();
             monaco.editor.setModelMarkers(
@@ -337,8 +346,11 @@ export class CodeCell extends Cell {
         }
     }
 
-    addResult(contentType, content) {
+    addOutput(contentType, content) {
         this.cellOutput.classList.add('output');
+        if (!this.container.classList.contains('error')) {
+            this.container.classList.add('success');
+        }
         const contentTypeParts = contentType.split(';').map(str => str.replace(/(^\s+|\s+$)/g, ""));
         const mimeType = contentTypeParts.shift();
         const args = {};
@@ -350,15 +362,34 @@ export class CodeCell extends Cell {
         const rel = args.rel || 'none';
         const lang = args.lang || null;
         const self = this;
-        CodeCell.parseContent(content, mimeType, lang).then(function(result) {
-            self.cellOutputDisplay.appendChild(
-                div(['output'], result).attr('rel', rel).attr('mime-type', mimeType)
-            );
+        return CodeCell.parseContent(content, mimeType, lang).then(function(result) {
+            const el = div(['output'], result).attr('rel', rel).attr('mime-type', mimeType);
+            self.cellOutputDisplay.appendChild(el);
+            return el;
         }).catch(function(err) {
             self.cellOutputDisplay.appendChild(
                 div(['output'], err)
             );
         });
+    }
+
+    addResult(result) {
+        if (result instanceof ResultValue) {
+            // TODO: keep "result" and "output" separate for UI... have a way to show declarations, results, outputs, etc. separately
+            if (result.name) {
+                // don't display this; it's a named declaration
+                // TODO: have a way to display these if desired
+            } else {
+                // TODO: have a UI to look at other reprs
+                const [mime, content] = result.displayRepr;
+                this.addOutput(mime, content).then(el => {
+                    const ident = div(['out-ident'], `Out(${result.identifier.right}):`);
+                    el.insertBefore(ident, el.childNodes[0]);
+                });
+            }
+        } else {
+            throw "Result must be a ResultValue"
+        }
     }
 
     static colorize(content, lang) {
@@ -385,6 +416,7 @@ export class CodeCell extends Cell {
     }
 
     clearResult() {
+        this.container.classList.remove('error', 'success');
         this.setErrors([]);
     }
 

@@ -34,8 +34,11 @@
 @ui-border-dark: darken(@ui-border, 20%);
 @ui-selected:   rgb(67, 104, 234);
 @ui-text:       rgb(50, 60, 68);
+@code-fonts:    'Hasklig', 'Fira Code', 'Menlo', fixed;
 
 @toolbar-height: 68px;
+@cell-margin-width: 70pt;
+@cell-margin-width-plus-padding: 80pt;
 
 body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
@@ -269,17 +272,38 @@ body {
   .cell-input {
     position: relative;
 
+    .in-ident {
+      color: #303F9F;
+      font-family: @code-fonts;
+      font-size: 11pt;
+      text-align: right;
+      line-height: 11pt;
+      vertical-align: middle;
+      cursor: pointer;
+
+      .icon {
+        font-size: 8pt;
+        line-height: 11pt;
+        vertical-align: middle;
+        float: left;
+        visibility: hidden;
+      }
+
+      &:hover .icon {
+        visibility: visible;
+      }
+    }
+
     .cell-input-tools {
       position: absolute;
       left: 0;
       top: 0;
       bottom: 0;
-      width: 42px;
+      width: @cell-margin-width;
       background: @ui-background;
       border: 1px solid @ui-border;
-      border-width: 1px 0 1px 1px;
-      box-sizing: border-box;
       padding: 4px;
+      box-sizing: border-box;
 
       button.run-cell.refresh .icon {
         font-size: 8px;
@@ -289,7 +313,8 @@ body {
 
     .cell-input-editor {
       border: 1px solid @ui-border;
-      margin-left: 42px;
+      border-left-width: 0;
+      margin-left: @cell-margin-width;
       min-height: 3em;
     }
   }
@@ -318,7 +343,7 @@ body {
     }
 
     .cell-input {
-      border-left: 42px solid transparent;
+      border-left: @cell-margin-width solid transparent;
     }
 
     .cell-input-tools {
@@ -1037,25 +1062,43 @@ body {
     }
 
     .cell-output-tools {
+      display: none;
+    }
+
+    .out-ident {
+      color: #D84315;
+      font-family: @code-fonts;
+      font-size: 11pt;
+      position: absolute;
+      left: 0;
+      width: @cell-margin-width;
+      padding: 0 4px;
+      text-align: right;
+      box-sizing: border-box;
+    }
+
+    .cell-output-display::before {
+      content: " ";
       position: absolute;
       top: 0;
       left: 0;
       bottom: 0;
-      width: 43px;
-      box-sizing: border-box;
+      width: @cell-margin-width;
       border: 1px solid @ui-border;
       border-top: none;
+      border-bottom: none;
       background: @ui-background;
+      box-sizing: border-box;
     }
 
     .cell-output-display {
-      margin-left: 42px;
       font-size: 11pt;
-      padding: .5em;
+      padding: .5em .5em .5em @cell-margin-width-plus-padding;
       border-right: 1px solid @ui-border;
       border-bottom: 1px solid @ui-border;
       overflow: auto;
       resize: vertical;
+      position: relative;
 
       ul.stack-trace {
         margin: 0 0 0 .5em;
@@ -1101,7 +1144,7 @@ body {
       .output[mime-type='text/plain'] {
         white-space: pre;
         line-height: 1.5;
-        font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+        font-family: @code-fonts;
       }
 
       .output[rel='stderr'] {
@@ -1419,10 +1462,14 @@ button {
       }
       tbody {
         overflow-y: auto;
+        background: white;
+
+        tr {
+          animation: highlight 2s;
+        }
 
         th, td {
           text-align: left;
-          background: white;
           line-height: 1.2;
 
           span {
@@ -1448,7 +1495,7 @@ button {
         }
 
         .name, .type {
-          font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+          font-family: @code-fonts;
         }
       }
     }
@@ -1789,7 +1836,7 @@ button {
 
     input {
       width: available;
-      font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+      font-family: @code-fonts;
       font-size: inherit;
     }
   }
@@ -1835,4 +1882,18 @@ button {
     background-color: rgb(240, 240, 240);
   }
 
+}
+
+@keyframes highlight {
+  from {
+    background-color: rgba(253, 246, 227, 1.0);
+  }
+
+  50% {
+    background-color: rgba(253, 246, 227, 1.0);
+  }
+
+  to {
+    background-color: rgba(253, 246, 227, 0.0);
+  }
 }

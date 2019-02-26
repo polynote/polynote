@@ -186,20 +186,11 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
         jep.eval("globals().update(__polynote_locals__)")
         val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 
-        // TODO: We talked about potentially creating an `Out` map, inspired by ipython, instead of these resCell# vars
-        val maybeOutput = if (lastIsExpr) {
-          val hasLastValue = jep.getValue(s"$resultName != None", classOf[java.lang.Boolean])
-          if (hasLastValue) {
-            Option(Output("text/plain; rel=decl; lang=python", s"$resultName = ${jep.getValue(s"repr($resultName)", classOf[String])}"))
-          } else None
-        } else None
 
-        (getPyResults(newDecls, cell).filterNot(_._2.value == null).values, maybeOutput)
-      }.flatMap { case (resultSymbols, maybeOutput) =>
+        getPyResults(newDecls, cell).filterNot(_._2.value == null).values
+      }.flatMap { resultSymbols =>
 
         for {
-          // send the final output to resultQ
-          _ <- maybeOutput.map(resultQ.enqueue1(_)).getOrElse(IO.unit)
           // send all symbols to resultQ
           _ <- Stream.emits(resultSymbols.toSeq).to(resultQ.enqueue).compile.drain
           // make sure to flush stdout
@@ -217,18 +208,31 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
     }
   }
 
-  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, ResultValue] =
+  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, ResultValue] = {
+    val cellIndex = try sourceCellId.stripPrefix("Cell").toInt catch {
+      case err: Throwable => -1
+    }
+
     decls.map {
-      name => name -> {
+      // TODO avoid creating the resCellX variable, instead evaluate the last expression separately
+      case name if cellIndex != -1 && name == s"res$sourceCellId" => name -> {
         getPyResult(name) match {
           case (value, Some(typ)) =>
-            ResultValue(kernelContext)(name, typ, value, sourceCellId)
+            ResultValue.withIndex(kernelContext, name, cellIndex, typ, value, sourceCellId)
           case (value, _) =>
-            val typ = kernelContext.inferType(value)
-            ResultValue(kernelContext)(name, typ, value, sourceCellId)
+            ResultValue.withIndex(kernelContext, name, cellIndex, value, sourceCellId)
+        }
+      }
+      case name => name -> {
+        getPyResult(name) match {
+          case (value, Some(typ)) =>
+            ResultValue(kernelContext, name, typ, value, sourceCellId)
+          case (value, _) =>
+            ResultValue(kernelContext, name, value, sourceCellId)
         }
       }
     }.toMap
+  }
 
   def getPyResult(accessor: String): (Any, Option[global.Type]) = {
     val resultType = jep.getValue(s"type($accessor).__name__", classOf[String])

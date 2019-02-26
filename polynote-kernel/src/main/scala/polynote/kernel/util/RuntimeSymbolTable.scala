@@ -98,11 +98,6 @@ final class RuntimeSymbolTable(
     source: Option[LanguageInterpreter[IO]],
     sourceCellId: String
   ) extends SymbolDecl[IO] {
-    lazy val typeString: String = kernelContext.formatType(scalaTypeHolder)
-    lazy val valueString: String = value.toString match {
-      case str if str.length > 64 => str.substring(0, 64)
-      case str => str
-    }
 
     override def scalaType(g: Global): g.Type = if (g eq global) {
       scalaTypeHolder.asInstanceOf[g.Type] // this is safe because we have established that the globals are the same
@@ -113,8 +108,13 @@ final class RuntimeSymbolTable(
     // don't need to hash everything to determine hash code; name collisions are less common than hash comparisons
     override def hashCode(): Int = name.hashCode()
 
-    def toResultValue: ResultValue = ResultValue(kernelContext)(name, scalaTypeHolder, value, sourceCellId)
+    def toResultValue: ResultValue = name match {
+      case `outRegex`(idx) => ResultValue.withIndex(kernelContext, idx.toInt, scalaTypeHolder, value, sourceCellId)
+      case _ => ResultValue(kernelContext, name, scalaTypeHolder, value, sourceCellId)
+    }
   }
+
+  private val outRegex = "^Out\\((\\d+)\\)$".r
 
   object RuntimeValue {
     def apply(name: String, value: Any, source: Option[LanguageInterpreter[IO]], sourceCell: String): RuntimeValue = RuntimeValue(
@@ -130,7 +130,7 @@ final class RuntimeSymbolTable(
     def fromResultValue(resultValue: ResultValue, source: LanguageInterpreter[IO]): Option[RuntimeValue] = resultValue match {
       case ResultValue(_, _, _, _, Unit, _) => None
       case ResultValue(name, typeName, reprs, sourceCell, value, scalaType) =>
-        Some(apply(name, value, scalaType.asInstanceOf[global.Type], Option(source), sourceCell))
+        Some(apply(name.fold(identity, i => s"Out($i)", (name, _) => name), value, scalaType.asInstanceOf[global.Type], Option(source), sourceCell))
     }
   }
 

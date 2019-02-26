@@ -100,6 +100,7 @@ export class KernelSymbolsUI {
                     tr.updateValues({type: span([], type).attr('title', type), value: span([], value).attr('title', value)})
 
                 }
+
             });
         } else {
             const tr = this.tableEl.addRow({name: name, type: span([], type).attr('title', type), value: span([], value).attr('title', value)});
@@ -969,17 +970,19 @@ export class NotebookUI {
                         console.log(result.error);
                         cell.setRuntimeError(result.error);
                     } else if (result instanceof Output) {
-                        cell.addResult(result.contentType, result.content);
+                        cell.addOutput(result.contentType, result.content);
                     } else if (result instanceof ClearResults) {
                         cell.clearResult();
                     } else if (result instanceof ResultValue) {
-                        const [mime, content] = result.displayRepr;
-                        cell.addResult(mime, content);
+                        cell.addResult(result);
                     }
                 }
 
                 if (result instanceof ResultValue) {
-                    this.kernelUI.symbols.setSymbolInfo(result.name, result.typeName, result.valueText);
+                    this.kernelUI.symbols.setSymbolInfo(
+                        result.identifier.fold(name => name, idx => `Out(${idx})`, (name, idx) => name),
+                        result.typeName,
+                        result.valueText);
                 }
             }
         });
@@ -1024,10 +1027,9 @@ export class NotebookUI {
                         } else if (result instanceof RuntimeError) {
                             cell.setRuntimeError(result.error)
                         } else if (result instanceof Output) {
-                            cell.addResult(result.contentType, result.content)
+                            cell.addOutput(result.contentType, result.content)
                         } else if (result instanceof ResultValue) {
-                            const [mime, content] = result.displayRepr;
-                            cell.addResult(mime, content);
+                            cell.addResult(result);
                         }
                     }
                 )

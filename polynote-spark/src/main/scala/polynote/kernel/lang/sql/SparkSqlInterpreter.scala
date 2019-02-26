@@ -94,11 +94,12 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
     code: String
   ): IO[fs2.Stream[IO, Result]] = {
     val compilerRun = new global.Run
+    val cellIndex = previousCells.size
     val run = for {
       _           <- symbolTable.drain()
       parseResult <- IO.fromEither(parser.parse(cell, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
       resultDF    <- registerTempViews(parseResult.tableIdentifiers).sequence.bracket(_ => IO(spark.sql(code)))(dropTempViews)
-      cellResult   = ResultValue(kernelContext)(s"res$cell", global.typeOf[DataFrame], resultDF, cell)
+      cellResult   = ResultValue.withIndex(kernelContext, cellIndex, global.typeOf[DataFrame], resultDF, cell)
     } yield Stream.emit(cellResult) ++ Stream.eval(outputDataFrame(resultDF))
 
     run.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))

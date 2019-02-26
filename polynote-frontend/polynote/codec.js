@@ -341,6 +341,76 @@ export function arrayCodec(lengthCodec, elementCodec) {
     });
 }
 
+export class Ior {
+    constructor(left, right) {
+        this.left = left;
+        this.right = right;
+    }
+
+    fold(leftFnOrObj, rightFn, bothFn) {
+        const [l, r, b] = (leftFnOrObj.left && leftFnOrObj.right && leftFnOrObj.both)
+                            ? [leftFnOrObj.left, leftFnOrObj.right, leftFnOrObj.both] : [leftFnOrObj, rightFn, bothFn];
+
+        if (this.left !== undefined && this.right !== undefined) {
+            return b(this.left, this.right);
+        } else if (this.left !== undefined) {
+            return l(this.left);
+        } else if (this.right !== undefined) {
+            return r(this.right);
+        } else {
+            throw "Ior defines neither left nor right";
+        }
+    }
+
+    static left(left) {
+        return new Ior(left, undefined);
+    }
+
+    static right(right) {
+        return new Ior(undefined, right);
+    }
+
+    static both(left, right) {
+        return new Ior(left, right);
+    }
+}
+
+export function ior(leftCodec, rightCodec) {
+    const encode = (value, writer) => {
+        if (value.left !== undefined && value.right !== undefined) {
+            writer.writeInt8(2);
+            leftCodec.encode(value.left, writer);
+            rightCodec.encode(value.right, writer);
+        } else if (value.left !== undefined) {
+            writer.writeInt8(0);
+            leftCodec.encode(value.left, writer);
+        } else if (value.right !== undefined) {
+            writer.writeInt8(1);
+            rightCodec.encode(value.right, writer);
+        } else {
+            throw "Neither left nor right of ior is defined"
+        }
+    };
+
+    const decode = (reader) => {
+        const discriminator = reader.readUint8();
+        switch (discriminator) {
+            case 0:
+                return Ior.left(leftCodec.decode(reader));
+            case 1:
+                return Ior.right(rightCodec.decode(reader));
+            case 2:
+                const left = leftCodec.decode(reader);
+                const right = rightCodec.decode(reader);
+                return Ior.both(left, right);
+            default:
+                throw `Invalid discriminator for ior (${discriminator})`
+        }
+    };
+
+    return Object.freeze({encode, decode})
+}
+
 export function mapCodec(lengthCodec, keyCodec, valueCodec) {
     class Pair {
         static unapply(inst) {

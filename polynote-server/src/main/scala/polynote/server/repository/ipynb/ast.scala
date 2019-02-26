@@ -1,12 +1,13 @@
 package polynote.server.repository.ipynb
 
+import cats.data.Ior
 import io.circe._
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.syntax._
 import polynote.data.Rope
 import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
-import polynote.messages.{CellMetadata, Notebook, NotebookCell, NotebookConfig, ShortList, ShortString}
+import polynote.messages.{CellMetadata, Notebook, NotebookCell, NotebookConfig, ShortList, ShortString, TinyString}
 
 sealed trait JupyterCellType
 
@@ -82,15 +83,15 @@ object JupyterOutput {
     result match {
       case Stream(name, text) => Output(s"text/plain; rel=$name", text.mkString)
       case DisplayData(data, metadata) => convertData(data, metadata)
-      case ExecuteResult(_, data, metadata) =>
-        val meta = metadata.map(_.toMap).getOrElse(Map.empty)
-        val name = meta.get("name").flatMap(_.asString).getOrElse("")
-        val typ  = meta.get("type").flatMap(_.asString).getOrElse("")
+      case ExecuteResult(execId, data, metadata) =>
+        val meta  = metadata.map(_.toMap).getOrElse(Map.empty)
+        val ident = meta.get("name").flatMap(_.asString).fold(Ior.right[TinyString, Int](execId))(name => Ior.both(name, execId))
+        val typ   = meta.get("type").flatMap(_.asString).getOrElse("")
         val reprs = data.toList.map {
           case ("text/plain", json) => StringRepr(jsonToStr(json))
           case (mime, json) => MIMERepr(mime, jsonToStr(json))
         }
-        ResultValue(name, typ, reprs, cellId, (), scala.reflect.runtime.universe.NoType)
+        ResultValue(ident, typ, reprs, cellId, (), scala.reflect.runtime.universe.NoType)
       case Error(typ, message, trace) =>
         RuntimeError(RecoveredException(message, typ))
     }
@@ -123,12 +124,19 @@ object JupyterOutput {
       Error(typ, Option(msg).getOrElse(""), Nil) :: Nil
 
     case ClearResults() => Nil
-    case rv @ ResultValue(name, typeName, reprs, _, _, _) if rv.isCellResult =>
+    case rv @ ResultValue(identifier, typeName, reprs, _, _, _) if rv.isCellResult =>
+
       reprs.collect {
         case StringRepr(str) => "text/plain" -> Json.arr(str.linesWithSeparators.toSeq.map(_.asJson): _*)
         case MIMERepr(mimeType, content) => mimeType -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)
       } match {
-        case results => List(ExecuteResult(execId, results.toMap, Some(JsonObject("name" -> name.asJson, "type" -> typeName.asJson))))
+        case results =>
+          val meta = List(
+            identifier.left.map(name => "name" -> name.asJson),
+            Some("type" -> typeName.asJson)
+          ).flatten
+
+          List(ExecuteResult(execId, results.toMap, Some(JsonObject(meta: _*))))
       }
 
     case ResultValue(_, _, _, _, _, _) => Nil

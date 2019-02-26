@@ -2,7 +2,7 @@
 
 import {
     Codec, DataReader, DataWriter, discriminated, combined, arrayCodec,
-    str, shortStr, tinyStr, uint8, uint16, int32
+    str, shortStr, tinyStr, uint8, uint16, int32, ior
 } from './codec.js'
 
 import { ValueRepr, StringRepr, MIMERepr } from './value_repr.js'
@@ -198,12 +198,12 @@ export class ResultValue extends Result {
     static get msgTypeId() { return 4; }
 
     static unapply(inst) {
-        return [inst.name, inst.typeName, inst.reprs, inst.sourceCell];
+        return [inst.identifier, inst.typeName, inst.reprs, inst.sourceCell];
     }
 
-    constructor(name, typeName, reprs, sourceCell) {
-        super(name, typeName, reprs, sourceCell);
-        this.name = name;
+    constructor(identifier, typeName, reprs, sourceCell) {
+        super(identifier, typeName, reprs, sourceCell);
+        this.identifier = identifier;
         this.typeName = typeName;
         if (reprs instanceof Array) { // conditional is so IntelliJ knows it's an array. Dem completions.
             this.reprs = reprs;
@@ -216,6 +216,10 @@ export class ResultValue extends Result {
         const index = this.reprs.findIndex(repr => repr instanceof StringRepr);
         if (index < 0) return "";
         return this.reprs[index].string;
+    }
+
+    get name() {
+        return this.identifier.left;
     }
 
     /**
@@ -236,7 +240,7 @@ export class ResultValue extends Result {
     }
 }
 
-ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), tinyStr).to(ResultValue);
+ResultValue.codec = combined(ior(tinyStr, int32), tinyStr, arrayCodec(uint8, ValueRepr.codec), tinyStr).to(ResultValue);
 
 Result.codecs = [
   Output,
