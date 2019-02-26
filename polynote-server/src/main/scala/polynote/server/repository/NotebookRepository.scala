@@ -5,7 +5,9 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
 
 import scala.collection.JavaConverters._
 import cats.effect.{ContextShift, IO}
-import polynote.messages.{Notebook, NotebookCell, ShortList, ShortString}
+import polynote.config.DependencyConfigs
+import polynote.messages.{Notebook, NotebookCell, NotebookConfig, ShortList, ShortString}
+import polynote.server.ServerConfig
 
 import scala.concurrent.ExecutionContext
 
@@ -27,6 +29,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   def path: Path
   def chunkSize: Int
   def executionContext: ExecutionContext
+  def serverConfig: ServerConfig
 
   protected def pathOf(relativePath: String): Path = path.resolve(relativePath)
 
@@ -69,26 +72,27 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     fullPath.dropWhile(elem => nbPath.contains(elem)).length
   }
 
+  def emptyNotebook(path: String, title: String): Notebook = Notebook(
+    ShortString(path),
+    ShortList(
+      NotebookCell("Cell0", "text", s"# $title\n\nThis is a text cell. Start editing!") :: Nil
+    ),
+    Some(NotebookConfig(Option(serverConfig.dependencies.asInstanceOf[DependencyConfigs]), Option(serverConfig.repositories)))
+  )
+
   def createNotebook(relativePath: String): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
 
     val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
-    val emptyNotebook = Notebook(
-      ShortString(extPath),
-      ShortList(
-        NotebookCell("Cell0", "text", s"# $defaultTitle\n\nThis is a text cell. Start editing!") :: Nil
-      ),
-      None
-    )
 
     if (relativeDepth(relativePath) > maxDepth) {
       IO.raiseError(new IllegalArgumentException(s"Input path ($relativePath) too deep, maxDepth is $maxDepth"))
     } else {
       notebookExists(extPath).flatMap {
         case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
-        case false => saveNotebook(extPath, emptyNotebook).map {
+        case false => saveNotebook(extPath, emptyNotebook(extPath, defaultTitle)).map {
           _ => extPath
         }
       }

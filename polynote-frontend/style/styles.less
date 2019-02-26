@@ -1567,9 +1567,8 @@ button {
   }
 
   .resolver-row {
-    input {
-      width: 33em;
-    }
+    display: grid;
+    grid-template-columns: 7em 2fr 1fr 1fr 32px;
 
     select {
       width: 7em;
@@ -1582,7 +1581,7 @@ button {
 
   .resolver-row.ivy {
     input.ivy {
-      display: inline-block;
+      display: block;
     }
   }
 

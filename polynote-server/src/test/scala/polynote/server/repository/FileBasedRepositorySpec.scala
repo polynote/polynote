@@ -5,6 +5,7 @@ import java.nio.file.{FileAlreadyExistsException, Files, Path, Paths}
 import cats.effect.{ContextShift, IO}
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.messages.Notebook
+import polynote.server.ServerConfig
 
 import scala.concurrent.ExecutionContext
 
@@ -115,6 +116,7 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers {
 
 class SimpleFileBasedRepo extends FileBasedRepository {
   val tmp: Path = Files.createTempDirectory(getClass.getSimpleName)
+  val serverConfig: ServerConfig = ServerConfig()
 
   sys.addShutdownHook(cleanup())
 
