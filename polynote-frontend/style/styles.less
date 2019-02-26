@@ -1322,6 +1322,12 @@ button {
     }
   }
 
+  &.disconnected h2 {
+    .kill, .start {
+      display: none !important;
+    }
+  }
+
   .kernel-tasks {
     grid-area: tasks;
     .task {
