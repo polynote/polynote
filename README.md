@@ -72,6 +72,19 @@ The scripts won't install anything on your local machine, so you will need to ma
     - [webpack](https://webpack.js.org/) `npm install webpack` 
     - [markdown-it](https://www.npmjs.com/package/markdown-it) `npm install markdown-it`
     
+    
+## Development tips
+
+### UI development
+
+To watch UI assets and reload them after making changes, run Polynote with the `--watch` flag and then run:
+
+    cd polynote-frontend/
+    npm run watch
+    
+Now, the UI will get packaged every time you make a change, so you can run Polynote and load new UI code by simply 
+refreshing the browser. 
+
 ## Documentation
 
 TODO
