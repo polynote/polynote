@@ -53,6 +53,7 @@ val `polynote-kernel` = project.settings(
     "org.scodec" %% "scodec-core" % "1.10.3",
     "io.circe" %% "circe-yaml" % "0.9.0",
     "io.circe" %% "circe-generic" % "0.10.0",
+    "io.circe" %% "circe-generic-extras" % "0.10.0",
     "io.get-coursier" %% "coursier" % "1.1.0-M9",
     "io.get-coursier" %% "coursier-cache" % "1.1.0-M9"
   )
@@ -66,7 +67,6 @@ val `polynote-server` = project.settings(
     "org.http4s" %% "http4s-dsl" % versions.http4s,
     "org.http4s" %% "http4s-blaze-server" % versions.http4s,
     "org.scodec" %% "scodec-core" % "1.10.3",
-    "io.circe" %% "circe-generic-extras" % "0.10.0",
     "io.circe" %% "circe-parser" % "0.10.0",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",

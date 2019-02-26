@@ -397,6 +397,7 @@ export class NotebookConfigUI extends EventTarget {
                         if (this.lastConfig) {
                             this.setConfig(this.lastConfig);
                         }
+                        this.el.classList.remove("open");
                     })
                 ])
             ])
@@ -453,8 +454,24 @@ export class NotebookConfigUI extends EventTarget {
         this.resolverContainer.insertBefore(row, this.resolverRowTemplate);
     }
 
+    clearConfig() {
+        while (this.dependencyContainer.childNodes.length > 0) {
+            this.dependencyContainer.removeChild(this.dependencyContainer.childNodes[0]);
+        }
+        this.dependencyContainer.appendChild(this.dependencyRowTemplate);
+        [...this.dependencyContainer.querySelectorAll('input')].forEach(input => input.value = '');
+
+        while (this.resolverContainer.childNodes.length > 0) {
+            this.resolverContainer.removeChild(this.resolverContainer.childNodes[0]);
+        }
+        this.resolverContainer.appendChild(this.resolverRowTemplate);
+        [...this.resolverContainer.querySelectorAll('input')].forEach(input => input.value = '');
+    }
+
     setConfig(config) {
         this.lastConfig = config;
+        this.clearConfig();
+
         if (config.dependencies && config.dependencies.scala) {
             for (const dep of config.dependencies.scala) {
                 this.addDependency(dep);

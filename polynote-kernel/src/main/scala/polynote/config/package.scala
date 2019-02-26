@@ -3,7 +3,9 @@ package polynote
 import io.circe.{Decoder, ObjectEncoder}
 import polynote.messages.{TinyList, TinyMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
-import io.circe.generic.semiauto._
+import io.circe.generic.extras.JsonKey
+import io.circe.generic.extras.semiauto._
+import io.circe.generic.extras.defaults._
 import scodec.Codec
 
 package object config {
@@ -12,13 +14,15 @@ package object config {
   sealed trait RepositoryConfig
   final case class ivy(
     base: String,
-    artifactPatternOpt: Option[String] = None,
-    metadataPatternOpt: Option[String] = None,
+    @JsonKey("artifact_pattern") artifactPatternOpt: Option[String] = None,
+    @JsonKey("metadata_pattern") metadataPatternOpt: Option[String] = None,
     changing: Option[Boolean] = None
   ) extends RepositoryConfig {
 
     def artifactPattern: String = artifactPatternOpt.getOrElse("[orgPath]/[module](_[scalaVersion])(_[sbtVersion])/[revision]/[artifact]-[revision](-[classifier]).[ext]")
     def metadataPattern: String = metadataPatternOpt.getOrElse("[orgPath]/[module](_[scalaVersion])(_[sbtVersion])/[revision]/[module](_[scalaVersion])(_[sbtVersion])-[revision]-ivy.xml")
+
+
   }
 
   object ivy {
