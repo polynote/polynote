@@ -35,17 +35,22 @@ trait Server extends IOApp with Http4sDsl[IO] {
 
   protected lazy val kernelFactory: KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters)
 
-  def serveFile(path: String, req: Request[IO])(implicit syncIO: Sync[IO]): IO[Response[IO]] = {
-    StaticFile.fromResource(path, executionContext, Some(req)).getOrElseF(NotFound())
+  def serveFile(path: String, req: Request[IO], watchUI: Boolean)(implicit syncIO: Sync[IO]): IO[Response[IO]] = {
+    if (watchUI) {
+      val outputLoc = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/$path").toString
+      StaticFile.fromString(outputLoc, executionContext, Some(req)).getOrElseF(NotFound())
+    } else {
+      StaticFile.fromResource(path, executionContext, Some(req)).getOrElseF(NotFound())
+    }
   }
 
-  def route(notebookManager: NotebookManager[IO])(implicit timer: Timer[IO]): HttpRoutes[IO] = {
+  def route(notebookManager: NotebookManager[IO], watchUI: Boolean)(implicit timer: Timer[IO]): HttpRoutes[IO] = {
     HttpRoutes.of[IO] {
       case GET -> Root / "ws" => SocketSession(notebookManager).flatMap(_.toResponse)
-      case req @ GET -> Root  => serveFile(indexFile, req)
-      case req @ GET -> "notebook" /: _ => serveFile(indexFile, req)
+      case req @ GET -> Root  => serveFile(indexFile, req, watchUI)
+      case req @ GET -> "notebook" /: _ => serveFile(indexFile, req, watchUI)
       case req @ GET -> path  =>
-        serveFile(path.toString, req)
+        serveFile(path.toString, req, watchUI)
     }
   }
 
@@ -88,7 +93,7 @@ trait Server extends IOApp with Http4sDsl[IO] {
     exitCode        <- BlazeBuilder[IO]
                         .bindHttp(port, address)
                         .withWebSockets(true)
-                        .mountService(route(notebookManager), "/")
+                        .mountService(route(notebookManager, args.watchUI), "/")
                         .serve
                         .compile
                         .toList
@@ -102,12 +107,14 @@ trait Server extends IOApp with Http4sDsl[IO] {
 object Server {
 
   case class Args(
-    configFile: File = new File("config.yml")
+    configFile: File = new File("config.yml"),
+    watchUI: Boolean = false
   ) extends ServerArgs
 
   private def parseArgs(args: List[String], current: Args = Args()): Either[Throwable, Args] = args match {
     case Nil => Right(current)
     case ("--config" | "-c") :: filename :: rest => parseArgs(rest, current.copy(configFile = new File(filename)))
+    case ("--watch"  | "-w") :: rest => parseArgs(rest, current.copy(watchUI = true))
     case other :: rest => Left(new IllegalArgumentException(s"Unknown argument $other"))
   }
 
@@ -115,6 +122,7 @@ object Server {
 
 trait ServerArgs {
   def configFile: File
+  def watchUI: Boolean
 }
 
 
