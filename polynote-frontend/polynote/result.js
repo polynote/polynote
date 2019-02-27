@@ -198,12 +198,12 @@ export class ResultValue extends Result {
     static get msgTypeId() { return 4; }
 
     static unapply(inst) {
-        return [inst.identifier, inst.typeName, inst.reprs, inst.sourceCell];
+        return [inst.name, inst.typeName, inst.reprs, inst.sourceCell];
     }
 
-    constructor(identifier, typeName, reprs, sourceCell) {
-        super(identifier, typeName, reprs, sourceCell);
-        this.identifier = identifier;
+    constructor(name, typeName, reprs, sourceCell) {
+        super(name, typeName, reprs, sourceCell);
+        this.name = name;
         this.typeName = typeName;
         if (reprs instanceof Array) { // conditional is so IntelliJ knows it's an array. Dem completions.
             this.reprs = reprs;
@@ -216,10 +216,6 @@ export class ResultValue extends Result {
         const index = this.reprs.findIndex(repr => repr instanceof StringRepr);
         if (index < 0) return "";
         return this.reprs[index].string;
-    }
-
-    get name() {
-        return this.identifier.left;
     }
 
     /**
@@ -240,7 +236,7 @@ export class ResultValue extends Result {
     }
 }
 
-ResultValue.codec = combined(ior(tinyStr, int32), tinyStr, arrayCodec(uint8, ValueRepr.codec), tinyStr).to(ResultValue);
+ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), tinyStr).to(ResultValue);
 
 Result.codecs = [
   Output,

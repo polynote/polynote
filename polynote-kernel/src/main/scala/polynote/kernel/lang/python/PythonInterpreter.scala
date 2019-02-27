@@ -173,7 +173,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
         jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
         val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
 
-        val resultName = s"res$cell"
+        val resultName = "Out"
         val maybeModifiedCode = if (lastIsExpr) {
           val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
           val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
@@ -209,21 +209,8 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
   }
 
   def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, ResultValue] = {
-    val cellIndex = try sourceCellId.stripPrefix("Cell").toInt catch {
-      case err: Throwable => -1
-    }
-
     decls.map {
-      // TODO avoid creating the resCellX variable, instead evaluate the last expression separately
-      case name if cellIndex != -1 && name == s"res$sourceCellId" => name -> {
-        getPyResult(name) match {
-          case (value, Some(typ)) =>
-            ResultValue.withIndex(kernelContext, name, cellIndex, typ, value, sourceCellId)
-          case (value, _) =>
-            ResultValue.withIndex(kernelContext, name, cellIndex, value, sourceCellId)
-        }
-      }
-      case name => name -> {
+      name => name -> {
         getPyResult(name) match {
           case (value, Some(typ)) =>
             ResultValue(kernelContext, name, typ, value, sourceCellId)

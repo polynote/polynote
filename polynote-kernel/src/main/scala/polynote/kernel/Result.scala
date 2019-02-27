@@ -140,7 +140,7 @@ object ClearResults extends ResultCompanion[ClearResults](3)
 
 // TODO: fix the naming of these classes
 final case class ResultValue(
-  identifier: Ior[TinyString, Int],
+  name: TinyString,
   typeName: TinyString,
   reprs: TinyList[ValueRepr],
   sourceCell: TinyString,
@@ -148,10 +148,7 @@ final case class ResultValue(
   scalaType: Universe#Type
 ) extends Result {
 
-  def name: Option[TinyString] = identifier.left
-  def index: Option[Int] = identifier.right
-
-  def isCellResult: Boolean = index.isDefined
+  def isCellResult: Boolean = name == "Out"
 
 }
 
@@ -165,28 +162,12 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
 
   def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: String): ResultValue = {
     val (globalType, typeStr) = toGlobalType(ctx, typ)
-    ResultValue(Ior.left(name), typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ)
+    ResultValue(name, typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ)
   }
 
   def apply(ctx: KernelContext, name: String, value: Any, sourceCell: String): ResultValue =
     apply(ctx, name, ctx.inferType(value), value, sourceCell)
 
-  def withIndex(ctx: KernelContext, name: Option[String], index: Int, typ: Universe#Type, value: Any, sourceCell: String): ResultValue = {
-    val (globalType, typeStr) = toGlobalType(ctx, typ)
-    ResultValue(name.fold(Ior.right[TinyString, Int](index))(name => Ior.both(name, index)), typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ)
-  }
-
-  def withIndex(ctx: KernelContext, name: String, index: Int, typ: Universe#Type, value: Any, sourceCell: String): ResultValue =
-    withIndex(ctx, Some(name), index, typ, value, sourceCell)
-
-  def withIndex(ctx: KernelContext, index: Int, typ: Universe#Type, value: Any, sourceCell: String): ResultValue =
-    withIndex(ctx, None, index, typ, value, sourceCell)
-
-  def withIndex(ctx: KernelContext, name: String, index: Int, value: Any, sourceCell: String): ResultValue =
-    withIndex(ctx, name, index, ctx.inferType(value), value, sourceCell)
-
-  def withIndex(ctx: KernelContext, index: Int, value: Any, sourceCell: String): ResultValue =
-    withIndex(ctx, index, ctx.inferType(value), value, sourceCell)
 
   // manual codec - we'll never encode nor decode `value` nor `scalaType`.
   /*
@@ -200,12 +181,12 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
       but it seems prudent to raise an alarm if we're trying to decode a ResultValue, because we shouldn't be. Maybe
       at some point if there is a client-side interpreter (i.e. JavaScript up in your browser) this would be a thing?
    */
-  implicit val codec: Codec[ResultValue] = (iorCodec[TinyString, Int] ~ tinyStringCodec ~ tinyListCodec[ValueRepr] ~ tinyStringCodec).xmap(
+  implicit val codec: Codec[ResultValue] = (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec[ValueRepr] ~ tinyStringCodec).xmap(
     _ => throw new UnsupportedOperationException(
       s"Shouldn't be decoding a ${classOf[ResultValue].getSimpleName} on the server!"
       // the reflection is so this message can participate in refactoring of ResultValue's name, which is likely.
     ),
-    v => (((v.identifier, v.typeName), v.reprs), v.sourceCell)
+    v => (((v.name, v.typeName), v.reprs), v.sourceCell)
   )
 
 }

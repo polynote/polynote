@@ -980,7 +980,7 @@ export class NotebookUI {
 
                 if (result instanceof ResultValue) {
                     this.kernelUI.symbols.setSymbolInfo(
-                        result.identifier.fold(name => name, idx => `Out(${idx})`, (name, idx) => name),
+                        result.name,
                         result.typeName,
                         result.valueText);
                 }

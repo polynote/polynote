@@ -85,8 +85,7 @@ export class Cell extends UIEventTarget {
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
                 div(['cell-input-tools'], [
-                    div(['run-cell', 'in-ident'], [span(['icon', 'fas'], ''), `In (${this.cellIndex}):`]),
-                    //iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
+                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
                 this.editorEl = div(['cell-input-editor'], [])
@@ -166,7 +165,8 @@ export class CodeCell extends Cell {
             fontLigatures: true,
             contextmenu: false,
             fixedOverflowWidgets: true,
-            lineNumbers: false, // TODO: preferences to enable line numbers
+            lineNumbers: true,
+            lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
         });
 
@@ -376,14 +376,14 @@ export class CodeCell extends Cell {
     addResult(result) {
         if (result instanceof ResultValue) {
             // TODO: keep "result" and "output" separate for UI... have a way to show declarations, results, outputs, etc. separately
-            if (result.name) {
+            if (result.name !== "Out") {
                 // don't display this; it's a named declaration
                 // TODO: have a way to display these if desired
             } else {
                 // TODO: have a UI to look at other reprs
                 const [mime, content] = result.displayRepr;
                 this.addOutput(mime, content).then(el => {
-                    const ident = div(['out-ident'], `Out(${result.identifier.right}):`);
+                    const ident = div(['out-ident'], `Out:`);
                     el.insertBefore(ident, el.childNodes[0]);
                 });
             }

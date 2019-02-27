@@ -117,8 +117,6 @@ class ScalaInterpreter(
                     // don't publish if the type is Unit
                     if (accessor.info.finalResultType <:< global.typeOf[Unit])
                       None
-                    else if (source.resultName.exists(_.decodedName.toString == name))
-                      Some(ResultValue.withIndex(kernelContext, cellIndex, tpe, value, cell))
                     else
                       Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, cell))
 
