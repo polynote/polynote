@@ -2,9 +2,10 @@ package polynote
 
 import java.nio.charset.StandardCharsets
 
+import cats.data.Ior
 import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
 import scodec.Codec
-import scodec.codecs.{listOfN, string, uint16, uint8, variableSizeBytes}
+import scodec.codecs.{listOfN, string, uint16, uint8, variableSizeBytes, byte}
 import shapeless.Lazy
 import shapeless.tag.@@
 
@@ -91,4 +92,10 @@ package object messages {
 
   implicit def tinyMapEncoder[A, B](implicit enc: Encoder[Map[A, B]]): Encoder[TinyMap[A, B]] = enc.contramap(m => m)
   implicit def tinyMapDecoder[A, B](implicit dec: Decoder[Map[A, B]]): Decoder[TinyMap[A, B]] = dec.map(m => TinyMap(m))
+
+  implicit def iorCodec[A, B](implicit codecA: Codec[A], codecB: Codec[B]): Codec[Ior[A, B]] =
+    scodec.codecs.discriminated[Ior[A, B]].by(byte)
+    .|(0) { case Ior.Left(a) => a } (Ior.left) (codecA)
+    .|(1) { case Ior.Right(b) => b } (Ior.right) (codecB)
+    .|(2) { case Ior.Both(a, b) => (a, b) } ((Ior.both[A, B] _).tupled) (codecA ~ codecB)
 }

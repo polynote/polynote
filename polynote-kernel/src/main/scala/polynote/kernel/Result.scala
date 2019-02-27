@@ -2,6 +2,7 @@ package polynote.kernel
 
 import java.nio.charset.{Charset, StandardCharsets}
 
+import cats.data.Ior
 import cats.effect.IO
 import scodec.{Attempt, Codec, DecodeResult, Err}
 import scodec.codecs._
@@ -10,7 +11,7 @@ import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import polynote.kernel.util.{KernelContext, SymbolDecl}
-import polynote.messages.{TinyList, TinyString, tinyListCodec, tinyStringCodec, truncateTinyString}
+import polynote.messages.{TinyList, TinyString, tinyListCodec, tinyStringCodec, truncateTinyString, iorCodec}
 import scodec.bits.BitVector
 
 import scala.collection.mutable.ListBuffer
@@ -136,6 +137,7 @@ final case class ClearResults() extends Result
 
 object ClearResults extends ResultCompanion[ClearResults](3)
 
+
 // TODO: fix the naming of these classes
 final case class ResultValue(
   name: TinyString,
@@ -146,24 +148,26 @@ final case class ResultValue(
   scalaType: Universe#Type
 ) extends Result {
 
-  // TODO: better way to handle "the result" of the cell. Maybe name should be optional?
-  def isCellResult: Boolean = name startsWith "res"
+  def isCellResult: Boolean = name == "Out"
 
 }
 
 object ResultValue extends ResultCompanion[ResultValue](4) {
-
-  def apply(ctx: KernelContext)(name: String, typ: Universe#Type, value: Any, sourceCell: String): ResultValue = {
+  private def toGlobalType(ctx: KernelContext, typ: Universe#Type): (ctx.global.Type, String) = {
     val globalType = try typ.asInstanceOf[ctx.global.Type] catch {
       case err: ClassCastException => throw new RuntimeException(s"Type $typ is being used in a foreign kernel", err)
     }
+    globalType -> ctx.formatType(globalType)
+  }
 
-    val typeStr = ctx.formatType(globalType)
+  def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: String): ResultValue = {
+    val (globalType, typeStr) = toGlobalType(ctx, typ)
     ResultValue(name, typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ)
   }
 
   def apply(ctx: KernelContext, name: String, value: Any, sourceCell: String): ResultValue =
-    apply(ctx)(name, ctx.inferType(value), value, sourceCell)
+    apply(ctx, name, ctx.inferType(value), value, sourceCell)
+
 
   // manual codec - we'll never encode nor decode `value` nor `scalaType`.
   /*

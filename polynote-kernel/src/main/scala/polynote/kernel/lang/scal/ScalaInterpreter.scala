@@ -67,6 +67,9 @@ class ScalaInterpreter(
   ): IO[Stream[IO, Result]] = {
     val originalOut = System.out
 
+    // TODO: this is wrong. It doesn't seem good to keep parsing this from "CellXX" though. Maybe cells also (or only?) need a numeric ID?
+    val cellIndex = previousCells.size
+
     val source = new ScalaSource[this.type](this)(cell, visibleSymbols.toSet, previousCells.collect(previousSources).toList, code)
     interpreterLock.acquire.bracket { _ =>
       IO.fromEither(source.compile).flatMap {
@@ -77,7 +80,7 @@ class ScalaInterpreter(
             val resultQ = new EnqueueSome(maybeResultQ)
 
             val symType = sym.asModule.toType
-            val run = IO(importToRuntime.importSymbol(sym)).flatMap {
+            val run = IO(importToRuntime.importSymbol(sym)).map {
               runtimeSym =>
 
                 val moduleMirror = try runtimeMirror.reflectModule(runtimeSym.asModule) catch {
@@ -97,7 +100,7 @@ class ScalaInterpreter(
                 // collect term definitions and values from the cell's object, and publish them to the symbol table
                 // TODO: We probably also want to publish some output for types, like "Defined class Foo" or "Defined type alias Bar".
                 //       But the class story is still WIP (i.e. we might want to pull them out of cells into the notebook package)
-                val syms = symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor && !d.isSetter).collect {
+                symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor && !d.isSetter).collect {
 
                   case accessor if accessor.isGetter || (accessor.isMethod && !accessor.isOverloaded && accessor.asMethod.paramLists.isEmpty && accessor.isStable) =>
                     // if the decl is a val, evaluate it and push it to the symbol table
@@ -115,7 +118,7 @@ class ScalaInterpreter(
                     if (accessor.info.finalResultType <:< global.typeOf[Unit])
                       None
                     else
-                      Some(ResultValue(kernelContext)(accessor.name.toString, tpe, value, cell))
+                      Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, cell))
 
                   case method if method.isMethod =>
                     // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
@@ -150,19 +153,11 @@ class ScalaInterpreter(
                       runtimeTools.eval(tree) -> typ
                     }
                     val methodType = importFromRuntime.importType(fnType)
-                    Some(ResultValue(kernelContext)(method.name.toString, methodType, runtimeFn, cell))
+
+                    // I guess we're saying a "def" shouldn't become the cell result?
+                    Some(ResultValue(kernelContext, method.name.toString, methodType, runtimeFn, cell))
 
                 }.flatten
-
-                val maybeOutput = syms.find(_.name.startsWith("res"))
-
-                def stringRepr(value: ResultValue): TinyString = // TODO: from reprs?
-                  Option(value).map(_.value).flatMap(Option(_)).map(_.toString).getOrElse("")
-
-                maybeOutput
-                  .map(rv => resultQ.enqueue1(Output("text/plain; rel=decl; lang=scala", s"${rv.name}: ${rv.typeName} = ${stringRepr(rv)}")))
-                  .getOrElse(IO.unit)
-                  .as(syms)
             }
 
             val saveSource = IO.delay[Unit](previousSources.put(cell, source))

@@ -185,6 +185,12 @@ export function table(classes, contentSpec) {
                     appendContent(cell, value);
                 }
             }
+            const nextSibling = tr.nextSibling;
+            const parentNode = tr.parentNode;
+            if (parentNode) {
+                parentNode.removeChild(tr);
+                parentNode.insertBefore(tr, nextSibling);   // re-trigger the highlight animation
+            }
         };
 
         return tr;

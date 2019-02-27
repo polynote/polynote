@@ -100,12 +100,12 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       trees.last match {
         case global.ValDef(mods, name, _, _) if !mods.isPrivate => (Some(name), trees)
         case t@global.ValDef(mods, name, tpt, _) =>
-          val accessorName = global.TermName(s"res$id")
+          val accessorName = global.TermName("Out")
           val pos = t.pos.withStart(t.pos.end)
           (Some(accessorName), trees.dropRight(1) :+
             global.ValDef(global.Modifiers(), accessorName, tpt, global.Ident(name).setPos(pos)).setPos(pos))
         case expr if expr.isTerm =>
-          val accessorName = global.TermName(s"res$id")
+          val accessorName = global.TermName("Out")
           (Some(accessorName), trees.dropRight(1) :+
             global.ValDef(global.Modifiers(), accessorName, global.TypeTree(global.NoType), expr).setPos(expr.pos))
         case _ => (None, trees)

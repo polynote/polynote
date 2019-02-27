@@ -2,7 +2,7 @@
 
 import {
     Codec, DataReader, DataWriter, discriminated, combined, arrayCodec,
-    str, shortStr, tinyStr, uint8, uint16, int32
+    str, shortStr, tinyStr, uint8, uint16, int32, ior
 } from './codec.js'
 
 import { ValueRepr, StringRepr, MIMERepr } from './value_repr.js'
