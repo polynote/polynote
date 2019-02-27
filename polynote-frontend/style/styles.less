@@ -272,28 +272,6 @@ body {
   .cell-input {
     position: relative;
 
-    .in-ident {
-      color: #303F9F;
-      font-family: @code-fonts;
-      font-size: 11pt;
-      text-align: right;
-      line-height: 11pt;
-      vertical-align: middle;
-      cursor: pointer;
-
-      .icon {
-        font-size: 8pt;
-        line-height: 11pt;
-        vertical-align: middle;
-        float: left;
-        visibility: hidden;
-      }
-
-      &:hover .icon {
-        visibility: visible;
-      }
-    }
-
     .cell-input-tools {
       position: absolute;
       left: 0;
@@ -304,6 +282,11 @@ body {
       border: 1px solid @ui-border;
       padding: 4px;
       box-sizing: border-box;
+
+      button {
+        display: block;
+        margin: 0 auto;
+      }
 
       button.run-cell.refresh .icon {
         font-size: 8px;

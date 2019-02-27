@@ -66,10 +66,10 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         "kernel" -> polynote.runtime.Runtime,
         "x" -> 1,
         "y" -> 2,
-        "restest" -> 3
+        "Out" -> 3
       )
 
-      output should contain only Output("text/plain; rel=decl; lang=python", "restest = 3")
+      output shouldBe empty
       displayed shouldBe empty
     }
   }
@@ -89,12 +89,11 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         "x" -> 1,
         "y" -> 2,
         "answer" -> 3,
-        "restest" -> 3
+        "Out" -> 3
       )
 
       output should contain theSameElementsAs Seq(
-        Output("text/plain; rel=stdout", "1 + 2 = 3"),
-        Output("text/plain; rel=decl; lang=python", "restest = 3")
+        Output("text/plain; rel=stdout", "1 + 2 = 3")
       )
       displayed shouldBe empty
     }
