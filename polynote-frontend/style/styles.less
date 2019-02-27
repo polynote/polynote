@@ -51,7 +51,7 @@ body {
 
 }
 
-#Toolbar {
+.toolbar-container {
   height: @toolbar-height;
   background: @ui-background;
   border-bottom: 1px solid @ui-border;
@@ -64,6 +64,35 @@ body {
   top: 0;
   left: 0;
   right: 0;
+
+  .text {
+    display: none;
+  }
+
+  &.editing-text .text {
+    display: block;
+  }
+
+  .code {
+    display: none;
+  }
+
+  &.editing-code .code {
+    display: block;
+  }
+
+  .toolbar.settings {
+    float: right;
+  }
+
+  .floating-menu {
+    border: 1px #c2c2c2 solid;
+    background: white;
+    position: absolute;
+    display: none;
+    padding: 4px;
+    user-select: text;
+  }
 
   .toolbar {
     //min-width: 120px;
@@ -232,29 +261,6 @@ body {
   }
 }
 
-#Toolbar #Toolbar-Text {
-  display: none;
-
-
-}
-
-//#Toolbar-Cell .cell-language {
-//  float: right;
-//  margin-left: 1em;
-//  margin-top: -.5em;
-//}
-
-#Toolbar.editing-text #Toolbar-Text {
-  display: block;
-}
-
-#Toolbar #Toolbar-Code {
-  display: none;
-}
-
-#Toolbar.editing-code #Toolbar-Code {
-  display: block;
-}
 
 .cell-container {
   margin: 1em 0;
@@ -1166,6 +1172,13 @@ button {
     border-color: @ui-border-dark;
     outline: 0;
   }
+
+  &:disabled {
+    pointer-events:none;
+    .icon {
+      color: gray;
+    }
+  }
 }
 
 
@@ -1285,12 +1298,18 @@ button {
   .ui-panel-content {
     display: inline-block;
     grid-area: body;
+    overflow-y: auto;
   }
 }
 
 .kernel-ui {
   background-color: @ui-background;
   border-left: 1px solid @ui-border;
+
+  // so the ui-panel-content can scroll properly
+  position: absolute;
+  max-height: 100%;
+  width: 100%;
 
   > .ui-panel-content {
     grid-template-areas: "info" "symbols" "tasks";
@@ -1642,15 +1661,18 @@ button {
   display: grid;
   grid-template-rows: 1fr;
   grid-template-columns: 1fr;
+  position: relative;
+  background-color: @ui-background;
 }
 
-.main-ui {
+.split-view {
   position: absolute;
   top: 68px;
   bottom: 0;
   left: 0;
   right: 0;
   grid-template-rows: 100%;
+  overflow: hidden;
 }
 
 .tab-view {
@@ -1694,8 +1716,6 @@ button {
 }
 
 .tree-view {
-  border: 1px solid @ui-border;
-  background: white;
 
   ul {
     margin: 0;
@@ -1775,12 +1795,23 @@ button {
 }
 
 .notebooks-list {
+  position: relative;
+  border: 1px solid @ui-border;
+  background: white;
+
   button.create-notebook {
     color: green;
   }
 
   .tree-view {
     padding: .5em 0;
+  }
+
+  .ui-panel-content {
+    position: absolute;
+    min-width: 100%;
+    max-height: 100%;
+
   }
 }
 
