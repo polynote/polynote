@@ -728,7 +728,7 @@ export class NotebookUI {
 
         this.cellUI.addEventListener('InsertCellAfter', evt => {
            const current = this.cellUI.cells[evt.detail.cellId] || this.cellUI.cells[this.cellUI.el.querySelector('.cell-container').id];
-           const nextId = "Cell" + this.cellUI.cellCount;
+           const nextId = this.cellUI.cellCount;
            const newCell = current.language === 'text' ? new TextCell(nextId, '', 'text') : new CodeCell(nextId, '', current.language);
            this.socket.send(new messages.InsertCell(path, this.globalVersion, this.localVersion++, new messages.NotebookCell(newCell.id, newCell.language, ''), current.id));
            this.cellUI.insertCell(newCell, current);

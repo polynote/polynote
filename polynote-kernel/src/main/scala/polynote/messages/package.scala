@@ -98,4 +98,9 @@ package object messages {
     .|(0) { case Ior.Left(a) => a } (Ior.left) (codecA)
     .|(1) { case Ior.Right(b) => b } (Ior.right) (codecB)
     .|(2) { case Ior.Both(a, b) => (a, b) } ((Ior.both[A, B] _).tupled) (codecA ~ codecB)
+
+  // alias for Cell ID type so we can more easily change it (if needed)
+  type CellID = Short
+
+  implicit def int2cellId(i: Int): CellID = i.toShort
 }

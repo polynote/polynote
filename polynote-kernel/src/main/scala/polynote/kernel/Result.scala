@@ -11,7 +11,7 @@ import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import polynote.kernel.util.{KernelContext, SymbolDecl}
-import polynote.messages.{TinyList, TinyString, tinyListCodec, tinyStringCodec, truncateTinyString, iorCodec}
+import polynote.messages.{CellID, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
 import scodec.bits.BitVector
 
 import scala.collection.mutable.ListBuffer
@@ -143,7 +143,7 @@ final case class ResultValue(
   name: TinyString,
   typeName: TinyString,
   reprs: TinyList[ValueRepr],
-  sourceCell: Short,
+  sourceCell: CellID,
   value: Any,
   scalaType: Universe#Type
 ) extends Result {
@@ -160,12 +160,12 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
     globalType -> ctx.formatType(globalType)
   }
 
-  def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: Short): ResultValue = {
+  def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: CellID): ResultValue = {
     val (globalType, typeStr) = toGlobalType(ctx, typ)
     ResultValue(name, typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ)
   }
 
-  def apply(ctx: KernelContext, name: String, value: Any, sourceCell: Short): ResultValue =
+  def apply(ctx: KernelContext, name: String, value: Any, sourceCell: CellID): ResultValue =
     apply(ctx, name, ctx.inferType(value), value, sourceCell)
 
 

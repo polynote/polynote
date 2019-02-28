@@ -5,12 +5,13 @@ import org.antlr.v4.runtime.atn.ATNSimulator
 import org.antlr.v4.runtime._
 import org.apache.spark.sql.catalyst.parser._
 import polynote.kernel.{CompileErrors, KernelReport, Pos}
+import polynote.messages.CellID
 
 import scala.collection.mutable.ListBuffer
 
 class Parser {
 
-  def parse(cellId: Short, sql: String): Ior[CompileErrors, Parser.Result] = {
+  def parse(id: CellID, sql: String): Ior[CompileErrors, Parser.Result] = {
      val lexer = new SqlBaseLexer(new org.antlr.v4.runtime.ANTLRInputStream(sql) {
        override def LA(i: Int): Int = {
          val la = super.LA(i)
@@ -25,7 +26,7 @@ class Parser {
 
     parser.addErrorListener(new BaseErrorListener {
       override def syntaxError(recognizer: Recognizer[_, _], offendingSymbol: AnyRef, line: Int, charPositionInLine: Int, msg: String, e: RecognitionException): Unit = {
-        errors += report(cellId, msg, e)
+        errors += report(id, msg, e)
       }
     })
 
@@ -49,15 +50,15 @@ class Parser {
       }
     } catch {
       case err: RecognitionException =>
-        errors += report(cellId, err.getMessage, err)
+        errors += report(id, err.getMessage, err)
         Ior.left(CompileErrors(errors.toList))
     }
 
   }
 
-  private def report(cellId: Short, msg: String, err: RecognitionException): KernelReport = {
+  private def report(id: CellID, msg: String, err: RecognitionException): KernelReport = {
     val token = err.getOffendingToken
-    val pos = Pos(s"Cell$cellId", token.getStartIndex, token.getStopIndex, token.getStartIndex)
+    val pos = Pos(s"Cell$id", token.getStartIndex, token.getStopIndex, token.getStartIndex)
     KernelReport(pos, msg, KernelReport.Error)
   }
 }

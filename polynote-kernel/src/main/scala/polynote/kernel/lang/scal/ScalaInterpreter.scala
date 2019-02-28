@@ -15,7 +15,7 @@ import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util._
-import polynote.messages.{CellResult, ShortList, ShortString, TinyList, TinyString}
+import polynote.messages.{CellID, CellResult, ShortList, ShortString, TinyList, TinyString}
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
@@ -46,7 +46,7 @@ class ScalaInterpreter(
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete
 
-  protected val previousSources: mutable.HashMap[Short, ScalaSource[this.type]] = new mutable.HashMap()
+  protected val previousSources: mutable.HashMap[CellID, ScalaSource[this.type]] = new mutable.HashMap()
 
   protected lazy val notebookPackageName = global.TermName("$notebook")
   def notebookPackage = global.Ident(notebookPackageName)
@@ -60,9 +60,9 @@ class ScalaInterpreter(
   override def init(): IO[Unit] = IO.unit // pass for now
 
   override def runCode(
-    cell: Short,
+    cell: CellID,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[Short],
+    previousCells: Seq[CellID],
     code: String
   ): IO[Stream[IO, Result]] = {
     val originalOut = System.out
@@ -207,9 +207,9 @@ class ScalaInterpreter(
   }
 
   override def completionsAt(
-    cell: Short,
+    cell: CellID,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[Short],
+    previousCells: Seq[CellID],
     code: String,
     pos: Int
   ): IO[List[Completion]] =
@@ -233,9 +233,9 @@ class ScalaInterpreter(
     }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(Nil))
 
   override def parametersAt(
-    cell: Short,
+    cell: CellID,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[Short],
+    previousCells: Seq[CellID],
     code: String,
     pos: Int
   ): IO[Option[Signatures]] =

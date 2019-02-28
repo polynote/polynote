@@ -212,9 +212,9 @@ class IOSharedNotebook(
       }
     }(_ => kernelLock.release)
 
-    override def runCells(cellIds: List[Short]): IO[Stream[IO, CellResult]] =
+    override def runCells(ids: List[CellID]): IO[Stream[IO, CellResult]] =
       ensureKernel().map {
-        kernel => Stream.emits(cellIds).evalMap {
+        kernel => Stream.emits(ids).evalMap {
           id => runCell(id).map(results => results.map(result => CellResult(ShortString(path), id, result)))
         }.flatten
       }
@@ -223,9 +223,9 @@ class IOSharedNotebook(
 
     def init: IO[Unit] = ensureKernel().flatMap(_.init)
 
-    private def withInterpreterLaunch[A](cellId: Short)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
+    private def withInterpreterLaunch[A](id: CellID)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
       kernel        <- ensureKernel()
-      predefResults <- kernel.startInterpreterFor(cellId)
+      predefResults <- kernel.startInterpreterFor(id)
       _             <- predefResults.map(result => CellResult(ShortString(path), -1, result)).through(outputMessages.publish).compile.drain
       result        <- fn(kernel)
     } yield result
@@ -235,27 +235,27 @@ class IOSharedNotebook(
       case false => IO(no)
     }
 
-    def startInterpreterFor(cellId: Short): IO[Stream[IO, Result]] = ensureKernel().flatMap(_.startInterpreterFor(cellId))
+    def startInterpreterFor(id: CellID): IO[Stream[IO, Result]] = ensureKernel().flatMap(_.startInterpreterFor(id))
 
-    def runCell(cellId: Short): IO[Stream[IO, Result]] = withInterpreterLaunch(cellId) {
+    def runCell(id: CellID): IO[Stream[IO, Result]] = withInterpreterLaunch(id) {
       kernel =>
         val buf = new WindowBuffer[Result](1000)
-        kernel.runCell(cellId).map {
+        kernel.runCell(id).map {
           results => results.evalTap {
-            result => IO(buf.add(result)) *> outputMessages.publish1(CellResult(ShortString(path), cellId, result))
+            result => IO(buf.add(result)) *> outputMessages.publish1(CellResult(ShortString(path), id, result))
           }.onFinalize {
             ref.update {
-              case (ver, nb) => ver -> nb.setResults(cellId, buf.toList)
+              case (ver, nb) => ver -> nb.setResults(id, buf.toList)
             }
           }
         }
     }
 
-    def completionsAt(cellId: Short, pos: Int): IO[List[Completion]] =
-      withInterpreterLaunch(cellId)(_.completionsAt(cellId, pos))
+    def completionsAt(id: CellID, pos: Int): IO[List[Completion]] =
+      withInterpreterLaunch(id)(_.completionsAt(id, pos))
 
-    def parametersAt(cellId: Short, offset: Int): IO[Option[Signatures]] =
-      withInterpreterLaunch(cellId)(_.parametersAt(cellId, offset))
+    def parametersAt(id: CellID, offset: Int): IO[Option[Signatures]] =
+      withInterpreterLaunch(id)(_.parametersAt(id, offset))
 
     def currentSymbols(): IO[List[ResultValue]] = ifKernelStarted(_.currentSymbols(), Nil)
 

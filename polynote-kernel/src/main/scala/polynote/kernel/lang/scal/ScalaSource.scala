@@ -4,6 +4,7 @@ import cats.data.Ior
 import cats.syntax.either._
 import polynote.kernel.EmptyCell
 import polynote.kernel.util.KernelReporter
+import polynote.messages.CellID
 
 import scala.annotation.tailrec
 import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFile}
@@ -15,7 +16,7 @@ import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFi
   *       unwound?
   */
 class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)(
-  cellId: Short,
+  id: CellID,
   availableSymbols: Set[Interpreter#Decl],
   previousSources: List[ScalaSource[Interpreter]],
   code: String
@@ -71,7 +72,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     transformer.transform(tree)
   }
 
-  private val cellName = s"Cell$cellId"
+  private val cellName = s"Cell$id"
   private lazy val unitParser = global.newUnitParser(code, cellName)
 
   // the parsed trees, but only successful if there weren't any parse errors
