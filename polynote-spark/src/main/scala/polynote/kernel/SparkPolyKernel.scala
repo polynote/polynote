@@ -139,7 +139,7 @@ class SparkPolyKernel(
 
   override def info: IO[Option[KernelInfo]] = IO(session).map { sess =>
     sess.sparkContext.uiWebUrl.map { url =>
-      KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url">$url</a>"""))
+      KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url" target="_blank">$url</a>"""))
     }
   }
 
