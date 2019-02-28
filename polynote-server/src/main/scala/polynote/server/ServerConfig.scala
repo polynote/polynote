@@ -39,14 +39,20 @@ object ServerConfig {
 
   def parse(content: String): Either[Throwable, ServerConfig] = yaml.parser.parse(content).flatMap(_.as[ServerConfig])
 
-  def load(file: File): IO[ServerConfig] = IO(new FileReader(file)).bracket {
-    reader => IO.fromEither(yaml.parser.parse(reader).flatMap(_.as[ServerConfig]))
-  }(reader => IO(reader.close())).handleErrorWith {
-    case err: MatchError =>
-      IO.pure(ServerConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
-    case err: FileNotFoundException =>
-      IO(logger.warn(s"Configuration file $file not found; using default configuration")).as(new ServerConfig())
-    case err: Throwable => IO.raiseError(err)
+  def load(file: File): IO[ServerConfig] = {
+
+    IO(new FileReader(file)).flatMap { reader =>
+      val parsed = IO.fromEither(yaml.parser.parse(reader).flatMap(_.as[ServerConfig]))
+      reader.close()
+      parsed
+    } handleErrorWith {
+      case err: MatchError =>
+        IO.pure(ServerConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
+      case err: FileNotFoundException =>
+        IO(logger.warn(s"Configuration file $file not found; using default configuration")).as(new ServerConfig())
+      case err: Throwable => IO.raiseError(err)
+    }
+
   }
 
 }
