@@ -25,7 +25,7 @@ export class ToolbarUI extends UIEventTarget {
             this.codeToolbar.el,
             this.textToolbar.el,
             this.settingsToolbar.el,
-        ])
+        ]).listener('mousedown', (evt) => evt.preventDefault())
     }
 
     onContextChanged() {
@@ -51,23 +51,17 @@ function toolbarElem(name, buttonGroups) {
     return div(["toolbar", name], contents)
 }
 
-// iconButton that doesn't steal focus
-function toolbarButton(classes, title, icon, alt) {
-    return iconButton(classes, title, icon, alt)
-        .listener('mousedown', (evt) => evt.preventDefault())
-}
-
 class NotebookToolbarUI extends UIEventTarget {
     constructor() {
         super();
         this.el = toolbarElem("notebook", [
             [
-                toolbarButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
+                iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("RunAll")))),
-                toolbarButton(["branch"], "Create branch", "", "Branch").disable(),
-                toolbarButton(["publish"], "Publish", "", "Publish").disable(),
+                iconButton(["branch"], "Create branch", "", "Branch").disable(),
+                iconButton(["publish"], "Publish", "", "Publish").disable(),
             ], [
-                toolbarButton(["schedule-notebook"], "Schedule notebook", "", "Schedule").disable(),
+                iconButton(["schedule-notebook"], "Schedule notebook", "", "Schedule").disable(),
             ]
         ]);
     }
@@ -82,11 +76,11 @@ class CellToolbarUI extends UIEventTarget {
                     button(["selected"], {value: "text"}, ["Text"])
                 ])
             ], [
-                toolbarButton(["insert-cell-above"], "Insert cell above current", "", "Insert above")
+                iconButton(["insert-cell-above"], "Insert cell above current", "", "Insert above")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("InsertAbove")))),
-                toolbarButton(["insert-cell-below"], "Insert cell below current", "", "Insert below")
+                iconButton(["insert-cell-below"], "Insert cell below current", "", "Insert below")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("InsertBelow")))),
-                toolbarButton(["delete-cell"], "Delete current cell", "", "Delete")
+                iconButton(["delete-cell"], "Delete current cell", "", "Delete")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("DeleteCell")))),
             ]
         ]);
@@ -113,11 +107,11 @@ class CodeToolbarUI extends UIEventTarget {
         super();
         this.el = toolbarElem("code", [
             [
-                toolbarButton(["run-cell"], "Run this cell (only)", "", "Run")
+                iconButton(["run-cell"], "Run this cell (only)", "", "Run")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("RunCurrentCell")))),
-                toolbarButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "", "Run to cursor")
+                iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "", "Run to cursor")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("RunToCursor")))),
-                toolbarButton(["stop-cell"], "Stop/cancel this cell", "", "Cancel").disable(),
+                iconButton(["stop-cell"], "Stop/cancel this cell", "", "Cancel").disable(),
             ]
         ]);
     }
@@ -129,7 +123,7 @@ class TextToolbarUI extends UIEventTarget {
         let buttons = [];
 
         function commandButton(cmd, title, icon, alt) {
-            const button = toolbarButton([cmd], title, icon, alt)
+            const button = iconButton([cmd], title, icon, alt)
                 .attr('command', cmd)
                 .click(() => document.execCommand(cmd, false))
                 .withKey('getState', () => document.queryCommandValue(cmd));
@@ -157,7 +151,7 @@ class TextToolbarUI extends UIEventTarget {
                 commandButton("italic", "Italic", "", "Italic"),
                 commandButton("underline", "underline", "", "underline"),
                 commandButton("strikethrough", "Strikethrough", "", "Strikethrough"),
-                this.codeButton = toolbarButton(["code"], "Inline code", "", "Code")
+                this.codeButton = iconButton(["code"], "Inline code", "", "Code")
                     .click(() => {
                         const selection = document.getSelection();
                         if (selection.baseNode &&
@@ -192,8 +186,8 @@ class TextToolbarUI extends UIEventTarget {
             ]}, {
             classes: ["objects"],
             elems: [
-                toolbarButton(["image"], "Insert image", "", "Image").disable(),
-                this.equationButton = toolbarButton(["equation"], "Insert/edit equation", "𝝨", "Equation")
+                iconButton(["image"], "Insert image", "", "Image").disable(),
+                this.equationButton = iconButton(["equation"], "Insert/edit equation", "𝝨", "Equation")
                     .click(() => LaTeXEditor.forSelection().show())
                     .withKey('getState', () => {
                         const selection = document.getSelection();
@@ -207,7 +201,7 @@ class TextToolbarUI extends UIEventTarget {
                         }
                         return false;
                     }),
-                toolbarButton(["table"], "Insert data table", "", "Table").disable(),
+                iconButton(["table"], "Insert data table", "", "Table").disable(),
             ]}
         ]);
 
@@ -240,9 +234,9 @@ class SettingsToolbarUI extends UIEventTarget {
     constructor() {
         super();
         this.el = toolbarElem("settings", [[
-            this.viewButton = toolbarButton(["view"], "View UI Preferences", "", "View")
+            this.viewButton = iconButton(["view"], "View UI Preferences", "", "View")
                 .click(() => this.dispatchEvent(new ToolbarEvent("ViewPrefs", {elem: this.floatingMenu, anchor: this.viewButton}))),
-            toolbarButton(["reset"], "Reset UI Preferences", "", "Reset")
+            iconButton(["reset"], "Reset UI Preferences", "", "Reset")
                 .click(() => this.dispatchEvent(new ToolbarEvent(("ResetPrefs")))),
         ]]);
 
