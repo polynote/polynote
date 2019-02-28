@@ -2,11 +2,10 @@
 
 import {
     DataReader, DataWriter, Codec, combined, arrayCodec, discriminated, optional, mapCodec,
-    str, shortStr, tinyStr, uint8, uint16, int32, uint32, bool
+    str, shortStr, tinyStr, uint8, uint16, int16, int32, uint32, bool
 } from './codec.js'
 
 import { Result, KernelErrorWithCause } from './result.js'
-import {int16} from "./codec";
 
 export class Message {
     static decode(data) {
@@ -85,7 +84,7 @@ export class NotebookCell {
     }
 }
 
-NotebookCell.codec = combined(int16, tinyStr, str, arrayCodec(uint16, Result.codec), CellMetadata.codec).to(NotebookCell);
+NotebookCell.codec = combined(int16, tinyStr, str, arrayCodec(int16, Result.codec), CellMetadata.codec).to(NotebookCell);
 
 export class RepositoryConfig {
 
