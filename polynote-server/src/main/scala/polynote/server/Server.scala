@@ -111,10 +111,12 @@ object Server {
     watchUI: Boolean = false
   ) extends ServerArgs
 
+  private val serverClass = """polynote.server.(.*)""".r
   private def parseArgs(args: List[String], current: Args = Args()): Either[Throwable, Args] = args match {
     case Nil => Right(current)
     case ("--config" | "-c") :: filename :: rest => parseArgs(rest, current.copy(configFile = new File(filename)))
     case ("--watch"  | "-w") :: rest => parseArgs(rest, current.copy(watchUI = true))
+    case serverClass(_) :: rest => parseArgs(rest, current) // class name might be arg0 in some circumstances
     case other :: rest => Left(new IllegalArgumentException(s"Unknown argument $other"))
   }
 
