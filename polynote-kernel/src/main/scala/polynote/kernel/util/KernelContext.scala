@@ -3,8 +3,8 @@ package polynote.kernel.util
 import java.io.File
 import java.net.URL
 
-import polynote.kernel.{StringRepr, ValueRepr}
 import polynote.messages.truncateTinyString
+import polynote.runtime.{StringRepr, ValueRepr}
 
 import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader

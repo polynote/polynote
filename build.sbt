@@ -37,7 +37,10 @@ val commonSettings = Seq(
 lazy val `polynote-runtime` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
-    "black.ninia" % "jep" % "3.8.2"
+    "black.ninia" % "jep" % "3.8.2",
+    "com.chuusai" %% "shapeless" % "2.3.3",
+    "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided",
+    "org.apache.spark" %% "spark-sql" % "2.1.1" % "provided"
   )
 )
 

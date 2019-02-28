@@ -27,15 +27,15 @@ function SingletonDataType(msgTypeId) {
     return inst;
 }
 
-const ByteType = SingletonDataType(0);
-const BoolType = SingletonDataType(1);
-const ShortType = SingletonDataType(2);
-const IntType = SingletonDataType(3);
-const LongType = SingletonDataType(4);
-const FloatType = SingletonDataType(5);
-const DoubleType = SingletonDataType(6);
-const BinaryType = SingletonDataType(7);
-const StringType = SingletonDataType(8);
+export const ByteType = SingletonDataType(0);
+export const BoolType = SingletonDataType(1);
+export const ShortType = SingletonDataType(2);
+export const IntType = SingletonDataType(3);
+export const LongType = SingletonDataType(4);
+export const FloatType = SingletonDataType(5);
+export const DoubleType = SingletonDataType(6);
+export const BinaryType = SingletonDataType(7);
+export const StringType = SingletonDataType(8);
 
 export class StructField {
     constructor(name, dataType) {
@@ -95,6 +95,9 @@ export class ArrayType extends DataType {
 
 ArrayType.codec = combined(DataType.delegatedCodec).to(ArrayType);
 
+export const DateType = SingletonDataType(12);
+export const TimestampType = SingletonDataType(13);
+
 DataType.codecs = [
     ByteType,     //  0
     BoolType,     //  1
@@ -108,6 +111,8 @@ DataType.codecs = [
     StructType,   //  9
     OptionalType, // 10
     ArrayType,    // 11
+    DateType,     // 12
+    TimestampType, // 13
 ];
 
 DataType.codec = discriminated(

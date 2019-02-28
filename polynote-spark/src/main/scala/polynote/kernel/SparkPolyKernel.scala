@@ -71,8 +71,6 @@ class SparkPolyKernel(
       (_, file) <- namedFiles if file.getName endsWith ".jar"
     } yield file -> tmp.resolve(URLDecoder.decode(file.getName, "utf-8"))
 
-
-
     runtimeJar(tmp) :: jars.map {
       case (file, path) =>
         val copied = Files.copy(file.toPath, path)

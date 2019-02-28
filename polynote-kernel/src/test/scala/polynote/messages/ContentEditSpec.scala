@@ -242,6 +242,9 @@ class ContentEditSpec extends FreeSpec with Matchers with GeneratorDrivenPropert
 
     "many edits against many edits" - {
 
+      // TODO: test this failed scenario
+      // MultiEditScenario(,ContentEdits(List(Insert(0, "8"), Insert(0, "ak!"))),ContentEdits(List(Insert(0, "d"), Insert(0, "8"))))
+
       "content is the same no matter what order edits are applied" in forAll(genMultiEditScenario, MinSuccessful(500)) {
         case MultiEditScenario(initial, edits1, edits2) =>
 
