@@ -42,9 +42,8 @@ object ServerConfig {
   def load(file: File): IO[ServerConfig] = {
 
     IO(new FileReader(file)).flatMap { reader =>
-      val parsed = IO.fromEither(yaml.parser.parse(reader).flatMap(_.as[ServerConfig]))
-      reader.close()
-      parsed
+      IO.fromEither(yaml.parser.parse(reader).flatMap(_.as[ServerConfig]))
+        .guarantee(IO(reader.close()))
     } handleErrorWith {
       case err: MatchError =>
         IO.pure(ServerConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
