@@ -927,7 +927,6 @@ export class NotebookUI {
         });
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
-            //console.log(result);
             if (path === this.path) {
                 const cell = this.cellUI.cells[id];
                 if (cell instanceof CodeCell) {

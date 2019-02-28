@@ -59,7 +59,7 @@ final case class CellMetadata(
 )
 
 final case class NotebookCell(
-  id: TinyString,
+  id: Short,
   language: TinyString,
   content: Rope,
   results: ShortList[Result] = ShortList(Nil),
@@ -69,7 +69,7 @@ final case class NotebookCell(
 }
 
 object NotebookCell {
-  def apply(id: TinyString, language: TinyString, content: String): NotebookCell = NotebookCell(id, language, Rope(content))
+  def apply(id: Short, language: TinyString, content: String): NotebookCell = NotebookCell(id, language, Rope(content))
 }
 
 final case class NotebookConfig(
@@ -87,18 +87,18 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
     cells = ShortList(cells.map(fn))
   )
 
-  def updateCell(id: String)(fn: NotebookCell => NotebookCell): Notebook = map {
+  def updateCell(id: Short)(fn: NotebookCell => NotebookCell): Notebook = map {
     case cell if cell.id == id => fn(cell)
     case cell => cell
   }
 
-  def editCell(id: String, edits: ContentEdits): Notebook = updateCell(id) {
+  def editCell(id: Short, edits: ContentEdits): Notebook = updateCell(id) {
     cell => cell.updateContent(_.withEdits(edits))
   }
 
   def addCell(cell: NotebookCell): Notebook = copy(cells = ShortList(cells :+ cell))
 
-  def insertCell(cell: NotebookCell, after: Option[String]): Notebook = {
+  def insertCell(cell: NotebookCell, after: Option[Short]): Notebook = {
     val insertIndex = after.fold(0)(id => cells.indexWhere(_.id == id)) match {
       case -1 => 0
       case n => n
@@ -109,25 +109,25 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
         cells.take(insertIndex + 1) ++ (cell :: cells.drop(insertIndex + 1))))
   }
 
-  def deleteCell(id: String): Notebook = copy(cells = ShortList(cells.collect {
+  def deleteCell(id: Short): Notebook = copy(cells = ShortList(cells.collect {
     case cell if cell.id != id => cell
   }))
 
-  def setResults(id: String, results: List[Result]): Notebook = updateCell(TinyString(id)) {
+  def setResults(id: Short, results: List[Result]): Notebook = updateCell(id) {
     cell => cell.copy(results = ShortList(results))
   }
 
-  def getCell(id: String): Option[NotebookCell] = cells.find(_.id == id)
+  def getCell(id: Short): Option[NotebookCell] = cells.find(_.id == id)
 
-  def cell(id: String): NotebookCell = getCell(id).getOrElse(throw new NoSuchElementException(s"Cell $id does not exist"))
+  def cell(id: Short): NotebookCell = getCell(id).getOrElse(throw new NoSuchElementException(s"Cell $id does not exist"))
 }
 
 object Notebook extends MessageCompanion[Notebook](2)
 
-final case class RunCell(notebook: ShortString, id: ShortList[TinyString]) extends Message
+final case class RunCell(notebook: ShortString, cellIds: ShortList[Short]) extends Message
 object RunCell extends MessageCompanion[RunCell](3)
 
-final case class CellResult(notebook: ShortString, id: TinyString, result: Result) extends Message
+final case class CellResult(notebook: ShortString, cellId: Short, result: Result) extends Message
 object CellResult extends MessageCompanion[CellResult](4)
 
 sealed trait NotebookUpdate extends Message {
@@ -167,16 +167,16 @@ object NotebookUpdate {
   }
 }
 
-final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: TinyString, edits: ContentEdits) extends Message with NotebookUpdate
+final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cellId: Short, edits: ContentEdits) extends Message with NotebookUpdate
 object UpdateCell extends MessageCompanion[UpdateCell](5)
 
-final case class InsertCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cell: NotebookCell, after: Option[TinyString]) extends Message with NotebookUpdate
+final case class InsertCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cell: NotebookCell, after: Option[Short]) extends Message with NotebookUpdate
 object InsertCell extends MessageCompanion[InsertCell](6)
 
-final case class CompletionsAt(notebook: ShortString, id: TinyString, pos: Int, completions: ShortList[Completion]) extends Message
+final case class CompletionsAt(notebook: ShortString, cellId: Short, pos: Int, completions: ShortList[Completion]) extends Message
 object CompletionsAt extends MessageCompanion[CompletionsAt](7)
 
-final case class ParametersAt(notebook: ShortString, id: TinyString, pos: Int, signatures: Option[Signatures]) extends Message
+final case class ParametersAt(notebook: ShortString, cellId: Short, pos: Int, signatures: Option[Signatures]) extends Message
 object ParametersAt extends MessageCompanion[ParametersAt](8)
 
 final case class KernelStatus(notebook: ShortString, update: KernelStatusUpdate) extends Message
@@ -185,7 +185,7 @@ object KernelStatus extends MessageCompanion[KernelStatus](9)
 final case class UpdateConfig(notebook: ShortString, globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate
 object UpdateConfig extends MessageCompanion[UpdateConfig](10)
 
-final case class SetCellLanguage(notebook: ShortString, globalVersion: Int, localVersion: Int, id: TinyString, language: TinyString) extends Message with NotebookUpdate
+final case class SetCellLanguage(notebook: ShortString, globalVersion: Int, localVersion: Int, cellId: Short, language: TinyString) extends Message with NotebookUpdate
 object SetCellLanguage extends MessageCompanion[SetCellLanguage](11)
 
 final case class StartKernel(notebook: ShortString, level: Byte) extends Message
@@ -203,7 +203,7 @@ object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 final case class CreateNotebook(path: ShortString) extends Message
 object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
-final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: TinyString) extends Message with NotebookUpdate
+final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cellId: Short) extends Message with NotebookUpdate
 object DeleteCell extends MessageCompanion[DeleteCell](15)
 
 final case class ServerHandshake(

@@ -46,7 +46,7 @@ class ScalaInterpreter(
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete
 
-  protected val previousSources: mutable.HashMap[String, ScalaSource[this.type]] = new mutable.HashMap()
+  protected val previousSources: mutable.HashMap[Short, ScalaSource[this.type]] = new mutable.HashMap()
 
   protected lazy val notebookPackageName = global.TermName("$notebook")
   def notebookPackage = global.Ident(notebookPackageName)
@@ -60,9 +60,9 @@ class ScalaInterpreter(
   override def init(): IO[Unit] = IO.unit // pass for now
 
   override def runCode(
-    cell: String,
+    cell: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCells: Seq[Short],
     code: String
   ): IO[Stream[IO, Result]] = {
     val originalOut = System.out
@@ -207,9 +207,9 @@ class ScalaInterpreter(
   }
 
   override def completionsAt(
-    cell: String,
+    cell: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCells: Seq[Short],
     code: String,
     pos: Int
   ): IO[List[Completion]] =
@@ -233,9 +233,9 @@ class ScalaInterpreter(
     }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(Nil))
 
   override def parametersAt(
-    cell: String,
+    cell: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCells: Seq[Short],
     code: String,
     pos: Int
   ): IO[Option[Signatures]] =

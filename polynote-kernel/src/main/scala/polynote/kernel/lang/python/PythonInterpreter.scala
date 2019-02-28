@@ -140,13 +140,13 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
   }
 
   override def runCode(
-    cell: String,
+    cellId: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCells: Seq[Short],
     code: String
   ): IO[Stream[IO, Result]] = if (code.trim().isEmpty) IO.pure(Stream.empty) else {
     val run = new global.Run()
-    global.newCompilationUnit("", cell)
+    global.newCompilationUnit("", s"Cell$cellId")
 
     val shiftEffect = IO.ioConcurrentEffect(shift) // TODO: we can also create an implicit shift instead of doing this, which is better?
     Queue.unbounded[IO, Option[Result]](shiftEffect).flatMap { maybeResultQ =>
@@ -165,7 +165,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
         jep.eval("sys.stdout = __polynote_displayhook__\n")
         jep.eval("__polynote_locals__ = {}\n")
         jep.set("__polynote_code__", code)
-        jep.set("__polynote_cell__", cell)
+        jep.set("__polynote_cell__", cellId)
 
         // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
         // TODO: should probably just use ipython to evaluate it instead
@@ -187,7 +187,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
         val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 
 
-        getPyResults(newDecls, cell).filterNot(_._2.value == null).values
+        getPyResults(newDecls, cellId).filterNot(_._2.value == null).values
       }.flatMap { resultSymbols =>
 
         for {
@@ -208,7 +208,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
     }
   }
 
-  def getPyResults(decls: Seq[String], sourceCellId: String): Map[String, ResultValue] = {
+  def getPyResults(decls: Seq[String], sourceCellId: Short): Map[String, ResultValue] = {
     decls.map {
       name => name -> {
         getPyResult(name) match {
@@ -258,9 +258,9 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
   }
 
   override def completionsAt(
-    cell: String,
+    cell: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCells: Seq[Short],
     code: String,
     pos: Int
   ): IO[List[Completion]] = withJep {
@@ -316,9 +316,9 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
 
   // TODO: can parameter hints be implemented for python?
   override def parametersAt(
-    cell: String,
+    cell: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCells: Seq[Short],
     code: String,
     pos: Int
   ): IO[Option[Signatures]] = IO.pure(None)

@@ -36,10 +36,10 @@ class MarkdownNotebookRepository(
   override protected val defaultExtension: String = "md"
 
   private def textCell(content: String, i: Int) =
-    NotebookCell(TinyString(s"Cell$i"), TinyString("text"), Rope(content), ShortList(Nil))
+    NotebookCell(i.toShort, TinyString("text"), Rope(content), ShortList(Nil))
 
   private def codeCell(node: FencedCodeBlock, i: Int) =
-    NotebookCell(TinyString(s"Cell$i"), TinyString(node.getInfo.normalizeEOL()), Rope(node.getContentChars.normalizeEOL()), ShortList(Nil))
+    NotebookCell(i.toShort, TinyString(node.getInfo.normalizeEOL()), Rope(node.getContentChars.normalizeEOL()), ShortList(Nil))
 
   private def collectCells(path: String, document: Document): Notebook =
     document.getChildren.iterator().asScala.foldLeft((0, 0, Notebook(ShortString(path), ShortList(Nil), None))) {
@@ -66,7 +66,7 @@ class MarkdownNotebookRepository(
           val parsedChildren = children.collect {
             case child: HtmlBlock => scala.xml.XML.loadString(child.getContentChars.normalizeEOL())
           }
-          val parsedResults: ShortList[Result] = ShortList(parsedChildren.flatMap(htmlToResult(_, nb.cells.last.id)))
+          val parsedResults: ShortList[Result] = ShortList(parsedChildren.flatMap(htmlToResult(_, nb.cells.last.id.toString)))
           (node.getEndOffset, node.getEndOffset, nb.copy(cells = ShortList(nb.cells.dropRight(1) :+ nb.cells.last.copy(results = parsedResults))))
 
         case other =>

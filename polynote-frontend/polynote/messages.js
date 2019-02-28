@@ -6,6 +6,7 @@ import {
 } from './codec.js'
 
 import { Result, KernelErrorWithCause } from './result.js'
+import {int16} from "./codec";
 
 export class Message {
     static decode(data) {
@@ -84,7 +85,7 @@ export class NotebookCell {
     }
 }
 
-NotebookCell.codec = combined(tinyStr, tinyStr, str, arrayCodec(uint16, Result.codec), CellMetadata.codec).to(NotebookCell);
+NotebookCell.codec = combined(int16, tinyStr, str, arrayCodec(uint16, Result.codec), CellMetadata.codec).to(NotebookCell);
 
 export class RepositoryConfig {
 
@@ -190,7 +191,7 @@ export class RunCell extends Message {
     }
 }
 
-RunCell.codec = combined(shortStr, arrayCodec(uint16, tinyStr)).to(RunCell);
+RunCell.codec = combined(shortStr, arrayCodec(uint16, uint16)).to(RunCell);
 
 export class CellResult extends Message {
     static get msgTypeId() { return 4; }
@@ -208,7 +209,7 @@ export class CellResult extends Message {
     }
 }
 
-CellResult.codec = combined(shortStr, tinyStr, Result.codec).to(CellResult);
+CellResult.codec = combined(shortStr, int16, Result.codec).to(CellResult);
 
 
 export class ContentEdit {
@@ -366,7 +367,7 @@ export class UpdateCell extends Message {
     }
 }
 
-UpdateCell.codec = combined(shortStr, uint32, uint32, tinyStr, arrayCodec(uint16, ContentEdit.codec)).to(UpdateCell);
+UpdateCell.codec = combined(shortStr, uint32, uint32, int16, arrayCodec(uint16, ContentEdit.codec)).to(UpdateCell);
 
 export class InsertCell extends Message {
     static get msgTypeId() { return 6; }
@@ -386,7 +387,7 @@ export class InsertCell extends Message {
     }
 }
 
-InsertCell.codec = combined(shortStr, uint32, uint32, NotebookCell.codec, optional(tinyStr)).to(InsertCell);
+InsertCell.codec = combined(shortStr, uint32, uint32, NotebookCell.codec, optional(int16)).to(InsertCell);
 
 export class ParamInfo {
     static unapply(inst) {
@@ -438,7 +439,7 @@ export class CompletionsAt extends Message {
 }
 
 CompletionsAt.codec =
-    combined(shortStr, tinyStr, int32, arrayCodec(uint16, CompletionCandidate.codec)).to(CompletionsAt);
+    combined(shortStr, int16, int32, arrayCodec(uint16, CompletionCandidate.codec)).to(CompletionsAt);
 
 export class ParameterHint {
     static unapply(inst) {
@@ -502,7 +503,7 @@ export class ParametersAt extends Message {
     }
 }
 
-ParametersAt.codec = combined(shortStr, tinyStr, int32, optional(Signatures.codec)).to(ParametersAt);
+ParametersAt.codec = combined(shortStr, int16, int32, optional(Signatures.codec)).to(ParametersAt);
 
 export class KernelStatusUpdate {
    constructor() {
@@ -680,7 +681,7 @@ export class SetCellLanguage extends Message {
     }
 }
 
-SetCellLanguage.codec = combined(shortStr, uint32, uint32, tinyStr, tinyStr).to(SetCellLanguage);
+SetCellLanguage.codec = combined(shortStr, uint32, uint32, int16, tinyStr).to(SetCellLanguage);
 
 export class StartKernel extends Message {
     static get msgTypeId() { return 12; }
@@ -749,7 +750,7 @@ export class DeleteCell extends Message {
     }
 }
 
-DeleteCell.codec = combined(shortStr, uint32, uint32, tinyStr).to(DeleteCell);
+DeleteCell.codec = combined(shortStr, uint32, uint32, int16).to(DeleteCell);
 
 export class ServerHandshake extends Message {
     static get msgTypeId() { return 16; }

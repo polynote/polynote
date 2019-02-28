@@ -10,7 +10,7 @@ import scala.collection.mutable.ListBuffer
 
 class Parser {
 
-  def parse(id: String, sql: String): Ior[CompileErrors, Parser.Result] = {
+  def parse(cellId: Short, sql: String): Ior[CompileErrors, Parser.Result] = {
      val lexer = new SqlBaseLexer(new org.antlr.v4.runtime.ANTLRInputStream(sql) {
        override def LA(i: Int): Int = {
          val la = super.LA(i)
@@ -25,7 +25,7 @@ class Parser {
 
     parser.addErrorListener(new BaseErrorListener {
       override def syntaxError(recognizer: Recognizer[_, _], offendingSymbol: AnyRef, line: Int, charPositionInLine: Int, msg: String, e: RecognitionException): Unit = {
-        errors += report(id, msg, e)
+        errors += report(cellId, msg, e)
       }
     })
 
@@ -49,15 +49,15 @@ class Parser {
       }
     } catch {
       case err: RecognitionException =>
-        errors += report(id, err.getMessage, err)
+        errors += report(cellId, err.getMessage, err)
         Ior.left(CompileErrors(errors.toList))
     }
 
   }
 
-  private def report(id: String, msg: String, err: RecognitionException): KernelReport = {
+  private def report(cellId: Short, msg: String, err: RecognitionException): KernelReport = {
     val token = err.getOffendingToken
-    val pos = Pos(id, token.getStartIndex, token.getStopIndex, token.getStartIndex)
+    val pos = Pos(s"Cell$cellId", token.getStartIndex, token.getStopIndex, token.getStartIndex)
     KernelReport(pos, msg, KernelReport.Error)
   }
 }

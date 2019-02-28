@@ -22,15 +22,15 @@ trait KernelAPI[F[_]] {
 
   def shutdown(): F[Unit]
 
-  def startInterpreterFor(id: String): F[Stream[F, Result]]
+  def startInterpreterFor(id: Short): F[Stream[F, Result]]
 
-  def runCell(id: String): F[Stream[F, Result]]
+  def runCell(id: Short): F[Stream[F, Result]]
 
-  def runCells(ids: List[String]): F[Stream[F, CellResult]]
+  def runCells(ids: List[Short]): F[Stream[F, CellResult]]
 
-  def completionsAt(id: String, pos: Int): F[List[Completion]]
+  def completionsAt(id: Short, pos: Int): F[List[Completion]]
 
-  def parametersAt(cell: String, offset: Int): F[Option[Signatures]]
+  def parametersAt(id: Short, pos: Int): F[Option[Signatures]]
 
   def currentSymbols(): F[List[ResultValue]]
 

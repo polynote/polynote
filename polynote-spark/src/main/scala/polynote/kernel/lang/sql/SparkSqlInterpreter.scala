@@ -88,27 +88,27 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
   }.handleErrorWith(err => IO.pure(RuntimeError(err)))
 
   override def runCode(
-    cell: String,
+    cellId: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCellIds: Seq[Short],
     code: String
   ): IO[fs2.Stream[IO, Result]] = {
     val compilerRun = new global.Run
-    val cellIndex = previousCells.size
+    val cellIndex = previousCellIds.size
     val run = for {
       _           <- symbolTable.drain()
-      parseResult <- IO.fromEither(parser.parse(cell, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
+      parseResult <- IO.fromEither(parser.parse(cellId, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
       resultDF    <- registerTempViews(parseResult.tableIdentifiers).sequence.bracket(_ => IO(spark.sql(code)))(dropTempViews)
-      cellResult   = ResultValue(kernelContext, "Out", global.typeOf[DataFrame], resultDF, cell)
+      cellResult   = ResultValue(kernelContext, "Out", global.typeOf[DataFrame], resultDF, cellId)
     } yield Stream.emit(cellResult) ++ Stream.eval(outputDataFrame(resultDF))
 
     run.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))
   }
 
   override def completionsAt(
-    cell: String,
+    cellIds: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCellIds: Seq[Short],
     code: String,
     pos: Int
   ): IO[List[Completion]] = {
@@ -119,11 +119,11 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
     }
 
     for {
-      parseResult <- IO.fromEither(parser.parse(cell, code).toEither)
+      parseResult <- IO.fromEither(parser.parse(cellIds, code).toEither)
     } yield completeAtPos(parseResult.statement)
   }
 
-  override def parametersAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): IO[Option[Signatures]] =
+  override def parametersAt(cellId: Short, visibleSymbols: Seq[Decl], previousCellIds: Seq[Short], code: String, pos: Int): IO[Option[Signatures]] =
     IO(None) // TODO: could we generate parameter hints for spark's builtin functions?
 
   override def init(): IO[Unit] = IO.unit

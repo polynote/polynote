@@ -48,10 +48,10 @@ object Generators {
   // applying a bunch of edits to it
   implicit val arbRope: Arbitrary[Rope] = Arbitrary(genEdits.map(_._3))
 
-  def genCell(id: String): Gen[NotebookCell] = for {
+  def genCell(cellId: Short): Gen[NotebookCell] = for {
     lang <- Gen.oneOf[TinyString]("text", "scala", "python")
     content <- genRope
     // TODO: also generate results & metadata
-  } yield NotebookCell(id, lang, content)
+  } yield NotebookCell(cellId, lang, content)
 
 }

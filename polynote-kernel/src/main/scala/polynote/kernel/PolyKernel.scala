@@ -60,7 +60,7 @@ class PolyKernel private[kernel] (
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
       interp.predefCode match {
-        case Some(code) => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode("Predef", Nil, Nil, code)).map {
+        case Some(code) => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(-1, Nil, Nil, code)).map {
           results => results.collect {
             case v: ResultValue => v
           }.evalTap {
@@ -96,7 +96,7 @@ class PolyKernel private[kernel] (
     * Perform a task upon a notebook cell, if the interpreter for that cell has already been launched. If the interpreter
     * hasn't been launched, the action won't be performed and the result will be None.
     */
-  protected def withLaunchedInterpreter[A](cellId: String)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO]) => IO[A]): IO[Option[A]] = for {
+  protected def withLaunchedInterpreter[A](cellId: Short)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO]) => IO[A]): IO[Option[A]] = for {
     notebook <- getNotebook()
     cell     <- IO(notebook.cell(cellId))
     interp    = getInterpreter(cell.language)
@@ -108,7 +108,7 @@ class PolyKernel private[kernel] (
     * predef code being executed, and that might produce results, the caller must be prepared to handle the result stream
     * (which is passed into the given task)
     */
-  protected def withInterpreter[A](cellId: String)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO], Stream[IO, Result]) => IO[A]): IO[A] = for {
+  protected def withInterpreter[A](cellId: Short)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO], Stream[IO, Result]) => IO[A]): IO[A] = for {
     notebook <- getNotebook()
     cell     <- IO(notebook.cell(cellId))
     launch   <- getOrLaunchInterpreter(cell.language)
@@ -116,26 +116,27 @@ class PolyKernel private[kernel] (
     result   <- fn(notebook, cell, interp, predefResults)
   } yield result
 
-  private def prevCells(notebook: Notebook, id: String) = "Predef" :: notebook.cells.view.takeWhile(_.id != id).map(_.id).toList
+  // TODO: using -1 for Predef is kinda weird.
+  private def prevCells(notebook: Notebook, id: Short): List[Short] = List[Short](-1) ++ notebook.cells.view.takeWhile(_.id != id).map(_.id).toList
 
-  protected def findAvailableSymbols(prevCells: List[String], interp: LanguageInterpreter[IO]): Seq[interp.Decl] = {
+  protected def findAvailableSymbols(prevCells: List[Short], interp: LanguageInterpreter[IO]): Seq[interp.Decl] = {
     symbolTable.currentTerms.filter(v => prevCells.contains(v.sourceCellId)).asInstanceOf[Seq[interp.Decl]]
   }
 
-  def startInterpreterFor(cellId: String): IO[Stream[IO, Result]] = withInterpreter(cellId) {
+  def startInterpreterFor(cellId: Short): IO[Stream[IO, Result]] = withInterpreter(cellId) {
     (_, _, _, results) => IO.pure(results)
   }
 
-  def runCell(id: String): IO[Stream[IO, Result]] = {
+  def runCell(cellId: Short): IO[Stream[IO, Result]] = {
     val done = ReadySignal()
     Queue.unbounded[IO, Option[Result]].map {
       oq =>
           val oqSome = new EnqueueSome(oq)
           val cellResults = Stream.eval {
-            withInterpreter(id) {
+            withInterpreter(cellId) {
               (notebook, cell, interp, predefResults) =>
-                val prevCellIds = prevCells(notebook, id)
-                taskQueue.runTaskIO(id, id, s"Running $id") {
+                val prevCellIds = prevCells(notebook, cellId)
+                taskQueue.runTaskIO(s"Cell $cellId", s"Cell $cellId", s"Running $cellId") {
                   taskInfo =>
                     // TODO: should this be something the interpreter has to do? Without this we wouldn't even need to allocate a queue here
                     polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
@@ -146,7 +147,7 @@ class PolyKernel private[kernel] (
                     }
 
                     symbolTable.drain() *> interp.runCode(
-                      id,
+                      cellId,
                       findAvailableSymbols(prevCellIds, interp),
                       prevCellIds,
                       cell.content.toString
@@ -169,22 +170,22 @@ class PolyKernel private[kernel] (
     }
   }
 
-  def runCells(ids: List[String]): IO[Stream[IO, CellResult]] = getNotebook().map {
-    notebook => Stream.emits(ids).evalMap {
+  def runCells(cellIds: List[Short]): IO[Stream[IO, CellResult]] = getNotebook().map {
+    notebook => Stream.emits(cellIds).evalMap {
       id => runCell(id).map(results => results.map(result => CellResult(notebook.path, id, result)))
     }.flatten // TODO: better control execution order of tasks, and use parJoinUnbounded instead
   }
 
-  def completionsAt(id: String, pos: Int): IO[List[Completion]] = withLaunchedInterpreter(id) {
+  def completionsAt(cellId: Short, pos: Int): IO[List[Completion]] = withLaunchedInterpreter(cellId) {
     (notebook, cell, interp) =>
-      val prevCellIds = prevCells(notebook, id)
-      interp.completionsAt(id, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
+      val prevCellIds = prevCells(notebook, cellId)
+      interp.completionsAt(cellId, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
   }.map(_.getOrElse(Nil))
 
-  def parametersAt(id: String, pos: Int): IO[Option[Signatures]] = withLaunchedInterpreter(id) {
+  def parametersAt(cellId: Short, pos: Int): IO[Option[Signatures]] = withLaunchedInterpreter(cellId) {
     (notebook, cell, interp) =>
-      val prevCellIds = prevCells(notebook, id)
-      interp.parametersAt(id, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
+      val prevCellIds = prevCells(notebook, cellId)
+      interp.parametersAt(cellId, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
   }.map(_.flatten)
 
   def currentSymbols(): IO[List[ResultValue]] = IO {

@@ -75,7 +75,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   def emptyNotebook(path: String, title: String): Notebook = Notebook(
     ShortString(path),
     ShortList(
-      NotebookCell("Cell0", "text", s"# $title\n\nThis is a text cell. Start editing!") :: Nil
+      NotebookCell(0.toShort, "text", s"# $title\n\nThis is a text cell. Start editing!") :: Nil
     ),
     Some(NotebookConfig(Option(serverConfig.dependencies.asInstanceOf[DependencyConfigs]), Option(serverConfig.repositories)))
   )

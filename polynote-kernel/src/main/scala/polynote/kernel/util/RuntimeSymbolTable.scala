@@ -24,11 +24,11 @@ final class RuntimeSymbolTable(
   private val currentSymbolTable: ConcurrentHashMap[TermName, RuntimeValue] = new ConcurrentHashMap()
   private val disposed = ReadySignal()
 
-  private val cellIds: mutable.TreeSet[String] = new mutable.TreeSet()
+  private val cellIds: mutable.TreeSet[Short] = new mutable.TreeSet()
 
   private val newSymbols: Topic[IO, RuntimeValue] =
     Topic[IO, RuntimeValue]{
-      val kernel = RuntimeValue("kernel", polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, "$Predef")
+      val kernel = RuntimeValue("kernel", polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, -1)
       // make sure this is actually in the symbol table.
       // TODO: is there a better way to set this value?
       putValue(kernel)
@@ -62,7 +62,7 @@ final class RuntimeSymbolTable(
     cellIds.add(value.sourceCellId)
   }
 
-  def publish(source: LanguageInterpreter[IO], sourceCellId: String)(name: String, value: Any, staticType: Option[global.Type]): IO[Unit] = {
+  def publish(source: LanguageInterpreter[IO], sourceCellId: Short)(name: String, value: Any, staticType: Option[global.Type]): IO[Unit] = {
     val rv = RuntimeValue(name, value, staticType.getOrElse(kernelContext.inferType(value)), Some(source), sourceCellId)
     for {
       _    <- IO(putValue(rv))
@@ -96,7 +96,7 @@ final class RuntimeSymbolTable(
     value: Any,
     scalaTypeHolder: global.Type,
     source: Option[LanguageInterpreter[IO]],
-    sourceCellId: String
+    sourceCellId: Short
   ) extends SymbolDecl[IO] {
 
     override def scalaType(g: Global): g.Type = if (g eq global) {
@@ -112,7 +112,7 @@ final class RuntimeSymbolTable(
   }
 
   object RuntimeValue {
-    def apply(name: String, value: Any, source: Option[LanguageInterpreter[IO]], sourceCell: String): RuntimeValue = RuntimeValue(
+    def apply(name: String, value: Any, source: Option[LanguageInterpreter[IO]], sourceCell: Short): RuntimeValue = RuntimeValue(
       name, value, kernelContext.inferType(value), source, sourceCell
     )
 
@@ -137,7 +137,7 @@ final class RuntimeSymbolTable(
 trait SymbolDecl[F[_]] {
   def name: String
   def source: Option[LanguageInterpreter[F]]
-  def sourceCellId: String
+  def sourceCellId: Short
   def scalaType(g: Global): g.Type
   def getValue: Option[Any]
 }

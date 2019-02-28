@@ -31,9 +31,9 @@ trait LanguageInterpreter[F[_]] {
     *         resulted from running the code.
     */
   def runCode(
-    cell: String,
+    cell: Short,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCells: Seq[Short],
     code: String
   ): F[Stream[F, Result]]
 
@@ -42,14 +42,14 @@ trait LanguageInterpreter[F[_]] {
     *
     * @param pos The position (character offset) within the code string at which completions are requested
     */
-  def completionsAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): F[List[Completion]]
+  def completionsAt(cell: Short, visibleSymbols: Seq[Decl], previousCells: Seq[Short], code: String, pos: Int): F[List[Completion]]
 
   /**
     * Ask for parameter signatures (if applicable) at the given position in the given code string
     *
     * @param pos The position (character offset) within the code string at which parameter hints are requested
     */
-  def parametersAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): F[Option[Signatures]]
+  def parametersAt(cell: Short, visibleSymbols: Seq[Decl], previousCells: Seq[Short], code: String, pos: Int): F[Option[Signatures]]
 
   /**
     * Initialize the kernel (if necessary)
