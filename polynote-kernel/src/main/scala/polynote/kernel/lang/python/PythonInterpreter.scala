@@ -146,7 +146,8 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
     code: String
   ): IO[Stream[IO, Result]] = if (code.trim().isEmpty) IO.pure(Stream.empty) else {
     val run = new global.Run()
-    global.newCompilationUnit("", s"Cell$cellId")
+    val cellName = s"Cell$cellId"
+    global.newCompilationUnit("", cellName)
 
     val shiftEffect = IO.ioConcurrentEffect(shift) // TODO: we can also create an implicit shift instead of doing this, which is better?
     Queue.unbounded[IO, Option[Result]](shiftEffect).flatMap { maybeResultQ =>
@@ -165,7 +166,7 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
         jep.eval("sys.stdout = __polynote_displayhook__\n")
         jep.eval("__polynote_locals__ = {}\n")
         jep.set("__polynote_code__", code)
-        jep.set("__polynote_cell__", cellId)
+        jep.set("__polynote_cell__", cellName)
 
         // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
         // TODO: should probably just use ipython to evaluate it instead
