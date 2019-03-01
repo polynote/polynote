@@ -54,6 +54,7 @@ class SparkPolyKernel(
         val inPath = jarFS.getPath(polynoteRuntimeJar)
         val runtimeJar = new File(tmp.toFile, polynoteRuntimeJar).toPath
         Files.copy(inPath, runtimeJar, StandardCopyOption.REPLACE_EXISTING)
+        jarFS.close()
         runtimeJar
 
       case "file" =>
