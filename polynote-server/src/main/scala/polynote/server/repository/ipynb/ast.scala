@@ -7,7 +7,7 @@ import io.circe.syntax._
 import polynote.data.Rope
 import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
-import polynote.messages.{CellMetadata, Notebook, NotebookCell, NotebookConfig, ShortList, ShortString, TinyString}
+import polynote.messages._
 
 sealed trait JupyterCellType
 
@@ -59,7 +59,7 @@ object JupyterOutput {
   implicit val encoder: Encoder[JupyterOutput] = extras.semiauto.deriveEncoder[JupyterOutput]
   implicit val decoder: Decoder[JupyterOutput] = extras.semiauto.deriveDecoder[JupyterOutput]
 
-  def toResult(cellId: String)(result: JupyterOutput): Result = {
+  def toResult(cellId: CellID)(result: JupyterOutput): Result = {
     def jsonToStr(json: Json): String = json.fold("", _.toString, _.toString, _.toString, _.map(jsonToStr).mkString, _.toString)
 
     def convertData(data: Map[String, Json], metadata: Option[JsonObject]) = metadata.flatMap(_("rel").flatMap(_.asString)) match {
@@ -165,8 +165,6 @@ object JupyterCell {
       case Code     => cell.language.getOrElse("scala")
     }
 
-    val id = cell.metadata.flatMap(_("name").flatMap(_.asString)).getOrElse(s"Cell${cell.execution_count.getOrElse(index)}")
-
     val meta = cell.metadata.map {
       obj =>
         val disabled = obj("cell.metadata.run_control.frozen").flatMap(_.asBoolean).getOrElse(false)
@@ -175,16 +173,11 @@ object JupyterCell {
         CellMetadata(disabled, hideSource, hideOutput)
     }.getOrElse(CellMetadata())
 
-    NotebookCell(id, language, Rope(cell.source.mkString), ShortList(cell.outputs.getOrElse(Nil).map(JupyterOutput.toResult(id))), meta)
+    NotebookCell(index, language, Rope(cell.source.mkString), ShortList(cell.outputs.getOrElse(Nil).map(JupyterOutput.toResult(index))), meta)
   }
 
-  private val CellIdPattern = """Cell(\d+)""".r
-
   def fromNotebookCell(cell: NotebookCell): JupyterCell = {
-    val executionCount = cell.id match {
-      case CellIdPattern(id) => try Some(id.toInt) catch { case err: Throwable => None }
-      case _ => None
-    }
+    val executionCount = Option(cell.id.toInt) // TODO: do we need the real exec id?
 
     val contentLines = cell.content.toString.linesWithSeparators.toList
     val cellType = cell.language.toString match {

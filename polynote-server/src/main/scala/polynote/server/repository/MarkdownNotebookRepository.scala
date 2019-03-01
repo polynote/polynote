@@ -8,7 +8,7 @@ import cats.syntax.either._
 import com.vladsch.flexmark.ast._
 import com.vladsch.flexmark.ext.yaml.front.matter.{YamlFrontMatterBlock, YamlFrontMatterExtension}
 import com.vladsch.flexmark.parser.Parser
-import polynote.messages.{Notebook, NotebookCell, NotebookConfig, ShortList, ShortString, TinyString}
+import polynote.messages._
 import io.circe.syntax._
 import io.circe.yaml.Printer
 import polynote.data.Rope
@@ -36,10 +36,10 @@ class MarkdownNotebookRepository(
   override protected val defaultExtension: String = "md"
 
   private def textCell(content: String, i: Int) =
-    NotebookCell(TinyString(s"Cell$i"), TinyString("text"), Rope(content), ShortList(Nil))
+    NotebookCell(i, TinyString("text"), Rope(content), ShortList(Nil))
 
   private def codeCell(node: FencedCodeBlock, i: Int) =
-    NotebookCell(TinyString(s"Cell$i"), TinyString(node.getInfo.normalizeEOL()), Rope(node.getContentChars.normalizeEOL()), ShortList(Nil))
+    NotebookCell(i, TinyString(node.getInfo.normalizeEOL()), Rope(node.getContentChars.normalizeEOL()), ShortList(Nil))
 
   private def collectCells(path: String, document: Document): Notebook =
     document.getChildren.iterator().asScala.foldLeft((0, 0, Notebook(ShortString(path), ShortList(Nil), None))) {
@@ -66,7 +66,7 @@ class MarkdownNotebookRepository(
           val parsedChildren = children.collect {
             case child: HtmlBlock => scala.xml.XML.loadString(child.getContentChars.normalizeEOL())
           }
-          val parsedResults: ShortList[Result] = ShortList(parsedChildren.flatMap(htmlToResult(_, nb.cells.last.id)))
+          val parsedResults: ShortList[Result] = ShortList(parsedChildren.flatMap(htmlToResult(_, nb.cells.last.id.toString)))
           (node.getEndOffset, node.getEndOffset, nb.copy(cells = ShortList(nb.cells.dropRight(1) :+ nb.cells.last.copy(results = parsedResults))))
 
         case other =>

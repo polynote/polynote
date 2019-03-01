@@ -6,7 +6,7 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
 import scala.collection.JavaConverters._
 import cats.effect.{ContextShift, IO}
 import polynote.config.DependencyConfigs
-import polynote.messages.{Notebook, NotebookCell, NotebookConfig, ShortList, ShortString}
+import polynote.messages._
 import polynote.server.ServerConfig
 
 import scala.concurrent.ExecutionContext
@@ -75,7 +75,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   def emptyNotebook(path: String, title: String): Notebook = Notebook(
     ShortString(path),
     ShortList(
-      NotebookCell("Cell0", "text", s"# $title\n\nThis is a text cell. Start editing!") :: Nil
+      NotebookCell(0, "text", s"# $title\n\nThis is a text cell. Start editing!") :: Nil
     ),
     Some(NotebookConfig(Option(serverConfig.dependencies.asInstanceOf[DependencyConfigs]), Option(serverConfig.repositories)))
   )

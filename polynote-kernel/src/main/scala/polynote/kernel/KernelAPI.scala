@@ -4,7 +4,7 @@ import cats.effect.concurrent.Ref
 import fs2.Stream
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
-import polynote.messages.{CellResult, ShortString, TinyList, TinyMap, TinyString}
+import polynote.messages.{CellID, CellResult, ShortString, TinyList, TinyMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
 
@@ -22,15 +22,15 @@ trait KernelAPI[F[_]] {
 
   def shutdown(): F[Unit]
 
-  def startInterpreterFor(id: String): F[Stream[F, Result]]
+  def startInterpreterFor(id: CellID): F[Stream[F, Result]]
 
-  def runCell(id: String): F[Stream[F, Result]]
+  def runCell(id: CellID): F[Stream[F, Result]]
 
-  def runCells(ids: List[String]): F[Stream[F, CellResult]]
+  def runCells(ids: List[CellID]): F[Stream[F, CellResult]]
 
-  def completionsAt(id: String, pos: Int): F[List[Completion]]
+  def completionsAt(id: CellID, pos: Int): F[List[Completion]]
 
-  def parametersAt(cell: String, offset: Int): F[Option[Signatures]]
+  def parametersAt(id: CellID, pos: Int): F[Option[Signatures]]
 
   def currentSymbols(): F[List[ResultValue]]
 

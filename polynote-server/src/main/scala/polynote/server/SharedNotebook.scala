@@ -212,7 +212,7 @@ class IOSharedNotebook(
       }
     }(_ => kernelLock.release)
 
-    override def runCells(ids: List[String]): IO[Stream[IO, CellResult]] =
+    override def runCells(ids: List[CellID]): IO[Stream[IO, CellResult]] =
       ensureKernel().map {
         kernel => Stream.emits(ids).evalMap {
           id => runCell(id).map(results => results.map(result => CellResult(ShortString(path), id, result)))
@@ -223,10 +223,10 @@ class IOSharedNotebook(
 
     def init: IO[Unit] = ensureKernel().flatMap(_.init)
 
-    private def withInterpreterLaunch[A](cellId: String)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
+    private def withInterpreterLaunch[A](id: CellID)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
       kernel        <- ensureKernel()
-      predefResults <- kernel.startInterpreterFor(cellId)
-      _             <- predefResults.map(result => CellResult(ShortString(path), "Predef", result)).through(outputMessages.publish).compile.drain
+      predefResults <- kernel.startInterpreterFor(id)
+      _             <- predefResults.map(result => CellResult(ShortString(path), -1, result)).through(outputMessages.publish).compile.drain
       result        <- fn(kernel)
     } yield result
 
@@ -235,9 +235,9 @@ class IOSharedNotebook(
       case false => IO(no)
     }
 
-    def startInterpreterFor(id: String): IO[Stream[IO, Result]] = ensureKernel().flatMap(_.startInterpreterFor(id))
+    def startInterpreterFor(id: CellID): IO[Stream[IO, Result]] = ensureKernel().flatMap(_.startInterpreterFor(id))
 
-    def runCell(id: String): IO[Stream[IO, Result]] = withInterpreterLaunch(id) {
+    def runCell(id: CellID): IO[Stream[IO, Result]] = withInterpreterLaunch(id) {
       kernel =>
         val buf = new WindowBuffer[Result](1000)
         kernel.runCell(id).map {
@@ -251,11 +251,11 @@ class IOSharedNotebook(
         }
     }
 
-    def completionsAt(cellId: String, pos: Int): IO[List[Completion]] =
-      withInterpreterLaunch(cellId)(_.completionsAt(cellId, pos))
+    def completionsAt(id: CellID, pos: Int): IO[List[Completion]] =
+      withInterpreterLaunch(id)(_.completionsAt(id, pos))
 
-    def parametersAt(cellId: String, offset: Int): IO[Option[Signatures]] =
-      withInterpreterLaunch(cellId)(_.parametersAt(cellId, offset))
+    def parametersAt(id: CellID, offset: Int): IO[Option[Signatures]] =
+      withInterpreterLaunch(id)(_.parametersAt(id, offset))
 
     def currentSymbols(): IO[List[ResultValue]] = ifKernelStarted(_.currentSymbols(), Nil)
 

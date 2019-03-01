@@ -14,7 +14,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import polynote.kernel._
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.{Publish, RuntimeSymbolTable}
-import polynote.messages.{ShortString, TinyList, TinyString}
+import polynote.messages.{CellID, ShortString, TinyList, TinyString}
 
 import scala.collection.mutable
 
@@ -88,13 +88,13 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
   }.handleErrorWith(err => IO.pure(RuntimeError(err)))
 
   override def runCode(
-    cell: String,
+    cell: CellID,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCellIds: Seq[CellID],
     code: String
   ): IO[fs2.Stream[IO, Result]] = {
     val compilerRun = new global.Run
-    val cellIndex = previousCells.size
+    val cellIndex = previousCellIds.size
     val run = for {
       _           <- symbolTable.drain()
       parseResult <- IO.fromEither(parser.parse(cell, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
@@ -106,9 +106,9 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
   }
 
   override def completionsAt(
-    cell: String,
+    cell: CellID,
     visibleSymbols: Seq[Decl],
-    previousCells: Seq[String],
+    previousCells: Seq[CellID],
     code: String,
     pos: Int
   ): IO[List[Completion]] = {
@@ -123,7 +123,7 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
     } yield completeAtPos(parseResult.statement)
   }
 
-  override def parametersAt(cell: String, visibleSymbols: Seq[Decl], previousCells: Seq[String], code: String, pos: Int): IO[Option[Signatures]] =
+  override def parametersAt(cell: CellID, visibleSymbols: Seq[Decl], previousCells: Seq[CellID], code: String, pos: Int): IO[Option[Signatures]] =
     IO(None) // TODO: could we generate parameter hints for spark's builtin functions?
 
   override def init(): IO[Unit] = IO.unit

@@ -20,7 +20,7 @@ import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
 import polynote.kernel.util.{RuntimeSymbolTable, _}
-import polynote.messages.{CellResult, Notebook, NotebookCell}
+import polynote.messages._
 
 import scala.concurrent.ExecutionContext
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
@@ -60,7 +60,7 @@ class PolyKernel private[kernel] (
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
       interp.predefCode match {
-        case Some(code) => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode("Predef", Nil, Nil, code)).map {
+        case Some(code) => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(-1, Nil, Nil, code)).map {
           results => results.collect {
             case v: ResultValue => v
           }.evalTap {
@@ -96,7 +96,7 @@ class PolyKernel private[kernel] (
     * Perform a task upon a notebook cell, if the interpreter for that cell has already been launched. If the interpreter
     * hasn't been launched, the action won't be performed and the result will be None.
     */
-  protected def withLaunchedInterpreter[A](cellId: String)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO]) => IO[A]): IO[Option[A]] = for {
+  protected def withLaunchedInterpreter[A](cellId: CellID)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO]) => IO[A]): IO[Option[A]] = for {
     notebook <- getNotebook()
     cell     <- IO(notebook.cell(cellId))
     interp    = getInterpreter(cell.language)
@@ -108,7 +108,7 @@ class PolyKernel private[kernel] (
     * predef code being executed, and that might produce results, the caller must be prepared to handle the result stream
     * (which is passed into the given task)
     */
-  protected def withInterpreter[A](cellId: String)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO], Stream[IO, Result]) => IO[A]): IO[A] = for {
+  protected def withInterpreter[A](cellId: CellID)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO], Stream[IO, Result]) => IO[A]): IO[A] = for {
     notebook <- getNotebook()
     cell     <- IO(notebook.cell(cellId))
     launch   <- getOrLaunchInterpreter(cell.language)
@@ -116,17 +116,18 @@ class PolyKernel private[kernel] (
     result   <- fn(notebook, cell, interp, predefResults)
   } yield result
 
-  private def prevCells(notebook: Notebook, id: String) = "Predef" :: notebook.cells.view.takeWhile(_.id != id).map(_.id).toList
+  // TODO: using -1 for Predef is kinda weird.
+  private def prevCells(notebook: Notebook, id: CellID): List[CellID] = List[CellID](-1) ++ notebook.cells.view.takeWhile(_.id != id).map(_.id).toList
 
-  protected def findAvailableSymbols(prevCells: List[String], interp: LanguageInterpreter[IO]): Seq[interp.Decl] = {
+  protected def findAvailableSymbols(prevCells: List[CellID], interp: LanguageInterpreter[IO]): Seq[interp.Decl] = {
     symbolTable.currentTerms.filter(v => prevCells.contains(v.sourceCellId)).asInstanceOf[Seq[interp.Decl]]
   }
 
-  def startInterpreterFor(cellId: String): IO[Stream[IO, Result]] = withInterpreter(cellId) {
+  def startInterpreterFor(cellId: CellID): IO[Stream[IO, Result]] = withInterpreter(cellId) {
     (_, _, _, results) => IO.pure(results)
   }
 
-  def runCell(id: String): IO[Stream[IO, Result]] = {
+  def runCell(id: CellID): IO[Stream[IO, Result]] = {
     val done = ReadySignal()
     Queue.unbounded[IO, Option[Result]].map {
       oq =>
@@ -135,7 +136,7 @@ class PolyKernel private[kernel] (
             withInterpreter(id) {
               (notebook, cell, interp, predefResults) =>
                 val prevCellIds = prevCells(notebook, id)
-                taskQueue.runTaskIO(id, id, s"Running $id") {
+                taskQueue.runTaskIO(s"Cell $id", s"Cell $id", s"Running $id") {
                   taskInfo =>
                     // TODO: should this be something the interpreter has to do? Without this we wouldn't even need to allocate a queue here
                     polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
@@ -169,19 +170,19 @@ class PolyKernel private[kernel] (
     }
   }
 
-  def runCells(ids: List[String]): IO[Stream[IO, CellResult]] = getNotebook().map {
+  def runCells(ids: List[CellID]): IO[Stream[IO, CellResult]] = getNotebook().map {
     notebook => Stream.emits(ids).evalMap {
       id => runCell(id).map(results => results.map(result => CellResult(notebook.path, id, result)))
     }.flatten // TODO: better control execution order of tasks, and use parJoinUnbounded instead
   }
 
-  def completionsAt(id: String, pos: Int): IO[List[Completion]] = withLaunchedInterpreter(id) {
+  def completionsAt(id: CellID, pos: Int): IO[List[Completion]] = withLaunchedInterpreter(id) {
     (notebook, cell, interp) =>
       val prevCellIds = prevCells(notebook, id)
       interp.completionsAt(id, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
   }.map(_.getOrElse(Nil))
 
-  def parametersAt(id: String, pos: Int): IO[Option[Signatures]] = withLaunchedInterpreter(id) {
+  def parametersAt(id: CellID, pos: Int): IO[Option[Signatures]] = withLaunchedInterpreter(id) {
     (notebook, cell, interp) =>
       val prevCellIds = prevCells(notebook, id)
       interp.parametersAt(id, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)

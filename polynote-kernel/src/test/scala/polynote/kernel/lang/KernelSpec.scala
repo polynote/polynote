@@ -63,7 +63,7 @@ trait KernelSpec {
         // publishes to symbol table as a side-effect
         // TODO: ideally we wouldn't need to run predef specially
         symsF   <- symbolTable.subscribe()(_ => IO.unit).map(_._1).interruptWhen(done()).compile.toVector.start
-        results <- interp.runCode("test", symbolTable.currentTerms.map(_.asInstanceOf[interp.Decl]), Nil, code)
+        results <- interp.runCode(0, symbolTable.currentTerms.map(_.asInstanceOf[interp.Decl]), Nil, code)
         output  <- results.evalMap {
             case v: ResultValue =>
               symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp).toList).map { _ =>

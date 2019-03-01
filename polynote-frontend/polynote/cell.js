@@ -85,8 +85,6 @@ export class Cell extends UIEventTarget {
         this.id = id;
         this.language = language;
 
-        this.cellIndex = id.match(/^Cell(\d+)$/)[1];
-
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
                 div(['cell-input-tools'], [
@@ -99,7 +97,7 @@ export class Cell extends UIEventTarget {
                 this.cellOutputTools = div(['cell-output-tools'], []),
                 this.cellOutputDisplay = div(['cell-output-display'], [])
             ])
-        ]).withId(id);
+        ]).withId(`Cell${id}`);
 
         this.container.cell = this;
 
