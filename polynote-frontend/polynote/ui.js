@@ -545,7 +545,22 @@ export class NotebookCellsUI extends UIEventTarget {
         window.addEventListener('resize', this.onWindowResize.bind(this));
         this.configUI.addEventListener('UpdatedConfig', evt => this.dispatchEvent(new CustomEvent('UpdatedConfig', { detail: evt.detail })));
     }
-    
+
+    extractId(cellRef) {
+        console.log("extracting id from", cellRef)
+        if (typeof cellRef === 'string') {
+            return cellRef.match(/^Cell(\d+)$/)[1];
+        } else if (typeof cellRef === 'number') {
+            return cellRef;
+        } else {
+            throw { message: `Unable to parse cell reference ${cellRef}` };
+        }
+    }
+
+    getCell(cellRef) {
+        return this.cells[this.extractId(cellRef)];
+    }
+
     onWindowResize(evt) {
         if (this.resizeTimeout) {
             clearTimeout(this.resizeTimeout);
@@ -569,8 +584,8 @@ export class NotebookCellsUI extends UIEventTarget {
         let prevCell = after;
         if (after && after instanceof Cell) {
             prevCell = after.container;
-        } else if (after && typeof(after) === 'string') {
-            prevCell = this.cells[after].container;
+        } else if (after && this.getCell(after)) {
+            prevCell = this.getCell(after).container;
         } else if (!after) {
             prevCell = this.configUI.el;
         }
@@ -581,7 +596,7 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 
     removeCell(cellId) {
-        const cell = this.cells[cellId];
+        const cell = this.getCell(cellId);
         if (cell) {
             this.el.removeChild(cell.container);
             cell.dispose();
@@ -590,7 +605,7 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 
     setupCell(cell) {
-        this.cells[cell.id] = cell;
+        this.cells[this.extractId(cell.id)] = cell;
         if (cell.editor && cell.editor.layout) {
             cell.editor.layout();
         }
@@ -598,7 +613,7 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 
     setCellLanguage(cell, language) {
-        const currentCell = this.cells[cell.id];
+        const currentCell = this.getCell(cell.id);
         if (cell !== currentCell)
             throw { message:"Cell with that ID is not the same cell as the target cell" };
 
@@ -711,12 +726,12 @@ export class NotebookUI {
         this.cellUI.addEventListener('AdvanceCell', evt => {
             if (Cell.currentFocus) {
                 if (evt.backward) {
-                    const prev = Cell.currentFocus.container.previousSibling && cellUI.cells[Cell.currentFocus.container.previousSibling.id];
+                    const prev = Cell.currentFocus.container.previousSibling && cellUI.getCell(Cell.currentFocus.container.previousSibling.id);
                     if (prev) {
                         prev.focus();
                     }
                 } else {
-                    const next = Cell.currentFocus.container.nextSibling && cellUI.cells[Cell.currentFocus.container.nextSibling.id];
+                    const next = Cell.currentFocus.container.nextSibling && cellUI.getCell(Cell.currentFocus.container.nextSibling.id);
                     if (next) {
                         next.focus();
                     } else {
@@ -727,7 +742,7 @@ export class NotebookUI {
         });
 
         this.cellUI.addEventListener('InsertCellAfter', evt => {
-           const current = this.cellUI.cells[evt.detail.cellId] || this.cellUI.cells[this.cellUI.el.querySelector('.cell-container').id];
+           const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.el.querySelector('.cell-container').id);
            const nextId = this.cellUI.cellCount;
            const newCell = current.language === 'text' ? new TextCell(nextId, '', 'text') : new CodeCell(nextId, '', current.language);
            this.socket.send(new messages.InsertCell(path, this.globalVersion, this.localVersion++, new messages.NotebookCell(newCell.id, newCell.language, ''), current.id));
@@ -736,7 +751,7 @@ export class NotebookUI {
         });
 
         this.cellUI.addEventListener('DeleteCell', evt => {
-            const current = this.cellUI.cells[evt.detail.cellId];
+            const current = this.cellUI.getCell(evt.detail.cellId);
             if (current) {
                 this.socket.send(new messages.DeleteCell(path, this.globalVersion, this.localVersion++, current.id));
                 this.cellUI.removeCell(current.id);
@@ -749,7 +764,7 @@ export class NotebookUI {
                 cellId = [cellId];
             }
             cellId.forEach(id => {
-               const cell = this.cellUI.cells[id];
+               const cell = this.cellUI.getCell(id);
                if (cell) {
                    cell.dispatchEvent(new BeforeCellRunEvent(id));
                }
@@ -890,7 +905,7 @@ export class NotebookUI {
 
                 this.localVersion++;
 
-                const cell = this.cellUI.cells[id];
+                const cell = this.cellUI.getCell(id);
 
                 if (cell) {
                     cell.applyEdits(rebasedEdits);
@@ -928,7 +943,7 @@ export class NotebookUI {
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
             if (path === this.path) {
-                const cell = this.cellUI.cells[id];
+                const cell = this.cellUI.getCell(id);
                 if (cell instanceof CodeCell) {
                     if (result instanceof CompileErrors) {
                         cell.setErrors(result.reports);
@@ -955,12 +970,11 @@ export class NotebookUI {
     }
 
     onCellLanguageSelected(setLanguage, path) {
-        if (Cell.currentFocus && this.cellUI.cells[Cell.currentFocus.id] && this.cellUI.cells[Cell.currentFocus.id].language !== setLanguage) {
+        if (Cell.currentFocus && this.cellUI.getCell(Cell.currentFocus.id) && this.cellUI.getCell(Cell.currentFocus.id).language !== setLanguage) {
             const id = Cell.currentFocus.id;
             this.cellUI.setCellLanguage(Cell.currentFocus, setLanguage);
             this.socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
         }
-
     }
     
     onCellsLoaded(path, cells, config) {
@@ -1311,7 +1325,7 @@ export class MainUI {
         this.toolbarUI.addEventListener('InsertAbove', () => {
             const notebookUI = this.currentNotebook.cellsUI;
             const activeCell = Cell.currentFocus.id;
-            if (!notebookUI.cells[activeCell] || notebookUI.cells[activeCell] !== Cell.currentFocus) {
+            if (!notebookUI.getCell(activeCell) || notebookUI.getCell(activeCell) !== Cell.currentFocus) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
@@ -1324,7 +1338,7 @@ export class MainUI {
         this.toolbarUI.addEventListener('InsertBelow', () => {
             const notebookUI = this.currentNotebook.cellsUI;
             const activeCell = Cell.currentFocus.id;
-            if (!notebookUI.cells[activeCell] || notebookUI.cells[activeCell] !== Cell.currentFocus) {
+            if (!notebookUI.getCell(activeCell) || notebookUI.getCell(activeCell) !== Cell.currentFocus) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
@@ -1335,7 +1349,7 @@ export class MainUI {
         this.toolbarUI.addEventListener('DeleteCell', () => {
             const notebookUI = this.currentNotebook.cellsUI;
             const activeCell = Cell.currentFocus.id;
-            if (!notebookUI.cells[activeCell] || notebookUI.cells[activeCell] !== Cell.currentFocus) {
+            if (!notebookUI.getCell(activeCell) || notebookUI.getCell(activeCell) !== Cell.currentFocus) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }

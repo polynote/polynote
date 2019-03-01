@@ -97,7 +97,7 @@ export class Cell extends UIEventTarget {
                 this.cellOutputTools = div(['cell-output-tools'], []),
                 this.cellOutputDisplay = div(['cell-output-display'], [])
             ])
-        ]).withId(id);
+        ]).withId(`Cell${id}`);
 
         this.container.cell = this;
 
