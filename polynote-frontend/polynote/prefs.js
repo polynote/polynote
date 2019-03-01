@@ -27,6 +27,15 @@ export class Prefs {
     update(name, updateFn) {
         this.set(name, updateFn(this.get(name)))
     }
+
+    clear() {
+        window.localStorage.clear()
+    }
+
+    show() {
+        const onlyMyStuff =  Object.entries(window.localStorage)
+        return Object.assign({}, ...Array.from(onlyMyStuff, ([k, v]) => ({[k]: v}) ))
+    }
 }
 
 export const prefs = new Prefs();

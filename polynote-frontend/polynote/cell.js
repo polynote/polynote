@@ -3,7 +3,6 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import * as messages from "./messages.js";
 import { ResultValue } from "./result.js"
 import {RichTextEditor} from "./text_editor.js";
-import {MainToolbar, mainToolbar} from "./ui.js";
 import {UIEvent, UIEventTarget} from "./ui_event.js"
 import { default as Diff } from './diff.js'
 
@@ -17,6 +16,12 @@ export class CellEvent extends UIEvent {
     }
 
     get cellId() { return this.detail.cellId }
+}
+
+export class SelectCellEvent extends CellEvent {
+    constructor(cellId, lang) {
+        super('SelectCell', cellId, {lang: lang});
+    }
 }
 
 export class RunCellEvent extends CellEvent {
@@ -116,15 +121,14 @@ export class Cell extends UIEventTarget {
         Cell.currentFocus = this;
         this.container.classList.add('active');
 
-        // TODO: refactor this into an event instead
-        MainToolbar.setCurrentCellType(this.language);
+        this.dispatchEvent(new SelectCellEvent(this.id, this.language));
     }
 
     blur() {
         this.container.classList.remove('active');
         if (Cell.currentFocus === this) {
             Cell.currentFocus = null;
-            mainToolbar.dispatchEvent(new CustomEvent('ContextChanged'));
+            this.dispatchEvent(new SelectCellEvent(this.id, this.language)); // technically this is deselection but we do the same thing anyways...
         }
     }
 
@@ -434,7 +438,6 @@ export class CodeCell extends Cell {
 
     makeActive() {
         super.makeActive();
-        mainToolbar.dispatchEvent(new CustomEvent('ContextChanged'));
     }
 
     focus() {
@@ -589,7 +592,6 @@ export class TextCell extends Cell {
 
     makeActive() {
         super.makeActive();
-        mainToolbar.dispatchEvent(new CustomEvent('ContextChanged'));
     }
 
     blur() {

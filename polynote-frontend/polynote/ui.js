@@ -4,17 +4,15 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import {} from './scala.js'
 import {} from './theme.js'
 import { LaTeXEditor } from './latex_editor.js'
-import { Toolbar } from './toolbar.js'
 import { UIEvent, UIEventTarget } from './ui_event.js'
 import { FakeSelect } from './fake_select.js'
-import { TextToolbar } from './text_editor.js'
 import { Cell, TextCell, CodeCell, BeforeCellRunEvent } from "./cell.js"
 import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, dropdown } from './tags.js'
 import { TaskStatus } from './messages.js';
 import * as messages from './messages.js'
 import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from './result.js'
-import { Prefs, prefs } from './prefs.js'
-
+import { prefs } from './prefs.js'
+import { ToolbarUI } from "./toolbar";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -24,49 +22,8 @@ export class MainToolbar extends EventTarget {
         super();
         this.element = el;
         el.addEventListener('mousedown', (evt) => evt.preventDefault());
-        // TODO: clean up toolbar code
-        MainToolbar.cellTypeSelector = this.cellTypeSelector = new FakeSelect(document.getElementById('Toolbar-Cell-Language'));
-
-        this.addEventListener("ContextChanged", evt => this.onContextChanged(evt));
-    }
-
-    onContextChanged(evt) {
-        let newContext = '';
-        if (Cell.currentFocus instanceof TextCell) {
-            newContext = 'editing-text';
-        } else if (Cell.currentFocus instanceof CodeCell) {
-            newContext = 'editing-code';
-        }
-        this.element.className = newContext;
-    }
-
-    static setCurrentCellType(type) {
-        const cellTypeSelector = MainToolbar.cellTypeSelector;
-        let i = 0;
-        for (const opt of cellTypeSelector.options) {
-            if (opt.value === type) {
-                cellTypeSelector.selectedIndex = i;
-                break;
-            }
-            i++;
-        }
-    }
-
-    setInterpreters(interpreters) {
-        while (this.cellTypeSelector.options.length > 1) {
-            this.cellTypeSelector.removeOption(this.cellTypeSelector.options[1]);
-        }
-
-        for (const languageId in interpreters) {
-            if (interpreters.hasOwnProperty(languageId)) {
-                this.cellTypeSelector.addOption(interpreters[languageId], languageId);
-            }
-        }
     }
 }
-
-// TODO: remove during toolbar cleanup
-export const mainToolbar = new MainToolbar(document.getElementById('Toolbar'));
 
 export class KernelSymbolsUI {
     constructor() {
@@ -197,7 +154,7 @@ export class KernelTasksUI {
     }
 }
 
-// TODO: how can we remember collapsed state across sessions?
+// TODO: should we remember collapsed state across sessions?
 export class KernelInfoUI {
     constructor() {
         this.el = div(['kernel-info'], [
@@ -254,7 +211,6 @@ export class KernelInfoUI {
     renderInfo() {
         this.infoEl.innerHTML = "";
         for (const [k, v] of this.info) {
-            console.log(`rendering ${k}, ${v}`);
             const val = div(['info-value'], []);
             val.innerHTML = v;
             const el = div(['info-item'], [
@@ -271,7 +227,7 @@ export class SplitView {
         this.left = left;
         this.center = center;
         this.right = right;
-        let classes = [];
+        let classes = [id];
         let children = [];
         this.templates = {};
         this.areas = [];
@@ -351,9 +307,6 @@ export class SplitView {
         }
 
         this.el = div(['split-view', ...classes], children);
-        if (id) {
-            this.el.id = id;
-        }
         this.el.style.display = 'grid';
         this.el.style.gridTemplateAreas = `"${this.areas.join(' ')}"`;
         this.layout();
@@ -722,7 +675,7 @@ class EditBuffer {
 }
 
 export class NotebookUI {
-    constructor(path, socket) {  // TODO: Maybe UI shouldn't talk directly to session? I dunno...
+    constructor(path, socket, mainUI) {  // TODO: Maybe UI shouldn't talk directly to session? I dunno...
         let cellUI = new NotebookCellsUI();
         let kernelUI = new KernelUI();
         //super(null, cellUI, kernelUI);
@@ -739,6 +692,20 @@ export class NotebookUI {
 
         this.cellUI.addEventListener('UpdatedConfig', evt => {
             this.socket.send(new messages.UpdateConfig(path, this.globalVersion, this.localVersion++, evt.detail.config));
+        });
+
+        this.cellUI.addEventListener('SelectCell', evt => {
+            const cellTypeSelector = mainUI.toolbarUI.cellToolbar.cellTypeSelector;
+            let i = 0;
+            for (const opt of cellTypeSelector.options) {
+                if (opt.value === evt.detail.lang) {
+                    cellTypeSelector.selectedIndex = i;
+                    break;
+                }
+                i++;
+            }
+
+            mainUI.toolbarUI.onContextChanged();
         });
 
         this.cellUI.addEventListener('AdvanceCell', evt => {
@@ -986,16 +953,15 @@ export class NotebookUI {
                 }
             }
         });
+    }
 
-        // TODO: Toolbar cleanup: this should be an event emitted by the toolbar itself
-        MainToolbar.cellTypeSelector.addEventListener('change', evt => {
-            const setLanguage = evt.newValue;
-            if (Cell.currentFocus && cellUI.cells[Cell.currentFocus.id] && cellUI.cells[Cell.currentFocus.id].language !== setLanguage) {
-                const id = Cell.currentFocus.id;
-                cellUI.setCellLanguage(Cell.currentFocus, setLanguage);
-                socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
-            }
-        })
+    onCellLanguageSelected(setLanguage, path) {
+        if (Cell.currentFocus && this.cellUI.cells[Cell.currentFocus.id] && this.cellUI.cells[Cell.currentFocus.id].language !== setLanguage) {
+            const id = Cell.currentFocus.id;
+            this.cellUI.setCellLanguage(Cell.currentFocus, setLanguage);
+            this.socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
+        }
+
     }
     
     onCellsLoaded(path, cells, config) {
@@ -1266,31 +1232,35 @@ export class NotebookListUI extends EventTarget {
     }
 }
 
-export class MainUI extends SplitView {
+export class MainUI {
     constructor(socket) {
-        let left = new NotebookListUI();
+        let left = { el: div(['grid-shell'], []) };
         let center = { el: div(['tab-view'], []) };
         let right = { el: div(['grid-shell'], []) };
-        super('MainUI', left, center, right);
 
-        this.el.classList.add('main-ui');
+        this.mainView = new SplitView('split-view', left, center, right);
+        this.toolbarUI = new ToolbarUI();
+
+        this.el = div(['main-ui'], [this.toolbarUI.el, this.mainView.el]);
+
         this.notebookContent = div(['notebook-content'], []);
 
-        this.browseUI = left;
         this.tabUI = new TabUI({notebook: this.notebookContent, kernel: right.el});
-        this.center.el.appendChild(this.tabUI.el);
-        this.center.el.appendChild(this.notebookContent);
+        this.mainView.center.el.appendChild(this.tabUI.el);
+        this.mainView.center.el.appendChild(this.notebookContent);
 
+        this.browseUI = new NotebookListUI();
+        this.mainView.left.el.appendChild(this.browseUI.el);
         this.browseUI.addEventListener('TriggerItem', evt => this.loadNotebook(evt.detail));
         this.browseUI.addEventListener('NewNotebook', evt => this.createNotebook(evt));
 
         this.socket = socket;
 
-        socket.listenOnceFor(messages.ListNotebooks, (items) => this.left.setItems(items));
+        socket.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
         socket.send(new messages.ListNotebooks([]));
 
         socket.listenOnceFor(messages.ServerHandshake, (interpreters) => {
-            mainToolbar.setInterpreters(interpreters);
+            this.toolbarUI.cellToolbar.setInterpreters(interpreters);
         });
 
         window.addEventListener('popstate', evt => {
@@ -1305,37 +1275,41 @@ export class MainUI extends SplitView {
             this.currentNotebook = this.tabUI.getTab(evt.detail).content.notebook;
         });
 
-        // TODO: part of toolbar cleanup
-            document.querySelector('.run-all').addEventListener('click', evt => {
-                this.runCells(this.currentNotebook.querySelectorAll('.cell-container.code-cell'))
-            });
+        this.toolbarUI.addEventListener('RunAll', () =>
+            this.runCells(this.currentNotebook.querySelectorAll('.cell-container.code-cell'))
+        );
 
-            document.querySelector('.run-cell.to-cursor').addEventListener('click', evt => {
-                const cells = [...this.currentNotebook.querySelectorAll('.cell-container.code-cell')];
-                const notebookUI = this.currentNotebook.cellsUI;
-                const activeCell = Cell.currentFocus;
+        this.toolbarUI.addEventListener('RunToCursor', () => {
+            const cells = [...this.currentNotebook.querySelectorAll('.cell-container.code-cell')];
+            const activeCell = Cell.currentFocus.container;
 
-                const activeCellIndex = cells.indexOf(activeCell);
-                if (activeCellIndex < 0) {
-                    console.log("Active cell is not part of current notebook?");
-                    return;
-                }
+            const activeCellIndex = cells.indexOf(activeCell);
+            if (activeCellIndex < 0) {
+                console.log("Active cell is not part of current notebook?");
+                return;
+            }
 
-                this.runCells(cells.slice(0, activeCellIndex + 1));
-            });
+            this.runCells(cells.slice(0, activeCellIndex + 1));
+        });
 
-            document.querySelector('.insert-cell-below').addEventListener('click', evt => {
-                const notebookUI = this.currentNotebook.cellsUI;
-                const activeCell = Cell.currentFocus.id;
-                if (!notebookUI.cells[activeCell] || notebookUI.cells[activeCell] !== Cell.currentFocus) {
-                    console.log("Active cell is not part of current notebook?");
-                    return;
-                }
+        this.toolbarUI.addEventListener('RunCurrentCell', () => {
+            const cells = [...this.currentNotebook.querySelectorAll('.cell-container.code-cell')];
+            const activeCell = Cell.currentFocus.container;
 
-                notebookUI.dispatchEvent(new CustomEvent('InsertCellAfter', { detail: { cellId: activeCell }}));
-            });
+            const activeCellIndex = cells.indexOf(activeCell);
 
-        document.querySelector('.insert-cell-above').addEventListener('click', evt => {
+            console.log("run current cell", activeCell, activeCellIndex, cells)
+
+            if (activeCellIndex < 0) {
+                console.log("Active cell is not part of current notebook?");
+                return;
+            }
+
+            this.runCells([cells[activeCellIndex]]);
+        });
+
+
+        this.toolbarUI.addEventListener('InsertAbove', () => {
             const notebookUI = this.currentNotebook.cellsUI;
             const activeCell = Cell.currentFocus.id;
             if (!notebookUI.cells[activeCell] || notebookUI.cells[activeCell] !== Cell.currentFocus) {
@@ -1348,7 +1322,18 @@ export class MainUI extends SplitView {
             notebookUI.dispatchEvent(new CustomEvent('InsertCellAfter', { detail: { cellId: (prevCell && prevCell.id) || null }}));
         });
 
-        document.querySelector('.delete-cell').addEventListener('click', evt => {
+        this.toolbarUI.addEventListener('InsertBelow', () => {
+            const notebookUI = this.currentNotebook.cellsUI;
+            const activeCell = Cell.currentFocus.id;
+            if (!notebookUI.cells[activeCell] || notebookUI.cells[activeCell] !== Cell.currentFocus) {
+                console.log("Active cell is not part of current notebook?");
+                return;
+            }
+
+            notebookUI.dispatchEvent(new CustomEvent('InsertCellAfter', { detail: { cellId: activeCell }}));
+        });
+
+        this.toolbarUI.addEventListener('DeleteCell', () => {
             const notebookUI = this.currentNotebook.cellsUI;
             const activeCell = Cell.currentFocus.id;
             if (!notebookUI.cells[activeCell] || notebookUI.cells[activeCell] !== Cell.currentFocus) {
@@ -1357,6 +1342,38 @@ export class MainUI extends SplitView {
             }
 
             notebookUI.dispatchEvent(new CustomEvent('DeleteCell', { detail: {cellId: activeCell }}));
+        });
+
+        // TODO: maybe we can break out this menu stuff once we need more menus.
+        this.toolbarUI.addEventListener('ViewPrefs', (evt) => {
+            const anchorElem = document.getElementsByClassName(evt.detail.anchor.className)[0];
+            const anchorPos = anchorElem.getBoundingClientRect();
+
+            const menu = evt.detail.elem;
+            const content = JSON.stringify(prefs.show(), null, 2);
+
+            monaco.editor.colorize(content, "json", {}).then(function(result) {
+                menu.innerHTML = result;
+            });
+
+            menu.style.display = 'block';
+
+            const bodySize = document.body.getBoundingClientRect();
+
+            menu.style.right = (bodySize.width - anchorPos.left) - anchorPos.width + "px";
+
+            // hide it when you click away...
+            document.addEventListener('mousedown', () => {
+                menu.style.display = 'none';
+            }, {once: true});
+
+            //... but not if you click inside it:
+            menu.addEventListener('mousedown', (evt) => evt.stopPropagation());
+        });
+
+        this.toolbarUI.addEventListener('ResetPrefs', () => {
+            prefs.clear();
+            location.reload(); //TODO: can we avoid reloading?
         });
     }
 
@@ -1378,13 +1395,17 @@ export class MainUI extends SplitView {
         const notebookTab = this.tabUI.getTab(path);
 
         if (!notebookTab) {
-            const notebookUI = new NotebookUI(path, this.socket);
+            const notebookUI = new NotebookUI(path, this.socket, this);
             this.socket.send(new messages.LoadNotebook(path));
             const tab = this.tabUI.addTab(path, span(['notebook-tab-title'], [path.split(/\//g).pop()]), {
                 notebook: notebookUI.cellUI.el,
                 kernel: notebookUI.kernelUI.el
             });
             this.tabUI.activateTab(tab);
+
+            this.toolbarUI.cellToolbar.cellTypeSelector.addEventListener('change', evt => {
+                notebookUI.onCellLanguageSelected(evt.newValue, path);
+            })
         } else {
             this.tabUI.activateTab(notebookTab);
         }
@@ -1414,53 +1435,6 @@ export class MainUI extends SplitView {
         }
     }
 }
-
-
-
-const textToolbar = new TextToolbar('Toolbar-Text', {
-    '.PN-Text-blockType': {
-        change: (evt) => {
-            document.execCommand('formatBlock', false, `<${evt.target.value}>`);
-        }
-    },
-    '.PN-Text-bold': 'command',
-    '.PN-Text-italic': 'command',
-    '.PN-Text-underline': 'command',
-    '.PN-Text-strike': 'command',
-    '.PN-Text-code': {
-        click: (evt) => {
-            const selection = document.getSelection();
-            if (selection.baseNode && selection.baseNode.tagName && selection.baseNode.tagName.toLowerCase() === "code") {
-                document.execCommand('insertHTML', false, selection.toString());
-            } else {
-                document.execCommand('insertHTML', false, '<code>' + selection.toString() + '</code>');
-            }
-        },
-        getState: (selection) => (selection.baseNode && selection.baseNode.tagName && selection.baseNode.tagName.toLowerCase() === "code")
-    },
-    '.PN-Text-Equation': {
-        click: (evt) => LaTeXEditor.forSelection().show(),
-        getState: (evt) => {
-            const selection = document.getSelection();
-            if (selection.focusNode && selection.focusNode.childNodes) {
-                for (let i = 0; i < selection.focusNode.childNodes.length; i++) {
-                    const node = selection.focusNode.childNodes[i];
-                    if (node.nodeType === 1 && selection.containsNode(node, false) && (node.classList.contains('katex') || node.classList.contains('katex-block'))) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-    },
-    '.PN-Text-ul': 'command',
-    '.PN-Text-ol': 'command',
-    '.PN-Text-indent': 'command',
-    '.PN-Text-outdent': 'command'
-});
-
-document.addEventListener('selectionchange', (evt) => textToolbar.action(evt));
-
 
 // TODO: move all these to happen when server handshake gives list of languages
 monaco.languages.registerCompletionItemProvider('scala', {

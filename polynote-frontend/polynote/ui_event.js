@@ -28,6 +28,7 @@ export class UIEventTarget extends EventTarget {
 
     setEventParent(parent) {
         this.eventParent = parent;
+        return this;
     }
 
     dispatchEvent(event) {
@@ -39,7 +40,7 @@ export class UIEventTarget extends EventTarget {
     }
 
     addEventChild(child) {
-        child.setEventParent(this);
+        return child.setEventParent(this);
     }
 
     addEventListener(type, listener, options) {
