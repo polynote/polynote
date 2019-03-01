@@ -248,8 +248,11 @@ export class SplitView {
             });
 
             leftDragger.addEventListener('drag', (evt) => {
-                this.templates.left = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX )) + "px";
-                this.layout();
+                evt.preventDefault();
+                if (evt.clientX) {
+                    this.templates.left = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX )) + "px";
+                    this.layout();
+                }
             });
 
             leftDragger.addEventListener('dragend', (evt) => {
@@ -285,7 +288,7 @@ export class SplitView {
 
             rightDragger.addEventListener('drag', (evt) => {
                 evt.preventDefault();
-                if (evt.screenY) {
+                if (evt.clientX) {
                     this.templates.right = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
                     this.layout();
                 }
