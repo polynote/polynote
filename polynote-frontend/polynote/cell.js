@@ -6,6 +6,7 @@ import {RichTextEditor} from "./text_editor.js";
 import {MainToolbar, mainToolbar} from "./ui.js";
 import {UIEvent, UIEventTarget} from "./ui_event.js"
 import { default as Diff } from './diff.js'
+import {ReprUI} from "./repr_ui";
 
 const JsDiff = new Diff();
 
@@ -380,12 +381,16 @@ export class CodeCell extends Cell {
                 // don't display this; it's a named declaration
                 // TODO: have a way to display these if desired
             } else {
-                // TODO: have a UI to look at other reprs
                 const [mime, content] = result.displayRepr;
-                this.addOutput(mime, content).then(el => {
-                    const ident = div(['out-ident'], `Out:`);
-                    el.insertBefore(ident, el.childNodes[0]);
-                });
+                const outLabel = result.reprs.length <= 1
+                    ? div(['out-ident'], `Out:`)
+                    : div(['out-ident', 'with-reprs'], `Out:`).click(evt => {
+                        const reprUi = new ReprUI(result.name, result.reprs);
+                        reprUi.setEventParent(this);
+                        reprUi.show();
+                    });
+
+                this.addOutput(mime, content).then(el => el.insertBefore(outLabel, el.childNodes[0]));
             }
         } else {
             throw "Result must be a ResultValue"

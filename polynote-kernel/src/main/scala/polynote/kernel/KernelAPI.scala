@@ -4,7 +4,7 @@ import cats.effect.concurrent.Ref
 import fs2.Stream
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
-import polynote.messages.{CellResult, ShortString, TinyList, TinyMap, TinyString}
+import polynote.messages.{ByteVector32, CellResult, HandleType, ShortString, TinyList, TinyMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
 
@@ -39,6 +39,8 @@ trait KernelAPI[F[_]] {
   def idle(): F[Boolean]
 
   def info: F[Option[KernelInfo]]
+
+  def getHandleData(handleType: HandleType, handle: Int, count: Int): F[List[ByteVector32]]
 
 }
 

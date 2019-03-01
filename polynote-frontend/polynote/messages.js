@@ -1,7 +1,7 @@
 'use strict';
 
 import {
-    DataReader, DataWriter, Codec, combined, arrayCodec, discriminated, optional, mapCodec,
+    DataReader, DataWriter, Codec, combined, arrayCodec, discriminated, optional, mapCodec, bufferCodec,
     str, shortStr, tinyStr, uint8, uint16, int32, uint32, bool
 } from './codec.js'
 
@@ -766,6 +766,25 @@ export class ServerHandshake extends Message {
 
 ServerHandshake.codec = combined(mapCodec(uint8, tinyStr, tinyStr)).to(ServerHandshake);
 
+export class HandleData extends Message {
+    static get msgTypeId() { return 17; }
+    static unapply(inst) {
+        return [inst.path, inst.handleType, inst.handle, inst.count, inst.data];
+    }
+
+    constructor(path, handleType, handle, count, data) {
+        super(path, handleType, handle, count, data);
+        this.path = path;
+        this.handleType = handleType;
+        this.handle = handle;
+        this.count = count;
+        this.data = data;
+        Object.freeze(this);
+    }
+}
+
+HandleData.codec = combined(shortStr, uint8, int32, int32, arrayCodec(int32, bufferCodec)).to(HandleData);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -784,6 +803,7 @@ Message.codecs = [
     CreateNotebook,  // 14
     DeleteCell,      // 15
     ServerHandshake, // 16
+    HandleData,      // 17
 ];
 
 

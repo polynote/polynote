@@ -205,6 +205,11 @@ class SocketSession(
         status      <- notebookRef.currentStatus
       } yield Stream.emit(KernelStatus(path, status))
 
+    case HandleData(path, handleType, handle, count, _) =>
+      for {
+        notebookRef <- getNotebook(path)
+        results     <- notebookRef.getHandleData(handleType, handle, count)
+      } yield Stream.emit(HandleData(path, handleType, handle, count, results))
 
     case other =>
       IO.pure(Stream.empty)

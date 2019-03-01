@@ -1,7 +1,7 @@
 'use strict';
 
 import {
-    Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, bufferCodec,
+    Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, bufferCodec, optional,
     str, shortStr, tinyStr, uint8, uint16, int32, uint32
 } from './codec.js'
 
@@ -75,6 +75,7 @@ export class LazyDataRepr extends ValueRepr {
 }
 
 LazyDataRepr.codec = combined(int32, DataType.codec).to(LazyDataRepr);
+LazyDataRepr.handleTypeId = 0;
 
 export class UpdatingDataRepr extends ValueRepr {
     static get msgTypeId() { return 4; }
@@ -92,6 +93,7 @@ export class UpdatingDataRepr extends ValueRepr {
 }
 
 UpdatingDataRepr.codec = combined(int32, DataType.codec).to(UpdatingDataRepr);
+UpdatingDataRepr.handleTypeId = 1;
 
 export class StreamingDataRepr extends ValueRepr {
     static get msgTypeId() { return 5; }
@@ -109,7 +111,8 @@ export class StreamingDataRepr extends ValueRepr {
     }
 }
 
-StreamingDataRepr.codec = combined(int32, DataType.codec, uint32).to(StreamingDataRepr);
+StreamingDataRepr.codec = combined(int32, DataType.codec, optional(uint32)).to(StreamingDataRepr);
+StreamingDataRepr.handleTypeId = 2;
 
 ValueRepr.codecs = [
     StringRepr,        // 0

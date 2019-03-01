@@ -210,3 +210,28 @@ final case class ServerHandshake(
   interpreters: TinyMap[TinyString, TinyString]
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
+
+
+case object Lazy extends HandleType
+case object Updating extends HandleType
+case object Streaming extends HandleType
+
+sealed trait HandleType
+
+object HandleType {
+  implicit val codec: Codec[HandleType] = discriminated[HandleType].by(byte)
+    .|(0) { case Lazy => Lazy } (identity) (provide(Lazy))
+    .|(1) { case Updating => Updating } (identity) (provide(Updating))
+    .|(2) { case Streaming => Streaming } (identity) (provide(Streaming))
+}
+
+
+final case class HandleData(
+  path: ShortString,
+  handleType: HandleType,
+  handle: Int,
+  count: Int,
+  data: List[ByteVector32]
+) extends Message
+
+object HandleData extends MessageCompanion[HandleData](17)

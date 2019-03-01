@@ -2,6 +2,7 @@ package polynote.kernel
 
 import java.io.File
 import java.net.URL
+import java.nio.ByteBuffer
 import java.util.concurrent.{ConcurrentHashMap, Executors}
 
 import cats.effect.concurrent.{Ref, Semaphore}
@@ -14,13 +15,15 @@ import cats.syntax.functor._
 import cats.syntax.traverse._
 import cats.instances.list._
 import fs2.Stream
-import fs2.concurrent.{Enqueue, Queue, Topic}
+import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
 import org.log4s.{Logger, getLogger}
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
 import polynote.kernel.util.{RuntimeSymbolTable, _}
-import polynote.messages.{CellResult, Notebook, NotebookCell}
+import polynote.messages.{ByteVector32, CellResult, HandleType, Lazy, Notebook, NotebookCell, Streaming, Updating}
+import polynote.runtime.{LazyDataRepr, StreamingDataRepr, UpdatingDataRepr}
+import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
@@ -200,6 +203,26 @@ class PolyKernel private[kernel] (
   def shutdown(): IO[Unit] = IO.unit
 
   def info: IO[Option[KernelInfo]] = IO.pure(None)
+
+  override def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[List[ByteVector32]] = handleType match {
+    case Lazy =>
+      for {
+        handleOpt <- IO(LazyDataRepr.getHandle(handleId))
+        handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Lazy#$handleId")))
+      } yield List(ByteVector32(ByteVector(handle.data.rewind().asInstanceOf[ByteBuffer])))
+
+    case Updating =>
+      for {
+        handleOpt <- IO(UpdatingDataRepr.getHandle(handleId))
+        handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Updating#$handleId")))
+      } yield handle.lastData.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer]))).toList
+
+    case Streaming =>
+      for {
+        handleOpt <- IO(StreamingDataRepr.getHandle(handleId))
+        handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Streaming#$handleId")))
+      } yield handle.iterator.take(count).toList.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer])))
+  }
 
 }
 

@@ -94,23 +94,29 @@ object UpdatingDataRepr {
     @volatile private var lastState: ByteBuffer = _
     @volatile private var releaseFlag: Int = 0
 
-    private[polynote] def setUpdater(updater: ByteBuffer => Unit): Unit = if (releaseFlag == 0) synchronized {
-      if (this.updater == null && lastState != null) {
-        this.updater = updater
-        updater.apply(lastState)
-      } else {
-        this.updater = updater
+    def setUpdater(updater: ByteBuffer => Unit): this.type = synchronized {
+      if (releaseFlag == 0) synchronized {
+        if (this.updater == null && lastState != null) {
+          this.updater = updater
+          updater.apply(lastState)
+        } else {
+          this.updater = updater
+        }
       }
+      this
     }
 
-    private[polynote] def setFinalizer(finalizer: () => Unit): Unit = synchronized {
+    def setFinalizer(finalizer: () => Unit): this.type = synchronized {
       if (releaseFlag == 1) {
         finalizer.apply()
         releaseFlag = 2
       } else if (releaseFlag == 0) {
         this.finalizer = finalizer
       }
+      this
     }
+
+    def lastData: Option[ByteBuffer] = Option(lastState)
 
     def update(data: ByteBuffer): Boolean = if (releaseFlag == 0) synchronized {
       if (this.updater != null) {

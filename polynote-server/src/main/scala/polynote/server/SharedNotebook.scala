@@ -14,8 +14,10 @@ import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, WindowBuffer}
 import polynote.messages._
+import polynote.runtime.UpdatingDataRepr
 import polynote.server.IOSharedNotebook.{GlobalVersion, SubscriberId}
 import polynote.util.VersionBuffer
+import scodec.bits.ByteVector
 
 /**
   * SharedNotebook is responsible for managing concurrent access and updates to a notebook. It's the central authority
@@ -237,18 +239,58 @@ class IOSharedNotebook(
 
     def startInterpreterFor(id: String): IO[Stream[IO, Result]] = ensureKernel().flatMap(_.startInterpreterFor(id))
 
+    /**
+      * If the [[ResultValue]] has any [[UpdatingDataRepr]]s, create a [[SignallingRef]] to capture its updatese in a
+      * Stream. When the finalizer of the repr is run, the stream will terminate.
+      */
+    private def watchUpdatingValues(value: ResultValue) = {
+      value.reprs.collect {
+        case updating: UpdatingDataRepr => updating
+      } match {
+        case Nil => Stream.empty
+        case updatingReprs =>
+          Stream.emits(updatingReprs).evalMap {
+            repr => SignallingRef[IO, Option[Option[ByteVector32]]](Some(None)).flatMap {
+              ref => IO {
+                UpdatingDataRepr.getHandle(repr.handle)
+                  .getOrElse(throw new IllegalStateException("Created UpdatingDataRepr handle not found"))
+                  .setUpdater {
+                    buf =>
+                      val b = buf.duplicate()
+                      b.rewind()
+                      ref.set(Some(Some(ByteVector32(ByteVector(b))))).unsafeRunSync()
+                  }.setFinalizer {
+                    () => ref.set(None).unsafeRunSync()
+                  }
+              } as {
+                ref.discrete.unNoneTerminate.unNone.map {
+                  update => HandleData(ShortString(path), Updating, repr.handle, 1, List(update))
+                }
+              }
+            }
+          }.flatten
+      }
+    }
+
     def runCell(id: String): IO[Stream[IO, Result]] = withInterpreterLaunch(id) {
       kernel =>
         val buf = new WindowBuffer[Result](1000)
         kernel.runCell(id).map {
-          results => results.evalTap {
-            result => IO(buf.add(result)) *> outputMessages.publish1(CellResult(ShortString(path), id, result))
-          }.onFinalize {
-            ref.update {
-              case (ver, nb) => ver -> nb.setResults(id, buf.toList)
+          results =>
+            results.evalTap {
+              // buffer the result and also broadcast to all clients
+              result => IO(buf.add(result)) *> outputMessages.publish1(CellResult(ShortString(path), id, result))
+            }.evalTap {
+              // if there are any UpdatingDataReprs, watch for their updates and broadcast
+              case v: ResultValue => watchUpdatingValues(v).through(outputMessages.publish).compile.drain.start.as(()) // TODO: is it wise to forget the fiber?
+              case _ => IO.unit
+            }.onFinalize {
+              // write the buffered results to the notebook
+              ref.update {
+                case (ver, nb) => ver -> nb.setResults(id, buf.toList)
+              }
             }
           }
-        }
     }
 
     def completionsAt(cellId: String, pos: Int): IO[List[Completion]] =
@@ -264,6 +306,9 @@ class IOSharedNotebook(
     def idle(): IO[Boolean] = ifKernelStarted(_.idle(), false)
 
     override def info: IO[Option[KernelInfo]] = ifKernelStarted(_.info, None)
+
+    override def getHandleData(handleType: HandleType, handle: Int, count: Int): IO[List[ByteVector32]] =
+      ensureKernel().flatMap(_.getHandleData(handleType, handle, count))
   }
 
 }

@@ -4,27 +4,29 @@ import java.io.File
 import java.net.URL
 
 import polynote.messages.truncateTinyString
-import polynote.runtime.{StringRepr, ValueRepr}
+import polynote.runtime.{ReprsOf, StringRepr, ValueRepr}
 
 import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
-import scala.reflect.runtime
-import scala.reflect.runtime.universe
+import scala.reflect.runtime.{universe => ru}
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
 import scala.tools.reflect.ToolBox
+import org.log4s.{Logger, getLogger}
 
 final case class KernelContext(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
   import global.{Type, Symbol}
 
-  val runtimeMirror: universe.Mirror = scala.reflect.runtime.universe.runtimeMirror(classLoader)
+  private val logger = getLogger
 
-  val importToRuntime: Importer[runtime.universe.type, global.type] = runtime.universe.internal.createImporter(global)
+  val runtimeMirror: ru.Mirror = ru.runtimeMirror(classLoader)
 
-  val importFromRuntime: Importer[global.type, runtime.universe.type] = global.internal.createImporter(scala.reflect.runtime.universe)
+  val importToRuntime: Importer[ru.type, global.type] = ru.internal.createImporter(global)
 
-  val runtimeTools: ToolBox[universe.type] = runtimeMirror.mkToolBox()
+  val importFromRuntime: Importer[global.type, ru.type] = global.internal.createImporter(ru)
+
+  val runtimeTools: ToolBox[ru.type] = runtimeMirror.mkToolBox()
 
   def inferType(value: Any): global.Type = {
     val instMirror = runtimeMirror.reflect(value)
@@ -63,9 +65,28 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
   }
 
   def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = {
-    val stringRepr = StringRepr(truncateTinyString(Option(value).map(_.toString).getOrElse("")))
-    // TODO: look up representations, i.e. with a typeclass (may have to push ValueRepr to polynote-runtime)
-    List(stringRepr)
+    val otherReprs = try {
+      runtimeTools.inferImplicitValue(ru.appliedType(ru.typeOf[ReprsOf[_]].typeConstructor, importToRuntime.importType(typ))) match {
+        case ru.EmptyTree => Array.empty[ValueRepr]
+        case tree =>
+          val untyped = runtimeTools.untypecheck(tree)
+          runtimeTools.eval(untyped).asInstanceOf[ReprsOf[Any]].apply(value)
+      }
+    } catch {
+      case err: Throwable =>
+        val e = err
+        logger.debug(err)(s"Error resolving reprs of $typ")
+        Array.empty[ValueRepr]
+    }
+
+    val stringRepr = if (otherReprs.exists(_.isInstanceOf[StringRepr]))
+      None
+    else
+      Some(StringRepr(truncateTinyString(Option(value).map(_.toString).getOrElse(""))))
+
+
+
+    stringRepr.toList ++ otherReprs.toList
   }
 
 }
