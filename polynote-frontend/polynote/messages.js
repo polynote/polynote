@@ -386,7 +386,7 @@ export class InsertCell extends Message {
     }
 }
 
-InsertCell.codec = combined(shortStr, uint32, uint32, NotebookCell.codec, optional(int16)).to(InsertCell);
+InsertCell.codec = combined(shortStr, uint32, uint32, NotebookCell.codec, int16).to(InsertCell);
 
 export class ParamInfo {
     static unapply(inst) {
