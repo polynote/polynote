@@ -6,6 +6,7 @@ import {
 } from './codec.js'
 
 import { ValueRepr, StringRepr, MIMERepr } from './value_repr.js'
+import {int16} from "./codec";
 
 export class Result {
     static decode(data) {
@@ -236,7 +237,7 @@ export class ResultValue extends Result {
     }
 }
 
-ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), tinyStr).to(ResultValue);
+ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), int16).to(ResultValue);
 
 Result.codecs = [
   Output,

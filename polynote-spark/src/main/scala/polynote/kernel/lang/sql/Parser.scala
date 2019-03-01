@@ -5,12 +5,13 @@ import org.antlr.v4.runtime.atn.ATNSimulator
 import org.antlr.v4.runtime._
 import org.apache.spark.sql.catalyst.parser._
 import polynote.kernel.{CompileErrors, KernelReport, Pos}
+import polynote.messages.CellID
 
 import scala.collection.mutable.ListBuffer
 
 class Parser {
 
-  def parse(id: String, sql: String): Ior[CompileErrors, Parser.Result] = {
+  def parse(id: CellID, sql: String): Ior[CompileErrors, Parser.Result] = {
      val lexer = new SqlBaseLexer(new org.antlr.v4.runtime.ANTLRInputStream(sql) {
        override def LA(i: Int): Int = {
          val la = super.LA(i)
@@ -55,9 +56,9 @@ class Parser {
 
   }
 
-  private def report(id: String, msg: String, err: RecognitionException): KernelReport = {
+  private def report(id: CellID, msg: String, err: RecognitionException): KernelReport = {
     val token = err.getOffendingToken
-    val pos = Pos(id, token.getStartIndex, token.getStopIndex, token.getStartIndex)
+    val pos = Pos(s"Cell$id", token.getStartIndex, token.getStopIndex, token.getStartIndex)
     KernelReport(pos, msg, KernelReport.Error)
   }
 }

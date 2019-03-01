@@ -3,7 +3,7 @@ package polynote.test
 import org.scalacheck.{Arbitrary, Gen}
 import Arbitrary.arbitrary
 import polynote.data.Rope
-import polynote.messages.{ContentEdit, ContentEdits, Delete, Insert, NotebookCell, TinyString, ShortList}
+import polynote.messages.{CellID, ContentEdit, ContentEdits, Delete, Insert, NotebookCell, ShortList, TinyString}
 
 import scala.collection.immutable.Queue
 
@@ -48,7 +48,7 @@ object Generators {
   // applying a bunch of edits to it
   implicit val arbRope: Arbitrary[Rope] = Arbitrary(genEdits.map(_._3))
 
-  def genCell(id: String): Gen[NotebookCell] = for {
+  def genCell(id: CellID): Gen[NotebookCell] = for {
     lang <- Gen.oneOf[TinyString]("text", "scala", "python")
     content <- genRope
     // TODO: also generate results & metadata

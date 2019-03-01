@@ -54,6 +54,7 @@ class SparkPolyKernel(
         val inPath = jarFS.getPath(polynoteRuntimeJar)
         val runtimeJar = new File(tmp.toFile, polynoteRuntimeJar).toPath
         Files.copy(inPath, runtimeJar, StandardCopyOption.REPLACE_EXISTING)
+        jarFS.close()
         runtimeJar
 
       case "file" =>
@@ -137,7 +138,7 @@ class SparkPolyKernel(
 
   override def info: IO[Option[KernelInfo]] = IO(session).map { sess =>
     sess.sparkContext.uiWebUrl.map { url =>
-      KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url">$url</a>"""))
+      KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url" target="_blank">$url</a>"""))
     }
   }
 

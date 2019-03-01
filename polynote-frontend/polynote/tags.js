@@ -45,13 +45,26 @@ export function tag(name, classes, attributes, content) {
     };
 
     el.click = function(handler) {
-      el.addEventListener('click', handler);
-      return el;
+        return el.listener('click', handler);
     };
 
     el.change = function(handler) {
-        el.addEventListener('change', handler);
-        return el;
+        return el.listener('change', handler);
+    };
+
+    el.listener = function(name, handler) {
+        el.addEventListener(name, handler);
+        return el
+    };
+
+    el.withKey = function(key, value) {
+        el[key] = value;
+        return el
+    };
+
+    el.disable = function () {
+        el.disabled = true;
+        return el
     };
 
     return el;
@@ -74,6 +87,9 @@ export function div(classes, content) {
 }
 
 export function button(classes, attributes, content) {
+    if (!("type" in attributes)) {
+        attributes["type"] = "button"
+    }
     return tag('button', classes, attributes, content);
 }
 
@@ -109,6 +125,16 @@ export function dropdown(classes, options) {
     }
 
     return tag('select', classes, {}, opts);
+}
+
+// create element that goes into a FakeSelect (but not the FakeSelect itself)
+export function fakeSelectElem(classes, buttons) {
+    classes.push("dropdown");
+    const el = div(classes, [
+        div(['marker', 'fas'], [""]),
+    ].concat(buttons));
+
+    return el
 }
 
 export function checkbox(classes, label, value) {

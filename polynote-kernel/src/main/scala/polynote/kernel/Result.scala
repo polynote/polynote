@@ -11,7 +11,7 @@ import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import polynote.kernel.util.{KernelContext, SymbolDecl}
-import polynote.messages.{TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
+import polynote.messages.{CellID, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
 import polynote.runtime.ValueRepr
 import scodec.bits.BitVector
 
@@ -144,7 +144,7 @@ final case class ResultValue(
   name: TinyString,
   typeName: TinyString,
   reprs: TinyList[ValueRepr],
-  sourceCell: TinyString,
+  sourceCell: CellID,
   value: Any,
   scalaType: Universe#Type
 ) extends Result {
@@ -161,12 +161,12 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
     globalType -> ctx.formatType(globalType)
   }
 
-  def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: String): ResultValue = {
+  def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: CellID): ResultValue = {
     val (globalType, typeStr) = toGlobalType(ctx, typ)
     ResultValue(name, typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ)
   }
 
-  def apply(ctx: KernelContext, name: String, value: Any, sourceCell: String): ResultValue =
+  def apply(ctx: KernelContext, name: String, value: Any, sourceCell: CellID): ResultValue =
     apply(ctx, name, ctx.inferType(value), value, sourceCell)
 
 
@@ -183,7 +183,7 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
       at some point if there is a client-side interpreter (i.e. JavaScript up in your browser) this would be a thing?
    */
   implicit val codec: Codec[ResultValue] =
-    (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec(ValueReprCodec.codec) ~ tinyStringCodec).xmap(
+    (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec(ValueReprCodec.codec) ~ short16).xmap(
       _ => throw new UnsupportedOperationException(
         s"Shouldn't be decoding a ${classOf[ResultValue].getSimpleName} on the server!"
         // the reflection is so this message can participate in refactoring of ResultValue's name, which is likely.

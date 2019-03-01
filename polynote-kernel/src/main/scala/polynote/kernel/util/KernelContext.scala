@@ -112,7 +112,7 @@ object KernelContext {
       */
     val dependencyClassLoader: URLClassLoader =
     new LimitedSharingClassLoader(
-      "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus)\\.",
+      "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus|org.slf4j)\\.",
       dependencyClassPath,
       parentClassLoader)
 

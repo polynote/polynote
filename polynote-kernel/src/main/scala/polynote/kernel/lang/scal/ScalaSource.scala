@@ -4,6 +4,7 @@ import cats.data.Ior
 import cats.syntax.either._
 import polynote.kernel.EmptyCell
 import polynote.kernel.util.KernelReporter
+import polynote.messages.CellID
 
 import scala.annotation.tailrec
 import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFile}
@@ -15,7 +16,7 @@ import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFi
   *       unwound?
   */
 class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)(
-  id: String,
+  id: CellID,
   availableSymbols: Set[Interpreter#Decl],
   previousSources: List[ScalaSource[Interpreter]],
   code: String
@@ -71,7 +72,8 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     transformer.transform(tree)
   }
 
-  private lazy val unitParser = global.newUnitParser(code, id)
+  private val cellName = s"Cell$id"
+  private lazy val unitParser = global.newUnitParser(code, cellName)
 
   // the parsed trees, but only successful if there weren't any parse errors
   lazy val parsed: Ior[Throwable, List[Tree]] = reporter.attemptIor(unitParser.parseStats())
@@ -93,7 +95,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
 
   private lazy val executionId = global.currentRunId
 
-  lazy val moduleName: global.TermName = global.TermName(s"Eval$$$id$$$executionId")
+  lazy val moduleName: global.TermName = global.TermName(s"Eval$$$cellName$$$executionId")
 
   private lazy val results = parsedTrees.flatMap {
     trees => Either.catchNonFatal {
@@ -195,7 +197,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
 
   private lazy val compileUnit: Either[Throwable, global.CompilationUnit] = wrapped.right.map {
     tree =>
-      val sourceFile = CellSourceFile(id)
+      val sourceFile = CellSourceFile(cellName)
       val unit = new global.RichCompilationUnit(sourceFile) //new global.CompilationUnit(CellSourceFile(id))
       unit.body = tree
       unit.status = global.JustParsed
