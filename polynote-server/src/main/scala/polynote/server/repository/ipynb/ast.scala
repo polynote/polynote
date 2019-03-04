@@ -8,6 +8,7 @@ import polynote.data.Rope
 import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
 import polynote.messages._
+import polynote.runtime.{MIMERepr, StringRepr}
 
 sealed trait JupyterCellType
 

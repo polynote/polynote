@@ -2,6 +2,10 @@ package polynote.kernel
 
 import java.net.URL
 
+import scodec.Codec
+import scodec.codecs.DiscriminatorCodec
+import shapeless.HList
+
 import scala.reflect.api.Universe
 
 package object util {

@@ -16,6 +16,10 @@ export class DataReader {
         return this.buffer.getUint8(this.offset++);
     }
 
+    readBoolean() {
+        return !!this.readUint8();
+    }
+
     readInt8() {
         return this.buffer.getInt8(this.offset++);
     }
@@ -42,6 +46,13 @@ export class DataReader {
         const result = this.buffer.getInt32(this.offset);
         this.offset += 4;
         return result;
+    }
+
+    // NOTE: JavaScript can't represent all 64-bit integers...
+    readInt64() {
+        const hi = this.readInt32();
+        const lo = this.readInt32();
+        return (hi << 32) | lo;
     }
 
     readFloat32() {

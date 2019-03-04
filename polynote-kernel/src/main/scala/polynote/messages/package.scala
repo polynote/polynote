@@ -5,7 +5,8 @@ import java.nio.charset.StandardCharsets
 import cats.data.Ior
 import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
 import scodec.Codec
-import scodec.codecs.{listOfN, string, uint16, uint8, variableSizeBytes, byte}
+import scodec.bits.ByteVector
+import scodec.codecs.{byte, listOfN, string, uint32, uint16, uint8, variableSizeBytes}
 import shapeless.Lazy
 import shapeless.tag.@@
 
@@ -92,6 +93,15 @@ package object messages {
 
   implicit def tinyMapEncoder[A, B](implicit enc: Encoder[Map[A, B]]): Encoder[TinyMap[A, B]] = enc.contramap(m => m)
   implicit def tinyMapDecoder[A, B](implicit dec: Decoder[Map[A, B]]): Decoder[TinyMap[A, B]] = dec.map(m => TinyMap(m))
+
+  // refined ByteVector type, to encode it with a 32-bit length frame
+  // assumption: We will never be sending ByteVectors of more than 4GB over the wire!
+  type ByteVector32 = ByteVector @@ ShortTag
+  implicit def ByteVector32(byteVector: ByteVector): ByteVector32 = byteVector.asInstanceOf[ByteVector32]
+  implicit val byteVector32Codec: Codec[ByteVector32] =
+    scodec.codecs.variableSizeBytesLong(uint32, scodec.codecs.bytes).xmap(_.asInstanceOf[ByteVector32], v => v)
+
+
 
   implicit def iorCodec[A, B](implicit codecA: Codec[A], codecB: Codec[B]): Codec[Ior[A, B]] =
     scodec.codecs.discriminated[Ior[A, B]].by(byte)

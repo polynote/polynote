@@ -856,6 +856,17 @@ export class NotebookUI {
             this.socket.send(new messages.ParametersAt(path, id, pos, null))
         });
 
+        this.cellUI.addEventListener("ReprDataRequest", evt => {
+            const req = evt.detail;
+            this.socket.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data) => {
+                if (path === this.path && handleType === req.handleType && handleId === req.handleId) {
+                    req.onComplete(data);
+                    return false;
+                } else return true;
+            });
+            this.socket.send(new messages.HandleData(path, req.handleType, req.handleId, req.count, []));
+        });
+
         this.kernelUI.addEventListener('Connect', evt => {
            if (!this.socket.isOpen) {
                this.socket.reconnect();
