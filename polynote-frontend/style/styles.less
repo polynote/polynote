@@ -37,8 +37,8 @@
 @code-fonts:    'Hasklig', 'Fira Code', 'Menlo', fixed;
 
 @toolbar-height: 68px;
-@cell-margin-width: 40pt;
-@cell-margin-width-plus-padding: 50pt;
+@cell-margin-width: 55pt;
+@cell-margin-width-plus-padding: 65pt;
 
 body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
@@ -292,11 +292,23 @@ body {
 
       button {
         display: block;
-        margin: 0 auto;
+        float: left;
       }
 
       button.run-cell.refresh .icon {
         font-size: 8px;
+      }
+
+      .cell-label {
+        font-family: @code-fonts;
+        text-align: right;
+        font-size: 11pt;
+        float: right;
+        line-height: 34px
+      }
+
+      .cell-label:after {
+        content: ':'
       }
     }
 

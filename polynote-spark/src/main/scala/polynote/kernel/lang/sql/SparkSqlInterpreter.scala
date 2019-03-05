@@ -51,40 +51,41 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
   private def dropTempViews(views: List[String]): IO[Unit] = views.map(name => IO(spark.catalog.dropTempView(name))).sequence.as(())
 
   private def outputDataFrame(df: DataFrame): IO[Result] = IO {
-    // TODO: We should have a way of just sending raw tabular data to the client for it to display and maybe plot!
-    //       But we'd have to write some actual content to the notebook file... maybe Output could take multiple
-    //       representations of the content and each representation could be possibly written to the notebook and
-    //       possibly sent to the client?
-    //       Sending raw table data was the reason for starting DataType stuff in polynote-runtime, but I haven't done
-    //       anything with it yet (JS)
+    kernelContext.runInterruptible {
+      // TODO: We should have a way of just sending raw tabular data to the client for it to display and maybe plot!
+      //       But we'd have to write some actual content to the notebook file... maybe Output could take multiple
+      //       representations of the content and each representation could be possibly written to the notebook and
+      //       possibly sent to the client?
+      //       Sending raw table data was the reason for starting DataType stuff in polynote-runtime, but I haven't done
+      //       anything with it yet (JS)
 
-    // TODO: When async/updatable outputs are supported, would be cool to support structured streaming stuff
+      // TODO: When async/updatable outputs are supported, would be cool to support structured streaming stuff
 
-    // this is really just placeholder... in the future the display should be much fancier than this
-    val schema = df.schema
+      // this is really just placeholder... in the future the display should be much fancier than this
+      val schema = df.schema
 
-    def escape(str: String) = str.replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+      def escape(str: String) = str.replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
-    val heading = schema.fields.map {
-      field => s"<th>${escape(field.name)}</th>"
-    }.mkString("<thead><tr>", "", "</tr></thead>")
+      val heading = schema.fields.map {
+        field => s"<th>${escape(field.name)}</th>"
+      }.mkString("<thead><tr>", "", "</tr></thead>")
 
-    val count = df.count()
-    val rows = df.take(50)
+      val count = df.count()
+      val rows = df.take(50)
 
-    val body = rows.view.map {
-      row => row.toSeq.view.map(_.toString).map(escape).mkString("<td>", "</td><td>", "</td>")
-    }.mkString("<tbody><tr>", "</tr><tr>", "</tr></tbody>")
+      val body = rows.view.map {
+        row => row.toSeq.view.map(_.toString).map(escape).mkString("<td>", "</td><td>", "</td>")
+      }.mkString("<tbody><tr>", "</tr><tr>", "</tr></tbody>")
 
-    Output(
-      "text/html",
-      s"""<table>
-         |  <caption>Showing ${rows.length} of $count rows</caption>
-         |  $heading
-         |  $body
-         |</table>""".stripMargin
-    )
-
+      Output(
+        "text/html",
+        s"""<table>
+           |  <caption>Showing ${rows.length} of $count rows</caption>
+           |  $heading
+           |  $body
+           |</table>""".stripMargin
+      )
+    }
   }.handleErrorWith(err => IO.pure(RuntimeError(err)))
 
   override def runCode(

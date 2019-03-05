@@ -237,3 +237,6 @@ final case class HandleData(
 ) extends Message
 
 object HandleData extends MessageCompanion[HandleData](17)
+
+final case class CancelTasks(path: ShortString) extends Message
+object CancelTasks extends MessageCompanion[CancelTasks](18)

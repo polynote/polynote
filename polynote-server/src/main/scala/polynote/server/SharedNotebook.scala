@@ -9,6 +9,8 @@ import cats.effect.{Concurrent, ContextShift, IO}
 import cats.syntax.apply._
 import cats.syntax.functor._
 import cats.syntax.flatMap._
+import cats.syntax.traverse._
+import cats.instances.list._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
 import polynote.kernel._
@@ -214,11 +216,12 @@ class IOSharedNotebook(
       }
     }(_ => kernelLock.release)
 
+    // we want to queue all the cells, but evaluate them in order. So the outer IO of the result runs the outer IO of queueCell for all the cells.
     override def runCells(ids: List[CellID]): IO[Stream[IO, CellResult]] =
-      ensureKernel().map {
-        kernel => Stream.emits(ids).evalMap {
-          id => runCell(id).map(results => results.map(result => CellResult(ShortString(path), id, result)))
-        }.flatten
+      ids.map {
+        id => queueCell(id).map(_.map(_.map(result => CellResult(ShortString(path), id, result))))
+      }.sequence.map {
+        queued => Stream.emits(queued).flatMap(run => Stream.eval(run).flatten)
       }
 
     def startKernel(): IO[Unit] = ensureKernel().as(())
@@ -273,25 +276,42 @@ class IOSharedNotebook(
       }
     }
 
-    def runCell(id: CellID): IO[Stream[IO, Result]] = withInterpreterLaunch(id) {
-      kernel =>
-        val buf = new WindowBuffer[Result](1000)
-        kernel.runCell(id).map {
-          results =>
-            results.evalTap {
-              // buffer the result and also broadcast to all clients
-              result => IO(buf.add(result)) *> outputMessages.publish1(CellResult(ShortString(path), id, result))
-            }.evalTap {
-              // if there are any UpdatingDataReprs, watch for their updates and broadcast
-              case v: ResultValue => watchUpdatingValues(v).through(outputMessages.publish).compile.drain.start.as(()) // TODO: is it wise to forget the fiber?
-              case _ => IO.unit
-            }.onFinalize {
-              // write the buffered results to the notebook
-              ref.update {
-                case (ver, nb) => ver -> nb.setResults(id, buf.toList)
-              }
+    override def runCell(id: CellID): IO[Stream[IO, Result]] = queueCell(id).flatten
+
+    def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = get.flatMap {
+      notebook =>
+        notebook.getCell(id).filterNot(_.language == "text").fold[IO[IO[Stream[IO, Result]]]](IO.pure(IO.pure(Stream.empty))) {
+          _ =>
+            withInterpreterLaunch(id) {
+              kernel =>
+                val buf = new WindowBuffer[Result](1000)
+                kernel.queueCell(id).map {
+                  ioResult => ioResult.map {
+                    results =>
+                      results.evalTap {
+                        // buffer the result and also broadcast to all clients
+                        result => IO(buf.add(result)).flatMap {
+                          _ =>
+                            outputMessages.publish1(CellResult(ShortString(path), id, result))
+                        }
+                      }.evalTap {
+                        // if there are any UpdatingDataReprs, watch for their updates and broadcast
+                        case v: ResultValue => watchUpdatingValues(v).through(outputMessages.publish).compile.drain.start.as(()) // TODO: is it wise to forget the fiber?
+                        case _ => IO.unit
+                      }.onFinalize {
+                        // write the buffered results to the notebook
+                        ref.update {
+                          case (ver, nb) => ver -> nb.setResults(id, buf.toList)
+                        }
+                      }
+                  }.handleErrorWith {
+                    case errs@CompileErrors(_) => IO.pure(Stream.emit(errs))
+                    case err@RuntimeError(_) => IO.pure(Stream.emit(err))
+                    case err => IO.pure(Stream.emit(RuntimeError(err)))
+                  }
+                }
             }
-          }
+        }
     }
 
     def completionsAt(id: CellID, pos: Int): IO[List[Completion]] =
@@ -310,6 +330,8 @@ class IOSharedNotebook(
 
     override def getHandleData(handleType: HandleType, handle: Int, count: Int): IO[List[ByteVector32]] =
       ensureKernel().flatMap(_.getHandleData(handleType, handle, count))
+
+    override def cancelTasks(): IO[Unit] = ifKernelStarted(_.cancelTasks(), ())
   }
 
 }
