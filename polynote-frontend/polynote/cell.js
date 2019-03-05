@@ -20,7 +20,7 @@ export class CellEvent extends UIEvent {
 }
 
 export class SelectCellEvent extends CellEvent {
-    constructor(cell, lang) {
+    constructor(cell) {
         super('SelectCell', cell.id, {cell});
     }
 }
