@@ -549,19 +549,8 @@ export class NotebookCellsUI extends UIEventTarget {
         this.configUI.addEventListener('UpdatedConfig', evt => this.dispatchEvent(new CustomEvent('UpdatedConfig', { detail: evt.detail })));
     }
 
-    extractId(cellRef) {
-        console.log("extracting id from", cellRef)
-        if (typeof cellRef === 'string') {
-            return cellRef.match(/^Cell(\d+)$/)[1];
-        } else if (typeof cellRef === 'number') {
-            return cellRef;
-        } else {
-            throw { message: `Unable to parse cell reference ${cellRef}` };
-        }
-    }
-
     getCell(cellRef) {
-        return this.cells[this.extractId(cellRef)];
+        return this.cells[Cell.extractId(cellRef)];
     }
 
     onWindowResize(evt) {
@@ -608,7 +597,7 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 
     setupCell(cell) {
-        this.cells[this.extractId(cell.id)] = cell;
+        this.cells[Cell.extractId(cell.id)] = cell;
         if (cell.editor && cell.editor.layout) {
             cell.editor.layout();
         }
@@ -1408,7 +1397,7 @@ export class MainUI {
         const ids = [];
         [...cellContainers].forEach(container => {
             if (container.cell && container.id) {
-                ids.push(container.id);
+                ids.push(Cell.extractId(container.id));
                 container.cell.dispatchEvent(new BeforeCellRunEvent(container.id));
             }
         });

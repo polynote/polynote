@@ -106,7 +106,16 @@ export class Cell extends UIEventTarget {
         this.cellInput.querySelector('.run-cell').onclick = (evt) => {
             this.dispatchEvent(new RunCellEvent(this.id));
         }
+    }
 
+    static extractId(cellRef) {
+        if (typeof cellRef === 'string') {
+            return cellRef.match(/^Cell(\d+)$/)[1];
+        } else if (typeof cellRef === 'number') {
+            return cellRef;
+        } else {
+            throw { message: `Unable to parse cell reference ${cellRef}` };
+        }
     }
 
     focus() {
