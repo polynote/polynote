@@ -383,6 +383,10 @@ export class CodeCell extends Cell {
                 // don't display this; it's a named declaration
                 // TODO: have a way to display these if desired
             } else {
+                if (this.resultEl && this.resultEl.parentNode) {
+                    this.resultEl.parentNode.removeChild(this.resultEl);
+                    this.resultEl = null;
+                }
                 const [mime, content] = result.displayRepr;
                 const outLabel = result.reprs.length <= 1
                     ? div(['out-ident'], `Out:`)
@@ -392,7 +396,10 @@ export class CodeCell extends Cell {
                         reprUi.show();
                     });
 
-                this.addOutput(mime, content).then(el => el.insertBefore(outLabel, el.childNodes[0]));
+                this.addOutput(mime, content).then(el => {
+                    this.resultEl = el;
+                    el.insertBefore(outLabel, el.childNodes[0])
+                });
             }
         } else {
             throw "Result must be a ResultValue"
