@@ -57,13 +57,13 @@ class PolyKernel private[kernel] (
   /**
     * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
     */
-  protected lazy val taskQueue: TaskManager = TaskManager(statusUpdates).unsafeRunSync()
+  protected lazy val taskManager: TaskManager = TaskManager(statusUpdates).unsafeRunSync()
 
   // TODO: duplicates logic from runCell
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
       interp.predefCode match {
-        case Some(code) => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(-1, Nil, Nil, code)).map {
+        case Some(code) => taskManager.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(-1, Nil, Nil, code)).map {
           results => results.collect {
             case v: ResultValue => v
           }.evalTap {
@@ -85,7 +85,7 @@ class PolyKernel private[kernel] (
           Option(interpreters.get(language)).map(interp => IO.pure(interp -> Stream.empty)).getOrElse {
             for {
               factory <- IO.fromEither(Either.fromOption(availableInterpreters.get(language), new RuntimeException(s"No interpreter for language $language")))
-              interp  <- taskQueue.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
+              interp  <- taskManager.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
               _        = interpreters.put(language, interp)
               results  <- runPredef(interp, language)
             } yield (interp, results)
@@ -142,7 +142,7 @@ class PolyKernel private[kernel] (
   def runCell(id: CellID): IO[Stream[IO, Result]] = queueCell(id).flatten
 
   def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = {
-    taskQueue.queueTaskStream(s"Cell $id", s"Cell $id", s"Running $id") {
+    taskManager.queueTaskStream(s"Cell $id", s"Cell $id", s"Running $id") {
       taskInfo =>
         Queue.unbounded[IO, Option[Result]].map {
           oq =>
@@ -206,13 +206,13 @@ class PolyKernel private[kernel] (
     symbolTable.currentTerms.toList.map(_.toResultValue)
   }
 
-  def currentTasks(): IO[List[TaskInfo]] = taskQueue.allTasks
+  def currentTasks(): IO[List[TaskInfo]] = taskManager.allTasks
 
-  def idle(): IO[Boolean] = taskQueue.runningTasks.map(_.isEmpty)
+  def idle(): IO[Boolean] = taskManager.runningTasks.map(_.isEmpty)
 
   def init: IO[Unit] = IO.unit
 
-  def shutdown(): IO[Unit] = taskQueue.shutdown()
+  def shutdown(): IO[Unit] = taskManager.shutdown()
 
   def info: IO[Option[KernelInfo]] = IO.pure(None)
 
@@ -238,11 +238,11 @@ class PolyKernel private[kernel] (
 
   override def cancelTasks(): IO[Unit] = {
     // don't bother to cancel the running fiber – it doesn't seem to do anything except silently succeed
-    // instead the language interpreter has to participate by using kernelContext.runTask, so we can call
+    // instead the language interpreter has to participate by using kernelContext.runInterruptible, so we can call
     // kernelContext.interrupt() here.
     // TODO: Why can't it work with fibers? Is there any point in tracking the fibers if they can't be cancelled?
     // TODO: have to go through symbolTable.kernelContext because SparkPolyKernel overrides it (but not kernelContext) - needs to be fixed
-    taskQueue.cancelAllQueued *> IO(symbolTable.kernelContext.interrupt())
+    taskManager.cancelAllQueued *> IO(symbolTable.kernelContext.interrupt())
   }
 
 }
