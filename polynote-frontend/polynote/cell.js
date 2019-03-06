@@ -20,8 +20,8 @@ export class CellEvent extends UIEvent {
 }
 
 export class SelectCellEvent extends CellEvent {
-    constructor(cellId, lang) {
-        super('SelectCell', cellId, {lang: lang});
+    constructor(cell) {
+        super('SelectCell', cell.id, {cell});
     }
 }
 
@@ -120,14 +120,13 @@ export class Cell extends UIEventTarget {
         Cell.currentFocus = this;
         this.container.classList.add('active');
 
-        this.dispatchEvent(new SelectCellEvent(this.id, this.language));
+        this.dispatchEvent(new SelectCellEvent(this));
     }
 
     blur() {
         this.container.classList.remove('active');
         if (Cell.currentFocus === this) {
             Cell.currentFocus = null;
-            this.dispatchEvent(new SelectCellEvent(this.id, this.language)); // technically this is deselection but we do the same thing anyways...
         }
     }
 

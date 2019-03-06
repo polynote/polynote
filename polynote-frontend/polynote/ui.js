@@ -715,15 +715,29 @@ export class NotebookUI {
         this.cellUI.addEventListener('SelectCell', evt => {
             const cellTypeSelector = mainUI.toolbarUI.cellToolbar.cellTypeSelector;
             let i = 0;
+
+            // update cell type selector
             for (const opt of cellTypeSelector.options) {
-                if (opt.value === evt.detail.lang) {
+                if (opt.value === evt.detail.cell.lang) {
                     cellTypeSelector.selectedIndex = i;
                     break;
                 }
                 i++;
             }
 
+            // notify toolbar of context change
             mainUI.toolbarUI.onContextChanged();
+
+            // ensure cell is visible in the viewport
+            const container = evt.detail.cell.container;
+            const cellY = container.offsetTop;
+            const cellHeight = container.offsetHeight;
+            const viewport = mainUI.notebookContent;
+            const viewportScrollTop = viewport.scrollTop;
+            const viewportHeight = viewport.clientHeight;
+            if (cellY + cellHeight > viewportScrollTop + viewportHeight || cellY < viewportScrollTop) {
+                setTimeout(() => viewport.scrollTop = cellY, 0);
+            }
         });
 
         this.cellUI.addEventListener('AdvanceCell', evt => {
