@@ -57,7 +57,7 @@ class NotebookToolbarUI extends UIEventTarget {
         this.el = toolbarElem("notebook", [
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
-                    .click(() => this.dispatchEvent(new ToolbarEvent(("RunAll")))),
+                    .click(() => this.dispatchEvent(new ToolbarEvent("RunAll"))),
                 iconButton(["branch"], "Create branch", "", "Branch").disable(),
                 iconButton(["publish"], "Publish", "", "Publish").disable(),
             ], [
@@ -82,6 +82,8 @@ class CellToolbarUI extends UIEventTarget {
                     .click(() => this.dispatchEvent(new ToolbarEvent(("InsertBelow")))),
                 iconButton(["delete-cell"], "Delete current cell", "", "Delete")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("DeleteCell")))),
+                iconButton(['undo'], 'Undo', '', 'Undo')
+                    .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
             ]
         ]);
 
