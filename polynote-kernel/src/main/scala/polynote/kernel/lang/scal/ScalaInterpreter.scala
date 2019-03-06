@@ -195,7 +195,7 @@ class ScalaInterpreter(
               ioValues =>
                 Stream(
                   maybeResultQ.dequeue.unNoneTerminate,
-                  Stream.eval(ioValues).flatMap(Stream.emits).onFinalize(maybeResultQ.enqueue1(None))
+                  Stream.eval(ioValues).flatMap(Stream.emits) ++ Stream.eval(maybeResultQ.enqueue1(None)).drain
                 ).parJoinUnbounded
             }
         }

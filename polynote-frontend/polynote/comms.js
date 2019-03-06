@@ -73,7 +73,7 @@ export class SocketSession extends EventTarget {
 
                 for (var handler of this.messageListeners) {
                     if (msg instanceof handler[0]) {
-                        const result = handler[1].apply(null, msg.constructor.unapply(msg));
+                        const result = handler[1].apply(null, handler[0].unapply(msg));
                         if (handler[2] && result === false) {
                             this.removeMessageListener(handler);
                         }

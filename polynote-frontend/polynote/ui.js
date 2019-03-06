@@ -13,6 +13,7 @@ import * as messages from './messages.js'
 import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from './result.js'
 import { prefs } from './prefs.js'
 import { ToolbarUI } from "./toolbar";
+import match from "./match.js";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -324,7 +325,7 @@ export class SplitView {
     }
 }
 
-export class KernelUI extends EventTarget {
+export class KernelUI extends UIEventTarget {
     constructor(socket) {
         super();
         this.info = new KernelInfoUI();
@@ -350,16 +351,16 @@ export class KernelUI extends EventTarget {
     }
 
     connect() {
-        this.dispatchEvent(new CustomEvent('Connect'))
+        this.dispatchEvent(new UIEvent('Connect'))
     }
 
     startKernel() {
-        this.dispatchEvent(new CustomEvent('StartKernel'))
+        this.dispatchEvent(new UIEvent('StartKernel'))
     }
 
     killKernel() {
         if (confirm("Kill running kernel? State will be lost.")) {
-            this.dispatchEvent(new CustomEvent('KillKernel'))
+            this.dispatchEvent(new UIEvent('KillKernel'))
         }
     }
 
@@ -549,7 +550,6 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 
     extractId(cellRef) {
-        console.log("extracting id from", cellRef)
         if (typeof cellRef === 'string') {
             return cellRef.match(/^Cell(\d+)$/)[1];
         } else if (typeof cellRef === 'number') {
@@ -691,10 +691,12 @@ class EditBuffer {
     }
 }
 
-export class NotebookUI {
+export class NotebookUI extends UIEventTarget {
     constructor(path, socket, mainUI) {  // TODO: Maybe UI shouldn't talk directly to session? I dunno...
-        let cellUI = new NotebookCellsUI();
-        let kernelUI = new KernelUI();
+        super();
+        let cellUI = new NotebookCellsUI().setEventParent(this);
+        cellUI.notebookUI = this;
+        let kernelUI = new KernelUI().setEventParent(this);
         //super(null, cellUI, kernelUI);
         //this.el.classList.add('notebook-ui');
         this.path = path;
@@ -708,7 +710,9 @@ export class NotebookUI {
         this.editBuffer = new EditBuffer();
 
         this.cellUI.addEventListener('UpdatedConfig', evt => {
-            this.socket.send(new messages.UpdateConfig(path, this.globalVersion, this.localVersion++, evt.detail.config));
+            const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
+            this.editBuffer.push(this.localVersion, update);
+            this.socket.send(this.localVersion, update);
         });
 
         this.cellUI.addEventListener('SelectCell', evt => {
@@ -761,7 +765,9 @@ export class NotebookUI {
            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.el.querySelector('.cell-container').id);
            const nextId = this.cellUI.cellCount;
            const newCell = current.language === 'text' ? new TextCell(nextId, '', 'text') : new CodeCell(nextId, '', current.language);
-           this.socket.send(new messages.InsertCell(path, this.globalVersion, this.localVersion++, new messages.NotebookCell(newCell.id, newCell.language, ''), current.id));
+           const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, new messages.NotebookCell(newCell.id, newCell.language, ''), current.id)
+           this.socket.send(update);
+           this.editBuffer.push(this.localVersion, update);
            this.cellUI.insertCell(newCell, current);
            newCell.focus();
         });
@@ -769,7 +775,9 @@ export class NotebookUI {
         this.cellUI.addEventListener('DeleteCell', evt => {
             const current = this.cellUI.getCell(evt.detail.cellId);
             if (current) {
-                this.socket.send(new messages.DeleteCell(path, this.globalVersion, this.localVersion++, current.id));
+                const update = new messages.DeleteCell(path, this.globalVersion, ++this.localVersion, current.id);
+                this.socket.send(update);
+                this.editBuffer.push(this.localVersion, update);
                 this.cellUI.removeCell(current.id);
             }
         });
@@ -789,8 +797,9 @@ export class NotebookUI {
         });
 
         this.cellUI.addEventListener('ContentChange', (evt) => {
-            this.socket.send(new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits));
-            this.editBuffer.push(this.localVersion, evt.detail.edits);
+            const update = new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits);
+            this.socket.send(update);
+            this.editBuffer.push(this.localVersion, update);
         });
 
         this.cellUI.addEventListener('CompletionRequest', (evt) => {
@@ -918,32 +927,45 @@ export class NotebookUI {
             }
         });
 
-        socket.addMessageListener(messages.UpdateCell, (path, globalVersion, localVersion, id, edits) => {
-            if (globalVersion >= this.globalVersion) {
-                this.globalVersion = globalVersion;
-                let rebasedEdits = edits;
+        socket.addMessageListener(messages.NotebookUpdate, update => {
+            if (update.path === this.path) {
+                if (update.globalVersion >= this.globalVersion) {
+                    this.globalVersion = update.globalVersion;
 
-                if (localVersion < this.localVersion) {
-                    const editsBefore = this.editBuffer.range(localVersion, this.localVersion);
-                    rebasedEdits = messages.ContentEdit.rebaseEdits(edits, editsBefore);
-                } else if (localVersion > this.localVersion) {
-                    console.error("Local version from server is after client's. Something's wrong.")
+                    if (update.localVersion < this.localVersion) {
+                        const prevUpdates = this.editBuffer.range(update.localVersion, this.localVersion);
+                        update = messages.NotebookUpdate.rebase(update, prevUpdates);
+                    }
+
+
+                    this.localVersion++;
+
+                    match(update)
+                        .when(messages.UpdateCell, (p, g, l, id, edits) => {
+                            const cell = this.cellUI.getCell(id);
+                            if (cell) {
+                                cell.applyEdits(edits);
+                                this.editBuffer.push(this.localVersion, messages);
+                            }
+                        })
+                        .when(messages.InsertCell, (p, g, l, cell, after) => {
+                            const prev = this.cellUI.getCell(after);
+                            const newCell = (prev && prev.language && prev.language !== "text")
+                                            ? new CodeCell(cell.id, cell.content, cell.language)
+                                            : new TextCell(cell.id, cell.content);
+                            this.cellUI.insertCell(newCell, after)
+                        })
+                        .when(messages.DeleteCell, (p, g, l, id) => this.cellUI.removeCell(id))
+                        .when(messages.UpdateConfig, (p, g, l, config) => this.cellUI.configUI.setConfig(config))
+                        .when(messages.SetCellLanguage, (p, g, l, id, language) => this.cellUI.setCellLanguage(this.cellUI.getCell(id), language))
+                        .otherwise();
+
+
+                    // discard edits before the local version from server – it will handle rebasing at least until that point
+                    this.editBuffer.discard(update.localVersion);
+
                 }
-
-                this.localVersion++;
-
-                const cell = this.cellUI.getCell(id);
-
-                if (cell) {
-                    cell.applyEdits(rebasedEdits);
-                    this.editBuffer.push(this.localVersion, rebasedEdits);
-                }
-
-                // discard edits before the local version from server – it will handle rebasing at least until that point
-                this.editBuffer.discard(localVersion);
-
             }
-            console.log(globalVersion, localVersion, this.localVersion, edits);
         });
 
         socket.addEventListener('close', evt => {
@@ -1384,40 +1406,47 @@ export class MainUI extends EventTarget {
            this.socket.send(new messages.CancelTasks(this.currentNotebookPath));
         });
 
+        this.toolbarUI.addEventListener('Undo', () => {
+           const notebookUI = this.currentNotebook.cellsUI.notebookUI;
+           if (notebookUI instanceof NotebookUI) {
+               notebookUI
+           }
+        });
+
 
         this.toolbarUI.addEventListener('InsertAbove', () => {
-            const notebookUI = this.currentNotebook.cellsUI;
+            const cellsUI = this.currentNotebook.cellsUI;
             const activeCell = Cell.currentFocus.id;
-            if (!notebookUI.getCell(activeCell) || notebookUI.getCell(activeCell) !== Cell.currentFocus) {
+            if (!cellsUI.getCell(activeCell) || cellsUI.getCell(activeCell) !== Cell.currentFocus) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
 
             const prevCell = Cell.currentFocus.container.previousSibling;
 
-            notebookUI.dispatchEvent(new CustomEvent('InsertCellAfter', { detail: { cellId: (prevCell && prevCell.id) || null }}));
+            cellsUI.dispatchEvent(new UIEvent('InsertCellAfter', { cellId: (prevCell && prevCell.id) || null }));
         });
 
         this.toolbarUI.addEventListener('InsertBelow', () => {
-            const notebookUI = this.currentNotebook.cellsUI;
+            const cellsUI = this.currentNotebook.cellsUI;
             const activeCell = Cell.currentFocus.id;
-            if (!notebookUI.getCell(activeCell) || notebookUI.getCell(activeCell) !== Cell.currentFocus) {
+            if (!cellsUI.getCell(activeCell) || cellsUI.getCell(activeCell) !== Cell.currentFocus) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
 
-            notebookUI.dispatchEvent(new CustomEvent('InsertCellAfter', { detail: { cellId: activeCell }}));
+            cellsUI.dispatchEvent(new UIEvent('InsertCellAfter', { cellId: activeCell }));
         });
 
         this.toolbarUI.addEventListener('DeleteCell', () => {
-            const notebookUI = this.currentNotebook.cellsUI;
+            const cellsUI = this.currentNotebook.cellsUI;
             const activeCell = Cell.currentFocus.id;
-            if (!notebookUI.getCell(activeCell) || notebookUI.getCell(activeCell) !== Cell.currentFocus) {
+            if (!cellsUI.getCell(activeCell) || cellsUI.getCell(activeCell) !== Cell.currentFocus) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
 
-            notebookUI.dispatchEvent(new CustomEvent('DeleteCell', { detail: {cellId: activeCell }}));
+            cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCell }));
         });
 
         // TODO: maybe we can break out this menu stuff once we need more menus.
@@ -1471,7 +1500,7 @@ export class MainUI extends EventTarget {
         if (!this.welcomeUI) {
             this.welcomeUI = new WelcomeUI().setEventParent(this);
         }
-        this.tabUI.addTab('home', 'Home', { notebook: this.welcomeUI.el, path: '/' }, 'home');
+        this.tabUI.addTab('home', span([], 'Home'), { notebook: this.welcomeUI.el, path: '/' }, 'home');
     }
 
     loadNotebook(path) {

@@ -211,6 +211,34 @@ export class CellResult extends Message {
 CellResult.codec = combined(shortStr, int16, Result.codec).to(CellResult);
 
 
+export class NotebookUpdate extends Message {
+
+    static unapply(inst) { return [inst]; }
+
+    /**
+     * Transform a so that it has the same effect when applied after b. Returns transformed a.
+     * @seeScala polynote.messages.NotebookUpdate#rebase
+     */
+    static rebase(a, b) {
+        if (b instanceof Array) {
+            let accum = a;
+            b.forEach(update => {
+                accum = NotebookUpdate.rebase(accum, update);
+            });
+            return accum;
+        }
+
+        if (a instanceof InsertCell && b instanceof InsertCell && a.after === b.after) {
+            return new InsertCell(a.path, a.globalVersion, a.localVersion, b.cell.id);
+        } else if (a instanceof UpdateCell && b instanceof UpdateCell && a.id === b.id) {
+            return new UpdateCell(a.path, a.globalVersion, a.localVersion, ContentEdit.rebaseEdits(a.edits, b.edits));
+        } else {
+            return a;
+        }
+    }
+
+}
+
 export class ContentEdit {
 
     // TODO: starting to think overhead of scala.js would have been worth it to avoid duplicating all this logic...
@@ -348,16 +376,16 @@ ContentEdit.codec = discriminated(
     msg => msg.constructor.msgTypeId
 );
 
-export class UpdateCell extends Message {
+export class UpdateCell extends NotebookUpdate {
     static get msgTypeId() { return 5; }
 
     static unapply(inst) {
-        return [inst.notebook, inst.globalVersion, inst.localVersion, inst.id, inst.edits];
+        return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.edits];
     }
 
-    constructor(notebook, globalVersion, localVersion, id, edits) {
-        super(notebook, globalVersion, localVersion, id, edits);
-        this.notebook = notebook;
+    constructor(path, globalVersion, localVersion, id, edits) {
+        super(path, globalVersion, localVersion, id, edits);
+        this.path = path;
         this.globalVersion = globalVersion;
         this.localVersion = localVersion;
         this.id = id;
@@ -368,16 +396,16 @@ export class UpdateCell extends Message {
 
 UpdateCell.codec = combined(shortStr, uint32, uint32, int16, arrayCodec(uint16, ContentEdit.codec)).to(UpdateCell);
 
-export class InsertCell extends Message {
+export class InsertCell extends NotebookUpdate {
     static get msgTypeId() { return 6; }
 
     static unapply(inst) {
-        return [inst.notebook, inst.globalVersion, inst.localVersion, inst.cell, inst.after];
+        return [inst.path, inst.globalVersion, inst.localVersion, inst.cell, inst.after];
     }
 
-    constructor(notebook, globalVersion, localVersion, cell, after) {
-        super(notebook, globalVersion, localVersion, cell, after);
-        this.notebook = notebook;
+    constructor(path, globalVersion, localVersion, cell, after) {
+        super(path, globalVersion, localVersion, cell, after);
+        this.path = path;
         this.globalVersion = globalVersion;
         this.localVersion = localVersion;
         this.cell = cell;
@@ -645,7 +673,7 @@ export class KernelStatus extends Message {
 
 KernelStatus.codec = combined(shortStr, KernelStatusUpdate.codec).to(KernelStatus);
 
-export class UpdateConfig extends Message {
+export class UpdateConfig extends NotebookUpdate {
     static get msgTypeId() { return 10; }
     static unapply(inst) {
         return [inst.path, inst.globalVersion, inst.localVersion, inst.config];
@@ -663,7 +691,7 @@ export class UpdateConfig extends Message {
 
 UpdateConfig.codec = combined(shortStr, uint32, uint32, NotebookConfig.codec).to(UpdateConfig);
 
-export class SetCellLanguage extends Message {
+export class SetCellLanguage extends NotebookUpdate {
     static get msgTypeId() { return 11; }
     static unapply(inst) {
         return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.language];
@@ -733,7 +761,7 @@ export class CreateNotebook extends Message {
 
 CreateNotebook.codec = combined(shortStr).to(CreateNotebook);
 
-export class DeleteCell extends Message {
+export class DeleteCell extends NotebookUpdate {
     static get msgTypeId() { return 15; }
     static unapply(inst) {
         return [inst.path, inst.globalVersion, inst.localVersion, inst.id];
