@@ -258,4 +258,6 @@ const md = require('markdown-it');
 
   if (path.startsWith('/notebook/')) {
       mainUI.loadNotebook(path.replace(/^\/notebook\//, ''));
+  } else {
+      mainUI.showWelcome();
   }
