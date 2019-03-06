@@ -112,4 +112,15 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       displayed shouldBe empty
     }
   }
+
+  it should "not error when the cell contains no statements" in {
+    val code =
+      "# this is just a comment"
+
+    assertPythonOutput(code) {
+      case (vars, output, displayed) =>
+        output shouldBe empty
+        displayed shouldBe empty
+    }
+  }
 }
