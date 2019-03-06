@@ -112,9 +112,7 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
   def interrupt(): Unit = {
     taskThreadMonitor.synchronized(Option(currentTaskThread)) match {
       case None => ()
-      case Some(thread) => try thread.interrupt() catch {
-        case err: NullPointerException => ()
-      }
+      case Some(thread) => thread.interrupt()
     }
   }
 

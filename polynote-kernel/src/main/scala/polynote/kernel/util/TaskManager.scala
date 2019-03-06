@@ -15,6 +15,7 @@ import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
   * Manages running tasks. Announces task status to `statusUpdates`. Tasks can be run concurrently or queued to run
   * one at a time.
   */
+// TODO: This should get some cleanup while retaining the external semantics
 class TaskManager(
   statusUpdates: Publish[IO, KernelStatusUpdate],
   semaphore: Semaphore[IO])(implicit
@@ -23,6 +24,8 @@ class TaskManager(
   import TaskManager.{Queued, Running, QueuedStream}
 
   private val running = new ConcurrentLinkedDeque[TaskManager.Running[_]]()
+
+  // TODO: This LinkedBlockingQueue (and runNext()) ought to be replaceable by an fs2 Queue.
   private val queuedTasks = new LinkedBlockingQueue[TaskManager.Queued[_]]()
 
   private def publish(taskInfo: TaskInfo): IO[Unit] = statusUpdates.publish1(UpdatedTasks(taskInfo :: Nil))
@@ -49,11 +52,15 @@ class TaskManager(
 
           runTask.fiber.join.uncancelable.flatMap {
             result =>
+              // The "result" might be a thing (i.e. Stream) that's still running, so we need to defer the finalizer
+              // until after it completes. Subtypes of Queued know how to do that for their type, using onComplete.
               queued.onComplete(result, finalizer)
           }.attempt.flatMap {
-            result =>
-              queued.deferred.complete(result) *> {
-                result match {
+            resultOrError =>
+              // Finally, the "result" with the onComplete behavior needs to be completed into the Queued task's promise
+              // If it failed, the finalizer also needs to be run eagerly now, because there is no result to which we can attach that behavior.
+              queued.deferred.complete(resultOrError) *> {
+                resultOrError match {
                   case Left(err) => finalizer
                   case Right(_)  => IO.unit
                 }
@@ -136,11 +143,29 @@ class TaskManager(
 }
 
 object TaskManager {
+
+  /**
+    * A queued task of type A
+    */
   sealed trait Queued[A] {
     type Result = A
+
+    // Describes the information about the task
     def taskInfo: TaskInfo
+
+    // Describes the computation that the task will run
     def io: IO[A]
+
+    // A promise to accept the result (or failure) of the task
     def deferred: Deferred[IO, Either[Throwable, A]]
+
+    /**
+      * Attach the given finalizer so that it will be evaluated at the "completion" of a. What this means depends on
+      * A. For example, a Stream would run the finalizer at the completion of the stream; if A were itself i.e IO[X]
+      * then it would attach the finalizer via {{a <* finalizer}}.
+      *
+      * @return An IO suspension of a new [[A]] value, which is the given value with the finalizer attached.
+      */
     def onComplete(a: A, finalizer: IO[Unit]): IO[A]
   }
 

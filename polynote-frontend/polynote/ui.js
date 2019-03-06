@@ -1344,8 +1344,8 @@ export class MainUI extends EventTarget {
             const tab = evt.detail.tab
             if (tab.type === 'notebook') {
                 window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
-                this.currentNotebookPath = evt.detail;
-                this.currentNotebook = this.tabUI.getTab(evt.detail).content.notebook;
+                this.currentNotebookPath = tab.name;
+                this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook;
             }
         });
 
