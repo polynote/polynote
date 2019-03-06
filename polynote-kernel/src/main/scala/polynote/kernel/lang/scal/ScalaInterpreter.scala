@@ -178,7 +178,7 @@ class ScalaInterpreter(
                   val newOut = new PrintStream(stdOut)
                   System.setOut(newOut)
                   Console.setOut(newOut)
-                }.bracket(_ => run) {
+                }.bracket(_ => run <* IO(stdOut.flush())) {
                   _ => IO {
                     System.setOut(originalOut)
                     Console.setOut(originalOut)
