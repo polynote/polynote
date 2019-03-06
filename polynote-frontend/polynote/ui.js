@@ -1344,8 +1344,8 @@ export class MainUI extends EventTarget {
             const tab = evt.detail.tab
             if (tab.type === 'notebook') {
                 window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
-                this.currentNotebookPath = evt.detail;
-                this.currentNotebook = this.tabUI.getTab(evt.detail).content.notebook;
+                this.currentNotebookPath = tab.name;
+                this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook;
             }
         });
 
@@ -1372,14 +1372,16 @@ export class MainUI extends EventTarget {
 
             const activeCellIndex = cells.indexOf(activeCell);
 
-            console.log("run current cell", activeCell, activeCellIndex, cells)
-
             if (activeCellIndex < 0) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
 
             this.runCells([cells[activeCellIndex]]);
+        });
+
+        this.toolbarUI.addEventListener('CancelTasks', () => {
+           this.socket.send(new messages.CancelTasks(this.currentNotebookPath));
         });
 
 
@@ -1455,8 +1457,8 @@ export class MainUI extends EventTarget {
         const ids = [];
         [...cellContainers].forEach(container => {
             if (container.cell && container.id) {
-                ids.push(container.id);
-                container.cell.dispatchEvent(new BeforeCellRunEvent(container.id));
+                ids.push(container.cell.id);
+                container.cell.dispatchEvent(new BeforeCellRunEvent(container.cell.id));
             }
         });
 

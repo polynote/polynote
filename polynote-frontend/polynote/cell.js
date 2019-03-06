@@ -88,7 +88,7 @@ export class Cell extends UIEventTarget {
 
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
-                div(['cell-input-tools'], [
+                this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
@@ -152,6 +152,9 @@ export class CodeCell extends Cell {
     constructor(id, content, language) {
         super(id, content, language);
         this.container.classList.add('code-cell');
+
+        this.cellInputTools.insertBefore(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
+
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
             value: content,

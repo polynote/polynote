@@ -785,6 +785,19 @@ export class HandleData extends Message {
 
 HandleData.codec = combined(shortStr, uint8, int32, int32, arrayCodec(int32, bufferCodec)).to(HandleData);
 
+export class CancelTasks extends Message {
+    static get msgTypeId() { return 18; }
+    static unapply(inst) { return [inst.path]; }
+
+    constructor(path) {
+        super(path);
+        this.path = path;
+        Object.freeze(this);
+    }
+}
+
+CancelTasks.codec = combined(shortStr).to(CancelTasks);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -804,6 +817,7 @@ Message.codecs = [
     DeleteCell,      // 15
     ServerHandshake, // 16
     HandleData,      // 17
+    CancelTasks,     // 18
 ];
 
 

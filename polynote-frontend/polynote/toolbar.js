@@ -111,7 +111,8 @@ class CodeToolbarUI extends UIEventTarget {
                     .click(() => this.dispatchEvent(new ToolbarEvent(("RunCurrentCell")))),
                 iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "", "Run to cursor")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("RunToCursor")))),
-                iconButton(["stop-cell"], "Stop/cancel this cell", "", "Cancel").disable(),
+                iconButton(["stop-cell"], "Stop/cancel this cell", "", "Cancel")
+                    .click(() => this.dispatchEvent(new ToolbarEvent("CancelTasks"))),
             ]
         ]);
     }

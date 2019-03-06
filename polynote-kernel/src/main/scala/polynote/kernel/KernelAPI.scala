@@ -26,6 +26,9 @@ trait KernelAPI[F[_]] {
 
   def runCell(id: CellID): F[Stream[F, Result]]
 
+  // Queue the cell - the outer F completes when the cell is queued; the inner cell completes when the cell is finished running
+  def queueCell(id: CellID): F[F[Stream[F, Result]]]
+
   def runCells(ids: List[CellID]): F[Stream[F, CellResult]]
 
   def completionsAt(id: CellID, pos: Int): F[List[Completion]]
@@ -41,6 +44,8 @@ trait KernelAPI[F[_]] {
   def info: F[Option[KernelInfo]]
 
   def getHandleData(handleType: HandleType, handle: Int, count: Int): F[List[ByteVector32]]
+
+  def cancelTasks(): F[Unit]
 
 }
 
@@ -203,7 +208,11 @@ final case class TaskInfo(
   label: TinyString,
   detail: TinyString,
   status: TaskStatus,
-  progress: Byte = 0)
+  progress: Byte = 0) {
+
+  def running: TaskInfo = copy(status = TaskStatus.Running)
+  def completed: TaskInfo = copy(status = TaskStatus.Complete, progress = 255.toByte)
+}
 
 final case class UpdatedTasks(
   tasks: TinyList[TaskInfo]

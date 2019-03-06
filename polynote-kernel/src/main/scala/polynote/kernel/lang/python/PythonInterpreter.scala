@@ -186,7 +186,9 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
           } else code
 
           jep.set("__polynote_code__", maybeModifiedCode)
-          jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
+          kernelContext.runInterruptible {
+            jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
+          }
           jep.eval("globals().update(__polynote_locals__)")
           val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 

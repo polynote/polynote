@@ -130,7 +130,7 @@ class SparkPolyKernel(
     sess
   }
 
-  override val init: IO[Unit] = super.init >> taskQueue.runTaskIO("spark", "Spark session", "Starting Spark session...") {
+  override val init: IO[Unit] = super.init >> taskManager.runTaskIO("spark", "Spark session", "Starting Spark session...") {
     taskInfo => IO(session).handleErrorWith(err => IO(logger.error(err)(err.getMessage)) *> IO.raiseError(err)) >> info.flatMap { update =>
       update.map(statusUpdates.publish1).getOrElse(IO.unit)
     }

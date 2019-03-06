@@ -57,13 +57,13 @@ class PolyKernel private[kernel] (
   /**
     * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
     */
-  protected lazy val taskQueue: TaskQueue = TaskQueue(statusUpdates).unsafeRunSync()
+  protected lazy val taskManager: TaskManager = TaskManager(statusUpdates).unsafeRunSync()
 
   // TODO: duplicates logic from runCell
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
       interp.predefCode match {
-        case Some(code) => taskQueue.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(-1, Nil, Nil, code)).map {
+        case Some(code) => taskManager.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(-1, Nil, Nil, code)).map {
           results => results.collect {
             case v: ResultValue => v
           }.evalTap {
@@ -85,7 +85,7 @@ class PolyKernel private[kernel] (
           Option(interpreters.get(language)).map(interp => IO.pure(interp -> Stream.empty)).getOrElse {
             for {
               factory <- IO.fromEither(Either.fromOption(availableInterpreters.get(language), new RuntimeException(s"No interpreter for language $language")))
-              interp  <- taskQueue.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
+              interp  <- taskManager.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
               _        = interpreters.put(language, interp)
               results  <- runPredef(interp, language)
             } yield (interp, results)
@@ -111,13 +111,22 @@ class PolyKernel private[kernel] (
     * predef code being executed, and that might produce results, the caller must be prepared to handle the result stream
     * (which is passed into the given task)
     */
-  protected def withInterpreter[A](cellId: CellID)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO], Stream[IO, Result]) => IO[A]): IO[A] = for {
-    notebook <- getNotebook()
-    cell     <- IO(notebook.cell(cellId))
-    launch   <- getOrLaunchInterpreter(cell.language)
-    (interp, predefResults) = launch
-    result   <- fn(notebook, cell, interp, predefResults)
-  } yield result
+  protected def withInterpreter[A](cellId: CellID)(fn: (Notebook, NotebookCell, LanguageInterpreter[IO], Stream[IO, Result]) => IO[A])(ifText: => IO[A]): IO[A] = {
+    def launchLanguageAndRun(notebook: Notebook, cell: NotebookCell) =
+      if (cell.language != "text") {
+        for {
+          launch   <- getOrLaunchInterpreter(cell.language)
+          (interp, predefResults) = launch
+          result   <- fn(notebook, cell, interp, predefResults)
+        } yield result
+      } else ifText
+
+    for {
+      notebook <- getNotebook()
+      cell     <- IO(notebook.cell(cellId))
+      result   <- launchLanguageAndRun(notebook, cell)
+    } yield result
+  }
 
   // TODO: using -1 for Predef is kinda weird.
   private def prevCells(notebook: Notebook, id: CellID): List[CellID] = List[CellID](-1) ++ notebook.cells.view.takeWhile(_.id != id).map(_.id).toList
@@ -128,48 +137,50 @@ class PolyKernel private[kernel] (
 
   def startInterpreterFor(cellId: CellID): IO[Stream[IO, Result]] = withInterpreter(cellId) {
     (_, _, _, results) => IO.pure(results)
-  }
+  } (IO.pure(Stream.empty))
 
-  def runCell(id: CellID): IO[Stream[IO, Result]] = {
-    val done = ReadySignal()
-    Queue.unbounded[IO, Option[Result]].map {
-      oq =>
-          val oqSome = new EnqueueSome(oq)
-          val cellResults = Stream.eval {
-            withInterpreter(id) {
-              (notebook, cell, interp, predefResults) =>
+  def runCell(id: CellID): IO[Stream[IO, Result]] = queueCell(id).flatten
+
+  def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = {
+    taskManager.queueTaskStream(s"Cell $id", s"Cell $id", s"Running $id") {
+      taskInfo =>
+        Queue.unbounded[IO, Option[Result]].map {
+          oq =>
+            val oqSome = new EnqueueSome(oq)
+            val run = withLaunchedInterpreter(id) {
+              (notebook, cell, interp) =>
                 val prevCellIds = prevCells(notebook, id)
-                taskQueue.runTaskIO(s"Cell $id", s"Cell $id", s"Running $id") {
-                  taskInfo =>
-                    // TODO: should this be something the interpreter has to do? Without this we wouldn't even need to allocate a queue here
-                    polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
-                    polynote.runtime.Runtime.setProgressSetter {
-                      (progress, detail) =>
-                        val newDetail = Option(detail).getOrElse(taskInfo.detail)
-                        statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
-                    }
-
-                    symbolTable.drain() *> interp.runCode(
-                      id,
-                      findAvailableSymbols(prevCellIds, interp),
-                      prevCellIds,
-                      cell.content.toString
-                    ).map {
-                      results => predefResults merge results.evalMap {
-                        case v: ResultValue =>
-                          symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp).toList).as(v)
-                        case result =>
-                          IO.pure(result)
-                      }
-                    }.handleErrorWith {
-                      case errs@CompileErrors(_) => IO.pure(Stream.emit(errs))
-                      case err@RuntimeError(_) => IO.pure(Stream.emit(err))
-                      case err => IO.pure(Stream.emit(RuntimeError(err)))
-                    }.guarantee(oq.enqueue1(None)) <* symbolTable.drain()
+                // TODO: should this be something the interpreter has to do? Without this we wouldn't even need to allocate a queue here
+                polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
+                polynote.runtime.Runtime.setProgressSetter {
+                  (progress, detail) =>
+                    val newDetail = Option(detail).getOrElse(taskInfo.detail)
+                    statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
                 }
-            }.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))
-          }
-        Stream.emit(ClearResults()) ++ Stream(cellResults.flatten, oq.dequeue.unNoneTerminate).parJoinUnbounded
+
+                symbolTable.drain() *> interp.runCode(
+                  id,
+                  findAvailableSymbols(prevCellIds, interp),
+                  prevCellIds,
+                  cell.content.toString
+                ).map {
+                  results => results.evalMap {
+                    case v: ResultValue =>
+                      symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp).toList).as(v)
+                    case result =>
+                      IO.pure(result)
+                  }
+                }.handleErrorWith {
+                  case errs@CompileErrors(_) => IO.pure(Stream.emit(errs))
+                  case err@RuntimeError(_) => IO.pure(Stream.emit(err))
+                  case err => IO.pure(Stream.emit(RuntimeError(err)))
+                }
+            }.map(_.getOrElse(Stream.empty)).handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err)))).map {
+              _ ++ Stream.eval(oq.enqueue1(None)).drain ++ Stream.eval(symbolTable.drain()).drain
+            }
+
+            Stream.emit(ClearResults()) ++ Stream(oq.dequeue.unNoneTerminate, Stream.eval(run).flatten).parJoinUnbounded
+      }
     }
   }
 
@@ -195,13 +206,13 @@ class PolyKernel private[kernel] (
     symbolTable.currentTerms.toList.map(_.toResultValue)
   }
 
-  def currentTasks(): IO[List[TaskInfo]] = taskQueue.allTasks
+  def currentTasks(): IO[List[TaskInfo]] = taskManager.allTasks
 
-  def idle(): IO[Boolean] = taskQueue.currentTask.map(_.isEmpty)
+  def idle(): IO[Boolean] = taskManager.runningTasks.map(_.isEmpty)
 
   def init: IO[Unit] = IO.unit
 
-  def shutdown(): IO[Unit] = IO.unit
+  def shutdown(): IO[Unit] = taskManager.shutdown()
 
   def info: IO[Option[KernelInfo]] = IO.pure(None)
 
@@ -223,6 +234,15 @@ class PolyKernel private[kernel] (
         handleOpt <- IO(StreamingDataRepr.getHandle(handleId))
         handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Streaming#$handleId")))
       } yield handle.iterator.take(count).toList.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer])))
+  }
+
+  override def cancelTasks(): IO[Unit] = {
+    // don't bother to cancel the running fiber – it doesn't seem to do anything except silently succeed
+    // instead the language interpreter has to participate by using kernelContext.runInterruptible, so we can call
+    // kernelContext.interrupt() here.
+    // TODO: Why can't it work with fibers? Is there any point in tracking the fibers if they can't be cancelled?
+    // TODO: have to go through symbolTable.kernelContext because SparkPolyKernel overrides it (but not kernelContext) - needs to be fixed
+    taskManager.cancelAllQueued *> IO(symbolTable.kernelContext.interrupt())
   }
 
 }

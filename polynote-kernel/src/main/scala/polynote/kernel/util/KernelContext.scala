@@ -89,6 +89,33 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
     stringRepr.toList ++ otherReprs.toList
   }
 
+  @volatile private var currentTaskThread: Thread = _
+  private object taskThreadMonitor
+  private object taskMonitor
+
+  def runInterruptible[T](thunk: => T): T = taskMonitor.synchronized {
+    val prev = taskThreadMonitor.synchronized {
+      val prev = currentTaskThread
+      currentTaskThread = Thread.currentThread()
+      prev
+    }
+
+    val result = try thunk finally {
+      taskThreadMonitor.synchronized {
+        currentTaskThread = prev
+      }
+    }
+
+    result
+  }
+
+  def interrupt(): Unit = {
+    taskThreadMonitor.synchronized(Option(currentTaskThread)) match {
+      case None => ()
+      case Some(thread) => thread.interrupt()
+    }
+  }
+
 }
 
 object KernelContext {
