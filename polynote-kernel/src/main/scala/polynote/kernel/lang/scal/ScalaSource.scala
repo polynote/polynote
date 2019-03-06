@@ -322,8 +322,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
 
     for {
       treeOpt <- typedTreeAt(offset)
-      tree    <- Either.fromOption(treeOpt, new RuntimeException("No typed tree at position"))
-      results <- completionResults(tree)
+      results <- treeOpt.fold[Either[Throwable, (global.Type, List[global.Symbol])]](Right(global.NoType -> Nil))(completionResults)
     } yield results
   }
 
