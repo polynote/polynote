@@ -86,10 +86,7 @@ class SocketSession(
           Stream(oq.dequeue.interruptWhen(closeSignal()), responses.parJoinUnbounded).parJoinUnbounded
             .handleErrorWith {
               err =>
-                val re = err match {
-                  case RuntimeError(e) => e
-                  case e => RuntimeError(e)
-                }
+                val re = ErrorResult(err)
                 Stream.eval(logError(re).map(_ => Error(0, re)))
             }
             //.evalTap(logMessage)

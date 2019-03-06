@@ -1341,7 +1341,7 @@ export class MainUI extends EventTarget {
         });
 
         this.tabUI.addEventListener('TabActivated', evt => {
-            const tab = evt.detail.tab
+            const tab = evt.detail.tab;
             if (tab.type === 'notebook') {
                 window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
                 this.currentNotebookPath = tab.name;
