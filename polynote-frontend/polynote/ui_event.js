@@ -17,6 +17,10 @@ export class UIEvent extends CustomEvent {
         Object.setPrototypeOf(c, this.constructor.prototype);
         return c;
     }
+
+    forward(el) {
+        el.dispatchEvent(this.copy())
+    }
 }
 
 export class UIEventTarget extends EventTarget {

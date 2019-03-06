@@ -86,6 +86,9 @@ export class Cell extends UIEventTarget {
         super(id, content, language);
         this.id = id;
         this.language = language;
+        if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
+        this.isCode = false;
+        console.log("create cell with lang", this.language)
 
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
@@ -118,6 +121,7 @@ export class Cell extends UIEventTarget {
         if (Cell.currentFocus && Cell.currentFocus !== this) {
             Cell.currentFocus.blur();
         }
+        console.log("cell", this.id, "now active")
         Cell.currentFocus = this;
         this.container.classList.add('active');
 
@@ -190,6 +194,7 @@ function errorDisplay(error, currentFile, maxDepth, nested) {
 export class CodeCell extends Cell {
     constructor(id, content, language) {
         super(id, content, language);
+        this.isCode = true;
         this.container.classList.add('code-cell');
 
         this.cellInputTools.insertBefore(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
