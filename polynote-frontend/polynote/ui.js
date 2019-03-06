@@ -373,7 +373,7 @@ export class KernelUI extends EventTarget {
     }
 }
 
-export class NotebookConfigUI extends EventTarget {
+export class NotebookConfigUI extends UIEventTarget {
     constructor() {
         super();
         this.el = div(['notebook-config'], [
@@ -419,7 +419,7 @@ export class NotebookConfigUI extends EventTarget {
                 div(['controls'], [
                     button(['save'], {}, ['Save & Restart']).click(evt => {
                         this.lastConfig = this.config;
-                        this.dispatchEvent(new CustomEvent('UpdatedConfig', {detail: { config: this.config }}));
+                        this.dispatchEvent(new UIEvent('UpdatedConfig', { config: this.config }));
                     }),
                     button(['cancel'], {}, ['Cancel']).click(evt => {
                         if (this.lastConfig) {
@@ -540,13 +540,12 @@ export class NotebookConfigUI extends EventTarget {
 export class NotebookCellsUI extends UIEventTarget {
     constructor() {
         super();
-        this.configUI = new NotebookConfigUI();
+        this.configUI = new NotebookConfigUI().setEventParent(this);
         this.el = div(['notebook-cells'], [this.configUI.el]);
         this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.cells = {};
         this.cellCount = 0;
         window.addEventListener('resize', this.onWindowResize.bind(this));
-        this.configUI.addEventListener('UpdatedConfig', evt => this.dispatchEvent(new CustomEvent('UpdatedConfig', { detail: evt.detail })));
     }
 
     extractId(cellRef) {
@@ -752,7 +751,7 @@ export class NotebookUI {
                     if (next) {
                         next.focus();
                     } else {
-                        this.cellUI.dispatchEvent(new CustomEvent('InsertCellAfter', {detail: {cellId: Cell.currentFocus.id}}));
+                        this.cellUI.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: Cell.currentFocus.id}));
                     }
                 }
             }
@@ -1059,11 +1058,12 @@ export class TabUI extends EventTarget {
         this.tabEls = {};
     }
 
-    addTab(name, title, content) {
+    addTab(name, title, content, type) {
         const tab = {
             name: name,
             title: title,
-            content: content
+            content: content,
+            type: type
         };
 
         this.tabs[name] = tab;
@@ -1104,7 +1104,7 @@ export class TabUI extends EventTarget {
             tabEl.parentNode.removeChild(tabEl);
         }
 
-        this.dispatchEvent(new CustomEvent('TabRemoved', { detail: tab.name }));
+        this.dispatchEvent(new UIEvent('TabRemoved', { name: tab.name }));
 
         // if (tab.content && tab.content.parentNode) {
         //     tab.content.parentNode.removeChild(tab.content);
@@ -1144,7 +1144,7 @@ export class TabUI extends EventTarget {
         }
         this.tabEls[tab.name].classList.add('active');
         this.currentTab = tab;
-        this.dispatchEvent(new CustomEvent('TabActivated', { detail: tab.name }));
+        this.dispatchEvent(new UIEvent('TabActivated', { tab: tab }));
     }
 
     getTab(name) {
@@ -1152,7 +1152,7 @@ export class TabUI extends EventTarget {
     }
 }
 
-export class NotebookListUI extends EventTarget {
+export class NotebookListUI extends UIEventTarget {
     constructor() {
         super();
         this.el = div(
@@ -1160,7 +1160,7 @@ export class NotebookListUI extends EventTarget {
                 h2([], [
                     'Notebooks',
                     span(['buttons'], [
-                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => this.dispatchEvent(new CustomEvent('NewNotebook')))
+                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => this.dispatchEvent(new UIEvent('NewNotebook')))
                     ])
                 ]),
                 div(['ui-panel-content'], [
@@ -1217,7 +1217,7 @@ export class NotebookListUI extends EventTarget {
                     itemEl = tag('li', ['leaf'], {}, [
                         span(['name'], [itemName]).click(evt => {
                             console.log(`Load ${item}`);
-                            this.dispatchEvent(new CustomEvent('TriggerItem', {detail: item}));
+                            this.dispatchEvent(new UIEvent('TriggerItem', {item: item}));
                         })
                     ]);
                     itemEl.item = item;
@@ -1273,8 +1273,38 @@ export class NotebookListUI extends EventTarget {
     }
 }
 
-export class MainUI {
+export class WelcomeUI extends UIEventTarget {
+    constructor() {
+        super();
+        this.el = div(['welcome-page'], []);
+        this.el.innerHTML = `
+          <img src="/style/polynote.svg" alt="Polynote" />
+          <h2>Home</h2>
+          
+          <p>
+            To get started, open a notebook by clicking on it in the Notebooks panel, or create a new notebook by
+             clicking the Create Notebook (<span class="create-notebook icon fas"></span>) button.
+          </p>
+          
+          <h3>Recent notebooks</h3>
+          <ul class="recent-notebooks"></ul>  
+        `;
+
+        const recent = this.el.querySelector('.recent-notebooks');
+        (prefs.get('recentNotebooks') || []).forEach(nb => {
+           recent.appendChild(
+               tag('li', ['notebook-link'], {}, [
+                   span([], nb.name).click(
+                        evt => this.dispatchEvent(new UIEvent('TriggerItem', {item: nb.path})))
+               ])
+           );
+        });
+    }
+}
+
+export class MainUI extends EventTarget {
     constructor(socket) {
+        super();
         let left = { el: div(['grid-shell'], []) };
         let center = { el: div(['tab-view'], []) };
         let right = { el: div(['grid-shell'], []) };
@@ -1290,9 +1320,9 @@ export class MainUI {
         this.mainView.center.el.appendChild(this.tabUI.el);
         this.mainView.center.el.appendChild(this.notebookContent);
 
-        this.browseUI = new NotebookListUI();
+        this.browseUI = new NotebookListUI().setEventParent(this);
         this.mainView.left.el.appendChild(this.browseUI.el);
-        this.browseUI.addEventListener('TriggerItem', evt => this.loadNotebook(evt.detail));
+        this.addEventListener('TriggerItem', evt => this.loadNotebook(evt.detail.item));
         this.browseUI.addEventListener('NewNotebook', evt => this.createNotebook(evt));
 
         this.socket = socket;
@@ -1311,9 +1341,12 @@ export class MainUI {
         });
 
         this.tabUI.addEventListener('TabActivated', evt => {
-            window.history.pushState({notebook: evt.detail}, `${evt.detail.split(/\//g).pop()} | Polynote`, `/notebook/${evt.detail}`);
-            this.currentNotebookPath = evt.detail;
-            this.currentNotebook = this.tabUI.getTab(evt.detail).content.notebook;
+            const tab = evt.detail.tab
+            if (tab.type === 'notebook') {
+                window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
+                this.currentNotebookPath = evt.detail;
+                this.currentNotebook = this.tabUI.getTab(evt.detail).content.notebook;
+            }
         });
 
         this.toolbarUI.addEventListener('RunAll', () =>
@@ -1432,6 +1465,13 @@ export class MainUI {
         }
     }
 
+    showWelcome() {
+        if (!this.welcomeUI) {
+            this.welcomeUI = new WelcomeUI().setEventParent(this);
+        }
+        this.tabUI.addTab('home', 'Home', { notebook: this.welcomeUI.el, path: '/' }, 'home');
+    }
+
     loadNotebook(path) {
         const notebookTab = this.tabUI.getTab(path);
 
@@ -1441,7 +1481,7 @@ export class MainUI {
             const tab = this.tabUI.addTab(path, span(['notebook-tab-title'], [path.split(/\//g).pop()]), {
                 notebook: notebookUI.cellUI.el,
                 kernel: notebookUI.kernelUI.el
-            });
+            }, 'notebook');
             this.tabUI.activateTab(tab);
 
             this.toolbarUI.cellToolbar.cellTypeSelector.addEventListener('change', evt => {
