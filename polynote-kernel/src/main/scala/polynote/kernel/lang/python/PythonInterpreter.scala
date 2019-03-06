@@ -171,24 +171,28 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
         // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
         // TODO: should probably just use ipython to evaluate it instead
         jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
-        jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
-        val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
+        val numStats = jep.getValue("len(__polynote_parsed__)", classOf[java.lang.Long])
 
-        val resultName = "Out"
-        val maybeModifiedCode = if (lastIsExpr) {
-          val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
-          val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
+        if (numStats > 0) {
+          jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
+          val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
 
-          (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
-        } else code
+          val resultName = "Out"
+          val maybeModifiedCode = if (lastIsExpr) {
+            val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
+            val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
 
-        jep.set("__polynote_code__", maybeModifiedCode)
-        jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
-        jep.eval("globals().update(__polynote_locals__)")
-        val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
+            (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
+          } else code
+
+          jep.set("__polynote_code__", maybeModifiedCode)
+          jep.eval("exec(__polynote_code__, None, __polynote_locals__)\n")
+          jep.eval("globals().update(__polynote_locals__)")
+          val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 
 
-        getPyResults(newDecls, cell).filterNot(_._2.value == null).values
+          getPyResults(newDecls, cell).filterNot(_._2.value == null).values
+        } else Nil
       }.flatMap { resultSymbols =>
 
         for {
