@@ -20,8 +20,8 @@ export class CellEvent extends UIEvent {
 }
 
 export class SelectCellEvent extends CellEvent {
-    constructor(cellId, lang) {
-        super('SelectCell', cellId, {lang: lang});
+    constructor(cell) {
+        super('SelectCell', cell.id, {cell});
     }
 }
 
@@ -120,14 +120,13 @@ export class Cell extends UIEventTarget {
         Cell.currentFocus = this;
         this.container.classList.add('active');
 
-        this.dispatchEvent(new SelectCellEvent(this.id, this.language));
+        this.dispatchEvent(new SelectCellEvent(this));
     }
 
     blur() {
         this.container.classList.remove('active');
         if (Cell.currentFocus === this) {
             Cell.currentFocus = null;
-            this.dispatchEvent(new SelectCellEvent(this.id, this.language)); // technically this is deselection but we do the same thing anyways...
         }
     }
 
@@ -386,6 +385,10 @@ export class CodeCell extends Cell {
                 // don't display this; it's a named declaration
                 // TODO: have a way to display these if desired
             } else {
+                if (this.resultEl && this.resultEl.parentNode) {
+                    this.resultEl.parentNode.removeChild(this.resultEl);
+                    this.resultEl = null;
+                }
                 const [mime, content] = result.displayRepr;
                 const outLabel = result.reprs.length <= 1
                     ? div(['out-ident'], `Out:`)
@@ -395,7 +398,10 @@ export class CodeCell extends Cell {
                         reprUi.show();
                     });
 
-                this.addOutput(mime, content).then(el => el.insertBefore(outLabel, el.childNodes[0]));
+                this.addOutput(mime, content).then(el => {
+                    this.resultEl = el;
+                    el.insertBefore(outLabel, el.childNodes[0])
+                });
             }
         } else {
             throw "Result must be a ResultValue"

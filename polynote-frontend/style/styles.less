@@ -1812,10 +1812,6 @@ button {
   border: 1px solid @ui-border;
   background: white;
 
-  button.create-notebook {
-    color: green;
-  }
-
   .tree-view {
     padding: .5em 0;
   }
@@ -1826,6 +1822,10 @@ button {
     max-height: 100%;
 
   }
+}
+
+.create-notebook {
+  color: green;
 }
 
 .notebook-cells {
@@ -1909,6 +1909,20 @@ button {
     background-color: rgb(240, 240, 240);
   }
 
+}
+
+.welcome-page {
+  font-size: 12pt;
+  padding: 2em;
+  line-height: 1.5;
+
+  .recent-notebooks li {
+    span {
+      color: blue;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+  }
 }
 
 @keyframes highlight {
