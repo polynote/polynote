@@ -170,12 +170,10 @@ class PolyKernel private[kernel] (
                     case result =>
                       IO.pure(result)
                   }
-                }.handleErrorWith {
-                  case errs@CompileErrors(_) => IO.pure(Stream.emit(errs))
-                  case err@RuntimeError(_) => IO.pure(Stream.emit(err))
-                  case err => IO.pure(Stream.emit(RuntimeError(err)))
                 }
-            }.map(_.getOrElse(Stream.empty)).handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err)))).map {
+            }.map {
+              _.getOrElse(Stream.empty)
+            }.handleErrorWith(ErrorResult.toStream).map {
               _ ++ Stream.eval(oq.enqueue1(None)).drain ++ Stream.eval(symbolTable.drain()).drain
             }
 

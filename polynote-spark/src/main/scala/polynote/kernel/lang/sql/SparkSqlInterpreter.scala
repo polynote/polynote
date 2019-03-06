@@ -86,7 +86,7 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
            |</table>""".stripMargin
       )
     }
-  }.handleErrorWith(err => IO.pure(RuntimeError(err)))
+  }.handleErrorWith(ErrorResult.applyIO)
 
   override def runCode(
     cell: CellID,
@@ -103,7 +103,7 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
       cellResult   = ResultValue(kernelContext, "Out", global.typeOf[DataFrame], resultDF, cell)
     } yield Stream.emit(cellResult) ++ Stream.eval(outputDataFrame(resultDF))
 
-    run.handleErrorWith(err => IO.pure(Stream.emit(RuntimeError(err))))
+    run.handleErrorWith(ErrorResult.toStream)
   }
 
   override def completionsAt(

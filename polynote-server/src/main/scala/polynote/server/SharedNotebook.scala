@@ -304,11 +304,7 @@ class IOSharedNotebook(
                           case (ver, nb) => ver -> nb.setResults(id, buf.toList)
                         }
                       }
-                  }.handleErrorWith {
-                    case errs@CompileErrors(_) => IO.pure(Stream.emit(errs))
-                    case err@RuntimeError(_) => IO.pure(Stream.emit(err))
-                    case err => IO.pure(Stream.emit(RuntimeError(err)))
-                  }
+                  }.handleErrorWith(ErrorResult.toStream)
                 }
             }
         }

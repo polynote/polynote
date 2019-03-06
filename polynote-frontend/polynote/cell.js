@@ -6,6 +6,7 @@ import {RichTextEditor} from "./text_editor.js";
 import {UIEvent, UIEventTarget} from "./ui_event.js"
 import { default as Diff } from './diff.js'
 import {ReprUI} from "./repr_ui";
+import {details} from "./tags";
 
 const JsDiff = new Diff();
 
@@ -146,6 +147,44 @@ export class Cell extends UIEventTarget {
     applyEdits(edits) {
         throw "applyEdits not implemented for this cell type";
     }
+}
+
+function errorDisplay(error, currentFile, maxDepth, nested) {
+    maxDepth = maxDepth || 0;
+    nested = nested || false;
+    let cellLine = null;
+    const traceItems = [];
+    const messageStr = `${error.message} (${error.className})`;
+
+    let reachedIrrelevant = false;
+
+    if (error.stackTrace && error.stackTrace.length) {
+        error.stackTrace.forEach((traceEl, i) => {
+            if (traceEl.file === currentFile && traceEl.line >= 0) {
+                if (cellLine === null)
+                    cellLine = traceEl.line;
+                traceItems.push(tag('li', [], {}, [span(['error-link'], [`(Line ${traceEl.line})`])]))
+            } else {
+                if (traceEl.className === 'sun.reflect.NativeMethodAccessorImpl') {
+                    reachedIrrelevant = true;
+                }
+                const classes = reachedIrrelevant ? ['irrelevant'] : [];
+                traceItems.push(tag('li', classes, {}, [`${traceEl.className}.${traceEl.method}(${traceEl.file}:${traceEl.line})`]))
+            }
+        });
+    }
+
+    const causeEl = (maxDepth > 0 && error.cause)
+                    ? [errorDisplay(error.cause, currentFile, maxDepth - 1, true).el]
+                    : [];
+    const label = nested ? "Caused by" : "Uncaught exception";
+    const summaryContent = [span(['severity'], [label]), span(['message'], [messageStr])];
+    const traceContent = [tag('ul', ['stack-trace'], {}, traceItems), ...causeEl];
+    const el = traceItems.length
+                ? details([], summaryContent, traceContent)
+                : div([], summaryContent);
+
+    return {el, messageStr, cellLine};
 }
 
 export class CodeCell extends Cell {
@@ -294,41 +333,12 @@ export class CodeCell extends Cell {
     }
 
     setRuntimeError(error) {
-        let tracePos = 0;
-        let cellLine = null;
-        const traceItems = [];
-        const messageStr = `${error.message} (${error.className})`;
+        const {el, messageStr, cellLine} = errorDisplay(error, this.container.id, 3);
 
-        let reachedIrrelevant = false;
-
-        if (error.stackTrace && error.stackTrace.length) {
-            error.stackTrace.forEach((traceEl, i) => {
-                if (traceEl.file === this.id && traceEl.line >= 0) {
-                    if (cellLine === null)
-                        cellLine = traceEl.line;
-                    traceItems.push(tag('li', [], {}, [span(['error-link'], [`(Line ${traceEl.line})`])]))
-                } else {
-                    if (traceEl.className === 'sun.reflect.NativeMethodAccessorImpl') {
-                        reachedIrrelevant = true;
-                    }
-                    const classes = reachedIrrelevant ? ['irrelevant'] : [];
-                    traceItems.push(tag('li', classes, {}, [`${traceEl.className}.${traceEl.method}(${traceEl.file}:${traceEl.line})`]))
-                }
-            });
-        }
-
-        // TODO: should show nested causes, maybe collapsed by default
-
-        // clear the display
-        // actually, don't - for a runtime error we still might want to see any prior output //this.cellOutputDisplay.innerHTML = '';
         this.cellOutput.classList.add('errors');
         this.cellOutputDisplay.appendChild(
             div(['errors'], [
-                blockquote(['error-report', 'Error'], [
-                    span(['severity'], ['Uncaught exception']),
-                    span(['message'], [messageStr]),
-                    tag('ul', ['stack-trace'], {}, traceItems)
-                ])
+                blockquote(['error-report', 'Error'], [el])
             ])
         );
 

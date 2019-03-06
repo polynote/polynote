@@ -56,11 +56,6 @@ case object EmptyCell extends Throwable
 
 object RuntimeError extends ResultCompanion[RuntimeError](2) {
 
-  def of(err: Throwable): RuntimeError = err match {
-    case e @ RuntimeError(_) => e
-    case e => RuntimeError(e)
-  }
-
   private implicit val charset: Charset = StandardCharsets.UTF_8
 
   val str = variableSizeBytes(int32, string)
@@ -131,6 +126,20 @@ object RuntimeError extends ResultCompanion[RuntimeError](2) {
   }
 
   implicit val codec: Codec[RuntimeError] = throwableWithCausesCodec.as[RuntimeError]
+}
+
+object ErrorResult {
+  def apply(err: Throwable): Result with Throwable = err match {
+    case e @ CompileErrors(_) => e
+    case RuntimeError(e @ RuntimeError(_)) => apply(e)  // in case we accidentally nested RuntimeErrors
+    case e @ RuntimeError(_) => e
+    case e => RuntimeError(e)
+  }
+
+  def applyIO(err: Throwable): IO[Result] = IO.pure(apply(err))
+
+  import fs2.Stream
+  def toStream(err: Throwable): IO[Stream[IO, Result]] = IO.pure(Stream.emit(apply(err)))
 }
 
 

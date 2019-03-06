@@ -86,15 +86,15 @@ class ScalaInterpreter(
               runtimeSym =>
                 kernelContext.runInterruptible {
                   val moduleMirror = try runtimeMirror.reflectModule(runtimeSym.asModule) catch {
-                    case err: ExceptionInInitializerError => throw new RuntimeError(err.getCause)
+                    case err: ExceptionInInitializerError => throw RuntimeError(err.getCause)
                     case err: Throwable =>
-                      throw new RuntimeError(err) // could be linkage errors which won't get handled by IO#handleErrorWith
+                      throw RuntimeError(err) // could be linkage errors which won't get handled by IO#handleErrorWith
                   }
 
                   val instMirror = try runtimeMirror.reflect(moduleMirror.instance) catch {
-                    case err: ExceptionInInitializerError => throw new RuntimeError(err.getCause)
+                    case err: ExceptionInInitializerError => throw RuntimeError(err.getCause)
                     case err: Throwable =>
-                      throw new RuntimeError(err)
+                      throw RuntimeError(err)
                   }
 
                   val runtimeType = instMirror.symbol.info
@@ -188,7 +188,7 @@ class ScalaInterpreter(
                 for {
                   pub   <- outputs.through(resultQ.enqueue).compile.drain.start
                   fiber <- runWithCapturedStdout.start
-                } yield fiber.join.uncancelable.handleErrorWith(err => IO.pure(List(RuntimeError(err))))
+                } yield fiber.join.uncancelable.handleErrorWith(err => IO.pure(List(ErrorResult(err))))
             }
 
             eval.map {

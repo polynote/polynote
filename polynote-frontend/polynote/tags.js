@@ -262,3 +262,11 @@ export function table(classes, contentSpec) {
 
     return table;
 }
+
+export function details(classes, summary, content) {
+    const el = tag('details', classes, {}, [
+        tag('summary', [], {}, summary)
+    ]);
+    appendContent(el, content);
+    return el;
+}
