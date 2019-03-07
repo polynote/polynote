@@ -88,7 +88,6 @@ export class Cell extends UIEventTarget {
         this.language = language;
         if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
         this.isCode = false;
-        console.log("create cell with lang", this.language)
 
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
@@ -121,7 +120,6 @@ export class Cell extends UIEventTarget {
         if (Cell.currentFocus && Cell.currentFocus !== this) {
             Cell.currentFocus.blur();
         }
-        console.log("cell", this.id, "now active")
         Cell.currentFocus = this;
         this.container.classList.add('active');
 
