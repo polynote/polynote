@@ -564,7 +564,7 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 
     getCodeCellIds() {
-        return this.getCells().filter(cell => cell.isCode).map(cell => cell.id);
+        return this.getCells().filter(cell => cell instanceof CodeCell).map(cell => cell.id);
     }
 
     onWindowResize(evt) {

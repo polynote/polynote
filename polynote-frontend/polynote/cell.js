@@ -87,7 +87,6 @@ export class Cell extends UIEventTarget {
         this.id = id;
         this.language = language;
         if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
-        this.isCode = false;
 
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
@@ -192,7 +191,6 @@ function errorDisplay(error, currentFile, maxDepth, nested) {
 export class CodeCell extends Cell {
     constructor(id, content, language) {
         super(id, content, language);
-        this.isCode = true;
         this.container.classList.add('code-cell');
 
         this.cellInputTools.insertBefore(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
