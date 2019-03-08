@@ -86,6 +86,7 @@ export class Cell extends UIEventTarget {
         super(id, content, language);
         this.id = id;
         this.language = language;
+        if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
 
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
