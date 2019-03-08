@@ -93,10 +93,12 @@ class SparkPolyKernel(
 
   // initialize the session, and add task listener
   private lazy val sparkListener = new KernelListener(statusUpdates)
-  private lazy val session = {
+
+  private lazy val session: SparkSession = {
+    val nbConfig = getNotebook().unsafeRunSync().config
     val conf = new SparkConf(loadDefaults = true)
 
-    config.spark.foreach {
+    nbConfig.flatMap(_.sparkConfig).getOrElse(config.spark).foreach {
       case (k, v) => conf.set(k, v)
     }
 
@@ -108,8 +110,8 @@ class SparkPolyKernel(
     conf.set("spark.repl.class.outputDir", outputPath.toString)
 
     // TODO: experimental
-//    conf.set("spark.driver.userClassPathFirst", "true")
-//    conf.set("spark.executor.userClassPathFirst", "true")
+    //    conf.set("spark.driver.userClassPathFirst", "true")
+    //    conf.set("spark.executor.userClassPathFirst", "true")
     // TODO: experimental
 
     val sess = SparkSession.builder().config(conf)

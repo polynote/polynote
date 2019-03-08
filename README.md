@@ -72,6 +72,20 @@ The scripts won't install anything on your local machine, so you will need to ma
     - [webpack](https://webpack.js.org/) `npm install webpack` 
     - [markdown-it](https://www.npmjs.com/package/markdown-it) `npm install markdown-it`
     
+## Configuration
+
+Polynote can be configured with a YAML configuration file. By default, a file named `config.yml` present in Polynote's
+current directory will be read. You can point Polynote somewhere else using the `--config` or `-c` flag. 
+
+Check out [this template](./config-template.yml) to see the sort of things you can configure. 
+
+Note that configurations that affect notebook behavior, such as dependency, repository or spark configuration, are stored
+inside each notebook's metadata upon creation. This means that changing these configurations in your config file will 
+not affect existing notebooks - only new notebooks that are created while this configuration is active. 
+
+*Caveat regarding spark configuration*: Currently spark notebooks share a SparkSession which is created on the first time
+any notebook is run. This means that the first notebook you run will set the Spark configuration for the entire lifetime
+of the Polynote server process. This will be resolved by [this issue](https://github.com/polynote/polynote/issues/101).
     
 ## Development tips
 
