@@ -74,12 +74,15 @@ object NotebookCell {
 
 final case class NotebookConfig(
   dependencies: Option[DependencyConfigs],
-  repositories: Option[TinyList[RepositoryConfig]]
+  repositories: Option[TinyList[RepositoryConfig]],
+  sparkConfig: Option[ShortMap[String, String]]
 )
 
 object NotebookConfig {
   implicit val encoder: Encoder[NotebookConfig] = deriveEncoder[NotebookConfig]
   implicit val decoder: Decoder[NotebookConfig] = deriveDecoder[NotebookConfig]
+
+  def empty = NotebookConfig(None, None, None)
 }
 
 final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], config: Option[NotebookConfig]) extends Message {

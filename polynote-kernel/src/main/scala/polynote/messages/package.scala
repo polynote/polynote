@@ -94,6 +94,22 @@ package object messages {
   implicit def tinyMapEncoder[A, B](implicit enc: Encoder[Map[A, B]]): Encoder[TinyMap[A, B]] = enc.contramap(m => m)
   implicit def tinyMapDecoder[A, B](implicit dec: Decoder[Map[A, B]]): Decoder[TinyMap[A, B]] = dec.map(m => TinyMap(m))
 
+  type ShortMap[A, B] = Map[A, B] @@ ShortTag
+  def ShortMap[A, B](map: Map[A, B]): ShortMap[A, B] = if (map.size > Short.MaxValue)
+    throw new RuntimeException(s"Map length exceeds Short Max Value of ${Short.MaxValue}")
+  else
+    map.asInstanceOf[ShortMap[A, B]]
+
+  def ShortMap[A, B](t: (A, B)*): ShortMap[A, B] = ShortMap(Map(t: _*))
+
+  implicit def map2ShortMap[A, B](map: Map[A, B]): ShortMap[A, B] = ShortMap(map)
+
+  implicit def shortMapCodec[A, B](implicit ca: Lazy[Codec[A]], cb: Lazy[Codec[B]]): Codec[ShortMap[A, B]] =
+    listOfN(uint16, ca.value ~ cb.value).xmap(l => ShortMap(l.toMap), m => m.toList)
+
+  implicit def shortMapEncoder[A, B](implicit enc: Encoder[Map[A, B]]): Encoder[ShortMap[A, B]] = enc.contramap(m => m)
+  implicit def shortMapDecoder[A, B](implicit dec: Decoder[Map[A, B]]): Decoder[ShortMap[A, B]] = dec.map(m => ShortMap(m))
+
   // refined ByteVector type, to encode it with a 32-bit length frame
   // assumption: We will never be sending ByteVectors of more than 4GB over the wire!
   type ByteVector32 = ByteVector @@ ShortTag

@@ -5,9 +5,8 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
 
 import scala.collection.JavaConverters._
 import cats.effect.{ContextShift, IO}
-import polynote.config.DependencyConfigs
+import polynote.config.{DependencyConfigs, PolynoteConfig}
 import polynote.messages._
-import polynote.server.ServerConfig
 
 import scala.concurrent.ExecutionContext
 
@@ -29,7 +28,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   def path: Path
   def chunkSize: Int
   def executionContext: ExecutionContext
-  def serverConfig: ServerConfig
+  def config: PolynoteConfig
 
   protected def pathOf(relativePath: String): Path = path.resolve(relativePath)
 
@@ -77,7 +76,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     ShortList(
       NotebookCell(0, "text", s"# $title\n\nThis is a text cell. Start editing!") :: Nil
     ),
-    Some(NotebookConfig(Option(serverConfig.dependencies.asInstanceOf[DependencyConfigs]), Option(serverConfig.repositories)))
+    Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.repositories), Option(config.spark)))
   )
 
   def createNotebook(relativePath: String): IO[String] = {

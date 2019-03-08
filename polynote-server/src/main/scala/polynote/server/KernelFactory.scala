@@ -8,6 +8,7 @@ import cats.instances.list._
 import cats.syntax.parallel._
 import fs2.Stream
 import fs2.concurrent.Topic
+import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel._
@@ -26,7 +27,8 @@ trait KernelFactory[F[_]] {
 
 class IOKernelFactory(
   dependencyFetchers: Map[String, DependencyFetcher[IO]],
-  val interpreters: Map[String, LanguageInterpreter.Factory[IO]])(implicit
+  val interpreters: Map[String, LanguageInterpreter.Factory[IO]],
+  config: PolynoteConfig)(implicit
   contextShift: ContextShift[IO]
 ) extends KernelFactory[IO] {
 
@@ -44,12 +46,12 @@ class IOKernelFactory(
     settings: Settings,
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
-  ): IO[PolyKernel] = IO.pure(PolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader))
+  ): IO[PolyKernel] = IO.pure(PolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader, config))
 
   override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate]): IO[KernelAPI[IO]] = for {
     notebook <- getNotebook()
     path      = notebook.path
-    config    = notebook.config.getOrElse(NotebookConfig(None, None))
+    config    = notebook.config.getOrElse(NotebookConfig.empty)
     taskInfo  = TaskInfo("kernel", "Start", "Kernel starting", TaskStatus.Running)
     deps     <- fetchDependencies(config, statusUpdates)
     numDeps   = deps.values.map(_.size).sum
