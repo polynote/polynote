@@ -20,5 +20,11 @@
 
 # Default dependencies can be specified. Uncommenting the following lines would add default dependencies for the Scala interpreter, which are inherited by new notebooks.
 #dependencies:
-#  - org.typelevel:cats-core_2.11:1.6.0
-#  - com.mycompany:my-library:jar:all:1.0.0
+#  scala:
+#    - org.typelevel:cats-core_2.11:1.6.0
+#    - com.mycompany:my-library:jar:all:1.0.0
+
+# Spark config params can be set by uncommenting and editing the following lines:
+#spark:
+#  spark.driver.userClasspathFirst: true
+#  spark.executor.userClasspathFirst: true

@@ -710,9 +710,10 @@ export class NotebookUI extends UIEventTarget {
         this.editBuffer = new EditBuffer();
 
         this.cellUI.addEventListener('UpdatedConfig', evt => {
+            console.log("updating config")
             const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
             this.editBuffer.push(this.localVersion, update);
-            this.socket.send(this.localVersion, update);
+            this.socket.send(update);
         });
 
         this.cellUI.addEventListener('SelectCell', evt => {

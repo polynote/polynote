@@ -2,6 +2,7 @@ package polynote.server
 import java.io.File
 
 import cats.effect.IO
+import polynote.config.PolynoteConfig
 import polynote.kernel.{KernelStatusUpdate, PolyKernel, SparkPolyKernel}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.Publish
@@ -11,7 +12,7 @@ import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
 
 object SparkServer extends Server {
-  override protected lazy val kernelFactory: KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters) {
+  override protected def kernelFactory(config: PolynoteConfig): KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters, config) {
     override protected def mkKernel(
       getNotebook: () => IO[Notebook],
       deps: Map[String, List[(String, File)]],
@@ -21,7 +22,7 @@ object SparkServer extends Server {
       settings: Settings,
       outputDir: AbstractFile,
       parentClassLoader: ClassLoader
-    ): IO[PolyKernel] = IO.pure(SparkPolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, parentClassLoader))
+    ): IO[PolyKernel] = IO.pure(SparkPolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, parentClassLoader, config))
   }
 }
 

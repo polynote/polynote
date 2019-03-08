@@ -8,6 +8,7 @@ import org.http4s._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeBuilder
 import org.log4s.{Logger, getLogger}
+import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.lang.{LanguageInterpreter, LanguageInterpreterService}
 import polynote.server.repository.NotebookRepository
@@ -33,7 +34,7 @@ trait Server extends IOApp with Http4sDsl[IO] {
         (accum, next) => accum ++ next.interpreters
       }
 
-  protected lazy val kernelFactory: KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters)
+  protected def kernelFactory(config: PolynoteConfig): KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters, config)
 
   def serveFile(path: String, req: Request[IO], watchUI: Boolean)(implicit syncIO: Sync[IO]): IO[Response[IO]] = {
     if (watchUI) {
@@ -70,9 +71,9 @@ trait Server extends IOApp with Http4sDsl[IO] {
            |""".stripMargin)
   }
 
-  protected def createRepository(serverConfig: ServerConfig): NotebookRepository[IO] = new IPythonNotebookRepository(
+  protected def createRepository(config: PolynoteConfig): NotebookRepository[IO] = new IPythonNotebookRepository(
     new File(System.getProperty("user.dir")).toPath.resolve("notebooks"),
-    serverConfig,
+    config,
     executionContext = executionContext)
 
   def run(args: List[String]): IO[ExitCode] = for {
@@ -80,15 +81,16 @@ trait Server extends IOApp with Http4sDsl[IO] {
     // create that config or remove that setting. Until then, be sure to add `--driver-java-options "-Dlog4j.configuration=log4j.properties"
     // to your `spark-submit` call.
     args            <- parseArgs(args)
-    config          <- ServerConfig.load(args.configFile)
+    config          <- PolynoteConfig.load(args.configFile)
     port             = config.listen.port
-    address          = config.listen.address
+    address          = config.listen.host
+    _               <- IO(logger.info(s"Read config from ${args.configFile.getAbsolutePath}: $config"))
     host             = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url              = s"http://$host:$port"
     _               <- splash
     _               <- IO(logger.info(s" Running on $url"))
     repository       = createRepository(config)
-    notebookManager  = new IONotebookManager(config, repository, kernelFactory)
+    notebookManager  = new IONotebookManager(config, repository, kernelFactory(config))
 
     exitCode        <- BlazeBuilder[IO]
                         .bindHttp(port, address)
