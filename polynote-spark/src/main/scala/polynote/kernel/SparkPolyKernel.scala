@@ -98,7 +98,7 @@ class SparkPolyKernel(
     val nbConfig = getNotebook().unsafeRunSync().config
     val conf = new SparkConf(loadDefaults = true)
 
-    nbConfig.flatMap(_.sparkConfig).getOrElse(Map.empty).foreach {
+    nbConfig.flatMap(_.sparkConfig).getOrElse(config.spark).foreach {
       case (k, v) => conf.set(k, v)
     }
 
