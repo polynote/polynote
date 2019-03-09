@@ -417,6 +417,20 @@ export class NotebookConfigUI extends UIEventTarget {
                         ])
                     ])
                 ]),
+                div(['notebook-exclusions'], [
+                    h3([], ['Exclusions']),
+                    para([], ['Specify organization:module coordinates for your exclusions, i.e. ', span(['pre'], ['org.myorg:package-name_2.11'])]),
+                    this.exclusionContainer = div(['exclusion-list'], [
+                        this.exclusionRowTemplate = div(['exclusion-row'], [
+                            textbox(['exclusion'], 'Exclusion organization:name'),
+                            iconButton(['add'], 'Add', '', 'Add').click(evt => {
+                                this.addExclusion(evt.currentTarget.parentNode.querySelector('.exclusion').value);
+                                this.exclusionRowTemplate.querySelector('.exclusion').value = '';
+                            }),
+                            iconButton(['remove'], 'Remove', '', 'Remove')
+                        ])
+                    ])
+                ]),
                 div(['controls'], [
                     button(['save'], {}, ['Save & Restart']).click(evt => {
                         this.lastConfig = this.config;
@@ -461,6 +475,16 @@ export class NotebookConfigUI extends UIEventTarget {
         this.dependencyContainer.insertBefore(row, this.dependencyRowTemplate);
     }
 
+    addExclusion(value) {
+        const row = this.exclusionRowTemplate.cloneNode(true);
+        row.querySelector('.exclusion').value = value;
+        row.querySelector('.remove').addEventListener('click', evt => {
+            row.innerHTML = '';
+            row.parentNode.removeChild(row);
+        });
+        this.exclusionContainer.insertBefore(row, this.exclusionRowTemplate);
+    }
+
     addResolver(value) {
         const row = this.resolverRowTemplate.cloneNode(true);
         row.querySelector('.resolver-url').value = value.base;
@@ -490,6 +514,12 @@ export class NotebookConfigUI extends UIEventTarget {
         this.dependencyContainer.appendChild(this.dependencyRowTemplate);
         [...this.dependencyContainer.querySelectorAll('input')].forEach(input => input.value = '');
 
+        while (this.exclusionContainer.childNodes.length > 0) {
+            this.exclusionContainer.removeChild(this.exclusionContainer.childNodes[0]);
+        }
+        this.exclusionContainer.appendChild(this.exclusionRowTemplate);
+        [...this.exclusionContainer.querySelectorAll('input')].forEach(input => input.value = '');
+
         while (this.resolverContainer.childNodes.length > 0) {
             this.resolverContainer.removeChild(this.resolverContainer.childNodes[0]);
         }
@@ -507,6 +537,12 @@ export class NotebookConfigUI extends UIEventTarget {
             }
         }
 
+        if (config.exclusions) {
+            for (const excl of config.exclusions) {
+                this.addExclusion(excl);
+            }
+        }
+
         if(config.repositories) {
             for (const repository of config.repositories) {
                 this.addResolver(repository);
@@ -521,6 +557,12 @@ export class NotebookConfigUI extends UIEventTarget {
             if (input.value) deps.push(input.value);
         });
 
+        const exclusions = [];
+        const exclusionInputs = this.exclusionContainer.querySelectorAll('.exclusion-row input');
+        exclusionInputs.forEach(input => {
+            if (input.value) exclusions.push(input.value);
+        });
+
         const repos = [];
         const repoRows = this.resolverContainer.querySelectorAll('.resolver-row');
         repoRows.forEach(row => {
@@ -532,6 +574,7 @@ export class NotebookConfigUI extends UIEventTarget {
 
         return new messages.NotebookConfig(
             {scala: deps},
+            exclusions,
             repos
         );
     }
@@ -572,7 +615,7 @@ export class NotebookCellsUI extends UIEventTarget {
             clearTimeout(this.resizeTimeout);
         }
         this.resizeTimeout = setTimeout(() => {
-            this.cells.forEach((cell) => {
+            this.getCells().forEach((cell) => {
                 if (cell instanceof CodeCell) {
                     cell.editor.layout();
                 }
@@ -1478,7 +1521,7 @@ export class MainUI extends EventTarget {
                 return;
             }
 
-            cellsUI.dispatchEvent(new UIEvent('InsertCellBefore', { detail: { cellId: activeCellId }}));
+            cellsUI.dispatchEvent(new UIEvent('InsertCellBefore', { cellId: activeCellId }));
         });
 
         this.toolbarUI.addEventListener('InsertBelow', () => {
