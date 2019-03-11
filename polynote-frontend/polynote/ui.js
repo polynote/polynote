@@ -539,9 +539,10 @@ export class NotebookConfigUI extends UIEventTarget {
 }
 
 export class NotebookCellsUI extends UIEventTarget {
-    constructor() {
+    constructor(path) {
         super();
         this.configUI = new NotebookConfigUI().setEventParent(this);
+        this.path = path;
         this.el = div(['notebook-cells'], [this.configUI.el]);
         this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.cells = {};
@@ -625,14 +626,14 @@ export class NotebookCellsUI extends UIEventTarget {
 
         if (currentCell instanceof TextCell && language !== 'text') {
             // replace text cell with a code cell
-            const newCell = new CodeCell(currentCell.id, currentCell.content, language);
+            const newCell = new CodeCell(currentCell.id, currentCell.content, language, this.path);
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);
             newCell.focus();
         } else if (currentCell instanceof CodeCell && language === 'text') {
             // replace code cell with a text cell
-            const newCell = new TextCell(currentCell.id, currentCell.content, language);
+            const newCell = new TextCell(currentCell.id, currentCell.content, this.path);
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);
@@ -694,7 +695,7 @@ class EditBuffer {
 export class NotebookUI extends UIEventTarget {
     constructor(path, socket, mainUI) {  // TODO: Maybe UI shouldn't talk directly to session? I dunno...
         super();
-        let cellUI = new NotebookCellsUI().setEventParent(this);
+        let cellUI = new NotebookCellsUI(path).setEventParent(this);
         cellUI.notebookUI = this;
         let kernelUI = new KernelUI().setEventParent(this);
         //super(null, cellUI, kernelUI);
@@ -764,7 +765,7 @@ export class NotebookUI extends UIEventTarget {
         this.cellUI.addEventListener('InsertCellAfter', evt => {
            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.el.querySelector('.cell-container').id);
            const nextId = this.cellUI.cellCount;
-           const newCell = current.language === 'text' ? new TextCell(nextId, '', 'text') : new CodeCell(nextId, '', current.language);
+           const newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, new messages.NotebookCell(newCell.id, newCell.language, ''), current.id)
            this.socket.send(update);
            this.editBuffer.push(this.localVersion, update);
@@ -951,8 +952,8 @@ export class NotebookUI extends UIEventTarget {
                         .when(messages.InsertCell, (p, g, l, cell, after) => {
                             const prev = this.cellUI.getCell(after);
                             const newCell = (prev && prev.language && prev.language !== "text")
-                                            ? new CodeCell(cell.id, cell.content, cell.language)
-                                            : new TextCell(cell.id, cell.content);
+                                            ? new CodeCell(cell.id, cell.content, cell.language, this.path)
+                                            : new TextCell(cell.id, cell.content, this.path);
                             this.cellUI.insertCell(newCell, after)
                         })
                         .when(messages.DeleteCell, (p, g, l, id) => this.cellUI.removeCell(id))
@@ -1041,10 +1042,10 @@ export class NotebookUI extends UIEventTarget {
                 switch (cellInfo.language) {
                     case 'text':
                     case 'markdown':
-                        cell = new TextCell(cellInfo.id, cellInfo.content, 'text');
+                        cell = new TextCell(cellInfo.id, cellInfo.content, path);
                         break;
                     default:
-                        cell = new CodeCell(cellInfo.id, cellInfo.content, cellInfo.language);
+                        cell = new CodeCell(cellInfo.id, cellInfo.content, cellInfo.language, path);
                 }
 
                 this.cellUI.addCell(cell);
@@ -1409,7 +1410,7 @@ export class MainUI extends EventTarget {
         this.toolbarUI.addEventListener('Undo', () => {
            const notebookUI = this.currentNotebook.cellsUI.notebookUI;
            if (notebookUI instanceof NotebookUI) {
-               notebookUI
+               notebookUI // TODO: implement undoing after deciding on behavior
            }
         });
 

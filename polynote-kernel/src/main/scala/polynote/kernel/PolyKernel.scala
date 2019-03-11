@@ -22,7 +22,7 @@ import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
 import polynote.kernel.util.{RuntimeSymbolTable, _}
 import polynote.messages._
-import polynote.runtime.{LazyDataRepr, StreamingDataRepr, UpdatingDataRepr}
+import polynote.runtime.{LazyDataRepr, StreamingDataRepr, TableOp, UpdatingDataRepr}
 import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
@@ -227,11 +227,14 @@ class PolyKernel private[kernel] (
         handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Updating#$handleId")))
       } yield handle.lastData.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer]))).toList
 
-    case Streaming =>
-      for {
-        handleOpt <- IO(StreamingDataRepr.getHandle(handleId))
-        handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Streaming#$handleId")))
-      } yield handle.iterator.take(count).toList.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer])))
+    case Streaming => IO.raiseError(new IllegalStateException("Streaming data is managed on a per-subscriber basis"))
+  }
+
+  override def modifyStream(handleId: Int, ops: List[TableOp]): IO[Option[StreamingDataRepr]] = {
+    IO(StreamingDataRepr.getHandle(handleId)).flatMap {
+      case None => IO.pure(None)
+      case Some(handle) => IO.fromEither(handle.modify(ops)).map(StreamingDataRepr.fromHandle).map(Some(_))
+    }
   }
 
   override def cancelTasks(): IO[Unit] = {

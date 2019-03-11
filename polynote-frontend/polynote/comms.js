@@ -37,6 +37,7 @@ export class SocketSession extends EventTarget {
         this.isOpen = false;
         this.queue = [];
         this.messageListeners = [];
+        SocketSession.current = this; // yeah...
         mkSocket.call(this);
     }
 

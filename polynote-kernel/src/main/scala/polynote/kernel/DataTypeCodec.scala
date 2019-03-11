@@ -43,7 +43,17 @@ object ValueReprCodec {
   implicit val updatingDataRepr: Discriminator[ValueRepr, UpdatingDataRepr, Byte] = Discriminator(4)
   implicit val streamingDataRepr: Discriminator[ValueRepr, StreamingDataRepr, Byte] = Discriminator(5)
 
+  implicit val streamingDataReprCodec: Codec[StreamingDataRepr] = cachedImplicit
   implicit val byteBufferCodec: Codec[ByteBuffer] = variableSizeBytes(int32, bytes).xmap(_.toByteBuffer, ByteVector.apply)
 
   implicit val codec: Codec[ValueRepr] = cachedImplicit
+}
+
+object TableOpCodec {
+  implicit val tableOpDiscriminated: Discriminated[TableOp, Byte] = Discriminated(byte)
+  implicit val groupAgg: Discriminator[TableOp, GroupAgg, Byte] = Discriminator(0)
+  implicit val quantileBin: Discriminator[TableOp, QuantileBin, Byte] = Discriminator(1)
+  implicit val select: Discriminator[TableOp, Select, Byte] = Discriminator(2)
+
+  implicit val tableOpCodec: Codec[TableOp] = cachedImplicit
 }

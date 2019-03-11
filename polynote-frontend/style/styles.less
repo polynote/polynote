@@ -1450,70 +1450,6 @@ button {
   .kernel-symbols {
     position: relative;
     grid-area: symbols;
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      border-width: 1px 0;
-
-      th, td {
-        border: 1px solid @ui-border;
-        padding: 0.25em;
-        font-weight: normal;
-      }
-
-      th:first-child, td:first-child {
-        border-left-width: 0;
-      }
-
-      th:last-child, td:last-child {
-        border-right-width: 0;
-      }
-
-      thead {
-        th {
-          background: @ui-background;
-          text-align: left;
-        }
-      }
-      tbody {
-        overflow-y: auto;
-        background: white;
-
-        tr {
-          animation: highlight 2s;
-        }
-
-        th, td {
-          text-align: left;
-          line-height: 1.2;
-
-          span {
-            display: block;
-            max-height: 1.2em;
-            position: relative;
-            overflow: hidden;
-            color: transparent;
-            word-break: break-all;
-          }
-
-          span::after {
-            content: attr(title);
-            position: absolute;
-            left: 0;
-            top: 0;
-            right: 0;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            color: black;
-          }
-        }
-
-        .name, .type {
-          font-family: @code-fonts;
-        }
-      }
-    }
   }
 
   .kernel-info {
@@ -1921,6 +1857,72 @@ button {
       color: blue;
       text-decoration: underline;
       cursor: pointer;
+    }
+  }
+}
+
+.kernel-ui .kernel-symbols table,
+.table-view table {
+  width: 100%;
+  border-collapse: collapse;
+  border-width: 1px 0;
+
+  th, td {
+    border: 1px solid @ui-border;
+    padding: 0.25em;
+    font-weight: normal;
+  }
+
+  th:first-child, td:first-child {
+    border-left-width: 0;
+  }
+
+  th:last-child, td:last-child {
+    border-right-width: 0;
+  }
+
+  thead {
+    th {
+      background: @ui-background;
+      text-align: left;
+    }
+  }
+  tbody {
+    overflow-y: auto;
+    background: white;
+
+    tr {
+      animation: highlight 2s;
+    }
+
+    th, td {
+      text-align: left;
+      line-height: 1.2;
+
+      span {
+        display: block;
+        max-height: 1.2em;
+        position: relative;
+        overflow: hidden;
+        color: transparent;
+        word-break: break-all;
+      }
+
+      span::after {
+        content: attr(title);
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: black;
+      }
+    }
+
+    .name, .type {
+      font-family: @code-fonts;
     }
   }
 }

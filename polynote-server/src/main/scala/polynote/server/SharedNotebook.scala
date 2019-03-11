@@ -1,5 +1,6 @@
 package polynote.server
 
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -7,6 +8,7 @@ import cats.Monad
 import cats.effect.concurrent.{Deferred, Ref, Semaphore}
 import cats.effect.{Concurrent, ContextShift, IO}
 import cats.syntax.apply._
+import cats.syntax.either._
 import cats.syntax.functor._
 import cats.syntax.flatMap._
 import cats.syntax.traverse._
@@ -16,10 +18,12 @@ import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, WindowBuffer}
 import polynote.messages._
-import polynote.runtime.UpdatingDataRepr
+import polynote.runtime.{StreamingDataRepr, TableOp, UpdatingDataRepr}
 import polynote.server.IOSharedNotebook.{GlobalVersion, SubscriberId}
 import polynote.util.VersionBuffer
 import scodec.bits.ByteVector
+
+import scala.collection.mutable
 
 /**
   * SharedNotebook is responsible for managing concurrent access and updates to a notebook. It's the central authority
@@ -324,8 +328,42 @@ class IOSharedNotebook(
 
     override def info: IO[Option[KernelInfo]] = ifKernelStarted(_.info, None)
 
-    override def getHandleData(handleType: HandleType, handle: Int, count: Int): IO[List[ByteVector32]] =
-      ensureKernel().flatMap(_.getHandleData(handleType, handle, count))
+    private val streams = new mutable.HashMap[Int, Iterator[ByteVector32]]
+
+    private class HandleIterator(handleId: Int, iter: Iterator[ByteVector32]) extends Iterator[ByteVector32] {
+      override def hasNext: Boolean = iter.hasNext
+
+      override def next(): ByteVector32 = {
+        val b = iter.next()
+        if (!iter.hasNext) {
+          streams.remove(handleId)  // release this iterator for GC to make underlying collection available for GC
+        }
+        b
+      }
+    }
+
+    override def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[List[ByteVector32]] = handleType match {
+      case Streaming =>
+        streams.get(handleId).map(IO.pure).getOrElse {
+          for {
+            handleOpt <- IO(StreamingDataRepr.getHandle(handleId))
+          } yield handleOpt match {
+            case Some(handle) =>
+              val iter = new HandleIterator(handleId, handle.iterator.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer]))))
+              streams.put(handleId, iter)
+              iter
+
+            case None         => Iterator.empty
+          }
+        }.map {
+          iter => iter.take(count).toList
+        }
+
+      case _ => ensureKernel().flatMap(_.getHandleData(handleType, handleId, count))
+    }
+
+    override def modifyStream(handleId: Int, ops: List[TableOp]): IO[Option[StreamingDataRepr]] =
+      ensureKernel().flatMap(_.modifyStream(handleId, ops))
 
     override def cancelTasks(): IO[Unit] = ifKernelStarted(_.cancelTasks(), ())
   }
