@@ -206,7 +206,7 @@ object TaskStatus {
 final case class TaskInfo(
   id: TinyString,
   label: TinyString,
-  detail: TinyString,
+  detail: ShortString,
   status: TaskStatus,
   progress: Byte = 0) {
 
