@@ -9,6 +9,10 @@ cat << EOM
 ***************************************************************************************
 NOTE: This script will install things and copy files on a remote machine!
 It has access to everything that '${REMOTE_USER}' can do on '${REMOTE_HOST}'!
+
+It will not install anything on the local machine though, so make sure you have all the
+dependencies installed. See https://github.com/polynote/polynote#dependencies
+
 Please confirm that you have read the script thoroughly and understand what it will do.
 ***************************************************************************************
 EOM

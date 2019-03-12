@@ -1,12 +1,15 @@
 package polynote
 
-import io.circe.{Decoder, ObjectEncoder}
+import io.circe.{Decoder, Json, ObjectEncoder}
 import polynote.messages.{TinyList, TinyMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
-import io.circe.generic.extras.JsonKey
+import io.circe.generic.extras.{Configuration, JsonKey}
 import io.circe.generic.extras.semiauto._
-import io.circe.generic.extras.defaults._
-import scodec.Codec
+
+import cats.syntax.traverse._
+import cats.syntax.either._
+import cats.instances.list._
+import cats.instances.either._
 
 package object config {
   type DependencyConfigs = TinyMap[TinyString, TinyList[TinyString]]
@@ -43,6 +46,22 @@ package object config {
     implicit val discriminated: Discriminated[RepositoryConfig, Byte] = Discriminated(byte)
     implicit val encoder: ObjectEncoder[RepositoryConfig] = deriveEncoder
     implicit val decoder: Decoder[RepositoryConfig] = deriveDecoder
+  }
+
+  implicit val circeConfig: Configuration =
+    Configuration.default.withSnakeCaseConstructorNames.withSnakeCaseMemberNames.withDefaults
+
+  implicit val mapStringStringDecoder: Decoder[Map[String, String]] = Decoder[Map[String, Json]].emap {
+    jsonMap => jsonMap.toList.map {
+      case (key, json) => json.fold(
+        Left("No null values allowed in this map"),
+        b => Right(key -> b.toString),
+        n => Right(key -> n.toString),
+        s => Right(key -> s),
+        _ => Left("No array values allowed in this map"),
+        _ => Left("No object values allowed in this map")
+      )
+    }.sequence.map(_.toMap)
   }
 
 }

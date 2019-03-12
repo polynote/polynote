@@ -6,3 +6,4 @@ notebooks
 libjep.dylib
 .idea
 .DS_Store
+config.yml

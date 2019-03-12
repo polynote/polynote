@@ -12,6 +12,7 @@ const config = {
     {"open":"(","close":")"},
     {"open":"[","close":"]"},
     {"open": '"""', "close": '"""'},
+    {"open": '"', "close": '"'},
   ],
   "brackets": [
     ["{","}"],

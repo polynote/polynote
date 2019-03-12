@@ -8,14 +8,14 @@ import cats.syntax.either._
 import io.circe.parser.parse
 import io.circe.Printer
 import io.circe.syntax._
+import polynote.config.PolynoteConfig
 import polynote.messages.Notebook
-import polynote.server.ServerConfig
 
 import scala.concurrent.ExecutionContext
 
 class IPythonNotebookRepository(
   val path: Path,
-  val serverConfig: ServerConfig,
+  val config: PolynoteConfig,
   saveVersion: Int = 4,
   val chunkSize: Int = 8192,
   val executionContext: ExecutionContext = ExecutionContext.global)(implicit

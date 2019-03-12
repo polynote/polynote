@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
 import cats.Monad
 import cats.effect.{ContextShift, Fiber, IO}
 import cats.effect.concurrent.Semaphore
+import polynote.config.PolynoteConfig
 import polynote.server.repository.NotebookRepository
 
 import scala.collection.immutable.SortedMap
@@ -28,7 +29,7 @@ abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
 }
 
 class IONotebookManager(
-  serverConfig: ServerConfig,
+  config: PolynoteConfig,
   repository: NotebookRepository[IO],
   kernelFactory: KernelFactory[IO])(implicit
   contextShift: ContextShift[IO]

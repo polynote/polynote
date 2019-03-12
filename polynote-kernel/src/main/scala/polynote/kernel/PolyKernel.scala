@@ -17,6 +17,7 @@ import cats.instances.list._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
 import org.log4s.{Logger, getLogger}
+import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
@@ -38,7 +39,8 @@ class PolyKernel private[kernel] (
   val outputDir: AbstractFile,
   dependencies: Map[String, List[(String, File)]],
   val statusUpdates: Publish[IO, KernelStatusUpdate],
-  availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty
+  availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
+  config: PolynoteConfig
 ) extends KernelAPI[IO] {
 
   protected val logger: Logger = getLogger
@@ -273,7 +275,8 @@ object PolyKernel {
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,
     outputDir: AbstractFile = defaultOutputDir,
-    parentClassLoader: ClassLoader = defaultParentClassLoader
+    parentClassLoader: ClassLoader = defaultParentClassLoader,
+    config: PolynoteConfig
   ): PolyKernel = {
 
     val kernelContext = KernelContext(dependencies, baseSettings, extraClassPath, outputDir, parentClassLoader)
@@ -284,7 +287,8 @@ object PolyKernel {
       outputDir,
       dependencies,
       statusUpdates,
-      availableInterpreters
+      availableInterpreters,
+      config
     )
   }
 }

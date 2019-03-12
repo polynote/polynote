@@ -16,6 +16,7 @@ import org.apache.spark.{SparkConf, Success}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.SparkSession
+import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
@@ -36,8 +37,9 @@ class SparkPolyKernel(
   statusUpdates: Publish[IO, KernelStatusUpdate],
   outputPath: Path,
   subKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
-  parentClassLoader: ClassLoader
-) extends PolyKernel(getNotebook, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels) {
+  parentClassLoader: ClassLoader,
+  config: PolynoteConfig
+) extends PolyKernel(getNotebook, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels, config) {
 
   import kernelContext.global
 
@@ -91,8 +93,15 @@ class SparkPolyKernel(
 
   // initialize the session, and add task listener
   private lazy val sparkListener = new KernelListener(statusUpdates)
-  private lazy val session = {
+
+  private lazy val session: SparkSession = {
+    val nbConfig = getNotebook().unsafeRunSync().config
     val conf = new SparkConf(loadDefaults = true)
+
+    nbConfig.flatMap(_.sparkConfig).getOrElse(config.spark).foreach {
+      case (k, v) => conf.set(k, v)
+    }
+
     conf.setIfMissing("spark.master", "local[*]")
     if (conf.get("spark.master") == "local[*]") {
       conf.set("spark.driver.host", "127.0.0.1")
@@ -101,8 +110,8 @@ class SparkPolyKernel(
     conf.set("spark.repl.class.outputDir", outputPath.toString)
 
     // TODO: experimental
-    conf.set("spark.driver.userClassPathFirst", "true")
-    conf.set("spark.executor.userClassPathFirst", "true")
+    //    conf.set("spark.driver.userClassPathFirst", "true")
+    //    conf.set("spark.executor.userClassPathFirst", "true")
     // TODO: experimental
 
     val sess = SparkSession.builder().config(conf)
@@ -153,7 +162,8 @@ object SparkPolyKernel {
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,
-    parentClassLoader: ClassLoader = defaultParentClassLoader
+    parentClassLoader: ClassLoader = defaultParentClassLoader,
+    config: PolynoteConfig
   ): SparkPolyKernel = {
 
     val notebookFilename = getNotebook().map {
@@ -180,7 +190,8 @@ object SparkPolyKernel {
       statusUpdates,
       outputPath,
       subKernels,
-      parentClassLoader
+      parentClassLoader,
+      config
     )
 
     //global.extendCompilerClassPath(kernel.classPath: _*)

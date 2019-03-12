@@ -550,18 +550,22 @@ export class NotebookCellsUI extends UIEventTarget {
         window.addEventListener('resize', this.onWindowResize.bind(this));
     }
 
-    extractId(cellRef) {
-        if (typeof cellRef === 'string') {
-            return cellRef.match(/^Cell(\d+)$/)[1];
-        } else if (typeof cellRef === 'number') {
-            return cellRef;
-        } else {
-            throw { message: `Unable to parse cell reference ${cellRef}` };
-        }
+    firstCell() {
+        return this.getCells()[0];
     }
 
-    getCell(cellRef) {
-        return this.cells[this.extractId(cellRef)];
+    getCell(cellId) {
+        return this.cells[cellId];
+    }
+
+    getCells() {
+        return Array.from(this.el.children)
+            .map(container => container.cell)
+            .filter(cell => cell);
+    }
+
+    getCodeCellIds() {
+        return this.getCells().filter(cell => cell instanceof CodeCell).map(cell => cell.id);
     }
 
     onWindowResize(evt) {
@@ -569,9 +573,9 @@ export class NotebookCellsUI extends UIEventTarget {
             clearTimeout(this.resizeTimeout);
         }
         this.resizeTimeout = setTimeout(() => {
-            this.el.querySelectorAll('.code-cell').forEach((el) => {
-                if (el.cell instanceof CodeCell) {
-                    el.cell.editor.layout();
+            this.cells.forEach((cell) => {
+                if (cell instanceof CodeCell) {
+                    cell.editor.layout();
                 }
             })
         }, 333);
@@ -602,13 +606,14 @@ export class NotebookCellsUI extends UIEventTarget {
         const cell = this.getCell(cellId);
         if (cell) {
             this.el.removeChild(cell.container);
+            delete this.cells[cellId];
             cell.dispose();
             cell.container.innerHTML = '';
         }
     }
 
     setupCell(cell) {
-        this.cells[this.extractId(cell.id)] = cell;
+        this.cells[cell.id] = cell;
         if (cell.editor && cell.editor.layout) {
             cell.editor.layout();
         }
@@ -617,8 +622,9 @@ export class NotebookCellsUI extends UIEventTarget {
 
     setCellLanguage(cell, language) {
         const currentCell = this.getCell(cell.id);
-        if (cell !== currentCell)
-            throw { message:"Cell with that ID is not the same cell as the target cell" };
+        if (cell !== currentCell){
+            throw { message: "Cell with that ID is not the same cell as the target cell" };
+        }
 
 
         if (currentCell.language === language)
@@ -713,7 +719,7 @@ export class NotebookUI extends UIEventTarget {
         this.cellUI.addEventListener('UpdatedConfig', evt => {
             const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
             this.editBuffer.push(this.localVersion, update);
-            this.socket.send(this.localVersion, update);
+            this.socket.send(update);
         });
 
         this.cellUI.addEventListener('SelectCell', evt => {
@@ -722,7 +728,7 @@ export class NotebookUI extends UIEventTarget {
 
             // update cell type selector
             for (const opt of cellTypeSelector.options) {
-                if (opt.value === evt.detail.cell.lang) {
+                if (opt.value === evt.detail.cell.language) {
                     cellTypeSelector.selectedIndex = i;
                     break;
                 }
@@ -747,12 +753,12 @@ export class NotebookUI extends UIEventTarget {
         this.cellUI.addEventListener('AdvanceCell', evt => {
             if (Cell.currentFocus) {
                 if (evt.backward) {
-                    const prev = Cell.currentFocus.container.previousSibling && cellUI.getCell(Cell.currentFocus.container.previousSibling.id);
+                    const prev = Cell.currentFocus.container.previousSibling && cellUI.getCell(Cell.currentFocus.container.previousSibling.cell.id);
                     if (prev) {
                         prev.focus();
                     }
                 } else {
-                    const next = Cell.currentFocus.container.nextSibling && cellUI.getCell(Cell.currentFocus.container.nextSibling.id);
+                    const next = Cell.currentFocus.container.nextSibling && cellUI.getCell(Cell.currentFocus.container.nextSibling.cell.id);
                     if (next) {
                         next.focus();
                     } else {
@@ -763,7 +769,7 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.cellUI.addEventListener('InsertCellAfter', evt => {
-           const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.el.querySelector('.cell-container').id);
+           const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.firstCell().id);
            const nextId = this.cellUI.cellCount;
            const newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, new messages.NotebookCell(newCell.id, newCell.language, ''), current.id)
@@ -773,28 +779,59 @@ export class NotebookUI extends UIEventTarget {
            newCell.focus();
         });
 
+        this.cellUI.addEventListener('InsertCellBefore', evt => {
+            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.firstCell();
+            const nextId = this.cellUI.cellCount;
+            const newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
+            if (current === this.cellUI.firstCell()) {
+                const update = new messages.InsertCell(path, this.globalVersion, this.localVersion++, new messages.NotebookCell(newCell.id, newCell.language, ''), -1);
+                this.socket.send(update);
+                this.cellUI.insertCell(newCell, null);
+            } else {
+                const prev = current.container.previousSibling.cell;
+                const update = new messages.InsertCell(path, this.globalVersion, this.localVersion++, new messages.NotebookCell(newCell.id, newCell.language, ''), prev.id);
+                this.socket.send(update);
+                this.cellUI.insertCell(newCell, prev);
+
+            }
+            newCell.focus();
+        });
+
         this.cellUI.addEventListener('DeleteCell', evt => {
-            const current = this.cellUI.getCell(evt.detail.cellId);
+            const current = Cell.currentFocus;
             if (current) {
                 const update = new messages.DeleteCell(path, this.globalVersion, ++this.localVersion, current.id);
                 this.socket.send(update);
                 this.editBuffer.push(this.localVersion, update);
+                const nextCell = current.container.nextSibling && cellUI.getCell(current.container.nextSibling.cell.id);
                 this.cellUI.removeCell(current.id);
+                if (nextCell) {
+                    nextCell.focus();
+                }
             }
         });
 
         this.cellUI.addEventListener('RunCell', (evt) => {
-            let cellId = evt.detail.cellId;
-            if (!(cellId instanceof Array)) {
-                cellId = [cellId];
+            this.runCells(evt.detail.cellId);
+        });
+
+        this.cellUI.addEventListener('RunCurrentCell', () => {
+            this.runCells(Cell.currentFocus.id);
+        });
+
+        this.cellUI.addEventListener('RunAll', () => {
+            const cellIds = this.cellUI.getCodeCellIds();
+            this.runCells(cellIds);
+        });
+
+        this.cellUI.addEventListener('RunToCursor', () => {
+            const activeCellIdx = Cell.currentFocus.id;
+            if (activeCellIdx < 0) {
+                console.log("Active cell is not part of current notebook?")
+            } else {
+                const cellIds = this.cellUI.getCodeCellIds();
+                this.runCells(cellIds.slice(0, activeCellIdx + 1));
             }
-            cellId.forEach(id => {
-               const cell = this.cellUI.getCell(id);
-               if (cell) {
-                   cell.dispatchEvent(new BeforeCellRunEvent(id));
-               }
-            });
-            this.socket.send(new messages.RunCell(path, cellId));
         });
 
         this.cellUI.addEventListener('ContentChange', (evt) => {
@@ -1019,6 +1056,19 @@ export class NotebookUI extends UIEventTarget {
         });
     }
 
+    runCells(cellIds) {
+        if (!(cellIds instanceof Array)) {
+            cellIds = [cellIds];
+        }
+        cellIds.forEach(id => {
+            const cell = this.cellUI.getCell(id);
+            if (cell) {
+                cell.dispatchEvent(new BeforeCellRunEvent(id));
+            }
+        });
+        this.socket.send(new messages.RunCell(this.path, cellIds));
+    }
+
     onCellLanguageSelected(setLanguage, path) {
         if (Cell.currentFocus && this.cellUI.getCell(Cell.currentFocus.id) && this.cellUI.getCell(Cell.currentFocus.id).language !== setLanguage) {
             const id = Cell.currentFocus.id;
@@ -1099,13 +1149,16 @@ export class TabUI extends EventTarget {
         this.tabEls[name] = tabEl;
 
         tabEl.addEventListener('mousedown', evt => {
-           this.activateTab(tab);
+            if (evt.button === 0) { // left click
+                this.activateTab(tab);
+            } else if (evt.button === 1) { // middle click
+                this.removeTab(tab)
+            } // nothing on right click...
         });
 
         this.tabContainer.appendChild(tabEl);
 
-
-        if (!this.currentTab) {
+        if (this.currentTab !== tab) {
             this.activateTab(tab);
         }
         return tab;
@@ -1119,13 +1172,18 @@ export class TabUI extends EventTarget {
                 const nextTab = tabEl.previousSibling || tabEl.nextSibling;
                 if (nextTab && nextTab.tab) {
                     this.activateTab(nextTab.tab);
+                } else {
+                    setTimeout(() => this.dispatchEvent(new UIEvent('NoActiveTab')), 0);
                 }
             }
         }
 
         if (tabEl) {
-            tabEl.parentNode.removeChild(tabEl);
+            this.tabContainer.removeChild(tabEl);
         }
+
+        delete this.tabEls[tab.name];
+        delete this.tabs[tab.name];
 
         this.dispatchEvent(new UIEvent('TabRemoved', { name: tab.name }));
 
@@ -1144,7 +1202,6 @@ export class TabUI extends EventTarget {
     }
 
     activateTab(tab) {
-
         if (this.currentTab && this.currentTab === tab) {
             return;
         } else if (this.currentTab) {
@@ -1155,7 +1212,9 @@ export class TabUI extends EventTarget {
                     }
                 }
             }
-            this.tabEls[this.currentTab.name].classList.remove('active');
+            if (this.tabEls[this.currentTab.name] && this.tabEls[this.currentTab.name].classList) {
+                this.tabEls[this.currentTab.name].classList.remove('active');
+            }
         }
 
         for (const area in this.contentAreas) {
@@ -1368,39 +1427,32 @@ export class MainUI extends EventTarget {
             if (tab.type === 'notebook') {
                 window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
                 this.currentNotebookPath = tab.name;
-                this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook;
+                this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
+            } else if (tab.type === 'home') {
+                window.history.pushState({notebook: tab.name}, 'Polynote', '/');
             }
         });
 
-        this.toolbarUI.addEventListener('RunAll', () =>
-            this.runCells(this.currentNotebook.querySelectorAll('.cell-container.code-cell'))
-        );
-
-        this.toolbarUI.addEventListener('RunToCursor', () => {
-            const cells = [...this.currentNotebook.querySelectorAll('.cell-container.code-cell')];
-            const activeCell = Cell.currentFocus.container;
-
-            const activeCellIndex = cells.indexOf(activeCell);
-            if (activeCellIndex < 0) {
-                console.log("Active cell is not part of current notebook?");
-                return;
-            }
-
-            this.runCells(cells.slice(0, activeCellIndex + 1));
+        this.tabUI.addEventListener('NoActiveTab', () => {
+            this.showWelcome();
         });
 
-        this.toolbarUI.addEventListener('RunCurrentCell', () => {
-            const cells = [...this.currentNotebook.querySelectorAll('.cell-container.code-cell')];
-            const activeCell = Cell.currentFocus.container;
-
-            const activeCellIndex = cells.indexOf(activeCell);
-
-            if (activeCellIndex < 0) {
-                console.log("Active cell is not part of current notebook?");
-                return;
+        this.toolbarUI.addEventListener('RunAll', (evt) => {
+            if (this.currentNotebook) {
+                evt.forward(this.currentNotebook);
             }
+        });
 
-            this.runCells([cells[activeCellIndex]]);
+        this.toolbarUI.addEventListener('RunToCursor', (evt) => {
+            if (this.currentNotebook) {
+                evt.forward(this.currentNotebook);
+            }
+        });
+
+        this.toolbarUI.addEventListener('RunCurrentCell', (evt) => {
+            if (this.currentNotebook) {
+                evt.forward(this.currentNotebook);
+            }
         });
 
         this.toolbarUI.addEventListener('CancelTasks', () => {
@@ -1416,38 +1468,44 @@ export class MainUI extends EventTarget {
 
 
         this.toolbarUI.addEventListener('InsertAbove', () => {
-            const cellsUI = this.currentNotebook.cellsUI;
-            const activeCell = Cell.currentFocus.id;
-            if (!cellsUI.getCell(activeCell) || cellsUI.getCell(activeCell) !== Cell.currentFocus) {
+            const cellsUI = this.currentNotebook;
+            let activeCell = Cell.currentFocus;
+            if (!activeCell) {
+                activeCell = cellsUI.firstCell();
+            }
+            const activeCellId = activeCell.id;
+            if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== activeCell) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
 
-            const prevCell = Cell.currentFocus.container.previousSibling;
-
-            cellsUI.dispatchEvent(new UIEvent('InsertCellAfter', { cellId: (prevCell && prevCell.id) || null }));
+            cellsUI.dispatchEvent(new UIEvent('InsertCellBefore', { detail: { cellId: activeCellId }}));
         });
 
         this.toolbarUI.addEventListener('InsertBelow', () => {
-            const cellsUI = this.currentNotebook.cellsUI;
-            const activeCell = Cell.currentFocus.id;
-            if (!cellsUI.getCell(activeCell) || cellsUI.getCell(activeCell) !== Cell.currentFocus) {
+            const cellsUI = this.currentNotebook;
+            let activeCell = Cell.currentFocus;
+            if (!activeCell) {
+                activeCell = cellsUI.firstCell();
+            }
+            const activeCellId = activeCell.id;
+            if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== activeCell) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
 
-            cellsUI.dispatchEvent(new UIEvent('InsertCellAfter', { cellId: activeCell }));
+            cellsUI.dispatchEvent(new UIEvent('InsertCellAfter', { cellId: activeCellId }));
         });
 
         this.toolbarUI.addEventListener('DeleteCell', () => {
-            const cellsUI = this.currentNotebook.cellsUI;
-            const activeCell = Cell.currentFocus.id;
-            if (!cellsUI.getCell(activeCell) || cellsUI.getCell(activeCell) !== Cell.currentFocus) {
+            const cellsUI = this.currentNotebook;
+            const activeCellId = Cell.currentFocus.id;
+            if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== Cell.currentFocus) {
                 console.log("Active cell is not part of current notebook?");
                 return;
             }
 
-            cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCell }));
+            cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCellId }));
         });
 
         // TODO: maybe we can break out this menu stuff once we need more menus.
@@ -1483,20 +1541,6 @@ export class MainUI extends EventTarget {
         });
     }
 
-    runCells(cellContainers) {
-        const ids = [];
-        [...cellContainers].forEach(container => {
-            if (container.cell && container.id) {
-                ids.push(container.cell.id);
-                container.cell.dispatchEvent(new BeforeCellRunEvent(container.cell.id));
-            }
-        });
-
-        if (ids.length) {
-            this.socket.send(new messages.RunCell(this.currentNotebookPath, ids));
-        }
-    }
-
     showWelcome() {
         if (!this.welcomeUI) {
             this.welcomeUI = new WelcomeUI().setEventParent(this);
@@ -1517,7 +1561,10 @@ export class MainUI extends EventTarget {
             this.tabUI.activateTab(tab);
 
             this.toolbarUI.cellToolbar.cellTypeSelector.addEventListener('change', evt => {
-                notebookUI.onCellLanguageSelected(evt.newValue, path);
+                // hacky way to tell whether this is the current notebook ...
+                if (this.currentNotebook.notebookUI === notebookUI) {
+                    notebookUI.onCellLanguageSelected(evt.newValue, path);
+                }
             })
         } else {
             this.tabUI.activateTab(notebookTab);

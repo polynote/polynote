@@ -75,12 +75,15 @@ object NotebookCell {
 
 final case class NotebookConfig(
   dependencies: Option[DependencyConfigs],
-  repositories: Option[TinyList[RepositoryConfig]]
+  repositories: Option[TinyList[RepositoryConfig]],
+  sparkConfig: Option[ShortMap[String, String]]
 )
 
 object NotebookConfig {
   implicit val encoder: Encoder[NotebookConfig] = deriveEncoder[NotebookConfig]
   implicit val decoder: Decoder[NotebookConfig] = deriveDecoder[NotebookConfig]
+
+  def empty = NotebookConfig(None, None, None)
 }
 
 final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], config: Option[NotebookConfig]) extends Message {
@@ -102,10 +105,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
   def insertCell(cell: NotebookCell, after: Short): Notebook = {
     require(!cells.exists(_.id == cell.id), s"Cell ids must be unique, a cell with id ${cell.id} already exists")
 
-    val insertIndex = cells.indexWhere(_.id == after) match {
-      case -1 => 0
-      case n => n
-    }
+    val insertIndex = cells.indexWhere(_.id == after)
 
     copy(
       cells = ShortList(
