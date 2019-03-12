@@ -22,6 +22,7 @@ object Listen {
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   repositories: List[RepositoryConfig] = Nil,
+  exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,
   spark: Map[String, String] = Map.empty
 )

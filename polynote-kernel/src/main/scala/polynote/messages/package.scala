@@ -31,6 +31,9 @@ package object messages {
       str.asInstanceOf[ShortString]
   }
 
+  implicit def truncateShortString(str: String): ShortString = ShortString(
+    if (str.length > Short.MaxValue) str.substring(0, Short.MaxValue) else str)
+
   implicit val shortStringCodec: Codec[ShortString] =
     variableSizeBytes(uint16, string(StandardCharsets.UTF_8)).xmap(ShortString, x => x)
 

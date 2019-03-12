@@ -1396,6 +1396,7 @@ button {
       padding: 8px;
       margin: 4px 0;
       background: white;
+      white-space: pre-line;
 
       h4 {
         margin-top: 0;
@@ -1524,6 +1525,10 @@ button {
     font-size: 100%;
   }
 
+  .pre {
+    font-family: monospace, monospace;
+  }
+
   .content {
     display: none;
     font-size: 86%;
@@ -1534,7 +1539,7 @@ button {
     display: block;
   }
 
-  .notebook-dependencies, .notebook-resolvers {
+  .notebook-dependencies, .notebook-exclusions, .notebook-resolvers {
     border-radius: 4px;
     border: 1px solid @ui-border;
     border-left-width: 6px;
@@ -1542,19 +1547,19 @@ button {
     margin: 1em 0;
   }
 
-  .dependency-row .add, .resolver-row .add {
+  .dependency-row .add, .exclusion-row .add, .resolver-row .add {
     display: none;
   }
 
-  .dependency-row:last-child .add, .resolver-row:last-child .add {
+  .dependency-row:last-child .add, .exclusion-row:last-child .add, .resolver-row:last-child .add {
     display: inline-block;
   }
 
-  .dependency-row:last-child .remove, .resolver-row:last-child .remove {
+  .dependency-row:last-child .remove, .exclusion-row:last-child .remove, .resolver-row:last-child .remove {
     display: none;
   }
 
-  .dependency-row, .resolver-row {
+  .dependency-row, .exclusion-row, .resolver-row {
     button {
       padding: 4px;
     }
@@ -1567,6 +1572,12 @@ button {
   .dependency-row {
     input {
       width: 40em;
+    }
+  }
+
+  .exclusion-row {
+    input {
+      width: 20em;
     }
   }
 

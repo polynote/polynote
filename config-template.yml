@@ -24,6 +24,9 @@
 #    - org.typelevel:cats-core_2.11:1.6.0
 #    - com.mycompany:my-library:jar:all:1.0.0
 
+#exclusions:
+#  - com.google.guava:guava  # spark, update your guava already!!!
+
 # Spark config params can be set by uncommenting and editing the following lines:
 #spark:
 #  spark.driver.userClasspathFirst: true

@@ -10,7 +10,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
   "PolynoteConfig" should "Ser/De" in {
 
     val cfg = PolynoteConfig(
-      Listen(), List(maven("foo")), Map("foo" -> List("bar", "baz")), Map("key" -> "val")
+      Listen(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), Map("key" -> "val")
     )
     val js = cfg.asJson
     val cfgString = cfg.asJson.spaces2
@@ -47,6 +47,9 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |  scala:
         |    - org.typelevel:cats-core_2.11:1.6.0
         |    - com.mycompany:my-library:jar:all:1.0.0
+        |exclusions:
+        |  - org.typelevel
+        |  - com.mycompany
         |
         |# Spark config params can be set by uncommenting and editing the following lines:
         |spark:
@@ -73,6 +76,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         maven("http://central.maven.org/maven2/"),
         maven("http://oss.sonatype.org/content/repositories/snapshots", changing = Option(true))
       ),
+      List("org.typelevel", "com.mycompany"),
       Map("scala" -> List("org.typelevel:cats-core_2.11:1.6.0", "com.mycompany:my-library:jar:all:1.0.0")),
       Map("spark.driver.userClasspathFirst" -> "true", "spark.executor.userClasspathFirst" -> "true")
     )
