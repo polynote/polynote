@@ -597,7 +597,7 @@ export class TaskInfo {
     }
 }
 
-TaskInfo.codec = combined(tinyStr, tinyStr, tinyStr, uint8, uint8).to(TaskInfo);
+TaskInfo.codec = combined(tinyStr, tinyStr, shortStr, uint8, uint8).to(TaskInfo);
 
 export class UpdatedTasks extends KernelStatusUpdate {
     static get msgTypeId() { return 1; }

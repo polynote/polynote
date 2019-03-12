@@ -88,6 +88,13 @@ export class KernelTasksUI {
         this.tasks = {};
     }
 
+    clear() {
+        while (this.taskContainer.firstChild) {
+            this.taskContainer.removeChild(this.taskContainer.firstChild);
+        }
+        this.tasks = {};
+    }
+
     addTask(id, label, detail, status, progress) {
         const taskEl = div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
             h4([], [label]),
@@ -761,6 +768,7 @@ export class NotebookUI extends UIEventTarget {
         this.cellUI.addEventListener('UpdatedConfig', evt => {
             const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
             this.editBuffer.push(this.localVersion, update);
+            this.kernelUI.tasks.clear(); // old tasks no longer relevant with new config.
             this.socket.send(update);
         });
 
@@ -1054,20 +1062,19 @@ export class NotebookUI extends UIEventTarget {
         });
 
         socket.addMessageListener(messages.Error, (code, err) => {
-            // TODO: show this better in the UI
             console.log("Kernel error:", err);
-            const id = "KernelError";
+            const id = err.id;
             const message = div(["message"], [
                 para([], `${err.className}: ${err.message}`),
-                para([], "Please see the console for more details.")
+                para([], err.extraContent)
             ]);
-            this.kernelUI.tasks.updateTask(id, "Kernel Error", message, TaskStatus.Error, 0);
+            this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
 
             // clean up (assuming that running another cell means users are done with this error)
             socket.addMessageListener(messages.CellResult, () => {
-                this.kernelUI.tasks.updateTask(id, "Kernel Error", message, TaskStatus.Complete, 100);
+                this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Complete, 100);
                 return false // make sure to remove the listener
-            }, true)
+            }, true);
         });
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
