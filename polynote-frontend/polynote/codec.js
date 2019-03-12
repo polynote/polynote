@@ -422,22 +422,23 @@ export function ior(leftCodec, rightCodec) {
     return Object.freeze({encode, decode})
 }
 
-export function mapCodec(lengthCodec, keyCodec, valueCodec) {
-    class Pair {
-        static unapply(inst) {
-            return [inst.first, inst.second];
-        }
-
-        constructor(first, second) {
-            this.first = first;
-            this.second = second;
-            Object.freeze(this);
-        }
+export class Pair {
+    static unapply(inst) {
+        return [inst.first, inst.second];
     }
 
-    Pair.codec = combined(keyCodec, valueCodec).to(Pair);
+    constructor(first, second) {
+        this.first = first;
+        this.second = second;
+        Object.freeze(this);
+    }
+}
 
-    const underlying = arrayCodec(lengthCodec, Pair.codec);
+Pair.codec = (firstCodec, secondCodec) => combined(firstCodec, secondCodec).to(Pair);
+
+export function mapCodec(lengthCodec, keyCodec, valueCodec) {
+
+    const underlying = arrayCodec(lengthCodec, Pair.codec(keyCodec, valueCodec));
 
     const encode = (value, writer) => {
         const pairs = [];

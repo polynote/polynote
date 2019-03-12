@@ -5,6 +5,7 @@ import fs2.Stream
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
 import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, ShortString, TinyList, TinyMap, TinyString}
+import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
 
@@ -43,7 +44,11 @@ trait KernelAPI[F[_]] {
 
   def info: F[Option[KernelInfo]]
 
-  def getHandleData(handleType: HandleType, handle: Int, count: Int): F[List[ByteVector32]]
+  def getHandleData(handleType: HandleType, handle: Int, count: Int): F[Array[ByteVector32]]
+
+  def modifyStream(handleId: Int, ops: List[TableOp]): F[Option[StreamingDataRepr]]
+
+  def releaseHandle(handleType: HandleType, handleId: Int): F[Unit]
 
   def cancelTasks(): F[Unit]
 

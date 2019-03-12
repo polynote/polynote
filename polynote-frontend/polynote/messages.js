@@ -6,6 +6,27 @@ import {
 } from './codec.js'
 
 import { Result, KernelErrorWithCause } from './result.js'
+import {float64, Pair} from "./codec";
+import {StreamingDataRepr} from "./value_repr";
+
+export function isEqual(a, b) {
+    if (a === b)
+        return true;
+
+    if (a instanceof Array || a instanceof Object) {
+        if (a.constructor !== b.constructor)
+            return false;
+
+        for (const i in a) {
+            if (!isEqual(a[i], b[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    return false;
+}
 
 export class Message {
     static decode(data) {
@@ -18,6 +39,10 @@ export class Message {
 
     encode() {
         return Message.encode(this);
+    }
+
+    isResponse(other) {
+        return false;
     }
 }
 
@@ -830,6 +855,98 @@ export class CancelTasks extends Message {
 
 CancelTasks.codec = combined(shortStr).to(CancelTasks);
 
+export class TableOp {}
+export class GroupAgg extends TableOp {
+    static get msgTypeId() { return 0; }
+    static unapply(inst) { return [inst.columns, inst.aggregations]; }
+
+    constructor(columns, aggregations) {
+        super(columns, aggregations);
+        this.columns = columns;
+        this.aggregations = aggregations;
+        Object.freeze(this);
+    }
+}
+
+GroupAgg.codec = combined(arrayCodec(int32, str), arrayCodec(int32, Pair.codec(str, str))).to(GroupAgg);
+
+export class QuantileBin extends TableOp {
+    static get msgTypeId() { return 1; }
+    static unapply(inst) { return [inst.column, inst.binCount, inst.err]; }
+    constructor(column, binCount, err) {
+        super(column, binCount, err);
+        this.column = column;
+        this.binCount = binCount;
+        this.err = err;
+        Object.freeze(this);
+    }
+}
+
+QuantileBin.codec = combined(str, int32, float64).to(QuantileBin);
+
+export class Select extends TableOp {
+    static get msgTypeId() { return 2; }
+    static unapply(inst) { return [inst.columns]; }
+    constructor(columns) {
+        super(columns);
+        this.columns = columns;
+        Object.freeze(this);
+    }
+}
+
+Select.codec = combined(arrayCodec(int32, str)).to(Select);
+
+TableOp.codecs = [
+    GroupAgg,
+    QuantileBin,
+    Select
+];
+
+TableOp.codec = discriminated(uint8, msgTypeId => TableOp.codecs[msgTypeId].codec, msg => msg.constructor.msgTypeId);
+
+export class ModifyStream extends Message {
+    static get msgTypeId() { return 19; }
+    static unapply(inst) { return [inst.path, inst.fromHandle, inst.ops, inst.newRepr]; }
+    constructor(path, fromHandle, ops, newRepr) {
+        super(path, fromHandle, ops, newRepr);
+        this.path = path;
+        this.fromHandle = fromHandle;
+        this.ops = ops;
+        this.newRepr = newRepr;
+        Object.freeze(this);
+    }
+
+    isResponse(other) {
+        if (!(other instanceof ModifyStream) || other.path !== this.path || other.fromHandle !== this.fromHandle)
+            return false;
+
+        return isEqual(this.ops, other.ops);
+    }
+}
+
+ModifyStream.codec = combined(shortStr, int32, arrayCodec(uint8, TableOp.codec), optional(StreamingDataRepr.codec)).to(ModifyStream);
+
+export class ReleaseHandle extends Message {
+    static get msgTypeId() { return 20; }
+    static unapply(inst) { return [inst.path, inst.handleType, inst.handleId]; }
+    constructor(path, handleType, handleId) {
+        super(path, handleType, handleId);
+        this.path = path;
+        this.handleType = handleType;
+        this.handleId = handleId;
+        Object.freeze(this);
+    }
+
+    isResponse(other) {
+        return other instanceof ReleaseHandle &&
+            other.path === this.path &&
+            other.handleType === this.handleType &&
+            other.handleId === this.handleId;
+    }
+}
+
+ReleaseHandle.codec = combined(shortStr, uint8, int32).to(ReleaseHandle);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -850,6 +967,8 @@ Message.codecs = [
     ServerHandshake, // 16
     HandleData,      // 17
     CancelTasks,     // 18
+    ModifyStream,    // 19
+    ReleaseHandle,   // 20
 ];
 
 

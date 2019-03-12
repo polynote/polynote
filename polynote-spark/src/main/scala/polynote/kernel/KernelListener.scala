@@ -28,11 +28,13 @@ class KernelListener(statusUpdates: Publish[IO, KernelStatusUpdate]) extends Spa
 
       jobStageIds.put(jobId, jobStages.map(_.stageId).toSet)
 
-      jobStages.foreach {
-        stageInfo =>
-          stageInfos.put(stageInfo.stageId, stageInfo)
-          statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), s"Stage ${stageInfo.stageId}", stageInfo.name, TaskStatus.Queued) :: Nil)).unsafeRunAsyncAndForget()
-      }
+      // TODO: This can be a HUGE amount of queued stages for some tasks... maybe there's a good way to give some idea
+      //       of how many stages you're going to wait for without displaying them all at job start
+//      jobStages.foreach {
+//        stageInfo =>
+//          stageInfos.put(stageInfo.stageId, stageInfo)
+//          statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), s"Stage ${stageInfo.stageId}", stageInfo.name, TaskStatus.Queued) :: Nil)).unsafeRunAsyncAndForget()
+//      }
   }
 
   /**

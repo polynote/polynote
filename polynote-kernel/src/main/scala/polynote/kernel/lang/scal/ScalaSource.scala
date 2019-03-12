@@ -265,7 +265,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     } yield context
 
     def completionResults(tree: Tree): Either[Throwable, (global.Type, List[global.Symbol])] = tree match {
-      case global.Select(qual: global.Tree, _) =>
+      case global.Select(qual: global.Tree, _) if qual != null =>
 
         // this brings in completions that are available through implicit enrichments
         def addContext(scope: global.Scope): global.Scope = getContext(tree).map {
@@ -287,10 +287,11 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
         }
 
         for {
-          tpe     <- withCompiler(qual.tpe.widen)
-          scope    = addContext(tpe.members)
+          tpe     <- withCompiler(qual.tpe)
+          widened <- if (tpe != null) withCompiler(tpe.widen) else Right(global.NoType)
+          scope    = addContext(widened.members)
           members <- withCompiler(scope.view.filter(isVisibleSymbol).filter(_.isTerm))
-        } yield tpe -> {
+        } yield widened -> {
           for {
             sym <- members
             if includeOperators || !sym.name.isOperatorName

@@ -6,7 +6,11 @@
     "markdown-it-katex": "latest",
     "monaco-editor": "^0.15.6",
     "monaco-editor-webpack-plugin": "^1.7.0",
-    "requirejs": "latest"
+    "requirejs": "latest",
+    "vega": "^5.2.0",
+    "vega-embed": "^4.0.0-rc1",
+    "vega-lib": "^4.4.0",
+    "vega-lite": "^3.0.0-rc14"
   },
   "devDependencies": {
     "copy-webpack-plugin": "^4.6.0",

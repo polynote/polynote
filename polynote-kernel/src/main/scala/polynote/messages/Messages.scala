@@ -11,6 +11,7 @@ import scodec.codecs.implicits._
 import io.circe.generic.semiauto._
 import polynote.config.{DependencyConfigs, RepositoryConfig}
 import polynote.data.Rope
+import polynote.runtime.{StreamingDataRepr, TableOp}
 
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
@@ -214,6 +215,12 @@ final case class ServerHandshake(
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 
+final case class CancelTasks(path: ShortString) extends Message
+object CancelTasks extends MessageCompanion[CancelTasks](18)
+
+/*****************************************
+ ** Stuff for stream-ish value handling **
+ *****************************************/
 
 case object Lazy extends HandleType
 case object Updating extends HandleType
@@ -234,10 +241,21 @@ final case class HandleData(
   handleType: HandleType,
   handle: Int,
   count: Int,
-  data: List[ByteVector32]
+  data: Array[ByteVector32]
 ) extends Message
 
 object HandleData extends MessageCompanion[HandleData](17)
 
-final case class CancelTasks(path: ShortString) extends Message
-object CancelTasks extends MessageCompanion[CancelTasks](18)
+/********************************************************
+ ** Specifically for streams of structs (i.e. tables)  **
+ *******************************************************/
+
+final case class ModifyStream(path: ShortString, fromHandle: Int, ops: TinyList[TableOp], newRepr: Option[StreamingDataRepr]) extends Message
+object ModifyStream extends MessageCompanion[ModifyStream](19) {
+  import TableOpCodec.tableOpCodec
+  import ValueReprCodec.streamingDataReprCodec
+  implicit val codec: Codec[ModifyStream] = shapeless.cachedImplicit
+}
+
+final case class ReleaseHandle(path: String, handleType: HandleType, handle: Int) extends Message
+object ReleaseHandle extends MessageCompanion[ReleaseHandle](20)

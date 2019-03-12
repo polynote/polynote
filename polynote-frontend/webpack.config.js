@@ -21,8 +21,7 @@ module.exports = {
     new CopyWebpackPlugin([
       'index.html',
       { from: 'style', to: 'style' },
-      {from: 'latex-editor.html', to: 'latex-editor.html'},
-      {from: 'favicon.ico', to: 'favicon.ico'},
+      { from: 'favicon.ico', to: 'favicon.ico' },
     ])
   ],
   mode: "development"

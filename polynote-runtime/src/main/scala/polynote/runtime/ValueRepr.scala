@@ -45,12 +45,17 @@ object LazyDataRepr {
     }
 
     def isEvaluated: Boolean = computedFlag
+
+    def release(): Unit = {
+      LazyDataRepr.handles.remove(handle)
+    }
   }
 
 
   private val handles: ConcurrentHashMap[Int, Handle] = new ConcurrentHashMap()
   private val nextHandle: AtomicInteger = new AtomicInteger(0)
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
+  private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
 
   def apply(dataType: DataType, value: => ByteBuffer): LazyDataRepr = {
     val handleId = nextHandle.getAndIncrement()
@@ -143,6 +148,7 @@ object UpdatingDataRepr {
   private val handles: ConcurrentHashMap[Int, Handle] = new ConcurrentHashMap()
   private val nextHandle: AtomicInteger = new AtomicInteger(0)
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
+  private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
 
   def apply(dataType: DataType): UpdatingDataRepr = {
     val handleId = nextHandle.getAndIncrement()
@@ -179,16 +185,15 @@ final case class StreamingDataRepr private[polynote](handle: Int, dataType: Data
 
 object StreamingDataRepr {
 
-  private[polynote] class Handle(
-    val handle: Int,
-    val dataType: DataType,
-    val knownSize: Option[Int],
-    iter: => Iterator[ByteBuffer]
-  ) {
+  trait Handle {
+    def handle: Int
+    def dataType: DataType
+    def knownSize: Option[Int]
+
     @volatile private var finalizer: () => Unit = _
     @volatile private var releaseFlag: Int = 0
 
-    private[polynote] lazy val iterator: Iterator[ByteBuffer] = iter
+    def iterator: Iterator[ByteBuffer]
 
     private[polynote] def setFinalizer(finalizer: () => Unit): Unit = synchronized {
       if (releaseFlag == 1) {
@@ -209,18 +214,40 @@ object StreamingDataRepr {
         releaseFlag = 1
       }
     }
+
+    def modify(ops: List[TableOp]): Either[Throwable, Int => Handle]
+  }
+
+  private[polynote] class DefaultHandle(
+    val handle: Int,
+    val dataType: DataType,
+    val knownSize: Option[Int],
+    iter: => Iterator[ByteBuffer]
+  ) extends Handle {
+    def iterator: Iterator[ByteBuffer] = iter
+    def modify(ops: List[TableOp]): Either[Throwable, Int => Handle] = Left(new UnsupportedOperationException("Table operators are not supported for this data type"))
   }
 
   private val handles: ConcurrentHashMap[Int, Handle] = new ConcurrentHashMap()
   private val nextHandle: AtomicInteger = new AtomicInteger(0)
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
+  private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
 
-  def apply(dataType: DataType, knownSize: Option[Int], lazyIter: => Iterator[ByteBuffer]): StreamingDataRepr = {
+  def apply(dataType: DataType, knownSize: Option[Int], lazyIter: => Iterator[ByteBuffer]): StreamingDataRepr =
+    fromHandle(new DefaultHandle(_, dataType, knownSize, lazyIter))
+
+  def apply(dataType: DataType, knownSize: Int, lazyIter: => Iterator[ByteBuffer]): StreamingDataRepr =
+    apply(dataType, Some(knownSize), lazyIter)
+
+  def apply(dataType: DataType, lazyIter: => Iterator[ByteBuffer]): StreamingDataRepr =
+    apply(dataType, None, lazyIter)
+
+  private[polynote] def fromHandle(mkHandle: Int => Handle): StreamingDataRepr = {
     val handleId = nextHandle.getAndIncrement()
-    val handle = new Handle(handleId, dataType, knownSize, lazyIter)
+    val handle = mkHandle(handleId)
     handles.put(handleId, handle)
 
-    val repr = StreamingDataRepr(handleId, dataType, knownSize)
+    val repr = StreamingDataRepr(handleId, handle.dataType, handle.knownSize)
 
     Cleaner.create(repr, new Runnable {
       def run(): Unit = {
@@ -235,15 +262,13 @@ object StreamingDataRepr {
     repr
   }
 
-  def apply(dataType: DataType, knownSize: Int, lazyIter: => Iterator[ByteBuffer]): StreamingDataRepr =
-    apply(dataType, Some(knownSize), lazyIter)
-
-  def apply(dataType: DataType, lazyIter: => Iterator[ByteBuffer]): StreamingDataRepr =
-    apply(dataType, None, lazyIter)
-
 }
 
 sealed trait ValueRepr
 
+sealed trait TableOp
+final case class GroupAgg(columns: List[String], aggregations: List[(String, String)]) extends TableOp
+final case class QuantileBin(column: String, binCount: Int, err: Double) extends TableOp
+final case class Select(columns: List[String]) extends TableOp
 
 

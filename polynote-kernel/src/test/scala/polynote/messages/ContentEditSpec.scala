@@ -229,6 +229,9 @@ class ContentEditSpec extends FreeSpec with Matchers with GeneratorDrivenPropert
       }
 
       "content is the same no matter what order edits are applied" in forAll(genEditScenario, MinSuccessful(500)) {
+        // TODO: test this failed scenario
+        // EditScenario(aks42,Insert(2, " "),ContentEdits(List(Delete(0,5), Insert(0, " "), Insert(0, "@0kTWZ"))))
+
         case EditScenario(initial, edit, edits) =>
 
           val rebasedEdits = edits.rebase(edit)

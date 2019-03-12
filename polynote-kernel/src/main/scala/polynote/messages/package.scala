@@ -4,13 +4,15 @@ import java.nio.charset.StandardCharsets
 
 import cats.data.Ior
 import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
-import scodec.Codec
-import scodec.bits.ByteVector
-import scodec.codecs.{byte, listOfN, string, uint32, uint16, uint8, variableSizeBytes}
+import scodec.{Attempt, Codec, DecodeResult, SizeBound, codecs}
+import scodec.bits.{BitVector, ByteVector}
+import codecs.{byte, int32, listOfN, string, uint16, uint32, uint8, variableSizeBytes}
 import shapeless.Lazy
 import shapeless.tag.@@
 
+import scala.collection.compat.immutable.ArraySeq
 import scala.language.implicitConversions
+import scala.reflect.{ClassTag, classTag}
 
 package object messages {
 
@@ -120,8 +122,6 @@ package object messages {
   implicit val byteVector32Codec: Codec[ByteVector32] =
     scodec.codecs.variableSizeBytesLong(uint32, scodec.codecs.bytes).xmap(_.asInstanceOf[ByteVector32], v => v)
 
-
-
   implicit def iorCodec[A, B](implicit codecA: Codec[A], codecB: Codec[B]): Codec[Ior[A, B]] =
     scodec.codecs.discriminated[Ior[A, B]].by(byte)
     .|(0) { case Ior.Left(a) => a } (Ior.left) (codecA)
@@ -132,4 +132,15 @@ package object messages {
   type CellID = Short
 
   implicit def int2cellId(i: Int): CellID = i.toShort
+
+  implicit def arrayCodec[A : ClassTag](implicit aCodec: Codec[A]): Codec[Array[A]] =
+    int32.flatZip {
+      len => new Codec[Array[A]] {
+        def decode(bits: BitVector): Attempt[DecodeResult[Array[A]]] = scodec.Decoder.decodeCollect[Array, A](aCodec, Some(len))(bits)
+
+        def encode(value: Array[A]): Attempt[BitVector] = scodec.Encoder.encodeSeq(aCodec)(ArraySeq.unsafeWrapArray(value))
+
+        def sizeBound: SizeBound = (aCodec.sizeBound * len) + SizeBound(32, None)
+      }
+    }.xmap(_._2, arr => arr.length -> arr)
 }

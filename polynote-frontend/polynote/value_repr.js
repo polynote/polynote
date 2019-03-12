@@ -6,6 +6,7 @@ import {
 } from './codec.js'
 
 import { DataType } from './data_type.js'
+import {HandleData} from "./messages";
 
 export class ValueRepr {}
 
@@ -128,3 +129,134 @@ ValueRepr.codec = discriminated(
     (msgTypeId) => ValueRepr.codecs[msgTypeId].codec,
     (dataType) => dataType.constructor.msgTypeId
 );
+
+export class DataBatch extends CustomEvent {
+    constructor(batch) {
+        Object.freeze(batch);
+        super('DataBatch', {detail: {batch}});
+        this.batch = batch;
+    }
+}
+
+function requestNext() {
+    this.socket.send(new HandleData(this.path, StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize, []))
+}
+
+
+/**
+ * An API for streaming data out of a StreamingDataRepr
+ */
+export class DataStream extends EventTarget {
+    constructor(path, repr, socket) {
+        super();
+        this.path = path;
+        this.repr = repr;
+        this.socket = socket;
+
+        this.batchSize = 50;
+
+        this.receivedCount = 0;
+        this.terminated = false;
+        this.stopAfter = Infinity;
+
+        const decodeValues = data => data.map(buf => repr.dataType.decodeBuffer(new DataReader(buf)));
+
+        this.socketListener = this.socket.addMessageListener(HandleData, (path, handleType, handleId, count, data) => {
+            if (path === this.path && handleType === StreamingDataRepr.handleTypeId && handleId === repr.handle) {
+                const batch = decodeValues(data);
+                this.dispatchEvent(new DataBatch(batch));
+                if (this.nextPromise) {
+                    this.nextPromise.resolve(batch);
+                    this.nextPromise = null;
+                }
+                
+                if (batch.length < count) {
+                    this.kill();
+                }
+            }
+        });
+    }
+
+    batch(batchSize) {
+        batchSize = +batchSize;
+        if (!batchSize || batchSize < 0) {
+            throw "Expected batch size > 0"
+        }
+        this.batchSize = batchSize;
+        return this;
+    }
+
+    to(fn) {
+        if (this.listener) {
+            this.removeEventListener('DataBatch', this.listener);
+        }
+        this.listener = this.addEventListener('DataBatch', (evt) => {fn(evt.batch)});
+        return this;
+    }
+
+    limit(n) {
+        this.stopAfter = n;
+        return this;
+    }
+
+    kill() {
+        this.terminated = true;
+        if (this.listener) {
+            this.removeEventListener('DataBatch', this.listener);
+        }
+        if (this.onComplete) {
+            this.onComplete();
+        }
+        if (this.nextPromise) {
+            this.nextPromise.reject("Stream was terminated")
+        }
+    }
+
+    /**
+     * Run the stream until it's killed or it completes
+     */
+    run() {
+        if (this.runListener) {
+            throw "Stream is already running";
+        }
+
+
+        this.runListener = this.addEventListener('DataBatch', (evt) => {
+           this.receivedCount += evt.batch.length;
+           if (this.receivedCount >= this.stopAfter) {
+               this.kill();
+           }
+           if (!this.terminated) {
+               requestNext.call(this);
+           }
+        });
+
+        return new Promise((resolve, reject) => {
+            this.onComplete = resolve;
+            this.onError = reject;
+            requestNext.call(this);
+        });
+    }
+
+    /**
+     * Fetch the next batch from the stream, for a stream that isn't being automatically run via run()
+     */
+    requestNext() {
+        if (this.runListener) {
+            throw "Stream is already running";
+        }
+        
+        if (this.nextPromise) {
+            throw "Next batch is already being awaited";
+        }
+        
+        return new Promise(
+            (resolve, reject) => {
+                this.nextPromise = {resolve, reject};
+                requestNext.call(this);
+            }
+        );
+    }
+
+
+}

@@ -37,6 +37,7 @@ export class SocketSession extends EventTarget {
         this.isOpen = false;
         this.queue = [];
         this.messageListeners = [];
+        SocketSession.current = this; // yeah...
         mkSocket.call(this);
     }
 
@@ -107,6 +108,21 @@ export class SocketSession extends EventTarget {
 
     listenOnceFor(msgType, fn) {
         return this.addMessageListener(msgType, fn, true);
+    }
+
+    /**
+     * Send a request and listen for the response. The message must properly implement the isResponse method.
+     */
+    request(msg) {
+        return new Promise((resolve, reject) => {
+            const listener = this.addEventListener('message', evt => {
+               if (msg.isResponse(evt.message)) {
+                   this.removeEventListener('message', listener);
+                   resolve(evt.message);
+               }
+            });
+            this.send(msg);
+        });
     }
 
     close() {

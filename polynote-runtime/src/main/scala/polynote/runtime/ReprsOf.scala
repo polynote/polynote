@@ -63,6 +63,8 @@ object ReprsOf extends ExpandedScopeReprs {
 
   implicit def fromDataReprs[T](implicit dataReprsOfT: DataReprsOf[T]): ReprsOf[T] = dataReprsOfT
 
+  val empty: ReprsOf[Any] = instance(_ => Array.empty)
+
 }
 
 private[runtime] trait CollectionReprs { self: ReprsOf.type =>

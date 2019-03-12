@@ -82,10 +82,11 @@ export class ParamHintRequest extends CellEvent {
 }
 
 export class Cell extends UIEventTarget {
-    constructor(id, content, language) {
+    constructor(id, content, language, path) {
         super(id, content, language);
         this.id = id;
         this.language = language;
+        this.path = path;
         if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
 
         this.container = div(['cell-container', language], [
@@ -189,8 +190,8 @@ function errorDisplay(error, currentFile, maxDepth, nested) {
 }
 
 export class CodeCell extends Cell {
-    constructor(id, content, language) {
-        super(id, content, language);
+    constructor(id, content, language, path) {
+        super(id, content, language, path);
         this.container.classList.add('code-cell');
 
         this.cellInputTools.insertBefore(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
@@ -395,7 +396,7 @@ export class CodeCell extends Cell {
             if (result.name !== "Out") {
                 // don't display this; it's a named declaration
                 // TODO: have a way to display these if desired
-            } else {
+            } else if (!this.resultEl || !this.resultEl.reprs || !this.resultEl.reprs.length || this.resultEl.reprs.length < result.reprs.length) {
                 if (this.resultEl && this.resultEl.parentNode) {
                     this.resultEl.parentNode.removeChild(this.resultEl);
                     this.resultEl = null;
@@ -404,12 +405,13 @@ export class CodeCell extends Cell {
                 const outLabel = result.reprs.length <= 1
                     ? div(['out-ident'], `Out:`)
                     : div(['out-ident', 'with-reprs'], `Out:`).click(evt => {
-                        const reprUi = new ReprUI(result.name, result.reprs);
+                        const reprUi = new ReprUI(`Cell${this.id}`, this.path, result.reprs, this.resultEl);
                         reprUi.setEventParent(this);
                         reprUi.show();
                     });
 
                 this.addOutput(mime, content).then(el => {
+                    el.reprs = result.reprs;
                     this.resultEl = el;
                     el.insertBefore(outLabel, el.childNodes[0])
                 });
@@ -530,8 +532,8 @@ export class CodeCell extends Cell {
 }
 
 export class TextCell extends Cell {
-    constructor(id, content, language) {
-        super(id, content, language);
+    constructor(id, content, path) {
+        super(id, content, 'text', path);
         this.container.classList.add('text-cell');
         this.editorEl.classList.add('markdown-body');
         this.editorEl.cell = this;
