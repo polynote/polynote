@@ -32,7 +32,7 @@ class ExpandedScopeMacros(val c: whitebox.Context) {
   import ExpandedScopeMacros.resourceBase
 
   def resolveFromScope: Tree = {
-    val A = c.macroApplication.tpe.resultType
+    val A = c.enclosingImplicits.head.pt
     val typeConstructor = A.typeConstructor
     val typeName = typeConstructor.typeSymbol.fullName
     val typeArgs = A.typeArgs
@@ -55,6 +55,8 @@ class ExpandedScopeMacros(val c: whitebox.Context) {
       }
     }
 
+    // TODO: something is weird with this cache... the second time around it doesn't find the right reprs!
+    //       Fix it! (context: It didn't seem to be a problem before the plotting stuff)
     val subtypes = ExpandedScopeMacros.cache.getOrElseUpdate(
       typeName,
       loadSubtypes

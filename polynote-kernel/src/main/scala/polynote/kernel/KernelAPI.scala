@@ -44,9 +44,11 @@ trait KernelAPI[F[_]] {
 
   def info: F[Option[KernelInfo]]
 
-  def getHandleData(handleType: HandleType, handle: Int, count: Int): F[List[ByteVector32]]
+  def getHandleData(handleType: HandleType, handle: Int, count: Int): F[Array[ByteVector32]]
 
   def modifyStream(handleId: Int, ops: List[TableOp]): F[Option[StreamingDataRepr]]
+
+  def releaseHandle(handleType: HandleType, handleId: Int): F[Unit]
 
   def cancelTasks(): F[Unit]
 

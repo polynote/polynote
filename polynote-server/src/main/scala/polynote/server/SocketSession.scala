@@ -220,6 +220,12 @@ class SocketSession(
         result      <- notebookRef.modifyStream(fromHandle, ops)
       } yield Stream.emit(ms.copy(newRepr = result))
 
+    case rh @ ReleaseHandle(path, handleType, handleId) =>
+      for {
+        notebookRef <- getNotebook(path)
+        _           <- notebookRef.releaseHandle(handleType, handleId)
+      } yield Stream.emit(rh)
+
     case other =>
       IO.pure(Stream.empty)
   }

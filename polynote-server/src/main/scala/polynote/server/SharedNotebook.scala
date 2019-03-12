@@ -272,7 +272,7 @@ class IOSharedNotebook(
                   }
               } as {
                 ref.discrete.unNoneTerminate.unNone.map {
-                  update => HandleData(ShortString(path), Updating, repr.handle, 1, List(update))
+                  update => HandleData(ShortString(path), Updating, repr.handle, 1, Array(update))
                 }
               }
             }
@@ -331,18 +331,19 @@ class IOSharedNotebook(
     private val streams = new mutable.HashMap[Int, Iterator[ByteVector32]]
 
     private class HandleIterator(handleId: Int, iter: Iterator[ByteVector32]) extends Iterator[ByteVector32] {
-      override def hasNext: Boolean = iter.hasNext
-
-      override def next(): ByteVector32 = {
-        val b = iter.next()
-        if (!iter.hasNext) {
+      override def hasNext: Boolean = {
+        val hasNext = iter.hasNext
+        if (!hasNext) {
           streams.remove(handleId)  // release this iterator for GC to make underlying collection available for GC
         }
-        b
+        hasNext
       }
+
+      override def next(): ByteVector32 =
+        iter.next()
     }
 
-    override def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[List[ByteVector32]] = handleType match {
+    override def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[Array[ByteVector32]] = handleType match {
       case Streaming =>
         streams.get(handleId).map(IO.pure).getOrElse {
           for {
@@ -353,13 +354,20 @@ class IOSharedNotebook(
               streams.put(handleId, iter)
               iter
 
-            case None         => Iterator.empty
+            case None => Iterator.empty
           }
         }.map {
-          iter => iter.take(count).toList
+          iter =>
+            iter.take(count).toArray
         }
 
       case _ => ensureKernel().flatMap(_.getHandleData(handleType, handleId, count))
+    }
+
+    override def releaseHandle(handleType: HandleType, handleId: GlobalVersion): IO[Unit] = handleType match {
+      case Lazy | Updating => ensureKernel().flatMap(_.releaseHandle(handleType, handleId))
+      case Streaming =>
+        IO(streams.remove(handleId)) *> ensureKernel().flatMap(_.releaseHandle(Streaming, handleId))
     }
 
     override def modifyStream(handleId: Int, ops: List[TableOp]): IO[Option[StreamingDataRepr]] =

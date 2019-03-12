@@ -240,7 +240,7 @@ final case class HandleData(
   handleType: HandleType,
   handle: Int,
   count: Int,
-  data: List[ByteVector32]
+  data: Array[ByteVector32]
 ) extends Message
 
 object HandleData extends MessageCompanion[HandleData](17)
@@ -256,3 +256,5 @@ object ModifyStream extends MessageCompanion[ModifyStream](19) {
   implicit val codec: Codec[ModifyStream] = shapeless.cachedImplicit
 }
 
+final case class ReleaseHandle(path: String, handleType: HandleType, handle: Int) extends Message
+object ReleaseHandle extends MessageCompanion[ReleaseHandle](20)

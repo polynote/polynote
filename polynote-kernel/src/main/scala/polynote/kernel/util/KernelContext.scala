@@ -15,6 +15,8 @@ import scala.tools.nsc.interactive.Global
 import scala.tools.reflect.ToolBox
 import org.log4s.{Logger, getLogger}
 
+import scala.collection.mutable
+
 final case class KernelContext(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
   import global.{Type, Symbol}
 
@@ -64,14 +66,18 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
     }
   }
 
+  private val reprsOfCache = new mutable.HashMap[global.Type, ReprsOf[Any]]()
+
   def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = {
     val otherReprs = try {
-      runtimeTools.inferImplicitValue(ru.appliedType(ru.typeOf[ReprsOf[_]].typeConstructor, importToRuntime.importType(typ))) match {
-        case ru.EmptyTree => Array.empty[ValueRepr]
-        case tree =>
-          val untyped = runtimeTools.untypecheck(tree)
-          runtimeTools.eval(untyped).asInstanceOf[ReprsOf[Any]].apply(value)
-      }
+      reprsOfCache.getOrElseUpdate(typ,
+        runtimeTools.inferImplicitValue(ru.appliedType(ru.typeOf[ReprsOf[_]].typeConstructor, importToRuntime.importType(typ))) match {
+          case ru.EmptyTree => ReprsOf.empty
+          case tree =>
+            val untyped = runtimeTools.untypecheck(tree)
+            runtimeTools.eval(untyped).asInstanceOf[ReprsOf[Any]]
+        }
+      ).apply(value)
     } catch {
       case err: Throwable =>
         val e = err

@@ -1,6 +1,6 @@
 package polynote.runtime
 
-sealed trait DataType {
+sealed trait DataType extends Serializable {
   def size: Int = -1
 }
 

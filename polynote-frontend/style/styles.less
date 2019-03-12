@@ -186,79 +186,79 @@ body {
       display: none;
     }
   }
+}
 
-  .dropdown {
-    position: relative;
-    display: grid;
-    grid-template-columns: 1fr;
+.dropdown {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
 
-    &.open {
-      background-color: white;
-      border-radius: 4px;
+  &.open {
+    background-color: white;
+    border-radius: 4px;
+  }
+
+  .marker {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 1.5em;
+    height: 2em;
+    line-height: 2em;
+    user-select: none;
+    z-index: 3;
+  }
+
+  button {
+    height: 0;
+    width: auto;
+    padding: 0 2.5em 0 1em;
+    visibility: hidden;
+    overflow: visible;
+    display: block;
+    border-width: 0 1px;
+    font-size: 12px;
+    background: white;
+    border-color: transparent @ui-border;
+    border-radius: 0;
+  }
+
+  button.selected, &.open button {
+    padding: .5em 2.5em .5em 1em;
+    line-height: 1;
+    width: auto;
+    height: auto;
+    text-align: left;
+    border-width: 1px;
+    opacity: 1;
+    visibility: visible;
+  }
+
+  button.selected, button:hover {
+    border-radius: 4px;
+    border-color: @ui-border;
+  }
+
+  &.open button {
+    border-radius: 0;
+    border-color: transparent @ui-border;
+
+    &:first-of-type {
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+      border-top-color: @ui-border;
     }
 
-    .marker {
-      position: absolute;
-      right: 0;
-      top: 0;
-      width: 1.5em;
-      height: 2em;
-      line-height: 2em;
-      user-select: none;
-      z-index: 3;
+    &:last-of-type {
+      border-bottom-left-radius: 4px;
+      border-bottom-right-radius: 4px;
+      border-bottom-color: @ui-border;
     }
+  }
 
-    button {
-      height: 0;
-      width: auto;
-      padding: 0 2.5em 0 1em;
-      visibility: hidden;
-      overflow: visible;
-      display: block;
-      border-width: 0 1px;
-      font-size: 12px;
-      background: white;
-      border-color: transparent @ui-border;
-      border-radius: 0;
-    }
-
-    button.selected, &.open button {
-      padding: .5em 2.5em .5em 1em;
-      line-height: 1;
-      width: auto;
-      height: auto;
-      text-align: left;
-      border-width: 1px;
-      opacity: 1;
-      visibility: visible;
-    }
-
-    button.selected, button:hover {
-      border-radius: 4px;
-      border-color: @ui-border;
-    }
-
-    &.open button {
-      border-radius: 0;
-      border-color: transparent @ui-border;
-
-      &:first-of-type {
-        border-top-left-radius: 4px;
-        border-top-right-radius: 4px;
-        border-top-color: @ui-border;
-      }
-
-      &:last-of-type {
-        border-bottom-left-radius: 4px;
-        border-bottom-right-radius: 4px;
-        border-bottom-color: @ui-border;
-      }
-    }
-
-    &.open button:hover {
-      background-color: @ui-selected;
-      color: white;
-    }
+  &.open button:hover {
+    background-color: @ui-selected;
+    color: white;
   }
 }
 
@@ -1923,6 +1923,163 @@ button {
 
     .name, .type {
       font-family: @code-fonts;
+    }
+  }
+}
+
+.plot-editor {
+  background: @ui-background;
+  display: grid;
+  border: 1px solid @ui-border;
+  grid-template-areas: "controls plot";
+  grid-template-columns: 1fr 4fr;
+
+  .selected-measure {
+    display: grid;
+    grid-template-columns: 6.5em auto;
+    position: relative;
+    line-height: 2;
+    vertical-align: middle;
+    .dropdown {
+      position: absolute;
+      width: 6.5em;
+    }
+  }
+
+  .left-controls {
+    grid-area: controls;
+    display: grid;
+    overflow-y: auto;
+    grid-template-areas: "plot-type" "measure-title" "measure-list" "dimension-title" "dimension-list" "control-buttons";
+    grid-template-rows: 2em 2em auto 2em auto 2.5em;
+
+    h4 {
+      margin: 0;
+      padding: 0 .25em;
+      button.add {
+        color: green;
+      }
+    }
+
+    .plot-type-selector {
+      grid-area: plot-type;
+      position: relative;
+      z-index: 4;
+    }
+
+    .dimension-title {
+      grid-area: dimension-title;
+    }
+
+    .dimension-list {
+      grid-area: dimension-list;
+      border: 1px solid @ui-border;
+      background: white;
+
+      .dimension {
+        clear: left;
+      }
+    }
+
+    .measure-title {
+      grid-area: measure-title;
+    }
+
+    .measure-list {
+      grid-area: measure-list;
+      border: 1px solid @ui-border;
+      background: white;
+
+      .measure {
+        clear: left;
+      }
+    }
+
+    .control-buttons {
+      padding: 2pt 0;
+      grid-area: control-buttons;
+      text-align: right;
+      button {
+        font-size: inherit;
+      }
+
+      button.plot .fas {
+        color: green;
+        margin-right: 2pt;
+      }
+    }
+
+  }
+
+  .measure, .dimension {
+    float: left;
+    width: auto;
+    margin: 2pt;
+    padding: 2pt;
+    border: 1px solid @ui-border;
+    background: @ui-background;
+  }
+
+  .measure .measure-name {
+    padding: 0 .5em;
+    min-width: 3em;
+  }
+
+  .plot-area {
+    min-height: 30em;
+    grid-area: plot;
+    display: grid;
+    grid-template-areas: 'y-axis-drop plot-output' 'empty x-axis-drop';
+    grid-template-rows: auto 2.5em;
+    grid-template-columns: 2.5em auto;
+
+    .x-axis-drop {
+      grid-area: x-axis-drop;
+      text-align: center;
+      line-height: 2em;
+    }
+
+    .y-axis-drop {
+      grid-area: y-axis-drop;
+
+      .label {
+        transform: rotate(-90deg) translate(-50%, 0);
+        transform-origin: left top;
+        white-space: nowrap;
+        display: block;
+        position: absolute;
+        top: 50%;
+        line-height: 2em;
+
+        .measure {
+          padding: 0 2pt;
+          float: none;
+          display: inline-block;
+          margin: 0;
+          button {
+            padding: 1pt;
+            margin-left: 2pt;
+            color: red;
+          }
+        }
+      }
+    }
+
+    .plot-output {
+      grid-area: plot-output;
+      background: white;
+
+      .plot-embed {
+        margin: 0 auto;
+      }
+    }
+
+    .drop-ok {
+      background: #eeffee;
+    }
+
+    .drop-disallowed {
+      background: #ffeeee;
     }
   }
 }

@@ -9,6 +9,25 @@ import { Result, KernelErrorWithCause } from './result.js'
 import {float64, Pair} from "./codec";
 import {StreamingDataRepr} from "./value_repr";
 
+export function isEqual(a, b) {
+    if (a === b)
+        return true;
+
+    if (a instanceof Array || a instanceof Object) {
+        if (a.constructor !== b.constructor)
+            return false;
+
+        for (const i in a) {
+            if (!isEqual(a[i], b[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    return false;
+}
+
 export class Message {
     static decode(data) {
         return Codec.decode(Message.codec, data);
@@ -20,6 +39,10 @@ export class Message {
 
     encode() {
         return Message.encode(this);
+    }
+
+    isResponse(other) {
+        return false;
     }
 }
 
@@ -879,7 +902,7 @@ TableOp.codec = discriminated(uint8, msgTypeId => TableOp.codecs[msgTypeId].code
 
 export class ModifyStream extends Message {
     static get msgTypeId() { return 19; }
-    static unapply(inst) { return [inst.path, inst.fromHandle, inst.ops, inst.newRepr] };
+    static unapply(inst) { return [inst.path, inst.fromHandle, inst.ops, inst.newRepr]; }
     constructor(path, fromHandle, ops, newRepr) {
         super(path, fromHandle, ops, newRepr);
         this.path = path;
@@ -888,9 +911,37 @@ export class ModifyStream extends Message {
         this.newRepr = newRepr;
         Object.freeze(this);
     }
+
+    isResponse(other) {
+        if (!(other instanceof ModifyStream) || other.path !== this.path || other.fromHandle !== this.fromHandle)
+            return false;
+
+        return isEqual(this.ops, other.ops);
+    }
 }
 
 ModifyStream.codec = combined(shortStr, int32, arrayCodec(uint8, TableOp.codec), optional(StreamingDataRepr.codec)).to(ModifyStream);
+
+export class ReleaseHandle extends Message {
+    static get msgTypeId() { return 20; }
+    static unapply(inst) { return [inst.path, inst.handleType, inst.handleId]; }
+    constructor(path, handleType, handleId) {
+        super(path, handleType, handleId);
+        this.path = path;
+        this.handleType = handleType;
+        this.handleId = handleId;
+        Object.freeze(this);
+    }
+
+    isResponse(other) {
+        return other instanceof ReleaseHandle &&
+            other.path === this.path &&
+            other.handleType === this.handleType &&
+            other.handleId === this.handleId;
+    }
+}
+
+ReleaseHandle.codec = combined(shortStr, uint8, int32).to(ReleaseHandle);
 
 Message.codecs = [
     Error,           // 0
@@ -913,6 +964,7 @@ Message.codecs = [
     HandleData,      // 17
     CancelTasks,     // 18
     ModifyStream,    // 19
+    ReleaseHandle,   // 20
 ];
 
 

@@ -214,20 +214,26 @@ class PolyKernel private[kernel] (
 
   def info: IO[Option[KernelInfo]] = IO.pure(None)
 
-  override def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[List[ByteVector32]] = handleType match {
+  override def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[Array[ByteVector32]] = handleType match {
     case Lazy =>
       for {
         handleOpt <- IO(LazyDataRepr.getHandle(handleId))
         handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Lazy#$handleId")))
-      } yield List(ByteVector32(ByteVector(handle.data.rewind().asInstanceOf[ByteBuffer])))
+      } yield Array(ByteVector32(ByteVector(handle.data.rewind().asInstanceOf[ByteBuffer])))
 
     case Updating =>
       for {
         handleOpt <- IO(UpdatingDataRepr.getHandle(handleId))
         handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Updating#$handleId")))
-      } yield handle.lastData.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer]))).toList
+      } yield handle.lastData.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer]))).toArray
 
     case Streaming => IO.raiseError(new IllegalStateException("Streaming data is managed on a per-subscriber basis"))
+  }
+
+  override def releaseHandle(handleType: HandleType, handleId: Int): IO[Unit] = handleType match {
+    case Lazy => IO(LazyDataRepr.releaseHandle(handleId))
+    case Updating => IO(UpdatingDataRepr.releaseHandle(handleId))
+    case Streaming => IO(StreamingDataRepr.releaseHandle(handleId))
   }
 
   override def modifyStream(handleId: Int, ops: List[TableOp]): IO[Option[StreamingDataRepr]] = {

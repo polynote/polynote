@@ -5,9 +5,10 @@ import {DataStream, StreamingDataRepr} from "./value_repr";
 import {HandleData} from "./messages";
 import {DataReader} from "./codec";
 import {TabUI} from "./ui";
-import {div, iconButton, span, table} from "./tags";
+import {div, iconButton, span, table, tag} from "./tags";
 import {StructType, ArrayType, BinaryType} from "./data_type";
 import {SocketSession} from "./comms";
+import {PlotEditor} from "./plot_editor";
 
 export class ReprDataRequest extends UIEvent {
     constructor(reprType, handleId, count, onComplete, onFail) {
@@ -39,6 +40,8 @@ export class ReprUI extends UIEventTarget {
             // various table views
             this.tableView = new TableView(repr, this.path);
             this.tabUI.addTab('Table', span([], 'Data'), {content: this.tableView.el});
+            this.plotView = new PlotEditor(repr, this.path, this.name);
+            this.tabUI.addTab('Plot', span([], 'Plot'), {content: this.plotView.el});
         }
     }
 
@@ -106,7 +109,7 @@ class TableView {
     }
 
     pageNext() {
-        if (this.currentPos < this.rows.length) {
+        if (this.currentPos + 20 < this.rows.length) {
             this.displayItems(this.currentPos + 20, this.currentPos + 40);
         } else if (!this.stream.terminated) {
             this.stream.requestNext().then(batch => this.addBatch(batch)).then(_ => this.prevButton.enabled = true);

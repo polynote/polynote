@@ -45,12 +45,17 @@ object LazyDataRepr {
     }
 
     def isEvaluated: Boolean = computedFlag
+
+    def release(): Unit = {
+      LazyDataRepr.handles.remove(handle)
+    }
   }
 
 
   private val handles: ConcurrentHashMap[Int, Handle] = new ConcurrentHashMap()
   private val nextHandle: AtomicInteger = new AtomicInteger(0)
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
+  private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
 
   def apply(dataType: DataType, value: => ByteBuffer): LazyDataRepr = {
     val handleId = nextHandle.getAndIncrement()
@@ -143,6 +148,7 @@ object UpdatingDataRepr {
   private val handles: ConcurrentHashMap[Int, Handle] = new ConcurrentHashMap()
   private val nextHandle: AtomicInteger = new AtomicInteger(0)
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
+  private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
 
   def apply(dataType: DataType): UpdatingDataRepr = {
     val handleId = nextHandle.getAndIncrement()
@@ -225,6 +231,7 @@ object StreamingDataRepr {
   private val handles: ConcurrentHashMap[Int, Handle] = new ConcurrentHashMap()
   private val nextHandle: AtomicInteger = new AtomicInteger(0)
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
+  private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
 
   def apply(dataType: DataType, knownSize: Option[Int], lazyIter: => Iterator[ByteBuffer]): StreamingDataRepr =
     fromHandle(new DefaultHandle(_, dataType, knownSize, lazyIter))

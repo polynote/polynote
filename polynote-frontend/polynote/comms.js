@@ -110,6 +110,21 @@ export class SocketSession extends EventTarget {
         return this.addMessageListener(msgType, fn, true);
     }
 
+    /**
+     * Send a request and listen for the response. The message must properly implement the isResponse method.
+     */
+    request(msg) {
+        return new Promise((resolve, reject) => {
+            const listener = this.addEventListener('message', evt => {
+               if (msg.isResponse(evt.message)) {
+                   this.removeEventListener('message', listener);
+                   resolve(evt.message);
+               }
+            });
+            this.send(msg);
+        });
+    }
+
     close() {
         if (this.socket.readyState < WebSocket.CLOSING) {
             this.socket.close();

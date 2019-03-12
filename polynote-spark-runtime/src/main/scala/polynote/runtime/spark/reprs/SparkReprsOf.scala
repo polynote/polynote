@@ -3,6 +3,7 @@ package polynote.runtime.spark.reprs
 import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
 
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.{types => sparkTypes}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -40,6 +41,29 @@ object SparkReprsOf {
     }
   }
 
+  private[polynote] class FixedSizeDataFrameDecoder(structType: StructType, encode: (DataOutput, InternalRow) => Unit) extends (InternalRow => Array[Byte]) with Serializable {
+    assert(structType.size >= 0)
+    override def apply(row: InternalRow): Array[Byte] = {
+        // TODO: share/reuse this buffer? Any reason to be threadsafe?
+      val arr = new Array[Byte](structType.size)
+      val buf = ByteBuffer.wrap(arr)
+      encode(new DataEncoder.BufferOutput(buf), row)
+      arr
+    }
+  }
+
+  private[polynote] class VariableSizeDataFrameDecoder(structType: StructType, encode: (DataOutput, InternalRow) => Unit) extends (InternalRow => Array[Byte]) with Serializable {
+    override def apply(row: InternalRow): Array[Byte] = {
+      val out = new ByteArrayOutputStream()
+      try {
+        encode(new DataOutputStream(out), row)
+        out.toByteArray
+      } finally {
+        out.close()
+      }
+    }
+  }
+
 
   private[polynote] class DataFrameHandle(
     val handle: Int,
@@ -48,33 +72,27 @@ object SparkReprsOf {
 
     private val originalStorage = dataFrame.storageLevel
     private val (structType, encode) = dataTypeAndEncoder(dataFrame.schema)
-    private val rowToBytes: InternalRow => ByteBuffer = if (structType.size >= 0) {
-      row: InternalRow =>
-        // TODO: share/reuse this buffer? Any reason to be threadsafe?
-        val buf = ByteBuffer.allocate(structType.size)
-        encode(new DataEncoder.BufferOutput(buf), row)
-        buf
-    } else {
-      row: InternalRow =>
-        val out = new ByteArrayOutputStream()
-        try {
-          encode(new DataOutputStream(out), row)
-          ByteBuffer.wrap(out.toByteArray)
-        } finally {
-          out.close()
-        }
-    }
+
 
     val dataType: DataType = structType
     val knownSize: Option[Int] = None
 
-    def iterator: Iterator[ByteBuffer] = {
-      dataFrame.cache()
-      dataFrame.queryExecution.toRdd.toLocalIterator.map(rowToBytes)
+    // TODO: It might be nice to iterate instead of collect, but maybe in a better way than toLocalIterator...
+    private lazy val collectedData = {
+      val rowToBytes: InternalRow => Array[Byte] = if (structType.size >= 0) {
+        new FixedSizeDataFrameDecoder(structType, encode)
+      } else {
+        new VariableSizeDataFrameDecoder(structType, encode)
+      }
+
+      dataFrame.limit(1000000).queryExecution.toRdd.map(rowToBytes).collect()
     }
 
+    def iterator: Iterator[ByteBuffer] = collectedData.iterator.map(ByteBuffer.wrap)
+
+
     def modify(ops: List[TableOp]): Either[Throwable, Int => StreamingDataRepr.Handle] = {
-      import org.apache.spark.sql.functions, functions.{when, col, sum, lit, struct}
+      import org.apache.spark.sql.functions, functions.{when, col, sum, lit, struct, count, approx_count_distinct, avg}
       import org.apache.spark.sql.Column
       import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
       import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
@@ -93,12 +111,17 @@ object SparkReprsOf {
           val meanAgg = functions.avg(name) as s"${name}_mean"
           val meanCol = col(s"${name}_mean")
           val post = (df: DataFrame) => df.withColumn(
-            s"${name}_quartiles",
+            s"quartiles($name)",
             struct(quartilesCol(0) as "min", quartilesCol(1) as "q1", quartilesCol(2) as "median", meanCol as "mean", quartilesCol(3) as "q3", quartilesCol(4) as "max")
           ).drop(quartilesCol).drop(meanCol)
           List(quartilesAgg, meanAgg) -> Some(post)
 
-        case (name, "sum") => List(sum(col(name))) -> None
+        case (name, "sum") => List(sum(col(name)) as s"sum($name)") -> None
+        case (name, "count") => List(count(col(name)) as s"count($name)") -> None
+        case (name, "approx_count_distinct") => List(approx_count_distinct(col(name)) as s"approx_count_distinct($name)") -> None
+        case (name, "mean") => List(avg(col(name)) as s"mean($name)") -> None
+
+
 
         case (_, op) => throw new UnsupportedOperationException(op)
       }
@@ -136,7 +159,11 @@ object SparkReprsOf {
       if (originalStorage == StorageLevel.NONE) {
         dataFrame.unpersist(false)
       } else {
-        dataFrame.persist(originalStorage)
+        try {
+          dataFrame.persist(originalStorage)
+        } catch {
+          case err: Throwable => dataFrame.unpersist(false)
+        }
       }
       super.release()
     }

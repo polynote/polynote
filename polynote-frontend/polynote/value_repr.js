@@ -204,6 +204,9 @@ export class DataStream extends EventTarget {
         if (this.listener) {
             this.removeEventListener('DataBatch', this.listener);
         }
+        if (this.onComplete) {
+            this.onComplete();
+        }
         if (this.nextPromise) {
             this.nextPromise.reject("Stream was terminated")
         }
@@ -217,6 +220,7 @@ export class DataStream extends EventTarget {
             throw "Stream is already running";
         }
 
+
         this.runListener = this.addEventListener('DataBatch', (evt) => {
            this.receivedCount += evt.batch.length;
            if (this.receivedCount >= this.stopAfter) {
@@ -226,7 +230,12 @@ export class DataStream extends EventTarget {
                requestNext.call(this);
            }
         });
-        requestNext.call(this);
+
+        return new Promise((resolve, reject) => {
+            this.onComplete = resolve;
+            this.onError = reject;
+            requestNext.call(this);
+        });
     }
 
     /**

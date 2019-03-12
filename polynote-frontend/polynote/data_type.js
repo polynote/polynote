@@ -14,9 +14,10 @@ DataType.delegatedCodec = {
     decode: (reader) => DataType.codec.decode(reader)
 };
 
-function SingletonDataType(msgTypeId, readBuf) {
+function SingletonDataType(msgTypeId, readBuf, name) {
     const inst = {
         msgTypeId,
+        name: (inst) => name,
         decodeBuffer: readBuf,
         codec: {
             encode: (value, writer) => {},
@@ -28,15 +29,15 @@ function SingletonDataType(msgTypeId, readBuf) {
     return inst;
 }
 
-export const ByteType = SingletonDataType(0, reader => reader.readUint8());
-export const BoolType = SingletonDataType(1, reader => reader.readBoolean());
-export const ShortType = SingletonDataType(2, reader => reader.readInt16());
-export const IntType = SingletonDataType(3, reader => reader.readInt32());
-export const LongType = SingletonDataType(4, reader => reader.readInt64);
-export const FloatType = SingletonDataType(5, reader => reader.readFloat32());
-export const DoubleType = SingletonDataType(6, reader => reader.readFloat64());
-export const BinaryType = SingletonDataType(7, reader => reader.readBuffer());
-export const StringType = SingletonDataType(8, reader => reader.readString());
+export const ByteType = SingletonDataType(0, reader => reader.readUint8(), 'byte');
+export const BoolType = SingletonDataType(1, reader => reader.readBoolean(), 'boolean');
+export const ShortType = SingletonDataType(2, reader => reader.readInt16(), 'int2');
+export const IntType = SingletonDataType(3, reader => reader.readInt32(), 'int4');
+export const LongType = SingletonDataType(4, reader => reader.readInt64(), 'int8');
+export const FloatType = SingletonDataType(5, reader => reader.readFloat32(), 'float4');
+export const DoubleType = SingletonDataType(6, reader => reader.readFloat64(), 'float8');
+export const BinaryType = SingletonDataType(7, reader => reader.readBuffer(), 'binary');
+export const StringType = SingletonDataType(8, reader => reader.readString(), 'string');
 
 export class StructField {
     constructor(name, dataType) {
@@ -53,6 +54,7 @@ StructField.codec = combined(
 
 export class StructType extends DataType {
     static get msgTypeId() { return 9; }
+    static name(inst) { return 'struct'; }
     static unapply(inst) {
         return [inst.fields];
     }
@@ -76,6 +78,7 @@ StructType.codec = combined(arrayCodec(int32, StructField.codec)).to(StructType)
 
 export class OptionalType extends DataType {
     static get msgTypeId() { return 10; }
+    static name(inst) { return `${inst.element.constructor.name(inst.element)}?`}
     static unapply(inst) {
         return [inst.element];
     }
@@ -98,6 +101,7 @@ OptionalType.codec = combined(DataType.delegatedCodec).to(OptionalType);
 
 export class ArrayType extends DataType {
     static get msgTypeId() { return 11; }
+    static name(inst) { return `[${inst.element.constructor.name(inst.element)}]`}
     static unapply(inst) {
         return [inst.element];
     }
@@ -120,8 +124,8 @@ export class ArrayType extends DataType {
 
 ArrayType.codec = combined(DataType.delegatedCodec).to(ArrayType);
 
-export const DateType = SingletonDataType(12, buffer => {throw "TODO"});
-export const TimestampType = SingletonDataType(13, buffer => {throw "TODO"});
+export const DateType = SingletonDataType(12, buffer => {throw "TODO"}, 'date');
+export const TimestampType = SingletonDataType(13, buffer => {throw "TODO"}, 'timestamp');
 
 DataType.codecs = [
     ByteType,     //  0
