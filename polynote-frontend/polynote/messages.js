@@ -137,23 +137,25 @@ RepositoryConfig.codec = discriminated(
 
 export class NotebookConfig {
     static unapply(inst) {
-        return [inst.dependencies, inst.repositories, inst.sparkConfig];
+        return [inst.dependencies, inst.exclusions, inst.repositories, inst.sparkConfig];
     }
 
-    constructor(dependencies, repositories, sparkConfig) {
+    constructor(dependencies, exclusions, repositories, sparkConfig) {
         this.dependencies = dependencies;
+        this.exclusions = exclusions;
         this.repositories = repositories;
         this.sparkConfig = sparkConfig;
         Object.freeze(this);
     }
 
     static get default() {
-        return new NotebookConfig([], [], {});
+        return new NotebookConfig([], [], [], {});
     }
 }
 
 NotebookConfig.codec = combined(
     optional(mapCodec(uint8, tinyStr, arrayCodec(uint8, tinyStr))),
+    optional(arrayCodec(uint8, tinyStr)),
     optional(arrayCodec(uint8, RepositoryConfig.codec)),
     optional(mapCodec(uint16, str, str)),
 ).to(NotebookConfig);

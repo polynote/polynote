@@ -36,6 +36,7 @@ trait DependencyFetcher[F[_]] {
   def fetchDependencyList(
     repositories: List[RepositoryConfig],
     dependencies: List[DependencyConfigs],
+    exclusions: List[String],
     taskInfo: TaskInfo,
     statusUpdates: Publish[F, KernelStatusUpdate]
   ): F[List[(String, F[File])]]
@@ -79,8 +80,16 @@ class CoursierFetcher extends DependencyFetcher[IO] {
 //      }
 //  }
 
-  private def resolution(dependencies: List[DependencyConfigs]): IO[Resolution] = loadResolutionCache.map {
+  private def resolution(dependencies: List[DependencyConfigs], exclusions: List[String]): IO[Resolution] = loadResolutionCache.map {
     projectCache =>
+      // exclusions are applied to all direct and transitive dependencies.
+      val coursierExclude = exclusions.map { exclusionStr =>
+        exclusionStr.split(":") match {
+          case Array(org, name) => (Organization(org), ModuleName(name))
+          case Array(org) => (Organization(org), Exclusions.allNames)
+        }
+      }.toSet
+
       Resolution(
         dependencies.flatMap(_.get(TinyString("scala"))).flatten.map {
           moduleStr =>
@@ -90,7 +99,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
               case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.default, Classifier(classifier), ver)
               case Array(org, name, typ, config, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration(config), Classifier(classifier), ver)
             }
-            Dependency(Module(org, name), ver, config, Attributes(typ, classifier), transitive = classifier.value != "all")
+            Dependency(Module(org, name), ver, config, Attributes(typ, classifier), coursierExclude, transitive = classifier.value != "all")
 
         }.toSet,
         projectCache = projectCache,
@@ -183,11 +192,12 @@ class CoursierFetcher extends DependencyFetcher[IO] {
   def fetchDependencyList(
     repositories: List[RepositoryConfig],
     dependencies: List[DependencyConfigs],
+    exclusions: List[String],
     taskInfo: TaskInfo,
     statusUpdates: Publish[IO, KernelStatusUpdate]
   ): IO[List[(String, IO[File])]] = for {
     repos <- IO.fromEither(repos(repositories))
-    res   <- resolution(dependencies)
+    res   <- resolution(dependencies, exclusions)
     resolved <- resolveDependencies(res, Fetch.from(repos, Cache.fetch[IO]()), taskInfo, statusUpdates)
     _     <- saveResolutionCache(resolved.projectCache).handleErrorWith(err => IO(err.printStackTrace())) // TODO: proper logging
   } yield cacheFilesList(resolved, statusUpdates)

@@ -79,7 +79,7 @@ class IOKernelFactory(
       .flatMap {
         case (lang, langDeps) => dependencyFetchers.get(lang).map {
           fetcher =>
-            fetcher.fetchDependencyList(config.repositories.getOrElse(Nil), TinyMap(Map(lang -> langDeps)) :: Nil, taskInfo, statusUpdates).map {
+            fetcher.fetchDependencyList(config.repositories.getOrElse(Nil), TinyMap(Map(lang -> langDeps)) :: Nil, config.exclusions.getOrElse(Nil), taskInfo, statusUpdates).map {
               _.map {
                 case (name, ioFile) => (lang, name, ioFile)
               }
