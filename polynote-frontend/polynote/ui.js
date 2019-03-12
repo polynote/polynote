@@ -1011,18 +1011,17 @@ export class NotebookUI extends UIEventTarget {
         });
 
         socket.addMessageListener(messages.Error, (code, err) => {
-            // TODO: show this better in the UI
             console.log("Kernel error:", err);
-            const id = "KernelError";
+            const id = err.id;
             const message = div(["message"], [
                 para([], `${err.className}: ${err.message}`),
-                para([], "Please see the console for more details.")
+                para([], err.extraContent)
             ]);
-            this.kernelUI.tasks.updateTask(id, "Kernel Error", message, TaskStatus.Error, 0);
+            this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
 
             // clean up (assuming that running another cell means users are done with this error)
-            socket.addMessageListener(messages.CellResult, () => {
-                this.kernelUI.tasks.updateTask(id, "Kernel Error", message, TaskStatus.Complete, 100);
+            socket.addMessageListener(messages.KernelStatus, () => {
+                this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Complete, 100);
                 return false // make sure to remove the listener
             }, true)
         });

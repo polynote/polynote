@@ -114,6 +114,13 @@ export class KernelError {
         this.className = className;
         this.message = message;
         this.stackTrace = stackTrace;
+        if (this.className.includes("UnrecoverableError")) {
+            this.id = "Unrecoverable Error";
+            this.extraContent = "Polynote encountered an unrecoverable error. Please reload your browser window to continue :-(";
+        } else {
+            this.id = "Kernel Error";
+            this.extraContent = "Please see the console for more details";
+        }
     }
 }
 

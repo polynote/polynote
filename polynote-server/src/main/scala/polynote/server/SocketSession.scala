@@ -68,7 +68,15 @@ class SocketSession(
       val responses = iq.dequeue.evalMap {
 
         case Binary(bytes, true) => Message.decode[IO](bytes).flatMap {
-          message => respond(message).start
+          message =>
+            val resp = respond(message)
+              // catch IO errors here so we don't terminate the stream later on
+                .handleErrorWith { err =>
+                  val re = ErrorResult(err)
+                  IO(Stream.eval(logError(re).map(_ => Error(0, re))))
+                }
+
+            resp.start
         }
 
         case Close(data) => IO.pure(Stream.eval(shutdown()).drain).start
@@ -86,13 +94,13 @@ class SocketSession(
           Stream(oq.dequeue.interruptWhen(closeSignal()), responses.parJoinUnbounded).parJoinUnbounded
             .handleErrorWith {
               err =>
-                val re = ErrorResult(err)
+                val re = UnrecoverableError(err)
                 Stream.eval(logError(re).map(_ => Error(0, re)))
             }
             //.evalTap(logMessage)
             .evalMap(toFrame).handleErrorWith {
             err =>
-              Stream.eval(logError(err)).drain
+              Stream.eval(logError(UnrecoverableError(err))).drain
           }
         }.interruptWhen(closeSignal())
 
@@ -146,10 +154,10 @@ class SocketSession(
           globalVersion =>
             notebookRef.isKernelStarted.flatMap {
               case true => notebookRef.restartKernel()
-              case false => IO.unit
+              case false => notebookRef.startKernel()
             }
-        }
-      }.map(_ => Stream.empty)
+        } *> notebookRef.currentStatus.map(status => Stream.emit(KernelStatus(path, status)))
+      }
 
 
     case NotebookUpdate(update) =>
@@ -234,3 +242,5 @@ object SocketSession {
   }
 
 }
+
+case class UnrecoverableError(err: Throwable) extends Throwable(s"${err.getClass.getSimpleName}: ${err.getMessage}", err)

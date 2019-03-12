@@ -158,6 +158,11 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     statusUpdates: Publish[IO, KernelStatusUpdate],
     maxIterations: Int = 100
   ) = {
+    // check whether we care about a missing resolution
+    def shouldErrorIfMissing(res: Resolution): Boolean = res.errorCache.exists {
+      case (mv, _) => resolution.rootDependencies.exists(dep => dep.module == mv._1 && dep.version == mv._2)
+    }
+
     // reimplements ResolutionProcess.run, so we can update the iteration progress
     def run(resolutionProcess: ResolutionProcess, iteration: Int): IO[Resolution] =
       statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = (iteration.toDouble / maxIterations * 255).toByte) :: Nil)) *> {
@@ -165,7 +170,19 @@ class CoursierFetcher extends DependencyFetcher[IO] {
           IO.pure(resolutionProcess.current)
         } else {
           resolutionProcess match {
-            case Done(res) => IO.pure(res)
+            case Done(res) if  shouldErrorIfMissing(res) =>
+              res.errorCache.map {
+                case (mv, err) =>
+                  statusUpdates.publish1(
+                    UpdatedTasks(taskInfo.copy(
+                      label = s"Error fetching dependency ${mv._1}:${mv._2}",
+                      detail = err.mkString("\n\n"),
+                      status = TaskStatus.Error
+                    ) :: Nil)
+                  )
+              }.toList.sequence *> IO.raiseError(new Exception("Dependency Resolution Error"))
+            case Done(res) =>
+              IO.pure(res)
             case missing0 @ Missing(missing, _, _) =>
               CoursierFetcher.fetchAll(missing, fetch).flatMap {
                 result => run(missing0.next(result), iteration + 1)
