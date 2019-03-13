@@ -74,7 +74,7 @@ class ScalaInterpreter(
         case global.NoSymbol => IO.pure(Stream.empty)
         case sym =>
           val saveSource = IO.delay[Unit](previousSources.put(cell, source))
-          val symType = sym.asModule.toType
+          val symType = global.exitingTyper(sym.asModule.toType)
 
           Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
             val resultQ = new EnqueueSome(maybeResultQ)
@@ -118,7 +118,7 @@ class ScalaInterpreter(
                       else
                         Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, cell))
 
-                    case method if method.isMethod =>
+                    case method if method.isMethod && method.originalInfo.typeParams.isEmpty =>
                       // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
                       // The Scala interpreter uses the original method, but other interpreters can use the function.
                       val runtimeMethod = runtimeType.decl(runtime.universe.TermName(method.nameString)).asMethod
