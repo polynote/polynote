@@ -102,6 +102,7 @@ lazy val `polynote-spark` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
+    "org.scodec" %% "scodec-stream" % "1.2.0",
     "org.apache.spark" %% "spark-sql" % "2.1.1" % "provided",
     "org.apache.spark" %% "spark-repl" % "2.1.1" % "provided",
     "org.apache.spark" %% "spark-sql" % "2.1.1" % "test",
