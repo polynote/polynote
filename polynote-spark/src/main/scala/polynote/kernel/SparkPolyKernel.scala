@@ -169,7 +169,7 @@ object SparkPolyKernel {
       nb => new File(nb.path).getName
     }.unsafeRunSync()
 
-    val outputPath = Files.createTempDirectory(notebookFilename)
+    val outputPath = org.apache.spark.repl.Main.outputDir.toPath
     outputPath.toFile.deleteOnExit()
 
     val outputDir = new PlainDirectory(new Directory(outputPath.toFile))

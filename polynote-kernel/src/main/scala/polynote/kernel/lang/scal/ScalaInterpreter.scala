@@ -184,7 +184,7 @@ class ScalaInterpreter(
                 for {
                   pub   <- outputs.through(resultQ.enqueue).compile.drain.start
                   fiber <- runWithCapturedStdout.start
-                } yield fiber.join.uncancelable.handleErrorWith(err => IO.pure(List(ErrorResult(err))))
+                } yield fiber.join.uncancelable.handleErrorWith(err => IO.pure(List(ErrorResult(err)))) <* pub.join
             }
 
             eval.map {
