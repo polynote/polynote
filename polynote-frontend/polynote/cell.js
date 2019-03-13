@@ -396,11 +396,11 @@ export class CodeCell extends Cell {
             if (result.name !== "Out") {
                 // don't display this; it's a named declaration
                 // TODO: have a way to display these if desired
-            } else if (!this.resultEl || !this.resultEl.reprs || !this.resultEl.reprs.length || this.resultEl.reprs.length < result.reprs.length) {
+            } else if (!this.resultEl || !this.resultEl.parentNode || !this.resultEl.reprs || !this.resultEl.reprs.length || this.resultEl.reprs.length < result.reprs.length) {
                 if (this.resultEl && this.resultEl.parentNode) {
                     this.resultEl.parentNode.removeChild(this.resultEl);
-                    this.resultEl = null;
                 }
+                this.resultEl = null;
                 const [mime, content] = result.displayRepr;
                 const outLabel = result.reprs.length <= 1
                     ? div(['out-ident'], `Out:`)

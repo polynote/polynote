@@ -52,8 +52,6 @@ class ScalaInterpreter(
   def notebookPackage = global.Ident(notebookPackageName)
   protected lazy val notebookPackageSymbol = global.internal.newModuleAndClassSymbol(global.rootMirror.RootPackage, notebookPackageName)
 
-  protected def isPredefSymbol(name: global.TermName): Boolean = name string_== "kernel"
-
   // TODO: we want to get rid of predef and load `kernel` from the RST (whatever that ends up being)
   def predefCode: Option[String] = Some("val kernel = polynote.runtime.Runtime")
 
@@ -75,13 +73,11 @@ class ScalaInterpreter(
       IO.fromEither(source.compile).flatMap {
         case global.NoSymbol => IO.pure(Stream.empty)
         case sym =>
-
           val saveSource = IO.delay[Unit](previousSources.put(cell, source))
+          val symType = sym.asModule.toType
 
           Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
             val resultQ = new EnqueueSome(maybeResultQ)
-
-            val symType = sym.asModule.toType
             val run = IO(kernelContext.runInterruptible(importToRuntime.importSymbol(sym))).map {
               runtimeSym =>
                 kernelContext.runInterruptible {

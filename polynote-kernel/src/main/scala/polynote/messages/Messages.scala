@@ -257,5 +257,5 @@ object ModifyStream extends MessageCompanion[ModifyStream](19) {
   implicit val codec: Codec[ModifyStream] = shapeless.cachedImplicit
 }
 
-final case class ReleaseHandle(path: String, handleType: HandleType, handle: Int) extends Message
+final case class ReleaseHandle(path: ShortString, handleType: HandleType, handle: Int) extends Message
 object ReleaseHandle extends MessageCompanion[ReleaseHandle](20)
