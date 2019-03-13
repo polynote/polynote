@@ -10,19 +10,24 @@ import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import org.apache.spark.sql.catalyst.parser.{SqlBaseBaseVisitor, SqlBaseParser}
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser.SingleStatementContext
+import org.apache.spark.sql.thief.SessionStateThief
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import org.log4s.getLogger
 import polynote.kernel._
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.{Publish, RuntimeSymbolTable}
 import polynote.messages.{CellID, ShortString, TinyList, TinyString}
 
 import scala.collection.mutable
+import scala.util.{Failure, Success}
 
 class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInterpreter[IO] {
 
-  import symbolTable.kernelContext, kernelContext.global
+  import symbolTable.kernelContext, kernelContext.global, kernelContext.implicits.executionContext
 
-  private implicit val contextShift: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.Implicits.global)
+  private val logger = getLogger
+
+  Thread.currentThread().setContextClassLoader(kernelContext.classLoader)
 
   def predefCode: Option[String] = None
 
@@ -131,13 +136,16 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
 
   override def shutdown(): IO[Unit] = IO.unit
 
-  private lazy val databaseNames = spark.catalog.listDatabases().map(_.name).collect()
+  private val sessionCatalog = SessionStateThief(spark).catalog
+
+  private var databaseNames = sessionCatalog.listDatabases().toArray
 
   // TODO: could we generate parameter lists and such?
-  private lazy val functionNames = spark.catalog.listFunctions().map(_.name).collect()
+  private lazy val functionNames = sessionCatalog.listFunctions(sessionCatalog.getCurrentDatabase).view.map(_._1.funcName).toArray
+
 
   private val databaseTableCache = new mutable.HashMap[String, List[String]]()
-  private def tablesOf(db: String): List[String] = databaseTableCache.getOrElseUpdate(db, spark.catalog.listTables(db).collect().map(_.name).toList)
+  private def tablesOf(db: String): List[String] = databaseTableCache.getOrElseUpdate(db, sessionCatalog.listTables(db).map(_.table).toList)
 
   private class CompletionVisitor(pos: Int, visibleSymbols: Seq[Decl]) extends SqlBaseBaseVisitor[List[Completion]] {
     override def defaultResult(): List[Completion] = Nil
