@@ -30,15 +30,7 @@ class ScalaInterpreter(
   import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime}
   private val logger = getLogger
 
-  private val executor = Executors.newCachedThreadPool(new ThreadFactory {
-    def newThread(r: Runnable): Thread = {
-      val thread = new Thread(r)
-      thread.setContextClassLoader(kernelContext.classLoader)
-      thread
-    }
-  })
-
-  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(executor))
+  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
 
   private val interpreterLock = Semaphore[IO](1).unsafeRunSync()
 

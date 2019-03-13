@@ -16,6 +16,7 @@ import org.apache.spark.{SparkConf, Success}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.thief.DAGSchedulerThief
 import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
@@ -149,6 +150,8 @@ class SparkPolyKernel(
       KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url" target="_blank">$url</a>"""))
     }
   }
+
+  override def cancelTasks(): IO[Unit] = super.cancelTasks() *> IO(DAGSchedulerThief(session).cancelAllJobs())
 
   override def shutdown(): IO[Unit] = super.shutdown() *> IO(session.stop())
 }
