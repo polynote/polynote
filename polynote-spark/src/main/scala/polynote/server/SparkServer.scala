@@ -1,7 +1,9 @@
 package polynote.server
 import java.io.File
+import java.net.URL
 
 import cats.effect.IO
+import org.apache.hadoop.fs.FsUrlStreamHandlerFactory
 import polynote.config.PolynoteConfig
 import polynote.kernel.{KernelStatusUpdate, PolyKernel, SparkPolyKernel}
 import polynote.kernel.lang.LanguageInterpreter
@@ -12,6 +14,11 @@ import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
 
 object SparkServer extends Server {
+  // TODO: If we ever want to support more than the default + hadoop URL schemes, we will need to do something else.
+  //       We might consider defining a custom filesystem provider instead.
+  //       See: https://docs.oracle.com/javase/8/docs/technotes/guides/io/fsp/filesystemprovider.html
+  URL.setURLStreamHandlerFactory(new FsUrlStreamHandlerFactory())
+
   override protected def kernelFactory(config: PolynoteConfig): KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters, config) {
     override protected def mkKernel(
       getNotebook: () => IO[Notebook],

@@ -208,7 +208,7 @@ export class CodeCell extends Cell {
             theme: 'polynote',
             fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
             fontSize: 15,
-            fontLigatures: true,
+            fontLigatures: false, // breaks monospacing in text
             contextmenu: false,
             fixedOverflowWidgets: true,
             lineNumbers: true,

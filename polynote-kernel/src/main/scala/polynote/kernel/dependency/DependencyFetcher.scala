@@ -1,35 +1,26 @@
 package polynote.kernel.dependency
 
 import java.io._
-import java.nio.channels.{Channels, FileChannel}
-import java.nio.file.Files
 import java.util.concurrent.{ExecutorService, Executors}
+import java.net.URL
+import java.nio.file.{Files, Paths}
 
-import cats.{Applicative, Eval, Parallel}
-import cats.data.{Validated, ValidatedNel, ZipStream}
-import cats.effect.internals.IOContextShift
+import cats.Parallel
+import cats.data.{Validated, ValidatedNel}
 import cats.effect.{ContextShift, IO}
-import cats.syntax.apply._
-import cats.syntax.traverse._
-import cats.syntax.parallel._
-import cats.syntax.functor._
-import cats.syntax.either._
-import cats.instances.list._
-import cats.instances.parallel._
-import coursier.Fetch.Content
-import coursier.core.compatibility.encodeURIComponent
+import cats.implicits._
 import coursier.ivy.IvyRepository
-import coursier.util.{EitherT, Gather, Monad, Schedulable}
+import coursier.util.{Monad, Schedulable}
 import coursier.core._
-import coursier.maven.MavenRepository.toBaseVersion
 import coursier.{Attributes, Cache, Dependency, Fetch, FileError, MavenRepository, Module, ModuleName, Organization, ProjectCache, Repository, Resolution}
 import polynote.config.{DependencyConfigs, RepositoryConfig, ivy, maven}
 import polynote.kernel.util.Publish
 import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
-import polynote.messages.TinyString
+import polynote.messages.{TinyList, TinyMap, TinyString}
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
+import scala.util.Try
 
 trait DependencyFetcher[F[_]] {
 
@@ -56,55 +47,29 @@ class CoursierFetcher extends DependencyFetcher[IO] {
   private val resolutionCacheFile = "resolution-cache"
   private lazy val resolutionCachePath = Cache.default.toPath.resolve(resolutionCacheFile)
 
-  private def loadResolutionCache: IO[ProjectCache] = IO.pure(Map.empty)
-//    IO.pure(resolutionCachePath).flatMap {
-//    path => IO(path.toFile.exists()).flatMap {
-//      case true => IO(new RandomAccessFile(path.toFile, "r")).map(_.getChannel.lock(0, Long.MaxValue, true)).bracket {
-//          lock => IO(new ObjectInputStream(Channels.newInputStream(lock.channel()))).bracket {
-//            is => IO(Option(is.readObject())).flatMap(obj => IO(obj.map(_.asInstanceOf[ProjectCache]).getOrElse(Map.empty)))
-//          }(is => IO(lock.close()) *> IO(is.close()))
-//        }(lock => IO(if (lock.isValid) lock.release()))
-//      case false => IO.raiseError(new FileNotFoundException(path.toString))
-//    }
-//  }.handleErrorWith[ProjectCache](err => IO(err.printStackTrace()).map(_ => Map.empty))
+  private def resolution(dependencies: List[DependencyConfigs], exclusions: List[String]): Resolution = {
+    // exclusions are applied to all direct and transitive dependencies.
+    val coursierExclude = exclusions.map { exclusionStr =>
+      exclusionStr.split(":") match {
+        case Array(org, name) => (Organization(org), ModuleName(name))
+        case Array(org) => (Organization(org), Exclusions.allNames)
+      }
+    }.toSet
 
-  private def saveResolutionCache(cache: ProjectCache): IO[Unit] = IO.unit
-//    IO.pure(resolutionCachePath).flatMap {
-//    path => loadResolutionCache.flatMap {
-//          existingCache => IO(new RandomAccessFile(path.toFile, "rw")).map(_.getChannel.lock(0, Long.MaxValue, true)).bracket {
-//            lock =>
-//              IO(new ObjectOutputStream(Channels.newOutputStream(lock.channel()))).bracket {
-//              os => IO(os.writeObject(existingCache ++ cache))
-//            }(os =>  IO(lock.release()) *> IO(os.close()))
-//        }(lock => IO(if (lock.isValid) lock.release()))
-//      }
-//  }
+    Resolution(
+      dependencies.flatMap(_.get(TinyString("scala"))).flatten.map {
+        moduleStr =>
+          val (org, name, typ, config, classifier, ver) = moduleStr.split(':') match {
+            case Array(org, name, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier.empty, ver)
+            case Array(org, name, classifier, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier(classifier), ver)
+            case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.default, Classifier(classifier), ver)
+            case Array(org, name, typ, config, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration(config), Classifier(classifier), ver)
+          }
+          Dependency(Module(org, name), ver, config, Attributes(typ, classifier), coursierExclude, transitive = classifier.value != "all")
 
-  private def resolution(dependencies: List[DependencyConfigs], exclusions: List[String]): IO[Resolution] = loadResolutionCache.map {
-    projectCache =>
-      // exclusions are applied to all direct and transitive dependencies.
-      val coursierExclude = exclusions.map { exclusionStr =>
-        exclusionStr.split(":") match {
-          case Array(org, name) => (Organization(org), ModuleName(name))
-          case Array(org) => (Organization(org), Exclusions.allNames)
-        }
-      }.toSet
-
-      Resolution(
-        dependencies.flatMap(_.get(TinyString("scala"))).flatten.map {
-          moduleStr =>
-            val (org, name, typ, config, classifier, ver) = moduleStr.split(':') match {
-              case Array(org, name, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier.empty, ver)
-              case Array(org, name, classifier, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier(classifier), ver)
-              case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.default, Classifier(classifier), ver)
-              case Array(org, name, typ, config, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration(config), Classifier(classifier), ver)
-            }
-            Dependency(Module(org, name), ver, config, Attributes(typ, classifier), coursierExclude, transitive = classifier.value != "all")
-
-        }.toSet,
-        projectCache = projectCache,
-        filter = Some(dep => !dep.optional && !excludedOrgs(dep.module.organization))
-      )
+      }.toSet,
+      filter = Some(dep => !dep.optional && !excludedOrgs(dep.module.organization))
+    )
   }
 
   private def repos(repositories: List[RepositoryConfig]): Either[Throwable, List[Repository]] = repositories.map {
@@ -120,7 +85,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     repos => (Cache.ivy2Local :: Cache.ivy2Cache :: repos) :+ MavenRepository("https://repo1.maven.org/maven2")
   }
 
-  private def cacheFilesList(resolved: Resolution, statusUpdates: Publish[IO, KernelStatusUpdate]): List[(String, IO[File])] = {
+  private def cacheFilesList(resolved: Resolution, downloaded: List[(String, IO[File])], statusUpdates: Publish[IO, KernelStatusUpdate]): List[(String, IO[File])] = {
     val logger = new Cache.Logger {
       private val size = new mutable.HashMap[String, Long]()
 
@@ -157,7 +122,18 @@ class CoursierFetcher extends DependencyFetcher[IO] {
       case (mv, artifact) => mv -> Cache.file[IO](artifact, logger = Some(logger)).leftMap(FileErrorException).run.flatMap(IO.fromEither)
     }.toList
 
-    filteredArtifacts
+    val downloadedFiles = downloaded.map {
+      case (url, ioF) =>
+        // TODO: any way to get real progress?
+        val ioWithUpdated = statusUpdates.publish1(UpdatedTasks(TaskInfo(url, s"Downloading $url", url, TaskStatus.Running) :: Nil)).bracket { _ =>
+          ioF
+        } { _ =>
+          statusUpdates.publish1(UpdatedTasks(TaskInfo(url, s"Downloading $url", url, TaskStatus.Complete) :: Nil))
+        }
+        "downloaded" -> ioWithUpdated
+    }
+
+    filteredArtifacts ++ downloadedFiles
   }
 
   private def resolveDependencies(
@@ -208,6 +184,48 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     run(resolution.process, 0)
   }
 
+  def splitDependencies(deps: List[DependencyConfigs]): (List[URL], List[DependencyConfigs]) = {
+    val (urlList, dependencies) = deps.flatMap { dep =>
+      dep.toList.collect {
+        case (k, v) =>
+          val (dependencies, urls) = v.map(s => Either.fromTry(Try(new URL(s))).leftMap(_ => s)).separate
+          (urls, TinyMap(k -> TinyList(dependencies)))
+      }
+    }.unzip
+    (urlList.flatten, dependencies)
+  }
+
+  def fetchUrls(urls: List[URL], statusUpdates: Publish[IO, KernelStatusUpdate], chunkSize: Int = 8192)(implicit ctx: ExecutionContext): List[(String, IO[File])] = {
+
+    // cheating! we could probably provide real progress if we moved to the filesystem API
+    def fakeProgress(s: fs2.Stream[IO, Unit], url: String): fs2.Stream[IO, Int] = {
+      val max: Double = 1.5 * 1024 * 1024 / chunkSize // looks ok, really big jars might wrap around
+      s.scan(0)((n, _) => n + 1).evalTap { i =>
+        statusUpdates.publish1(UpdatedTasks(TaskInfo(url.toString, s"Downloading $url", url.toString, TaskStatus.Running, (i / max).toByte) :: Nil))
+      }
+    }
+
+    urls.map { url =>
+      url.toString -> IO(url.openStream).flatMap { is =>
+
+        val file = Cache.default.toPath.resolve(Paths.get(url.getProtocol, url.getAuthority, url.getPath)).toFile
+
+        if (file.exists()) {
+          IO.pure(file)
+        } else {
+          for {
+            _ <- IO(Files.createDirectories(file.toPath.getParent))
+            os = new FileOutputStream(file)
+            // is it overkill to use fs2 steams for this...?
+            fs2IS = fs2.io.readInputStream[IO](IO(is), chunkSize, ctx)
+            fs2OS = fs2.io.writeOutputStream[IO](IO(os), ctx)
+            copyingStream = fs2IS.through(fs2OS)
+            _ <- fakeProgress(copyingStream, url.toString).compile.drain
+          } yield file
+        }
+      }
+    }
+  }
 
   def fetchDependencyList(
     repositories: List[RepositoryConfig],
@@ -217,10 +235,11 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     statusUpdates: Publish[IO, KernelStatusUpdate]
   ): IO[List[(String, IO[File])]] = for {
     repos <- IO.fromEither(repos(repositories))
-    res   <- resolution(dependencies, exclusions)
+    (urls, deps) = splitDependencies(dependencies)
+    downloadFiles = fetchUrls(urls, statusUpdates)
+    res   = resolution(deps, exclusions)
     resolved <- resolveDependencies(res, Fetch.from(repos, Cache.fetch[IO]()), taskInfo, statusUpdates)
-    _     <- saveResolutionCache(resolved.projectCache).handleErrorWith(err => IO(err.printStackTrace())) // TODO: proper logging
-  } yield cacheFilesList(resolved, statusUpdates)
+  } yield cacheFilesList(resolved, downloadFiles, statusUpdates)
 
 }
 
