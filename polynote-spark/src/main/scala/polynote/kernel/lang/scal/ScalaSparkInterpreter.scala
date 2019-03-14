@@ -16,7 +16,12 @@ class ScalaSparkInterpreter(st: RuntimeSymbolTable) extends ScalaInterpreter(st)
   override def predefCode: Option[String] = Some {
     s"""${super.predefCode.getOrElse("")}
        |import org.apache.spark.sql.SparkSession
-       |final val spark: SparkSession = SparkSession.builder().getOrCreate()
+       |@transient val spark: SparkSession = if (org.apache.spark.repl.Main.sparkSession != null) {
+       |            org.apache.spark.repl.Main.sparkSession
+       |          } else {
+       |            org.apache.spark.repl.Main.createSparkSession()
+       |          }
+       |import org.apache.spark.sql.{DataFrame, Dataset}
        |import this.spark.implicits._
        |import org.apache.spark.sql.functions._
      """.stripMargin

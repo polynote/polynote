@@ -7,6 +7,7 @@ import polynote.kernel.util.KernelReporter
 import polynote.messages.CellID
 
 import scala.annotation.tailrec
+import scala.collection.immutable.Queue
 import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFile}
 
 /**
@@ -115,17 +116,57 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     }
   }
 
+  /**
+    * We have to create both a class and an object – the class needs to actually run the code, so that it won't be run
+    * in a static initializer. But, we also want the declarations to be available in the object, and we want class
+    * definitions and such to go there too so that we don't have inner classes which cause lots of problems.
+    *
+    * So this does some rewriting - class declarations are moved to the object, and we make lazy val accessors
+    * into the INSTANCE for val definitions. We also make proxy methods that delegate to any methods defined in the cell.
+    * Everything else (statements etc) stays in the class.
+    */
+  private lazy val moduleClassTrees = results.map {
+    case (_, trees) =>
+      import global.Quasiquote
+      trees.foldLeft((Vector.empty[Tree], Vector.empty[Tree])) {
+        case ((moduleTrees, classTrees), tree) => tree match {
+          case tree: global.ValDef if !tree.mods.hasFlag(global.Flag.PRIVATE) && !tree.mods.hasFlag(global.Flag.PROTECTED) =>
+            // make a lazy val accessor in the companion
+            (moduleTrees :+ q"lazy val ${tree.name} = INSTANCE.${tree.name}", classTrees :+ tree)
+          case tree: global.DefDef =>
+            // make a proxy method in the companion
+            val typeArgs = tree.tparams.map(tp => global.Ident(tp.name))
+            val valueArgs = tree.vparamss.map(_.map(param => global.Ident(param.name)))
+            (moduleTrees :+ tree.copy(rhs = q"INSTANCE.${tree.name}[..$typeArgs](...$valueArgs)"), classTrees :+ tree)
+          case tree: global.MemberDef =>
+            // move class/type definition to the companion object and import it within the cell's class body
+            (moduleTrees :+ tree, q"import $moduleName.${tree.name}" +: classTrees)
+          case tree =>
+            // anything else, just leave it in the class body
+            (moduleTrees, classTrees :+ tree)
+        }
+      } match {
+        case (moduleTrees, classTrees) => moduleTrees.toList -> classTrees.toList
+      }
+  }
+
   lazy val resultName: Option[global.TermName] = results.right.toOption.flatMap(_._1)
 
-  lazy val wrapped: Either[Throwable, Tree] = results.right.map {
-    case (_, trees) =>
-      val range = new RangePosition(trees.head.pos.source, 0, 0, trees.last.pos.end)
-      val beginning = new RangePosition(trees.head.pos.source, 0, 0, 0)
-      val end = new RangePosition(trees.last.pos.source, trees.last.pos.end, trees.last.pos.end, trees.last.pos.end)
+  lazy val wrapped: Either[Throwable, Tree] = moduleClassTrees.right.map {
+    case (moduleTrees, classTrees) =>
+      val allTrees = moduleTrees ++ classTrees
+      val source = allTrees.head.pos.source
+      val endPos = allTrees.map(_.pos).collect {
+        case pos if pos != null && pos.isRange => pos.end
+      }.max
+      val range = new RangePosition(source, 0, 0, endPos)
+      val beginning = new RangePosition(source, 0, 0, 0)
+      val end = new RangePosition(source, endPos, endPos, endPos)
 
       import global.Quasiquote
+      import global.treeBuilder.scalaDot
 
-      val constructor = atPos(beginning) {
+      def constructor =
         global.DefDef(
           global.NoMods,
           global.nme.CONSTRUCTOR,
@@ -134,7 +175,6 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
           atPos(beginning)(global.TypeTree()),
           atPos(beginning)(global.Block(
             atPos(beginning)(global.PrimarySuperCall(ListOfNil)), atPos(beginning)(global.gen.mkSyntheticUnit()))))
-      }
 
       // find all externally-defined values in cells above this one, and make private alias methods for them
       val externalVals = availableSymbols
@@ -175,19 +215,34 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
           atPos(beginning)(notebookPackage),
           imports.map(forcePos(beginning, _)).map(global.resetAttrs) ::: List(
             atPos(range) {
+              global.ClassDef(
+                global.Modifiers(),
+                moduleName.toTypeName,
+                Nil,
+                atPos(range) {
+                  global.Template(
+                    List(atPos(beginning)(scalaDot(global.typeNames.AnyRef)), atPos(beginning)(scalaDot(global.typeNames.Serializable))), // extends AnyRef with Serializable
+                    atPos(beginning)(global.noSelfType.copy()),
+                    atPos(beginning)(constructor) :: externalVals ::: classTrees)
+                })
+            },
+            atPos(end) {
               global.ModuleDef(
                 global.Modifiers(),
                 moduleName,
-                atPos(range) {
+                atPos(end) {
                   global.Template(
-                    List(atPos(beginning)(tq"polynote.runtime.ScalaCell")), // extends AnyRef with Serializable
-                    atPos(beginning)(global.noSelfType.copy()),
-                    atPos(beginning)(constructor) :: externalVals ::: trees)
-                })
-            }))
+                    List(atPos(end)(scalaDot(global.typeNames.AnyRef))),
+                    atPos(end)(global.noSelfType.copy()),
+                    atPos(end)(constructor) :: atPos(end)(q"private val INSTANCE = new ${moduleName.toTypeName}") :: moduleTrees.map(forcePos(end, _))
+                  )
+                }
+              )
+            }
+          ))
       }
       ensurePositions(
-        trees.head.pos.source,
+        source,
         wrappedSource,
         range
       )
@@ -379,7 +434,9 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
           reporter.attempt(run.compileUnits(List(unit), run.namerPhase))
         }.flatMap(identity).flatMap {
           _ =>
-            withCompiler(unit.body.asInstanceOf[global.PackageDef].stats.head.symbol.module)
+            withCompiler {
+              unit.body.asInstanceOf[global.PackageDef].stats(1).symbol.companionModule
+            }
         }
       }.leftFlatMap {
         case EmptyCell => Right(global.NoSymbol)

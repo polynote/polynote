@@ -16,6 +16,7 @@ import org.apache.spark.{SparkConf, Success}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.thief.DAGSchedulerThief
 import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
@@ -96,7 +97,7 @@ class SparkPolyKernel(
 
   private lazy val session: SparkSession = {
     val nbConfig = getNotebook().unsafeRunSync().config
-    val conf = new SparkConf(loadDefaults = true)
+    val conf = org.apache.spark.repl.Main.conf
 
     nbConfig.flatMap(_.sparkConfig).getOrElse(config.spark).foreach {
       case (k, v) => conf.set(k, v)
@@ -108,15 +109,14 @@ class SparkPolyKernel(
     }
     conf.setJars(dependencyJars.map(_.toString))
     conf.set("spark.repl.class.outputDir", outputPath.toString)
+    conf.setAppName("Polynote session")
 
     // TODO: experimental
     //    conf.set("spark.driver.userClassPathFirst", "true")
     //    conf.set("spark.executor.userClassPathFirst", "true")
     // TODO: experimental
 
-    val sess = SparkSession.builder().config(conf)
-      .appName("PolyNote session")
-      .getOrCreate()
+    val sess = org.apache.spark.repl.Main.createSparkSession()
 
     // for some reason the jars aren't totally working...
 
@@ -151,6 +151,8 @@ class SparkPolyKernel(
     }
   }
 
+  override def cancelTasks(): IO[Unit] = super.cancelTasks() *> IO(DAGSchedulerThief(session).cancelAllJobs())
+
   override def shutdown(): IO[Unit] = super.shutdown() *> IO(session.stop())
 }
 
@@ -170,7 +172,7 @@ object SparkPolyKernel {
       nb => new File(nb.path).getName
     }.unsafeRunSync()
 
-    val outputPath = Files.createTempDirectory(notebookFilename)
+    val outputPath = org.apache.spark.repl.Main.outputDir.toPath
     outputPath.toFile.deleteOnExit()
 
     val outputDir = new PlainDirectory(new Directory(outputPath.toFile))

@@ -30,15 +30,7 @@ class ScalaInterpreter(
   import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime}
   private val logger = getLogger
 
-  private val executor = Executors.newCachedThreadPool(new ThreadFactory {
-    def newThread(r: Runnable): Thread = {
-      val thread = new Thread(r)
-      thread.setContextClassLoader(kernelContext.classLoader)
-      thread
-    }
-  })
-
-  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(executor))
+  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
 
   private val interpreterLock = Semaphore[IO](1).unsafeRunSync()
 
@@ -51,8 +43,6 @@ class ScalaInterpreter(
   protected lazy val notebookPackageName = global.TermName("$notebook")
   def notebookPackage = global.Ident(notebookPackageName)
   protected lazy val notebookPackageSymbol = global.internal.newModuleAndClassSymbol(global.rootMirror.RootPackage, notebookPackageName)
-
-  protected def isPredefSymbol(name: global.TermName): Boolean = name string_== "kernel"
 
   // TODO: we want to get rid of predef and load `kernel` from the RST (whatever that ends up being)
   def predefCode: Option[String] = Some("val kernel = polynote.runtime.Runtime")
@@ -75,13 +65,11 @@ class ScalaInterpreter(
       IO.fromEither(source.compile).flatMap {
         case global.NoSymbol => IO.pure(Stream.empty)
         case sym =>
-
           val saveSource = IO.delay[Unit](previousSources.put(cell, source))
+          val symType = global.exitingTyper(sym.asModule.toType)
 
           Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
             val resultQ = new EnqueueSome(maybeResultQ)
-
-            val symType = sym.asModule.toType
             val run = IO(kernelContext.runInterruptible(importToRuntime.importSymbol(sym))).map {
               runtimeSym =>
                 kernelContext.runInterruptible {
@@ -122,7 +110,7 @@ class ScalaInterpreter(
                       else
                         Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, cell))
 
-                    case method if method.isMethod =>
+                    case method if method.isMethod && method.originalInfo.typeParams.isEmpty =>
                       // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
                       // The Scala interpreter uses the original method, but other interpreters can use the function.
                       val runtimeMethod = runtimeType.decl(runtime.universe.TermName(method.nameString)).asMethod
@@ -188,7 +176,7 @@ class ScalaInterpreter(
                 for {
                   pub   <- outputs.through(resultQ.enqueue).compile.drain.start
                   fiber <- runWithCapturedStdout.start
-                } yield fiber.join.uncancelable.handleErrorWith(err => IO.pure(List(ErrorResult(err))))
+                } yield fiber.join.uncancelable.handleErrorWith(err => IO.pure(List(ErrorResult(err)))) <* pub.join
             }
 
             eval.map {

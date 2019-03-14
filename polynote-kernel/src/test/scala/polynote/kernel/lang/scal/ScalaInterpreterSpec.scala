@@ -89,8 +89,8 @@ class ScalaInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
 
       displayed shouldBe empty
       output should contain theSameElementsAs Seq(
-        Output("text/plain; rel=stdout", "println: 1 + 2 = 3"),
-        Output("text/plain; rel=stdout", "sys: 1 + 2 = 3")
+        Output("text/plain; rel=stdout", "println: 1 + 2 = 3\n"),
+        Output("text/plain; rel=stdout", "sys: 1 + 2 = 3\n")
       )
     }
 
@@ -105,7 +105,7 @@ class ScalaInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       vars.toSeq should contain only "kernel" -> polynote.runtime.Runtime
 
       displayed shouldBe empty
-      output should contain only Output("text/plain; rel=stdout", "Do you like muffins?")
+      output should contain only Output("text/plain; rel=stdout", "Do you like muffins?\n")
     }
   }
 }

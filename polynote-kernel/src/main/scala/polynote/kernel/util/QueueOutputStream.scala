@@ -17,8 +17,18 @@ class QueueOutputStream(
   private val closed = new AtomicBoolean(false)
 
   def write(b: Int): Unit = buf.synchronized {
-    if (!buf.hasRemaining || b == '\n') flush()
-    else buf.put(b.toByte)
+    if (closed.get()) {
+      throw new IllegalStateException("Writing to closed QueueOutputStream")
+    }
+    if (!buf.hasRemaining) {
+      flush()
+    }
+
+    buf.put(b.toByte)
+
+    if (b == '\n') {
+      flush()
+    }
   }
 
   override def flush(): Unit = {
@@ -37,9 +47,11 @@ class QueueOutputStream(
     }
   }
 
-  override def close(): Unit = if (!closed.getAndSet(true)) {
-    flush()
-    super.close()
-    queue.enqueue1(None).unsafeRunSync()
+  override def close(): Unit = buf.synchronized {
+    if (!closed.getAndSet(true)) {
+      flush()
+      super.close()
+      queue.enqueue1(None).unsafeRunSync()
+    }
   }
 }

@@ -2,6 +2,7 @@ package polynote.kernel.util
 
 import java.io.File
 import java.net.URL
+import java.util.concurrent.{ExecutorService, Executors, ThreadFactory}
 
 import polynote.messages.truncateTinyString
 import polynote.runtime.{ReprsOf, StringRepr, ValueRepr}
@@ -16,6 +17,7 @@ import scala.tools.reflect.ToolBox
 import org.log4s.{Logger, getLogger}
 
 import scala.collection.mutable
+import scala.concurrent.ExecutionContext
 
 final case class KernelContext(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
   import global.{Type, Symbol}
@@ -29,6 +31,20 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
   val importFromRuntime: Importer[global.type, ru.type] = global.internal.createImporter(ru)
 
   val runtimeTools: ToolBox[ru.type] = runtimeMirror.mkToolBox()
+
+  val executor: ExecutorService = Executors.newCachedThreadPool(new ThreadFactory {
+    def newThread(r: Runnable): Thread = {
+      val thread = new Thread(r)
+      thread.setContextClassLoader(classLoader)
+      thread
+    }
+  })
+
+  val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
+
+  object implicits {
+    implicit val executionContext: ExecutionContext = KernelContext.this.executionContext
+  }
 
   def inferType(value: Any): global.Type = {
     val instMirror = runtimeMirror.reflect(value)
@@ -107,6 +123,7 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
     }
 
     val result = try thunk finally {
+      Thread.currentThread().setContextClassLoader(classLoader)
       taskThreadMonitor.synchronized {
         currentTaskThread = prev
       }
