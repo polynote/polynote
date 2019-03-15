@@ -1539,7 +1539,7 @@ button {
     display: block;
   }
 
-  .notebook-dependencies, .notebook-exclusions, .notebook-resolvers {
+  .notebook-config-section {
     border-radius: 4px;
     border: 1px solid @ui-border;
     border-left-width: 6px;
@@ -1547,19 +1547,19 @@ button {
     margin: 1em 0;
   }
 
-  .dependency-row .add, .exclusion-row .add, .resolver-row .add {
+  .notebook-config-row .add {
     display: none;
   }
 
-  .dependency-row:last-child .add, .exclusion-row:last-child .add, .resolver-row:last-child .add {
+  .notebook-config-row:last-child .add {
     display: inline-block;
   }
 
-  .dependency-row:last-child .remove, .exclusion-row:last-child .remove, .resolver-row:last-child .remove {
+  .notebook-config-row:last-child .remove {
     display: none;
   }
 
-  .dependency-row, .exclusion-row, .resolver-row {
+  .notebook-config-row {
     button {
       padding: 4px;
     }
@@ -1572,6 +1572,12 @@ button {
   .dependency-row {
     input {
       width: 40em;
+    }
+  }
+
+  .spark-config-row {
+    input {
+      width: 30em;
     }
   }
 
