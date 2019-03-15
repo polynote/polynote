@@ -1,9 +1,7 @@
 package polynote.server
 import java.io.File
-import java.net.URL
 
 import cats.effect.IO
-import org.apache.hadoop.fs.FsUrlStreamHandlerFactory
 import polynote.config.PolynoteConfig
 import polynote.kernel.{KernelStatusUpdate, PolyKernel, SparkPolyKernel}
 import polynote.kernel.lang.LanguageInterpreter

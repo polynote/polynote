@@ -125,7 +125,6 @@ class CoursierFetcher extends DependencyFetcher[IO] {
 
     val downloadedFiles = downloaded.map {
       case (url, ioF) =>
-        // TODO: any way to get real progress?
         val ioWithUpdated = statusUpdates.publish1(UpdatedTasks(TaskInfo(url, s"Downloading $url", url, TaskStatus.Running) :: Nil)).bracket { _ =>
           ioF
         } { _ =>
