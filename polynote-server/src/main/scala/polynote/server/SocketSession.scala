@@ -174,7 +174,11 @@ class SocketSession(
     case req@CompletionsAt(notebook, id, pos, _) =>
       for {
         notebookRef <- getNotebook(notebook)
-        completions <- notebookRef.completionsAt(id, pos).handleErrorWith(err => IO(err.printStackTrace(System.err)).map(_ => Nil))
+        completions <- notebookRef.completionsAt(id, pos).handleErrorWith {
+          case RuntimeError(err) => IO.raiseError(err) // Since a completion request could start the Kernel, make sure to bubble these up
+          case err =>
+            IO(err.printStackTrace(System.err)).map(_ => Nil)
+        }
       } yield Stream.emit(req.copy(completions = ShortList(completions)))
 
     case req@ParametersAt(notebook, id, pos, _) =>

@@ -15,13 +15,11 @@ import coursier.core._
 import coursier.{Attributes, Cache, Dependency, Fetch, FileError, MavenRepository, Module, ModuleName, Organization, ProjectCache, Repository, Resolution}
 import polynote.config.{DependencyConfigs, RepositoryConfig, ivy, maven}
 import polynote.kernel.util.{DownloadableFileProvider, Publish}
-import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
+import polynote.kernel._
 import polynote.messages.{TinyList, TinyMap, TinyString}
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
-import scala.collection.JavaConverters._
-import scala.util.Try
 
 trait DependencyFetcher[F[_]] {
 
@@ -65,6 +63,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
             case Array(org, name, classifier, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier(classifier), ver)
             case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.default, Classifier(classifier), ver)
             case Array(org, name, typ, config, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration(config), Classifier(classifier), ver)
+            case _ => throw new Exception(s"Unable to parse dependency '$moduleStr'")
           }
           Dependency(Module(org, name), ver, config, Attributes(typ, classifier), coursierExclude, transitive = classifier.value != "all")
 
@@ -184,25 +183,26 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     run(resolution.process, 0)
   }
 
-  def splitDependencies(deps: List[DependencyConfigs]): (List[URI], List[DependencyConfigs]) = {
-    val (urlList, dependencies) = deps.flatMap { dep =>
+  def splitDependencies(deps: List[DependencyConfigs]): (List[DependencyConfigs], List[URI]) = {
+    val (dependencies, uriList) = deps.flatMap { dep =>
       dep.toList.collect {
         case (k, v) =>
-          val (dependencies, urls) = v.map { s =>
-            Either.fromTry {
-              Try(new URL(s)) // use URL because its parser is strict, even though we actually want URI
-                .map(_.toURI)
-                // we might still know how to handle the protocol even if URL doesn't
-                .recoverWith {
-                  case t: MalformedURLException if t.getMessage.contains("unknown protocol") => Try(new URI(s))
-                }
-            }.leftMap(_ => s) // on the left, strings are dependency coordinates
+          val (dependencies, uris) = v.map { s =>
+            val asURI = new URI(s)
+
+            Either.cond(
+              // Do we support this protocol (if any?)
+              DownloadableFileProvider.isSupported(asURI),
+              asURI,
+              s // an unsupported protocol might be a dependency
+            )
           }.separate
 
-          (urls, TinyMap(k -> TinyList(dependencies)))
+          (TinyMap(k -> TinyList(dependencies)), uris)
       }
     }.unzip
-    (urlList.flatten, dependencies)
+
+    (dependencies, uriList.flatten)
   }
 
   def fetchUrls(uris: List[URI], statusUpdates: Publish[IO, KernelStatusUpdate], chunkSize: Int = 8192)(implicit ctx: ExecutionContext): List[(String, IO[File])] = {
@@ -263,7 +263,7 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     statusUpdates: Publish[IO, KernelStatusUpdate]
   ): IO[List[(String, IO[File])]] = for {
     repos <- IO.fromEither(repos(repositories))
-    (urls, deps) = splitDependencies(dependencies)
+    (deps, urls) = splitDependencies(dependencies)
     downloadFiles = fetchUrls(urls, statusUpdates)
     res   = resolution(deps, exclusions)
     resolved <- resolveDependencies(res, Fetch.from(repos, Cache.fetch[IO]()), taskInfo, statusUpdates)
