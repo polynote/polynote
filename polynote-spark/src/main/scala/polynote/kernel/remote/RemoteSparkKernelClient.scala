@@ -17,7 +17,7 @@ import polynote.config.{DependencyConfigs, PolynoteConfig}
 import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.util.{KernelContext, Publish, ReadySignal}
 import Publish.enqueueToPublish
-import polynote.kernel.{KernelAPI, KernelBusyState, KernelStatusUpdate, SparkPolyKernel}
+import polynote.kernel._
 import polynote.messages.{KernelStatus, Message, Notebook, NotebookConfig, NotebookUpdate, ShortList, ShortString, Streaming}
 import polynote.server.{SparkKernelFactory, SparkKernelLaunching, StreamingHandleManager}
 import polynote.server.repository.NotebookRepository
@@ -26,6 +26,7 @@ import scodec.Codec
 import scodec.stream.decode
 import scodec.stream.encode
 
+import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 
 /**
@@ -39,7 +40,6 @@ class RemoteSparkKernelClient(
   private val executorService: ExecutorService = Executors.newCachedThreadPool()
   private val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executorService)
   protected implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(executorService))
-//  private implicit val channelGroup: AsynchronousChannelGroup = AsynchronousChannelGroup.withCachedThreadPool(executorService, 1)
 
   private val myAddress = InetAddress.getLocalHost.getHostAddress
   private def newChannel: IO[SocketChannel] = IO(java.nio.channels.SocketChannel.open(remoteAddress))
@@ -81,19 +81,27 @@ class RemoteSparkKernelClient(
     response => send(channel, response)
   }
 
-  private def handleRequests(kernel: KernelAPI[IO], notebookRef: Ref[IO, Notebook]): Pipe[IO, RemoteRequest, RemoteResponse] = _.map {
+  private def respondResultStream(reqId: Int, resultStream: Stream[IO, Result]) =
+    Stream.emit(StreamStarted(reqId)) ++ resultStream.mapChunks {
+      resultChunk => Chunk(ResultStreamElements(reqId, ShortList(resultChunk.toList)))
+    } ++ Stream.emit(StreamEnded(reqId))
+
+  private def handleRequests(
+    kernel: KernelAPI[IO],
+    notebookRef: Ref[IO, Notebook],
+    channel: SocketChannel
+  ): Pipe[IO, RemoteRequest, RemoteResponse] = _.map {
     case InitialNotebook(reqId, notebook) => Stream.eval(notebookRef.set(notebook).as(UnitResponse(reqId)))
-    case Shutdown(reqId) => Stream.eval(kernel.shutdown().as(UnitResponse(reqId))) ++ Stream.eval(shutdownSignal.complete).drain
-    case StartInterpreterFor(reqId, cell) => Stream.eval(kernel.startInterpreterFor(cell).as(UnitResponse(reqId)))
+    case Shutdown(reqId) =>
+      Stream.eval(kernel.shutdown().as(UnitResponse(reqId))) ++
+        Stream.eval(shutdownSignal.complete.guarantee(IO(channel.close()))).drain
+
+    case StartInterpreterFor(reqId, cell) =>
+      Stream.eval(kernel.startInterpreterFor(cell)).flatMap(respondResultStream(reqId, _))
+
     case QueueCell(reqId, cell) => Stream.eval(kernel.queueCell(cell)).flatMap {
       ioResultStream => Stream.emit(CellQueued(reqId)) ++
-        Stream.eval(ioResultStream).flatMap {
-          resultStream =>
-            Stream.emit(StreamStarted(reqId)) ++
-              resultStream.mapChunks {
-                resultChunk => Chunk(ResultStreamElements(reqId, ShortList(resultChunk.toList)))
-              } ++ Stream.emit(StreamEnded(reqId))
-        }
+        Stream.eval(ioResultStream).flatMap(respondResultStream(reqId, _))
     }
     case CompletionsAt(reqId, cell, pos) => Stream.eval(kernel.completionsAt(cell, pos).map(CompletionsResponse(reqId, _)))
     case ParametersAt(reqId, cell, pos) => Stream.eval(kernel.parametersAt(cell, pos).map(ParameterHintsResponse(reqId, _)))
@@ -128,10 +136,26 @@ class RemoteSparkKernelClient(
     nbConfig        = notebook.config.getOrElse(NotebookConfig.empty)
     notebookRef    <- Ref[IO].of(notebook)
     conf            = configFromNotebookConfig(nbConfig)
-    statusUpdates   = outputMessages.contramap[KernelStatusUpdate](update => MessageResponse(KernelStatus(notebook.path, update)))
+    statusUpdates   = outputMessages.contramap[KernelStatusUpdate](update => KernelStatusResponse(update))
     kernel         <- kernelFactory(conf).launchKernel(notebookRef.get _, statusUpdates)
     incoming        = incomingRequests(channel)
-    _              <- incoming.through(handleRequests(kernel, notebookRef)).compile.drain
+    _              <- incoming.through(handleRequests(kernel, notebookRef, channel)).interruptWhen(shutdownSignal()).compile.drain.guarantee(kernel.shutdown())
   } yield ExitCode.Success
 
+}
+
+object RemoteSparkKernelClient extends IOApp {
+
+  @tailrec
+  private def getArgs(remaining: List[String]): IO[InetSocketAddress] = remaining match {
+    case Nil => IO.raiseError(new IllegalArgumentException("Missing required argument --remoteAddress address:port"))
+    case "--remoteAddress" :: address :: _ => parseHostPort(address)
+    case _ :: rest => getArgs(rest)
+  }
+
+  def run(args: List[String]): IO[ExitCode] = for {
+    address <- getArgs(args)
+    client  <- IO(new RemoteSparkKernelClient(address))
+    result  <- client.run()
+  } yield result
 }

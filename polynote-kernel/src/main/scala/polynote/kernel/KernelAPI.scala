@@ -7,10 +7,13 @@ import io.circe.{Decoder, Encoder}
 import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, NotebookUpdate, ShortString, TinyList, TinyMap, TinyString}
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.codecs.{Discriminated, Discriminator, byte}
+import scodec.codecs.implicits._
 import scodec.{Attempt, Codec, Err}
 
 import scala.reflect.internal.util.Position
 import scala.util.Try
+
+import shapeless.cachedImplicit
 
 /**
   * The Kernel is expected to reference cells by their notebook ID; it must have a way to access the [[polynote.messages.Notebook]].
@@ -234,6 +237,7 @@ sealed trait KernelStatusUpdate
 
 object KernelStatusUpdate {
   implicit val discriminated: Discriminated[KernelStatusUpdate, Byte] = Discriminated(byte)
+  implicit val codec: Codec[KernelStatusUpdate] = cachedImplicit
 }
 
 abstract class KernelStatusUpdateCompanion[T <: KernelStatusUpdate](id: Byte) {

@@ -36,7 +36,17 @@ final case class LazyDataRepr private[polynote](handle: Int, dataType: DataType)
 
 object LazyDataRepr {
 
-  private[polynote] class Handle(val handle: Int, val dataType: DataType, lazyData: => ByteBuffer) {
+  trait Handle {
+    def handle: Int
+    def dataType: DataType
+    def isEvaluated: Boolean
+    def data: ByteBuffer
+    def release(): Unit = {
+      LazyDataRepr.handles.remove(handle)
+    }
+  }
+
+  private[polynote] class DefaultHandle(val handle: Int, val dataType: DataType, lazyData: => ByteBuffer) extends Handle {
     @volatile private var computedFlag: Boolean = false
 
     lazy val data: ByteBuffer = {
@@ -45,10 +55,6 @@ object LazyDataRepr {
     }
 
     def isEvaluated: Boolean = computedFlag
-
-    def release(): Unit = {
-      LazyDataRepr.handles.remove(handle)
-    }
   }
 
 
@@ -56,12 +62,11 @@ object LazyDataRepr {
   private val nextHandle: AtomicInteger = new AtomicInteger(0)
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
   private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
-
-  def apply(dataType: DataType, value: => ByteBuffer): LazyDataRepr = {
+  private[polynote] def fromHandle(mkHandle: Int => Handle): LazyDataRepr = {
     val handleId = nextHandle.getAndIncrement()
-    val handle = new Handle(handleId, dataType, value)
+    val handle = mkHandle(handleId)
     handles.put(handleId, handle)
-    val repr = LazyDataRepr(handleId, dataType)
+    val repr = LazyDataRepr(handleId, handle.dataType)
 
     // if the repr object gets GC'ed, we can let the handle go as well
     Cleaner.create(repr, new Runnable {
@@ -70,6 +75,8 @@ object LazyDataRepr {
 
     repr
   }
+
+  def apply(dataType: DataType, value: => ByteBuffer): LazyDataRepr = fromHandle(new DefaultHandle(_, dataType, value))
 
 }
 

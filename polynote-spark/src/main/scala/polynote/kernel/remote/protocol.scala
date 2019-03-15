@@ -11,7 +11,7 @@ import shapeless.{LabelledGeneric, cachedImplicit}
  * The protocol for communication with remote kernels. Essentially just an ADT version of KernelAPI, with some limitations
  */
 sealed trait RemoteRequest {
-  //def reqId: Int
+  def reqId: Int
 }
 
 abstract class RemoteRequestCompanion[T](msgTypeId: Byte) {
@@ -147,8 +147,8 @@ object ModifyStreamResponse extends RemoteResponseCompanion[ModifyStreamResponse
 final case class Announce(remoteAddress: String) extends RemoteResponse
 object Announce extends RemoteResponseCompanion[Announce](-1)
 
-final case class MessageResponse(message: Message) extends RemoteResponse
-object MessageResponse extends RemoteResponseCompanion[MessageResponse](-2)
+final case class KernelStatusResponse(message: KernelStatusUpdate) extends RemoteResponse
+object KernelStatusResponse extends RemoteResponseCompanion[KernelStatusResponse](-2)
 
 object RemoteResponse {
   implicit val discriminated: Discriminated[RemoteResponse, Byte] = Discriminated(byte)
