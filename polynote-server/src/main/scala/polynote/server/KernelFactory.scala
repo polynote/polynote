@@ -102,7 +102,7 @@ class IOKernelFactory(
         None
       case other =>
         // don't ignore other errors
-        throw new Exception(s"Error while downloading dependencies: ${other.getMessage}", other)
+        throw RuntimeError(new Exception(s"Error while downloading dependencies: ${other.getMessage}", other))
     }
   }
 

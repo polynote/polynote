@@ -29,11 +29,14 @@ trait DownloadableFileProvider {
 object DownloadableFileProvider {
   val providers: List[DownloadableFileProvider] = ServiceLoader.load(classOf[DownloadableFileProvider]).iterator.asScala.toList
 
-  def getFile(uri: URI): Option[DownloadableFile] = Option(uri.getScheme).flatMap { scheme =>
-    providers.collectFirst {
-      case provider if provider.protocols.contains(scheme) => provider.getFile(uri)
-    }.flatten
-  }
+  def isSupported(uri: URI): Boolean = Option(uri.getScheme).exists(providers.flatMap(_.protocols).contains)
+
+  def getFile(uri: URI): Option[DownloadableFile] =
+    for {
+      scheme <- Option(uri.getScheme)
+      provider <- providers.find(_.protocols.contains(scheme))
+      file <- provider.getFile(uri)
+    } yield file
 }
 
 class HttpFileProvider extends DownloadableFileProvider {
