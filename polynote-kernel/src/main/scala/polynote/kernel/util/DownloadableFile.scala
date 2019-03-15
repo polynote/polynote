@@ -17,9 +17,11 @@ trait DownloadableFileProvider {
 
   def provide: PartialFunction[URI, DownloadableFile]
 
-  object Protocol {
-    def unapply(arg: URI): Option[String] = {
-      Option(arg.getScheme)
+  def protocols: Seq[String]
+
+  object Supported {
+    def unapply(arg: URI): Option[URI] = {
+      Option(arg.getScheme).flatMap(scheme => protocols.find(_ == scheme)).map(_ => arg)
     }
   }
 }
@@ -27,12 +29,18 @@ trait DownloadableFileProvider {
 object DownloadableFileProvider {
   val providers: List[DownloadableFileProvider] = ServiceLoader.load(classOf[DownloadableFileProvider]).iterator.asScala.toList
 
-  def getFile(uri: URI): Option[DownloadableFile] = providers.flatMap(_.getFile(uri)).headOption
+  def getFile(uri: URI): Option[DownloadableFile] = Option(uri.getScheme).flatMap { scheme =>
+    providers.collectFirst {
+      case provider if provider.protocols.contains(scheme) => provider.getFile(uri)
+    }.flatten
+  }
 }
 
 class HttpFileProvider extends DownloadableFileProvider {
+  override def protocols: Seq[String] = Seq("http", "https")
+
   override def provide: PartialFunction[URI, DownloadableFile] = {
-    case uri @ Protocol("http" | "https") => HTTPFile(uri)
+    case Supported(uri) => HTTPFile(uri)
   }
 }
 
@@ -48,8 +56,10 @@ case class HTTPFile(uri: URI) extends DownloadableFile {
 }
 
 class LocalFileProvider extends DownloadableFileProvider {
+  override def protocols: Seq[String] = Seq("file")
+
   override def provide: PartialFunction[URI, DownloadableFile] = {
-    case uri @ Protocol("file") => LocalFile(uri)
+    case Supported(uri) => LocalFile(uri)
   }
 }
 

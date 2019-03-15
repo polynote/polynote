@@ -7,8 +7,10 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 class HadoopFileProvider extends DownloadableFileProvider {
+  override def protocols: Seq[String] = Seq("hdfs", "hftp", "s3")
+
   override def provide: PartialFunction[URI, DownloadableFile] = {
-    case uri @ Protocol("hdfs" | "hftp" | "s3") => HadoopFile(uri)
+    case Supported(uri) => HadoopFile(uri)
   }
 }
 
