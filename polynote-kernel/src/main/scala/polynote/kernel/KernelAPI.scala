@@ -4,7 +4,7 @@ import cats.effect.concurrent.Ref
 import fs2.Stream
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
-import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, ShortString, TinyList, TinyMap, TinyString}
+import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, NotebookUpdate, ShortString, TinyList, TinyMap, TinyString}
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
@@ -13,44 +13,116 @@ import scala.reflect.internal.util.Position
 import scala.util.Try
 
 /**
-  * The Kernel is expected to reference cells by their notebook ID; it will have a [[Ref]] to the [[polynote.messages.Notebook]].
+  * The Kernel is expected to reference cells by their notebook ID; it must have a way to access the [[polynote.messages.Notebook]].
   *
   * @see [[polynote.kernel.lang.LanguageInterpreter]]
   */
 trait KernelAPI[F[_]] {
 
+  /**
+    * Initialize this kernel
+    */
   def init: F[Unit]
 
+  /**
+    * Shutdown this kernel
+    */
   def shutdown(): F[Unit]
 
+  /**
+    * Start the language interpreter needed for the given cell
+    */
   def startInterpreterFor(id: CellID): F[Stream[F, Result]]
 
+  /**
+    * Run the given cell.
+    * @return A [[Stream]] of [[Result]] values which result from running the cell, inside of an [[F]] effect. The effect
+    *         represents the cell execution starting such that it can begin a stream of results.
+    */
   def runCell(id: CellID): F[Stream[F, Result]]
 
-  // Queue the cell - the outer F completes when the cell is queued; the inner cell completes when the cell is finished running
+  /**
+    * Queue the cell - the outer F represents the queueing of the cell, while the inner F represents the cell execution
+    * starting such that it can begin a stream of results.
+    *
+    * @return A [[Stream]] of [[Result]] values which result from running the cell, inside of two layers of [[F]] effect.
+    *         The outer layer represents queueing the cell, while the inner layer represents defining the cell's result
+    *         stream.
+    */
   def queueCell(id: CellID): F[F[Stream[F, Result]]]
 
+  /**
+    * Run multiple cells, combining their result streams into one stream of [[CellResult]] messages
+    */
   def runCells(ids: List[CellID]): F[Stream[F, CellResult]]
 
+  /**
+    * @return Completion candidates at the given position within the given cell
+    */
   def completionsAt(id: CellID, pos: Int): F[List[Completion]]
 
+  /**
+    * @return Optional parameter hints at the given position within the given cell
+    */
   def parametersAt(id: CellID, pos: Int): F[Option[Signatures]]
 
+  /**
+    * @return A list of currently defined [[ResultValue]]s in the notebook's most recent execution state
+    */
   def currentSymbols(): F[List[ResultValue]]
 
+  /**
+    * @return A list of currently incomplete tasks
+    */
   def currentTasks(): F[List[TaskInfo]]
 
+  /**
+    * @return A boolean indicating whether the kernel is currently idle. False if the kernel is currently doing some
+    *         work.
+    */
   def idle(): F[Boolean]
 
+  /**
+    * @return An optional [[KernelInfo]] structure, which surfaces general slowly-changing information about the kernel's state
+    *         (for example, the URL to the Spark UI for Spark-enabled kernels)
+    */
   def info: F[Option[KernelInfo]]
 
+  /**
+    * @return An array of up to `count` [[scodec.bits.ByteVector]] elements, in which each element represents one encoded
+    *         element from the given handle of the given type
+    */
   def getHandleData(handleType: HandleType, handle: Int, count: Int): F[Array[ByteVector32]]
 
+  /**
+    * Create a new [[StreamingDataRepr]] handle by performing [[TableOp]] operations on the given streaming handle. The
+    * given handle itself must be unaffected.
+    *
+    * @return If the operations make no changes, returns the given handle. If the operations are valid for the stream,
+    *         and it supports the modification, returns a new handle for the modified stream. If the stream doesn't support
+    *         modification, returns None. If the modifications are invalid or unsupported by the the stream, it may either
+    *         raise an error or return None.
+    */
   def modifyStream(handleId: Int, ops: List[TableOp]): F[Option[StreamingDataRepr]]
 
+  /**
+    * Release a handle. No further data will be available using [[getHandleData()]].
+    */
   def releaseHandle(handleType: HandleType, handleId: Int): F[Unit]
 
+  /**
+    * Cancel all the currently running tasks
+    */
   def cancelTasks(): F[Unit]
+
+  /**
+    * Notify the kernel of a notebook update. This may do nothing if the kernel already has access to the changing
+    * notebook state, but it will be invoked whenever a [[NotebookUpdate]] occurs; kernels can use this to keep a
+    * synchronized copy of the notebook if needed.
+    *
+    * @see [[NotebookUpdate.applyTo()]]
+    */
+  def updateNotebook(version: Int, update: NotebookUpdate): F[Unit]
 
 }
 

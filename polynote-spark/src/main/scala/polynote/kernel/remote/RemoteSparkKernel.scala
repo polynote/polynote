@@ -1,26 +1,50 @@
 package polynote.kernel.remote
 
 import java.net.InetSocketAddress
-import java.nio.channels.AsynchronousChannelGroup
+import java.nio.channels.{AsynchronousChannelGroup, AsynchronousServerSocketChannel, AsynchronousSocketChannel, SocketChannel}
 import java.util.concurrent.{ExecutorService, Executors}
 
+import cats.effect.concurrent.Deferred
 import cats.effect.{ContextShift, IO}
 import polynote.kernel._
 import fs2.io.tcp.Socket
-import polynote.messages.{ByteVector32, CellID, CellResult, HandleType}
+import polynote.config.PolynoteConfig
+import polynote.kernel.util.Publish
+import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Notebook, NotebookUpdate}
 import polynote.runtime.{StreamingDataRepr, TableOp}
 
 import scala.concurrent.ExecutionContext
 
-class RemoteSparkKernel() extends KernelAPI[IO] {
+class RemoteSparkKernel(
+  val statusUpdates: Publish[IO, KernelStatusUpdate],
+  getNotebook: () => IO[Notebook],
+  config: PolynoteConfig
+) extends KernelAPI[IO] {
   private val executorService: ExecutorService = Executors.newCachedThreadPool()
   private implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(executorService))
   private implicit val channelGroup: AsynchronousChannelGroup = AsynchronousChannelGroup.withCachedThreadPool(executorService, 1)
 
-  private val address = new InetSocketAddress(java.net.InetAddress.getLocalHost.getHostAddress, 0)
-  private val server = Socket.server(address)
+  private val server = AsynchronousServerSocketChannel.open(channelGroup).bind(new InetSocketAddress(java.net.InetAddress.getLocalHost.getHostAddress, 0))
+  private val address = server.getLocalAddress.asInstanceOf[InetSocketAddress]
+  private val clientConnection = Deferred.unsafe[IO, AsynchronousSocketChannel]
 
-  def init: IO[Unit] = ???
+  private val jarURL = s"http://${address.getAddress.getHostAddress}:${config.listen.port}/polynote-assembly.jar"
+  private val serverHostPort = s"${address.getAddress.getHostAddress}:${address.getPort}"
+
+  //scodec.stream.decode.many[RemoteResponse].decoder
+  //Socket.server[IO](address).flatMap(_.use(s => IO.pure(s.reads(8192, None)))).flatten.through(scodec.stream.decode.many[RemoteResponse])
+
+  def init: IO[Unit] = for {
+    _ <- statusUpdates.publish1(UpdatedTasks(TaskInfo("kernel", "Starting kernel process", "", TaskStatus.Running) :: Nil))
+    notebook      <- getNotebook()
+    futureChannel <- IO(server.accept())
+    sparkConfig = config.spark ++ notebook.config.flatMap(_.sparkConfig).getOrElse(Map.empty)
+    sparkArgs = sparkConfig.flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
+    command = Seq("spark-submit", "--class", classOf[RemoteSparkKernelClient].getName) ++ sparkArgs ++ Seq(jarURL, serverHostPort)
+    process <- IO(new ProcessBuilder(command: _*).inheritIO().start())
+    channel <- IO(futureChannel.get())
+
+  } yield ()
 
   def shutdown(): IO[Unit] = ???
 
@@ -51,4 +75,6 @@ class RemoteSparkKernel() extends KernelAPI[IO] {
   def releaseHandle(handleType: HandleType, handleId: Int): IO[Unit] = ???
 
   def cancelTasks(): IO[Unit] = ???
+
+  def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] = ???
 }

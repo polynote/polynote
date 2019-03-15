@@ -17,7 +17,7 @@ import polynote.server.repository.ipynb.IPythonNotebookRepository
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
-trait Server extends IOApp with Http4sDsl[IO] {
+trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
 
   // TODO: obviously, clean this up
   private val indexFile = "/index.html"
@@ -25,16 +25,6 @@ trait Server extends IOApp with Http4sDsl[IO] {
   private implicit val executionContext: ExecutionContext = ExecutionContext.global  // TODO: use a real one
 
   protected val logger: Logger = getLogger
-  protected val dependencyFetcher = new CoursierFetcher()
-
-  protected val interpreters: Map[String, LanguageInterpreter.Factory[IO]] =
-    ServiceLoader.load(classOf[LanguageInterpreterService]).iterator.asScala.toSeq
-      .sortBy(_.priority)
-      .foldLeft(Map.empty[String, LanguageInterpreter.Factory[IO]]) {
-        (accum, next) => accum ++ next.interpreters
-      }
-
-  protected def kernelFactory(config: PolynoteConfig): KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters, config)
 
   def serveFile(path: String, req: Request[IO], watchUI: Boolean)(implicit syncIO: Sync[IO]): IO[Response[IO]] = {
     if (watchUI) {

@@ -162,6 +162,14 @@ sealed trait NotebookUpdate extends Message {
     case _ => this
 
   }
+
+  def applyTo(notebook: Notebook): Notebook = this match {
+    case InsertCell(_, _, _, cell, after) => notebook.insertCell(cell, after)
+    case DeleteCell(_, _, _, id)          => notebook.deleteCell(id)
+    case UpdateCell(_, _, _, id, edits)   => notebook.editCell(id, edits)
+    case UpdateConfig(_, _, _, config)    => notebook.copy(config = Some(config))
+    case SetCellLanguage(_, _, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
+  }
 }
 
 object NotebookUpdate {

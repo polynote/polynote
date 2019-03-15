@@ -254,6 +254,7 @@ class PolyKernel private[kernel] (
     taskManager.cancelAllQueued *> IO(symbolTable.kernelContext.interrupt())
   }
 
+  override def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] = IO.unit
 }
 
 object PolyKernel {
