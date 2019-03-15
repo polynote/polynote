@@ -14,11 +14,6 @@ import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
 
 object SparkServer extends Server {
-  // TODO: If we ever want to support more than the default + hadoop URL schemes, we will need to do something else.
-  //       We might consider defining a custom filesystem provider instead.
-  //       See: https://docs.oracle.com/javase/8/docs/technotes/guides/io/fsp/filesystemprovider.html
-  URL.setURLStreamHandlerFactory(new FsUrlStreamHandlerFactory())
-
   override protected def kernelFactory(config: PolynoteConfig): KernelFactory[IO] = new IOKernelFactory(Map("scala" -> dependencyFetcher), interpreters, config) {
     override protected def mkKernel(
       getNotebook: () => IO[Notebook],

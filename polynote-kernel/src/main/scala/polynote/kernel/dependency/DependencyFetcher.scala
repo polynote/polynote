@@ -2,7 +2,7 @@ package polynote.kernel.dependency
 
 import java.io._
 import java.util.concurrent.{ExecutorService, Executors}
-import java.net.URL
+import java.net.{MalformedURLException, URI, URL}
 import java.nio.file.{Files, Paths}
 
 import cats.Parallel
@@ -14,12 +14,13 @@ import coursier.util.{Monad, Schedulable}
 import coursier.core._
 import coursier.{Attributes, Cache, Dependency, Fetch, FileError, MavenRepository, Module, ModuleName, Organization, ProjectCache, Repository, Resolution}
 import polynote.config.{DependencyConfigs, RepositoryConfig, ivy, maven}
-import polynote.kernel.util.Publish
+import polynote.kernel.util.{DownloadableFileProvider, Publish}
 import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 import polynote.messages.{TinyList, TinyMap, TinyString}
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
+import scala.collection.JavaConverters._
 import scala.util.Try
 
 trait DependencyFetcher[F[_]] {
@@ -184,46 +185,74 @@ class CoursierFetcher extends DependencyFetcher[IO] {
     run(resolution.process, 0)
   }
 
-  def splitDependencies(deps: List[DependencyConfigs]): (List[URL], List[DependencyConfigs]) = {
+  def splitDependencies(deps: List[DependencyConfigs]): (List[URI], List[DependencyConfigs]) = {
     val (urlList, dependencies) = deps.flatMap { dep =>
       dep.toList.collect {
         case (k, v) =>
-          val (dependencies, urls) = v.map(s => Either.fromTry(Try(new URL(s))).leftMap(_ => s)).separate
+          val (dependencies, urls) = v.map { s =>
+            Either.fromTry {
+              Try(new URL(s)) // use URL because its parser is strict, even though we actually want URI
+                .map(_.toURI)
+                // we might still know how to handle the protocol even if URL doesn't
+                .recoverWith {
+                  case t: MalformedURLException if t.getMessage.contains("unknown protocol") => Try(new URI(s))
+                }
+            }.leftMap(_ => s) // on the left, strings are dependency coordinates
+          }.separate
+
           (urls, TinyMap(k -> TinyList(dependencies)))
       }
     }.unzip
     (urlList.flatten, dependencies)
   }
 
-  def fetchUrls(urls: List[URL], statusUpdates: Publish[IO, KernelStatusUpdate], chunkSize: Int = 8192)(implicit ctx: ExecutionContext): List[(String, IO[File])] = {
+  def fetchUrls(uris: List[URI], statusUpdates: Publish[IO, KernelStatusUpdate], chunkSize: Int = 8192)(implicit ctx: ExecutionContext): List[(String, IO[File])] = {
 
-    // cheating! we could probably provide real progress if we moved to the filesystem API
-    def fakeProgress(s: fs2.Stream[IO, Unit], url: String): fs2.Stream[IO, Int] = {
-      val max: Double = 1.5 * 1024 * 1024 / chunkSize // looks ok, really big jars might wrap around
-      s.scan(0)((n, _) => n + 1).evalTap { i =>
-        statusUpdates.publish1(UpdatedTasks(TaskInfo(url.toString, s"Downloading $url", url.toString, TaskStatus.Running, (i / max).toByte) :: Nil))
-      }
+    def withProgress(s: fs2.Stream[IO, Byte], uri: String, fileSize: Long): fs2.Stream[IO, Byte] = {
+      val size = if (fileSize > 0) fileSize else 300 * 1024 * 1024 // this is roughly the size of the largest uber jars we have
+
+      // is there a better way to do this? seems more convoluted than necessary but I couldn't quite get there...
+      // in practice all this gobbledygook doesn't seem to slow things down though, so that's good.
+      s.chunks
+        .mapAccumulate(0)((n, c) => (n + c.size, c)) // carry along the size of the chunks so far
+        .evalTap { case (i, _) =>
+          statusUpdates.publish1(UpdatedTasks(TaskInfo(uri, s"Downloading $uri", uri, TaskStatus.Running, (i.toDouble * 255 / size).toByte) :: Nil))
+        }.flatMap { case (_, c) =>
+          fs2.Stream.chunk(c) // this looks like the only way to re-chunk the Stream...
+        }
     }
 
-    urls.map { url =>
-      url.toString -> IO(url.openStream).flatMap { is =>
+    uris.map { uri =>
+      val dlIO = IO.fromEither(Either.fromOption(DownloadableFileProvider.getFile(uri), new Exception(s"Unable to find provider for uri $uri"))).flatMap { file =>
+        // try to short circuit - maybe it's on the local FS?
+        val inputAsFile = Paths.get(uri.getPath).toFile
+        // if not, maybe it's already been cached?
+        val pathParts = Seq(uri.getScheme, uri.getAuthority, uri.getPath).flatMap(Option(_)) // URI methods sometimes return `null`, great.
+        val cacheFile = Cache.default.toPath.resolve(Paths.get(pathParts.head, pathParts.tail: _*)).toFile
 
-        val file = Cache.default.toPath.resolve(Paths.get(url.getProtocol, url.getAuthority, url.getPath)).toFile
-
-        if (file.exists()) {
-          IO.pure(file)
+        if (inputAsFile.exists()) {
+          IO.pure(inputAsFile)
+        } else if (cacheFile.exists()) {
+          IO.pure(cacheFile)
         } else {
-          for {
-            _ <- IO(Files.createDirectories(file.toPath.getParent))
-            os = new FileOutputStream(file)
+          // ok we actually have to fetch it I guess
+          (for {
+            _ <- IO(Files.createDirectories(cacheFile.toPath.getParent))
+            os = new FileOutputStream(cacheFile)
             // is it overkill to use fs2 steams for this...?
-            fs2IS = fs2.io.readInputStream[IO](IO(is), chunkSize, ctx)
+            fs2IS = fs2.io.readInputStream[IO](file.openStream, chunkSize, ctx)
             fs2OS = fs2.io.writeOutputStream[IO](IO(os), ctx)
-            copyingStream = fs2IS.through(fs2OS)
-            _ <- fakeProgress(copyingStream, url.toString).compile.drain
-          } yield file
+            fileSize <- file.size
+            _ <- withProgress(fs2IS, uri.toString, fileSize).through(fs2OS).compile.drain
+          } yield cacheFile).handleErrorWith { t: Throwable =>
+            IO.raiseError(t).guarantee(IO {
+              Files.delete(cacheFile.toPath) // clean up
+            })
+          }
         }
       }
+
+      uri.toString -> dlIO
     }
   }
 
