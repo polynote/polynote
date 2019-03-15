@@ -12,6 +12,7 @@ import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel._
+import polynote.kernel.dependency.CoursierFetcher.FileErrorException
 import polynote.kernel.util.{Publish, ReadySignal}
 import polynote.messages.{Notebook, NotebookConfig, TinyMap}
 
@@ -95,8 +96,15 @@ class IOKernelFactory(
 
   // TODO: ignoring download errors for now, until the weirdness of resolving nonexisting artifacts is solved
   private def downloadFailed(err: Throwable): IO[Option[(String, String, File)]] = IO {
-    System.err.println(err.getMessage)
-  }.map(_ => None)
+    err match {
+      case _: FileErrorException =>
+        System.err.println(s"Ignoring Coursier download error: ${err.getMessage}")
+        None
+      case other =>
+        // don't ignore other errors
+        throw RuntimeError(new Exception(s"Error while downloading dependencies: ${other.getMessage}", other))
+    }
+  }
 
   private def downloadDependencies(deps: List[(String, String, IO[File])], taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]) = {
     val completedCounter = Ref.unsafe[IO, Int](0)

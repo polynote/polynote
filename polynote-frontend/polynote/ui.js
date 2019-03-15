@@ -389,10 +389,10 @@ export class NotebookConfigUI extends UIEventTarget {
             div(['content'], [
                 div(['notebook-dependencies'], [
                     h3([], ['Dependencies']),
-                    para([], ['Specify Maven coordinates for your dependencies, i.e. ', span(['pre'], ['org.myorg:package-name_2.11:1.0.1'])]),
+                    para([], ['Specify Maven coordinates for your dependencies, e.g. ', span(['pre'], ['org.myorg:package-name_2.11:1.0.1']), ', or URLs like ', span(['pre'], ['s3://path/to/my.jar'])]),
                     this.dependencyContainer = div(['dependency-list'], [
                         this.dependencyRowTemplate = div(['dependency-row'], [
-                            textbox(['dependency'], 'Dependency coordinate'),
+                            textbox(['dependency'], 'Dependency coordinate or URL'),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
                                 this.addDependency(evt.currentTarget.parentNode.querySelector('.dependency').value);
                                 this.dependencyRowTemplate.querySelector('.dependency').value = '';
