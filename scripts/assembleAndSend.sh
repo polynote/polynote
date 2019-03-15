@@ -7,6 +7,7 @@ source ${DIR}/shared.sh
 
 pushd ${DIR}/../ # back to root
     pushd polynote-frontend
+        npm install
         npm run build
     popd
 

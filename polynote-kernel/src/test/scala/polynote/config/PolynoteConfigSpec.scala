@@ -82,6 +82,4 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     )
 
   }
-
-
 }
