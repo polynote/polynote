@@ -96,10 +96,13 @@ class SparkPolyKernel(
   private lazy val sparkListener = new KernelListener(statusUpdates)
 
   private lazy val session: SparkSession = {
-    val nbConfig = getNotebook().unsafeRunSync().config
+    val nbSparkConfig = getNotebook().unsafeRunSync().config.flatMap(_.sparkConfig)
     val conf = org.apache.spark.repl.Main.conf
 
-    nbConfig.flatMap(_.sparkConfig).getOrElse(config.spark).foreach {
+    // we set everything that is in the notebook spark config and use the server spark config as a backup
+    val sparkConfig = config.spark ++ nbSparkConfig.getOrElse(Map.empty)
+
+    sparkConfig.foreach {
       case (k, v) => conf.set(k, v)
     }
 
