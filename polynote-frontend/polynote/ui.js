@@ -618,7 +618,7 @@ export class NotebookConfigUI extends UIEventTarget {
         sparkConfigRows.forEach(row => {
             const k = row.querySelector('.spark-config-key').value.trim();
             const v = row.querySelector('.spark-config-val').value.trim();
-            if (k && v) sparkConfig[k] = v;
+            if (k) sparkConfig[k] = v;
         });
 
         return new messages.NotebookConfig(
