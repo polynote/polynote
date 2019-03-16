@@ -178,6 +178,11 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
   def apply(ctx: KernelContext, name: String, value: Any, sourceCell: CellID): ResultValue =
     apply(ctx, name, ctx.inferType(value), value, sourceCell)
 
+  def apply(ctx: KernelContext, name: String, reprs: TinyList[ValueRepr], typ: Universe#Type, value: Any, sourceCell: CellID): ResultValue = {
+    val (_, typeStr) = toGlobalType(ctx, typ)
+    ResultValue(name, typeStr, reprs, sourceCell, value, typ)
+  }
+
 
   // manual codec - we'll never encode nor decode `value` nor `scalaType`.
   /*

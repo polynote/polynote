@@ -8,6 +8,7 @@ import fs2.concurrent.{SignallingRef, Topic}
 import polynote.kernel.{KernelStatusUpdate, ResultValue}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.messages.CellID
+import polynote.runtime.ValueRepr
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
@@ -29,7 +30,7 @@ final class RuntimeSymbolTable(
 
   private val newSymbols: Topic[IO, RuntimeValue] =
     Topic[IO, RuntimeValue]{
-      val kernel = RuntimeValue("kernel", polynote.runtime.Runtime, global.typeOf[polynote.runtime.Runtime.type], None, -1)
+      val kernel = RuntimeValue("kernel", polynote.runtime.Runtime, None, -1)
       // make sure this is actually in the symbol table.
       // TODO: is there a better way to set this value?
       putValue(kernel)
@@ -64,7 +65,8 @@ final class RuntimeSymbolTable(
   }
 
   def publish(source: LanguageInterpreter[IO], sourceCellId: CellID)(name: String, value: Any, staticType: Option[global.Type]): IO[Unit] = {
-    val rv = RuntimeValue(name, value, staticType.getOrElse(kernelContext.inferType(value)), Some(source), sourceCellId)
+    val typ = staticType.getOrElse(kernelContext.inferType(value))
+    val rv = RuntimeValue(name, value, kernelContext.reprsOf(value, typ), typ, Some(source), sourceCellId)
     for {
       _    <- IO(putValue(rv))
       subs <- newSymbols.subscribers.head.compile.lastOrError
@@ -95,6 +97,7 @@ final class RuntimeSymbolTable(
   sealed case class RuntimeValue(
     name: String,
     value: Any,
+    reprs: List[ValueRepr],
     scalaTypeHolder: global.Type,
     source: Option[LanguageInterpreter[IO]],
     sourceCellId: CellID
@@ -109,12 +112,12 @@ final class RuntimeSymbolTable(
     // don't need to hash everything to determine hash code; name collisions are less common than hash comparisons
     override def hashCode(): Int = name.hashCode()
 
-    def toResultValue: ResultValue = ResultValue(kernelContext, name, scalaTypeHolder, value, sourceCellId)
+    def toResultValue: ResultValue = ResultValue(kernelContext, name, reprs, scalaTypeHolder, value, sourceCellId)
   }
 
   object RuntimeValue {
     def apply(name: String, value: Any, source: Option[LanguageInterpreter[IO]], sourceCell: CellID): RuntimeValue = RuntimeValue(
-      name, value, kernelContext.inferType(value), source, sourceCell
+      name, value, kernelContext.reprsOf(value, kernelContext.inferType(value)), kernelContext.inferType(value), source, sourceCell
     )
 
     def fromSymbolDecl(symbolDecl: SymbolDecl[IO]): Option[RuntimeValue] = {
@@ -126,7 +129,7 @@ final class RuntimeSymbolTable(
     def fromResultValue(resultValue: ResultValue, source: LanguageInterpreter[IO]): Option[RuntimeValue] = resultValue match {
       case ResultValue(_, _, _, _, Unit, _) => None
       case ResultValue(name, typeName, reprs, sourceCell, value, scalaType) =>
-        Some(apply(name, value, scalaType.asInstanceOf[global.Type], Option(source), sourceCell))
+        Some(apply(name, value, reprs, scalaType.asInstanceOf[global.Type], Option(source), sourceCell))
     }
   }
 
