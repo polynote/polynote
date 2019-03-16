@@ -207,6 +207,11 @@ export class KernelInfoUI {
         this.toggleVisibility()
     }
 
+    clearInfo() {
+        this.info.clear();
+        this.toggleVisibility()
+    }
+
     toggleVisibility() {
         if (this.info.size === 0) {
             this.el.style.display = "none";
@@ -341,7 +346,7 @@ export class KernelUI extends UIEventTarget {
         this.socket = socket;
         this.el = div(['kernel-ui', 'ui-panel'], [
             h2([], [
-                span(['status'], ['●']),
+                this.status = span(['status'], ['●']),
                 'Kernel',
                 span(['buttons'], [
                   iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect()),
@@ -375,6 +380,10 @@ export class KernelUI extends UIEventTarget {
         this.el.classList.remove('busy', 'idle', 'dead', 'disconnected');
         if (state === 'busy' || state === 'idle' || state === 'dead' || state === 'disconnected') {
             this.el.classList.add(state);
+            this.status.title = state;
+            if (state === 'dead') {
+                this.info.clearInfo();
+            }
         } else {
             throw "State must be one of [busy, idle, dead, disconnected]";
         }
@@ -979,9 +988,9 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.kernelUI.addEventListener('Connect', evt => {
-           if (!this.socket.isOpen) {
-               this.socket.reconnect();
-           }
+            if (!this.socket.isOpen) {
+                this.socket.reconnect();
+            }
         });
 
         this.kernelUI.addEventListener('StartKernel', evt => {
