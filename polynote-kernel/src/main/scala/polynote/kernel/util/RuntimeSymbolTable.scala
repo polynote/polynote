@@ -28,7 +28,7 @@ final class RuntimeSymbolTable(
 
   private val cellIds: mutable.TreeSet[CellID] = new mutable.TreeSet()
 
-  private val newSymbols: Topic[IO, RuntimeValue] = {
+  private val newSymbols: Topic[IO, RuntimeValue] =
     Topic[IO, RuntimeValue]{
       // note: IntelliJ doesn't like this but it compiles fine...
       val kernel = RuntimeValue(
@@ -43,7 +43,7 @@ final class RuntimeSymbolTable(
       putValue(kernel)
       kernel
     }.unsafeRunSync()
-  }
+
 
   private val awaitingDelivery = SignallingRef[IO, Int](0).unsafeRunSync()
 
