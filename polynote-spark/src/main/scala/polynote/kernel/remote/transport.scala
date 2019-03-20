@@ -308,7 +308,7 @@ object SocketTransport {
       }
     }
 
-    def close(): IO[Unit] = IO(socketChannel.close())
+    def close(): IO[Unit] = IO(outgoingLengthBuffer.synchronized(socketChannel.close()))
 
     val bitVectors: Stream[IO, BitVector] =
       Stream.repeatEval(IO(read())).unNone

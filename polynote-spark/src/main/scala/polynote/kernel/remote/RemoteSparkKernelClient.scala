@@ -71,6 +71,7 @@ class RemoteSparkKernelClient(
     _ <- IO(logger.info("Shutting down"))
     _ <- kernel.shutdown()
     _ <- transport.sendResponse(UnitResponse(reqId))
+    _ <- IO(logger.info("Kernel shutdown complete; closing transport"))
     _ <- shutdownSignal.complete
     _ <- transport.close()
   } yield ()

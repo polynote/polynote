@@ -159,7 +159,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
       runTest {
         val transport = new SocketTransport(new LocalTestDeploy(mockKernelFactory))
         for {
-          currentNotebook   <- Ref[IO].of(initialNotebook)
+          currentNotebook <- Ref[IO].of(initialNotebook)
           kernel <- RemoteSparkKernel(statusUpdates, currentNotebook.get _, config, transport)
 
           results <- kernel.runCell(2.toShort).flatMap(_.compile.toList)
