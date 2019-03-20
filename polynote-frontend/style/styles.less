@@ -39,6 +39,8 @@
 @toolbar-height: 68px;
 @cell-margin-width: 55pt;
 @cell-margin-width-plus-padding: 65pt;
+@tab-view-height: 1.5em;
+@tab-view-height-plus-padding: 2.5em;
 
 body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
@@ -319,6 +321,30 @@ body {
       margin-left: @cell-margin-width;
       min-height: 3em;
     }
+
+    .exec-info {
+      text-align: right;
+      font-style: italic;
+      padding: 4px;
+      border-bottom: 1px solid @ui-border;
+      border-right: 1px solid @ui-border;
+      //border-right: 2pt solid transparent;
+      display: none;
+
+      &.output {
+        display: block;
+      }
+
+      .exec-timestamp::before {
+        content: "Execution on ";
+      }
+      .exec-timestamp::after {
+        content: " took "
+      }
+      .exec-duration::after {
+        content: "ms"
+      }
+    }
   }
 
   &.code-cell .cell-input .cell-input-editor {
@@ -357,6 +383,10 @@ body {
       padding: 1em;
       border: none;
       min-height: 1em;
+    }
+
+    .cell-output-container {
+      display: none;
     }
 
     /** Replicate github doc style **/
@@ -1057,29 +1087,23 @@ body {
 
   .cell-output {
     position: relative;
-    display: none;
 
-    &.errors, &.output {
-      display: block;
+    .errors, .output {
+      display: block !important;
     }
 
-    .cell-output-tools {
-      display: none;
-    }
-
-    .out-ident {
-      color: #D84315;
+    .output[mime-type='text/plain'] {
+      white-space: pre;
+      line-height: 1.5;
       font-family: @code-fonts;
       font-size: 11pt;
-      position: absolute;
-      left: 0;
-      width: @cell-margin-width;
-      padding: 0 4px;
-      text-align: right;
-      box-sizing: border-box;
     }
 
-    .cell-output-display::before {
+    .output[rel='stderr'] {
+      color: #884444
+    }
+
+    .cell-output-tools::before {
       content: " ";
       position: absolute;
       top: 0;
@@ -1093,14 +1117,73 @@ body {
       box-sizing: border-box;
     }
 
-    .cell-output-display {
-      font-size: 11pt;
-      padding: .5em .5em .5em @cell-margin-width-plus-padding;
+    .cell-output-tools {
+      display: none;
+      padding: 0.1em 0.1em 0.1em @cell-margin-width;
       border-right: 1px solid @ui-border;
       border-bottom: 1px solid @ui-border;
+      resize: vertical;
+      position: relative;
+      min-height: @tab-view-height;
+
+
+      .tab-container {
+        border-right: 0px;
+      }
+
+      .repr-ui-content .output {
+        padding: 0.5em 1em;
+      }
+
+    }
+
+    .out-ident {
+      color: #D84315;
+      font-family: @code-fonts;
+      font-size: 11pt;
+      position: absolute;
+      left: 0;
+      top: 6px;
+      width: @cell-margin-width;
+      padding: 0 4px;
+      text-align: right;
+      box-sizing: border-box;
+    }
+
+    .cell-output-container::before {
+      content: " ";
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: @cell-margin-width;
+      border-left: 1px solid @ui-border;
+      border-right: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
+      background: @ui-background;
+      box-sizing: border-box;
+    }
+
+    .cell-output-display {
+      display: none;
+      padding-top: 0.5em;
+      padding-bottom: 0.5em;
+      border-right: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
+      left: @cell-margin-width;
+      width: calc(100% - @cell-margin-width - 1px);
       overflow: auto;
       resize: vertical;
       position: relative;
+
+      .output {
+        padding-left: 1em;
+      }
+
+      .errors {
+        padding-left: 1em;
+        padding-right: 1em;
+      }
 
       ul.stack-trace {
         margin: 0 0 0 .5em;
@@ -1141,16 +1224,6 @@ body {
           text-decoration: underline;
           cursor: pointer;
         }
-      }
-
-      .output[mime-type='text/plain'] {
-        white-space: pre;
-        line-height: 1.5;
-        font-family: @code-fonts;
-      }
-
-      .output[rel='stderr'] {
-        color: #884444
       }
     }
   }

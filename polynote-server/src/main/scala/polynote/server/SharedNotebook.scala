@@ -285,7 +285,7 @@ class IOSharedNotebook(
     def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = get.flatMap {
       notebook =>
         notebook.getCell(id).filterNot(_.language == "text").fold[IO[IO[Stream[IO, Result]]]](IO.pure(IO.pure(Stream.empty))) {
-          _ =>
+          cell =>
             withInterpreterLaunch(id) {
               kernel =>
                 val buf = new WindowBuffer[Result](1000)
@@ -305,7 +305,14 @@ class IOSharedNotebook(
                       }.onFinalize {
                         // write the buffered results to the notebook
                         ref.update {
-                          case (ver, nb) => ver -> nb.setResults(id, buf.toList)
+                          case (ver, nb) =>
+                            val bufList = buf.toList
+                            val execInfo = bufList.collect {
+                              case executionInfo: ExecutionInfo => executionInfo
+                            }.lastOption
+                            val newMetadata = cell.metadata.copy(executionInfo = execInfo)
+
+                            ver -> nb.setResults(id, bufList).setMetadata(id, newMetadata)
                         }
                       }
                   }.handleErrorWith(ErrorResult.toStream)

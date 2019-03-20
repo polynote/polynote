@@ -8,6 +8,7 @@ import {
 import { Result, KernelErrorWithCause } from './result.js'
 import {float64, Pair} from "./codec";
 import {StreamingDataRepr} from "./value_repr";
+import {ExecutionInfo} from "./result";
 
 export function isEqual(a, b) {
     if (a === b)
@@ -81,18 +82,19 @@ LoadNotebook.codec = combined(shortStr).to(LoadNotebook);
 
 export class CellMetadata {
     static unapply(inst) {
-        return [inst.disableRun, inst.hideSource, inst.hideOutput];
+        return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.executionInfo];
     }
 
-    constructor(disableRun, hideSource, hideOutput) {
+    constructor(disableRun, hideSource, hideOutput, executionInfo) {
         this.disableRun = disableRun;
         this.hideSource = hideSource;
         this.hideOutput = hideOutput;
+        this.executionInfo = executionInfo;
         Object.freeze(this);
     }
 }
 
-CellMetadata.codec = combined(bool, bool, bool).to(CellMetadata);
+CellMetadata.codec = combined(bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
 
 export class NotebookCell {
     static unapply(inst) {
@@ -104,7 +106,7 @@ export class NotebookCell {
         this.language = language;
         this.content = content || '';
         this.results = results || [];
-        this.metadata = metadata || new CellMetadata(false, false, false);
+        this.metadata = metadata || new CellMetadata(false, false, false, null);
         Object.freeze(this);
     }
 }

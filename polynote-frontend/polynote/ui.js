@@ -14,6 +14,7 @@ import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from '
 import { prefs } from './prefs.js'
 import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
+import {ExecutionInfo} from "./result";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -1143,6 +1144,8 @@ export class NotebookUI extends UIEventTarget {
                         cell.addOutput(result.contentType, result.content);
                     } else if (result instanceof ClearResults) {
                         cell.clearResult();
+                    } else if (result instanceof ExecutionInfo) {
+                        cell.setExecutionInfo(result);
                     } else if (result instanceof ResultValue) {
                         cell.addResult(result);
                     }
@@ -1194,10 +1197,10 @@ export class NotebookUI extends UIEventTarget {
                 switch (cellInfo.language) {
                     case 'text':
                     case 'markdown':
-                        cell = new TextCell(cellInfo.id, cellInfo.content, path);
+                        cell = new TextCell(cellInfo.id, cellInfo.content, path, cellInfo.metadata);
                         break;
                     default:
-                        cell = new CodeCell(cellInfo.id, cellInfo.content, cellInfo.language, path);
+                        cell = new CodeCell(cellInfo.id, cellInfo.content, cellInfo.language, path, cellInfo.metadata);
                 }
 
                 this.cellUI.addCell(cell);

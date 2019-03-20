@@ -50,9 +50,9 @@ export class DataReader {
 
     // NOTE: JavaScript can't represent all 64-bit integers...
     readInt64() {
-        const hi = this.readInt32();
-        const lo = this.readInt32();
-        return (hi << 32) | lo;
+        const result = this.buffer.getBigInt64(this.offset);
+        this.offset += 8;
+        return result;
     }
 
     readFloat32() {
@@ -147,6 +147,12 @@ export class DataWriter {
         this.ensureBufSize(this.buffer.byteLength + 4);
         this.dataView.setInt32(this.offset, value);
         this.offset += 4;
+    }
+
+    writeInt64(value) {
+        this.ensureBufSize(this.buffer.byteLength + 8);
+        this.dataView.setBigInt64(this.offset, value);
+        this.offset += 8;
     }
 
     writeFloat32(value) {
@@ -272,6 +278,11 @@ export const uint32 = Object.freeze({
 export const int32 = Object.freeze({
     encode: (value, writer) => writer.writeInt32(value),
     decode: (reader) => reader.readInt32()
+});
+
+export const int64 = Object.freeze({
+    encode: (value, writer) => writer.writeInt64(value),
+    decode: (reader) => reader.readInt64()
 });
 
 export const float32 = Object.freeze({

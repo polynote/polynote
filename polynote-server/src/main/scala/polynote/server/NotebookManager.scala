@@ -2,6 +2,7 @@ package polynote.server
 
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import org.log4s.{Logger, getLogger}
 
 import cats.Monad
 import cats.effect.{ContextShift, Fiber, IO}
@@ -39,8 +40,13 @@ class IONotebookManager(
   private val notebooks = new ConcurrentHashMap[String, SharedNotebook[IO]]
   private val loadingNotebook = Semaphore[IO](1).unsafeRunSync()
 
+  protected val logger: Logger = getLogger
+
   private def writeChanges(notebook: SharedNotebook[IO]): IO[Fiber[IO, Unit]] = notebook.versions.map(_._2).evalMap {
     updated => repository.saveNotebook(notebook.path, updated)
+  }.handleErrorWith { err =>
+    // TODO: Can we recover from this error? Or at least bubble it up to the UI?
+    fs2.Stream.eval(IO(logger.error(err)("Error while writing notebook")))
   }.compile.drain.start
 
   private def loadNotebook(path: String): IO[SharedNotebook[IO]] = loadingNotebook.acquire.bracket { _ =>

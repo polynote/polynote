@@ -7,6 +7,7 @@ import {UIEvent, UIEventTarget} from "./ui_event.js"
 import { default as Diff } from './diff.js'
 import {ReprUI} from "./repr_ui";
 import {details} from "./tags";
+import {ExecutionInfo} from "./result";
 
 const JsDiff = new Diff();
 
@@ -82,11 +83,12 @@ export class ParamHintRequest extends CellEvent {
 }
 
 export class Cell extends UIEventTarget {
-    constructor(id, content, language, path) {
+    constructor(id, content, language, path, metadata) {
         super(id, content, language);
         this.id = id;
         this.language = language;
         this.path = path;
+        this.metadata = metadata;
         if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
 
         this.container = div(['cell-container', language], [
@@ -95,11 +97,16 @@ export class Cell extends UIEventTarget {
                     iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
-                this.editorEl = div(['cell-input-editor'], [])
+                this.editorEl = div(['cell-input-editor'], []),
+                this.execInfoEl = div(["exec-info"], []),
             ]),
             this.cellOutput = div(['cell-output'], [
-                this.cellOutputTools = div(['cell-output-tools'], []),
-                this.cellOutputDisplay = div(['cell-output-display'], [])
+                div(['cell-output-container'], [
+                    this.cellOutputDisplay = div(['cell-output-display'], []),
+                ]),
+                this.cellOutputTools = div(['cell-output-tools'], [
+                    this.resultTabs = div(["result-tabs"], [])
+                ]),
             ])
         ]).withId(`Cell${id}`);
 
@@ -190,8 +197,8 @@ function errorDisplay(error, currentFile, maxDepth, nested) {
 }
 
 export class CodeCell extends Cell {
-    constructor(id, content, language, path) {
-        super(id, content, language, path);
+    constructor(id, content, language, path, metadata) {
+        super(id, content, language, path, metadata);
         this.container.classList.add('code-cell');
 
         this.cellInputTools.insertBefore(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
@@ -254,6 +261,10 @@ export class CodeCell extends Cell {
 
         this.onWindowResize = (evt) => this.editor.layout();
         window.addEventListener('resize', this.onWindowResize);
+
+        if (this.metadata && this.metadata.executionInfo) {
+            this.setExecutionInfo(this.metadata.executionInfo);
+        }
     }
 
     onChangeModelContent(event) {
@@ -313,7 +324,7 @@ export class CodeCell extends Cell {
         this.cellOutputDisplay.innerHTML = '';
         if (reports.length) {
             this.container.classList.add('error');
-            this.cellOutput.classList.add('errors');
+            this.cellOutputDisplay.classList.add('errors');
             this.cellOutputDisplay.appendChild(
                 div(
                     ['errors'],
@@ -329,7 +340,7 @@ export class CodeCell extends Cell {
                 )
             );
         } else {
-            this.cellOutput.classList.remove('errors');
+            this.cellOutputDisplay.classList.remove('errors');
             this.cellOutput.classList.remove('output');
         }
     }
@@ -337,7 +348,7 @@ export class CodeCell extends Cell {
     setRuntimeError(error) {
         const {el, messageStr, cellLine} = errorDisplay(error, this.container.id, 3);
 
-        this.cellOutput.classList.add('errors');
+        this.cellOutputDisplay.classList.add('errors');
         this.cellOutputDisplay.appendChild(
             div(['errors'], [
                 blockquote(['error-report', 'Error'], [el])
@@ -363,11 +374,7 @@ export class CodeCell extends Cell {
         }
     }
 
-    addOutput(contentType, content) {
-        this.cellOutput.classList.add('output');
-        if (!this.container.classList.contains('error')) {
-            this.container.classList.add('success');
-        }
+    buildOutput(contentType, content) {
         const contentTypeParts = contentType.split(';').map(str => str.replace(/(^\s+|\s+$)/g, ""));
         const mimeType = contentTypeParts.shift();
         const args = {};
@@ -378,46 +385,66 @@ export class CodeCell extends Cell {
 
         const rel = args.rel || 'none';
         const lang = args.lang || null;
-        const self = this;
         return CodeCell.parseContent(content, mimeType, lang).then(function(result) {
-            const el = div(['output'], result).attr('rel', rel).attr('mime-type', mimeType);
-            self.cellOutputDisplay.appendChild(el);
-            return el;
+            return div(['output'], result).attr('rel', rel).attr('mime-type', mimeType);
         }).catch(function(err) {
-            self.cellOutputDisplay.appendChild(
-                div(['output'], err)
-            );
+            return div(['output'], err);
         });
+    }
+
+    addOutput(contentType, content) {
+        this.cellOutputDisplay.classList.add('output');
+        if (!this.container.classList.contains('error')) {
+            this.container.classList.add('success');
+        }
+        const self = this;
+        this.buildOutput(contentType, content).then(function(el) {
+            self.cellOutputDisplay.appendChild(el);
+        })
     }
 
     addResult(result) {
         if (result instanceof ResultValue) {
+            // clear results
+            this.resultTabs.innerHTML = '';
+
             // TODO: keep "result" and "output" separate for UI... have a way to show declarations, results, outputs, etc. separately
             if (result.name !== "Out") {
                 // don't display this; it's a named declaration
                 // TODO: have a way to display these if desired
-            } else if (!this.resultEl || !this.resultEl.parentNode || !this.resultEl.reprs || !this.resultEl.reprs.length || this.resultEl.reprs.length < result.reprs.length) {
-                if (this.resultEl && this.resultEl.parentNode) {
-                    this.resultEl.parentNode.removeChild(this.resultEl);
-                }
-                this.resultEl = null;
-                const [mime, content] = result.displayRepr;
-                const outLabel = result.reprs.length <= 1
-                    ? div(['out-ident'], `Out:`)
-                    : div(['out-ident', 'with-reprs'], `Out:`).click(evt => {
-                        const reprUi = new ReprUI(`Cell${this.id}`, this.path, result.reprs, this.resultEl);
-                        reprUi.setEventParent(this);
-                        reprUi.show();
-                    });
+            } else if (result.reprs.length > 1) {
+                const outLabel = div(['out-ident', 'with-reprs'], `Out:`);
+                this.resultTabs.appendChild(outLabel);
 
-                this.addOutput(mime, content).then(el => {
-                    el.reprs = result.reprs;
-                    this.resultEl = el;
-                    el.insertBefore(outLabel, el.childNodes[0])
+                const [mime, content] = result.displayRepr;
+                const self = this;
+                this.buildOutput(mime, content).then(function(el) {
+                    self.resultTabs.appendChild(el);
+                    const reprUi = new ReprUI(`Cell${self.id}`, self.path, result.reprs, el);
+                    reprUi.setEventParent(self);
+                    reprUi.show();
+                    self.cellOutputTools.classList.add('output');
                 });
+
             }
         } else {
             throw "Result must be a ResultValue"
+        }
+    }
+
+    setExecutionInfo(result) {
+        console.log("got exec info!", result, result.timestamp, result.durationMs, Number(result.timestamp), new Date(Number(result.timestamp)));
+        if (result instanceof ExecutionInfo) {
+            const date = new Date(Number(result.timestamp));
+            // clear display
+            this.execInfoEl.innerHTML = '';
+
+            // populate display
+            this.execInfoEl.appendChild(span(['exec-timestamp'], [date.toLocaleString("en-US", {timeZoneName: "short", hour12: false})]));
+            this.execInfoEl.appendChild(span(['exec-duration'], [result.durationMs.toString()]));
+            this.execInfoEl.classList.add('output');
+        } else {
+            throw "Result must be an ExecutionInfo"
         }
     }
 
@@ -532,8 +559,8 @@ export class CodeCell extends Cell {
 }
 
 export class TextCell extends Cell {
-    constructor(id, content, path) {
-        super(id, content, 'text', path);
+    constructor(id, content, path, metadata) {
+        super(id, content, 'text', path, metadata);
         this.container.classList.add('text-cell');
         this.editorEl.classList.add('markdown-body');
         this.editorEl.cell = this;
