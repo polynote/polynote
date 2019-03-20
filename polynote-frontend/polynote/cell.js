@@ -472,6 +472,7 @@ export class CodeCell extends Cell {
 
     clearResult() {
         this.container.classList.remove('error', 'success');
+        this.execInfoEl.classList.remove('output');
         this.setErrors([]);
     }
 
