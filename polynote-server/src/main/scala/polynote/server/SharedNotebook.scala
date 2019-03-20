@@ -14,8 +14,10 @@ import cats.syntax.flatMap._
 import cats.syntax.parallel._
 import cats.syntax.traverse._
 import cats.instances.list._
+import cats.instances.option._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
+import polynote.config.PolynoteConfig
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, WindowBuffer}
 import polynote.messages._
@@ -90,7 +92,8 @@ class IOSharedNotebook(
   updatesTopic: Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]],  // a subscribe-able channel for watching updates,
   kernelFactory: KernelFactory[IO],
   outputMessages: Topic[IO, Message],
-  kernelLock: Semaphore[IO]
+  kernelLock: Semaphore[IO],
+  config: PolynoteConfig
 )(implicit contextShift: ContextShift[IO]) extends SharedNotebook[IO] {
 
   private val shutdownSignal: ReadySignal = ReadySignal()
@@ -99,7 +102,12 @@ class IOSharedNotebook(
 
   private val statusUpdates = Publish.PublishTopic(outputMessages).contramap[KernelStatusUpdate](KernelStatus(ShortString(path), _))
 
-  def shutdown(): IO[Unit] = subscribers.values().asScala.toList.parTraverse(_.close()) *> shutdownSignal.complete
+  def shutdown(): IO[Unit] = for {
+    _         <- subscribers.values().asScala.toList.parTraverse(_.close())
+    kernelOpt <- kernelRef.get
+    _         <- kernelOpt.map(_.shutdown()).sequence
+    _         <- shutdownSignal.complete
+  } yield ()
 
   // listen to the stream of updates and apply them in order, each one incrementing the global version
   updates.dequeue.unNoneTerminate.zipWithIndex.evalMap {
@@ -109,17 +117,10 @@ class IOSharedNotebook(
       applyUpdate(newGlobalVersion, subscriberId, update, versionPromise)
   }.interruptWhen(shutdownSignal()).compile.drain.unsafeRunAsyncAndForget()
 
-  // notify the kernel of notebook updates as they occur
-  updatesTopic.subscribe(128).unNone.evalMap {
-    case (version, _, update) => kernelRef.get.flatMap {
-      case None => IO.unit
-      case Some(kernel) => kernel.updateNotebook(version, update)
-    }
-  }.interruptWhen(shutdownSignal()).compile.drain.unsafeRunAsyncAndForget()
 
   private def ensureKernel(): IO[KernelAPI[IO]] = kernelLock.acquire.bracket { _ =>
     kernelRef.get.flatMap {
-      case None => kernelFactory.launchKernel(() => ref.get.map(_._2), statusUpdates).flatMap {
+      case None => kernelFactory.launchKernel(() => ref.get.map(_._2), statusUpdates, config).flatMap {
         kernel =>
           kernelRef.set(Some(kernel)).as(kernel)
       }
@@ -135,7 +136,12 @@ class IOSharedNotebook(
       // TODO: remove this, just checking for now
       assert(newGlobalVersion - 1 == currentVer, "Version is wrong!")
 
-      val doUpdate = ref.set(newGlobalVersion -> update.applyTo(notebook))
+      val doUpdate = ref.set(newGlobalVersion -> update.applyTo(notebook)).flatMap {
+        _ => kernelRef.get.flatMap {
+          case None => IO.unit
+          case Some(kernel) => kernel.updateNotebook(newGlobalVersion, update)
+        }
+      }
 
       for {
         _  <- doUpdate
@@ -248,7 +254,7 @@ class IOSharedNotebook(
 
     def startKernel(): IO[Unit] = ensureKernel().as(())
 
-    def init: IO[Unit] = ensureKernel().flatMap(_.init)
+    def init: IO[Unit] = ensureKernel().as(())
 
     private def withInterpreterLaunch[A](id: CellID)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
       kernel        <- ensureKernel()
@@ -370,14 +376,20 @@ class IOSharedNotebook(
 }
 
 object IOSharedNotebook {
-  def apply(path: String, initial: Notebook, kernelFactory: KernelFactory[IO])(implicit contextShift: ContextShift[IO]): IO[IOSharedNotebook] = for {
+  def apply(
+    path: String,
+    initial: Notebook,
+    kernelFactory: KernelFactory[IO],
+    config: PolynoteConfig)(implicit
+    contextShift: ContextShift[IO]
+  ): IO[IOSharedNotebook] = for {
     ref          <- SignallingRef[IO, (GlobalVersion, Notebook)](0 -> initial)
     kernel       <- Ref[IO].of[Option[KernelAPI[IO]]](None)
     updates      <- Queue.unbounded[IO, Option[(SubscriberId, NotebookUpdate, Deferred[IO, GlobalVersion])]]
     updatesTopic <- Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]](None)
     outputMessages <- Topic[IO, Message](KernelStatus(ShortString(path), KernelBusyState(busy = false, alive = false)))
     kernelLock   <- Semaphore[IO](1)
-  } yield new IOSharedNotebook(path, ref, kernel, updates, updatesTopic, kernelFactory, outputMessages, kernelLock)
+  } yield new IOSharedNotebook(path, ref, kernel, updates, updatesTopic, kernelFactory, outputMessages, kernelLock, config)
 }
 
 abstract class NotebookRef[F[_]](implicit F: Monad[F]) extends KernelAPI[F] {

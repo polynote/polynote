@@ -7,6 +7,7 @@ import cats.Monad
 import cats.effect.{ContextShift, Fiber, IO}
 import cats.effect.concurrent.Semaphore
 import polynote.config.PolynoteConfig
+import polynote.kernel.lang.LanguageInterpreter
 import polynote.server.repository.NotebookRepository
 
 import scala.collection.immutable.SortedMap
@@ -49,7 +50,7 @@ class IONotebookManager(
       case None =>
         for {
           loaded   <- repository.loadNotebook(path)
-          notebook <- IOSharedNotebook(path, loaded, kernelFactory)
+          notebook <- IOSharedNotebook(path, loaded, kernelFactory, config)
           _        <- IO { notebooks.put(path, notebook); () }
           writer   <- writeChanges(notebook)
           _        <- IO { writers.put(path, writer); () }
@@ -58,7 +59,7 @@ class IONotebookManager(
   }(_ => loadingNotebook.release)
 
   override lazy val interpreterNames: Map[String, String] = SortedMap.empty[String, String] ++
-    kernelFactory.interpreters.mapValues(_.languageName)
+    LanguageInterpreter.factories.mapValues(_.languageName)
 
   def getNotebook(path: String): IO[SharedNotebook[IO]] = notebooks.synchronized {
     Option(notebooks.get(path)) match {

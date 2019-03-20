@@ -6,7 +6,7 @@ import java.nio.channels._
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import java.util.concurrent.{ConcurrentHashMap, ExecutorService, Executors, LinkedBlockingQueue}
 
-import cats.effect.concurrent.Deferred
+import cats.effect.concurrent.{Deferred, Semaphore}
 import cats.effect.{ContextShift, Fiber, IO, Timer}
 import cats.syntax.apply._
 import cats.syntax.either._
@@ -23,47 +23,25 @@ import polynote.kernel.util.{Publish, ReadySignal}
 import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Lazy, Notebook, NotebookUpdate, ShortString, Streaming, Updating}
 import polynote.runtime._
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, MINUTES}
 
 class RemoteSparkKernel(
   val statusUpdates: Publish[IO, KernelStatusUpdate],
   getNotebook: () => IO[Notebook],
-  config: PolynoteConfig
+  config: PolynoteConfig,
+  transport: TransportServer)(implicit
+  contextShift: ContextShift[IO]
 ) extends KernelAPI[IO] {
 
-  private val executorService: ExecutorService = Executors.newCachedThreadPool()
-  private implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executorService)
-  private implicit val contextShift: ContextShift[IO] = IO.contextShift(executionContext)
-  private implicit val timer: Timer[IO] = IO.timer(executionContext)
-
-  private val server = ServerSocketChannel.open().bind(new InetSocketAddress(java.net.InetAddress.getLocalHost.getHostAddress, 0))
-  private val address = server.getLocalAddress.asInstanceOf[InetSocketAddress]
-
-  private val jarURL = s"http://${address.getAddress.getHostAddress}:${config.listen.port}/polynote-assembly.jar"
-  private val serverHostPort = s"${address.getAddress.getHostAddress}:${address.getPort}"
-
-  private val connection = Deferred.unsafe[IO, SocketChannel]
-  private val remoteAddr = Deferred.unsafe[IO, InetSocketAddress]
+  private val remoteAddr = Deferred.unsafe[IO, String]
   private val mainFiber = Deferred.unsafe[IO, Fiber[IO, Unit]]
   private val shutdownSignal = ReadySignal()
-
-  private def taskInfo(msg: String, detail: String = "", status: TaskStatus = TaskStatus.Running, progress: Byte = 0) =
-    UpdatedTasks(TaskInfo("kernel", msg, detail, status, progress) :: Nil)
 
   private val requestId = new AtomicInteger(0)
   private val requests = new ConcurrentHashMap[Int, Deferred[IO, RemoteResponse]]()
   private val streamRequests = new ConcurrentHashMap[Int, Deferred[IO, Queue[IO, Option[Result]]]]
 
   private val logger = getLogger
-
-  private def closeConnection(): IO[Unit] = connection.get.flatMap(conn => IO(conn.close()))
-
-  private def sendRequest(req: RemoteRequest): IO[Unit] = for {
-    channel <- connection.get
-    msg     <- IO.fromEither(RemoteRequest.codec.encode(req).toEither.leftMap(err => new RuntimeException(err.message)))
-    _       <- IO(channel.write(msg.toByteBuffer))
-  } yield ()
 
   /**
     * Send the given message, expecting the given response, and return an IO representing the response being received.
@@ -72,7 +50,7 @@ class RemoteSparkKernel(
   private def send1[Rep <: RemoteResponse](req: RemoteRequest) = for {
     promise <- Deferred[IO, Rep]
     _       <- IO(requests.put(req.reqId, promise.asInstanceOf[Deferred[IO, RemoteResponse]]))
-    _       <- sendRequest(req)
+    _       <- transport.sendRequest(req)
   } yield promise.get.guarantee(IO { requests.remove(req.reqId); () })
 
   /**
@@ -101,12 +79,13 @@ class RemoteSparkKernel(
 
   private def handleStreamStart(reqId: Int) = Option(streamRequests.get(reqId)) match {
     case None => IO(logger.error(s"Received stream start for $reqId, but there is no corresponding stream request outstanding"))
-    case Some(deferred) => Queue.unbounded[IO, Option[Result]] >>= deferred.complete
+    case Some(deferred) =>
+      Queue.unbounded[IO, Option[Result]] >>= deferred.complete
   }
 
   private def withQueue(reqId: Int, fn: Queue[IO, Option[Result]] => IO[Unit]) = Option(streamRequests.get(reqId)) match {
     case None => IO(logger.error(s"Received stream start for $reqId, but there is no corresponding stream request outstanding"))
-    case Some(deferred) => Queue.unbounded[IO, Option[Result]] >>= fn
+    case Some(deferred) => deferred.get >>= fn
   }
 
   private def transformResult(result: Result): Result = result match {
@@ -123,45 +102,45 @@ class RemoteSparkKernel(
           local
         case repr => repr
       })
+    case _ => result
   }
 
-  private def consumeResponses(responses: Stream[IO, RemoteResponse]): Stream[IO, Unit] = responses.flatMap {
-    case Announce(remoteAddress) => Stream.eval(parseHostPort(remoteAddress)).evalMap(addr => remoteAddr.complete(addr).handleErrorWith(_ => IO.unit))
+  private def consumeResponses(responses: Stream[IO, RemoteResponse]) = responses.map {
+    case Announce(remoteAddress) =>
+      Stream.eval(getNotebook().flatMap(notebook => request1[UnitResponse](InitialNotebook(_, notebook)).as(()))) ++
+        Stream.eval(remoteAddr.complete(remoteAddress).handleErrorWith(_ => IO.unit))
     case KernelStatusResponse(update) => Stream.eval(statusUpdates.publish1(update))
     case StreamStarted(reqId) => Stream.eval(handleStreamStart(reqId))
     case StreamEnded(reqId) => Stream.eval(withQueue(reqId, _.enqueue1(None)))
     case ResultStreamElements(reqId, elements) => Stream.eval(withQueue(reqId, q => Stream.emits(elements).map(Some(_)).through(q.enqueue).compile.drain))
     case rep: RequestResponse => Stream.eval(handleOneResponse(rep))
+  }.parJoinUnbounded
+
+  private val initialized = Deferred.unsafe[IO, Either[Throwable, Unit]]
+  private val initializer = Semaphore[IO](1).unsafeRunSync()
+
+  val init: IO[Unit] = initializer.tryAcquire.flatMap {
+    case true => {
+      for {
+        mainFiber    <- consumeResponses(transport.responses).compile.drain.start
+        _            <- this.mainFiber.complete(mainFiber)
+        _            <- IO(logger.info("Started processing responses"))
+        _            <- transport.connected
+        _            <- remoteAddr.get
+      } yield ()
+    }.attempt.flatMap(initialized.complete)
+
+    case false => initialized.get.flatMap(IO.fromEither)
   }
 
-  /**
-    * Launches the spark-submit process which will run the RemoteSparkKernelClient
-    */
-  def init: IO[Unit] = for {
-    _            <- statusUpdates.publish1(taskInfo("Starting kernel process"))
-    notebook     <- getNotebook()
-    connectFiber <- IO(server.accept()).start
-    sparkConfig   = config.spark ++ notebook.config.flatMap(_.sparkConfig).getOrElse(Map.empty)
-    sparkArgs     = sparkConfig.flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
-    command       = Seq("spark-submit", "--class", classOf[RemoteSparkKernelClient].getName) ++ sparkArgs ++ Seq(jarURL, serverHostPort)
-    process      <- IO(new ProcessBuilder(command: _*).inheritIO().start())
-    _            <- statusUpdates.publish1(taskInfo("Awaiting remote kernel"))
-    channel      <- connectFiber.join.timeout(Duration(5, MINUTES))
-    _            <- connection.complete(channel)
-    _            <- statusUpdates.publish1(taskInfo("Remote kernel connected"))
-    responses     = scodec.stream.decode.many(RemoteResponse.codec).decodeChannel[IO](channel)
-    mainFiber    <- consumeResponses(responses).interruptWhen(shutdownSignal()).compile.drain.start
-    _            <- this.mainFiber.complete(mainFiber)
-  } yield ()
-
   def shutdown(): IO[Unit] =
-    request1[UnitResponse](Shutdown(_)) *> shutdownSignal.complete *> closeConnection() *> (mainFiber.get >>= (_.cancel))
+    request1[UnitResponse](Shutdown(_)) *> shutdownSignal.complete *> transport.close() *> (mainFiber.get >>= (_.cancel))
 
   def startInterpreterFor(cell: CellID): IO[Stream[IO, Result]] = for {
     reqId    <- IO(requestId.getAndIncrement())
     req       = StartInterpreterFor(reqId, cell)
     ioStream <- prepareResultStream(req)
-    _        <- sendRequest(req)
+    _        <- transport.sendRequest(req)
     stream   <- ioStream
   } yield stream
 
@@ -242,7 +221,7 @@ class RemoteSparkKernel(
     request1[UnitResponse](CancelTasksRequest(_)).as(())
 
   def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] =
-    request1[UnitResponse](UpdateNotebookRequest(_, update)).as(())
+    request1[UnitResponse](UpdateNotebookRequest(_, version, update)).as(())
 
   /**
     * Transform a repr from the remote kernel into local JVM space
@@ -317,6 +296,42 @@ class RemoteSparkKernel(
       computedFlag = true
       getHandleData(Lazy, remoteHandle, 1).unsafeRunSync().head.toByteBuffer
     }
+  }
+
+}
+
+object RemoteSparkKernel {
+  private val logger = org.log4s.getLogger
+
+  private def taskInfo(msg: String, detail: String = "", status: TaskStatus = TaskStatus.Running, progress: Byte = 0) =
+    UpdatedTasks(TaskInfo("kernel", msg, detail, status, progress) :: Nil)
+
+  def apply[ServerAddress](
+    statusUpdates: Publish[IO, KernelStatusUpdate],
+    getNotebook: () => IO[Notebook],
+    config: PolynoteConfig,
+    transport: Transport[ServerAddress])(implicit
+    contextShift: ContextShift[IO],
+    timer: Timer[IO]
+  ): IO[RemoteSparkKernel] = {
+    def publish(msg: String, progress: Byte) = IO(logger.info(msg)) *> statusUpdates.publish1(taskInfo(msg, progress = progress))
+    for {
+      _        <- publish("Starting kernel process", 0)
+      notebook <- getNotebook()
+      server   <- transport.serve(config, notebook)
+      kernel    = new RemoteSparkKernel(statusUpdates, getNotebook, config, server)
+      start    <- kernel.init.start
+      _        <- publish("Awaiting remote kernel", 64)
+      _        <- server.connected
+      _        <- publish("Remote client connected", 128.toByte)
+      _        <- start.join.timeout(Duration(2, MINUTES)).handleErrorWith { err => start.cancel.flatMap(_ => kernel.shutdown().start) *> IO.raiseError(err) }
+      _        <- publish("Remote kernel started", 255.toByte)
+    } yield kernel
+  }.handleErrorWith {
+    err =>
+      IO(logger.error(err)("Failed to connect to remote client"))
+        statusUpdates.publish1(taskInfo("Failed to connect", err.getMessage, TaskStatus.Error)) *>
+        IO.raiseError(err)
   }
 
 }

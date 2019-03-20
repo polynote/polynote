@@ -1,30 +1,21 @@
 package polynote.kernel.remote
 
-import java.io.File
 import java.net.{InetAddress, InetSocketAddress}
-import java.nio.channels.{AsynchronousChannelGroup, Channels, SocketChannel}
-import java.util.concurrent.{ExecutorService, Executors}
 
 import cats.effect.concurrent.Ref
-import cats.effect.{ContextShift, ExitCode, IO, IOApp}
+import cats.effect._
 import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.functor._
 import fs2.{Chunk, Pipe, Stream}
-import fs2.concurrent.{Enqueue, Queue, Topic}
-import fs2.io.tcp.Socket
-import polynote.config.{DependencyConfigs, PolynoteConfig}
-import polynote.kernel.dependency.CoursierFetcher
-import polynote.kernel.util.{KernelContext, Publish, ReadySignal}
+import fs2.concurrent.Queue
+import polynote.config.PolynoteConfig
+import polynote.kernel.util.{Publish, ReadySignal}
 import Publish.enqueueToPublish
 import polynote.kernel._
-import polynote.messages.{KernelStatus, Message, Notebook, NotebookConfig, NotebookUpdate, ShortList, ShortString, Streaming}
-import polynote.server.{SparkKernelFactory, SparkKernelLaunching, StreamingHandleManager}
-import polynote.server.repository.NotebookRepository
-import polynote.server.repository.ipynb.IPythonNotebookRepository
-import scodec.Codec
-import scodec.stream.decode
-import scodec.stream.encode
+import polynote.messages.{Notebook, NotebookConfig, ShortList, Streaming}
+import polynote.runtime.{StreamingDataRepr, ValueRepr}
+import polynote.server.{KernelFactory, KernelLaunching, SparkKernelFactory, StreamingHandleManager}
 
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
@@ -34,31 +25,32 @@ import scala.concurrent.ExecutionContext
   * back to the RemoteSparkKernel server.
   */
 class RemoteSparkKernelClient(
-  remoteAddress: InetSocketAddress
-) extends Serializable with SparkKernelLaunching {
+  transport: TransportClient,
+  kernelFactory: KernelFactory[IO])(implicit
+  protected val executionContext: ExecutionContext,
+  protected val contextShift: ContextShift[IO],
+  protected val timer: Timer[IO]
+) extends Serializable {
 
-  private val executorService: ExecutorService = Executors.newCachedThreadPool()
-  private val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executorService)
-  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(executorService))
+  private val logger = org.log4s.getLogger
 
   private val myAddress = InetAddress.getLocalHost.getHostAddress
-  private def newChannel: IO[SocketChannel] = IO(java.nio.channels.SocketChannel.open(remoteAddress))
 
-  private val singleRequest = decode.once(RemoteRequest.codec)
-  private val requestStream = decode.many(RemoteRequest.codec)
-
+  // we don't have to multiplex, since there's only one "subscriber" - the remote kernel proxy.
+  // But the hosted kernel won't manage the streaming data on its own, since it requires the multiplexer in front.
   private val streams = new StreamingHandleManager
 
   private val shutdownSignal: ReadySignal = ReadySignal()
+  private val started: ReadySignal = ReadySignal()
 
-  private def readInitialNotebook(channel: SocketChannel): IO[InitialNotebook] = for {
-    messageOpt <- singleRequest.decodeChannel[IO](channel).compile.last
-    message    <- IO.fromEither(Either.fromOption(messageOpt, new NoSuchElementException("Notebook not received from server")))
-    notebook   <- message match {
+  private def readInitialNotebook(head: Stream[IO, RemoteRequest]): IO[InitialNotebook] = for {
+    messageOpt  <- head.compile.last
+    message     <- IO.fromEither(Either.fromOption(messageOpt, new NoSuchElementException("Notebook not received from server")))
+    notebookReq <- message match {
       case nb @ InitialNotebook(_, _) => IO.pure(nb)
       case other => IO.raiseError(new IllegalStateException(s"Initial message was ${other.getClass.getSimpleName} rather than InitialNotebook"))
     }
-  } yield notebook
+  } yield notebookReq
 
   private def configFromNotebookConfig(notebookConfig: NotebookConfig): PolynoteConfig = notebookConfig match {
     case NotebookConfig(dependencies, exclusions, repositories, spark) =>
@@ -70,37 +62,33 @@ class RemoteSparkKernelClient(
       )
   }
 
-  private def incomingRequests(channel: SocketChannel): Stream[IO, RemoteRequest] = requestStream.decodeChannel[IO](channel)
-
-  private def send(channel: SocketChannel, response: RemoteResponse): IO[Unit] = for {
-    bytes <- IO.fromEither(RemoteResponse.codec.encode(response).toEither.leftMap(err => new RuntimeException(err.message)))
-    _     <- IO(channel.write(bytes.toByteBuffer))
-  } yield ()
-
-  private def sendAll(channel: SocketChannel): Pipe[IO, RemoteResponse, Unit] = _.evalMap {
-    response => send(channel, response)
-  }
-
   private def respondResultStream(reqId: Int, resultStream: Stream[IO, Result]) =
     Stream.emit(StreamStarted(reqId)) ++ resultStream.mapChunks {
       resultChunk => Chunk(ResultStreamElements(reqId, ShortList(resultChunk.toList)))
     } ++ Stream.emit(StreamEnded(reqId))
 
+  private def shutdown(reqId: Int, kernel: KernelAPI[IO]) = for {
+    _ <- IO(logger.info("Shutting down"))
+    _ <- kernel.shutdown()
+    _ <- transport.sendResponse(UnitResponse(reqId))
+    _ <- shutdownSignal.complete
+    _ <- transport.close()
+  } yield ()
+
   private def handleRequests(
     kernel: KernelAPI[IO],
-    notebookRef: Ref[IO, Notebook],
-    channel: SocketChannel
+    notebookRef: Ref[IO, Notebook]
   ): Pipe[IO, RemoteRequest, RemoteResponse] = _.map {
     case InitialNotebook(reqId, notebook) => Stream.eval(notebookRef.set(notebook).as(UnitResponse(reqId)))
     case Shutdown(reqId) =>
-      Stream.eval(kernel.shutdown().as(UnitResponse(reqId))) ++
-        Stream.eval(shutdownSignal.complete.guarantee(IO(channel.close()))).drain
+      Stream.eval(shutdown(reqId, kernel)).drain
 
     case StartInterpreterFor(reqId, cell) =>
       Stream.eval(kernel.startInterpreterFor(cell)).flatMap(respondResultStream(reqId, _))
 
     case QueueCell(reqId, cell) => Stream.eval(kernel.queueCell(cell)).flatMap {
-      ioResultStream => Stream.emit(CellQueued(reqId)) ++
+      ioResultStream =>
+        Stream.emit(CellQueued(reqId)) ++
         Stream.eval(ioResultStream).flatMap(respondResultStream(reqId, _))
     }
     case CompletionsAt(reqId, cell, pos) => Stream.eval(kernel.completionsAt(cell, pos).map(CompletionsResponse(reqId, _)))
@@ -121,30 +109,44 @@ class RemoteSparkKernelClient(
       }) *> kernel.releaseHandle(handleType, handleId).as(UnitResponse(reqId))
     )
     case CancelTasksRequest(reqId) => Stream.eval(kernel.cancelTasks().as(UnitResponse(reqId)))
-    case UpdateNotebookRequest(reqId, update) => Stream.eval(notebookRef.update(update.applyTo).as(UnitResponse(reqId)))
+    case UpdateNotebookRequest(reqId, version, update) => Stream.eval(notebookRef.update(update.applyTo) *> kernel.updateNotebook(version, update).as(UnitResponse(reqId)))
   }.parJoinUnbounded
 
-
   def run(): IO[ExitCode] = for {
-    channel        <- newChannel
     outputMessages <- Queue.unbounded[IO, RemoteResponse]
-    outputWriter   <- outputMessages.dequeue.through(sendAll(channel)).compile.drain.start
+    outputWriter   <- outputMessages.dequeue.evalMap(transport.sendResponse).interruptWhen(shutdownSignal()).compile.drain.start
+    _              <- IO(logger.info("Remote kernel client starting up"))
     _              <- outputMessages.enqueue1(Announce(myAddress))
-    notebookReq    <- readInitialNotebook(channel)
+    notebookReq    <- readInitialNotebook(transport.requests.head)
+    _              <- IO(logger.info("Handshake complete"))
     notebook        = notebookReq.notebook
-    _              <- send(channel, UnitResponse(notebookReq.reqId))
     nbConfig        = notebook.config.getOrElse(NotebookConfig.empty)
     notebookRef    <- Ref[IO].of(notebook)
     conf            = configFromNotebookConfig(nbConfig)
     statusUpdates   = outputMessages.contramap[KernelStatusUpdate](update => KernelStatusResponse(update))
-    kernel         <- kernelFactory(conf).launchKernel(notebookRef.get _, statusUpdates)
-    incoming        = incomingRequests(channel)
-    _              <- incoming.through(handleRequests(kernel, notebookRef, channel)).interruptWhen(shutdownSignal()).compile.drain.guarantee(kernel.shutdown())
+    _              <- IO(logger.info("Launching kernel"))
+    kernel         <- kernelFactory.launchKernel(notebookRef.get _, statusUpdates, conf)
+    mainFiber      <- transport.requests.through(handleRequests(kernel, notebookRef)).through(outputMessages.enqueue).interruptWhen(shutdownSignal()).compile.drain.start
+    _              <- Stream.repeatEval(kernel.idle()).takeWhile(_ == false).compile.drain // wait until kernel is idle
+    _              <- IO(logger.info("Kernel ready"))
+    _              <- outputMessages.enqueue1(UnitResponse(notebookReq.reqId))
+    _              <- started.complete
+    _              <- mainFiber.join
+    _              <- IO(logger.info("Closing message loop"))
+    _              <- outputWriter.join
+    _              <- IO(logger.info("Kernel stopped"))
   } yield ExitCode.Success
 
+  def shutdown(): IO[Unit] = shutdownSignal.complete
 }
 
-object RemoteSparkKernelClient extends IOApp {
+object RemoteSparkKernelClient extends IOApp with KernelLaunching {
+
+  private val logger = org.log4s.getLogger
+
+  import scala.concurrent.ExecutionContext.Implicits.global
+
+  override protected def kernelFactory: KernelFactory[IO] = new SparkKernelFactory(dependencyFetchers)
 
   @tailrec
   private def getArgs(remaining: List[String]): IO[InetSocketAddress] = remaining match {
@@ -154,8 +156,10 @@ object RemoteSparkKernelClient extends IOApp {
   }
 
   def run(args: List[String]): IO[ExitCode] = for {
-    address <- getArgs(args)
-    client  <- IO(new RemoteSparkKernelClient(address))
-    result  <- client.run()
+    address   <- getArgs(args)
+    _         <- IO(logger.info(s"Will connect to $address"))
+    transport <- new SocketTransport().connect(address)
+    client    <- IO(new RemoteSparkKernelClient(transport, kernelFactory))
+    result    <- client.run()
   } yield result
 }

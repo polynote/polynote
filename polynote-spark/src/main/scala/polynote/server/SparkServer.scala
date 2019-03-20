@@ -1,36 +1,39 @@
 package polynote.server
 import java.io.File
 
-import cats.effect.{ContextShift, IO}
+import cats.effect.{ContextShift, IO, Timer}
+import cats.syntax.functor._
+import org.apache.spark.sql.thief.ActiveSessionThief
 import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.{KernelAPI, KernelStatusUpdate, PolyKernel, SparkPolyKernel}
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.remote.RemoteSparkKernel
+import polynote.kernel.remote.{RemoteSparkKernel, SocketTransport, Transport}
 import polynote.kernel.util.Publish
 import polynote.messages.Notebook
-import polynote.server.SparkServer.interpreters
 
 import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
 
-object SparkServer extends Server with SparkKernelLaunching
+object SparkServer extends Server {
 
-trait SparkKernelLaunching extends KernelLaunching {
-  override protected def kernelFactory(config: PolynoteConfig): KernelFactory[IO] = new SparkKernelFactory(Map("scala" -> dependencyFetcher), interpreters, config)
+  override protected def kernelFactory: KernelFactory[IO] =
+    if (sys.env.get("POLYNOTE_REMOTE_KERNELS") contains "true")
+      new SparkRemoteKernelFactory(new SocketTransport)
+    else
+      new SparkKernelFactory(dependencyFetchers = Map("scala" -> dependencyFetcher))
 }
 
 class SparkKernelFactory(
-  dependencyFetchers: Map[String, DependencyFetcher[IO]],
-  interpreters: Map[String, LanguageInterpreter.Factory[IO]],
-  config: PolynoteConfig)(implicit
+  dependencyFetchers: Map[String, DependencyFetcher[IO]])(implicit
   contextShift: ContextShift[IO]
-) extends IOKernelFactory(dependencyFetchers, interpreters, config) {
+) extends IOKernelFactory(dependencyFetchers) {
   override protected def mkKernel(
     getNotebook: () => IO[Notebook],
     deps: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
+    config: PolynoteConfig,
     extraClassPath: List[File],
     settings: Settings,
     outputDir: AbstractFile,
@@ -38,7 +41,11 @@ class SparkKernelFactory(
   ): IO[PolyKernel] = IO.pure(SparkPolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, parentClassLoader, config))
 }
 
-class SparkRemoteKernelFactory(val interpreters: Map[String, LanguageInterpreter.Factory[IO]], config: PolynoteConfig) extends KernelFactory[IO] {
-  def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate]): IO[KernelAPI[IO]] =
-    IO(new RemoteSparkKernel(statusUpdates, getNotebook, config))
+class SparkRemoteKernelFactory(
+  transport: Transport[_])(implicit
+  contextShift: ContextShift[IO],
+  timer: Timer[IO]
+) extends KernelFactory[IO] {
+  def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate], config: PolynoteConfig): IO[KernelAPI[IO]] =
+    RemoteSparkKernel(statusUpdates, getNotebook, config, transport)
 }

@@ -4,7 +4,8 @@ import java.io.DataOutput
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
-import shapeless.{::, Generic, HList, HNil, Lazy, Witness}
+import shapeless.labelled.FieldType
+import shapeless.{::, Generic, HList, HNil, LabelledGeneric, Lazy, Witness}
 
 import scala.collection.GenTraversable
 import scala.reflect.macros.whitebox
@@ -147,15 +148,15 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
       label: Witness.Aux[K],
       encoderH: DataEncoder[H],
       encoderT: StructDataEncoder[T]
-    ): DataEncoder[H :: T] =
-      instance[H :: T](StructType(StructField(label.value.name, encoderH.dataType) :: encoderT.dataType.fields)) {
+    ): StructDataEncoder[FieldType[K, H] :: T] =
+      instance[FieldType[K, H] :: T](StructType(StructField(label.value.name, encoderH.dataType) :: encoderT.dataType.fields)) {
         (output, ht) =>
           encoderT.encode(encoderH.encodeAnd(output, ht.head), ht.tail)
       } {
         ht => combineSize(encoderH.sizeOf(ht.head), encoderT.sizeOf(ht.tail))
       }
 
-    implicit def caseClass[A <: Product, L <: HList](implicit gen: Generic.Aux[A, L], encoderL: Lazy[StructDataEncoder[L]]): DataEncoder[A] =
+    implicit def caseClass[A <: Product, L <: HList](implicit gen: LabelledGeneric.Aux[A, L], encoderL: Lazy[StructDataEncoder[L]]): StructDataEncoder[A] =
       instance[A](encoderL.value.dataType)((output, a) => encoderL.value.encode(output, gen.to(a)))(a => encoderL.value.sizeOf(gen.to(a)))
   }
 

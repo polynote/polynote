@@ -10,6 +10,6 @@ package object remote {
     uri  <- IO(new URI(s"proto://$string"))
     host <- IO { Option(uri.getHost).getOrElse(throw new IllegalStateException("Remote host must be defined")) }
     port <- IO { Option(uri.getPort).getOrElse(throw new IllegalStateException("Remote port must be defined")) }
-  } yield InetSocketAddress.createUnresolved(host, port)
+  } yield new InetSocketAddress(host, port)
 
 }

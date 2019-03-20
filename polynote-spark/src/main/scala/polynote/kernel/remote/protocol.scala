@@ -74,7 +74,7 @@ object ReleaseHandleRequest extends RemoteRequestCompanion[ReleaseHandleRequest]
 final case class CancelTasksRequest(reqId: Int) extends RemoteRequest
 object CancelTasksRequest extends RemoteRequestCompanion[CancelTasksRequest](14)
 
-final case class UpdateNotebookRequest(reqId: Int, update: NotebookUpdate) extends RemoteRequest
+final case class UpdateNotebookRequest(reqId: Int, version: Int, update: NotebookUpdate) extends RemoteRequest
 object UpdateNotebookRequest extends RemoteRequestCompanion[UpdateNotebookRequest](15) {
   private implicit val notebookUpdateCodec: Codec[NotebookUpdate] = Message.codec.exmap[NotebookUpdate](
     _ match {
@@ -89,7 +89,7 @@ object UpdateNotebookRequest extends RemoteRequestCompanion[UpdateNotebookReques
 
 object RemoteRequest {
   implicit val discriminated: Discriminated[RemoteRequest, Byte] = Discriminated(byte)
-  val codec: Codec[RemoteRequest] = Codec[RemoteRequest]
+  implicit val codec: Codec[RemoteRequest] = cachedImplicit
 }
 
 
@@ -152,5 +152,5 @@ object KernelStatusResponse extends RemoteResponseCompanion[KernelStatusResponse
 
 object RemoteResponse {
   implicit val discriminated: Discriminated[RemoteResponse, Byte] = Discriminated(byte)
-  val codec: Codec[RemoteResponse] = Codec[RemoteResponse]
+  implicit val codec: Codec[RemoteResponse] = cachedImplicit
 }

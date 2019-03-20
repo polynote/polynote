@@ -82,7 +82,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     _               <- splash
     _               <- IO(logger.info(s" Running on $url"))
     repository       = createRepository(config)
-    notebookManager  = new IONotebookManager(config, repository, kernelFactory(config))
+    notebookManager  = new IONotebookManager(config, repository, kernelFactory)
 
     exitCode        <- BlazeBuilder[IO]
                         .bindHttp(port, address)
