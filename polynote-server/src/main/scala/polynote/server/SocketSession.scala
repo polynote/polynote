@@ -196,6 +196,7 @@ class SocketSession(
     case StartKernel(path, StartKernel.NoRestart) =>
       for {
         notebookRef <- getNotebook(path)
+        _           <- notebookRef.startKernel()
         status      <- notebookRef.currentStatus
       } yield Stream.emit(KernelStatus(path, status))
 

@@ -207,6 +207,11 @@ export class KernelInfoUI {
         this.toggleVisibility()
     }
 
+    clearInfo() {
+        this.info.clear();
+        this.toggleVisibility()
+    }
+
     toggleVisibility() {
         if (this.info.size === 0) {
             this.el.style.display = "none";
@@ -341,7 +346,7 @@ export class KernelUI extends UIEventTarget {
         this.socket = socket;
         this.el = div(['kernel-ui', 'ui-panel'], [
             h2([], [
-                span(['status'], ['●']),
+                this.status = span(['status'], ['●']),
                 'Kernel',
                 span(['buttons'], [
                   iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect()),
@@ -375,6 +380,10 @@ export class KernelUI extends UIEventTarget {
         this.el.classList.remove('busy', 'idle', 'dead', 'disconnected');
         if (state === 'busy' || state === 'idle' || state === 'dead' || state === 'disconnected') {
             this.el.classList.add(state);
+            this.status.title = state;
+            if (state === 'dead') {
+                this.info.clearInfo();
+            }
         } else {
             throw "State must be one of [busy, idle, dead, disconnected]";
         }
@@ -387,11 +396,11 @@ export class NotebookConfigUI extends UIEventTarget {
         this.el = div(['notebook-config'], [
             h2(['config'], ['Configuration & dependencies']).click(evt => this.el.classList.toggle('open')),
             div(['content'], [
-                div(['notebook-dependencies'], [
+                div(['notebook-dependencies', 'notebook-config-section'], [
                     h3([], ['Dependencies']),
                     para([], ['Specify Maven coordinates for your dependencies, e.g. ', span(['pre'], ['org.myorg:package-name_2.11:1.0.1']), ', or URLs like ', span(['pre'], ['s3://path/to/my.jar'])]),
                     this.dependencyContainer = div(['dependency-list'], [
-                        this.dependencyRowTemplate = div(['dependency-row'], [
+                        this.dependencyRowTemplate = div(['dependency-row', 'notebook-config-row'], [
                             textbox(['dependency'], 'Dependency coordinate or URL'),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
                                 this.addDependency(evt.currentTarget.parentNode.querySelector('.dependency').value);
@@ -401,16 +410,17 @@ export class NotebookConfigUI extends UIEventTarget {
                         ])
                     ])
                 ]),
-                div(['notebook-resolvers'], [
+                div(['notebook-resolvers', 'notebook-config-section'], [
                     h3([], ['Resolvers']),
                     para([], ['Specify any custom Ivy or Maven repositories here.']),
                     this.resolverContainer = div(['resolver-list'], [
-                        this.resolverRowTemplate = div(['resolver-row', 'ivy'], [
+                        this.resolverRowTemplate = div(['resolver-row', 'notebook-config-row', 'ivy'], [
                             dropdown(['resolver-type'], {ivy: 'Ivy', maven: 'Maven'}).change(evt => {
                                 const self = evt.currentTarget;
                                 const row = self.parentNode;
                                 const value = self.options[self.selectedIndex].value;
                                 row.className = 'resolver-row';
+                                row.classList.add('notebook-config-row');
                                 row.classList.add(value);
                             }),
                             textbox(['resolver-url'], 'Resolver URL or pattern'),
@@ -424,15 +434,34 @@ export class NotebookConfigUI extends UIEventTarget {
                         ])
                     ])
                 ]),
-                div(['notebook-exclusions'], [
+                div(['notebook-exclusions', 'notebook-config-section'], [
                     h3([], ['Exclusions']),
                     para([], ['Specify organization:module coordinates for your exclusions, i.e. ', span(['pre'], ['org.myorg:package-name_2.11'])]),
                     this.exclusionContainer = div(['exclusion-list'], [
-                        this.exclusionRowTemplate = div(['exclusion-row'], [
+                        this.exclusionRowTemplate = div(['exclusion-row', 'notebook-config-row'], [
                             textbox(['exclusion'], 'Exclusion organization:name'),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
                                 this.addExclusion(evt.currentTarget.parentNode.querySelector('.exclusion').value);
                                 this.exclusionRowTemplate.querySelector('.exclusion').value = '';
+                            }),
+                            iconButton(['remove'], 'Remove', '', 'Remove')
+                        ])
+                    ])
+                ]),
+                div(['notebook-spark-config', 'notebook-config-section'], [
+                    h3([], ['Spark Config']),
+                    para([], ['Set Spark configuration for this notebook here. Please note that it is possible that your environment may override some of these settings at runtime :(']),
+                    this.sparkConfigContainer = div(['spark-config-list'], [
+                        this.sparkConfigRowTemplate = div(['spark-config-row', 'notebook-config-row'], [
+                            textbox(['spark-config-key'], 'key'),
+                            textbox(['spark-config-val'], 'value'),
+                            iconButton(['add'], 'Add', '', 'Add').click(evt => {
+                                this.addSparkConfig([
+                                    evt.currentTarget.parentNode.querySelector('.spark-config-key').value.trim(),
+                                    evt.currentTarget.parentNode.querySelector('.spark-config-val').value.trim()
+                                ]);
+                                this.sparkConfigRowTemplate.querySelector('.spark-config-key').value = '';
+                                this.sparkConfigRowTemplate.querySelector('.spark-config-val').value = '';
                             }),
                             iconButton(['remove'], 'Remove', '', 'Remove')
                         ])
@@ -514,24 +543,32 @@ export class NotebookConfigUI extends UIEventTarget {
         this.resolverContainer.insertBefore(row, this.resolverRowTemplate);
     }
 
+    addSparkConfig(value) {
+        const row = this.sparkConfigRowTemplate.cloneNode(true);
+        row.querySelector('.spark-config-key').value = value[0] || '';
+        row.querySelector('.spark-config-val').value = value[1] || '';
+        row.querySelector('.remove').addEventListener('click', evt => {
+            row.innerHTML = '';
+            row.parentNode.removeChild(row);
+        });
+        this.sparkConfigContainer.insertBefore(row, this.sparkConfigRowTemplate);
+    }
+
     clearConfig() {
-        while (this.dependencyContainer.childNodes.length > 0) {
-            this.dependencyContainer.removeChild(this.dependencyContainer.childNodes[0]);
-        }
-        this.dependencyContainer.appendChild(this.dependencyRowTemplate);
-        [...this.dependencyContainer.querySelectorAll('input')].forEach(input => input.value = '');
+        const containers = new Map([
+            [this.dependencyContainer, this.dependencyRowTemplate],
+            [this.exclusionContainer, this.exclusionRowTemplate],
+            [this.resolverContainer, this.resolverRowTemplate],
+            [this.sparkConfigContainer, this.sparkConfigRowTemplate]
+        ]);
 
-        while (this.exclusionContainer.childNodes.length > 0) {
-            this.exclusionContainer.removeChild(this.exclusionContainer.childNodes[0]);
+        for (const [container, template] of containers) {
+            while (container.childNodes.length > 0) {
+                container.removeChild(container.childNodes[0]);
+            }
+            container.appendChild(template);
+            [...container.querySelectorAll('input')].forEach(input => input.value = '');
         }
-        this.exclusionContainer.appendChild(this.exclusionRowTemplate);
-        [...this.exclusionContainer.querySelectorAll('input')].forEach(input => input.value = '');
-
-        while (this.resolverContainer.childNodes.length > 0) {
-            this.resolverContainer.removeChild(this.resolverContainer.childNodes[0]);
-        }
-        this.resolverContainer.appendChild(this.resolverRowTemplate);
-        [...this.resolverContainer.querySelectorAll('input')].forEach(input => input.value = '');
     }
 
     setConfig(config) {
@@ -553,6 +590,12 @@ export class NotebookConfigUI extends UIEventTarget {
         if(config.repositories) {
             for (const repository of config.repositories) {
                 this.addResolver(repository);
+            }
+        }
+
+        if(config.sparkConfig) {
+            for (const entry of Object.entries(config.sparkConfig)) {
+                this.addSparkConfig(entry);
             }
         }
     }
@@ -579,10 +622,19 @@ export class NotebookConfigUI extends UIEventTarget {
             }
         });
 
+        const sparkConfig = {};
+        const sparkConfigRows = this.sparkConfigContainer.querySelectorAll('.spark-config-row');
+        sparkConfigRows.forEach(row => {
+            const k = row.querySelector('.spark-config-key').value.trim();
+            const v = row.querySelector('.spark-config-val').value.trim();
+            if (k) sparkConfig[k] = v;
+        });
+
         return new messages.NotebookConfig(
             {scala: deps},
             exclusions,
-            repos
+            repos,
+            sparkConfig
         );
     }
 
@@ -979,9 +1031,9 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.kernelUI.addEventListener('Connect', evt => {
-           if (!this.socket.isOpen) {
-               this.socket.reconnect();
-           }
+            if (!this.socket.isOpen) {
+                this.socket.reconnect();
+            }
         });
 
         this.kernelUI.addEventListener('StartKernel', evt => {
