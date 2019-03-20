@@ -141,6 +141,7 @@ object JupyterOutput {
       }
 
     case ResultValue(_, _, _, _, _, _) => Nil
+    case ExecutionInfo(_, _) => Nil
   }
 }
 
@@ -171,7 +172,8 @@ object JupyterCell {
         val disabled = obj("cell.metadata.run_control.frozen").flatMap(_.asBoolean).getOrElse(false)
         val hideSource = obj("jupyter.source_hidden").flatMap(_.asBoolean).getOrElse(false)
         val hideOutput = obj("jupyter.outputs_hidden").flatMap(_.asBoolean).getOrElse(false)
-        CellMetadata(disabled, hideSource, hideOutput)
+        val executionInfo = obj("cell.metadata.exec_info").flatMap(_.as[ExecutionInfo].right.toOption)
+        CellMetadata(disabled, hideSource, hideOutput, executionInfo)
     }.getOrElse(CellMetadata())
 
     NotebookCell(index, language, Rope(cell.source.mkString), ShortList(cell.outputs.getOrElse(Nil).map(JupyterOutput.toResult(index))), meta)
@@ -187,12 +189,14 @@ object JupyterCell {
     }
 
     val meta = cell.metadata match {
-      case CellMetadata(false, false, false) => None
+      case CellMetadata(false, false, false, None) => None
       case meta => Some {
         JsonObject.fromMap(List(
           "cell.metadata.run_control.frozen" -> meta.disableRun,
           "jupyter.source_hidden" -> meta.hideSource,
-          "jupyter.outputs_hidden" -> meta.hideOutput).filter(_._2).toMap.mapValues(Json.fromBoolean))
+          "jupyter.outputs_hidden" -> meta.hideOutput).filter(_._2).toMap.mapValues(Json.fromBoolean)
+          ++ Map("cell.metadata.exec_info" -> meta.executionInfo.asJson)
+        )
       }
     }
 

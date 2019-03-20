@@ -7,7 +7,7 @@ import java.util.concurrent.{ConcurrentHashMap, Executors}
 
 import cats.effect.concurrent.{Ref, Semaphore}
 import cats.effect.internals.IOContextShift
-import cats.effect.{ContextShift, IO}
+import cats.effect.{Clock, ContextShift, IO}
 import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.flatMap._
@@ -27,6 +27,7 @@ import polynote.runtime.{LazyDataRepr, StreamingDataRepr, TableOp, UpdatingDataR
 import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.MILLISECONDS
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
@@ -49,6 +50,8 @@ class PolyKernel private[kernel] (
 
   private val launchingInterpreter = Semaphore[IO](1).unsafeRunSync()
   private val interpreters = new ConcurrentHashMap[String, LanguageInterpreter[IO]]()
+
+  private val clock: Clock[IO] = Clock.create
 
 
   /**
@@ -160,7 +163,7 @@ class PolyKernel private[kernel] (
                     statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
                 }
 
-                symbolTable.drain() *> interp.runCode(
+                val results = interp.runCode(
                   id,
                   findAvailableSymbols(prevCellIds, interp),
                   prevCellIds,
@@ -172,6 +175,16 @@ class PolyKernel private[kernel] (
                     case result =>
                       IO.pure(result)
                   }
+                }
+
+                for {
+                  _ <- symbolTable.drain()
+                  start <- clock.monotonic(MILLISECONDS)
+                  res <- results
+                  end <- clock.monotonic(MILLISECONDS)
+                  timestamp <- clock.realTime(MILLISECONDS)
+                } yield {
+                  res ++ Stream.emit(ExecutionInfo((end - start).toInt, timestamp))
                 }
             }.map {
               _.getOrElse(Stream.empty)

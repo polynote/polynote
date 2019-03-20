@@ -6,7 +6,7 @@ import {
 } from './codec.js'
 
 import { ValueRepr, StringRepr, MIMERepr } from './value_repr.js'
-import {int16} from "./codec";
+import {int16, int64} from "./codec";
 
 export class Result {
     static decode(data) {
@@ -246,12 +246,32 @@ export class ResultValue extends Result {
 
 ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), int16).to(ResultValue);
 
+export class ExecutionInfo extends Result {
+    static get msgTypeId() { return 5; }
+
+    static unapply(inst) {
+        return [inst.durationMs, inst.timestamp];
+    }
+
+    constructor(durationMs, timestamp) {
+        super(durationMs, timestamp);
+
+        this.durationMs = durationMs;
+        this.timestamp = timestamp;
+
+        Object.freeze(this);
+    }
+}
+
+ExecutionInfo.codec = combined(int32, int64).to(ExecutionInfo);
+
 Result.codecs = [
-  Output,
-  CompileErrors,
-  RuntimeError,
-  ClearResults,
-  ResultValue
+  Output,           // 0
+  CompileErrors,    // 1
+  RuntimeError,     // 2
+  ClearResults,     // 3
+  ResultValue,      // 4
+  ExecutionInfo,    // 5
 ];
 
 Result.codec = discriminated(

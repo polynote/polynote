@@ -293,8 +293,8 @@ function normalSpec(plotType, xField, yMeas) {
                 type: 'quantitative'
             }
         },
-        width: this.plotOutput.offsetWidth - 150,
-        height: this.plotOutput.offsetHeight - 150
+        width: this.plotOutput.offsetWidth - 100,
+        height: this.plotOutput.offsetHeight - 100
     }
 }
 
@@ -308,8 +308,8 @@ function boxplotSpec(xField, yMeas, baseSpec) {
     return {
         $schema: 'https://vega.github.io/schema/vega-lite/v3.json',
         data: {name: this.name},
-        width: this.plotOutput.offsetWidth - 150,
-        height: this.plotOutput.offsetHeight - 150,
+        width: this.plotOutput.offsetWidth - 100,
+        height: this.plotOutput.offsetHeight - 100,
         layer: [
             {
                 // lower whisker

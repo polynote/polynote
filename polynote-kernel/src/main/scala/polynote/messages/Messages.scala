@@ -56,8 +56,14 @@ object LoadNotebook extends MessageCompanion[LoadNotebook](1)
 final case class CellMetadata(
   disableRun: Boolean = false,
   hideSource: Boolean = false,
-  hideOutput: Boolean = false
+  hideOutput: Boolean = false,
+  executionInfo: Option[ExecutionInfo] = None
 )
+
+object CellMetadata {
+  implicit val encoder: Encoder[CellMetadata] = deriveEncoder[CellMetadata]
+  implicit val decoder: Decoder[CellMetadata] = deriveDecoder[CellMetadata]
+}
 
 final case class NotebookCell(
   id: CellID,
@@ -119,6 +125,10 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
 
   def setResults(id: CellID, results: List[Result]): Notebook = updateCell(id) {
     cell => cell.copy(results = ShortList(results))
+  }
+
+  def setMetadata(id: CellID, metadata: CellMetadata): Notebook = updateCell(id) {
+    cell => cell.copy(metadata = metadata)
   }
 
   def getCell(id: CellID): Option[NotebookCell] = cells.find(_.id == id)
