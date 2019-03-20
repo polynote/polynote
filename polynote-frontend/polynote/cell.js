@@ -433,7 +433,6 @@ export class CodeCell extends Cell {
     }
 
     setExecutionInfo(result) {
-        console.log("got exec info!", result, result.timestamp, result.durationMs, Number(result.timestamp), new Date(Number(result.timestamp)));
         if (result instanceof ExecutionInfo) {
             const date = new Date(Number(result.timestamp));
             // clear display
