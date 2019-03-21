@@ -929,7 +929,8 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.cellUI.addEventListener('RunToCursor', () => {
-            const activeCellIdx = Cell.currentFocus.id;
+            const allCellIds = this.cellUI.getCodeCellIds();
+            const activeCellIdx = allCellIds.indexOf(Cell.currentFocus.id);
             if (activeCellIdx < 0) {
                 console.log("Active cell is not part of current notebook?")
             } else {
