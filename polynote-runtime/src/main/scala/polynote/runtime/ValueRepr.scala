@@ -240,10 +240,6 @@ object StreamingDataRepr {
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
   private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
 
-  // visible for testing
-  private[polynote] def addHandle(handle: Handle): Unit =
-    handles.put(handle.handle, handle)
-
   def apply(dataType: DataType, knownSize: Option[Int], lazyIter: => Iterator[ByteBuffer]): StreamingDataRepr =
     fromHandle(new DefaultHandle(_, dataType, knownSize, lazyIter))
 

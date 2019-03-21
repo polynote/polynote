@@ -15,7 +15,7 @@ import scala.collection.mutable
   * at any given time.
   */
 class StreamingHandleManager {
-  private val streams = new ConcurrentHashMap[Int, Iterator[ByteVector32]]
+  private val streams = new ConcurrentHashMap[Int, HandleIterator]
 
   private class HandleIterator(handleId: Int, iter: Iterator[ByteVector32]) extends Iterator[ByteVector32] {
     override def hasNext: Boolean = {

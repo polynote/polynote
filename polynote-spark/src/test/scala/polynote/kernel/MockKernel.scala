@@ -37,15 +37,15 @@ class MockKernel(@volatile private var notebook: Notebook) extends KernelAPI[IO]
   def init: IO[Unit] = IO.unit
   def shutdown(): IO[Unit] = IO.unit
 
-  def startInterpreterFor(id: CellID): IO[fs2.Stream[IO, Result]] = IO.pure {
+  def startInterpreterFor(id: CellID): IO[Stream[IO, Result]] = IO.pure {
     Stream.emits(MockKernel.results((-1).cell))
   }
 
-  def runCell(id: CellID): IO[fs2.Stream[IO, Result]] = IO.pure(Stream.emits(MockKernel.results(id)))
+  def runCell(id: CellID): IO[Stream[IO, Result]] = IO.pure(Stream.emits(MockKernel.results(id)))
 
-  def queueCell(id: CellID): IO[IO[fs2.Stream[IO, Result]]] = IO.pure(runCell(id))
+  def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = IO.pure(runCell(id))
 
-  def runCells(ids: List[CellID]): IO[fs2.Stream[IO, CellResult]] =
+  def runCells(ids: List[CellID]): IO[Stream[IO, CellResult]] =
     ids.map(cell => runCell(cell).map(_.map(CellResult(notebook.path, cell, _)))).sequence.map(Stream.emits).map(_.flatten)
 
   def completionsAt(id: CellID, pos: Int): IO[List[Completion]] = IO.pure(Nil)

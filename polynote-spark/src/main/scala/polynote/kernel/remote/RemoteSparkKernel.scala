@@ -25,6 +25,8 @@ import polynote.runtime._
 import polynote.util.Memoize
 
 import scala.concurrent.duration.{Duration, MINUTES}
+import scala.collection.JavaConverters._
+import scala.concurrent.CancellationException
 
 class RemoteSparkKernel(
   val statusUpdates: Publish[IO, KernelStatusUpdate],
@@ -39,7 +41,7 @@ class RemoteSparkKernel(
   private val shutdownSignal = ReadySignal()
 
   private val requestId = new AtomicInteger(0)
-  private val requests = new ConcurrentHashMap[Int, Deferred[IO, RemoteResponse]]()
+  private val requests = new ConcurrentHashMap[Int, Deferred[IO, Either[Throwable, RemoteResponse]]]()
   private val streamRequests = new ConcurrentHashMap[Int, Deferred[IO, Queue[IO, Option[Result]]]]
 
   private val logger = getLogger
@@ -48,11 +50,11 @@ class RemoteSparkKernel(
     * Send the given message, expecting the given response, and return an IO representing the response being received.
     * The outer IO of the return value sends the request, and the inner layer awaits the response.
     */
-  private def send1[Rep <: RemoteResponse](req: RemoteRequest) = for {
-    promise <- Deferred[IO, Rep]
-    _       <- IO(requests.put(req.reqId, promise.asInstanceOf[Deferred[IO, RemoteResponse]]))
+  private def send1[Rep <: RemoteResponse](req: RemoteRequest): IO[IO[Rep]] = for {
+    promise <- Deferred[IO, Either[Throwable, Rep]]
+    _       <- IO(requests.put(req.reqId, promise.asInstanceOf[Deferred[IO, Either[Throwable, RemoteResponse]]]))
     _       <- transport.sendRequest(req)
-  } yield promise.get.guarantee(IO { requests.remove(req.reqId); () })
+  } yield promise.get.flatMap(IO.fromEither).guarantee(IO { requests.remove(req.reqId); () })
 
   /**
     * Construct the given message with a fresh request ID, and send it, expecting the given response type. Returns an IO
@@ -75,7 +77,7 @@ class RemoteSparkKernel(
 
   private def handleOneResponse(rep: RequestResponse) = Option(requests.get(rep.reqId)) match {
     case None => IO(logger.error(s"Received response $rep, but there is no corresponding request outstanding"))
-    case Some(deferred) => deferred.complete(rep)
+    case Some(deferred) => deferred.complete(Right(rep))
   }
 
   private def handleStreamStart(reqId: Int) = Option(streamRequests.get(reqId)) match {
@@ -128,8 +130,20 @@ class RemoteSparkKernel(
 
   def init: IO[Unit] = initialize.get
 
+  private def cancelRequests() = for {
+    reqs <- IO(requests.values.asScala.toList)
+    _    <- reqs.map(_.complete(Left(new CancellationException("Request cancelled")))).sequence
+  } yield ()
+
   def shutdown(): IO[Unit] =
-    initialize.tryCancel() *> request1[UnitResponse](Shutdown(_)) *> shutdownSignal.complete *> transport.close()
+    initialize.tryCancel() *>
+      (IO(logger.info("Shutting down remote kernel")) *>
+        request1[UnitResponse](Shutdown(_)) *>
+        IO(logger.info("Remote kernel notified of shutdown"))).guarantee(
+          cancelRequests() *>
+          shutdownSignal.complete *>
+          transport.close() *>
+          IO(logger.info("Kernel server stopped")))
 
   def startInterpreterFor(cell: CellID): IO[Stream[IO, Result]] = for {
     reqId    <- IO(requestId.getAndIncrement())
@@ -277,7 +291,7 @@ class RemoteSparkKernel(
 
     override def release(): Unit = {
       super.release()
-      releaseHandle(Streaming, handle).unsafeRunAsyncAndForget()
+      releaseHandle(Streaming, handle).attempt.unsafeRunAsyncAndForget()
     }
   }
 
