@@ -5,6 +5,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.{ServerSocketChannel, SocketChannel}
 
+import cats.data.OptionT
 import cats.effect.{ContextShift, Fiber, IO, Timer}
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.syntax.apply._
@@ -76,48 +77,51 @@ class SocketTransportServer(
   contextShift: ContextShift[IO],
   timer: Timer[IO]
 ) extends TransportServer {
-  private val address = server.getLocalAddress.asInstanceOf[InetSocketAddress]
+
   private val logger = getLogger
 
-  private val connectionRef: Ref[IO, Option[FramedSocket]] = Ref.unsafe[IO, Option[FramedSocket]](None)
-  private val connectedSignal: Deferred[IO, Either[Throwable, FramedSocket]] = Deferred.unsafe
+  private val connectedChannel: Deferred[IO, Either[Throwable, FramedSocket]] = Deferred.unsafe
+  private val closed = ReadySignal()
 
   Stream.awakeEvery[IO](Duration(1, SECONDS)).evalMap(_ => process.exitStatus)
     .interruptWhen(connected.attempt)
     .evalMap {
-      case Some(exitValue) if exitValue != 0 => connectedSignal.complete(Left(new RuntimeException("Remote kernel process died unexpectedly")))
+      case Some(exitValue) if exitValue != 0 => connectedChannel.complete(Left(new RuntimeException("Remote kernel process died unexpectedly")))
       case _  => IO.unit
     }.compile.drain.unsafeRunAsyncAndForget()
 
   private val connection: Fiber[IO, FramedSocket] = IO(server.accept()).flatMap {
     channel =>
       val framed = new FramedSocket(channel)
-      connectionRef.set(Some(framed)) *> connectedSignal.complete(Right(framed)).as(framed)
+      connectedChannel.complete(Right(framed)).as(framed)
   }.start.unsafeRunSync()
 
   override def sendRequest(req: RemoteRequest): IO[Unit] = for {
-    channel <- connectedSignal.get.flatMap(IO.fromEither)
-    _       <- IO(logger.info(req.toString))
+    channel <- connectedChannel.get.flatMap(IO.fromEither)
     msg     <- IO.fromEither(RemoteRequest.codec.encode(req).toEither.leftMap(err => new RuntimeException(err.message)))
     _       <- channel.write(msg)
   } yield ()
 
-  override val responses: Stream[IO, RemoteResponse] = Stream.eval(connectedSignal.get.flatMap(IO.fromEither)).flatMap {
+  override val responses: Stream[IO, RemoteResponse] = Stream.eval(connectedChannel.get.flatMap(IO.fromEither)).flatMap {
     channel =>
       Stream.eval(IO(logger.info("Connected. Decoding incoming messages"))).drain ++
-        channel.bitVectors.through(scodec.stream.decode.pipe[IO, RemoteResponse])
-        .handleErrorWith(err => Stream.eval(IO(logger.error(err)("Response stream terminated due to error"))).drain) ++
-      Stream.eval(IO(logger.info("Response stream terminated"))).drain
-  }
+        channel.bitVectors
+          .interruptWhen(closed())
+          .through(scodec.stream.decode.pipe[IO, RemoteResponse])
+          .handleErrorWith {
+            err => Stream.eval(IO(logger.error(err)("Response stream terminated due to error"))).drain
+          } ++
+        Stream.eval(IO(logger.info("Response stream terminated"))).drain
+  }.onFinalize(closed.complete)
 
-  override def close(): IO[Unit] = connection.cancel.flatMap {
-    _ => connectionRef.get.flatMap {
-      case None => IO.unit
-      case Some(channel) => IO(channel.close())
+  override def close(): IO[Unit] = closed.complete *> connection.cancel.flatMap {
+    _ => connectedChannel.get.flatMap {
+      case Left(_) => IO.unit
+      case Right(channel) => channel.close()
     }
   }
 
-  override def connected: IO[Unit] = connectedSignal.get.flatMap(IO.fromEither).as(())
+  override def connected: IO[Unit] = connectedChannel.get.flatMap(IO.fromEither).as(())
 }
 
 class SocketTransportClient(channel: FramedSocket)(implicit contextShift: ContextShift[IO]) extends TransportClient {

@@ -22,6 +22,7 @@ import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal}
 import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Lazy, Notebook, NotebookUpdate, ShortString, Streaming, Updating}
 import polynote.runtime._
+import polynote.util.Memoize
 
 import scala.concurrent.duration.{Duration, MINUTES}
 
@@ -116,25 +117,19 @@ class RemoteSparkKernel(
     case rep: RequestResponse => Stream.eval(handleOneResponse(rep))
   }.parJoinUnbounded
 
-  private val initialized = Deferred.unsafe[IO, Either[Throwable, Unit]]
-  private val initializer = Semaphore[IO](1).unsafeRunSync()
-
-  val init: IO[Unit] = initializer.tryAcquire.flatMap {
-    case true => {
-      for {
-        mainFiber    <- consumeResponses(transport.responses).compile.drain.start
-        _            <- this.mainFiber.complete(mainFiber)
-        _            <- IO(logger.info("Started processing responses"))
-        _            <- transport.connected
-        _            <- remoteAddr.get
-      } yield ()
-    }.attempt.flatMap(initialized.complete)
-
-    case false => initialized.get.flatMap(IO.fromEither)
+  private val initialize = Memoize.unsafe {
+    for {
+      _ <- consumeResponses(transport.responses.interruptWhen(shutdownSignal())).compile.drain.start
+      _ <- IO(logger.info("Started processing responses"))
+      _ <- transport.connected
+      _ <- remoteAddr.get
+    } yield ()
   }
 
+  def init: IO[Unit] = initialize.get
+
   def shutdown(): IO[Unit] =
-    request1[UnitResponse](Shutdown(_)) *> shutdownSignal.complete *> transport.close() *> (mainFiber.get >>= (_.cancel))
+    initialize.tryCancel() *> request1[UnitResponse](Shutdown(_)) *> shutdownSignal.complete *> transport.close()
 
   def startInterpreterFor(cell: CellID): IO[Stream[IO, Result]] = for {
     reqId    <- IO(requestId.getAndIncrement())
