@@ -181,10 +181,15 @@ class PolyKernel private[kernel] (
                   _ <- symbolTable.drain()
                   start <- clock.monotonic(MILLISECONDS)
                   res <- results
-                  end <- clock.monotonic(MILLISECONDS)
-                  timestamp <- clock.realTime(MILLISECONDS)
                 } yield {
-                  res ++ Stream.emit(ExecutionInfo((end - start).toInt, timestamp))
+                  res.onComplete {
+                    Stream.eval {
+                      for {
+                        end <- clock.monotonic(MILLISECONDS)
+                        timestamp <- clock.realTime(MILLISECONDS)
+                      } yield ExecutionInfo((end - start).toInt, timestamp)
+                    }
+                  }
                 }
             }.map {
               _.getOrElse(Stream.empty)
