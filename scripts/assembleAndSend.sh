@@ -11,7 +11,7 @@ pushd ${DIR}/../ # back to root
         npm run build
     popd
 
-    sbt 'project polynote-spark' 'assembly'
+    sbt 'project polynote-spark' 'set test in assembly := {}' 'assembly'
     scp ./polynote-spark/target/scala-2.11/polynote-spark-assembly-0.1.0-SNAPSHOT.jar ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}
     scp ./config.yml ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} || true
 popd
