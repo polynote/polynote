@@ -31,12 +31,13 @@ export class ReprUI extends UIEventTarget {
 
     show() {
         this.targetEl.parentNode.replaceChild(this.el, this.targetEl);
-        this.tabUI.addTab('Default', span([],'Default'), {content: this.targetEl});
+        const defaultTab = this.tabUI.addTab('Default', span([],'Default'), {content: this.targetEl});
         this.reprs.forEach(repr => this.addReprTabs(repr));
         // kind of hacky way to hide tab if there's only one
         if (Object.keys(this.tabUI.tabs).length <= 1) {
            this.tabUI.tabContainer.style.display = "none";
         }
+        this.tabUI.activateTab(defaultTab);
     }
 
     addReprTabs(repr) {
