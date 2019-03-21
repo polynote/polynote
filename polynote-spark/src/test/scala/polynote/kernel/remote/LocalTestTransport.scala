@@ -118,7 +118,7 @@ class LocalTestTransportServer(transport: LocalTestTransport)(implicit contextSh
   def connectClient(client: LocalTestTransportClient): IO[Unit] = deferredClient.complete(client)
 
   def responses: Stream[IO, RemoteResponse] = Stream.eval(deferredClient.get).flatMap {
-    client => client.responsesOut.dequeue.interruptWhen(client.isClosed)
+    client => client.responsesOut.dequeue.interruptWhen(isClosed)
   }
 
   def sendRequest(req: RemoteRequest): IO[Unit] = transport.logReq(req) *> requestsOut.enqueue1(req)
@@ -132,6 +132,6 @@ class LocalTestTransportClient(server: LocalTestTransportServer, transport: Loca
   val isClosed: SignallingRef[IO, Boolean] = SignallingRef[IO, Boolean](false).unsafeRunSync()
 
   def sendResponse(rep: RemoteResponse): IO[Unit] = transport.logRep(rep) *> responsesOut.enqueue1(rep)
-  def requests: Stream[IO, RemoteRequest] = server.requestsOut.dequeue.interruptWhen(server.isClosed)
+  def requests: Stream[IO, RemoteRequest] = server.requestsOut.dequeue.interruptWhen(isClosed)
   def close(): IO[Unit] = isClosed.set(true)
 }
