@@ -108,4 +108,15 @@ class ScalaInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       output should contain only Output("text/plain; rel=stdout", "Do you like muffins?\n")
     }
   }
+
+  it should "support destructured assignment" in {
+    val code =
+      """
+        |val (foo, bar) = 1 -> "one"
+      """.stripMargin
+
+    assertScalaOutput(code) { (vars, output, displayed) =>
+      (vars - "kernel").toSeq should contain theSameElementsAs List("foo" -> 1, "bar" -> "one")
+    }
+  }
 }

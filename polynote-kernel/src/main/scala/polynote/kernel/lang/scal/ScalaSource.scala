@@ -130,9 +130,13 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       import global.Quasiquote
       trees.foldLeft((Vector.empty[Tree], Vector.empty[Tree])) {
         case ((moduleTrees, classTrees), tree) => tree match {
-          case tree: global.ValDef if !tree.mods.hasFlag(global.Flag.PRIVATE) && !tree.mods.hasFlag(global.Flag.PROTECTED) =>
-            // make a lazy val accessor in the companion
-            (moduleTrees :+ q"lazy val ${tree.name} = INSTANCE.${tree.name}", classTrees :+ tree)
+          case tree: global.ValDef =>
+            if (!tree.mods.hasFlag(global.Flag.PRIVATE) && !tree.mods.hasFlag(global.Flag.PROTECTED)) {
+              // make a lazy val accessor in the companion
+              (moduleTrees :+ q"lazy val ${tree.name} = INSTANCE.${tree.name}", classTrees :+ tree)
+            } else {
+              (moduleTrees, classTrees :+ tree)
+            }
           case tree: global.DefDef =>
             // make a proxy method in the companion
             val typeArgs = tree.tparams.map(tp => global.Ident(tp.name))
