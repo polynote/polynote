@@ -112,11 +112,16 @@ class RemoteSparkKernel(
     case Announce(remoteAddress) =>
       Stream.eval(getNotebook().flatMap(notebook => request1[UnitResponse](InitialNotebook(_, notebook)).as(()))) ++
         Stream.eval(remoteAddr.complete(remoteAddress).handleErrorWith(_ => IO.unit))
-    case KernelStatusResponse(update) => Stream.eval(statusUpdates.publish1(update))
-    case StreamStarted(reqId) => Stream.eval(handleStreamStart(reqId))
-    case StreamEnded(reqId) => Stream.eval(withQueue(reqId, _.enqueue1(None)))
-    case ResultStreamElements(reqId, elements) => Stream.eval(withQueue(reqId, q => Stream.emits(elements).map(Some(_)).through(q.enqueue).compile.drain))
-    case rep: RequestResponse => Stream.eval(handleOneResponse(rep))
+    case KernelStatusResponse(update) =>
+      Stream.eval(statusUpdates.publish1(update))
+    case StreamStarted(reqId) =>
+      Stream.eval(handleStreamStart(reqId))
+    case StreamEnded(reqId) =>
+      Stream.eval(withQueue(reqId, queue => IO(queue.synchronized(queue.enqueue1(None).unsafeRunSync()))))
+    case ResultStreamElements(reqId, elements) =>
+      Stream.eval(withQueue(reqId, q => IO(q.synchronized(elements.foreach(el => q.enqueue1(Some(el)).unsafeRunSync())))))
+    case rep: RequestResponse =>
+      Stream.eval(handleOneResponse(rep))
   }.parJoinUnbounded
 
   private val initialize = Memoize.unsafe {
