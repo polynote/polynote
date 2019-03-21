@@ -154,7 +154,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
     }
   }
 
-  "actual (local) networking" - {
+  "actual (local) networking" ignore {
     "run cell, handle mapping, stream proxy" in {
       runTest {
         val transport = new SocketTransport(new LocalTestDeploy(mockKernelFactory))
