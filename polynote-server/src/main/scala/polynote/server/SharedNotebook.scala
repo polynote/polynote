@@ -11,19 +11,23 @@ import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.functor._
 import cats.syntax.flatMap._
+import cats.syntax.parallel._
 import cats.syntax.traverse._
 import cats.instances.list._
+import cats.instances.option._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
+import polynote.config.PolynoteConfig
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, WindowBuffer}
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp, UpdatingDataRepr}
-import polynote.server.IOSharedNotebook.{GlobalVersion, SubscriberId}
+import polynote.server.SharedNotebook.{GlobalVersion, SubscriberId}
 import polynote.util.VersionBuffer
 import scodec.bits.ByteVector
 
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 
 /**
   * SharedNotebook is responsible for managing concurrent access and updates to a notebook. It's the central authority
@@ -67,7 +71,16 @@ trait SharedNotebook[F[_]] {
     */
   def open(name: String): F[NotebookRef[F]]
 
-  def versions: Stream[F, (Int, Notebook)]
+  def versions: Stream[F, (GlobalVersion, Notebook)]
+
+  def shutdown(): F[Unit]
+}
+
+object SharedNotebook {
+
+  // aliases for disambiguating tuple members
+  type SubscriberId = Int
+  type GlobalVersion = Int
 }
 
 
@@ -79,12 +92,22 @@ class IOSharedNotebook(
   updatesTopic: Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]],  // a subscribe-able channel for watching updates,
   kernelFactory: KernelFactory[IO],
   outputMessages: Topic[IO, Message],
-  kernelLock: Semaphore[IO]
+  kernelLock: Semaphore[IO],
+  config: PolynoteConfig
 )(implicit contextShift: ContextShift[IO]) extends SharedNotebook[IO] {
+
+  private val shutdownSignal: ReadySignal = ReadySignal()
 
   private val updateBuffer = new VersionBuffer[NotebookUpdate]
 
   private val statusUpdates = Publish.PublishTopic(outputMessages).contramap[KernelStatusUpdate](KernelStatus(ShortString(path), _))
+
+  def shutdown(): IO[Unit] = for {
+    _         <- subscribers.values().asScala.toList.parTraverse(_.close())
+    kernelOpt <- kernelRef.get
+    _         <- kernelOpt.map(_.shutdown()).sequence
+    _         <- shutdownSignal.complete
+  } yield ()
 
   // listen to the stream of updates and apply them in order, each one incrementing the global version
   updates.dequeue.unNoneTerminate.zipWithIndex.evalMap {
@@ -92,12 +115,14 @@ class IOSharedNotebook(
       val newGlobalVersion = (version % Int.MaxValue).toInt + 1
       updateBuffer.add(newGlobalVersion, update)
       applyUpdate(newGlobalVersion, subscriberId, update, versionPromise)
-  }.compile.drain.unsafeRunAsyncAndForget()
+  }.interruptWhen(shutdownSignal()).compile.drain.unsafeRunAsyncAndForget()
+
 
   private def ensureKernel(): IO[KernelAPI[IO]] = kernelLock.acquire.bracket { _ =>
     kernelRef.get.flatMap {
-      case None => kernelFactory.launchKernel(() => ref.get.map(_._2), statusUpdates).flatMap {
-        kernel => kernelRef.set(Some(kernel)).as(kernel)
+      case None => kernelFactory.launchKernel(() => ref.get.map(_._2), statusUpdates, config).flatMap {
+        kernel =>
+          kernelRef.set(Some(kernel)).as(kernel)
       }
       case Some(kernel) => IO.pure(kernel)
     }
@@ -111,12 +136,11 @@ class IOSharedNotebook(
       // TODO: remove this, just checking for now
       assert(newGlobalVersion - 1 == currentVer, "Version is wrong!")
 
-      val doUpdate = update match {
-        case InsertCell(_, _, _, cell, after) => ref.set(newGlobalVersion -> notebook.insertCell(cell, after))
-        case DeleteCell(_, _, _, id)          => ref.set(newGlobalVersion -> notebook.deleteCell(id))
-        case UpdateCell(_, _, _, id, edits)   => ref.set(newGlobalVersion -> notebook.editCell(id, edits))
-        case UpdateConfig(_, _, _, config)    => ref.set(newGlobalVersion -> notebook.copy(config = Some(config)))
-        case SetCellLanguage(_, _, _, id, lang) => ref.set(newGlobalVersion -> notebook.updateCell(id)(_.copy(language = lang)))
+      val doUpdate = ref.set(newGlobalVersion -> update.applyTo(notebook)).flatMap {
+        _ => kernelRef.get.flatMap {
+          case None => IO.unit
+          case Some(kernel) => kernel.updateNotebook(newGlobalVersion, update)
+        }
       }
 
       for {
@@ -230,7 +254,7 @@ class IOSharedNotebook(
 
     def startKernel(): IO[Unit] = ensureKernel().as(())
 
-    def init: IO[Unit] = ensureKernel().flatMap(_.init)
+    def init: IO[Unit] = ensureKernel().as(())
 
     private def withInterpreterLaunch[A](id: CellID)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
       kernel        <- ensureKernel()
@@ -248,7 +272,7 @@ class IOSharedNotebook(
 
 
     /**
-      * If the [[ResultValue]] has any [[UpdatingDataRepr]]s, create a [[SignallingRef]] to capture its updatese in a
+      * If the [[ResultValue]] has any [[UpdatingDataRepr]]s, create a [[SignallingRef]] to capture its updates in a
       * Stream. When the finalizer of the repr is run, the stream will terminate.
       */
     private def watchUpdatingValues(value: ResultValue) = {
@@ -335,70 +359,44 @@ class IOSharedNotebook(
 
     override def info: IO[Option[KernelInfo]] = ifKernelStarted(_.info, None)
 
-    private val streams = new mutable.HashMap[Int, Iterator[ByteVector32]]
-
-    private class HandleIterator(handleId: Int, iter: Iterator[ByteVector32]) extends Iterator[ByteVector32] {
-      override def hasNext: Boolean = {
-        val hasNext = iter.hasNext
-        if (!hasNext) {
-          streams.remove(handleId)  // release this iterator for GC to make underlying collection available for GC
-        }
-        hasNext
-      }
-
-      override def next(): ByteVector32 =
-        iter.next()
-    }
+    private val streams = new StreamingHandleManager
 
     override def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[Array[ByteVector32]] = handleType match {
-      case Streaming =>
-        streams.get(handleId).map(IO.pure).getOrElse {
-          for {
-            handleOpt <- IO(StreamingDataRepr.getHandle(handleId))
-          } yield handleOpt match {
-            case Some(handle) =>
-              val iter = new HandleIterator(handleId, handle.iterator.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer]))))
-              streams.put(handleId, iter)
-              iter
-
-            case None => Iterator.empty
-          }
-        }.map {
-          iter =>
-            iter.take(count).toArray
-        }
-
+      case Streaming => streams.getStreamData(handleId, count)
       case _ => ensureKernel().flatMap(_.getHandleData(handleType, handleId, count))
     }
 
     override def releaseHandle(handleType: HandleType, handleId: GlobalVersion): IO[Unit] = handleType match {
       case Lazy | Updating => ensureKernel().flatMap(_.releaseHandle(handleType, handleId))
       case Streaming =>
-        IO(streams.remove(handleId)) *> ensureKernel().flatMap(_.releaseHandle(Streaming, handleId))
+        IO(streams.releaseStreamHandle(handleId)) *> ensureKernel().flatMap(_.releaseHandle(Streaming, handleId))
     }
 
     override def modifyStream(handleId: Int, ops: List[TableOp]): IO[Option[StreamingDataRepr]] =
       ensureKernel().flatMap(_.modifyStream(handleId, ops))
 
     override def cancelTasks(): IO[Unit] = ifKernelStarted(_.cancelTasks(), ())
+
+    override def updateNotebook(version: GlobalVersion, update: NotebookUpdate): IO[Unit] = IO.unit
   }
 
 }
 
 object IOSharedNotebook {
-
-  // aliases for disambiguating tuple members
-  type SubscriberId = Int
-  type GlobalVersion = Int
-
-  def apply(path: String, initial: Notebook, kernelFactory: KernelFactory[IO])(implicit contextShift: ContextShift[IO]): IO[IOSharedNotebook] = for {
+  def apply(
+    path: String,
+    initial: Notebook,
+    kernelFactory: KernelFactory[IO],
+    config: PolynoteConfig)(implicit
+    contextShift: ContextShift[IO]
+  ): IO[IOSharedNotebook] = for {
     ref          <- SignallingRef[IO, (GlobalVersion, Notebook)](0 -> initial)
     kernel       <- Ref[IO].of[Option[KernelAPI[IO]]](None)
     updates      <- Queue.unbounded[IO, Option[(SubscriberId, NotebookUpdate, Deferred[IO, GlobalVersion])]]
     updatesTopic <- Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]](None)
     outputMessages <- Topic[IO, Message](KernelStatus(ShortString(path), KernelBusyState(busy = false, alive = false)))
     kernelLock   <- Semaphore[IO](1)
-  } yield new IOSharedNotebook(path, ref, kernel, updates, updatesTopic, kernelFactory, outputMessages, kernelLock)
+  } yield new IOSharedNotebook(path, ref, kernel, updates, updatesTopic, kernelFactory, outputMessages, kernelLock, config)
 }
 
 abstract class NotebookRef[F[_]](implicit F: Monad[F]) extends KernelAPI[F] {

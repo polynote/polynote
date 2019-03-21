@@ -102,6 +102,7 @@ lazy val `polynote-spark` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
+    "org.scodec" %% "scodec-stream" % "1.2.0",
     "org.apache.spark" %% "spark-sql" % "2.1.1" % "provided",
     "org.apache.spark" %% "spark-repl" % "2.1.1" % "provided",
     "org.apache.spark" %% "spark-sql" % "2.1.1" % "test",
@@ -113,7 +114,9 @@ lazy val `polynote-spark` = project.settings(
       copyRuntimeJar((resourceManaged in Compile).value, "polynote-runtime.jar", (packageBin in (`polynote-runtime`, Compile)).value),
       copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value)
     )
-  }.taskValue
+  }.taskValue,
+  fork in Test := false,
+  parallelExecution in Test := false
 ) dependsOn (`polynote-server`, `polynote-spark-runtime`)
 
 val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`)

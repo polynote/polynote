@@ -21,15 +21,16 @@ import scala.tools.nsc.Settings
 
 trait KernelFactory[F[_]] {
 
-  def launchKernel(getNotebook: () => F[Notebook], statusUpdates: Publish[F, KernelStatusUpdate]): F[KernelAPI[F]]
+  def launchKernel(
+    getNotebook: () => F[Notebook],
+    statusUpdates: Publish[F, KernelStatusUpdate],
+    config: PolynoteConfig
+  ): F[KernelAPI[F]]
 
-  def interpreters: Map[String, LanguageInterpreter.Factory[F]]
 }
 
 class IOKernelFactory(
-  dependencyFetchers: Map[String, DependencyFetcher[IO]],
-  val interpreters: Map[String, LanguageInterpreter.Factory[IO]],
-  config: PolynoteConfig)(implicit
+  dependencyFetchers: Map[String, DependencyFetcher[IO]])(implicit
   contextShift: ContextShift[IO]
 ) extends KernelFactory[IO] {
 
@@ -43,13 +44,14 @@ class IOKernelFactory(
     deps: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
+    config: PolynoteConfig,
     extraClassPath: List[File] = Nil,
     settings: Settings,
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
   ): IO[PolyKernel] = IO.pure(PolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader, config))
 
-  override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate]): IO[KernelAPI[IO]] = for {
+  override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate], polynoteConfig: PolynoteConfig): IO[KernelAPI[IO]] = for {
     notebook <- getNotebook()
     path      = notebook.path
     config    = notebook.config.getOrElse(NotebookConfig.empty)
@@ -57,7 +59,7 @@ class IOKernelFactory(
     deps     <- fetchDependencies(config, statusUpdates)
     numDeps   = deps.values.map(_.size).sum
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = (numDeps.toDouble / (numDeps + 1) * 255).toByte) :: Nil))
-    kernel   <- mkKernel(getNotebook, deps, interpreters, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader)
+    kernel   <- mkKernel(getNotebook, deps, LanguageInterpreter.factories, statusUpdates, polynoteConfig, extraClassPath, settings, outputDir, parentClassLoader)
     _        <- kernel.init
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = 255.toByte, status = TaskStatus.Complete) :: Nil))
     _        <- statusUpdates.publish1(KernelBusyState(busy = false, alive = true))

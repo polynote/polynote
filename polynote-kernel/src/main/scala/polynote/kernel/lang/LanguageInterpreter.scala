@@ -1,12 +1,16 @@
 package polynote.kernel.lang
 
 import java.io.File
+import java.util.ServiceLoader
 
+import cats.effect.IO
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, RuntimeSymbolTable, SymbolDecl}
 import polynote.messages.CellID
+
+import scala.collection.JavaConverters._
 
 /**
   * The LanguageInterpreter runs code in a given language.
@@ -70,5 +74,11 @@ object LanguageInterpreter {
     def languageName: String
     def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageInterpreter[F]
   }
+
+  lazy val factories: Map[String, Factory[IO]] = ServiceLoader.load(classOf[LanguageInterpreterService]).iterator.asScala.toSeq
+    .sortBy(_.priority)
+    .foldLeft(Map.empty[String, LanguageInterpreter.Factory[IO]]) {
+      (accum, next) => accum ++ next.interpreters
+    }
 
 }

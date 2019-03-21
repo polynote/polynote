@@ -428,7 +428,6 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     _ =>
       compileUnit.flatMap { unit =>
         withCompiler {
-          global.demandNewCompilerRun()
           val run = new global.Run()
           unit.body = global.resetAttrs(unit.body)
           reporter.attempt(run.compileUnits(List(unit), run.namerPhase))

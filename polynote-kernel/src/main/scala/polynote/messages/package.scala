@@ -29,6 +29,8 @@ package object messages {
       str.substring(0, Short.MaxValue - 1).asInstanceOf[ShortString]
     else
       str.asInstanceOf[ShortString]
+
+    def unapply(str: ShortString): Option[String] = Option(str)
   }
 
   implicit def truncateShortString(str: String): ShortString = ShortString(
@@ -55,16 +57,21 @@ package object messages {
   trait TinyTag // denotes that the value is expected to be < 256 elements in length
 
   type TinyString = String @@ TinyTag
-  def TinyString(str: String): TinyString = if (str.length > 255)
-    throw new RuntimeException("String length exceeds 255") // TODO: should these truncate instead?
-  else
-    str.asInstanceOf[TinyString]
+  object TinyString {
+    def apply(str: String): TinyString = if (str.length > 255)
+      throw new RuntimeException("String length exceeds 255") // TODO: should these truncate instead?
+    else
+      str.asInstanceOf[TinyString]
+
+    def unapply(str: TinyString): Option[String] = Option(str)
+  }
+
 
   implicit def truncateTinyString(str: String): TinyString = TinyString(
     if (str.length > 255) str.substring(0, 254) else str)
 
   implicit val tinyStringCodec: Codec[TinyString] =
-    variableSizeBytes(uint8, string(StandardCharsets.UTF_8)).xmap(TinyString, x => x)
+    variableSizeBytes(uint8, string(StandardCharsets.UTF_8)).xmap(TinyString.apply, x => x)
   
   implicit val tinyStringEncoder: Encoder[TinyString] = Encoder.encodeString.contramap(s => s)
   implicit val tinyStringDecoder: Decoder[TinyString] = Decoder.decodeString.map(s => TinyString(s))
@@ -72,10 +79,15 @@ package object messages {
   implicit val tinyStringKeyDecoder: KeyDecoder[TinyString] = KeyDecoder.decodeKeyString.map(s => TinyString(s))
 
   type TinyList[A] = List[A] @@ TinyTag
-  def TinyList[A](list: List[A]): TinyList[A] = if (list.size > 255)
-    throw new RuntimeException("List length exceeds 255")
-  else
-    list.asInstanceOf[TinyList[A]]
+
+  object TinyList {
+    def apply[A](list: List[A]): TinyList[A] = if (list.size > 255)
+      throw new RuntimeException("List length exceeds 255")
+    else
+      list.asInstanceOf[TinyList[A]]
+
+    def unapply[A](list: TinyList[A]): Option[List[A]] = Option(list)
+  }
 
   implicit def truncateTinyList[A](list: List[A]): TinyList[A] = TinyList(list.take(255))
 

@@ -185,23 +185,11 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
 
 
   // manual codec - we'll never encode nor decode `value` nor `scalaType`.
-  /*
-      Note: We could have a valid decoding with:
-
-              _ match {
-                case (((name, typeName), reprs), sourceCell) =>
-                  ResultValue(name, typeName, reprs, sourceCell, None, scala.reflect.runtime.universe.NoType)
-              }
-
-      but it seems prudent to raise an alarm if we're trying to decode a ResultValue, because we shouldn't be. Maybe
-      at some point if there is a client-side interpreter (i.e. JavaScript up in your browser) this would be a thing?
-   */
   implicit val codec: Codec[ResultValue] =
     (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec(ValueReprCodec.codec) ~ short16).xmap(
-      _ => throw new UnsupportedOperationException(
-        s"Shouldn't be decoding a ${classOf[ResultValue].getSimpleName} on the server!"
-        // the reflection is so this message can participate in refactoring of ResultValue's name, which is likely.
-      ),
+      {
+        case (((name, typeName), reprs), sourceCell) => ResultValue(name, typeName, reprs, sourceCell, Unit, scala.reflect.runtime.universe.NoType)
+      },
       v => (((v.name, v.typeName), v.reprs), v.sourceCell)
     )
 
