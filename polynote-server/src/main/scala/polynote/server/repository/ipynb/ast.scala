@@ -86,13 +86,22 @@ object JupyterOutput {
       case DisplayData(data, metadata) => convertData(data, metadata)
       case ExecuteResult(execId, data, metadata) =>
         val meta  = metadata.map(_.toMap).getOrElse(Map.empty)
-        val name  = meta.get("name").flatMap(_.asString).getOrElse("Out")
-        val typ   = meta.get("type").flatMap(_.asString).getOrElse("")
-        val reprs = data.toList.map {
-          case ("text/plain", json) => StringRepr(jsonToStr(json))
-          case (mime, json) => MIMERepr(mime, jsonToStr(json))
+        // maybe it's a CompileError?
+        meta.get("rel").find(_.asString.exists(_ == "compiler_errors")).fold[Result] {
+          // nope, it's just a normal result
+          val name  = meta.get("name").flatMap(_.asString).getOrElse("Out")
+          val typ   = meta.get("type").flatMap(_.asString).getOrElse("")
+          val reprs = data.toList.map {
+            case ("text/plain", json) => StringRepr(jsonToStr(json))
+            case (mime, json) => MIMERepr(mime, jsonToStr(json))
+          }
+          ResultValue(name, typ, reprs, cellId, (), scala.reflect.runtime.universe.NoType)
+        } { _ =>
+          // yep, it's a CompileError!
+          data.get("application/json")
+            .flatMap(_.as[CompileErrors].fold(_ => None, Option(_)))
+            .getOrElse(CompileErrors(Nil))
         }
-        ResultValue(name, typ, reprs, cellId, (), scala.reflect.runtime.universe.NoType)
       case Error(typ, message, trace) =>
         RuntimeError(RecoveredException(message, typ))
     }
