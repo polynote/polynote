@@ -414,7 +414,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       trees   <- typedTreesAt(offset)
       firstAp  = trees.reverse.dropWhile(!_.isInstanceOf[global.Apply])
       applyOpt = firstAp.headOption  // deepest Apply tree
-      apply   <- Either.fromOption(applyOpt, new RuntimeException("No apply tree at position"))
+      apply   <- Either.fromOption(applyOpt, NoApplyTree)
       (ad, pn) = nestedApplies(apply)  // how many param lists deep are we?
       result  <- signatureResult(apply, ad, pn)
     } yield result
@@ -450,3 +450,5 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
   def compile: Either[Throwable, global.Symbol] = compiledModule
 
 }
+
+case object NoApplyTree extends Throwable
