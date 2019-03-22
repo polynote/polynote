@@ -42,7 +42,7 @@ class RemoteSparkKernel(
 
   private val requestId = new AtomicInteger(0)
   private val requests = new ConcurrentHashMap[Int, Deferred[IO, Either[Throwable, RemoteResponse]]]()
-  private val streamRequests = new ConcurrentHashMap[Int, Deferred[IO, Queue[IO, Option[Result]]]]
+  private val streamRequests = new ConcurrentHashMap[Int, ResultStreamRequest]()
 
   private val logger = getLogger
 
@@ -72,8 +72,10 @@ class RemoteSparkKernel(
     */
   private def prepareResultStream(req: RemoteRequest): IO[IO[Stream[IO, Result]]] = for {
     queuePromise <- Deferred[IO, Queue[IO, Option[Result]]]
-    _            <- IO(streamRequests.put(req.reqId, queuePromise))
-  } yield queuePromise.get.map(q => q.dequeue.unNoneTerminate.map(transformResult).onFinalize(IO { streamRequests.remove(req.reqId); () }))
+    semaphore    <- Semaphore[IO](1)
+    streamReq     = ResultStreamRequest(queuePromise, semaphore)
+    _            <- IO(streamRequests.put(req.reqId, streamReq))
+  } yield streamReq.stream.map(_.map(transformResult).onFinalize(IO { streamRequests.remove(req.reqId); () }))
 
   private def handleOneResponse(rep: RequestResponse) = Option(requests.get(rep.reqId)) match {
     case None => IO(logger.error(s"Received response $rep, but there is no corresponding request outstanding"))
@@ -82,13 +84,12 @@ class RemoteSparkKernel(
 
   private def handleStreamStart(reqId: Int) = Option(streamRequests.get(reqId)) match {
     case None => IO(logger.error(s"Received stream start for $reqId, but there is no corresponding stream request outstanding"))
-    case Some(deferred) =>
-      Queue.unbounded[IO, Option[Result]] >>= deferred.complete
+    case Some(streamReq) => streamReq.start()
   }
 
-  private def withQueue(reqId: Int, fn: Queue[IO, Option[Result]] => IO[Unit]) = Option(streamRequests.get(reqId)) match {
+  private def withStreamReq(reqId: Int, fn: ResultStreamRequest => IO[Unit]) = Option(streamRequests.get(reqId)) match {
     case None => IO(logger.error(s"Received stream start for $reqId, but there is no corresponding stream request outstanding"))
-    case Some(deferred) => deferred.get >>= fn
+    case Some(streamReq) => fn(streamReq)
   }
 
   private def transformResult(result: Result): Result = result match {
@@ -117,9 +118,9 @@ class RemoteSparkKernel(
     case StreamStarted(reqId) =>
       Stream.eval(handleStreamStart(reqId))
     case StreamEnded(reqId) =>
-      Stream.eval(withQueue(reqId, queue => IO(queue.synchronized(queue.enqueue1(None).unsafeRunSync()))))
+      Stream.eval(withStreamReq(reqId, _.end()))
     case ResultStreamElements(reqId, elements) =>
-      Stream.eval(withQueue(reqId, q => IO(q.synchronized(elements.foreach(el => q.enqueue1(Some(el)).unsafeRunSync())))))
+      Stream.eval(withStreamReq(reqId, _.append(elements)))
     case rep: RequestResponse =>
       Stream.eval(handleOneResponse(rep))
   }.parJoinUnbounded
@@ -310,6 +311,28 @@ class RemoteSparkKernel(
       computedFlag = true
       getHandleData(Lazy, remoteHandle, 1).unsafeRunSync().head.toByteBuffer
     }
+  }
+
+  private case class ResultStreamRequest(
+    queuePromise: Deferred[IO, Queue[IO, Option[Result]]],
+    semaphore: Semaphore[IO]
+  ) {
+
+    def start(): IO[Unit] = Queue.unbounded[IO, Option[Result]].flatMap {
+      q => semaphore.acquire.bracket(_ => queuePromise.complete(q))(_ => semaphore.release)
+    }
+
+    def append(results: List[Result]): IO[Unit] = semaphore.acquire.bracket { _ =>
+      queuePromise.get.flatMap {
+        queue => Stream.emits[IO, Result](results).map(Some(_)).through(queue.enqueue).compile.drain
+      }
+    }(_ => semaphore.release)
+
+    def end(): IO[Unit] = semaphore.acquire.bracket { _ =>
+      queuePromise.get.flatMap(_.enqueue1(None))
+    }(_ => semaphore.release)
+
+    def stream: IO[Stream[IO, Result]] = queuePromise.get.map(_.dequeue.unNoneTerminate)
   }
 
 }
