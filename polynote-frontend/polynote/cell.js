@@ -432,6 +432,39 @@ export class CodeCell extends Cell {
         }
     }
 
+    // move this somewhere else if it's useful outside Cell...
+    static prettyDuration(milliseconds) {
+        function quotRem(dividend, divisor) {
+            const quotient = Math.floor(dividend / divisor);
+            const remainder = dividend % divisor;
+            return [quotient, remainder];
+        }
+
+        const [durationDays, leftOverHrs] = quotRem(milliseconds, 1000 * 60 * 60 * 24);
+        const [durationHrs, leftOverMin] = quotRem(leftOverHrs, 1000 * 60 * 60);
+        const [durationMin, leftOverSec] = quotRem(leftOverMin, 1000 * 60);
+        const [durationSec, durationMs] = quotRem(leftOverSec, 1000);
+
+        const duration = [];
+        if (durationDays) {
+            duration.push(`${durationDays}d`)
+        }
+        if (durationHrs) {
+            duration.push(`${durationHrs}h`)
+        }
+        if (durationMin) {
+            duration.push(`${durationMin}m`)
+        }
+        if (durationSec) {
+            duration.push(`${durationSec}s`)
+        }
+        if (durationMs) {
+            duration.push(`${durationMs}ms`)
+        }
+
+        return duration.join(":")
+    }
+
     setExecutionInfo(result) {
         if (result instanceof ExecutionInfo) {
             const date = new Date(Number(result.timestamp));
@@ -439,8 +472,9 @@ export class CodeCell extends Cell {
             this.execInfoEl.innerHTML = '';
 
             // populate display
-            this.execInfoEl.appendChild(span(['exec-timestamp'], [date.toLocaleString("en-US", {timeZoneName: "short", hour12: false})]));
-            this.execInfoEl.appendChild(span(['exec-duration'], [result.durationMs.toString()]));
+            this.execInfoEl.appendChild(span(['exec-timestamp'], [date.toLocaleString("en-US", {timeZoneName: "short"})]));
+
+            this.execInfoEl.appendChild(span(['exec-duration'], [CodeCell.prettyDuration(result.durationMs)]));
             this.execInfoEl.classList.add('output');
         } else {
             throw "Result must be an ExecutionInfo"
