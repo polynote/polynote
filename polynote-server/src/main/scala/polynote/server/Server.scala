@@ -1,6 +1,7 @@
 package polynote.server
 
 import java.io.File
+import java.net.{URI, URL}
 import java.util.ServiceLoader
 
 import cats.effect._
@@ -68,6 +69,25 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     config,
     executionContext = executionContext)
 
+  /**
+    * This is an icky thing we have to do to prevent certain *ahem* bad logging citizens from breaking. Find the log4j
+    * configuration and reset the system property to be a URI version of it rather than a relative path.
+    *
+    * This is probably not a good way to deal with this and is going to lead to lots of other problems. We should try
+    * to fix the actual issue in the libraries that have it.
+    */
+  protected def adjustSystemProperties(): IO[Unit] = IO {
+    System.getProperty("log4j.configuration") match {
+      case null =>
+      case loc =>
+        val asURL = try new URL(loc) catch {
+          case err: Throwable => getClass.getClassLoader.getResource(loc)
+        }
+        logger.info(s"Resetting log4j.configuration to $asURL")
+        System.setProperty("log4j.configuration", asURL.toString)
+    }
+  }
+
   def run(args: List[String]): IO[ExitCode] = for {
     // note, by default our bdas genie script sets log4j.configuration to a nonexistent log4j config. We should either
     // create that config or remove that setting. Until then, be sure to add `--driver-java-options "-Dlog4j.configuration=log4j.properties"
@@ -77,6 +97,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     port             = config.listen.port
     address          = config.listen.host
     _               <- IO(logger.info(s"Read config from ${args.configFile.getAbsolutePath}: $config"))
+    _               <- adjustSystemProperties()
     host             = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url              = s"http://$host:$port"
     _               <- splash
