@@ -412,7 +412,7 @@ export class CodeCell extends Cell {
             if (result.name !== "Out") {
                 // don't display this; it's a named declaration
                 // TODO: have a way to display these if desired
-            } else if (result.reprs.length > 1) {
+            } else if (result.reprs.length) {
                 const outLabel = div(['out-ident', 'with-reprs'], `Out:`);
                 this.resultTabs.appendChild(outLabel);
 
