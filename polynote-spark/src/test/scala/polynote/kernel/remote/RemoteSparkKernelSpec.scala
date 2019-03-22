@@ -89,6 +89,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
             remoteKernel <- startKernelF.join
             _ <- await
             _ <- remoteKernel.shutdown()
+            _ <- remoteClient.shutdown()
             _ <- runRemote.join
           } yield ()
       }
@@ -100,16 +101,15 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
       val transport = new LocalTestTransport
       for {
         currentNotebook   <- Ref[IO].of(initialNotebook)
+        remoteClient = new RemoteSparkKernelClient(transport.client, mockKernelFactory)
+        runRemoteClient <- remoteClient.run().start
         startRemoteKernel <- RemoteSparkKernel(
           statusUpdates,
           () => currentNotebook.get,
           config,
           transport).start
 
-        remoteClient = new RemoteSparkKernelClient(transport.client, mockKernelFactory)
-        runRemoteClient <- remoteClient.run().start
         remoteKernel <- startRemoteKernel.join
-        _ <- remoteKernel.init
 
         results <- remoteKernel.runCell(2.toShort).flatMap(_.compile.toList)
 
@@ -123,6 +123,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
         buffers <- remoteKernel.getHandleData(Streaming, repr.handle, 2)
         _ = buffers shouldEqual MockKernel.twoStream
         _ <- remoteKernel.shutdown()
+        _ <- remoteClient.shutdown()
         _ <- runRemoteClient.join
       } yield ()
     }
@@ -148,6 +149,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
           _               <- subscriber.update(update)
           _ = kernelFactory.kernel.currentNotebook shouldEqual update.applyTo(initialNotebook)
           _ <- sharedNotebook.shutdown()
+          _ <- remoteClient.shutdown()
           _ <- runRemoteClient.join
         } yield ()
       }
