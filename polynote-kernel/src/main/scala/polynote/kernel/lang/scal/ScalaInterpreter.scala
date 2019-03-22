@@ -261,7 +261,10 @@ class ScalaInterpreter(
         }
         Option(Signatures(hints.flatMap(_.toList), 0, n.toByte))
       case _ => None
-    }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(None))
+    }.handleErrorWith {
+      case NoApplyTree => IO.pure(None)
+      case err => IO(logger.error(err)("Completions error")).as(None)
+    }
 
 
 
