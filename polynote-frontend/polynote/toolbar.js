@@ -82,8 +82,8 @@ class CellToolbarUI extends UIEventTarget {
                     .click(() => this.dispatchEvent(new ToolbarEvent(("InsertBelow")))),
                 iconButton(["delete-cell"], "Delete current cell", "", "Delete")
                     .click(() => this.dispatchEvent(new ToolbarEvent(("DeleteCell")))),
-                iconButton(['undo'], 'Undo', '', 'Undo')
-                    .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
+                // iconButton(['undo'], 'Undo', '', 'Undo')
+                //     .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
             ]
         ]);
 
