@@ -204,7 +204,7 @@ object SocketTransport {
     ): IO[DeployedProcess] = {
       val sparkConfig = config.spark ++ notebookConfig.sparkConfig.getOrElse(Map.empty)
 
-      val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode")
+      val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory")
         .flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
 
       val sparkSubmitArgs = sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
@@ -224,6 +224,7 @@ object SocketTransport {
 
       val command = Seq("spark-submit", "--class", classOf[RemoteSparkKernelClient].getName) ++
         Seq("--driver-java-options", allDriverOptions) ++
+        sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
         (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++
         sparkSubmitArgs ++
         sparkArgs ++
