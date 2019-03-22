@@ -86,7 +86,7 @@ object JupyterOutput {
       case DisplayData(data, metadata) => convertData(data, metadata)
       case ExecuteResult(execId, data, metadata) =>
         val meta  = metadata.map(_.toMap).getOrElse(Map.empty)
-        // maybe it's a compiler error?
+        // maybe it's a CompileError?
         meta.get("rel").find(_.asString.exists(_ == "compiler_errors")).fold[Result] {
           // nope, it's just a normal result
           val name  = meta.get("name").flatMap(_.asString).getOrElse("Out")
@@ -97,7 +97,7 @@ object JupyterOutput {
           }
           ResultValue(name, typ, reprs, cellId, (), scala.reflect.runtime.universe.NoType)
         } { _ =>
-          // it's a compiler error!
+          // yep, it's a CompileError!
           data.get("application/json")
             .flatMap(_.as[CompileErrors].fold(_ => None, Option(_)))
             .getOrElse(CompileErrors(Nil))
