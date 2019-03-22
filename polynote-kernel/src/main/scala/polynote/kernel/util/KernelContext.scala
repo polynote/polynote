@@ -87,11 +87,18 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
   def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = {
     val otherReprs = try {
       reprsOfCache.getOrElseUpdate(typ,
-        runtimeTools.inferImplicitValue(ru.appliedType(ru.typeOf[ReprsOf[_]].typeConstructor, importToRuntime.importType(typ))) match {
-          case ru.EmptyTree => ReprsOf.empty
-          case tree =>
-            val untyped = runtimeTools.untypecheck(tree)
-            runtimeTools.eval(untyped).asInstanceOf[ReprsOf[Any]]
+        {
+          val run = new global.Run()
+          val appliedType = global.appliedType(global.typeOf[ReprsOf[_]].typeConstructor, typ)
+
+          val runtimeType = importToRuntime.importType(appliedType)
+          runtimeTools.inferImplicitValue(runtimeType) match {
+            case ru.EmptyTree =>
+              ReprsOf.empty
+            case tree =>
+              val untyped = runtimeTools.untypecheck(tree)
+              runtimeTools.eval(untyped).asInstanceOf[ReprsOf[Any]]
+          }
         }
       ).apply(value)
     } catch {
