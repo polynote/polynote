@@ -88,12 +88,14 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     }
   }
 
-  def run(args: List[String]): IO[ExitCode] = for {
-    // note, by default our bdas genie script sets log4j.configuration to a nonexistent log4j config. We should either
-    // create that config or remove that setting. Until then, be sure to add `--driver-java-options "-Dlog4j.configuration=log4j.properties"
-    // to your `spark-submit` call.
+  def getConfigs(args: List[String]): IO[(ServerArgs, PolynoteConfig)] = for {
     args            <- parseArgs(args)
     config          <- PolynoteConfig.load(args.configFile)
+  } yield (args, config)
+
+  def run(args: List[String]): IO[ExitCode] = for {
+    tuple           <- getConfigs(args)
+    (args, config)   = tuple // tuple decomposition in for-comprehension doesn't seem work I guess...
     port             = config.listen.port
     address          = config.listen.host
     _               <- IO(logger.info(s"Read config from ${args.configFile.getAbsolutePath}: $config"))
