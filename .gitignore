@@ -7,3 +7,5 @@ libjep.dylib
 .idea
 .DS_Store
 config.yml
+scripts/dist-config.yml
+*.zip
