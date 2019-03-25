@@ -305,5 +305,13 @@ final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelSt
 object KernelBusyState extends KernelStatusUpdateCompanion[KernelBusyState](2)
 
 //                                           key          html
-final case class KernelInfo(content: TinyMap[ShortString, String]) extends KernelStatusUpdate
-object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3)
+final case class KernelInfo(content: TinyMap[ShortString, String]) extends KernelStatusUpdate {
+  def combine(other: KernelInfo): KernelInfo = {
+    copy(TinyMap(content ++ other.content))
+  }
+}
+object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3) {
+  def apply(tups: (String, String)*): KernelInfo = KernelInfo(TinyMap(tups.map {
+    case (k, v) => ShortString(k) -> v
+  }.toMap))
+}
