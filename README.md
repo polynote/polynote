@@ -21,13 +21,29 @@ Current notebook solutions, like Jupyter and Zeppelin, are lacking in some funda
 
 ## Usage
 
-### Running locally
+### Alpha user instructions
+
+Alpha users should use our distribution zip file to deploy Polynote. You can go straight to [these instructions](#running-locally-using-scripts)
+
+### Maintainer instructions
+
+Maintainers can run Polynote in three main ways: locally through the IDE, locally using the run scripts, and remotely using the run scripts. 
+
+#### Running locally with IntelliJ
 
 You can run Polynote locally in IntelliJ by running `polynote/server/SparkServer.scala`. In the Run Configuration, 
-make sure to select the "Include dependencies with Provided Scope" option to load Spark. 
+make sure to select the "Include dependencies with Provided Scope" option to load Spark. There are more 
+[tips for developers here.](#development-tips)
 
-To use the Python kernel, you'll want to [install jep](https://github.com/ninia/jep/wiki/Getting-Started#installing-jep). 
-You'll need to add the jep library to a place where Java can find it. 
+To use the Python kernel, you'll need to install [`jep`](https://github.com/ninia/jep) and [`jedi`](https://jedi.readthedocs.io/en/latest/). 
+You can use `scripts/install-jep.sh` to install both on your machine. 
+It will also echo out the value you should set your `LD_LIBRARY_PATH` to for `jep` to work.
+You can set the `LD_LIBRARY_PATH` variable to that value in your IntelliJ Run Configuration. 
+
+##### Manual Installation
+
+Alternatively, you can install `jep` and `jedi` manually. 
+Check out the [`jep` installation instructions](https://github.com/ninia/jep/wiki/Getting-Started#installing-jep). 
 
 On OS X, you will need to do something like:
     
@@ -35,14 +51,36 @@ On OS X, you will need to do something like:
 
 On Linux, you will need to do something like:
 
-    ln -sf /usr/local/lib/python2.7/dist-packages/jep/libjep.so /usr/lib/libjep.so
+    ln -sf /usr/local/lib/python3.7/dist-packages/jep/libjep.so /usr/lib/libjep.so
     
 You may also want to check out the instructions for your system as described in the 
 [jep docs under Operating System Specifics](https://github.com/ninia/jep/wiki). 
 
-You will also need to install [`jedi`](https://jedi.readthedocs.io/en/latest/) for completions
+You can install `jedi` with
 
-    pip install jedi
+    pip3 install jedi
+    
+    
+### Running locally using scripts
+
+Note that you will need `spark-submit` to be available on your machine! If it's not installed (e.g., on your laptop), 
+try running [with IntelliJ instead](#running-locally-with-intellij). 
+
+Get your hands on a Polynote distribution zip file [(or follow these instructions to create your own)](#making-a-distribution). 
+
+Once you have your distribution, you can unzip it into the directory with your notebooks:
+
+    unzip -j polynote-distribution.zip
+
+`unzip` will prompt you to overwrite any files you might have in that directory that conflict. If you have created your 
+own `config.yml`, make sure not to overwrite it when you unzip!
+
+Once you've unzipped the file, you can run Polynote: 
+
+    source ./install-jep.sh  # you can run even if you've already installed Jep
+    ./run.sh
+
+Make sure you have installed the [runtime](#running-locally-with-intellij) dependencies (especially `LD_LIBRARY_PATH`)!
 
 ### Running remotely
 
@@ -55,11 +93,33 @@ The scripts read a few environment variables that you can set:
     REMOTE_HOST         (required) hostname, make sure you have SSH access to this host
     REMOTE_USER         (default: root) the username to use with SSH
     REMOTE_DIR          (default: /root/polynote) the location in which to install Polynote
-    INSTALL_ONLY        (default: 0) if nonzero, only install but don't run Polynote
 
-The best place to start would be to run `installAndRun.sh`:
+First, like when [running locally](#running-locally-using-scripts), get your hands on a Polynote distribution zip file 
+[(or follow these instructions to create your own)](#making-a-distribution). 
 
-    env REMOTE_HOST=me.myhost.mytld ./scripts/installAndRun.sh
+Now, point `POLYNOTE_DIST` to the location of the distribution and run `publish-distribution.sh`:
+
+    env REMOTE_HOST=me.myhost.mytld POLYNOTE_DIST=/home/me/polynote-distribution.zip ./scripts/publish-distribution.sh
+
+This will copy the distribution over to `/root/polynote/polynote-distribution.zip` (if you want it somewhere else, make 
+sure to set `REMOTE_DIR`).
+
+Next, run `run-remotely.sh`: 
+
+    env REMOTE_HOST=me.myhost.mytld ./scripts/run-remotely.sh
+
+This will unzip the distribution and set up a [`tmux`](https://github.com/tmux/tmux) session which runs it on your 
+remote machine. Polynote will start and you should see a log that looks like: 
+
+    Running on http://1.2.3.4:8192
+
+Click on or copy that link to your browser and you're all set!
+
+Running with `tmux` ensures that a network hiccup won't kill your Polynote session, even if it kills your SSH connection. 
+If your SSH session was lost, you can get back to Polynote by SSHing back into your machine and running `tmux a`. To close
+Polynote, you can simply use `Ctrl-C` as usual (as long as Polynote is in the foreground).
+
+You can read about using `tmux` [here](https://hackernoon.com/a-gentle-introduction-to-tmux-8d784c404340).
 
 #### Dependencies
 
@@ -69,8 +129,9 @@ The scripts won't install anything on your local machine, so you will need to ma
 - [sbt](https://www.scala-sbt.org/1.x/docs/Installing-sbt-on-Mac.html) `brew install sbt`
 - [npm](https://www.npmjs.com/get-npm) `brew install npm`
   - Inside the `polynote-frontend` dir:
-    - [webpack](https://webpack.js.org/) `npm install webpack` 
-    - [markdown-it](https://www.npmjs.com/package/markdown-it) `npm install markdown-it`
+    - Running `npm install` should be all you need to do. However, if that doesn't work for some reason, try running:
+      - [webpack](https://webpack.js.org/) `npm install webpack` 
+      - [markdown-it](https://www.npmjs.com/package/markdown-it) `npm install markdown-it`
     
 ## Configuration
 
@@ -98,6 +159,22 @@ To watch UI assets and reload them after making changes, run Polynote with the `
     
 Now, the UI will get packaged every time you make a change, so you can run Polynote and load new UI code by simply 
 refreshing the browser. 
+
+### Making a Distribution
+
+First, make sure you have all the [dependencies](#dependencies). 
+
+To create a distribution, simply run 
+
+    ./scripts/make-distribution.sh
+    
+You can add a `config.yml` file to this distribution by placing a file called `dist-config.yml` into the `scripts` folder. 
+This file gets packaged into the distribution as `config.yml`. It's a good place to put environment-specific settings, 
+such as default Spark configs, internal Maven/Ivy repos, etc. 
+
+To create and run a distribution on a remote machine all in one go, you can use the handy `./scripts/e2e.sh` script:
+
+    env REMOTE_HOST=me.myhost.mytld ./scripts/e2e.sh
 
 ## Documentation
 

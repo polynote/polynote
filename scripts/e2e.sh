@@ -32,6 +32,5 @@ set -x # print subsequent commands
 
 source ${DIR}/make-publish-distribution.sh
 
-runOnRemote "unzip -j ${REMOTE_DIR}/polynote-distribution.zip"
 source ${DIR}/run-remotely.sh
 
