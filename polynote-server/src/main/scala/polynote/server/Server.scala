@@ -2,7 +2,7 @@ package polynote.server
 
 import java.io.File
 import java.net.{URI, URL}
-import java.util.ServiceLoader
+import java.util.{Date, ServiceLoader}
 
 import cats.effect._
 import org.http4s._
@@ -14,6 +14,7 @@ import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.lang.{LanguageInterpreter, LanguageInterpreterService}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
+import polynote.buildinfo.BuildInfo
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
@@ -103,6 +104,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     host             = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url              = s"http://$host:$port"
     _               <- splash
+    _               <- IO(logger.info(s" Version is ${BuildInfo.version}, built at ${new Date(BuildInfo.buildTime)}"))
     _               <- IO(logger.info(s" Running on $url"))
     repository       = createRepository(config)
     notebookManager  = new IONotebookManager(config, repository, kernelFactory)

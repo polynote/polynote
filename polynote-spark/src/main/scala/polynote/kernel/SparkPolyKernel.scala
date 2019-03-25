@@ -7,6 +7,7 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
+import cats.data.OptionT
 import cats.effect.IO
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.syntax.flatMap._
@@ -148,10 +149,15 @@ class SparkPolyKernel(
     }
   }
 
-  override def info: IO[Option[KernelInfo]] = IO(session).map { sess =>
-    sess.sparkContext.uiWebUrl.map { url =>
-      KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url" target="_blank">$url</a>"""))
-    }
+  override def info: IO[Option[KernelInfo]] = {
+    val sparkKI = OptionT(IO(session).map { sess =>
+      sess.sparkContext.uiWebUrl.map { url =>
+        KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url" target="_blank">$url</a>"""))
+      }
+    })
+    val superKI = OptionT(super.info)
+
+    sparkKI.map2(superKI)((spk, sup) => spk.combine(sup)).orElse(sparkKI).orElse(superKI).value
   }
 
   override def cancelTasks(): IO[Unit] = super.cancelTasks() *> IO(DAGSchedulerThief(session).cancelAllJobs())

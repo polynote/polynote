@@ -44,7 +44,20 @@ lazy val `polynote-runtime` = project.settings(
     "com.chuusai" %% "shapeless" % "2.3.3",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
   )
-)
+).enablePlugins(BuildInfoPlugin)
+  .settings(
+    buildInfoKeys := Seq[BuildInfoKey](
+      name,
+      version,
+      BuildInfoKey.action("commit") {
+        git.gitHeadCommit.value.getOrElse("unknown")
+      },
+      BuildInfoKey.action("buildTime") {
+        System.currentTimeMillis
+      }
+    ),
+    buildInfoPackage := "polynote.buildinfo"
+  )
 
 val `polynote-kernel` = project.settings(
   commonSettings,
