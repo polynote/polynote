@@ -236,6 +236,7 @@ class PolyKernel private[kernel] (
   def shutdown(): IO[Unit] = taskManager.shutdown()
 
   def info: IO[Option[KernelInfo]] = IO.pure(
+    // TODO: This should really be in the ServerHandshake as it isn't a Kernel-level thing...
     Option(KernelInfo(
       "Polynote Version:" -> s"""<span id="version">${BuildInfo.version}</span>""",
       "Build:"            -> s"""<span id=build-time">${new Date(BuildInfo.buildTime)}</span>"""
