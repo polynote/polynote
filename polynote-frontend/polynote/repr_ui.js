@@ -58,7 +58,7 @@ function renderData(dataType, data) {
     // TODO: nicer display
     let value = '';
     if (dataType instanceof ArrayType || dataType instanceof StructType) {
-        value = JSON.stringify(item);
+        value = JSON.stringify(data);
     } else {
         value = data.toString();
     }

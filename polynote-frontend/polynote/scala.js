@@ -83,7 +83,6 @@ const tokenizer = {
 
       // delimiters and operators
       [/[{}()\[\]]/, '@brackets'],
-      [/[<>](?!@symbols)/, '@brackets'],
       [/@symbols/, { cases: { '@operators': 'operator',
                               '@default'  : '' } } ],
 
