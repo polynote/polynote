@@ -17,7 +17,7 @@ pushd ${DIR}/../
     sbt 'project polynote-spark' 'set test in assembly := {}' 'assembly'
 
     distDir="dist"
-    rm -r ${distDir}
+    rm -r ${distDir} || true
     mkdir ${distDir}
     pushd ${distDir}
         cp ${root}/polynote-spark/target/scala-2.11/polynote-spark-assembly-0.1.0-SNAPSHOT.jar ./
