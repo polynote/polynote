@@ -23,10 +23,9 @@ import scala.reflect.runtime
 import scala.tools.reflect.ToolBox
 
 class ScalaInterpreter(
-  val symbolTable: RuntimeSymbolTable
+  val kernelContext: KernelContext
 ) extends LanguageInterpreter[IO] {
 
-  import symbolTable.kernelContext
   import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime}
   private val logger = getLogger
 
@@ -38,37 +37,56 @@ class ScalaInterpreter(
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete
 
-  protected val previousSources: mutable.HashMap[CellID, ScalaSource[this.type]] = new mutable.HashMap()
+  protected val previousSources: mutable.HashMap[CellID, ScalaSource[kernelContext.global.type]] = new mutable.HashMap()
 
-  protected lazy val notebookPackageName = global.TermName("$notebook")
-  def notebookPackage = global.Ident(notebookPackageName)
-  protected lazy val notebookPackageSymbol = global.internal.newModuleAndClassSymbol(global.rootMirror.RootPackage, notebookPackageName)
+  lazy val notebookPackageName = "$notebook"
+  lazy val notebookPackageTerm = global.TermName(notebookPackageName)
+  def notebookPackage = global.Ident(notebookPackageTerm)
+  protected lazy val notebookPackageSymbol = global.internal.newModuleAndClassSymbol(global.rootMirror.RootPackage, notebookPackageTerm)
 
-  // TODO: we want to get rid of predef and load `kernel` from the RST (whatever that ends up being)
+  // TODO: we want to get rid of predef and load `kernel` from the KernelContext
   def predefCode: Option[String] = Some("val kernel = polynote.runtime.Runtime")
 
   override def init(): IO[Unit] = IO.unit // pass for now
 
-  override def runCode(
-    cell: CellID,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[CellID],
-    code: String
-  ): IO[Stream[IO, Result]] = {
+  // Compile and initialize the module, but don't reflect its values or output anything
+  def compileAndInit(source: ScalaSource[kernelContext.global.type], cellContext: CellContext): IO[Unit] = {
+    IO.fromEither(source.compile).flatMap {
+      case global.NoSymbol => IO.unit
+      case sym =>
+        val saveSource = IO.delay[Unit](previousSources.put(cellContext.id, source))
+        val setModule = cellContext.module.complete(sym.asModule)
+        setModule *> IO(kernelContext.runInterruptible(importToRuntime.importSymbol(sym))).map {
+          runtimeSym =>
+            kernelContext.runInterruptible {
+              val moduleMirror = try runtimeMirror.reflectModule(runtimeSym.asModule) catch {
+                case err: ExceptionInInitializerError => throw RuntimeError(err.getCause)
+                case err: Throwable =>
+                  throw RuntimeError(err) // could be linkage errors which won't get handled by IO#handleErrorWith
+              }
+
+              val instMirror = try runtimeMirror.reflect(moduleMirror.instance) catch {
+                case err: ExceptionInInitializerError => throw RuntimeError(err.getCause)
+                case err: Throwable =>
+                  throw RuntimeError(err)
+              }
+            }
+        } *> saveSource
+    }
+  }
+
+  def compileAndRun(source: ScalaSource[kernelContext.global.type], cellContext: CellContext): IO[Stream[IO, Result]] = {
     val originalOut = System.out
-
-    // TODO: this is wrong. It doesn't seem good to keep parsing this from "CellXX" though. Maybe cells also (or only?) need a numeric ID?
-    val cellIndex = previousCells.size
-
-    val source = new ScalaSource[this.type](this)(cell, visibleSymbols.toSet, previousCells.collect(previousSources).toList, code)
+    val cell = cellContext.id
     interpreterLock.acquire.bracket { _ =>
       IO.fromEither(source.compile).flatMap {
         case global.NoSymbol => IO.pure(Stream.empty)
         case sym =>
           val saveSource = IO.delay[Unit](previousSources.put(cell, source))
+          val setModule = cellContext.module.complete(sym.asModule)
           val symType = global.exitingTyper(sym.asModule.toType)
 
-          Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
+          setModule *> Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
             val resultQ = new EnqueueSome(maybeResultQ)
             val run = IO(kernelContext.runInterruptible(importToRuntime.importSymbol(sym))).map {
               runtimeSym =>
@@ -186,84 +204,103 @@ class ScalaInterpreter(
                   Stream.eval(ioValues).flatMap(Stream.emits) ++ Stream.eval(maybeResultQ.enqueue1(None)).drain
                 ).parJoinUnbounded
             }
-        }
+          }
       }
     }(_ => interpreterLock.release)
   }
 
+  override def runCode(
+    cellContext: CellContext,
+    code: String
+  ): IO[Stream[IO, Result]] = {
+    cellContext.collectBack {
+      case c if previousSources contains c.id => previousSources(c.id)
+    }.flatMap {
+      previous =>
+        val source = ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
+        compileAndRun(source, cellContext)
+    }
+  }
+
   override def completionsAt(
-    cell: CellID,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[CellID],
+    cellContext: CellContext,
     code: String,
     pos: Int
   ): IO[List[Completion]] =
-    IO.fromEither(new ScalaSource[this.type](this)(cell, visibleSymbols.toSet, previousCells.collect(previousSources).toList, code).completionsAt(pos)).map {
-      case (typ, completions) => completions.map { sym =>
-        val name = sym.name.decodedName.toString
-        val symType = sym.typeSignatureIn(typ)
-        val tParams = TinyList(sym.typeParams.map(tp => TinyString(tp.nameString)))
-        val params = TinyList {
-          for {
-            pl <- sym.paramLists
-          } yield TinyList {
-            for {
-              p <- pl
-            } yield (TinyString(p.name.decodedName.toString), ShortString(formatType(p.typeSignatureIn(symType))))
+    cellContext.collectBack {
+      case c if previousSources contains c.id => previousSources(c.id)
+    }.flatMap {
+      previous =>
+        IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).completionsAt(pos)).map {
+          case (typ, completions) => completions.map { sym =>
+            val name = sym.name.decodedName.toString
+            val symType = sym.typeSignatureIn(typ)
+            val tParams = TinyList(sym.typeParams.map(tp => TinyString(tp.nameString)))
+            val params = TinyList {
+              for {
+                pl <- sym.paramLists
+              } yield TinyList {
+                for {
+                  p <- pl
+                } yield (TinyString(p.name.decodedName.toString), ShortString(formatType(p.typeSignatureIn(symType))))
+              }
+            }
+            val symTypeStr = if (sym.isMethod) formatType(symType.finalResultType) else ""
+            Completion(TinyString(name), tParams, params, ShortString(symTypeStr), completionType(sym))
           }
-        }
-        val symTypeStr = if (sym.isMethod) formatType(symType.finalResultType) else ""
-        Completion(TinyString(name), tParams, params, ShortString(symTypeStr), completionType(sym))
-      }
-    }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(Nil))
+        }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(Nil))
+    }
 
   override def parametersAt(
-    cell: CellID,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[CellID],
+    cellContext: CellContext,
     code: String,
     pos: Int
   ): IO[Option[Signatures]] =
-    IO.fromEither(new ScalaSource[this.type](this)(cell, visibleSymbols.toSet, previousCells.collect(previousSources).toList, code).signatureAt(pos)).map {
-      case (typ: global.MethodType, syms, n, d) =>
-        val hints = syms.map {
-          sym =>
+    cellContext.collectBack {
+      case c if previousSources contains c.id => previousSources(c.id)
+    }.flatMap {
+      previous =>
+        IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).signatureAt(pos)).map {
+          case (typ: global.MethodType, syms, n, d) =>
+            val hints = syms.map {
+              sym =>
 
-            val paramsStr = sym.paramLists.map {
-              pl => "(" + pl.map {
-                param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(typ).finalResultType.toString}"
-              }.mkString(", ") + ")"
-            }.mkString
+                val paramsStr = sym.paramLists.map {
+                  pl => "(" + pl.map {
+                    param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(typ).finalResultType.toString}"
+                  }.mkString(", ") + ")"
+                }.mkString
 
-            try {
-              Some {
-                ParameterHints(
-                  TinyString(s"${sym.name.decodedName.toString}$paramsStr"),
-                  None,
-                  TinyList {
-                    sym.paramLists.flatMap {
-                      pl => pl.map {
-                        param => ParameterHint(
-                          TinyString(param.name.decodedName.toString),
-                          TinyString(param.typeSignatureIn(typ).finalResultType.toString),
-                          None  // TODO
-                        )
+                try {
+                  Some {
+                    ParameterHints(
+                      TinyString(s"${sym.name.decodedName.toString}$paramsStr"),
+                      None,
+                      TinyList {
+                        sym.paramLists.flatMap {
+                          pl => pl.map {
+                            param => ParameterHint(
+                              TinyString(param.name.decodedName.toString),
+                              TinyString(param.typeSignatureIn(typ).finalResultType.toString),
+                              None  // TODO
+                            )
+                          }
+                        } // TODO: could provide the rest of the param lists?
                       }
-                    } // TODO: could provide the rest of the param lists?
+                    )
                   }
-                )
-              }
-            } catch {
-              case err: Throwable =>
-                err.printStackTrace()
-                None
+                } catch {
+                  case err: Throwable =>
+                    err.printStackTrace()
+                    None
+                }
             }
+            Option(Signatures(hints.flatMap(_.toList), 0, n.toByte))
+          case _ => None
+        }.handleErrorWith {
+          case NoApplyTree => IO.pure(None)
+          case err => IO(logger.error(err)("Completions error")).as(None)
         }
-        Option(Signatures(hints.flatMap(_.toList), 0, n.toByte))
-      case _ => None
-    }.handleErrorWith {
-      case NoApplyTree => IO.pure(None)
-      case err => IO(logger.error(err)("Completions error")).as(None)
     }
 
 
@@ -312,8 +349,8 @@ class ScalaInterpreter(
 object ScalaInterpreter {
   class Factory() extends LanguageInterpreter.Factory[IO] {
     override val languageName: String = "Scala"
-    override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageInterpreter[IO] =
-      new ScalaInterpreter(symbolTable)
+    override def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[IO] =
+      new ScalaInterpreter(kernelContext)
   }
 
   def factory(): LanguageInterpreter.Factory[IO] = new Factory()

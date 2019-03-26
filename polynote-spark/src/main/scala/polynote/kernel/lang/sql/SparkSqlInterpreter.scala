@@ -15,15 +15,15 @@ import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.log4s.getLogger
 import polynote.kernel._
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.{Publish, RuntimeSymbolTable}
+import polynote.kernel.util.{CellContext, KernelContext, Publish}
 import polynote.messages.{CellID, ShortString, TinyList, TinyString}
 
 import scala.collection.mutable
 import scala.util.{Failure, Success}
 
-class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInterpreter[IO] {
+class SparkSqlInterpreter(val kernelContext: KernelContext) extends LanguageInterpreter[IO] {
 
-  import symbolTable.kernelContext, kernelContext.global, kernelContext.implicits.executionContext
+  import kernelContext.global, kernelContext.implicits.executionContext
 
   private val logger = getLogger
 
@@ -37,20 +37,24 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
 
   private lazy val datasetType = global.typeOf[Dataset[Any]].typeConstructor
 
-  private def dataFrames[D <: Decl](symbols: Seq[D]) = symbols.collect {
-    case rv if rv.scalaType(global).dealiasWiden.typeConstructor <:< datasetType => rv
+  private def dataFrames(symbols: Seq[ResultValue]) = symbols.collect {
+    case rv@ResultValue(_, _, _, _, _, scalaType: global.Type) if scalaType.typeConstructor <:< datasetType => rv
   }.toList
 
-  private def registerTempViews(identifiers: List[Parser.TableIdentifier]) = {
+  private def registerTempViews(identifiers: List[Parser.TableIdentifier], cellContext: CellContext) = {
     val candidates = identifiers.collect {
       case Parser.TableIdentifier(None, name) => name
     }.toSet
 
-    dataFrames(symbolTable.currentTerms).collect {
-      case rv if candidates(rv.name.toString) =>
-        val nameString = rv.name.toString
-        IO.pure(rv.value.asInstanceOf[Dataset[_]]).flatMap(ds => IO(ds.createOrReplaceTempView(nameString)).as(nameString))
+    cellContext.visibleValues.flatMap {
+      values =>
+        dataFrames(values).collect {
+          case rv if candidates(rv.name.toString) =>
+            val nameString = rv.name.toString
+            IO.pure(rv.value.asInstanceOf[Dataset[_]]).flatMap(ds => IO(ds.createOrReplaceTempView(nameString)).as(nameString))
+        }.sequence
     }
+
   }
 
   private def dropTempViews(views: List[String]): IO[Unit] = views.map(name => IO(spark.catalog.dropTempView(name))).sequence.as(())
@@ -94,17 +98,14 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
   }.handleErrorWith(ErrorResult.applyIO)
 
   override def runCode(
-    cell: CellID,
-    visibleSymbols: Seq[Decl],
-    previousCellIds: Seq[CellID],
+    cellContext: CellContext,
     code: String
   ): IO[fs2.Stream[IO, Result]] = {
     val compilerRun = new global.Run
-    val cellIndex = previousCellIds.size
+    val cell = cellContext.id
     val run = for {
-      _           <- symbolTable.drain()
       parseResult <- IO.fromEither(parser.parse(cell, code).fold(Left(_), Right(_), (errs, _) => Left(errs)))
-      resultDF    <- registerTempViews(parseResult.tableIdentifiers).sequence.bracket(_ => IO(spark.sql(code)))(dropTempViews)
+      resultDF    <- registerTempViews(parseResult.tableIdentifiers, cellContext).bracket(_ => IO(spark.sql(code)))(dropTempViews)
       cellResult   = ResultValue(kernelContext, "Out", global.typeOf[DataFrame], resultDF, cell)
     } yield Stream.emit(cellResult) ++ Stream.eval(outputDataFrame(resultDF))
 
@@ -112,24 +113,22 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
   }
 
   override def completionsAt(
-    cell: CellID,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[CellID],
+    cellContext: CellContext,
     code: String,
     pos: Int
-  ): IO[List[Completion]] = {
+  ): IO[List[Completion]] = cellContext.visibleValues.flatMap {
+    visibleValues =>
+      def completeAtPos(statement: SingleStatementContext) = {
+        val results = statement.accept(new CompletionVisitor(pos, visibleValues))
+        results
+      }
 
-    def completeAtPos(statement: SingleStatementContext) = {
-      val results = statement.accept(new CompletionVisitor(pos, visibleSymbols))
-      results
-    }
-
-    for {
-      parseResult <- IO.fromEither(parser.parse(cell, code).toEither)
-    } yield completeAtPos(parseResult.statement)
+      for {
+        parseResult <- IO.fromEither(parser.parse(cellContext.id, code).toEither)
+      } yield completeAtPos(parseResult.statement)
   }
 
-  override def parametersAt(cell: CellID, visibleSymbols: Seq[Decl], previousCells: Seq[CellID], code: String, pos: Int): IO[Option[Signatures]] =
+  override def parametersAt(cellContext: CellContext, code: String, pos: Int): IO[Option[Signatures]] =
     IO(None) // TODO: could we generate parameter hints for spark's builtin functions?
 
   override def init(): IO[Unit] = IO.unit
@@ -147,7 +146,7 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
   private val databaseTableCache = new mutable.HashMap[String, List[String]]()
   private def tablesOf(db: String): List[String] = databaseTableCache.getOrElseUpdate(db, sessionCatalog.listTables(db).map(_.table).toList)
 
-  private class CompletionVisitor(pos: Int, visibleSymbols: Seq[Decl]) extends SqlBaseBaseVisitor[List[Completion]] {
+  private class CompletionVisitor(pos: Int, visibleSymbols: Seq[ResultValue]) extends SqlBaseBaseVisitor[List[Completion]] {
     override def defaultResult(): List[Completion] = Nil
 
     override def aggregateResult(aggregate: List[Completion], nextResult: List[Completion]): List[Completion] = aggregate ++ nextResult
@@ -188,7 +187,7 @@ class SparkSqlInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageI
 object SparkSqlInterpreter {
   class Factory extends LanguageInterpreter.Factory[IO] {
     def languageName: String = "SQL"
-    def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageInterpreter[IO] = new SparkSqlInterpreter(symbolTable)
+    def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[IO] = new SparkSqlInterpreter(kernelContext)
   }
 
   def factory(): Factory = new Factory

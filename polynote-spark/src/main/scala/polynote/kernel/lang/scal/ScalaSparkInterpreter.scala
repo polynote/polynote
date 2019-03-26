@@ -5,13 +5,13 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.IO
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.RuntimeSymbolTable
+import polynote.kernel.util.{KernelContext}
 
-class ScalaSparkInterpreter(st: RuntimeSymbolTable) extends ScalaInterpreter(st) {
-  import symbolTable.kernelContext.global
+class ScalaSparkInterpreter(ctx: KernelContext) extends ScalaInterpreter(ctx) {
+  import kernelContext.global
 
   // need a unique package, in case of a shared spark session
-  override protected lazy val notebookPackageName = global.TermName(s"$$notebook${ScalaSparkInterpreter.nextNotebookId}")
+  override lazy val notebookPackageName = s"$$notebook${ScalaSparkInterpreter.nextNotebookId}"
 
   override def predefCode: Option[String] = Some {
     s"""${super.predefCode.getOrElse("")}
@@ -36,8 +36,8 @@ object ScalaSparkInterpreter {
 
   class Factory extends LanguageInterpreter.Factory[IO] {
     override val languageName: String = "Scala"
-    override def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageInterpreter[IO] =
-      new ScalaSparkInterpreter(symbolTable)
+    override def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[IO] =
+      new ScalaSparkInterpreter(kernelContext)
   }
 
   def factory(): LanguageInterpreter.Factory[IO] = new Factory

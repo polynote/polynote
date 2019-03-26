@@ -5,7 +5,7 @@ import java.net.URL
 import java.nio.ByteBuffer
 import java.util.concurrent.{ConcurrentHashMap, Executors}
 
-import cats.effect.concurrent.{Ref, Semaphore}
+import cats.effect.concurrent.{Deferred, Ref, Semaphore}
 import cats.effect.internals.IOContextShift
 import cats.effect.{Clock, ContextShift, IO}
 import cats.syntax.apply._
@@ -20,19 +20,18 @@ import org.log4s.{Logger, getLogger}
 import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.KernelContext
-import polynote.kernel.util.{RuntimeSymbolTable, _}
+import polynote.kernel.lang.scal.{ScalaInterpreter, ScalaSource}
+import polynote.kernel.util._
 import polynote.messages._
 import polynote.runtime.{LazyDataRepr, StreamingDataRepr, TableOp, UpdatingDataRepr}
 import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.MILLISECONDS
-import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
-import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
+import scala.collection.JavaConverters._
+import scala.collection.immutable.SortedMap
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
 import scala.tools.nsc.Settings
-import scala.tools.nsc.interactive.Global
 
 class PolyKernel private[kernel] (
   private val getNotebook: () => IO[Notebook],
@@ -53,11 +52,22 @@ class PolyKernel private[kernel] (
 
   private val clock: Clock[IO] = Clock.create
 
+  private val cellContexts = new ConcurrentHashMap[CellID, CellContext]()
+  private var lastPredefContext: CellContext = _
 
-  /**
-    * The symbol table, which stores all the currently existing runtime values
-    */
-  protected lazy val symbolTable = new RuntimeSymbolTable(kernelContext, statusUpdates)
+  private def prepareCellContext(id: CellID, notebook: Notebook, interp: LanguageInterpreter[IO]): IO[CellContext] = {
+    val before = prevCells(notebook, id)
+    val previous = before
+      .filter(cellContexts.contains)
+      .lastOption
+      .map(cellContexts.get)
+      .flatMap(Option.apply)
+      .orElse(Option(lastPredefContext))
+
+    CellContext(id, interp, previous, before.size).flatMap {
+      ctx => IO(cellContexts.put(id, ctx)).as(ctx)
+    }
+  }
 
   /**
     * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
@@ -67,30 +77,35 @@ class PolyKernel private[kernel] (
   // TODO: duplicates logic from runCell
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
-      interp.predefCode match {
-        case Some(code) => taskManager.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(-1, Nil, Nil, code)).map {
-          results => results.collect {
-            case v: ResultValue => v
-          }.evalTap {
-            v => symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp).toList)
-          }
-        }
+      val prevPredef = Option(lastPredefContext)
+      val index = prevPredef.map(_.index - 1).getOrElse(-1)
 
-        case None => IO.pure(Stream.empty)
+      CellContext(index, interp, prevPredef, index).flatMap {
+        cellContext =>
+          lastPredefContext = cellContext
+          interp.predefCode match {
+            case Some(code) => taskManager.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(cellContext, code)).map {
+              results => results.collect {
+                case v: ResultValue => v
+              }.through(cellContext.results.tap)
+            }
+
+            case None => IO.pure(Stream.empty)
+          }
       }
     }
 
   protected def getInterpreter(language: String): Option[LanguageInterpreter[IO]] = Option(interpreters.get(language))
 
-  protected def getOrLaunchInterpreter(language: String): IO[(LanguageInterpreter[IO], Stream[IO, Result])] =
+  protected def getOrLaunchInterpreter(language: String): IO[(LanguageInterpreter[IO], Stream[IO, Result])] = {
     getInterpreter(language)
       .map(interp => IO.pure(interp -> Stream.empty))
       .getOrElse {
-        launchingInterpreter.acquire.bracket { _ =>
+        val startInterp = launchingInterpreter.acquire.bracket { _ =>
           Option(interpreters.get(language)).map(interp => IO.pure(interp -> Stream.empty)).getOrElse {
             for {
               factory <- IO.fromEither(Either.fromOption(availableInterpreters.get(language), new RuntimeException(s"No interpreter for language $language")))
-              interp  <- taskManager.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), symbolTable))
+              interp  <- taskManager.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), kernelContext))
               _        = interpreters.put(language, interp)
               results  <- runPredef(interp, language)
             } yield (interp, results)
@@ -98,6 +113,16 @@ class PolyKernel private[kernel] (
         } {
           _ => launchingInterpreter.release
         }
+
+        if (language == "scala") startInterp else {
+          // ensure scala interpreter is launched, because it is required to make JVM modules for other interpreters
+          getOrLaunchInterpreter("scala").flatMap {
+            case (_, scalaPredefResults) => startInterp.map {
+              case (interp, interpPredefResults) => interp -> (scalaPredefResults ++ interpPredefResults)
+            }
+          }
+        }
+      }
   }
 
   /**
@@ -136,10 +161,6 @@ class PolyKernel private[kernel] (
   // TODO: using -1 for Predef is kinda weird.
   private def prevCells(notebook: Notebook, id: CellID): List[CellID] = List[CellID](-1) ++ notebook.cells.view.takeWhile(_.id != id).map(_.id).toList
 
-  protected def findAvailableSymbols(prevCells: List[CellID], interp: LanguageInterpreter[IO]): Seq[interp.Decl] = {
-    symbolTable.currentTerms.filter(v => prevCells.contains(v.sourceCellId)).asInstanceOf[Seq[interp.Decl]]
-  }
-
   def startInterpreterFor(cellId: CellID): IO[Stream[IO, Result]] = withInterpreter(cellId) {
     (_, _, _, results) => IO.pure(results)
   } (IO.pure(Stream.empty))
@@ -162,39 +183,57 @@ class PolyKernel private[kernel] (
                     val newDetail = Option(detail).getOrElse(taskInfo.detail)
                     statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
                 }
+                val prevContext = prevCellIds.reverse.find(cellContexts.contains).map(cellContexts.get)
+                CellContext(id, interp, prevContext, prevCellIds.size).flatMap {
+                  cellContext =>
 
-                val results = interp.runCode(
-                  id,
-                  findAvailableSymbols(prevCellIds, interp),
-                  prevCellIds,
-                  cell.content.toString
-                ).map {
-                  results => results.evalMap {
-                    case v: ResultValue =>
-                      symbolTable.publishAll(symbolTable.RuntimeValue.fromResultValue(v, interp).toList).as(v)
-                    case result =>
-                      IO.pure(result)
-                  }
-                }
-
-                for {
-                  _ <- symbolTable.drain()
-                  start <- clock.monotonic(MILLISECONDS)
-                  res <- results
-                } yield {
-                  res.onComplete {
-                    Stream.eval {
-                      for {
-                        end <- clock.monotonic(MILLISECONDS)
-                        timestamp <- clock.realTime(MILLISECONDS)
-                      } yield ExecutionInfo((end - start).toInt, timestamp)
+                    val results = IO(cellContexts.put(id, cellContext)) *> interp.runCode(
+                      cellContext,
+                      cell.content.toString
+                    ).map {
+                      results => results.through(cellContext.results.tapResults).evalTap {
+                        case ResultValue(name, _, _, _, value, _) => IO(polynote.runtime.Runtime.putValue(name, value))
+                        case _ => IO.unit
+                      }
                     }
-                  }
+
+                    for {
+                      start  <- clock.monotonic(MILLISECONDS)
+                      res    <- results
+                    } yield {
+                      res.onComplete {
+                        Stream.eval {
+                          for {
+                            end <- clock.monotonic(MILLISECONDS)
+                            timestamp <- clock.realTime(MILLISECONDS)
+                          } yield ExecutionInfo((end - start).toInt, timestamp)
+                        }
+                      }.onFinalize {
+                        // if the interpreter didn't make a module for the cell, use the scala interpreter to make one
+                        cellContext.module.tryGet.flatMap {
+                          case Some(_) => IO.unit
+                          case None =>
+                            getInterpreter("scala") match {
+                              case Some(interp: ScalaInterpreter) =>
+                                import interp.kernelContext.global.Quasiquote
+                                val exports = cellContext.resultValues.foldLeft(SortedMap.empty[String, interp.kernelContext.global.Type]) {
+                                  (accum, rv) => accum + (rv.name -> rv.scalaType.asInstanceOf[interp.kernelContext.global.Type])
+                                }.toList.map {
+                                  case (name, typ) => q"_root_.polynote.runtime.Runtime.getValue(${name.toString}).asInstanceOf[$typ]"
+                                }
+                                interp.compileAndInit(ScalaSource.fromTrees(interp.kernelContext)(cellContext, interp.notebookPackageName, exports), cellContext)
+                              case _ => IO.raiseError(new IllegalStateException("No scala interpreter"))
+                            }
+                        }
+
+
+                      }
+                    }
                 }
             }.map {
               _.getOrElse(Stream.empty)
             }.handleErrorWith(ErrorResult.toStream).map {
-              _ ++ Stream.eval(oq.enqueue1(None)).drain ++ Stream.eval(symbolTable.drain()).drain
+              _ ++ Stream.eval(oq.enqueue1(None)).drain
             }
 
             Stream.emit(ClearResults()) ++ Stream(oq.dequeue.unNoneTerminate, Stream.eval(run).flatten).parJoinUnbounded
@@ -210,25 +249,24 @@ class PolyKernel private[kernel] (
 
   def completionsAt(id: CellID, pos: Int): IO[List[Completion]] = withLaunchedInterpreter(id) {
     (notebook, cell, interp) =>
-      val prevCellIds = prevCells(notebook, id)
-      interp.completionsAt(id, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
+      prepareCellContext(id, notebook, interp).flatMap(ctx => interp.completionsAt(ctx, cell.content.toString, pos))
   }.map(_.getOrElse(Nil))
 
   def parametersAt(id: CellID, pos: Int): IO[Option[Signatures]] = withLaunchedInterpreter(id) {
     (notebook, cell, interp) =>
-      val prevCellIds = prevCells(notebook, id)
-      interp.parametersAt(id, findAvailableSymbols(prevCellIds, interp), prevCellIds, cell.content.toString, pos)
+      prepareCellContext(id, notebook, interp).flatMap(ctx => interp.parametersAt(ctx, cell.content.toString, pos))
   }.map(_.flatten)
 
-  def currentSymbols(): IO[List[ResultValue]] = IO {
-    symbolTable.currentTerms.toList.map(_.toResultValue)
+  def currentSymbols(): IO[List[ResultValue]] = IO(cellContexts.values.asScala).flatMap {
+    case ctxs if ctxs.isEmpty => IO.pure(Nil)
+    case ctxs => ctxs.maxBy(_.index).visibleValues
   }
 
   def currentTasks(): IO[List[TaskInfo]] = taskManager.allTasks
 
   def idle(): IO[Boolean] = taskManager.runningTasks.map(_.isEmpty)
 
-  def init: IO[Unit] = IO.unit
+  def init(): IO[Unit] = IO.unit
 
   def shutdown(): IO[Unit] = taskManager.shutdown()
 
@@ -269,7 +307,7 @@ class PolyKernel private[kernel] (
     // kernelContext.interrupt() here.
     // TODO: Why can't it work with fibers? Is there any point in tracking the fibers if they can't be cancelled?
     // TODO: have to go through symbolTable.kernelContext because SparkPolyKernel overrides it (but not kernelContext) - needs to be fixed
-    taskManager.cancelAllQueued *> IO(symbolTable.kernelContext.interrupt())
+    taskManager.cancelAllQueued *> IO(kernelContext.interrupt())
   }
 
   override def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] = IO.unit
@@ -298,7 +336,7 @@ object PolyKernel {
     config: PolynoteConfig
   ): PolyKernel = {
 
-    val kernelContext = KernelContext(dependencies, baseSettings, extraClassPath, outputDir, parentClassLoader)
+    val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath, outputDir, parentClassLoader)
 
     new PolyKernel(
       getNotebook,

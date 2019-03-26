@@ -60,7 +60,7 @@ class IOKernelFactory(
     numDeps   = deps.values.map(_.size).sum
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = (numDeps.toDouble / (numDeps + 1) * 255).toByte) :: Nil))
     kernel   <- mkKernel(getNotebook, deps, LanguageInterpreter.factories, statusUpdates, polynoteConfig, extraClassPath, settings, outputDir, parentClassLoader)
-    _        <- kernel.init
+    _        <- kernel.init()
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = 255.toByte, status = TaskStatus.Complete) :: Nil))
     _        <- statusUpdates.publish1(KernelBusyState(busy = false, alive = true))
   } yield kernel

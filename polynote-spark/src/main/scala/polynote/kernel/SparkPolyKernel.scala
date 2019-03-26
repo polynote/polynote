@@ -22,7 +22,7 @@ import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
-import polynote.kernel.util.{KernelContext, Publish, RuntimeSymbolTable}
+import polynote.kernel.util.{KernelContext, Publish}
 import polynote.messages._
 
 import scala.reflect.internal.util.AbstractFileClassLoader
@@ -85,13 +85,6 @@ class SparkPolyKernel(
 
   private val realOutputPath = Deferred.unsafe[IO, AbstractFile]
 
-  // TODO: any better way to handle this?
-  override protected lazy val symbolTable = realOutputPath.get.map {
-    outputDir =>
-      val updatedClassLoader = KernelContext.genNotebookClassLoader(dependencies, kernelContext.classPath, outputDir, parentClassLoader)
-      new RuntimeSymbolTable(kernelContext.copy(classLoader = updatedClassLoader), statusUpdates)
-  }.unsafeRunSync()
-
   // initialize the session, and add task listener
   private lazy val sparkListener = new KernelListener(statusUpdates)
 
@@ -142,7 +135,7 @@ class SparkPolyKernel(
     sess
   }
 
-  override val init: IO[Unit] = super.init >> taskManager.runTaskIO("spark", "Spark session", "Starting Spark session...") {
+  override def init(): IO[Unit] = super.init() >> taskManager.runTaskIO("spark", "Spark session", "Starting Spark session...") {
     taskInfo => IO(session).handleErrorWith(err => IO(logger.error(err)(err.getMessage)) *> IO.raiseError(err)) >> info.flatMap { update =>
       update.map(statusUpdates.publish1).getOrElse(IO.unit)
     }
@@ -186,7 +179,7 @@ object SparkPolyKernel {
       .map(new File(_))
       .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
 
-    val kernelContext = KernelContext(dependencies, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
+    val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
 
     val kernel = new SparkPolyKernel(
       getNotebook,

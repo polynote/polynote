@@ -254,7 +254,7 @@ class IOSharedNotebook(
 
     def startKernel(): IO[Unit] = ensureKernel().as(())
 
-    def init: IO[Unit] = ensureKernel().as(())
+    def init(): IO[Unit] = ensureKernel().as(())
 
     private def withInterpreterLaunch[A](id: CellID)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
       kernel        <- ensureKernel()

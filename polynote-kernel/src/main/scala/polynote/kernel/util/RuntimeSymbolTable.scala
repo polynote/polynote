@@ -14,7 +14,7 @@ import scala.collection.mutable
 import scala.collection.JavaConverters._
 import scala.tools.nsc.interactive.Global
 
-final class RuntimeSymbolTable(
+/*final class RuntimeSymbolTable(
   val kernelContext: KernelContext,
   statusUpdates: Publish[IO, KernelStatusUpdate])(implicit
   contextShift: ContextShift[IO]
@@ -153,4 +153,4 @@ trait SymbolDecl[F[_]] {
   def sourceCellId: CellID
   def scalaType(g: Global): g.Type
   def getValue: Option[Any]
-}
+}*/

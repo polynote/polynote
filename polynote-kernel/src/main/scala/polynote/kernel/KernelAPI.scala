@@ -25,7 +25,7 @@ trait KernelAPI[F[_]] {
   /**
     * Initialize this kernel
     */
-  def init: F[Unit]
+  def init(): F[Unit]
 
   /**
     * Shutdown this kernel
