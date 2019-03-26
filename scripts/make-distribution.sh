@@ -11,7 +11,7 @@ pushd ${DIR}/../
     root=`pwd`
     pushd polynote-frontend
         npm install
-        npm run build
+        npm run dist
     popd
 
     sbt 'project polynote-spark' 'set test in assembly := {}' 'assembly'
