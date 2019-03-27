@@ -239,7 +239,7 @@ class PolyKernel private[kernel] (
     // TODO: This should really be in the ServerHandshake as it isn't a Kernel-level thing...
     Option(KernelInfo(
       "Polynote Version:" -> s"""<span id="version">${BuildInfo.version}</span>""",
-      "Build:"            -> s"""<span id=build-time">${new Date(BuildInfo.buildTime)}</span>"""
+      "Build Commit:"            -> s"""<span id="commit">${BuildInfo.commit}</span>"""
     ))
   )
 
