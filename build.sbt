@@ -125,7 +125,8 @@ lazy val `polynote-spark` = project.settings(
   resourceGenerators in Compile += Def.task {
     Seq(
       copyRuntimeJar((resourceManaged in Compile).value, "polynote-runtime.jar", (packageBin in (`polynote-runtime`, Compile)).value),
-      copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value)
+      copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value),
+      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get) // sneak scala-lang jar into the assembly
     )
   }.taskValue,
   fork in Test := false,
