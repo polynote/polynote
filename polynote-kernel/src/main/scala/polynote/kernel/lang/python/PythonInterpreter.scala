@@ -9,7 +9,7 @@ import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
-import jep.{Jep, JepConfig}
+import jep.{Jep, JepConfig, NamingConventionClassEnquirer}
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
@@ -103,41 +103,21 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
 
   def withJep[T](t: => T): IO[T] = shift.evalOn(executionContext)(IO.delay(t))
 
-  private val jep = jepExecutor.submit {
+  protected val jep: Jep = jepExecutor.submit {
     new Callable[Jep] {
       def call(): Jep = {
-        val jep = new Jep(new JepConfig().addSharedModules("numpy").setInteractive(false))
-//        jep.eval(
-//          """def __polynote_export_value__(d, k):
-//            |  globals().update({ "__polynote_exported__": d[k] })
-//          """.stripMargin)
+        val jep = new Jep(
+          new JepConfig()
+            .addSharedModules("numpy")
+            .setInteractive(false)
+            .setClassLoader(kernelContext.classLoader)
+            .setClassEnquirer(new NamingConventionClassEnquirer(true)))
         jep
       }
     }
   }.get()
 
   private val shutdownSignal = ReadySignal()(listenerShift)
-
-  // TODO: This is kind of a slow way to do this conversion, as it will result in a lot of JNI calls, but it is
-  //       necessary to work around https://github.com/ninia/jep/issues/43 until that gets resolved. We don't want
-  //       anything being converted to String except Strings. It's further complicated by the lack of being able to
-  //       force PyObject return for invoke(), so there is some python-side stuff that we have to do.
-  private def convertPythonValue(jep: Jep, value: PyObject): Any = {
-
-    def convertPythonDict(dict: PyObject): Map[String, Any] = {
-      val keys = jep.invoke("__builtins__.dict.keys", dict).asInstanceOf[java.util.List[String]].asScala.toSeq
-      keys.map {
-        key =>
-          jep.invoke("__polynote_export_value__", dict, key)
-          key -> convertPythonValue(jep, jep.getValue("__polynote_exported__", classOf[PyObject]))
-      }.toMap
-    }
-
-    val typStr = jep.invoke("__builtins__.type", value).asInstanceOf[PyCallable].getAttr("__name__").asInstanceOf[String]
-    typStr match {
-      case "dict" =>
-    }
-  }
 
   override def runCode(
     cell: CellID,
@@ -216,34 +196,41 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
   }
 
   def getPyResults(decls: Seq[String], sourceCellId: CellID): Map[String, ResultValue] = {
-    decls.map {
-      name => name -> {
-        getPyResult(name) match {
+    decls.flatMap {
+      name =>
+        getPyResult(name).map {
           case (value, Some(typ)) =>
             ResultValue(kernelContext, name, typ, value, sourceCellId)
           case (value, _) =>
             ResultValue(kernelContext, name, value, sourceCellId)
+        }.map {
+          value => name -> value
         }
-      }
     }.toMap
   }
 
-  def getPyResult(accessor: String): (Any, Option[global.Type]) = {
+  // TODO: This is kind of a slow way to do this conversion, as it will result in a lot of JNI calls, but it is
+  //       necessary to work around https://github.com/ninia/jep/issues/43 until that gets resolved. We don't want
+  //       anything being converted to String except Strings.
+  def getPyResult(accessor: String): Option[(Any, Option[global.Type])] = {
     val resultType = jep.getValue(s"type($accessor).__name__", classOf[String])
     import global.{typeOf, weakTypeOf}
     resultType match {
-      case "int" => jep.getValue(accessor, classOf[java.lang.Number]).longValue() -> Some(typeOf[Long])
-      case "float" => jep.getValue(accessor, classOf[java.lang.Number]).doubleValue() -> Some(typeOf[Double])
-      case "str" => jep.getValue(accessor, classOf[String]) -> Some(typeOf[String])
-      case "bool" => jep.getValue(accessor, classOf[java.lang.Boolean]).booleanValue() -> Some(typeOf[Boolean])
+      case "int" => Option(jep.getValue(accessor, classOf[java.lang.Number]).longValue() -> Some(typeOf[Long]))
+      case "float" => Option(jep.getValue(accessor, classOf[java.lang.Number]).doubleValue() -> Some(typeOf[Double]))
+      case "str" => Option(jep.getValue(accessor, classOf[String]) -> Some(typeOf[String]))
+      case "bool" => Option(jep.getValue(accessor, classOf[java.lang.Boolean]).booleanValue() -> Some(typeOf[Boolean]))
       case "tuple" => getPyResult(s"list($accessor)")
-      case "dict" =>
-        val keys = getPyResult(s"list($accessor.keys())")._1.asInstanceOf[List[Any]]
-        val values = getPyResult(s"list($accessor.values())")._1.asInstanceOf[List[Any]]
-        keys.zip(values).toMap -> Some(typeOf[Map[Any, Any]])
+      case "dict" => for {
+        keys <- getPyResult(s"list($accessor.keys())")
+        values <- getPyResult(s"list($accessor.values())")
+      } yield {
+        keys._1.asInstanceOf[List[Any]].zip(values._1.asInstanceOf[List[Any]]).toMap -> Some(typeOf[Map[Any, Any]])
+      }
       case "list" =>
+        // TODO: this in particular is pretty inefficient... it does a JNI call for every element of the list.
         val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
-        val (elems, types) = (0L until numElements).map(n => getPyResult(s"$accessor[$n]")).toList.unzip
+        val (elems, types) = (0L until numElements).flatMap(n => getPyResult(s"$accessor[$n]")).toList.unzip
 
         val listType = global.ask {
           () =>
@@ -256,11 +243,14 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
             global.appliedType(typeOf[List[Any]].typeConstructor, lubType)
         }
 
-        elems -> Some(listType)
+        Option(elems -> Some(listType))
       case "PyJObject" =>
-        jep.getValue(accessor) -> Some(typeOf[AnyRef])
+        Option(jep.getValue(accessor) -> Some(typeOf[AnyRef]))
+      case "module" | "type" => None
+      case "function" | "builtin_function_or_method" => Option(jep.getValue(accessor, classOf[PyCallable]) -> Some(typeOf[PyCallable]))
+
       case _ =>
-        jep.getValue(accessor, classOf[PyObject]) -> Some(typeOf[PyObject])
+        Option(jep.getValue(accessor, classOf[PyObject]) -> Some(typeOf[PyObject]))
     }
   }
 
