@@ -153,6 +153,9 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         foo.bar(1, 2, 3) shouldEqual 6
         foo.bar(1, bb = 2, cc = 3) shouldEqual 6
         foo.bar(aa = 1, bb = 2, cc = 3) shouldEqual 6
+
+        foo.wizzle = "wizzlewozzleweasel"
+        foo.wizzle[String] shouldEqual "wizzlewozzleweasel"
     }
   }
 
