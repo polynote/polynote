@@ -97,7 +97,7 @@ object PythonObject {
     def tag: ClassTag[Class]
   }
 
-  object ReturnTypeFor extends ReturnTypeForNothing {
+  object ReturnTypeFor extends ReturnTypeForSomething {
     type Aux[T, Out0] = ReturnTypeFor[T] { type Out = Out0 }
 
     implicit val forNothing: Aux[Nothing, PythonObject] = new ReturnTypeFor[Nothing] {
@@ -111,7 +111,7 @@ object PythonObject {
     }
   }
 
-  private[PythonObject] trait ReturnTypeForNothing { self: ReturnTypeFor.type =>
+  private[PythonObject] trait ReturnTypeForSomething { self: ReturnTypeFor.type =>
     implicit def forSomething[T : ClassTag]: Aux[T, T] = new ReturnTypeFor[T] {
       type Out = T
       type Class = T
