@@ -57,30 +57,32 @@ trait KernelSpec {
 
       // TODO: we should get the results of out as well so we can capture output (or maybe interpreters shouldn't even be writing to out!!)
       interp.init().bracket { _ =>
-        val done = ReadySignal()
+        CellContext((-1).toShort, interp, None, -1).flatMap {
+          predefContext =>
 
-        def runPredef = interp.predefCode.map {
-          predefCode => CellContext((-1).toShort, interp, None, -1).flatMap {
-            predefContext => interp.runCode(predefContext, predefCode)
-          }
-        }.getOrElse(IO.pure(Stream.empty))
+          val done = ReadySignal()
+
+          def runPredef = interp.predefCode.map {
+            predefCode => interp.runCode(predefContext, predefCode)
+          }.getOrElse(IO.pure(Stream.empty))
 
 
-        for {
-          // publishes to symbol table as a side-effect
-          // TODO: ideally we wouldn't need to run predef specially
-          predefResults <- runPredef
-          cellContext <- CellContext(0.toShort, interp, None, 0)
-          results <- interp.runCode(cellContext, code)
-          output  <- (predefResults ++ results).compile.toVector
-          // make  sure everything has been processed
-          _       <- done.complete
-          (vars, outputs) = output.map {
-            case ResultValue(name, _, _, _, value, _) => Either.left(name -> value)
-            case result => Either.right(result)
-          }.separate
-          _       <- assertion(interp, vars.toMap, outputs, displayed) *> IO(polynote.runtime.Runtime.clear())
-        } yield ()
+          for {
+            // publishes to symbol table as a side-effect
+            // TODO: ideally we wouldn't need to run predef specially
+            predefResults <- runPredef.flatMap(_.compile.toVector)
+            cellContext <- CellContext(0.toShort, interp, Some(predefContext), 0)
+            results <- interp.runCode(cellContext, code).flatMap(_.compile.toVector)
+            output  = predefResults ++ results
+            // make  sure everything has been processed
+            _       <- done.complete
+            (vars, outputs) = output.map {
+              case ResultValue(name, _, _, _, value, _) => Either.left(name -> value)
+              case result => Either.right(result)
+            }.separate
+            _       <- assertion(interp, vars.toMap, outputs, displayed) *> IO(polynote.runtime.Runtime.clear())
+          } yield ()
+        }
       }(_ => interp.shutdown())
     }.unsafeRunSync()
   }
