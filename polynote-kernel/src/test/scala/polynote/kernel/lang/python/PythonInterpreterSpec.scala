@@ -4,6 +4,7 @@ import jep.python.{PyCallable, PyObject}
 import org.scalatest._
 import polynote.kernel.Output
 import polynote.kernel.lang.KernelSpec
+import polynote.runtime.python.{PythonFunction, PythonObject}
 
 
 class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
@@ -36,11 +37,11 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       //TODO: can we figure out a nicer way to test this?
       vars("x") shouldEqual 1
       vars("y") shouldEqual "foo"
-      vars("A") shouldBe a[PyCallable]
+      vars("A") shouldBe a [PythonFunction]
       vars("A").toString shouldEqual "<class '__main__.A'>"
-      vars("z") shouldBe a[PyObject]
+      vars("z") shouldBe a [PythonObject]
       vars("z").toString should startWith("<__main__.A object")
-      vars("d") shouldBe a[PyObject]
+      vars("d") shouldBe a [PythonObject]
       vars("d").toString shouldEqual "2019-02-03 00:00:00"
       vars("l") shouldEqual List(1, "foo", Map("sup?" -> "nm"), false)
       vars("l2") shouldEqual List(100, List(1, "foo", Map("sup?" -> "nm"), false))
@@ -121,6 +122,63 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       case (vars, output, displayed) =>
         output shouldBe empty
         displayed shouldBe empty
+    }
+  }
+
+  it should "return a useful PythonObject when a value can't be converted to the JVM directly" in {
+    val code =
+      """class Tester:
+        |  def __init__(self, wizzle):
+        |    self.wizzle = wizzle
+        |
+        |  def foo(self, num):
+        |    return num + 10
+        |
+        |  def bar(self, aa, bb, cc):
+        |    return aa + bb + cc
+        |
+        |foo = Tester("wozzle")
+      """.stripMargin
+
+    assertPythonOutput(code) {
+      case (vars, _, _) =>
+        val foo = vars("foo").asInstanceOf[PythonObject]
+        foo.wizzle[String] shouldEqual "wozzle"
+        val wizzleAsObject = foo.wizzle
+        wizzleAsObject shouldBe a [PythonObject]
+        wizzleAsObject.toString shouldEqual "wozzle"
+
+        foo.foo(10) shouldEqual 20
+
+        foo.bar(1, 2, 3) shouldEqual 6
+        foo.bar(1, bb = 2, cc = 3) shouldEqual 6
+        foo.bar(aa = 1, bb = 2, cc = 3) shouldEqual 6
+    }
+  }
+
+  it should "return a constructor function of PyObject for Python constructors" ignore {
+    // TODO: we need to fix the PyCallable interface upstream in Jep for this to be possible, so test is ignored for now
+    val code =
+      """class Tester:
+        |  def __init__(self, wizzle):
+        |    self.wizzle = wizzle
+        |
+        |  def foo(self, num):
+        |    return num + 10
+        |
+        |  def bar(self, aa, bb, cc):
+        |    return aa + bb + cc
+        |
+        |foo = Tester("wozzle")
+      """.stripMargin
+
+    assertPythonOutput(code) {
+      case (vars, _, _) =>
+        val Tester = vars("Tester").asInstanceOf[PythonFunction]
+        val tester = Tester("weasel")
+        tester shouldBe a[PythonObject]
+
+        tester.asInstanceOf[PythonObject].wizzle[String] shouldEqual "weasel"
     }
   }
 }

@@ -2,7 +2,9 @@ package polynote.kernel.lang
 package python
 
 import java.io.File
-import java.util.concurrent.{Callable, ExecutorService, Executors, ThreadFactory}
+import java.util
+import java.util.concurrent._
+import java.util.concurrent.atomic.AtomicReference
 
 import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
@@ -10,10 +12,12 @@ import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig, NamingConventionClassEnquirer}
+import org.log4s.Logger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, RuntimeSymbolTable}
 import polynote.messages.{CellID, ShortString, TinyList, TinyString}
+import polynote.runtime.python.{PythonFunction, PythonObject}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
@@ -21,6 +25,8 @@ import scala.concurrent.ExecutionContext
 class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInterpreter[IO] {
   import symbolTable.kernelContext
   import kernelContext.global
+
+  protected val logger: Logger = org.log4s.getLogger
 
   val predefCode: Option[String] = None
 
@@ -82,18 +88,32 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
     }
   }
 
-  private def newSingleThread(name: String): ExecutorService = Executors.newSingleThreadExecutor {
+  private val jepThread: AtomicReference[Thread] = new AtomicReference[Thread](null)
+
+  private def newSingleThread(name: String, ref: Option[AtomicReference[Thread]] = None): ExecutorService = Executors.newSingleThreadExecutor {
     new ThreadFactory {
       def newThread(r: Runnable): Thread = {
         val thread = new Thread(r)
         thread.setDaemon(true)
         thread.setName(name)
+        ref.foreach(_.set(thread))
         thread
       }
     }
   }
 
-  private val jepExecutor = newSingleThread("JEP execution thread")
+  private val jepExecutor = newSingleThread("JEP execution thread", Some(jepThread))
+
+  // sharable runner for passing to PythonObjects – checks if we're on the Jep thread, runs immediately if so, otherwise
+  // submits task to the jep executor. Otherwise, if we *were* on the jep thread, we would immediately deadlock.
+  private val runner = new PythonObject.Runner {
+    def run[T](task: => T): T = if (Thread.currentThread() == jepThread.get) {
+      task
+    } else {
+      withJep(task).unsafeRunSync()
+    }
+  }
+
   private val externalListener = newSingleThread("Python symbol listener")
 
   private val executionContext = ExecutionContext.fromExecutor(jepExecutor)
@@ -246,11 +266,19 @@ class PythonInterpreter(val symbolTable: RuntimeSymbolTable) extends LanguageInt
         Option(elems -> Some(listType))
       case "PyJObject" =>
         Option(jep.getValue(accessor) -> Some(typeOf[AnyRef]))
-      case "module" | "type" => None
-      case "function" | "builtin_function_or_method" => Option(jep.getValue(accessor, classOf[PyCallable]) -> Some(typeOf[PyCallable]))
+      case "module" =>
+        None
+      case "function" | "builtin_function_or_method" | "type" =>
+        try Option(new PythonFunction(jep.getValue(accessor, classOf[PyCallable]), runner) -> Some(typeOf[PythonFunction])) catch {
+          case err: Throwable =>
+            logger.info(err)("Error getting python object")
+            None
+        }
 
       case _ =>
-        Option(jep.getValue(accessor, classOf[PyObject]) -> Some(typeOf[PyObject]))
+        Option(jep.getValue(accessor, classOf[PyObject])).map {
+          pyObj => new PythonObject(pyObj, runner) -> Some(typeOf[PythonObject])
+        }
     }
   }
 
