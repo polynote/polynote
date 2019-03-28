@@ -2,7 +2,7 @@ package polynote.server
 
 import java.io.File
 import java.net.{URI, URL}
-import java.util.ServiceLoader
+import java.util.{Date, ServiceLoader}
 
 import cats.effect._
 import org.http4s._
@@ -14,6 +14,7 @@ import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.lang.{LanguageInterpreter, LanguageInterpreterService}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
+import polynote.buildinfo.BuildInfo
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
@@ -88,12 +89,14 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     }
   }
 
-  def run(args: List[String]): IO[ExitCode] = for {
-    // note, by default our bdas genie script sets log4j.configuration to a nonexistent log4j config. We should either
-    // create that config or remove that setting. Until then, be sure to add `--driver-java-options "-Dlog4j.configuration=log4j.properties"
-    // to your `spark-submit` call.
+  def getConfigs(args: List[String]): IO[(ServerArgs, PolynoteConfig)] = for {
     args            <- parseArgs(args)
     config          <- PolynoteConfig.load(args.configFile)
+  } yield (args, config)
+
+  def run(args: List[String]): IO[ExitCode] = for {
+    tuple           <- getConfigs(args)
+    (args, config)   = tuple // tuple decomposition in for-comprehension doesn't seem work I guess...
     port             = config.listen.port
     address          = config.listen.host
     _               <- IO(logger.info(s"Read config from ${args.configFile.getAbsolutePath}: $config"))
@@ -101,6 +104,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     host             = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url              = s"http://$host:$port"
     _               <- splash
+    _               <- IO(logger.info(s" Version is ${BuildInfo.version}, built at ${new Date(BuildInfo.buildTime)}"))
     _               <- IO(logger.info(s" Running on $url"))
     repository       = createRepository(config)
     notebookManager  = new IONotebookManager(config, repository, kernelFactory)

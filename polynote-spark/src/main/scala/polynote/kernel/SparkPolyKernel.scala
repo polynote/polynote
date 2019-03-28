@@ -7,6 +7,7 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
+import cats.data.OptionT
 import cats.effect.IO
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.syntax.flatMap._
@@ -45,24 +46,29 @@ class SparkPolyKernel(
   import kernelContext.global
 
   val polynoteRuntimeJar = "polynote-runtime.jar"
+  val polynoteSparkRuntimeJar = "polynote-spark-runtime.jar"
 
-  private def runtimeJar(tmp: Path) = {
-    val resourceURL = getClass.getClassLoader.getResource(polynoteRuntimeJar)
-    resourceURL.getProtocol match {
-      case "jar" =>
-        val jarFS = FileSystems.newFileSystem(
-          resourceURL.toURI,
-          Collections.emptyMap[String, Any]
-        )
-        val inPath = jarFS.getPath(polynoteRuntimeJar)
-        val runtimeJar = new File(tmp.toFile, polynoteRuntimeJar).toPath
-        Files.copy(inPath, runtimeJar, StandardCopyOption.REPLACE_EXISTING)
-        jarFS.close()
-        runtimeJar
+  private def runtimeJars(tmp: Path) = {
+    def file(name: String) = {
+      val resourceURL = getClass.getClassLoader.getResource(name)
+      resourceURL.getProtocol match {
+        case "jar" =>
+          val jarFS = FileSystems.newFileSystem(
+            resourceURL.toURI,
+            Collections.emptyMap[String, Any]
+          )
+          val inPath = jarFS.getPath(name)
+          val runtimeJar = new File(tmp.toFile, name).toPath
+          Files.copy(inPath, runtimeJar, StandardCopyOption.REPLACE_EXISTING)
+          jarFS.close()
+          runtimeJar
 
-      case "file" =>
-        new File(resourceURL.getPath).toPath
+        case "file" =>
+          new File(resourceURL.getPath).toPath
+      }
     }
+
+    file(polynoteRuntimeJar) :: file(polynoteSparkRuntimeJar) :: Nil
   }
 
   private lazy val dependencyJars = {
@@ -75,7 +81,7 @@ class SparkPolyKernel(
       (_, file) <- namedFiles if file.getName endsWith ".jar"
     } yield file -> tmp.resolve(URLDecoder.decode(file.getName, "utf-8"))
 
-    runtimeJar(tmp) :: jars.map {
+    runtimeJars(tmp) ::: jars.map {
       case (file, path) =>
         val copied = Files.copy(file.toPath, path)
         copied.toFile.deleteOnExit()
@@ -141,10 +147,15 @@ class SparkPolyKernel(
     }
   }
 
-  override def info: IO[Option[KernelInfo]] = IO(session).map { sess =>
-    sess.sparkContext.uiWebUrl.map { url =>
-      KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url" target="_blank">$url</a>"""))
-    }
+  override def info: IO[Option[KernelInfo]] = {
+    val sparkKI = OptionT(IO(session).map { sess =>
+      sess.sparkContext.uiWebUrl.map { url =>
+        KernelInfo(TinyMap(ShortString("Spark Web UI:") -> s"""<a href="$url" target="_blank">$url</a>"""))
+      }
+    })
+    val superKI = OptionT(super.info)
+
+    sparkKI.map2(superKI)((spk, sup) => spk.combine(sup)).orElse(sparkKI).orElse(superKI).value
   }
 
   override def cancelTasks(): IO[Unit] = super.cancelTasks() *> IO(DAGSchedulerThief(session).cancelAllJobs())

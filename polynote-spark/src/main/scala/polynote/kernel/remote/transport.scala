@@ -15,8 +15,9 @@ import cats.syntax.functor._
 import fs2.Stream
 import org.log4s.getLogger
 import polynote.config.PolynoteConfig
+import polynote.kernel
 import polynote.kernel.remote.SocketTransport.FramedSocket
-import polynote.kernel.util.ReadySignal
+import polynote.kernel.util.{ReadySignal, SparkSubmitCommand}
 import polynote.messages.{Notebook, NotebookConfig}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.stream.decode
@@ -166,11 +167,6 @@ class SocketTransport(deploy: SocketTransport.Deploy = new SocketTransport.Deplo
 }
 
 object SocketTransport {
-  def parseQuotedArgs(str: String): List[String] = str.split('"').toList.sliding(2,2).toList.flatMap {
-    case nonQuoted :: quoted :: Nil => nonQuoted.split("\\s+").toList ::: quoted :: Nil
-    case nonQuoted :: Nil => nonQuoted.split("\\s+").toList
-    case _ => sys.error("impossible sliding state")
-  }.map(_.trim).filterNot(_.isEmpty)
 
   /**
     * Deploys the remote kernel which will connect back to the server (for example by running spark-submit in a subprocess)
@@ -204,11 +200,6 @@ object SocketTransport {
     ): IO[DeployedProcess] = {
       val sparkConfig = config.spark ++ notebookConfig.sparkConfig.getOrElse(Map.empty)
 
-      val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory")
-        .flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
-
-      val sparkSubmitArgs = sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
-
       val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
 
       val jarURL =
@@ -217,18 +208,11 @@ object SocketTransport {
         else
           getClass.getProtectionDomain.getCodeSource.getLocation.getPath
 
+      val baseCommand = SparkSubmitCommand(sparkConfig, classOf[RemoteSparkKernelClient].getName, jarURL)
+
       val serverHostPort = s"${serverAddress.getAddress.getHostAddress}:${serverAddress.getPort}"
 
-      val allDriverOptions =
-        sparkConfig.get("spark.driver.extraJavaOptions").toList ++ List("-Dlog4j.configuration=log4j.properties") mkString " "
-
-      val command = Seq("spark-submit", "--class", classOf[RemoteSparkKernelClient].getName) ++
-        Seq("--driver-java-options", allDriverOptions) ++
-        sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
-        (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++
-        sparkSubmitArgs ++
-        sparkArgs ++
-        Seq(jarURL, "--remoteAddress", serverHostPort)
+      val command = baseCommand ++ Seq("--remoteAddress", serverHostPort)
 
       val displayCommand = command.map {
         str => if (str contains " ") s""""$str"""" else str

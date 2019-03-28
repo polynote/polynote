@@ -170,7 +170,12 @@ export class KernelInfoUI {
         this.el = div(['kernel-info'], [
             this.toggleEl = h3(['toggle'], ['...']).click(evt => this.toggleCollapse()),
             h3(['title'], ['Info']),
-            this.infoEl = div(['info-container'], []),
+            this.infoEl = table(['info-container'], {
+                header: false,
+                classes: ['key', 'val'],
+                rowHeading: false,
+                addToTop: false
+            }),
         ]);
         this.info = new Map();
 
@@ -224,15 +229,12 @@ export class KernelInfoUI {
     }
 
     renderInfo() {
-        this.infoEl.innerHTML = "";
         for (const [k, v] of this.info) {
-            const val = div(['info-value'], []);
-            val.innerHTML = v;
-            const el = div(['info-item'], [
-                div(['info-key'], [k]),
-                val
-            ]);
-            this.infoEl.appendChild(el);
+            const el = div([], []);
+            el.innerHTML = v;
+            if (this.infoEl.findRowsBy(row => row.key === k).length === 0) {
+                this.infoEl.addRow({key: k, val: el.firstChild});
+            }
         }
     }
 }

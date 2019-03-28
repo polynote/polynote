@@ -3,6 +3,8 @@ package polynote.kernel
 import java.io.File
 import java.net.URL
 import java.nio.ByteBuffer
+import java.time.LocalDateTime
+import java.util.Date
 import java.util.concurrent.{ConcurrentHashMap, Executors}
 
 import cats.effect.concurrent.{Deferred, Ref, Semaphore}
@@ -17,6 +19,7 @@ import cats.instances.list._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
 import org.log4s.{Logger, getLogger}
+import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageInterpreter
@@ -270,7 +273,13 @@ class PolyKernel private[kernel] (
 
   def shutdown(): IO[Unit] = taskManager.shutdown()
 
-  def info: IO[Option[KernelInfo]] = IO.pure(None)
+  def info: IO[Option[KernelInfo]] = IO.pure(
+    // TODO: This should really be in the ServerHandshake as it isn't a Kernel-level thing...
+    Option(KernelInfo(
+      "Polynote Version:" -> s"""<span id="version">${BuildInfo.version}</span>""",
+      "Build Commit:"            -> s"""<span id="commit">${BuildInfo.commit}</span>"""
+    ))
+  )
 
   override def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[Array[ByteVector32]] = handleType match {
     case Lazy =>

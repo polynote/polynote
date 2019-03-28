@@ -1539,14 +1539,26 @@ button {
     }
 
     .info-container {
-      padding: 4px;
       background-color: white;
+      width: 100%;
+      table-layout: fixed;
 
-      .info-item {
-        display: flex;
+      tbody {
+        background: white;
+      }
 
-        .info-key {
-          margin-right: 2px;
+      td {
+        text-align: left;
+        overflow: hidden;
+        word-break: break-all;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+
+        &.val {
+          padding-left: 4px;
+        }
+        &.key {
+          width: 40%;
         }
       }
     }

@@ -44,7 +44,20 @@ lazy val `polynote-runtime` = project.settings(
     "com.chuusai" %% "shapeless" % "2.3.3",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
   )
-)
+).enablePlugins(BuildInfoPlugin)
+  .settings(
+    buildInfoKeys := Seq[BuildInfoKey](
+      name,
+      version,
+      BuildInfoKey.action("commit") {
+        git.gitHeadCommit.value.getOrElse("unknown")
+      },
+      BuildInfoKey.action("buildTime") {
+        System.currentTimeMillis
+      }
+    ),
+    buildInfoPackage := "polynote.buildinfo"
+  )
 
 val `polynote-kernel` = project.settings(
   commonSettings,
@@ -112,7 +125,8 @@ lazy val `polynote-spark` = project.settings(
   resourceGenerators in Compile += Def.task {
     Seq(
       copyRuntimeJar((resourceManaged in Compile).value, "polynote-runtime.jar", (packageBin in (`polynote-runtime`, Compile)).value),
-      copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value)
+      copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value),
+      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get) // sneak scala-lang jar into the assembly
     )
   }.taskValue,
   fork in Test := false,
