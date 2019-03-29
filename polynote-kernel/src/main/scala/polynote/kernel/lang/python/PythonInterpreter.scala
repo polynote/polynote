@@ -39,6 +39,14 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         |
         |    def __getattr__(self, name):
         |        return getattr(self.ref, name)
+        |""".stripMargin)
+    jep.eval(
+      """def __pn_expand_globals__(syms):
+        |    g = globals()
+        |    pg = dict(syms)
+        |    for k in g:
+        |        pg[k] = g[k]
+        |    return pg
       """.stripMargin.trim)
     jep.eval("kernel = KernelProxy(__kernel_ref)")
     val pykernel = jep.getValue("kernel", classOf[PyObject])
@@ -100,12 +108,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
   private val shutdownSignal = ReadySignal()(listenerShift)
 
   private def expandGlobals(): Unit = {
-    jep.eval("__polynote_globals__ = dict(__polynote_globals__)")
-    jep.eval("__g = globals()")
-    jep.eval("""for k in __g:
-        |  __polynote_globals__[k] = __g[k]
-        |""".stripMargin)
-    jep.eval("del __g")
+    jep.eval("__polynote_globals__ = __pn_expand_globals__(__polynote_globals__)")
   }
 
   override def runCode(
