@@ -72,4 +72,8 @@ object CellContext {
 
   def unsafe(id: CellID, previous: Option[CellContext])(implicit concurrent: Concurrent[IO]): CellContext =
     new CellContext(id, Deferred.tryable[IO, scala.reflect.api.Symbols#ModuleSymbol].unsafeRunSync(), previous)
+
+  def unsafe(id: CellID)(implicit concurrent: Concurrent[IO]): CellContext = unsafe(id, None)
+
+  def unsafe(idInt: Int)(implicit concurrent: Concurrent[IO]): CellContext = unsafe(idInt.toShort)
 }

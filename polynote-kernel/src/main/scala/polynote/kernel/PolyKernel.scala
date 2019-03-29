@@ -70,7 +70,7 @@ class PolyKernel private[kernel] (
                 results => results.collect {
                   case v: ResultValue => v
                 }.through(cellContext.results.tap)
-              } <* IO(notebookContext.insert(cellContext, None))
+              } <* IO(notebookContext.insertFirst(cellContext))
 
             case None => IO.pure(Stream.empty)
           }

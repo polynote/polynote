@@ -16,14 +16,8 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
   @volatile private var _last: CellContext = _
 
   def insert(cellContext: CellContext, after: Option[CellID]): CellContext = after match {
-    case None => synchronized {
-      if (_first != null) {
-        _first.setPrev(cellContext)
-      } else if (_last == null) {
-        _last = cellContext
-      }
-      cellContext
-    }
+    case None => insertFirst(cellContext)
+    case Some(id) if id == cellContext.id => throw new IllegalArgumentException("Cell can not be inserted after itself")
     case Some(id) =>
       @tailrec def findTail(at: Option[CellContext], currentTail: List[CellContext]): List[CellContext] = at match {
         case Some(ctx) if ctx.id == id => ctx :: currentTail
@@ -33,7 +27,7 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
 
       synchronized {
         findTail(Option(_last), Nil) match {
-          case Nil => insert(cellContext, None)
+          case Nil => throw new NoSuchElementException(s"Predecessor $id not found")
           case at :: tail =>
             val cellsBefore = at.collectBack {
               case ctx => ctx.id
@@ -46,18 +40,36 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
             tail.filter(_.previous.exists(ctx => cellsBefore(ctx.id))).foreach {
               ctx => ctx.setPrev(cellContext)
             }
+
+            if (at eq _last) {
+              _last = cellContext
+            }
+
             cellContext
         }
       }
   }
 
-  def insertLast(cellContext: CellContext): CellContext = {
+  def insertLast(cellContext: CellContext): CellContext = synchronized {
     if (_last != null) {
       cellContext.setPrev(_last)
       _last = cellContext
       cellContext
     } else {
       assert(_first == null, "Broken links")
+      _first = cellContext
+      _last = cellContext
+      cellContext
+    }
+  }
+
+  def insertFirst(cellContext: CellContext): CellContext = synchronized {
+    if (_first != null) {
+      _first.setPrev(cellContext)
+      _first = cellContext
+      cellContext
+    } else {
+      assert(_last == null, "Broken links")
       _first = cellContext
       _last = cellContext
       cellContext
@@ -75,17 +87,19 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
         this._last = null
         this._first = null
       }
-    } else if (last != null) {
-      var nextToLast: CellContext = last
-      last = last.previous.orNull
-
-      while (last != null) {
-        if (last.id == id) {
-          nextToLast.setPrev(last.previous)
-          return
-        }
-        nextToLast = last
+    } else {
+      if (last != null) {
+        var nextToLast: CellContext = last
         last = last.previous.orNull
+
+        while (last != null) {
+          if (last.id == id) {
+            nextToLast.setPrev(last.previous)
+            return
+          }
+          nextToLast = last
+          last = last.previous.orNull
+        }
       }
       // not found
       throw new NoSuchElementException(s"No cell context with id $id to remove")
