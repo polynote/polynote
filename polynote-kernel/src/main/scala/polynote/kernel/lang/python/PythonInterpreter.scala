@@ -91,12 +91,14 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   def withJep[T](t: => T): IO[T] = shift.evalOn(executionContext)(IO.delay(t))
 
+  protected def sharedModules: List[String] = List("numpy")
+
   protected val jep: Jep = jepExecutor.submit {
     new Callable[Jep] {
       def call(): Jep = {
         val jep = new Jep(
           new JepConfig()
-            .addSharedModules("numpy")
+            .addSharedModules(sharedModules: _*)
             .setInteractive(false)
             .setClassLoader(kernelContext.classLoader)
             .setClassEnquirer(new NamingConventionClassEnquirer(true)))
