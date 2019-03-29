@@ -213,95 +213,93 @@ class ScalaInterpreter(
     cellContext: CellContext,
     code: String
   ): IO[Stream[IO, Result]] = {
-    cellContext.collectBack {
+    val previous = cellContext.collectBack {
       case c if previousSources contains c.id => previousSources(c.id)
-    }.flatMap {
-      previous =>
-        val source = ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
-        compileAndRun(source, cellContext)
     }
+
+    val source = ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
+    compileAndRun(source, cellContext)
+
   }
 
   override def completionsAt(
     cellContext: CellContext,
     code: String,
     pos: Int
-  ): IO[List[Completion]] =
-    cellContext.collectBack {
+  ): IO[List[Completion]] = {
+    val previous = cellContext.collectBack {
       case c if previousSources contains c.id => previousSources(c.id)
-    }.flatMap {
-      previous =>
-        IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).completionsAt(pos)).map {
-          case (typ, completions) => completions.map { sym =>
-            val name = sym.name.decodedName.toString
-            val symType = sym.typeSignatureIn(typ)
-            val tParams = TinyList(sym.typeParams.map(tp => TinyString(tp.nameString)))
-            val params = TinyList {
-              for {
-                pl <- sym.paramLists
-              } yield TinyList {
-                for {
-                  p <- pl
-                } yield (TinyString(p.name.decodedName.toString), ShortString(formatType(p.typeSignatureIn(symType))))
-              }
-            }
-            val symTypeStr = if (sym.isMethod) formatType(symType.finalResultType) else ""
-            Completion(TinyString(name), tParams, params, ShortString(symTypeStr), completionType(sym))
-          }
-        }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(Nil))
     }
+    IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).completionsAt(pos)).map {
+      case (typ, completions) => completions.map { sym =>
+        val name = sym.name.decodedName.toString
+        val symType = sym.typeSignatureIn(typ)
+        val tParams = TinyList(sym.typeParams.map(tp => TinyString(tp.nameString)))
+        val params = TinyList {
+          for {
+            pl <- sym.paramLists
+          } yield TinyList {
+            for {
+              p <- pl
+            } yield (TinyString(p.name.decodedName.toString), ShortString(formatType(p.typeSignatureIn(symType))))
+          }
+        }
+        val symTypeStr = if (sym.isMethod) formatType(symType.finalResultType) else ""
+        Completion(TinyString(name), tParams, params, ShortString(symTypeStr), completionType(sym))
+      }
+    }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(Nil))
+  }
 
   override def parametersAt(
     cellContext: CellContext,
     code: String,
     pos: Int
-  ): IO[Option[Signatures]] =
-    cellContext.collectBack {
+  ): IO[Option[Signatures]] = {
+    val previous = cellContext.collectBack {
       case c if previousSources contains c.id => previousSources(c.id)
-    }.flatMap {
-      previous =>
-        IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).signatureAt(pos)).map {
-          case (typ: global.MethodType, syms, n, d) =>
-            val hints = syms.map {
-              sym =>
-
-                val paramsStr = sym.paramLists.map {
-                  pl => "(" + pl.map {
-                    param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(typ).finalResultType.toString}"
-                  }.mkString(", ") + ")"
-                }.mkString
-
-                try {
-                  Some {
-                    ParameterHints(
-                      TinyString(s"${sym.name.decodedName.toString}$paramsStr"),
-                      None,
-                      TinyList {
-                        sym.paramLists.flatMap {
-                          pl => pl.map {
-                            param => ParameterHint(
-                              TinyString(param.name.decodedName.toString),
-                              TinyString(param.typeSignatureIn(typ).finalResultType.toString),
-                              None  // TODO
-                            )
-                          }
-                        } // TODO: could provide the rest of the param lists?
-                      }
-                    )
-                  }
-                } catch {
-                  case err: Throwable =>
-                    err.printStackTrace()
-                    None
-                }
-            }
-            Option(Signatures(hints.flatMap(_.toList), 0, n.toByte))
-          case _ => None
-        }.handleErrorWith {
-          case NoApplyTree => IO.pure(None)
-          case err => IO(logger.error(err)("Completions error")).as(None)
-        }
     }
+    IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).signatureAt(pos)).map {
+      case (typ: global.MethodType, syms, n, d) =>
+        val hints = syms.map {
+          sym =>
+
+            val paramsStr = sym.paramLists.map {
+              pl => "(" + pl.map {
+                param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(typ).finalResultType.toString}"
+              }.mkString(", ") + ")"
+            }.mkString
+
+            try {
+              Some {
+                ParameterHints(
+                  TinyString(s"${sym.name.decodedName.toString}$paramsStr"),
+                  None,
+                  TinyList {
+                    sym.paramLists.flatMap {
+                      pl => pl.map {
+                        param => ParameterHint(
+                          TinyString(param.name.decodedName.toString),
+                          TinyString(param.typeSignatureIn(typ).finalResultType.toString),
+                          None  // TODO
+                        )
+                      }
+                    } // TODO: could provide the rest of the param lists?
+                  }
+                )
+              }
+            } catch {
+              case err: Throwable =>
+                err.printStackTrace()
+                None
+            }
+        }
+        Option(Signatures(hints.flatMap(_.toList), 0, n.toByte))
+      case _ => None
+    }.handleErrorWith {
+      case NoApplyTree => IO.pure(None)
+      case err => IO(logger.error(err)("Completions error")).as(None)
+    }
+  }
 
 
 

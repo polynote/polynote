@@ -31,7 +31,24 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
 
-  override def init(): IO[Unit] = IO.unit
+  override def init(): IO[Unit] = withJep {
+    jep.set("__kernel_ref", polynote.runtime.Runtime)
+    jep.eval(
+      """
+        |class KernelProxy(object):
+        |    def __init__(self, ref):
+        |        self.ref = ref
+        |
+        |    def __getattr__(self, name):
+        |        return getattr(self.ref, name)
+      """.stripMargin.trim)
+    jep.eval("kernel = KernelProxy(__kernel_ref)")
+    val pykernel = jep.getValue("kernel", classOf[PyObject])
+    pykernel.setAttr("display", polynote.runtime.Runtime.display)
+    jep.eval("del kernel")
+    jep.set("kernel", pykernel)
+    jep.eval("del __kernel_ref")
+  }
 
   private val jepThread: AtomicReference[Thread] = new AtomicReference[Thread](null)
 
@@ -96,72 +113,72 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
     val shiftEffect = IO.ioConcurrentEffect(shift) // TODO: we can also create an implicit shift instead of doing this, which is better?
     Queue.unbounded[IO, Option[Result]](shiftEffect).flatMap { maybeResultQ =>
-      cellContext.visibleValues.flatMap { visibleValues =>
+      // TODO: Jep doesn't give us a good way to construct a dict... should we wrap cell context in a class that emulates dict instead?
+      val globals = cellContext.visibleValues.view.map {
+        rv => Array(rv.name, rv.value)
+      }.toArray
 
-        // convert scope from cell context into a HashMap, so jep will make it a dict in python
-        val globals = new java.util.HashMap[String, Any](visibleValues.map(rv => rv.name -> rv.value).toMap.asJava)
-        val resultQ = new EnqueueSome(maybeResultQ)
+      val resultQ = new EnqueueSome(maybeResultQ)
 
-        val stdout = new PythonDisplayHook(resultQ)
-
-
-        withJep {
-
-          jep.set("__polynote_displayhook__", stdout)
-          jep.eval("import sys\n")
-          jep.eval("import ast\n")
-          jep.eval("sys.displayhook = __polynote_displayhook__.output\n")
-          jep.eval("sys.stdout = __polynote_displayhook__\n")
-          jep.eval("__polynote_locals__ = {}\n")
-          jep.set("__polynote_code__", code)
-          jep.set("__polynote_cell__", cellName)
-          jep.set("__polynote_globals__", globals)
-
-          // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
-          // TODO: should probably just use ipython to evaluate it instead
-          jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
-          val numStats = jep.getValue("len(__polynote_parsed__)", classOf[java.lang.Long])
-
-          if (numStats > 0) {
-            jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
-            val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
-
-            val resultName = "Out"
-            val maybeModifiedCode = if (lastIsExpr) {
-              val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
-              val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
-
-              (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
-            } else code
-
-            jep.set("__polynote_code__", maybeModifiedCode)
-            kernelContext.runInterruptible {
-              jep.eval("exec(__polynote_code__, __polynote_globals__, __polynote_locals__)\n")
-            }
-            jep.eval("globals().update(__polynote_locals__)")
-            val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
+      val stdout = new PythonDisplayHook(resultQ)
 
 
-            getPyResults(newDecls, cell).filterNot(_._2.value == null).values
-          } else Nil
-        }.flatMap { resultSymbols =>
+      withJep {
 
-          for {
-            // send all symbols to resultQ
-            _ <- Stream.emits(resultSymbols.toSeq).to(resultQ.enqueue).compile.drain
-            // make sure to flush stdout
-            _ <- IO(stdout.flush())
-          } yield {
+        jep.set("__polynote_displayhook__", stdout)
+        jep.eval("import sys\n")
+        jep.eval("import ast\n")
+        jep.eval("sys.displayhook = __polynote_displayhook__.output\n")
+        jep.eval("sys.stdout = __polynote_displayhook__\n")
+        jep.eval("__polynote_locals__ = {}\n")
+        jep.set("__polynote_code__", code)
+        jep.set("__polynote_cell__", cellName)
+        jep.set("__polynote_globals__", globals)
 
-            // resultQ will be in this approximate order (not that it should matter I hope):
-            //    1. stdout while running the cell
-            //    2. The symbols defined in the cell
-            //    3. The final output (if any) of the cell
-            //    4. Anything that might come out of stdout being flushed (probably nothing)
-            maybeResultQ.dequeue.unNoneTerminate
+        // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
+        // TODO: should probably just use ipython to evaluate it instead
+        jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
+        val numStats = jep.getValue("len(__polynote_parsed__)", classOf[java.lang.Long])
+
+        if (numStats > 0) {
+          jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
+          val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
+
+          val resultName = "Out"
+          val maybeModifiedCode = if (lastIsExpr) {
+            val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
+            val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
+
+            (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
+          } else code
+
+          jep.set("__polynote_code__", maybeModifiedCode)
+          kernelContext.runInterruptible {
+            jep.eval("exec(__polynote_code__, {**dict(__polynote_globals__), **globals()}, __polynote_locals__)\n")
           }
-        }.guarantee(maybeResultQ.enqueue1(None))
-      }
+          jep.eval("globals().update(__polynote_locals__)")
+          val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
+
+
+          getPyResults(newDecls, cell).filterNot(_._2.value == null).values
+        } else Nil
+      }.flatMap { resultSymbols =>
+
+        for {
+          // send all symbols to resultQ
+          _ <- Stream.emits(resultSymbols.toSeq).to(resultQ.enqueue).compile.drain
+          // make sure to flush stdout
+          _ <- IO(stdout.flush())
+        } yield {
+
+          // resultQ will be in this approximate order (not that it should matter I hope):
+          //    1. stdout while running the cell
+          //    2. The symbols defined in the cell
+          //    3. The final output (if any) of the cell
+          //    4. Anything that might come out of stdout being flushed (probably nothing)
+          maybeResultQ.dequeue.unNoneTerminate
+        }
+      }.guarantee(maybeResultQ.enqueue1(None))
     }
   }
 

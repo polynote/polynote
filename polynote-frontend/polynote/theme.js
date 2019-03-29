@@ -1,6 +1,6 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 
-const theme = {
+export const theme = {
   base: 'vs',
   inherit: true,
   rules: [
@@ -10,5 +10,5 @@ const theme = {
   ]
 };
 
-monaco.editor.defineTheme('polynote', theme);
+
 

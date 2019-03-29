@@ -57,7 +57,7 @@ trait KernelSpec {
 
       // TODO: we should get the results of out as well so we can capture output (or maybe interpreters shouldn't even be writing to out!!)
       interp.init().bracket { _ =>
-        CellContext((-1).toShort, interp, None, -1).flatMap {
+        CellContext((-1).toShort, None).flatMap {
           predefContext =>
 
           val done = ReadySignal()
@@ -71,7 +71,7 @@ trait KernelSpec {
             // publishes to symbol table as a side-effect
             // TODO: ideally we wouldn't need to run predef specially
             predefResults <- runPredef.flatMap(_.compile.toVector)
-            cellContext <- CellContext(0.toShort, interp, Some(predefContext), 0)
+            cellContext <- CellContext(0.toShort, Some(predefContext))
             results <- interp.runCode(cellContext, code).flatMap(_.compile.toVector)
             output  = predefResults ++ results
             // make  sure everything has been processed

@@ -3,6 +3,9 @@
 import { SocketSession } from './comms.js'
 import * as messages from './messages.js'
 import { MainUI } from './ui.js'
+import { tokenizer, config } from './scala.js'
+import { theme } from './theme.js'
+import * as monaco from "monaco-editor";
 
 const md = require('markdown-it');
 
@@ -240,24 +243,32 @@ const md = require('markdown-it');
       };
   })();
 
-  const MarkdownIt = md({
-      html: true,
-      linkify: false,
-  });
-  
-  MarkdownIt.use(mdk);
+const MarkdownIt = md({
+  html: true,
+  linkify: false,
+});
 
-  window.MarkdownIt = MarkdownIt;
+MarkdownIt.use(mdk);
+
+window.MarkdownIt = MarkdownIt;
+
+// set up scala highlighter
+monaco.languages.register({ id: 'scala' });
+monaco.languages.setMonarchTokensProvider('scala', tokenizer);
+monaco.languages.setLanguageConfiguration('scala', config);
+
+// use our theme
+monaco.editor.defineTheme('polynote', theme);
 
 
-  const socket = new SocketSession();
+const socket = new SocketSession();
 
-  const mainUI = new MainUI(socket);
-  document.getElementById('Main').appendChild(mainUI.el);
-  const path = unescape(window.location.pathname);
+const mainUI = new MainUI(socket);
+document.getElementById('Main').appendChild(mainUI.el);
+const path = unescape(window.location.pathname);
 
-  if (path.startsWith('/notebook/')) {
-      mainUI.loadNotebook(path.replace(/^\/notebook\//, ''));
-  } else {
-      mainUI.showWelcome();
-  }
+if (path.startsWith('/notebook/')) {
+  mainUI.loadNotebook(path.replace(/^\/notebook\//, ''));
+} else {
+  mainUI.showWelcome();
+}

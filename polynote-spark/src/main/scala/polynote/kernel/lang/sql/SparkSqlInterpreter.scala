@@ -46,15 +46,11 @@ class SparkSqlInterpreter(val kernelContext: KernelContext) extends LanguageInte
       case Parser.TableIdentifier(None, name) => name
     }.toSet
 
-    cellContext.visibleValues.flatMap {
-      values =>
-        dataFrames(values).collect {
-          case rv if candidates(rv.name.toString) =>
-            val nameString = rv.name.toString
-            IO.pure(rv.value.asInstanceOf[Dataset[_]]).flatMap(ds => IO(ds.createOrReplaceTempView(nameString)).as(nameString))
-        }.sequence
-    }
-
+    dataFrames(cellContext.visibleValues).collect {
+      case rv if candidates(rv.name.toString) =>
+        val nameString = rv.name.toString
+        IO.pure(rv.value.asInstanceOf[Dataset[_]]).flatMap(ds => IO(ds.createOrReplaceTempView(nameString)).as(nameString))
+    }.sequence
   }
 
   private def dropTempViews(views: List[String]): IO[Unit] = views.map(name => IO(spark.catalog.dropTempView(name))).sequence.as(())
@@ -116,16 +112,15 @@ class SparkSqlInterpreter(val kernelContext: KernelContext) extends LanguageInte
     cellContext: CellContext,
     code: String,
     pos: Int
-  ): IO[List[Completion]] = cellContext.visibleValues.flatMap {
-    visibleValues =>
-      def completeAtPos(statement: SingleStatementContext) = {
-        val results = statement.accept(new CompletionVisitor(pos, visibleValues))
-        results
-      }
+  ): IO[List[Completion]] = {
+    def completeAtPos(statement: SingleStatementContext) = {
+      val results = statement.accept(new CompletionVisitor(pos, cellContext.visibleValues))
+      results
+    }
 
-      for {
-        parseResult <- IO.fromEither(parser.parse(cellContext.id, code).toEither)
-      } yield completeAtPos(parseResult.statement)
+    for {
+      parseResult <- IO.fromEither(parser.parse(cellContext.id, code).toEither)
+    } yield completeAtPos(parseResult.statement)
   }
 
   override def parametersAt(cellContext: CellContext, code: String, pos: Int): IO[Option[Signatures]] =

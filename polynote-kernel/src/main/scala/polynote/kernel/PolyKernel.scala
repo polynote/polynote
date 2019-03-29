@@ -55,22 +55,7 @@ class PolyKernel private[kernel] (
 
   private val clock: Clock[IO] = Clock.create
 
-  private val cellContexts = new ConcurrentHashMap[CellID, CellContext]()
-  private var lastPredefContext: CellContext = _
-
-  private def prepareCellContext(id: CellID, notebook: Notebook, interp: LanguageInterpreter[IO]): IO[CellContext] = {
-    val before = prevCells(notebook, id)
-    val previous = before
-      .filter(cellContexts.contains)
-      .lastOption
-      .map(cellContexts.get)
-      .flatMap(Option.apply)
-      .orElse(Option(lastPredefContext))
-
-    CellContext(id, interp, previous, before.size).flatMap {
-      ctx => IO(cellContexts.put(id, ctx)).as(ctx)
-    }
-  }
+  private val notebookContext = new NotebookContext(getNotebook)
 
   /**
     * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
@@ -80,18 +65,17 @@ class PolyKernel private[kernel] (
   // TODO: duplicates logic from runCell
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
-      val prevPredef = Option(lastPredefContext)
-      val index = prevPredef.map(_.index - 1).getOrElse(-1)
+      val index = notebookContext.first.map(_.id).getOrElse(0.toShort) - 1
 
-      CellContext(index, interp, prevPredef, index).flatMap {
+      CellContext(index, None).flatMap {
         cellContext =>
-          lastPredefContext = cellContext
           interp.predefCode match {
-            case Some(code) => taskManager.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(cellContext, code)).map {
-              results => results.collect {
-                case v: ResultValue => v
-              }.through(cellContext.results.tap)
-            }
+            case Some(code) =>
+              taskManager.runTaskIO(s"Predef $language", s"Predef ($language)")(_ => interp.runCode(cellContext, code)).map {
+                results => results.collect {
+                  case v: ResultValue => v
+                }.through(cellContext.results.tap)
+              } <* IO(notebookContext.insert(cellContext, None))
 
             case None => IO.pure(Stream.empty)
           }
@@ -161,9 +145,6 @@ class PolyKernel private[kernel] (
     } yield result
   }
 
-  // TODO: using -1 for Predef is kinda weird.
-  private def prevCells(notebook: Notebook, id: CellID): List[CellID] = List[CellID](-1) ++ notebook.cells.view.takeWhile(_.id != id).map(_.id).toList
-
   def startInterpreterFor(cellId: CellID): IO[Stream[IO, Result]] = withInterpreter(cellId) {
     (_, _, _, results) => IO.pure(results)
   } (IO.pure(Stream.empty))
@@ -178,7 +159,6 @@ class PolyKernel private[kernel] (
             val oqSome = new EnqueueSome(oq)
             val run = withLaunchedInterpreter(id) {
               (notebook, cell, interp) =>
-                val prevCellIds = prevCells(notebook, id)
                 // TODO: should this be something the interpreter has to do? Without this we wouldn't even need to allocate a queue here
                 polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
                 polynote.runtime.Runtime.setProgressSetter {
@@ -186,11 +166,9 @@ class PolyKernel private[kernel] (
                     val newDetail = Option(detail).getOrElse(taskInfo.detail)
                     statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
                 }
-                val prevContext = prevCellIds.reverse.find(cellContexts.contains).map(cellContexts.get)
-                CellContext(id, interp, prevContext, prevCellIds.size).flatMap {
+                CellContext(cell.id).flatMap(ctx => IO(notebookContext.tryUpdate(ctx)).as(ctx)).flatMap {
                   cellContext =>
-
-                    val results = IO(cellContexts.put(id, cellContext)) *> interp.runCode(
+                    val results = interp.runCode(
                       cellContext,
                       cell.content.toString
                     ).map {
@@ -198,7 +176,7 @@ class PolyKernel private[kernel] (
                         case ResultValue(name, _, _, _, value, _) => IO(polynote.runtime.Runtime.putValue(name, value))
                         case _ => IO.unit
                       }
-                    }
+                    } <* IO(notebookContext.tryUpdate(cellContext))
 
                     for {
                       start  <- clock.monotonic(MILLISECONDS)
@@ -252,24 +230,21 @@ class PolyKernel private[kernel] (
 
   def completionsAt(id: CellID, pos: Int): IO[List[Completion]] = withLaunchedInterpreter(id) {
     (notebook, cell, interp) =>
-      prepareCellContext(id, notebook, interp).flatMap(ctx => interp.completionsAt(ctx, cell.content.toString, pos))
+      notebookContext.getIO(id).flatMap(ctx => interp.completionsAt(ctx, cell.content.toString, pos))
   }.map(_.getOrElse(Nil))
 
   def parametersAt(id: CellID, pos: Int): IO[Option[Signatures]] = withLaunchedInterpreter(id) {
     (notebook, cell, interp) =>
-      prepareCellContext(id, notebook, interp).flatMap(ctx => interp.parametersAt(ctx, cell.content.toString, pos))
+      notebookContext.getIO(id).flatMap(ctx => interp.parametersAt(ctx, cell.content.toString, pos))
   }.map(_.flatten)
 
-  def currentSymbols(): IO[List[ResultValue]] = IO(cellContexts.values.asScala).flatMap {
-    case ctxs if ctxs.isEmpty => IO.pure(Nil)
-    case ctxs => ctxs.maxBy(_.index).visibleValues
-  }
+  def currentSymbols(): IO[List[ResultValue]] = IO(notebookContext.allResultValues)
 
   def currentTasks(): IO[List[TaskInfo]] = taskManager.allTasks
 
   def idle(): IO[Boolean] = taskManager.runningTasks.map(_.isEmpty)
 
-  def init(): IO[Unit] = IO.unit
+  def init(): IO[Unit] = notebookContext.init()
 
   def shutdown(): IO[Unit] = taskManager.shutdown()
 
@@ -319,7 +294,13 @@ class PolyKernel private[kernel] (
     taskManager.cancelAllQueued *> IO(kernelContext.interrupt())
   }
 
-  override def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] = IO.unit
+  override def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] = update match {
+    case InsertCell(_, _, _, cell, after) => CellContext(cell.id).flatMap {
+      cellContext => IO(notebookContext.insert(cellContext, Option(after)))
+    }
+    case DeleteCell(_, _, _, id) => IO(notebookContext.remove(id))
+    case _ => IO.unit
+  }
 }
 
 object PolyKernel {

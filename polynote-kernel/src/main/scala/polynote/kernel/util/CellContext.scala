@@ -6,44 +6,71 @@ import polynote.kernel.ResultValue
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.messages.CellID
 
+import scala.annotation.tailrec
 
-case class CellContext(
-  id: CellID,
-  interpreter: LanguageInterpreter[IO],
-  module: TryableDeferred[IO, scala.reflect.api.Symbols#ModuleSymbol],
-  previous: Ref[IO, Option[CellContext]], // TODO: maybe just make this @volatile mutable private, with setter/getter – the IO contaminates all the APIs
-  index: Int
+
+class CellContext(
+  val id: CellID,
+  val module: TryableDeferred[IO, scala.reflect.api.Symbols#ModuleSymbol],
+  @volatile private var previousContext: Option[CellContext]
 ) {
 
   val results = new ResultValueCollector
   def resultValues: List[ResultValue] = results.toList
 
-  def collectBack[A](fn: PartialFunction[CellContext, A]): IO[List[A]] = {
-    def impl(prev: Ref[IO, Option[CellContext]], res: List[A]): IO[List[A]] = prev.get.flatMap {
-      case Some(prev) if fn.isDefinedAt(prev) => impl(prev.previous, fn(prev) :: res)
-      case _ => IO.pure(res.reverse)
+  def collectBack[A](fn: PartialFunction[CellContext, A]): List[A] = {
+    @tailrec def impl(prev: Option[CellContext], res: List[A]): List[A] = prev match {
+      case Some(prev) if fn.isDefinedAt(prev) => impl(prev.previousContext, fn(prev) :: res)
+      case Some(prev) => impl(prev.previousContext, res)
+      case _ => res.reverse
     }
-    impl(previous, Nil)
+    impl(Some(this), Nil)
   }
 
-  def foldBack[A](initial: A)(fn: (A, CellContext) => A): IO[A] = {
-    def impl(prev: Ref[IO, Option[CellContext]], current: A): IO[A] = prev.get.flatMap {
-      case Some(prev) => impl(prev.previous, fn(current, prev))
-      case _ => IO.pure(current)
+  def collectBackWhile[A](fn: PartialFunction[CellContext, A]): List[A] = {
+    @tailrec def impl(prev: Option[CellContext], res: List[A]): List[A] = prev match {
+      case Some(prev) if fn.isDefinedAt(prev) => impl(prev.previousContext, fn(prev) :: res)
+      case _ => res.reverse
     }
-    impl(previous, initial)
+    impl(Some(this), Nil)
   }
 
-  def visibleValues: IO[List[ResultValue]] = foldBack(Map.empty[String, ResultValue]) {
+  def foldBack[A](initial: A)(fn: (A, CellContext) => A): A = {
+    @tailrec def impl(prev: Option[CellContext], current: A): A = prev match {
+      case Some(prev) => impl(prev.previousContext, fn(current, prev))
+      case _ => current
+    }
+    impl(Some(this), initial)
+  }
+
+
+  def visibleValues: List[ResultValue] = foldBack(Map.empty[String, ResultValue]) {
     (accum, next) => next.resultValues.map(rv => rv.name -> rv).toMap ++ accum
-  }.map(_.values.toList)
+  }.values.toList
+
+  def index: Int = previousContext match {
+    case None => 0
+    case Some(prev) => prev.index + 1
+  }
+
+  def setPrev(previous: CellContext): Unit = setPrev(Some(previous))
+
+  def setPrev(previous: Option[CellContext]): Unit = {
+    this.previousContext = previous
+  }
+
+  def previous: Option[CellContext] = previousContext
 
 }
 
 object CellContext {
-  def apply(id: CellID, interpreter: LanguageInterpreter[IO], previous: Option[CellContext], index: Int)(implicit concurrent: Concurrent[IO]): IO[CellContext] =
+  def apply(id: CellID, previous: Option[CellContext])(implicit concurrent: Concurrent[IO]): IO[CellContext] =
     for {
       module    <- Deferred.tryable[IO, scala.reflect.api.Symbols#ModuleSymbol]
-      previous  <- Ref[IO].of(previous)
-    } yield CellContext(id, interpreter, module, previous, index)
+    } yield new CellContext(id, module, previous)
+
+  def apply(id: CellID)(implicit concurrent: Concurrent[IO]): IO[CellContext] = apply(id, None)
+
+  def unsafe(id: CellID, previous: Option[CellContext])(implicit concurrent: Concurrent[IO]): CellContext =
+    new CellContext(id, Deferred.tryable[IO, scala.reflect.api.Symbols#ModuleSymbol].unsafeRunSync(), previous)
 }

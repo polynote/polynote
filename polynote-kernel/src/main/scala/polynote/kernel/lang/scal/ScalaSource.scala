@@ -159,13 +159,16 @@ class ScalaSource[G <: Global](
 
   lazy val resultName: Option[global.TermName] = results.right.toOption.flatMap(_._1)
 
-  lazy val wrapped: Either[Throwable, Tree] = moduleClassTrees.right.map {
-    case (moduleTrees, classTrees) =>
+  lazy val wrapped: Either[Throwable, Tree] = moduleClassTrees.right.flatMap {
+    case (moduleTrees, classTrees) => Either.catchNonFatal {
       val allTrees = moduleTrees ++ classTrees
       val source = allTrees.head.pos.source
       val endPos = allTrees.map(_.pos).collect {
         case pos if pos != null && pos.isRange => pos.end
-      }.max
+      } match {
+        case Nil => 0
+        case poss => poss.max
+      }
       val range = new RangePosition(source, 0, 0, endPos)
       val beginning = new RangePosition(source, 0, 0, 0)
       val end = new RangePosition(source, endPos, endPos, endPos)
@@ -239,6 +242,7 @@ class ScalaSource[G <: Global](
       )
 
       wrappedSource
+    }
   }
 
   private lazy val compileUnit: Either[Throwable, global.CompilationUnit] = wrapped.right.map {
