@@ -30,6 +30,9 @@ export class MainToolbar extends EventTarget {
 
 export class KernelSymbolsUI {
     constructor() {
+        this.symbols = {};
+        this.presentingFor = [];
+        this.predefs = {};
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
             this.tableEl = table(['kernel-symbols-table'], {
@@ -41,36 +44,92 @@ export class KernelSymbolsUI {
         ]);
     }
 
+    updateRow(tr, name, type, value) {
+        if (value === '') {
+            tr.querySelector('.type').colSpan = '2';
+            const v = tr.querySelector('.value');
+            if (v)
+                tr.removeChild(v);
+            tr.updateValues({type: span([], type).attr('title', type)});
+        } else {
+            tr.querySelector('.type').colSpan = '1';
+            const v = tr.querySelector('.value');
+            if (!v) {
+                tr.appendChild(tr.propCells.value);
+            }
+            tr.updateValues({type: span([], type).attr('title', type), value: span([], value).attr('title', value)})
+
+        }
+    }
+
+    addRow(name, type, value) {
+        const tr = this.tableEl.addRow({name: name, type: span([], type).attr('title', type), value: span([], value).attr('title', value)});
+        tr.data = {name, type, value};
+        if (value === '') {
+            tr.querySelector('.type').colSpan = '2';
+            const v = tr.querySelector('.value');
+            if (v)
+                tr.removeChild(v)
+        }
+        return tr;
+    }
+
     setSymbolInfo(name, type, value) {
         const existing = this.tableEl.findRowsBy(row => row.name === name);
         if (existing.length) {
-            existing.forEach(tr => {
-                if (value === '') {
-                    tr.querySelector('.type').colSpan = '2';
-                    const v = tr.querySelector('.value');
-                    if (v)
-                        tr.removeChild(v);
-                    tr.updateValues({type: span([], type).attr('title', type)});
-                } else {
-                    tr.querySelector('.type').colSpan = '1';
-                    const v = tr.querySelector('.value');
-                    if (!v) {
-                        tr.appendChild(tr.propCells.value);
-                    }
-                    tr.updateValues({type: span([], type).attr('title', type), value: span([], value).attr('title', value)})
-
-                }
-
-            });
+            existing.forEach(tr => this.updateRow(tr, name, type, value));
         } else {
-            const tr = this.tableEl.addRow({name: name, type: span([], type).attr('title', type), value: span([], value).attr('title', value)});
-            if (value === '') {
-                tr.querySelector('.type').colSpan = '2';
-                const v = tr.querySelector('.value');
-                if (v)
-                    tr.removeChild(v)
+            this.addRow(name, type, value);
+        }
+    }
+
+    addSymbol(name, type, value, cellId) {
+        if (!this.symbols[cellId]) {
+            this.symbols[cellId] = {};
+        }
+        const cellSymbols = this.symbols[cellId];
+        cellSymbols[name] = {name, type, value};
+        if (cellId < 0) {
+            this.predefs[cellId] = cellId;
+        }
+    }
+
+    presentFor(ids) {
+        ids = [...Object.values(this.predefs), ...ids];
+        this.presentingFor = ids;
+        const visibleSymbols = {};
+        ids.forEach(id => {
+           const cellSymbols = this.symbols[id];
+           for (const name in cellSymbols) {
+               if (cellSymbols.hasOwnProperty(name)) {
+                   visibleSymbols[name] = cellSymbols[name];
+               }
+           }
+        });
+
+        // update all existing symbols, remove any that aren't visible
+        [...this.tableEl.tBodies[0].rows].forEach(row => {
+            if (row.data) {
+                const sym = visibleSymbols[row.data.name];
+                if (sym === undefined) {
+                    row.parentNode.removeChild(row);
+                } else {
+                    if (sym.value !== row.data.value || sym.type !== row.data.type) {
+                        this.updateRow(row, sym.name, sym.type, sym.value);
+                    }
+                    delete visibleSymbols[sym.name]
+                }
+            }
+        });
+
+        // append all the remaining symbols
+        for (const name in visibleSymbols) {
+            if (visibleSymbols.hasOwnProperty(name)) {
+                const sym = visibleSymbols[name];
+                this.addRow(sym.name, sym.type, sym.value);
             }
         }
+
     }
 
     removeSymbol(name) {
@@ -674,6 +733,18 @@ export class NotebookCellsUI extends UIEventTarget {
         return this.getCells().filter(cell => cell instanceof CodeCell).map(cell => cell.id);
     }
 
+    getCodeCellIdsBefore(id) {
+        const result = [];
+        let child = this.el.firstElementChild;
+        while (child && (!child.cell || child.cell.id !== id)) {
+            if (child.cell) {
+                result.push(child.cell.id);
+            }
+            child = child.nextElementSibling;
+        }
+        return result;
+    }
+
     onWindowResize(evt) {
         if (this.resizeTimeout) {
             clearTimeout(this.resizeTimeout);
@@ -841,6 +912,7 @@ export class NotebookUI extends UIEventTarget {
 
         this.cellUI.addEventListener('SelectCell', evt => {
             const cellTypeSelector = mainUI.toolbarUI.cellToolbar.cellTypeSelector;
+            const id = evt.detail.cellId;
             let i = 0;
 
             // update cell type selector
@@ -865,6 +937,11 @@ export class NotebookUI extends UIEventTarget {
             if (cellY + cellHeight > viewportScrollTop + viewportHeight || cellY < viewportScrollTop) {
                 setTimeout(() => viewport.scrollTop = cellY, 0);
             }
+
+            // update the symbol table to reflect what's visible from this cell
+            const ids = this.cellUI.getCodeCellIdsBefore(id);
+            ids.push(id);
+            this.kernelUI.symbols.presentFor(ids);
         });
 
         this.cellUI.addEventListener('AdvanceCell', evt => {
@@ -1199,10 +1276,14 @@ export class NotebookUI extends UIEventTarget {
                 }
 
                 if (result instanceof ResultValue) {
-                    this.kernelUI.symbols.setSymbolInfo(
+                    this.kernelUI.symbols.addSymbol(
                         result.name,
                         result.typeName,
-                        result.valueText);
+                        result.valueText,
+                        result.sourceCell);
+                    const ids = this.cellUI.getCodeCellIdsBefore(id);
+                    ids.push(id);
+                    this.kernelUI.symbols.presentFor(ids);
                 }
             }
         });
