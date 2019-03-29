@@ -13,8 +13,6 @@ import polynote.config.{DependencyConfigs, RepositoryConfig}
 import polynote.data.Rope
 import polynote.runtime.{StreamingDataRepr, TableOp}
 
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
-
 sealed trait Message
 
 object Message {

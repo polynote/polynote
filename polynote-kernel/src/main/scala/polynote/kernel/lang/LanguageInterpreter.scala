@@ -7,7 +7,7 @@ import cats.effect.IO
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import polynote.kernel._
-import polynote.kernel.util.{Publish, RuntimeSymbolTable, SymbolDecl}
+import polynote.kernel.util.{CellContext, KernelContext, Publish}
 import polynote.messages.CellID
 
 import scala.collection.JavaConverters._
@@ -17,28 +17,19 @@ import scala.collection.JavaConverters._
   */
 trait LanguageInterpreter[F[_]] {
 
-  // LanguageInterpreter is expected to have a reference to the shared runtime symbol table of a notebook
-  // TODO: eliminate this
-  val symbolTable: RuntimeSymbolTable
-
-  final type Decl = SymbolDecl[F]
 
   def predefCode: Option[String]
 
   /**
     * Run the given code.
     *
-    * @param cell           The identifier string of the cell for the code being run
-    * @param visibleSymbols A list of symbols defined in cells "before" the given code, which are visible to it
-    * @param previousCells  The identifier strings of the cells "before" this code, for stateful language kernels
-    * @param code           The code string to run
+    * @param cellContext  An object describing things about the cell and its dependencies
+    * @param code         The code string to run
     * @return An [[F]] that returns a [[Stream]] which will contain [[Result]] value(s) containing anything that
     *         resulted from running the code.
     */
   def runCode(
-    cell: CellID,
-    visibleSymbols: Seq[Decl],
-    previousCells: Seq[CellID],
+    cellContext: CellContext,
     code: String
   ): F[Stream[F, Result]]
 
@@ -47,14 +38,14 @@ trait LanguageInterpreter[F[_]] {
     *
     * @param pos The position (character offset) within the code string at which completions are requested
     */
-  def completionsAt(cell: CellID, visibleSymbols: Seq[Decl], previousCells: Seq[CellID], code: String, pos: Int): F[List[Completion]]
+  def completionsAt(cellContext: CellContext, code: String, pos: Int): F[List[Completion]]
 
   /**
     * Ask for parameter signatures (if applicable) at the given position in the given code string
     *
     * @param pos The position (character offset) within the code string at which parameter hints are requested
     */
-  def parametersAt(cell: CellID, visibleSymbols: Seq[Decl], previousCells: Seq[CellID], code: String, pos: Int): F[Option[Signatures]]
+  def parametersAt(cellContext: CellContext, code: String, pos: Int): F[Option[Signatures]]
 
   /**
     * Initialize the kernel (if necessary)
@@ -72,7 +63,7 @@ object LanguageInterpreter {
 
   trait Factory[F[_]] {
     def languageName: String
-    def apply(dependencies: List[(String, File)], symbolTable: RuntimeSymbolTable): LanguageInterpreter[F]
+    def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[F]
   }
 
   lazy val factories: Map[String, Factory[IO]] = ServiceLoader.load(classOf[LanguageInterpreterService]).iterator.asScala.toSeq

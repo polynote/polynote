@@ -1,7 +1,6 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 
-monaco.languages.register({ id: 'scala' });
-const config = {
+export const config = {
   "surroundingPairs": [
     {"open":"{","close":"}"},
     {"open":"(","close":")"},
@@ -26,7 +25,7 @@ const config = {
   }
 };
 
-const tokenizer = {
+export const tokenizer = {
   // Set defaultToken to invalid to see what you do not tokenize yet
   // defaultToken: 'invalid',
 
@@ -141,5 +140,3 @@ const tokenizer = {
     ],
   },
 };
-monaco.languages.setMonarchTokensProvider('scala', tokenizer);
-monaco.languages.setLanguageConfiguration('scala', config);

@@ -134,7 +134,7 @@ class RemoteSparkKernel(
     } yield ()
   }
 
-  def init: IO[Unit] = initialize.get
+  def init(): IO[Unit] = initialize.get
 
   private def cancelRequests() = for {
     reqs <- IO(requests.values.asScala.toList)
@@ -357,7 +357,7 @@ object RemoteSparkKernel {
       notebook <- getNotebook()
       server   <- transport.serve(config, notebook)
       kernel    = new RemoteSparkKernel(statusUpdates, getNotebook, config, server)
-      start    <- kernel.init.start
+      start    <- kernel.init().start
       _        <- publish("Awaiting remote kernel", 64)
       _        <- server.connected
       _        <- publish("Remote client connected", 128.toByte)

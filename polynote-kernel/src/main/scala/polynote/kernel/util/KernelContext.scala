@@ -4,6 +4,7 @@ import java.io.File
 import java.net.URL
 import java.util.concurrent.{ExecutorService, Executors, ThreadFactory}
 
+import cats.effect.IO
 import polynote.messages.truncateTinyString
 import polynote.runtime.{ReprsOf, StringRepr, ValueRepr}
 
@@ -15,6 +16,7 @@ import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
 import scala.tools.reflect.ToolBox
 import org.log4s.{Logger, getLogger}
+import polynote.kernel.KernelStatusUpdate
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
@@ -179,13 +181,15 @@ object KernelContext {
     new AbstractFileClassLoader(outputDir, dependencyClassLoader)
   }
 
-  def apply(
+  def default(
     dependencies: Map[String, List[(String, File)]],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File]
-  ): KernelContext = apply(dependencies, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader)
+  ): KernelContext = apply(dependencies, statusUpdates, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader)
 
   def apply(
     dependencies: Map[String, List[(String, File)]],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
     baseSettings: Settings,
     extraClassPath: List[File],
     outputDir: AbstractFile,

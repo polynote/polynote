@@ -1,14 +1,17 @@
 package polynote.kernel.lang.scal
 
 import cats.data.Ior
+import cats.effect.IO
 import cats.syntax.either._
 import polynote.kernel.EmptyCell
-import polynote.kernel.util.KernelReporter
+import polynote.kernel.lang.LanguageInterpreter
+import polynote.kernel.util.{CellContext, KernelContext, KernelReporter}
 import polynote.messages.CellID
 
 import scala.annotation.tailrec
 import scala.collection.immutable.{ListMap, Queue}
 import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFile}
+import scala.tools.nsc.interactive.Global
 
 /**
   * Captures some Scala source in the context of a notebook, and provides compilation operations.
@@ -16,14 +19,15 @@ import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFi
   * TODO: the refined Interpreter type is really annoying; dictated by Global's path-dependent types. Can that be
   *       unwound?
   */
-class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)(
-  id: CellID,
-  availableSymbols: Set[Interpreter#Decl],
-  previousSources: List[ScalaSource[Interpreter]],
-  code: String
+class ScalaSource[G <: Global](
+  val global: G,
+  cellContext: CellContext,
+  previousSources: List[ScalaSource[G]],
+  notebookPackage: String,
+  afterParse: => Ior[Throwable, List[G#Tree]]
 ) {
-  import interpreter.symbolTable.kernelContext.global
-  import interpreter.notebookPackage
+
+  import cellContext.id
   import global.{Type, Tree, atPos}
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
@@ -32,7 +36,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     global.ask(() => fn)
   }
 
-  def moduleRef: global.Select = global.Select(notebookPackage, moduleName)
+  def moduleRef: global.Select = global.Select(global.Ident(global.TermName(notebookPackage)), moduleName)
 
   private def ensurePositions(sourceFile: SourceFile, tree: Tree, parentPos: Position): Position = {
     if (tree.pos != null && tree.pos.isDefined) {
@@ -73,11 +77,10 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
     transformer.transform(tree)
   }
 
-  private val cellName = s"Cell$id"
-  private lazy val unitParser = global.newUnitParser(code, cellName)
+  private val cellName = ScalaSource.nameFor(cellContext)
 
   // the parsed trees, but only successful if there weren't any parse errors
-  lazy val parsed: Ior[Throwable, List[Tree]] = reporter.attemptIor(unitParser.parseStats())
+  lazy val parsed: Ior[Throwable, List[Tree]] = afterParse.asInstanceOf[Ior[Throwable, List[Tree]]]
 
   lazy val successfulParse: Either[Throwable, List[Tree]] = parsed match {
     case Ior.Both(err, _) => Left(err)
@@ -156,13 +159,16 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
 
   lazy val resultName: Option[global.TermName] = results.right.toOption.flatMap(_._1)
 
-  lazy val wrapped: Either[Throwable, Tree] = moduleClassTrees.right.map {
-    case (moduleTrees, classTrees) =>
+  lazy val wrapped: Either[Throwable, Tree] = moduleClassTrees.right.flatMap {
+    case (moduleTrees, classTrees) => Either.catchNonFatal {
       val allTrees = moduleTrees ++ classTrees
       val source = allTrees.head.pos.source
       val endPos = allTrees.map(_.pos).collect {
         case pos if pos != null && pos.isRange => pos.end
-      }.max
+      } match {
+        case Nil => 0
+        case poss => poss.max
+      }
       val range = new RangePosition(source, 0, 0, endPos)
       val beginning = new RangePosition(source, 0, 0, 0)
       val end = new RangePosition(source, endPos, endPos, endPos)
@@ -179,23 +185,6 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
           atPos(beginning)(global.TypeTree()),
           atPos(beginning)(global.Block(
             atPos(beginning)(global.PrimarySuperCall(ListOfNil)), atPos(beginning)(global.gen.mkSyntheticUnit()))))
-
-      // find all externally-defined values in cells above this one, and make private alias methods for them
-      val externalVals = availableSymbols
-        .filterNot(_.source contains interpreter)
-        .toList.map {
-          sym =>
-            val name = global.TermName(sym.name)
-            val typ = sym.scalaType(global)
-            atPos(beginning)(
-              global.DefDef(
-                global.Modifiers(global.Flag.PRIVATE),
-                name,
-                Nil,
-                Nil,
-                global.TypeTree(typ),
-                atPos(beginning)(q"_root_.polynote.runtime.Runtime.getValue(${name.toString}).asInstanceOf[$typ]")))
-        }
 
       // import everything imported by previous cells...
       val directImports: List[global.Tree] = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]])
@@ -224,7 +213,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       // TODO: position validation seems to happen at parser phase – could tell Global to skip that and avoid all of this?
       val wrappedSource = atPos(range) {
         global.PackageDef(
-          atPos(beginning)(notebookPackage),
+          atPos(beginning)(global.Ident(global.TermName(notebookPackage))),
           (directImports ++ impliedImports).map(forcePos(beginning, _)).map(global.resetAttrs) ::: List(
             atPos(range) {
               global.ClassDef(
@@ -235,7 +224,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
                   global.Template(
                     List(atPos(beginning)(scalaDot(global.typeNames.AnyRef)), atPos(beginning)(scalaDot(global.typeNames.Serializable))), // extends AnyRef with Serializable
                     atPos(beginning)(global.noSelfType.copy()),
-                    atPos(beginning)(constructor) :: externalVals ::: classTrees)
+                    atPos(beginning)(constructor) :: classTrees)
                 })
             },
             atPos(end) {
@@ -260,6 +249,7 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
       )
 
       wrappedSource
+    }
   }
 
   private lazy val compileUnit: Either[Throwable, global.CompilationUnit] = wrapped.right.map {
@@ -456,6 +446,35 @@ class ScalaSource[Interpreter <: ScalaInterpreter](val interpreter: Interpreter)
   }
 
   def compile: Either[Throwable, global.Symbol] = compiledModule
+
+}
+
+object ScalaSource {
+
+  def apply(
+    kernelContext: KernelContext,
+    cellContext: CellContext,
+    previousSources: List[ScalaSource[_ <: Global]],
+    notebookPackage: String,
+    code: String
+  ): ScalaSource[kernelContext.global.type] = {
+    import kernelContext.global
+    val reporter = global.reporter.asInstanceOf[KernelReporter]
+    val cellName = nameFor(cellContext)
+    val unitParser = global.newUnitParser(code, cellName)
+    new ScalaSource[kernelContext.global.type](
+      global,
+      cellContext,
+      previousSources.asInstanceOf[List[ScalaSource[kernelContext.global.type]]],
+      notebookPackage,
+      reporter.attemptIor(unitParser.parseStats()))
+  }
+
+  def fromTrees(kernelContext: KernelContext)(cellContext: CellContext, notebookPackage: String, trees: List[kernelContext.global.Tree]): ScalaSource[kernelContext.global.type] = {
+    new ScalaSource[kernelContext.global.type](kernelContext.global, cellContext, Nil, notebookPackage, Ior.right(trees))
+  }
+
+  private def nameFor(cell: CellContext): String = s"Cell${cell.id}"
 
 }
 

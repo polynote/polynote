@@ -10,7 +10,7 @@ import scodec.codecs.implicits._
 import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
-import polynote.kernel.util.{KernelContext, SymbolDecl}
+import polynote.kernel.util.KernelContext
 import polynote.messages.{CellID, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
 import polynote.runtime.ValueRepr
 import scodec.bits.BitVector

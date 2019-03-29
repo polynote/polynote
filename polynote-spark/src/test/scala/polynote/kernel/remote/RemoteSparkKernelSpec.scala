@@ -142,7 +142,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
         for {
           sharedNotebook  <- IOSharedNotebook(path, initialNotebook, sparkKernelFactory, config)
           subscriber      <- sharedNotebook.open("test client")
-          ready           <- subscriber.init.start
+          ready           <- subscriber.init().start
           runRemoteClient <- remoteClient.run().start
           _               <- ready.join
           update = UpdateCell(path, 0, 0, 0.toShort, ContentEdits(Insert(2, "insert")))

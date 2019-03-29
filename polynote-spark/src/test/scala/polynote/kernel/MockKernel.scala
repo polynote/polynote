@@ -34,7 +34,7 @@ class MockKernelFactory(val kernel: MockKernel) extends KernelFactory[IO] {
 
 // TODO: add more utility to this - maybe record/check API
 class MockKernel(@volatile private var notebook: Notebook) extends KernelAPI[IO] {
-  def init: IO[Unit] = IO.unit
+  def init(): IO[Unit] = IO.unit
   def shutdown(): IO[Unit] = IO.unit
 
   def startInterpreterFor(id: CellID): IO[Stream[IO, Result]] = IO.pure {
