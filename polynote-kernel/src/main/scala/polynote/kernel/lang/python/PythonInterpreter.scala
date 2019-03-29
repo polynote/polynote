@@ -247,11 +247,23 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
     }
   }
 
+  // want to avoid re-populating globals at every completion request. We'll only do it when the cell we're completing changes.
+  private var lastCompletionCell = -1
+
   override def completionsAt(
     cellContext: CellContext,
     code: String,
     pos: Int
   ): IO[List[Completion]] = withJep {
+      if (cellContext.id != lastCompletionCell) {
+        lastCompletionCell = cellContext.id
+        val globals = cellContext.visibleValues.view.map {
+          rv => Array(rv.name, rv.value)
+        }.toArray
+        jep.set("__polynote_globals__", globals)
+        jep.eval("__polynote_globals__ = {**dict(__polynote_globals__), **globals()}")
+      }
+
       val (line, col) = {
         val iter = code.linesWithSeparators
         var p = 0
@@ -273,7 +285,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       }
       jep.set("__polynote_code__", code)
       jep.eval("import jedi")
-      jep.eval(s"__polynote_cmp__ = jedi.Interpreter(__polynote_code__, [globals(), locals()], line=$line, column=$col).completions()")
+      jep.eval(s"__polynote_cmp__ = jedi.Interpreter(__polynote_code__, [__polynote_globals__, {}], line=$line, column=$col).completions()")
       // If this comes back as a List, Jep will mash all the elements to strings. So gotta use it as a PyObject. Hope that gets fixed!
       // TODO: will need some reusable PyObject wrappings anyway
       jep.getValue("__polynote_cmp__", classOf[Array[PyObject]]).map {
