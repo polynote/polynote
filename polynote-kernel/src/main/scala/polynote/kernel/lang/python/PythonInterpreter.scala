@@ -99,6 +99,15 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   private val shutdownSignal = ReadySignal()(listenerShift)
 
+  private def expandGlobals(): Unit = {
+    jep.eval("__polynote_globals__ = dict(__polynote_globals__)")
+    jep.eval("__g = globals()")
+    jep.eval("""for k in __g:
+        |  __polynote_globals__[k] = __g[k]
+        |""".stripMargin)
+    jep.eval("del __g")
+  }
+
   override def runCode(
     cellContext: CellContext,
     code: String
@@ -132,7 +141,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         jep.set("__polynote_code__", code)
         jep.set("__polynote_cell__", cellName)
         jep.set("__polynote_globals__", globals)
-
+        expandGlobals()
         // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
         // TODO: should probably just use ipython to evaluate it instead
         jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
@@ -152,7 +161,8 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
           jep.set("__polynote_code__", maybeModifiedCode)
           kernelContext.runInterruptible {
-            jep.eval("exec(__polynote_code__, {**dict(__polynote_globals__), **globals()}, __polynote_locals__)\n")
+
+            jep.eval("exec(__polynote_code__, __polynote_globals__, __polynote_locals__)\n")
           }
           jep.eval("globals().update(__polynote_locals__)")
           val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
@@ -261,7 +271,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
           rv => Array(rv.name, rv.value)
         }.toArray
         jep.set("__polynote_globals__", globals)
-        jep.eval("__polynote_globals__ = {**dict(__polynote_globals__), **globals()}")
+        expandGlobals()
       }
 
       val (line, col) = {

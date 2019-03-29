@@ -10,5 +10,5 @@ jep_lib_path=`realpath ${jep_site_packages_path}/../../`
 export LD_LIBRARY_PATH=${jep_path}:${jep_site_packages_path}:${jep_lib_path}:${LD_LIBRARY_PATH}
 echo ${LD_LIBRARY_PATH}
 
-export LD_PRELOAD=${jep_lib_path}/libpython3.6m.so
+export LD_PRELOAD=${jep_lib_path}/libpython3.so
 echo ${LD_PRELOAD}
