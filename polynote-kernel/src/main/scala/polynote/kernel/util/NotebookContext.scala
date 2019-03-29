@@ -10,39 +10,19 @@ import scala.annotation.tailrec
   * Tracks all the CellContexts for a notebook. A good old-fashioned linked list in reverse, with an extra reference to the
   * tip for easy append (i.e. predefs)
   */
-class NotebookContext(getNotebook: () => IO[Notebook])(implicit concurrent: Concurrent[IO]) {
+class NotebookContext(implicit concurrent: Concurrent[IO]) {
 
   @volatile private var _first: CellContext = _
   @volatile private var _last: CellContext = _
 
-  def init(): IO[Unit] = getNotebook().flatMap {
-    notebook => IO {
-      synchronized {
-        val (first, last) = {
-          val notebook = getNotebook().unsafeRunSync()
-          if (notebook.cells.nonEmpty) {
-            val first = CellContext.unsafe(notebook.cells.head.id, None)
-            val last = notebook.cells.tail.foldLeft(first) {
-              (prev, next) => CellContext.unsafe(next.id, Some(prev))
-            }
-            (first, last)
-          } else {
-            (null, null)
-          }
-        }
-        _first = first
-        _last = last
-      }
-    }
-  }
-
-  def insert(cellContext: CellContext, after: Option[CellID]): Unit = after match {
+  def insert(cellContext: CellContext, after: Option[CellID]): CellContext = after match {
     case None => synchronized {
       if (_first != null) {
         _first.setPrev(cellContext)
       } else if (_last == null) {
         _last = cellContext
       }
+      cellContext
     }
     case Some(id) =>
       @tailrec def findTail(at: Option[CellContext], currentTail: List[CellContext]): List[CellContext] = at match {
@@ -66,8 +46,22 @@ class NotebookContext(getNotebook: () => IO[Notebook])(implicit concurrent: Conc
             tail.filter(_.previous.exists(ctx => cellsBefore(ctx.id))).foreach {
               ctx => ctx.setPrev(cellContext)
             }
+            cellContext
         }
       }
+  }
+
+  def insertLast(cellContext: CellContext): CellContext = {
+    if (_last != null) {
+      cellContext.setPrev(_last)
+      _last = cellContext
+      cellContext
+    } else {
+      assert(_first == null, "Broken links")
+      _first = cellContext
+      _last = cellContext
+      cellContext
+    }
   }
 
   def remove(id: CellID): Unit = synchronized {
@@ -119,17 +113,29 @@ class NotebookContext(getNotebook: () => IO[Notebook])(implicit concurrent: Conc
   def allResultValues: List[ResultValue] = Option(_last).toList.flatMap(_.visibleValues)
 
   /**
-    * If the context is already present, replace it with the given context and return true. Otherwise, return false.
+    * If the context is already present, replace it with the given context and return old context. Otherwise, return None.
     */
-  def tryUpdate(context: CellContext): Boolean = find(_.previous.exists(_.id == context.id)) match {
-    case Some(successor) =>
-      synchronized {
-        context.setPrev(successor.previous.flatMap(_.previous))
+  def tryUpdate(context: CellContext): Option[CellContext] = synchronized {
+    find(_.previous.exists(_.id == context.id)) match {
+      case Some(successor) =>
+        val existing = successor.previous.get // we know due to the exists() that it is defined
+        context.setPrev(existing.previous)
         successor.setPrev(context)
-        true
-      }
+        Some(existing)
 
-    case None => false
+
+      case None =>
+        // if there's only one cell context, it could be the one to update
+        if (_first != null && _first.id == context.id) {
+          assert(last eq first, "Broken links")
+          val existing = _first
+          _first = context
+          _last = context
+          Some(existing)
+        } else {
+          // it wasn't found
+          None
+        }
+    }
   }
-
 }

@@ -9,7 +9,7 @@ import polynote.kernel.util.{CellContext, KernelContext, KernelReporter}
 import polynote.messages.CellID
 
 import scala.annotation.tailrec
-import scala.collection.immutable.Queue
+import scala.collection.immutable.{ListMap, Queue}
 import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFile}
 import scala.tools.nsc.interactive.Global
 
@@ -186,16 +186,24 @@ class ScalaSource[G <: Global](
           atPos(beginning)(global.Block(
             atPos(beginning)(global.PrimarySuperCall(ListOfNil)), atPos(beginning)(global.gen.mkSyntheticUnit()))))
 
-      // import everything imported by previous cells, and also import all public declarations from previous cells
-      val imports: List[global.Tree] = previousSources.flatMap {
-        source =>
-          source.directImports.asInstanceOf[List[global.Tree]] ++ {
-            source.compiledModule match {
-              case Right(sym) if !(sym eq global.NoSymbol) => List(q"import ${sym.asInstanceOf[global.Symbol]}._")
-              case _ => Nil
-            }
-          }
-      }
+      // import everything imported by previous cells...
+      val directImports: List[global.Tree] = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]])
+
+      //... and also import all public declarations from previous cells
+      val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Name)]) {
+        (accum, next) =>
+          // grab this source's compiled module
+          val moduleSym = next.compiledModule.right.get.asModule
+
+          // grab all the non-private members declared in the module
+          accum ++ moduleSym.info.nonPrivateDecls.map {
+            decl =>
+              // Mapping with decl's name to clobber duplicates, keep track of decl Name and the Module it came from
+              decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.name.asInstanceOf[global.Name])
+          }.toMap
+        }.map {
+          case (_, (module, name)) => q"import $module.$name"
+        }
 
       // This gnarly thing is building a synthetic object {} tree around the statements.
       // Quasiquotes won't do the trick, because we have to assign positions to every tree or the compiler freaks out.
@@ -203,11 +211,10 @@ class ScalaSource[G <: Global](
       // We don't just make a new code string and re-parse, because we want the real positions in the cell to be
       // reported in any compile errors on the client side.
       // TODO: position validation seems to happen at parser phase – could tell Global to skip that and avoid all of this?
-
       val wrappedSource = atPos(range) {
         global.PackageDef(
           atPos(beginning)(global.Ident(global.TermName(notebookPackage))),
-          imports.map(forcePos(beginning, _)).map(global.resetAttrs) ::: List(
+          (directImports ++ impliedImports).map(forcePos(beginning, _)).map(global.resetAttrs) ::: List(
             atPos(range) {
               global.ClassDef(
                 global.Modifiers(),

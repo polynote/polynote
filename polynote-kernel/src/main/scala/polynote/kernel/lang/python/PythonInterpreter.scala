@@ -2,11 +2,9 @@ package polynote.kernel.lang
 package python
 
 import java.io.File
-import java.util
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicReference
 
-import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}

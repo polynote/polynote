@@ -1,9 +1,8 @@
 package polynote.kernel.util
 
 import cats.effect.{Concurrent, IO}
-import cats.effect.concurrent.{Deferred, Ref, TryableDeferred}
+import cats.effect.concurrent.{Deferred, TryableDeferred}
 import polynote.kernel.ResultValue
-import polynote.kernel.lang.LanguageInterpreter
 import polynote.messages.CellID
 
 import scala.annotation.tailrec

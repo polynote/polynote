@@ -1,23 +1,19 @@
 package polynote.kernel
 
 import java.io.File
-import java.net.URL
 import java.nio.ByteBuffer
-import java.time.LocalDateTime
-import java.util.Date
 import java.util.concurrent.{ConcurrentHashMap, Executors}
 
-import cats.effect.concurrent.{Deferred, Ref, Semaphore}
-import cats.effect.internals.IOContextShift
+import cats.effect.concurrent.Semaphore
 import cats.effect.{Clock, ContextShift, IO}
+import cats.instances.list._
 import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import cats.syntax.traverse._
-import cats.instances.list._
 import fs2.Stream
-import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
+import fs2.concurrent.{Enqueue, Queue}
 import org.log4s.{Logger, getLogger}
 import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
@@ -31,7 +27,6 @@ import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.MILLISECONDS
-import scala.collection.JavaConverters._
 import scala.collection.immutable.SortedMap
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
 import scala.tools.nsc.Settings
@@ -55,7 +50,7 @@ class PolyKernel private[kernel] (
 
   private val clock: Clock[IO] = Clock.create
 
-  private val notebookContext = new NotebookContext(getNotebook)
+  private val notebookContext = new NotebookContext
 
   /**
     * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
@@ -166,49 +161,54 @@ class PolyKernel private[kernel] (
                     val newDetail = Option(detail).getOrElse(taskInfo.detail)
                     statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
                 }
-                CellContext(cell.id).flatMap(ctx => IO(notebookContext.tryUpdate(ctx)).as(ctx)).flatMap {
+                CellContext(cell.id).flatMap {
                   cellContext =>
-                    val results = interp.runCode(
-                      cellContext,
-                      cell.content.toString
-                    ).map {
-                      results => results.through(cellContext.results.tapResults).evalTap {
-                        case ResultValue(name, _, _, _, value, _) => IO(polynote.runtime.Runtime.putValue(name, value))
-                        case _ => IO.unit
-                      }
-                    } <* IO(notebookContext.tryUpdate(cellContext))
-
-                    for {
-                      start  <- clock.monotonic(MILLISECONDS)
-                      res    <- results
-                    } yield {
-                      res.onComplete {
-                        Stream.eval {
-                          for {
-                            end <- clock.monotonic(MILLISECONDS)
-                            timestamp <- clock.realTime(MILLISECONDS)
-                          } yield ExecutionInfo((end - start).toInt, timestamp)
+                    IO(notebookContext.tryUpdate(cellContext)).flatMap {
+                      prevContext =>
+                        val results = interp.runCode(
+                          cellContext,
+                          cell.content.toString
+                        ).map {
+                          results => results.through(cellContext.results.tapResults).evalTap {
+                            case ResultValue(name, _, _, _, value, _) => IO(polynote.runtime.Runtime.putValue(name, value))
+                            case _ => IO.unit
+                          }
+                        }.handleErrorWith {
+                          err => IO(prevContext.map(notebookContext.tryUpdate)) *> IO.raiseError(err) // restore previous context on error
                         }
-                      }.onFinalize {
-                        // if the interpreter didn't make a module for the cell, use the scala interpreter to make one
-                        cellContext.module.tryGet.flatMap {
-                          case Some(_) => IO.unit
-                          case None =>
-                            getInterpreter("scala") match {
-                              case Some(interp: ScalaInterpreter) =>
-                                import interp.kernelContext.global.Quasiquote
-                                val exports = cellContext.resultValues.foldLeft(SortedMap.empty[String, interp.kernelContext.global.Type]) {
-                                  (accum, rv) => accum + (rv.name -> rv.scalaType.asInstanceOf[interp.kernelContext.global.Type])
-                                }.toList.map {
-                                  case (name, typ) => q"_root_.polynote.runtime.Runtime.getValue(${name.toString}).asInstanceOf[$typ]"
-                                }
-                                interp.compileAndInit(ScalaSource.fromTrees(interp.kernelContext)(cellContext, interp.notebookPackageName, exports), cellContext)
-                              case _ => IO.raiseError(new IllegalStateException("No scala interpreter"))
+
+                        for {
+                          start  <- clock.monotonic(MILLISECONDS)
+                          res    <- results
+                        } yield {
+                          res.onComplete {
+                            Stream.eval {
+                              for {
+                                end <- clock.monotonic(MILLISECONDS)
+                                timestamp <- clock.realTime(MILLISECONDS)
+                              } yield ExecutionInfo((end - start).toInt, timestamp)
                             }
+                          }.onFinalize {
+                            // if the interpreter didn't make a module for the cell, use the scala interpreter to make one
+                            cellContext.module.tryGet.flatMap {
+                              case Some(_) => IO.unit
+                              case None =>
+                                getInterpreter("scala") match {
+                                  case Some(interp: ScalaInterpreter) =>
+                                    import interp.kernelContext.global.Quasiquote
+                                    val exports = cellContext.resultValues.foldLeft(SortedMap.empty[String, interp.kernelContext.global.Type]) {
+                                      (accum, rv) => accum + (rv.name -> rv.scalaType.asInstanceOf[interp.kernelContext.global.Type])
+                                    }.toList.map {
+                                      case (name, typ) => q"_root_.polynote.runtime.Runtime.getValue(${name.toString}).asInstanceOf[$typ]"
+                                    }
+                                    interp.compileAndInit(ScalaSource.fromTrees(interp.kernelContext)(cellContext, interp.notebookPackageName, exports), cellContext)
+                                  case _ => IO.raiseError(new IllegalStateException("No scala interpreter"))
+                                }
+                            }
+
+
+                          }
                         }
-
-
-                      }
                     }
                 }
             }.map {
@@ -216,9 +216,8 @@ class PolyKernel private[kernel] (
             }.handleErrorWith(ErrorResult.toStream).map {
               _ ++ Stream.eval(oq.enqueue1(None)).drain
             }
-
             Stream.emit(ClearResults()) ++ Stream(oq.dequeue.unNoneTerminate, Stream.eval(run).flatten).parJoinUnbounded
-      }
+        }
     }
   }
 
@@ -244,7 +243,13 @@ class PolyKernel private[kernel] (
 
   def idle(): IO[Boolean] = taskManager.runningTasks.map(_.isEmpty)
 
-  def init(): IO[Unit] = notebookContext.init()
+  def init(): IO[Unit] = getNotebook().flatMap {
+    notebook => if (notebook.cells.isEmpty) IO.unit else {
+      notebook.cells.map {
+        cell => CellContext(cell.id).flatMap(context => IO(notebookContext.insertLast(context)))
+      }.sequence.as(())
+    }
+  }
 
   def shutdown(): IO[Unit] = taskManager.shutdown()
 
