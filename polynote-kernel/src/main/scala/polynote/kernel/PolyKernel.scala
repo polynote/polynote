@@ -199,7 +199,9 @@ class PolyKernel private[kernel] (
                                     val exports = cellContext.resultValues.foldLeft(SortedMap.empty[String, interp.kernelContext.global.Type]) {
                                       (accum, rv) => accum + (rv.name -> rv.scalaType.asInstanceOf[interp.kernelContext.global.Type])
                                     }.toList.map {
-                                      case (name, typ) => q"_root_.polynote.runtime.Runtime.getValue(${name.toString}).asInstanceOf[$typ]"
+                                      case (name, typ) =>
+                                        val termName = interp.kernelContext.global.TermName(name)
+                                        q"val $termName: $typ = _root_.polynote.runtime.Runtime.getValue(${name.toString}).asInstanceOf[$typ]"
                                     }
                                     interp.compileAndInit(ScalaSource.fromTrees(interp.kernelContext)(cellContext, interp.notebookPackageName, exports), cellContext)
                                   case _ => IO.raiseError(new IllegalStateException("No scala interpreter"))
