@@ -114,6 +114,68 @@ export class FakeSelect extends UIEventTarget {
         });
     }
 
+    recomputeVisible() {
+        this.element.querySelectorAll('.first-visible').forEach(el => el.classList.remove('first-visible'));
+        this.element.querySelectorAll('.last-visible').forEach(el => el.classList.remove('last-visible'));
+        let prevVisible = false;
+        let lastVisible = false;
+        this.options.forEach(opt => {
+           if (!opt.disabled) {
+               if (!prevVisible) {
+                   prevVisible = true;
+                   opt.classList.add('first-visible');
+               }
+               lastVisible = opt;
+           }
+        });
+
+        if (lastVisible) {
+            lastVisible.classList.add('last-visible');
+        }
+    }
+
+    hideOption(valueOrIndex) {
+        if (typeof(valueOrIndex) === "string") {
+            const idx = this.options.findIndex(opt => opt.value === valueOrIndex);
+            if (idx >= 0) {
+                this.hideOption(idx);
+            }
+        } else {
+            if (this.selectedIndex === valueOrIndex) {
+                if (this.options.length > this.selectedIndex) {
+                    this.selectedIndex = this.selectedIndex + 1;
+                } else if (this.selectedIndex > 0) {
+                    this.selectedIndex = this.selectedIndex - 1;
+                }
+            }
+            const opt = this.options[valueOrIndex];
+            if (opt) {
+                opt.disabled = true;
+            }
+
+            this.recomputeVisible();
+        }
+    }
+
+    showOption(valueOrIndex) {
+        if (typeof(valueOrIndex) === "string") {
+            const idx = this.options.findIndex(opt => opt.value === valueOrIndex);
+            if (idx >= 0) {
+                this.showOption(idx);
+            }
+        } else {
+            const opt = this.options[valueOrIndex];
+            if (opt) {
+                opt.disabled = false;
+            }
+            this.recomputeVisible();
+        }
+    }
+
+    showAllOptions() {
+        this.options.forEach((opt, index) => this.showOption(index));
+    }
+
     get selectedIndex() {
         return this.options.indexOf(this.selectedElement);
     }
