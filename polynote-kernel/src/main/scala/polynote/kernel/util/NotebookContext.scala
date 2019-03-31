@@ -19,6 +19,8 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
     case None => insertFirst(cellContext)
     case Some(id) if id == cellContext.id => throw new IllegalArgumentException("Cell can not be inserted after itself")
     case Some(id) =>
+      
+      // collects all cells back from `at` until `id` is found
       @tailrec def findTail(at: Option[CellContext], currentTail: List[CellContext]): List[CellContext] = at match {
         case Some(ctx) if ctx.id == id => ctx :: currentTail
         case Some(ctx) => findTail(ctx.previous, ctx :: currentTail)
@@ -36,10 +38,6 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
             cellContext.setPrev(at)
 
             tail.headOption.foreach(_.setPrev(cellContext))
-
-            tail.filter(_.previous.exists(ctx => cellsBefore(ctx.id))).foreach {
-              ctx => ctx.setPrev(cellContext)
-            }
 
             if (at eq _last) {
               _last = cellContext
@@ -64,6 +62,7 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
   }
 
   def insertFirst(cellContext: CellContext): CellContext = synchronized {
+    require(cellContext.previous.isEmpty, "insertFirst with non-empty previous reference")
     if (_first != null) {
       _first.setPrev(cellContext)
       _first = cellContext

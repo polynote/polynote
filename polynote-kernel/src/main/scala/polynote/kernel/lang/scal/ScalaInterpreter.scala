@@ -50,7 +50,8 @@ class ScalaInterpreter(
   override def init(): IO[Unit] = IO.unit // pass for now
 
   // Compile and initialize the module, but don't reflect its values or output anything
-  def compileAndInit(source: ScalaSource[kernelContext.global.type], cellContext: CellContext): IO[Unit] = {
+  def compileAndInit(source: ScalaSource[kernelContext.global.type]): IO[Unit] = {
+    import source.cellContext
     IO.fromEither(source.compile).flatMap {
       case global.NoSymbol => IO.unit
       case sym =>
@@ -75,14 +76,14 @@ class ScalaInterpreter(
     }
   }
 
-  def compileAndRun(source: ScalaSource[kernelContext.global.type], cellContext: CellContext): IO[Stream[IO, Result]] = {
+  def compileAndRun(source: ScalaSource[kernelContext.global.type]): IO[Stream[IO, Result]] = {
+    import source.cellContext, cellContext.id
     val originalOut = System.out
-    val cell = cellContext.id
     interpreterLock.acquire.bracket { _ =>
       IO.fromEither(source.compile).flatMap {
         case global.NoSymbol => IO.pure(Stream.empty)
         case sym =>
-          val saveSource = IO.delay[Unit](previousSources.put(cell, source))
+          val saveSource = IO.delay[Unit](previousSources.put(id, source))
           val setModule = cellContext.module.complete(sym.asModule)
           val symType = global.exitingTyper(sym.asModule.toType)
 
@@ -126,7 +127,7 @@ class ScalaInterpreter(
                       if (accessor.info.finalResultType <:< global.typeOf[Unit])
                         None
                       else
-                        Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, cell))
+                        Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, id))
 
                     case method if method.isMethod && method.originalInfo.typeParams.isEmpty =>
                       // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
@@ -163,7 +164,7 @@ class ScalaInterpreter(
                       val methodType = importFromRuntime.importType(fnType)
 
                       // I guess we're saying a "def" shouldn't become the cell result?
-                      Some(ResultValue(kernelContext, method.name.toString, methodType, runtimeFn, cell))
+                      Some(ResultValue(kernelContext, method.name.toString, methodType, runtimeFn, id))
 
                   }.flatten
                 }
@@ -218,7 +219,7 @@ class ScalaInterpreter(
     }
 
     val source = ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
-    compileAndRun(source, cellContext)
+    compileAndRun(source)
 
   }
 

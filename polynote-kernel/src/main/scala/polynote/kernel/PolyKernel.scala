@@ -57,12 +57,13 @@ class PolyKernel private[kernel] (
     */
   protected lazy val taskManager: TaskManager = TaskManager(statusUpdates).unsafeRunSync()
 
-  // TODO: duplicates logic from runCell
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
-      val index = notebookContext.first.map(_.id).getOrElse(0.toShort) - 1
+      // Since there can be multiple predefs (one per interpreter), they get monotonically decreasing negative cell IDs
+      // starting with -1. Get the smallest existing ID, make sure it's 0 or less, and subtract one.
+      val cellId = math.min(0, notebookContext.first.map(_.id).getOrElse(0.toShort)) - 1
 
-      CellContext(index, None).flatMap {
+      CellContext(cellId, None).flatMap {
         cellContext =>
           interp.predefCode match {
             case Some(code) =>
@@ -203,7 +204,7 @@ class PolyKernel private[kernel] (
                                         val termName = interp.kernelContext.global.TermName(name)
                                         q"val $termName: $typ = _root_.polynote.runtime.Runtime.getValue(${name.toString}).asInstanceOf[$typ]"
                                     }
-                                    interp.compileAndInit(ScalaSource.fromTrees(interp.kernelContext)(cellContext, interp.notebookPackageName, exports), cellContext)
+                                    interp.compileAndInit(ScalaSource.fromTrees(interp.kernelContext)(cellContext, interp.notebookPackageName, exports))
                                   case _ => IO.raiseError(new IllegalStateException("No scala interpreter"))
                                 }
                             }
@@ -297,7 +298,6 @@ class PolyKernel private[kernel] (
     // instead the language interpreter has to participate by using kernelContext.runInterruptible, so we can call
     // kernelContext.interrupt() here.
     // TODO: Why can't it work with fibers? Is there any point in tracking the fibers if they can't be cancelled?
-    // TODO: have to go through symbolTable.kernelContext because SparkPolyKernel overrides it (but not kernelContext) - needs to be fixed
     taskManager.cancelAllQueued *> IO(kernelContext.interrupt())
   }
 
