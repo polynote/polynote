@@ -67,6 +67,11 @@ export function tag(name, classes, attributes, content) {
         return el
     };
 
+    el.addClass = function(cls) {
+        el.classList.add(cls);
+        return el;
+    };
+
     return el;
 }
 
@@ -231,12 +236,15 @@ export function table(classes, contentSpec) {
         ...heading, body
     ]);
 
-    table.addRow = (row) => {
+    table.addRow = (row, whichBody) => {
+        const tbody = whichBody === undefined
+            ? body
+            : whichBody instanceof HTMLTableSectionElement ? whichBody : table.tBodies[whichBody];
         const rowEl = mkTR(row);
         if (contentSpec.addToTop)
-            body.insertBefore(rowEl, body.firstChild);
+            tbody.insertBefore(rowEl, tbody.firstChild);
         else
-            body.appendChild(rowEl);
+            tbody.appendChild(rowEl);
         return rowEl;
     };
 
@@ -258,6 +266,20 @@ export function table(classes, contentSpec) {
             }
         });
         return matches;
+    };
+
+    table.addBody = (rows) => {
+        const newBody = tag(
+            'tbody', [], [],
+            contentSpec.rows ? contentSpec.rows.map(mkTR) : []
+        );
+
+        table.appendChild(newBody);
+
+        if (rows) {
+            rows.forEach(row => this.addRow(row, newBody));
+        }
+        return newBody;
     };
 
     return table;
