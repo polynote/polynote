@@ -4,6 +4,7 @@ import jep.python.{PyCallable, PyObject}
 import org.scalatest._
 import polynote.kernel.Output
 import polynote.kernel.lang.KernelSpec
+import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
 
 
@@ -179,6 +180,81 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         tester shouldBe a[PythonObject]
 
         tester.asInstanceOf[PythonObject].wizzle[String] shouldEqual "weasel"
+
+        val tester2 = Tester(wizzle = "wozzle")
+        tester.asInstanceOf[PythonObject].wizzle[String] shouldEqual "wozzle"
+    }
+  }
+
+  "PythonObject" should "provide reprs from the __repr__, _repr_html_, and _repr_latex_ methods if they exist" in {
+    val code =
+      """class Example:
+        |  def __init__(self):
+        |    return
+        |
+        |  def __repr__(self):
+        |    return "Plaintext string"
+        |
+        |  def _repr_html_(self):
+        |    return "<h1>HTML string</h1>"
+        |
+        |  def _repr_latex_(self):
+        |    return "latex{string}"
+        |
+        |test = Example()""".stripMargin
+
+    assertPythonOutput(code) {
+      case (vars, _, _) =>
+        val test = vars("test").asInstanceOf[PythonObject]
+        PythonObject.defaultReprs(test).toList should contain theSameElementsAs List(
+          MIMERepr("text/plain", "Plaintext string"),
+          MIMERepr("text/html", "<h1>HTML string</h1>"),
+          MIMERepr("application/latex", "latex{string}")
+        )
+    }
+  }
+
+  it should "not cause an error if any of those methods don't exist" in {
+    val code =
+      """class Example:
+        |  def __init__(self):
+        |    return
+        |
+        |  def __repr__(self):
+        |    return "Plaintext string"
+        |
+        |  def _repr_html_(self):
+        |    return "<h1>HTML string</h1>"
+        |
+        |test = Example()""".stripMargin
+
+    assertPythonOutput(code) {
+      case (vars, _, _) =>
+        val test = vars("test").asInstanceOf[PythonObject]
+        PythonObject.defaultReprs(test).toList should contain theSameElementsAs List(
+          MIMERepr("text/plain", "Plaintext string"),
+          MIMERepr("text/html", "<h1>HTML string</h1>")
+        )
+    }
+  }
+
+  "PythonFunction" should "allow positional and keyword args" in {
+
+    val code =
+      """def hello(one, two, three):
+        |  return one + two + three""".stripMargin
+
+    assertPythonOutput(code) {
+      case (vars, _, _) =>
+        val hello = vars("hello").asInstanceOf[PythonFunction]
+        val posArgs = hello(1, 2, 3)
+        posArgs shouldEqual 6
+
+        val kwArgs = hello(one = 1, two = 2, three = 3)
+        kwArgs shouldEqual 6
+
+        val mixed = hello(1, 2, three = 3)
+        mixed shouldEqual 6
     }
   }
 }

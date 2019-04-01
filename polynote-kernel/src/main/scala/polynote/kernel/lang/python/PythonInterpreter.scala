@@ -15,7 +15,7 @@ import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.util._
 import polynote.messages.{CellID, ShortString, TinyList, TinyString}
-import polynote.runtime.python.{PythonFunction, PythonObject}
+import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
@@ -79,6 +79,22 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       task
     } else {
       withJep(task).unsafeRunSync()
+    }
+
+    override def asScalaList(obj: PythonObject): List[Any] = run {
+      jep.set("___anon___", obj.unwrap)
+      jep.eval("___anon___ = list(___anon___)")
+      val result = getPyResult("___anon___").map(_._1.asInstanceOf[List[Any]]).getOrElse(Nil)
+      jep.eval("del ___anon___")
+      result
+    }
+
+    override def asScalaMap(obj: PythonObject): Map[Any, Any] = run {
+      jep.set("___anon___", obj.unwrap)
+      jep.eval("___anon___ = dict(___anon___)")
+      val result = getPyResult("___anon___").map(_._1.asInstanceOf[Map[Any, Any]]).getOrElse(Map.empty)
+      jep.eval("del ___anon___")
+      result
     }
   }
 
@@ -255,9 +271,12 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
             None
         }
 
-      case _ =>
+      case name =>
         Option(jep.getValue(accessor, classOf[PyObject])).map {
-          pyObj => new PythonObject(pyObj, runner) -> Some(typeOf[PythonObject])
+          pyObj =>
+            // make a refined PythonObject type with the name of the type as a constant string type
+            val objType = global.appliedType(typeOf[TypedPythonObject[String]].typeConstructor, global.internal.constantType(global.Constant(name)))
+            new TypedPythonObject[String](pyObj, runner) -> Some(objType)
         }
     }
   }

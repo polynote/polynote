@@ -1,13 +1,11 @@
 package polynote.runtime.python
 
-import java.util.concurrent.{Callable, ExecutorService}
-
 import jep.python.{PyCallable, PyObject}
+import polynote.runtime._
 import polynote.runtime.python.PythonObject.ReturnTypeFor
 
 import scala.collection.JavaConverters._
 import scala.reflect.{ClassTag, classTag}
-
 import scala.language.dynamics
 
 /**
@@ -54,6 +52,9 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
     }
   }
 
+  def asScalaList: List[Any] = runner.asScalaList(this)
+  def asScalaMap: Map[Any, Any] = runner.asScalaMap(this)
+
   def selectDynamic[T](name: String)(implicit returnType: ReturnTypeFor[T]): returnType.Out = {
     runner.run {
       returnType.wrap(obj.getAttr(name, returnType.tag.runtimeClass.asInstanceOf[Class[returnType.Class]]), runner)
@@ -80,7 +81,24 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
 
 }
 
+
 object PythonObject {
+
+  // reprs for untyped python objects – try to get HTML, plaintext, and LaTeX strings from their respective methods
+  // and whichever succeeds we'll use.
+  implicit object defaultReprs extends ReprsOf[PythonObject] {
+    override def apply(obj: PythonObject): Array[ValueRepr] = {
+      def attemptRepr(mimeType: String, t: => String): Option[MIMERepr] = try Some(MIMERepr(mimeType, t)) catch {
+        case err: Throwable => None
+      }
+
+      val htmlRepr = attemptRepr("text/html", obj._repr_html_().asInstanceOf[String])
+      val textRepr = attemptRepr("text/plain", obj.__repr__().asInstanceOf[String])
+      val latexRepr = attemptRepr("application/latex", obj._repr_latex_().asInstanceOf[String])
+
+      List(htmlRepr, textRepr, latexRepr).flatten.toArray
+    }
+  }
 
   def unwrapArg(arg: AnyRef): AnyRef = arg match {
     case pyObj: PythonObject => pyObj.unwrap
@@ -122,6 +140,33 @@ object PythonObject {
 
   trait Runner {
     def run[T](task: => T): T
+    def asScalaList(obj: PythonObject): List[Any]
+    def asScalaMap(obj: PythonObject): Map[Any, Any]
   }
+
+}
+
+/**
+  * A [[PythonObject]] which is refined by a constant literal string type indicating its type name. Python objects
+  * will be assigned a type like this (i.e. `TypedPythonObject["DataFrame"]`) so that we can use its python type to
+  * find specific reprs for that type. For example, we could make an instance of type:
+  *
+  *     ReprsOf[ TypedPythonObject[Witness.`"DataFrame"`.T] ]
+  *
+  * which would be selected for a PythonObject["DataFrame"]. Then, this instance could (for example) return a similar
+  * streaming data representation to what the Scala DataFrame instance does, enabling the built-in data viz.
+  */
+class TypedPythonObject[TN <: String](obj: PyObject, runner: PythonObject.Runner) extends PythonObject(obj, runner) {
+  final type TypeName = TN
+}
+
+// TODO: Implement specific reprs for pandas, numpy, etc
+object TypedPythonObject extends AnyPythonReprs
+
+private[runtime] trait AnyPythonReprs { self: TypedPythonObject.type =>
+
+  // default reprs for any typed python object
+  implicit def anyReprs[T <: String]: ReprsOf[TypedPythonObject[T]] =
+    PythonObject.defaultReprs.asInstanceOf[ReprsOf[TypedPythonObject[T]]]
 
 }

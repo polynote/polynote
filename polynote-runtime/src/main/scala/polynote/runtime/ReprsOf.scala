@@ -9,7 +9,9 @@ import shapeless.HNil
 import scala.collection.GenSeq
 import scala.concurrent.Future
 
-trait ReprsOf[T] extends (T => Array[ValueRepr]) with Serializable
+trait ReprsOf[T] extends Serializable {
+  def apply(value: T): Array[ValueRepr]
+}
 
 object ReprsOf extends ExpandedScopeReprs {
 
