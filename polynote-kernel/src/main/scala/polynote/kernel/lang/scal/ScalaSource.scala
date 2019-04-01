@@ -21,14 +21,13 @@ import scala.tools.nsc.interactive.Global
   */
 class ScalaSource[G <: Global](
   val global: G,
-  cellContext: CellContext,
+  val cellContext: CellContext,
   previousSources: List[ScalaSource[G]],
   notebookPackage: String,
   afterParse: => Ior[Throwable, List[G#Tree]]
 ) {
 
-  import cellContext.id
-  import global.{Type, Tree, atPos}
+  import global.{Tree, atPos}
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
 

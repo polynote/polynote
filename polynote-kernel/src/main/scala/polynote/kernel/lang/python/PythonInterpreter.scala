@@ -31,6 +31,11 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   override def init(): IO[Unit] = withJep {
     jep.set("__kernel_ref", polynote.runtime.Runtime)
+
+    // Since Scala uses getter methods instead of class fields (i.e. you'd need `kernel.display().html()` instead of
+    // `kernel.display.html`), we do a little bit of acrobatics here – we create an object in Python that wraps the
+    // Runtime, and dynamically set an attribute `display` on it with Jep so that it's accessible as an attribute
+    // rather than a method.
     jep.eval(
       """
         |class KernelProxy(object):
@@ -40,6 +45,18 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         |    def __getattr__(self, name):
         |        return getattr(self.ref, name)
         |""".stripMargin)
+    jep.eval("kernel = KernelProxy(__kernel_ref)")
+    val pykernel = jep.getValue("kernel", classOf[PyObject])
+    pykernel.setAttr("display", polynote.runtime.Runtime.display)
+    jep.eval("del kernel")
+    jep.set("kernel", pykernel)
+    jep.eval("del __kernel_ref")
+
+    // this function is used to build a globals dict from the CellContext visibleSymbols, and then merge in the
+    // python interpreter's globals dict. This lets us bring in external values without clobbering any native-python
+    // version that already exists in the python interpreter.
+    // TODO: what about python variables that have since been shadowed by external variables? Maybe should be
+    //       smarter about which things to pull from globals dict?
     jep.eval(
       """def __pn_expand_globals__(syms):
         |    g = globals()
@@ -48,12 +65,8 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         |        pg[k] = g[k]
         |    return pg
       """.stripMargin.trim)
-    jep.eval("kernel = KernelProxy(__kernel_ref)")
-    val pykernel = jep.getValue("kernel", classOf[PyObject])
-    pykernel.setAttr("display", polynote.runtime.Runtime.display)
-    jep.eval("del kernel")
-    jep.set("kernel", pykernel)
-    jep.eval("del __kernel_ref")
+
+
   }
 
   private val jepThread: AtomicReference[Thread] = new AtomicReference[Thread](null)
