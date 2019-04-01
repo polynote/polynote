@@ -734,6 +734,37 @@ export class NotebookCellsUI extends UIEventTarget {
         window.addEventListener('resize', this.onWindowResize.bind(this));
     }
 
+    setStatus(id, status) {
+        const cell = this.getCell(id);
+        if (!cell) return;
+
+        switch (status.status) {
+            case TaskStatus.Complete:
+                cell.container.classList.remove('running', 'queued', 'error');
+                break;
+
+            case TaskStatus.Error:
+                cell.container.classList.remove('queued', 'running');
+                cell.container.classList.add('error');
+                break;
+
+            case TaskStatus.Queued:
+                cell.container.classList.remove('running', 'error');
+                cell.container.classList.add('queued');
+                break;
+
+            case TaskStatus.Running:
+                cell.container.classList.remove('queued', 'error');
+                cell.container.classList.add('running');
+                const progressBar = cell.container.querySelector('.progress-bar');
+                if (progressBar && status.progress) {
+                    progressBar.style.width = (status.progress * 100 / 255).toFixed(0) + "%";
+                }
+
+
+        }
+    }
+
     firstCell() {
         return this.getCells()[0];
     }
@@ -1196,6 +1227,13 @@ export class NotebookUI extends UIEventTarget {
                         update.tasks.forEach(taskInfo => {
                             //console.log(taskInfo);
                             this.kernelUI.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
+
+                            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
+                            //       and instead have an EOF message to tell us when a cell is done
+                            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
+                            if (cellMatch && cellMatch[1]) {
+                                this.cellUI.setStatus(+(cellMatch[1]), taskInfo);
+                            }
                         });
                         break;
 
