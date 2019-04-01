@@ -31,17 +31,19 @@ export class MainToolbar extends EventTarget {
 export class KernelSymbolsUI {
     constructor() {
         this.symbols = {};
-        this.presentingFor = [];
+        this.presentedCell = 0;
+        this.visibleCells = [];
         this.predefs = {};
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
             this.tableEl = table(['kernel-symbols-table'], {
                 header: ['Name', 'Type', 'Value'],
                 classes: ['name', 'type', 'value'],
-                rowHeading: true,
-                addToTop: true
+                rowHeading: true
             })
         ]);
+        this.resultSymbols = this.tableEl.tBodies[0].addClass('results');
+        this.scopeSymbols = this.tableEl.addBody().addClass('scope-symbols');
     }
 
     updateRow(tr, name, type, value) {
@@ -62,8 +64,8 @@ export class KernelSymbolsUI {
         }
     }
 
-    addRow(name, type, value) {
-        const tr = this.tableEl.addRow({name: name, type: span([], type).attr('title', type), value: span([], value).attr('title', value)});
+    addRow(name, type, value, whichBody) {
+        const tr = this.tableEl.addRow({name: name, type: span([], type).attr('title', type), value: span([], value).attr('title', value)}, whichBody);
         tr.data = {name, type, value};
         if (value === '') {
             tr.querySelector('.type').colSpan = '2';
@@ -74,13 +76,12 @@ export class KernelSymbolsUI {
         return tr;
     }
 
-    setSymbolInfo(name, type, value) {
-        const existing = this.tableEl.findRowsBy(row => row.name === name);
-        if (existing.length) {
-            existing.forEach(tr => this.updateRow(tr, name, type, value));
-        } else {
-            this.addRow(name, type, value);
-        }
+    addScopeRow(name, type, value) {
+        return this.addRow(name, type, value, this.scopeSymbols);
+    }
+
+    addResultRow(name, type, value) {
+        return this.addRow(name, type, value, this.resultSymbols);
     }
 
     addSymbol(name, type, value, cellId) {
@@ -92,13 +93,18 @@ export class KernelSymbolsUI {
         if (cellId < 0) {
             this.predefs[cellId] = cellId;
         }
+
+        if (cellId === this.presentedCell) {
+            this.addResultRow(name, type, value);
+        }
     }
 
-    presentFor(ids) {
-        ids = [...Object.values(this.predefs), ...ids];
-        this.presentingFor = ids;
+    presentFor(id, visibleCellIds) {
+        visibleCellIds = [...Object.values(this.predefs), ...visibleCellIds];
+        this.presentedCell = id;
+        this.visibleCells = visibleCellIds;
         const visibleSymbols = {};
-        ids.forEach(id => {
+        visibleCellIds.forEach(id => {
            const cellSymbols = this.symbols[id];
            for (const name in cellSymbols) {
                if (cellSymbols.hasOwnProperty(name)) {
@@ -108,7 +114,7 @@ export class KernelSymbolsUI {
         });
 
         // update all existing symbols, remove any that aren't visible
-        [...this.tableEl.tBodies[0].rows].forEach(row => {
+        [...this.scopeSymbols.rows].forEach(row => {
             if (row.data) {
                 const sym = visibleSymbols[row.data.name];
                 if (sym === undefined) {
@@ -126,10 +132,23 @@ export class KernelSymbolsUI {
         for (const name in visibleSymbols) {
             if (visibleSymbols.hasOwnProperty(name)) {
                 const sym = visibleSymbols[name];
-                this.addRow(sym.name, sym.type, sym.value);
+                this.addScopeRow(sym.name, sym.type, sym.value);
             }
         }
 
+        // clear the result rows
+        this.resultSymbols.innerHTML = "";
+
+        // add all results for the current cell
+        if (this.symbols[id]) {
+            const cellSymbols = this.symbols[id];
+            for (const name in cellSymbols) {
+                if (cellSymbols.hasOwnProperty(name)) {
+                    const sym = cellSymbols[name];
+                    this.addResultRow(sym.name, sym.type, sym.value);
+                }
+            }
+        }
     }
 
     removeSymbol(name) {
@@ -940,8 +959,7 @@ export class NotebookUI extends UIEventTarget {
 
             // update the symbol table to reflect what's visible from this cell
             const ids = this.cellUI.getCodeCellIdsBefore(id);
-            ids.push(id);
-            this.kernelUI.symbols.presentFor(ids);
+            this.kernelUI.symbols.presentFor(id, ids);
         });
 
         this.cellUI.addEventListener('AdvanceCell', evt => {
@@ -1282,8 +1300,7 @@ export class NotebookUI extends UIEventTarget {
                         result.valueText,
                         result.sourceCell);
                     const ids = this.cellUI.getCodeCellIdsBefore(id);
-                    ids.push(id);
-                    this.kernelUI.symbols.presentFor(ids);
+                    this.kernelUI.symbols.presentFor(id, ids);
                 }
             }
         });
