@@ -93,7 +93,7 @@ export class PlotEditor extends EventTarget {
                     ).withKey('field', field).attr('draggable', true)
                 )),
                 h4(['measure-title'], ['Measures', iconButton(['add', 'add-measure'], 'Add measure', '', 'Add').click(_ => this.showAddMeasure())]),
-                div(['measure-list'], this.fields.map(field => measures(field)).filter(_ => _)),
+                div(['measure-list'], this.measureSelectors = this.fields.map(field => measures(field)).filter(_ => _)),
                 div(['control-buttons'], [
                     this.runButton = button(['plot'], {}, [
                         span(['fas'], ''),
@@ -109,6 +109,8 @@ export class PlotEditor extends EventTarget {
                 ])
             ])
         ]);
+
+        this.plotTypeSelector.addEventListener('change', evt => this.onPlotTypeChange(evt));
 
         this.el.addEventListener('dragstart', evt => {
            this.draggingEl = evt.target;
@@ -167,6 +169,8 @@ export class PlotEditor extends EventTarget {
         });
 
         this.session = SocketSession.current;
+
+        this.onPlotTypeChange();
     }
 
     showAddMeasure() {
@@ -175,6 +179,38 @@ export class PlotEditor extends EventTarget {
 
     showAddDimension() {
         // TODO - show a UI to let you
+    }
+
+    onPlotTypeChange(evt) {
+        function showDefaultMeasures(selector) {
+            selector.showAllOptions();
+            selector.hideOption('quartiles');
+        }
+
+        const plotType = this.plotTypeSelector.value;
+        if (specialSpecs[plotType]) {
+            const specType = specialSpecs[plotType];
+            if (specType.allowedAggregates) {
+                this.measureSelectors.forEach(el => {
+                    const sel = el.selector;
+                    sel.options.forEach((opt, idx) => {
+                        if (specType.allowedAggregates.indexOf(opt.value) < 0) {
+                            sel.hideOption(idx);
+                        } else {
+                            sel.showOption(idx);
+                        }
+                    });
+                })
+            } else if (!specType.allAggregates) {
+                this.measureSelectors.forEach(el => showDefaultMeasures(el.selector));
+            } else {
+                this.measureSelectors.forEach(el => el.selector.showAllOptions());
+            }
+        } else {
+            this.measureSelectors.forEach(el => showDefaultMeasures(el.selector));
+        }
+        // TODO - evict any measures that aren't allowed by this plot type
+        // TODO - allow dimension vs dimension plot if the plot type allows it
     }
 
     updateRepr() {
@@ -239,23 +275,58 @@ export class PlotEditor extends EventTarget {
         }
     }
 
+    getSpec(plotType) {
+        if(specialSpecs[plotType]) {
+            const specFn = specialSpecs[plotType];
+            let measures = this.yMeasures;
+            if (specFn.allowedAggregates) {
+                measures = measures.filter(measure => specFn.allowedAggregates.indexOf(measure.agg) >= 0);
+            }
+            if (!measures.length) {
+                throw `No usable measures for ${plotType}`;
+            }
+            if (specFn.singleMeasure) {
+                measures = measures[0]
+            }
+            return specFn.call(this, plotType, this.xDimension, measures);
+        } else {
+            return normalSpec.call(this, plotType, this.xDimension, this.yMeasures);
+        }
+    }
+
     runPlot() {
         //this.runButton.disabled = true;
         this.runButton.disabled = true;
         this.updateRepr().then(repr => {
             // TODO: multiple Ys
             // TODO: encode color
-            const meas = this.yMeasures[0];
-
             // TODO: box plot has to be specially handled in order to pre-aggregate, https://github.com/vega/vega-lite/issues/4343
             const plotType = this.plotTypeSelector.value;
-            if (plotType === 'boxplot' && meas.agg !== 'quartiles') {
-                throw 'Must be using quartiles for a box plot'; // TODO: handle better
-            }
 
-            const spec = plotType === 'boxplot'
-                            ? boxplotSpec.call(this, this.xDimension, meas)
-                            : normalSpec.call(this, plotType, this.xDimension, meas);
+            const spec = this.getSpec(plotType);
+
+            let processBatch = (batch) => batch;
+
+            // if some measures are quantiles, we have to lift other, scalar measures to have i.e. a 'median' field
+            if (spec.liftScalar) {
+                const fieldName = spec.liftScalar;
+                delete spec.liftScalar;
+
+                const lifts = this.yMeasures.filter(meas => meas.agg !== 'quartiles').map(meas => `${meas.agg}(${meas.field.name})`);
+
+                if (lifts.length !== 0) {
+                    processBatch = (batch) => {
+                        batch.forEach(row => {
+                           lifts.forEach(field => {
+                               const value = row[field];
+                               row[field] = {};
+                               row[field][fieldName] = value;
+                           });
+                        });
+                        return batch;
+                    }
+                }
+            }
 
             embed(
                 this.plotOutput.querySelector('.plot-embed'),
@@ -264,7 +335,7 @@ export class PlotEditor extends EventTarget {
                 const stream = new DataStream(this.path, repr, this.session)
                     .batch(500)
                     .to(batch => {
-                        plot.view.insert(this.name, batch).runAsync();
+                        plot.view.insert(this.name, processBatch(batch)).runAsync();
                     });
                 stream.run().then(_ => {
                     plot.view.resize().runAsync();
@@ -279,7 +350,7 @@ export class PlotEditor extends EventTarget {
 }
 
 function normalSpec(plotType, xField, yMeas) {
-    return {
+    const spec = {
         $schema: 'https://vega.github.io/schema/vega-lite/v3.json',
         data: {name: this.name},
         mark: plotType,
@@ -287,21 +358,47 @@ function normalSpec(plotType, xField, yMeas) {
             x: {
                 field: xField.name,
                 type: dimensionType(xField.dataType)
-            },
-            y: {
-                field: `${yMeas.agg}(${yMeas.field.name})`,
-                type: 'quantitative'
             }
         },
         width: this.plotOutput.offsetWidth - 100,
         height: this.plotOutput.offsetHeight - 100
+    };
+
+    if (yMeas instanceof Array && yMeas.length === 1) {
+        yMeas = yMeas[0];
     }
+
+    if (yMeas instanceof Array) {
+        spec.transform = [{
+            fold: yMeas.map(measure => `${measure.agg}(${measure.field.name})`)
+        }];
+        spec.encoding.y = {
+            field: 'value'
+        };
+        spec.encoding.color = {
+            field: 'key',
+            type: 'nominal'
+        }
+    } else {
+        spec.encoding.y = {
+            field: `${yMeas.agg}(${yMeas.field.name})`,
+            type: 'quantitative'
+        };
+    }
+
+    return spec;
 }
+
+const specialSpecs = {
+    boxplot: boxplotSpec,
+    line: lineSpec
+};
 
 // we kind of have to roll our own boxplot layering, because we are pre-aggregating the data (see https://github.com/vega/vega-lite/issues/4343)
 // The way to construct it was taken from https://vega.github.io/vega-lite/docs/boxplot.html
 // it's essentially what an actual box plot expands to.
-function boxplotSpec(xField, yMeas, baseSpec) {
+function boxplotSpec(plotType, xField, yMeas) {
+    // TODO: can we allow multiple series of boxes? Does `fold` support a struct like this?
     const yName = `quartiles(${yMeas.field.name})`;
     const x = { field: xField.name, type: dimensionType(xField.dataType) };
     const size = 14;
@@ -389,3 +486,126 @@ function boxplotSpec(xField, yMeas, baseSpec) {
         ]
     };
 }
+
+boxplotSpec.allowedAggregates = ['quartiles'];
+boxplotSpec.singleMeasure = true;
+
+function lineSpec(plotType, xField, yMeas) {
+    if (yMeas instanceof Array && yMeas.length === 1) {
+        yMeas = yMeas[0];
+    }
+
+    let yField = "";
+    let transform = [];
+    let encodeColor = false;
+    let confidenceBands = false;
+    let layer = [];
+
+    if (yMeas instanceof Array) {
+        transform = [{
+            fold: yMeas.map(measure => `${measure.agg}(${measure.field.name})`)
+        }];
+        encodeColor = {
+            field: 'key',
+            type: 'nominal'
+        };
+        yField = 'value';
+
+        confidenceBands = yMeas.findIndex(meas => meas.agg === 'quartiles') >= 0;
+    } else {
+        yField = `${yMeas.agg}(${yMeas.field.name})`;
+        confidenceBands = yMeas.agg === 'quartiles';
+    }
+
+    if (confidenceBands) {
+        layer = [
+            // TODO: are min/max useful? Or just too much noise?
+            /*{
+                mark: 'area',
+                encoding: {
+                    x: {
+                        field: xField.name,
+                        type: 'ordinal'
+                    },
+                    y: {
+                        field: `${yField}.min`,
+                        type: 'quantitative',
+                        //axis:  {title: yField}
+                    },
+                    y2: {
+                        field: `${yField}.max`
+                    },
+                    opacity: {value: 0.1}
+                },
+            },*/
+            {
+                mark: 'area',
+                encoding: {
+                    x: {
+                        field: xField.name,
+                        type: 'ordinal'
+                    },
+                    y: {
+                        field: `${yField}.q1`,
+                        type: 'quantitative'
+                    },
+                    y2: {
+                        field: `${yField}.q3`
+                    },
+                    opacity: {value: 0.3}
+                },
+            },
+            {
+                mark: 'line',
+                encoding: {
+                    x: {
+                        field: xField.name,
+                        type: 'ordinal'
+                    },
+                    y: {
+                        field: `${yField}.median`,
+                        type: 'quantitative',
+                        axis: yField
+                    }
+                },
+            }
+        ];
+    } else {
+        layer = [
+            {
+                mark: 'line',
+                encoding: {
+                    x: {
+                        field: xField.name,
+                        type: 'ordinal'
+                    },
+                    y: {
+                        field: yField,
+                        type: 'quantitative'
+                    }
+                },
+            }
+        ];
+    }
+
+    if (encodeColor) {
+        layer.forEach(l => l.encoding.color = encodeColor);
+    }
+
+    const spec = {
+        $schema: 'https://vega.github.io/schema/vega-lite/v3.json',
+        data: {name: this.name},
+        width: this.plotOutput.offsetWidth - 100,
+        height: this.plotOutput.offsetHeight - 100,
+        transform,
+        layer
+    };
+
+    if (confidenceBands) {
+        spec.liftScalar = 'median';
+    }
+
+    return spec;
+}
+
+lineSpec.allAggregates = true;

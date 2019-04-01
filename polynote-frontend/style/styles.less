@@ -204,7 +204,7 @@ body {
     position: absolute;
     right: 0;
     top: 0;
-    width: 1.5em;
+    width: 1em;
     height: 2em;
     line-height: 2em;
     user-select: none;
@@ -214,7 +214,7 @@ body {
   button {
     height: 0;
     width: auto;
-    padding: 0 2.5em 0 1em;
+    padding: 0 2em 0 1em;
     visibility: hidden;
     overflow: visible;
     display: block;
@@ -226,7 +226,7 @@ body {
   }
 
   button.selected, &.open button {
-    padding: .5em 2.5em .5em 1em;
+    padding: .5em 2em .5em 1em;
     line-height: 1;
     width: auto;
     height: auto;
@@ -241,21 +241,25 @@ body {
     border-color: @ui-border;
   }
 
-  &.open button {
+  &.open button:enabled {
     border-radius: 0;
     border-color: transparent @ui-border;
 
-    &:first-of-type {
+    &:first-of-type, &.first-visible {
       border-top-left-radius: 4px;
       border-top-right-radius: 4px;
       border-top-color: @ui-border;
     }
 
-    &:last-of-type {
+    &:last-of-type, &.last-visible {
       border-bottom-left-radius: 4px;
       border-bottom-right-radius: 4px;
       border-bottom-color: @ui-border;
     }
+  }
+
+  &.open button:disabled {
+    display: none;
   }
 
   &.open button:hover {
@@ -2042,6 +2046,10 @@ button {
     .dropdown {
       position: absolute;
       width: 6.5em;
+    }
+
+    .dropdown.open {
+      z-index: 10;
     }
   }
 
