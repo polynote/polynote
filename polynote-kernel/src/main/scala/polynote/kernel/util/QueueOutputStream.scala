@@ -18,7 +18,9 @@ class QueueOutputStream(
 
   def write(b: Int): Unit = buf.synchronized {
     if (closed.get()) {
-      throw new IllegalStateException("Writing to closed QueueOutputStream")
+      // TODO: Trouble is, we close the output right after running all the code, but what if there are background threads printing to stuff?
+      //       I guess we might want to keep the channel open and keep streaming output? But how to know when it's done?
+      //throw new IllegalStateException("Writing to closed QueueOutputStream")
     }
     if (!buf.hasRemaining) {
       flush()
