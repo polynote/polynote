@@ -129,7 +129,8 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
     * If the context is already present, replace it with the given context and return old context. Otherwise, return None.
     */
   def tryUpdate(context: CellContext): Option[CellContext] = synchronized {
-    find(_.previous.exists(_.id == context.id)) match {
+    val maybeSuccessor = Option(_last).filter(_.id == context.id).orElse(find(_.previous.exists(_.id == context.id)))
+    maybeSuccessor match {
       case Some(successor) =>
         val existing = successor.previous.get // we know due to the exists() that it is defined
         context.setPrev(existing.previous)
