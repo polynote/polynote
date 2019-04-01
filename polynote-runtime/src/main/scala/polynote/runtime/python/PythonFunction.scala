@@ -3,6 +3,7 @@ package polynote.runtime.python
 import java.util.concurrent.{Callable, ExecutorService}
 
 import jep.python.PyCallable
+import shapeless.Witness
 
 import scala.collection.JavaConverters._
 import scala.language.dynamics
@@ -10,7 +11,7 @@ import scala.language.dynamics
 /**
   * Some Scala sugar around [[PyCallable]]
   */
-class PythonFunction(callable: PyCallable, runner: PythonObject.Runner) extends PythonObject(callable, runner) with Dynamic {
+class PythonFunction(callable: PyCallable, runner: PythonObject.Runner) extends TypedPythonObject[PythonFunction.function](callable, runner) with Dynamic {
 
   private def unwrapArg(arg: Any): Any = arg match {
     case pyObj: PythonObject => pyObj.unwrap
@@ -32,4 +33,8 @@ class PythonFunction(callable: PyCallable, runner: PythonObject.Runner) extends 
       super.applyDynamicNamed(method)(args: _*)
   }
 
+}
+
+object PythonFunction {
+  type function = Witness.`"function"`.T
 }
