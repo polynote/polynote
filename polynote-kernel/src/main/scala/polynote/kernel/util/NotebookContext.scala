@@ -129,26 +129,31 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
     * If the context is already present, replace it with the given context and return old context. Otherwise, return None.
     */
   def tryUpdate(context: CellContext): Option[CellContext] = synchronized {
-    find(_.previous.exists(_.id == context.id)) match {
-      case Some(successor) =>
-        val existing = successor.previous.get // we know due to the exists() that it is defined
-        context.setPrev(existing.previous)
-        successor.setPrev(context)
-        Some(existing)
-
-
-      case None =>
-        // if there's only one cell context, it could be the one to update
-        if (_first != null && _first.id == context.id) {
-          assert(last eq first, "Broken links")
-          val existing = _first
-          _first = context
-          _last = context
+    if (_last != null && _last.id == context.id) {
+      context.setPrev(_last.previous)
+      Some(_last)
+    } else {
+      find(_.previous.exists(_.id == context.id)) match {
+        case Some(successor) =>
+          val existing = successor.previous.get // we know due to the exists() that it is defined
+          context.setPrev(existing.previous)
+          successor.setPrev(context)
           Some(existing)
-        } else {
-          // it wasn't found
-          None
-        }
+
+
+        case None =>
+          // if there's only one cell context, it could be the one to update
+          if (_first != null && _first.id == context.id) {
+            assert(last eq first, "Broken links")
+            val existing = _first
+            _first = context
+            _last = context
+            Some(existing)
+          } else {
+            // it wasn't found
+            None
+          }
+      }
     }
   }
 }
