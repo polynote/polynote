@@ -116,7 +116,10 @@ export class Cell extends UIEventTarget {
         // TODO: this is incomplete (hook up all the run buttons etc)
         this.cellInput.querySelector('.run-cell').onclick = (evt) => {
             this.dispatchEvent(new RunCellEvent(this.id));
-        }
+        };
+
+        // clicking anywhere in a cell should select it
+        this.container.addEventListener('mousedown', evt => this.makeActive());
 
     }
 
@@ -128,10 +131,13 @@ export class Cell extends UIEventTarget {
         if (Cell.currentFocus && Cell.currentFocus !== this) {
             Cell.currentFocus.blur();
         }
-        Cell.currentFocus = this;
-        this.container.classList.add('active');
 
-        this.dispatchEvent(new SelectCellEvent(this));
+        if (Cell.currentFocus !== this) {
+            Cell.currentFocus = this;
+            this.container.classList.add('active');
+
+            this.dispatchEvent(new SelectCellEvent(this));
+        }
     }
 
     blur() {

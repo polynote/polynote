@@ -231,7 +231,7 @@ class NotebookContextSpec extends FreeSpec with Matchers {
       }
     }
 
-    "allResultValues" in {
+    "lastScope" in {
       val notebookContext = new NotebookContext()
       val a = CellContext.unsafe(0)
       val b = CellContext.unsafe(1)
@@ -253,7 +253,7 @@ class NotebookContextSpec extends FreeSpec with Matchers {
       Stream.emit(b_b1).through(b.results.enqueue).compile.drain.unsafeRunSync()
       Stream.emits(Seq(c_c1, c_a2)).through(c.results.enqueue).compile.drain.unsafeRunSync()
 
-      notebookContext.allResultValues should contain theSameElementsAs List(a_a1, b_b1, c_c1, c_a2)
+      notebookContext.lastScope should contain theSameElementsAs List(a_a1, b_b1, c_c1, c_a2)
     }
 
   }
