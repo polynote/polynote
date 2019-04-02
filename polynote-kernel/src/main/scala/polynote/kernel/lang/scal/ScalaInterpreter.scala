@@ -216,7 +216,7 @@ class ScalaInterpreter(
   ): IO[Stream[IO, Result]] = {
     val previous = cellContext.collectBack {
       case c if previousSources contains c.id => previousSources(c.id)
-    }
+    }.reverse
 
     val source = ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
     compileAndRun(source)
@@ -230,7 +230,8 @@ class ScalaInterpreter(
   ): IO[List[Completion]] = {
     val previous = cellContext.collectBack {
       case c if previousSources contains c.id => previousSources(c.id)
-    }
+    }.reverse
+
     IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).completionsAt(pos)).map {
       case (typ, completions) => completions.map { sym =>
         val name = sym.name.decodedName.toString
@@ -258,7 +259,8 @@ class ScalaInterpreter(
   ): IO[Option[Signatures]] = {
     val previous = cellContext.collectBack {
       case c if previousSources contains c.id => previousSources(c.id)
-    }
+    }.reverse
+
     IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).signatureAt(pos)).map {
       case (typ: global.MethodType, syms, n, d) =>
         val hints = syms.map {
