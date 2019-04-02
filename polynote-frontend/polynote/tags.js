@@ -248,7 +248,7 @@ export function table(classes, contentSpec) {
         return rowEl;
     };
 
-    table.findRows = (props) => table.findRowsBy((row) => {
+    table.findRows = (props, tbody) => table.findRowsBy((row, tbody) => {
         for (var prop in props) {
             if (props.hasOwnProperty(prop)) {
                 if (row[prop] !== props[prop])
@@ -258,9 +258,10 @@ export function table(classes, contentSpec) {
         return true;
     });
 
-    table.findRowsBy = (fn) => {
+    table.findRowsBy = (fn, tbody) => {
+        const [searchEl, selector] = tbody ? [tbody, 'tr'] : [table, 'tbody tr'];
         const matches = [];
-        [...table.querySelectorAll('tbody tr')].forEach(tr => {
+        [...searchEl.querySelectorAll(selector)].forEach(tr => {
             if (fn(tr.row)) {
                 matches.push(tr);
             }

@@ -123,7 +123,17 @@ class NotebookContext(implicit concurrent: Concurrent[IO]) {
   def first: Option[CellContext] = Option(_first)
   def last: Option[CellContext] = Option(_last)
 
-  def allResultValues: List[ResultValue] = Option(_last).toList.flatMap(_.visibleValues)
+  /**
+    * @return All the [[ResultValue]]s that are visible from the last cell
+    */
+  def lastScope: List[ResultValue] = Option(_last).toList.flatMap(_.visibleValues)
+
+  /**
+    * @return All the [[ResultValue]]s that are visible from any cell
+    */
+  def allResultValues: List[ResultValue] = Option(_last).toList.flatMap(_.collectBack {
+    case ctx => ctx.resultValues
+  }.flatten)
 
   /**
     * If the context is already present, replace it with the given context and return old context. Otherwise, return None.

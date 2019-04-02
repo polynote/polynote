@@ -96,9 +96,19 @@ export class KernelSymbolsUI {
         }
 
         if (cellId === this.presentedCell) {
-            this.addResultRow(name, type, value);
+            const existing = this.tableEl.findRows({name}, this.resultSymbols)[0];
+            if (existing) {
+                this.updateRow(existing, name, type, value);
+            } else {
+                this.addResultRow(name, type, value);
+            }
         } else if (this.visibleCells.indexOf(cellId) >= 0 || this.predefs[cellId]) {
-            this.addScopeRow(name, type, value);
+            const existing = this.tableEl.findRows({name}, this.scopeSymbols)[0];
+            if (existing) {
+                this.updateRow(existing, name, type, value);
+            } else {
+                this.addScopeRow(name, type, value);
+            }
         }
     }
 
@@ -1228,7 +1238,6 @@ export class NotebookUI extends UIEventTarget {
                 switch (update.constructor) {
                     case messages.UpdatedTasks:
                         update.tasks.forEach(taskInfo => {
-                            //console.log(taskInfo);
                             this.kernelUI.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
 
                             // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
