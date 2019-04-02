@@ -104,6 +104,7 @@ export class Cell extends UIEventTarget {
                 div(['cell-output-container'], [
                     this.cellOutputDisplay = div(['cell-output-display'], []),
                 ]),
+                // TODO: maybe a progress bar here?
                 this.cellOutputTools = div(['cell-output-tools'], [
                     this.resultTabs = div(["result-tabs"], [])
                 ]),
