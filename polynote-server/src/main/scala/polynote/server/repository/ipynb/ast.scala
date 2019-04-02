@@ -1,6 +1,10 @@
 package polynote.server.repository.ipynb
 
 import cats.data.Ior
+import cats.instances.either._
+import cats.instances.list._
+import cats.syntax.alternative._
+import cats.syntax.either._
 import io.circe._
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.syntax._
@@ -211,7 +215,16 @@ object JupyterCell {
 
     val outputs = cell.results.flatMap(JupyterOutput.fromResult(_, executionCount.getOrElse(-1)))
 
-    JupyterCell(cellType, executionCount, meta, Some(cell.language), contentLines, Some(outputs))
+    val (streams, others) = outputs.collect {
+      case stream@JupyterOutput.Stream(_, _) => Either.left(stream)
+      case other => Either.right(other)
+    }.separate
+
+    val groupedStreams = streams.groupBy(_.name).toList.map {
+      case (name, chunks) => JupyterOutput.Stream(name, chunks.flatMap(_.text))
+    }
+
+    JupyterCell(cellType, executionCount, meta, Some(cell.language), contentLines, Some(groupedStreams ::: others))
   }
 }
 

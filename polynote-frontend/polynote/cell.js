@@ -329,6 +329,8 @@ export class CodeCell extends Cell {
 
         // clear the display
         this.cellOutputDisplay.innerHTML = '';
+        this.stdOutDetails = null;
+        this.stdOutEl = null;
         if (reports.length) {
             this.container.classList.add('error');
             this.cellOutputDisplay.classList.add('errors');
@@ -381,7 +383,7 @@ export class CodeCell extends Cell {
         }
     }
 
-    buildOutput(contentType, content) {
+    parseContentType(contentType) {
         const contentTypeParts = contentType.split(';').map(str => str.replace(/(^\s+|\s+$)/g, ""));
         const mimeType = contentTypeParts.shift();
         const args = {};
@@ -390,36 +392,107 @@ export class CodeCell extends Cell {
             args[k] = v;
         });
 
+        return [mimeType, args];
+    }
+
+    mimeEl(mimeType, args, content) {
         const rel = args.rel || 'none';
+        return div(['output'], content).attr('rel', rel).attr('mime-type', mimeType);
+    }
+
+    buildOutput(mimeType, args, content) {
         const lang = args.lang || null;
-        return CodeCell.parseContent(content, mimeType, lang).then(function(result) {
-            return div(['output'], result).attr('rel', rel).attr('mime-type', mimeType);
-        }).catch(function(err) {
+        return CodeCell.parseContent(content, mimeType, lang).then(
+            result => this.mimeEl(mimeType, args, result)
+        ).catch(function(err) {
             return div(['output'], err);
         });
     }
 
     addOutput(contentType, content) {
+        const [mimeType, args] = this.parseContentType(contentType);
         this.cellOutputDisplay.classList.add('output');
         if (!this.container.classList.contains('error')) {
             this.container.classList.add('success');
         }
-        const self = this;
-        this.buildOutput(contentType, content).then(function(el) {
-            self.cellOutputDisplay.appendChild(el);
 
-            // <script> tags won't be executed when they come in through `innerHTML`. So take them out, clone them, and
-            // insert them as DOM nodes instead
-            const scripts = el.querySelectorAll('script');
-            scripts.forEach(script => {
-               const clone = document.createElement('script');
-               while (script.childNodes.length) {
-                   clone.appendChild(script.removeChild(script.childNodes[0]));
-               }
-               [...script.attributes].forEach(attr => clone.setAttribute(attr.name, attr.value));
-               script.parentNode.replaceChild(clone, script);
-            });
-        })
+        if (mimeType === 'text/plain' && args.rel === 'stdout' && this.stdOutEl && this.stdOutEl.parentNode) {
+
+            // if there are too many lines, fold some
+            const lines = content.split(/\r?\n/g);
+
+            this.stdOutLines += lines.length - 1;
+
+            if (this.stdOutLines > 12) { // TODO: user-configurable number?
+
+                const splitAtLine = (textNode, line) => {
+                    const lf = /\n/g;
+                    const text = textNode.nodeValue;
+                    let counted = 1;
+                    let splitPos = 0;
+                    while (counted < line) {
+                        counted++;
+                        const nextPos = lf.exec(text).index;
+                        if (nextPos === null) {
+                            return null;
+                        }
+                        splitPos = nextPos + 1;
+                    }
+                    return textNode.splitText(splitPos);
+                };
+
+                // fold all but the first 5 and last 5 lines into an expandable thingy
+                const numHiddenLines = this.stdOutLines - 11;
+                if (!this.stdOutDetails || !this.stdOutDetails.parentNode) {
+                    this.stdOutDetails = tag('details', [], {}, [
+                        tag('summary', [], {}, [span([], '')])
+                    ]);
+
+                    // split the existing text node into first 5 lines and the rest
+                    const textNode = this.stdOutEl.childNodes[0];
+                    const hidden = splitAtLine(textNode, 6);
+                    const after = splitAtLine(hidden, numHiddenLines);
+
+                    this.stdOutDetails.appendChild(hidden);
+                    this.stdOutEl.insertBefore(this.stdOutDetails, after);
+                } else {
+                    const textNode = this.stdOutDetails.nextSibling;
+                    const after = splitAtLine(textNode, lines.length);
+                    after.nodeValue += content;
+                    this.stdOutDetails.appendChild(textNode);
+                    this.stdOutEl.appendChild(after);
+                }
+                // update summary
+                this.stdOutDetails.querySelector('summary span').setAttribute('line-count', numHiddenLines.toString());
+            } else {
+                // no folding (yet) - append to the existing stdout container
+                this.stdOutEl.appendChild(document.createTextNode(content));
+            }
+
+            // collapse the adjacent text nodes
+            this.stdOutEl.normalize();
+
+        } else if (mimeType === 'text/plain' && args.rel === 'stdout') {
+            this.stdOutEl = this.mimeEl(mimeType, args, document.createTextNode(content));
+            this.stdOutLines = content.split(/\r?\n/g).length;
+            this.cellOutputDisplay.appendChild(this.stdOutEl);
+        } else {
+            this.buildOutput(mimeType, args, content).then(el => {
+                this.cellOutputDisplay.appendChild(el);
+
+                // <script> tags won't be executed when they come in through `innerHTML`. So take them out, clone them, and
+                // insert them as DOM nodes instead
+                const scripts = el.querySelectorAll('script');
+                scripts.forEach(script => {
+                    const clone = document.createElement('script');
+                    while (script.childNodes.length) {
+                        clone.appendChild(script.removeChild(script.childNodes[0]));
+                    }
+                    [...script.attributes].forEach(attr => clone.setAttribute(attr.name, attr.value));
+                    script.parentNode.replaceChild(clone, script);
+                });
+            })
+        }
     }
 
     addResult(result) {
@@ -436,8 +509,9 @@ export class CodeCell extends Cell {
                 this.resultTabs.appendChild(outLabel);
 
                 const [mime, content] = result.displayRepr;
+                const [mimeType, args] = this.parseContentType(mime);
                 const self = this;
-                this.buildOutput(mime, content).then(function(el) {
+                this.buildOutput(mime, args, content).then(function(el) {
                     self.resultTabs.appendChild(el);
                     const reprUi = new ReprUI(`Cell${self.id}`, self.path, result.reprs, el);
                     reprUi.setEventParent(self);
