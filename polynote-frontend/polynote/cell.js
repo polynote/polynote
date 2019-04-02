@@ -407,6 +407,18 @@ export class CodeCell extends Cell {
         const self = this;
         this.buildOutput(contentType, content).then(function(el) {
             self.cellOutputDisplay.appendChild(el);
+
+            // <script> tags won't be executed when they come in through `innerHTML`. So take them out, clone them, and
+            // insert them as DOM nodes instead
+            const scripts = el.querySelectorAll('script');
+            scripts.forEach(script => {
+               const clone = document.createElement('script');
+               while (script.childNodes.length) {
+                   clone.appendChild(script.removeChild(script.childNodes[0]));
+               }
+               [...script.attributes].forEach(attr => clone.setAttribute(attr.name, attr.value));
+               script.parentNode.replaceChild(clone, script);
+            });
         })
     }
 
