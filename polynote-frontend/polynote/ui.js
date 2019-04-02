@@ -1302,7 +1302,6 @@ export class NotebookUI extends UIEventTarget {
                         result.typeName,
                         result.valueText,
                         result.sourceCell);
-                    const ids = this.cellUI.getCodeCellIdsBefore(id);
                 }
             }
         });
