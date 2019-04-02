@@ -147,6 +147,9 @@ class ScalaSource[G <: Global](
           case tree: global.MemberDef =>
             // move class/type definition to the companion object and import it within the cell's class body
             (moduleTrees :+ tree, q"import $moduleName.${tree.name}" +: classTrees)
+          case tree: global.Import =>
+            // imports need to be in both because they might be in type annotations/params?
+            (moduleTrees :+ tree, classTrees :+ tree)
           case tree =>
             // anything else, just leave it in the class body
             (moduleTrees, classTrees :+ tree)
