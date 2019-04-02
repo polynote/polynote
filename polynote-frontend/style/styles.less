@@ -1117,6 +1117,39 @@ body {
       color: #884444
     }
 
+    .output[rel='stdout'] {
+
+      details {
+        position: relative;
+
+        summary {
+          margin-left: -.75em;
+          outline: none;
+          span {
+            position: absolute;
+            left: 0;
+          }
+
+          span::after {
+            content: "(" attr(line-count) " lines hidden; click to show)";
+            color: gray;
+          }
+        }
+      }
+
+      details[open] {
+        summary {
+          position: absolute;
+          span {
+            display: none
+          }
+          span::after {
+            display: none;
+          }
+        }
+      }
+    }
+
     .cell-output-tools::before {
       content: " ";
       position: absolute;
