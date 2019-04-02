@@ -416,12 +416,19 @@ export class CodeCell extends Cell {
             this.container.classList.add('success');
         }
 
-        if (mimeType === 'text/plain' && args.rel === 'stdout' && this.stdOutEl && this.stdOutEl.parentNode) {
+        if (mimeType === 'text/plain' && args.rel === 'stdout') {
 
             // if there are too many lines, fold some
             const lines = content.split(/\r?\n/g);
 
-            this.stdOutLines += lines.length - 1;
+
+            if (!this.stdOutEl || !this.stdOutEl.parentNode) {
+                this.stdOutEl = this.mimeEl(mimeType, args, document.createTextNode(content));
+                this.stdOutLines = lines.length;
+                this.cellOutputDisplay.appendChild(this.stdOutEl);
+            } else {
+                this.stdOutLines += lines.length - 1;
+            }
 
             if (this.stdOutLines > 12) { // TODO: user-configurable number?
 
@@ -432,11 +439,11 @@ export class CodeCell extends Cell {
                     let splitPos = 0;
                     while (counted < line) {
                         counted++;
-                        const nextPos = lf.exec(text).index;
-                        if (nextPos === null) {
+                        const match = lf.exec(text);
+                        if (match === null) {
                             return null;
                         }
-                        splitPos = nextPos + 1;
+                        splitPos = match.index + 1;
                     }
                     return textNode.splitText(splitPos);
                 };
@@ -472,10 +479,6 @@ export class CodeCell extends Cell {
             // collapse the adjacent text nodes
             this.stdOutEl.normalize();
 
-        } else if (mimeType === 'text/plain' && args.rel === 'stdout') {
-            this.stdOutEl = this.mimeEl(mimeType, args, document.createTextNode(content));
-            this.stdOutLines = content.split(/\r?\n/g).length;
-            this.cellOutputDisplay.appendChild(this.stdOutEl);
         } else {
             this.buildOutput(mimeType, args, content).then(el => {
                 this.cellOutputDisplay.appendChild(el);
