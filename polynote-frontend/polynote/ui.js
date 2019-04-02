@@ -39,7 +39,8 @@ export class KernelSymbolsUI {
             this.tableEl = table(['kernel-symbols-table'], {
                 header: ['Name', 'Type', 'Value'],
                 classes: ['name', 'type', 'value'],
-                rowHeading: true
+                rowHeading: true,
+                addToTop: true
             })
         ]);
         this.resultSymbols = this.tableEl.tBodies[0].addClass('results');
@@ -96,6 +97,8 @@ export class KernelSymbolsUI {
 
         if (cellId === this.presentedCell) {
             this.addResultRow(name, type, value);
+        } else if (this.visibleCells.indexOf(cellId) >= 0 || this.predefs[cellId]) {
+            this.addScopeRow(name, type, value);
         }
     }
 
@@ -1300,7 +1303,6 @@ export class NotebookUI extends UIEventTarget {
                         result.valueText,
                         result.sourceCell);
                     const ids = this.cellUI.getCodeCellIdsBefore(id);
-                    this.kernelUI.symbols.presentFor(id, ids);
                 }
             }
         });
