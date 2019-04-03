@@ -423,7 +423,7 @@ export class CodeCell extends Cell {
 
 
             if (!this.stdOutEl || !this.stdOutEl.parentNode) {
-                this.stdOutEl = this.mimeEl(mimeType, args, document.createTextNode(''));
+                this.stdOutEl = this.mimeEl(mimeType, args, document.createTextNode(content));
                 this.stdOutLines = lines.length;
                 this.cellOutputDisplay.appendChild(this.stdOutEl);
             } else {
