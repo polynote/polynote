@@ -33,10 +33,7 @@ object SparkServer extends Server {
   }
 
   override protected def kernelFactory: KernelFactory[IO] =
-    if (sys.env.get("POLYNOTE_REMOTE_KERNELS") contains "true")
-      new SparkRemoteKernelFactory(new SocketTransport)
-    else
-      new SparkKernelFactory(dependencyFetchers = Map("scala" -> dependencyFetcher))
+    new SparkKernelFactory(dependencyFetchers = Map("scala" -> dependencyFetcher))
 }
 
 case class SparkServerArgs(
@@ -51,7 +48,8 @@ object SparkServerArgs {
 
 class SparkKernelFactory(
   dependencyFetchers: Map[String, DependencyFetcher[IO]])(implicit
-  contextShift: ContextShift[IO]
+  contextShift: ContextShift[IO],
+  timer: Timer[IO]
 ) extends IOKernelFactory(dependencyFetchers) {
   override protected def mkKernel(
     getNotebook: () => IO[Notebook],
@@ -64,6 +62,16 @@ class SparkKernelFactory(
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
   ): IO[PolyKernel] = IO.pure(SparkPolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, parentClassLoader, config))
+
+  override def launchKernel(
+    getNotebook: () => IO[Notebook],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
+    polynoteConfig: PolynoteConfig
+  ): IO[KernelAPI[IO]] = if (polynoteConfig.spark.get("polynote.kernel.remote") contains "true") {
+    new SparkRemoteKernelFactory(new SocketTransport).launchKernel(getNotebook, statusUpdates, polynoteConfig)
+  } else {
+    super.launchKernel(getNotebook, statusUpdates, polynoteConfig)
+  }
 }
 
 class SparkRemoteKernelFactory(
