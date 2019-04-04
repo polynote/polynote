@@ -27,9 +27,12 @@ class LimitedSharingClassLoader(
   override def loadClass(name: String, resolve: Boolean): Class[_] =  getClassLoadingLock(name).synchronized {
     val c = if (share.test(name)) {
       //System.err.println(s"Delegating class $name")
-      super.loadClass(name, resolve)
-    }
-    else try {
+      try {
+        super.loadClass(name, resolve)
+      } catch {
+        case err: ClassNotFoundException => findClass(name)
+      }
+    } else try {
       findLoadedClass(name) match {
         case null =>
           //System.err.println(s"Privately loading class $name")

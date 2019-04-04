@@ -76,7 +76,7 @@ class ScalaSource[G <: Global](
     transformer.transform(tree)
   }
 
-  private val cellName = ScalaSource.nameFor(cellContext)
+  val cellName: String = ScalaSource.nameFor(cellContext)
 
   // the parsed trees, but only successful if there weren't any parse errors
   lazy val parsed: Ior[Throwable, List[Tree]] = afterParse.asInstanceOf[Ior[Throwable, List[Tree]]]
@@ -135,7 +135,7 @@ class ScalaSource[G <: Global](
           case tree: global.ValDef =>
             if (!tree.mods.hasFlag(global.Flag.PRIVATE) && !tree.mods.hasFlag(global.Flag.PROTECTED)) {
               // make a lazy val accessor in the companion
-              (moduleTrees :+ q"lazy val ${tree.name} = INSTANCE.${tree.name}", classTrees :+ tree)
+              (moduleTrees :+ atPos(tree.pos)(q"lazy val ${tree.name} = INSTANCE.${tree.name}"), classTrees :+ tree)
             } else {
               (moduleTrees, classTrees :+ tree)
             }
@@ -143,7 +143,7 @@ class ScalaSource[G <: Global](
             // make a proxy method in the companion
             val typeArgs = tree.tparams.map(tp => global.Ident(tp.name))
             val valueArgs = tree.vparamss.map(_.map(param => global.Ident(param.name)))
-            (moduleTrees :+ tree.copy(rhs = q"INSTANCE.${tree.name}[..$typeArgs](...$valueArgs)"), classTrees :+ tree)
+            (moduleTrees :+ atPos(tree.pos)(tree.copy(rhs = q"INSTANCE.${tree.name}[..$typeArgs](...$valueArgs)")), classTrees :+ tree)
           case tree: global.MemberDef =>
             // move class/type definition to the companion object and import it within the cell's class body
             (moduleTrees :+ tree, q"import $moduleName.${tree.name}" +: classTrees)
@@ -237,7 +237,7 @@ class ScalaSource[G <: Global](
                   global.Template(
                     List(atPos(end)(scalaDot(global.typeNames.AnyRef))),
                     atPos(end)(global.noSelfType.copy()),
-                    atPos(end)(constructor) :: atPos(end)(q"private val INSTANCE = new ${moduleName.toTypeName}") :: moduleTrees.map(forcePos(end, _))
+                    atPos(end)(constructor) :: atPos(end)(q"private val INSTANCE = new ${moduleName.toTypeName}") :: moduleTrees
                   )
                 }
               )
