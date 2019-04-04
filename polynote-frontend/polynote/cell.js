@@ -327,12 +327,13 @@ export class CodeCell extends Cell {
             reportInfos
         );
 
-        // clear the display
-        this.cellOutputDisplay.innerHTML = '';
-        this.stdOutDetails = null;
-        this.stdOutEl = null;
-        if (reports.length) {
+        // clear the display if there was a compile error
+        if (reportInfos.find(report => report.originalSeverity > 1)) {
+            this.clearResult();
             this.container.classList.add('error');
+        }
+
+        if (reports.length) {
             this.cellOutputDisplay.classList.add('errors');
             this.cellOutputDisplay.appendChild(
                 div(
@@ -348,9 +349,6 @@ export class CodeCell extends Cell {
                     })
                 )
             );
-        } else {
-            this.cellOutputDisplay.classList.remove('errors');
-            this.cellOutput.classList.remove('output');
         }
     }
 
@@ -603,7 +601,11 @@ export class CodeCell extends Cell {
     clearResult() {
         this.container.classList.remove('error', 'success');
         this.execInfoEl.classList.remove('output');
-        this.setErrors([]);
+        this.cellOutputDisplay.innerHTML = '';
+        this.cellOutputDisplay.classList.remove('errors');
+        this.cellOutput.classList.remove('output');
+        this.stdOutDetails = null;
+        this.stdOutEl = null;
     }
 
     requestCompletion(pos) {
