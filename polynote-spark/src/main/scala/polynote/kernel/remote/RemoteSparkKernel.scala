@@ -23,6 +23,7 @@ import polynote.kernel.util.{Publish, ReadySignal}
 import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Lazy, Notebook, NotebookUpdate, ShortString, Streaming, Updating}
 import polynote.runtime._
 import polynote.util.Memoize
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration.{Duration, MINUTES}
 import scala.collection.JavaConverters._
@@ -109,20 +110,22 @@ class RemoteSparkKernel(
     case _ => result
   }
 
-  private def consumeResponses(responses: Stream[IO, RemoteResponse]) = responses.map {
+  private def consumeResponses(responses: Stream[IO, RemoteResponse]) = responses.evalMap {
     case Announce(remoteAddress) =>
-      Stream.eval(getNotebook().flatMap(notebook => request1[UnitResponse](InitialNotebook(_, notebook)).as(()))) ++
-        Stream.eval(remoteAddr.complete(remoteAddress).handleErrorWith(_ => IO.unit))
+      IO.pure {
+        Stream.eval(getNotebook().flatMap(notebook => request1[UnitResponse](InitialNotebook(_, notebook)).as(()))) ++
+          Stream.eval(remoteAddr.complete(remoteAddress).handleErrorWith(_ => IO.unit))
+      }
     case KernelStatusResponse(update) =>
-      Stream.eval(statusUpdates.publish1(update))
+      IO.pure(Stream.eval(statusUpdates.publish1(update)))
     case StreamStarted(reqId) =>
-      Stream.eval(handleStreamStart(reqId))
+      handleStreamStart(reqId).map(Stream.emit)
     case StreamEnded(reqId) =>
-      Stream.eval(withStreamReq(reqId, _.end()))
+      withStreamReq(reqId, _.end()).map(Stream.emit)
     case ResultStreamElements(reqId, elements) =>
-      Stream.eval(withStreamReq(reqId, _.append(elements)))
+      withStreamReq(reqId, _.append(elements)).map(Stream.emit)
     case rep: RequestResponse =>
-      Stream.eval(handleOneResponse(rep))
+      handleOneResponse(rep).map(Stream.emit)
   }.parJoinUnbounded
 
   private val initialize = Memoize.unsafe {
@@ -215,21 +218,35 @@ class RemoteSparkKernel(
     opt => opt.fold(IO.raiseError[Int](new IllegalArgumentException("No corresponding remote handle exists")))(IO.pure)
   }
 
-  def getHandleData(handleType: HandleType, handle: Int, count: Int): IO[Array[ByteVector32]] =
-    getRemoteHandle(handleType, handle).flatMap {
-      remoteHandle => request1[HandleDataResponse](GetHandleDataRequest(_, handleType, remoteHandle, count)).map(_.data)
-    }
+  def getHandleData(handleType: HandleType, handleId: Int, count: Int): IO[Array[ByteVector32]] = handleType match {
+    case Lazy =>
+      for {
+        handleOpt <- IO(LazyDataRepr.getHandle(handleId))
+        handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Lazy#$handleId")))
+      } yield Array(ByteVector32(ByteVector(handle.data.rewind().asInstanceOf[ByteBuffer])))
 
+    case Updating =>
+      for {
+        handleOpt <- IO(UpdatingDataRepr.getHandle(handleId))
+        handle    <- IO.fromEither(Either.fromOption(handleOpt, new NoSuchElementException(s"Updating#$handleId")))
+      } yield handle.lastData.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer]))).toArray
+
+    case Streaming => IO.raiseError(new IllegalStateException("Streaming data is managed on a per-subscriber basis"))
+  }
+
+
+  private def modifyRemoteStream(handleId: Int, ops: List[TableOp]) = getRemoteHandle(Streaming, handleId).flatMap {
+    remoteHandle => request1[ModifyStreamResponse](ModifyStreamRequest(_, remoteHandle, ops)).map(_.repr)
+  }
 
   def modifyStream(handleId: Int, ops: List[TableOp]): IO[Option[StreamingDataRepr]] =
-    getRemoteHandle(Streaming, handleId).flatMap {
-      remoteHandle => request1[ModifyStreamResponse](ModifyStreamRequest(_, remoteHandle, ops)).map(_.repr)
-    }
+    modifyRemoteStream(handleId, ops).map(_.map(repr => StreamingDataRepr.fromHandle(transformRepr(repr))))
 
-  def releaseHandle(handleType: HandleType, handleId: Int): IO[Unit] =
-    getRemoteHandle(handleType, handleId).flatMap {
-      remoteHandle => request1[UnitResponse](ReleaseHandleRequest(_, handleType, remoteHandle)).as(())
-    }
+  def releaseHandle(handleType: HandleType, handleId: Int): IO[Unit] = handleType match {
+    case Lazy => IO(LazyDataRepr.releaseHandle(handleId))
+    case Updating => releaseUpdatingHandle(handleId)
+    case Streaming => IO(StreamingDataRepr.releaseHandle(handleId))
+  }
 
 
   def cancelTasks(): IO[Unit] =
@@ -247,6 +264,11 @@ class RemoteSparkKernel(
   private def transformRepr(repr: LazyDataRepr): Int => MappedLazyHandle =
     MappedLazyHandle(_, repr.dataType, repr.handle)
 
+  private def releaseUpdatingHandle(localId: Int) = for {
+    remote <- IO.fromEither(Either.fromOption(Option(updatingHandleMapping.get(localId)), new NoSuchElementException(s"Handle $localId doesn't exist")))
+    _      <- request1[UnitResponse](ReleaseHandleRequest(_, Updating, remote))
+  } yield ()
+
   // mapping of remote to local handles
   private val updatingHandleMapping = new ConcurrentHashMap[Int, Int]()
 
@@ -255,16 +277,14 @@ class RemoteSparkKernel(
     */
   private class RemoteStreamIterator(remoteHandle: Int, batchSize: Int = 512, fetchAhead: Int = 4) extends Iterator[ByteBuffer] {
     private val fetchComplete = new AtomicBoolean(false)
-
     private def fetchNext(): IO[Unit] = request1[HandleDataResponse](GetHandleDataRequest(_, Streaming, remoteHandle, batchSize)).flatMap {
       case rep if rep.data.isEmpty => IO(fetchComplete.set(true))
       case rep =>
-        if (chunkQueue.offer(rep.data)) {
-          fetchNext()
-        } else {
-          IO(chunkQueue.put(rep.data)) *> fetchNext()
-        }
+        offerChunk(rep) *> (if (rep.data.length < batchSize) IO(fetchComplete.set(true)) else fetchNext())
     }
+
+    private def offerChunk(rep: HandleDataResponse) =
+      if (chunkQueue.offer(rep.data)) IO.unit else IO(chunkQueue.put(rep.data))
 
     private val chunkQueue = new LinkedBlockingQueue[Array[ByteVector32]](fetchAhead)
     @volatile private var currentIterator: Iterator[ByteBuffer] = _
@@ -290,14 +310,14 @@ class RemoteSparkKernel(
     def iterator: Iterator[ByteBuffer] = new RemoteStreamIterator(remoteHandle)
 
     def modify(ops: List[TableOp]): Either[Throwable, Int => StreamingDataRepr.Handle] =
-      modifyStream(handle, ops).map(_.map(transformRepr).toRight(new UnsupportedOperationException("Stream does not support table operations")))
+      modifyRemoteStream(handle, ops).map(_.map(transformRepr).toRight[Throwable](new UnsupportedOperationException("Stream does not support table operations")))
         .attempt
         .unsafeRunSync()    // no choice but to run this synchronously – the Handle API doesn't have cats-effect so can't express in IO
-        .flatMap(identity)
+        .flatMap(either => either)
 
     override def release(): Unit = {
       super.release()
-      releaseHandle(Streaming, handle).attempt.unsafeRunAsyncAndForget()
+      request1[UnitResponse](ReleaseHandleRequest(_, Streaming, remoteHandle)).unsafeRunSync()
     }
   }
 

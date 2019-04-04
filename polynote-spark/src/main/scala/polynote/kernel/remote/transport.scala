@@ -145,14 +145,20 @@ class SocketTransportClient(channel: FramedSocket)(implicit contextShift: Contex
   * A transport that communicates over a socket with a kernel process it's deployed via spark-submit.
   * Requires that spark-submit is a valid executable command on the path.
   */
-class SocketTransport(deploy: SocketTransport.Deploy = new SocketTransport.DeploySubprocess)(
+class SocketTransport(
+  deploy: SocketTransport.Deploy = new SocketTransport.DeploySubprocess,
+  forceServerAddress: Option[String] = None
+)(
   implicit timer: Timer[IO]
 ) extends Transport[InetSocketAddress] {
 
   private val logger = org.log4s.getLogger
 
-  private def openServerChannel: IO[ServerSocketChannel] =
-    IO(ServerSocketChannel.open().bind(new InetSocketAddress(java.net.InetAddress.getLocalHost.getHostAddress, 0)))
+  private def openServerChannel: IO[ServerSocketChannel] = IO {
+    ServerSocketChannel.open().bind(
+      new InetSocketAddress(
+        forceServerAddress.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress), 0))
+  }
 
   def serve(config: PolynoteConfig, notebook: Notebook)(implicit contextShift: ContextShift[IO]): IO[TransportServer] = for {
     socketServer <- openServerChannel
