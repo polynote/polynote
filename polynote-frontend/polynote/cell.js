@@ -526,6 +526,24 @@ export class CodeCell extends Cell {
         }
     }
 
+    setExecutionPos(pos) {
+        if (pos) {
+            const oldExecutionPos = this.executionDecorations || [];
+            const model = this.editor.getModel();
+            const startPos = model.getPositionAt(pos.start);
+            const endPos = model.getPositionAt(pos.end);
+            this.executionDecorations = this.editor.deltaDecorations(oldExecutionPos, [
+                {
+                    range: monaco.Range.fromPositions(startPos, endPos),
+                    options: { className: "currently-executing" }
+                }
+            ]);
+        } else if (this.executionDecorations) {
+            this.editor.deltaDecorations(this.executionDecorations, []);
+            this.executionDecorations = [];
+        }
+    }
+
     // move this somewhere else if it's useful outside Cell...
     static prettyDuration(milliseconds) {
         function quotRem(dividend, divisor) {

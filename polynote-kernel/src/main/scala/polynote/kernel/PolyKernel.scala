@@ -156,12 +156,17 @@ class PolyKernel private[kernel] (
             val run = withLaunchedInterpreter(id) {
               (notebook, cell, interp) =>
                 // TODO: should this be something the interpreter has to do? Without this we wouldn't even need to allocate a queue here
+                val runningTaskInfo = taskInfo.copy(status = TaskStatus.Running)
                 polynote.runtime.Runtime.setDisplayer((mime, content) => oqSome.enqueue1(Output(mime, content)).unsafeRunSync())
                 polynote.runtime.Runtime.setProgressSetter {
                   (progress, detail) =>
                     val newDetail = Option(detail).getOrElse(taskInfo.detail)
-                    statusUpdates.publish1(UpdatedTasks(taskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
+                    statusUpdates.publish1(UpdatedTasks(runningTaskInfo.copy(detail = newDetail, progress = (progress * 255).toByte) :: Nil)).unsafeRunSync()
                 }
+                polynote.runtime.Runtime.setExecutionStatusSetter {
+                  optPos => statusUpdates.publish1(ExecutionStatus(id, optPos)).unsafeRunAsyncAndForget()
+                }
+
                 CellContext(cell.id).flatMap {
                   cellContext =>
                     IO(notebookContext.tryUpdate(cellContext)).flatMap {
@@ -171,7 +176,7 @@ class PolyKernel private[kernel] (
                           cell.content.toString
                         ).map {
                           results => results.through(cellContext.results.tapResults).evalTap {
-                            case ResultValue(name, _, _, _, value, _) => IO(polynote.runtime.Runtime.putValue(name, value))
+                            case ResultValue(name, _, _, _, value, _, _) => IO(polynote.runtime.Runtime.putValue(name, value))
                             case _ => IO.unit
                           }
                         }.handleErrorWith {
@@ -189,7 +194,7 @@ class PolyKernel private[kernel] (
                                 timestamp <- clock.realTime(MILLISECONDS)
                               } yield ExecutionInfo((end - start).toInt, timestamp)
                             }
-                          }.onFinalize {
+                          }.onFinalize(statusUpdates.publish1(ExecutionStatus(id, None))).onFinalize {
                             // if the interpreter didn't make a module for the cell, use the scala interpreter to make one
                             cellContext.module.tryGet.flatMap {
                               case Some(_) => IO.unit

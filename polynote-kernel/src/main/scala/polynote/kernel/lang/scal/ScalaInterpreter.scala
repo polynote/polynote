@@ -127,7 +127,7 @@ class ScalaInterpreter(
                       if (accessor.info.finalResultType <:< global.typeOf[Unit])
                         None
                       else
-                        Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, id))
+                        Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, id, Some((accessor.pos.start, accessor.pos.end))))
 
                     case method if method.isMethod && method.originalInfo.typeParams.isEmpty =>
                       // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
@@ -165,7 +165,7 @@ class ScalaInterpreter(
                         val methodType = importFromRuntime.importType(fnType)
 
                         // I guess we're saying a "def" shouldn't become the cell result?
-                        Some(ResultValue(kernelContext, method.name.toString, methodType, runtimeFn, id))
+                        Some(ResultValue(kernelContext, method.name.toString, methodType, runtimeFn, id, Some((method.pos.start, method.pos.end))))
                       } catch {
                         case err: Throwable => Some(CompileErrors(List(KernelReport(
                           Pos(source.cellName, method.pos.start, method.pos.end, method.pos.start),
