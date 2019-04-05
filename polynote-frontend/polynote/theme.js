@@ -8,7 +8,8 @@ export const theme = {
   ],
   colors: {
     'editor.lineHighlightBackground': '#f3f3f3',
-    'editor.lineHighlightBorder': '#00000000'
+    'editor.lineHighlightBorder': '#00000000',
+    'editorOverviewRuler.border': "#00000000"
   }
 };
 
