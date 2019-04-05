@@ -132,7 +132,7 @@ class ScalaInterpreter(
                     case method if method.isMethod && method.originalInfo.typeParams.isEmpty =>
                       // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
                       // The Scala interpreter uses the original method, but other interpreters can use the function.
-                      val runtimeMethod = runtimeType.decl(runtime.universe.TermName(method.nameString)).asMethod
+                      val runtimeMethod = importToRuntime.importSymbol(method.asMethod).asMethod
                       val fnSymbol = if (runtimeMethod.isOverloaded) {
                         resultQ.enqueue1(
                           CompileErrors(
@@ -146,25 +146,32 @@ class ScalaInterpreter(
 
                       // The function delegates to the method via reflection, which isn't good, but the Scala kernel doesn't
                       // use it anyway, and other interpreters would have to use reflection anyhow
-                      val (runtimeFn, fnType) = {
-                        import runtime.universe._
-                        val args = fnSymbol.paramLists.headOption.map(_.map(arg => ValDef(Modifiers(), TermName(arg.name.toString), TypeTree(arg.info), EmptyTree))).toList
-                        val fnArgs = args.flatten.map(param => Ident(param.name))
+                      try {
+                        val (runtimeFn, fnType) = {
+                          import runtime.universe._
+                          val args = fnSymbol.paramLists.headOption.map(_.map(arg => ValDef(Modifiers(), TermName(arg.name.toString), TypeTree(arg.info), EmptyTree))).toList
+                          val fnArgs = args.flatten.map(param => Ident(param.name))
 
-                        // eta-expand if necessary
-                        val call = fnSymbol.paramLists.size match {
-                          case 0 => q"$fnSymbol"
-                          case 1 => q"$fnSymbol(..$fnArgs)"
-                          case _ => q"$fnSymbol(..$fnArgs) _"
+                          // eta-expand if necessary
+                          val call = fnSymbol.paramLists.size match {
+                            case 0 => q"$fnSymbol"
+                            case 1 => q"$fnSymbol(..$fnArgs)"
+                            case _ => q"$fnSymbol(..$fnArgs) _"
+                          }
+                          val tree = Function(args.flatten, call)
+                          val typ = runtimeTools.typecheck(tree).tpe
+                          runtimeTools.eval(tree) -> typ
                         }
-                        val tree = Function(args.flatten, call)
-                        val typ = runtimeTools.typecheck(tree).tpe
-                        runtimeTools.eval(tree) -> typ
-                      }
-                      val methodType = importFromRuntime.importType(fnType)
+                        val methodType = importFromRuntime.importType(fnType)
 
-                      // I guess we're saying a "def" shouldn't become the cell result?
-                      Some(ResultValue(kernelContext, method.name.toString, methodType, runtimeFn, id))
+                        // I guess we're saying a "def" shouldn't become the cell result?
+                        Some(ResultValue(kernelContext, method.name.toString, methodType, runtimeFn, id))
+                      } catch {
+                        case err: Throwable => Some(CompileErrors(List(KernelReport(
+                          Pos(source.cellName, method.pos.start, method.pos.end, method.pos.start),
+                          s"Unable to create eta-expanded method for ${method.name}; it may not be available to other languages",
+                          KernelReport.Warning))))
+                      }
 
                   }.flatten
                 }
