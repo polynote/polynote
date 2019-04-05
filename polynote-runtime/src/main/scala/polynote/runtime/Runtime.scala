@@ -12,7 +12,11 @@ object Runtime {
   private val externalValues = new ConcurrentHashMap[String, Any]()
 
   def getValue(name: String): Any = externalValues.get(name)
-  def putValue(name: String, value: Any): Unit = externalValues.put(name, value)
+  def putValue(name: String, value: Any): Unit =
+    if (value != null)
+      externalValues.put(name, value)
+    else
+      externalValues.remove(name)
 
   object display {
     def html(html: String): Unit = displayer("text/html", html)
