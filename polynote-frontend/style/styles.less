@@ -86,6 +86,14 @@ body {
 
   .toolbar.settings {
     float: right;
+
+    .vim {
+      color: gray;
+
+      &.enabled {
+        color: green;
+      }
+    }
   }
 
   .floating-menu {
@@ -358,6 +366,17 @@ body {
       }
       .exec-timestamp::after {
         content: " took "
+      }
+    }
+
+    .vim-status {
+      margin-left: @cell-margin-width;
+      &::before {
+        content: "VIM: "
+      }
+
+      &.hide {
+        display: none !important;
       }
     }
   }
