@@ -88,7 +88,7 @@ object PythonObject {
   // and whichever succeeds we'll use.
   implicit object defaultReprs extends ReprsOf[PythonObject] {
     override def apply(obj: PythonObject): Array[ValueRepr] = {
-      def attemptRepr(mimeType: String, t: => String): Option[MIMERepr] = try Some(MIMERepr(mimeType, t)) catch {
+      def attemptRepr(mimeType: String, t: => String): Option[MIMERepr] = try Option(t).map(str => MIMERepr(mimeType, str)) catch {
         case err: Throwable => None
       }
 

@@ -8,6 +8,8 @@ import { default as Diff } from './diff.js'
 import {ReprUI} from "./repr_ui";
 import {details} from "./tags";
 import {ExecutionInfo} from "./result";
+import { initVimMode } from 'monaco-vim';
+import {prefs} from "./prefs";
 
 const JsDiff = new Diff();
 
@@ -529,6 +531,24 @@ export class CodeCell extends Cell {
         }
     }
 
+    setExecutionPos(pos) {
+        if (pos) {
+            const oldExecutionPos = this.executionDecorations || [];
+            const model = this.editor.getModel();
+            const startPos = model.getPositionAt(pos.start);
+            const endPos = model.getPositionAt(pos.end);
+            this.executionDecorations = this.editor.deltaDecorations(oldExecutionPos, [
+                {
+                    range: monaco.Range.fromPositions(startPos, endPos),
+                    options: { className: "currently-executing" }
+                }
+            ]);
+        } else if (this.executionDecorations) {
+            this.editor.deltaDecorations(this.executionDecorations, []);
+            this.executionDecorations = [];
+        }
+    }
+
     // move this somewhere else if it's useful outside Cell...
     static prettyDuration(milliseconds) {
         function quotRem(dividend, divisor) {
@@ -625,6 +645,7 @@ export class CodeCell extends Cell {
 
     makeActive() {
         super.makeActive();
+        this.activateVim();
     }
 
     focus() {
@@ -634,12 +655,44 @@ export class CodeCell extends Cell {
 
     blur() {
         super.blur();
+        this.hideVim();
     }
 
     dispose() {
         super.dispose();
         window.removeEventListener('resize', this.onWindowResize);
         this.editor.dispose();
+        this.deactivateVim();
+    }
+
+    activateVim() {
+        if (prefs.get('VIM')) {
+            if (!this.vim) {
+                console.log("init vim for cell", this.id)
+                if (!this.statusLine) {
+                    this.statusLine = div(["vim-status"], []);
+                }
+                this.vim = initVimMode(this.editor, this.statusLine);
+                this.cellInput.insertBefore(this.statusLine, this.execInfoEl);
+            }
+            this.statusLine.classList.toggle('hide', false);
+        } else {
+            this.deactivateVim();
+        }
+    }
+
+    deactivateVim() {
+        if (this.vim) {
+            this.vim.dispose();
+            delete this.vim;
+        }
+        this.hideVim();
+    }
+
+    hideVim() {
+        if (this.statusLine && !this.statusLine.contains(document.activeElement)) {
+            this.statusLine.classList.toggle('hide', true);
+        }
     }
 
     get content() {

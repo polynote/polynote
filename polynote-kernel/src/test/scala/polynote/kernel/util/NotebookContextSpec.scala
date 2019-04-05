@@ -243,11 +243,11 @@ class NotebookContextSpec extends FreeSpec with Matchers {
       import scala.reflect.runtime.universe.NoType
       import fs2.Stream
 
-      val a_a1 = new ResultValue("a1", "", Nil, 0, "a_a1", NoType)
-      val a_a2 = new ResultValue("a2", "", Nil, 0, "a_a2", NoType)
-      val b_b1 = new ResultValue("b1", "", Nil, 1, "b_b1", NoType)
-      val c_c1 = new ResultValue("c1", "", Nil, 2, "c_c1", NoType)
-      val c_a2 = new ResultValue("a2", "", Nil, 2, "c_a2", NoType)
+      val a_a1 = new ResultValue("a1", "", Nil, 0, "a_a1", NoType, None)
+      val a_a2 = new ResultValue("a2", "", Nil, 0, "a_a2", NoType, None)
+      val b_b1 = new ResultValue("b1", "", Nil, 1, "b_b1", NoType, None)
+      val c_c1 = new ResultValue("c1", "", Nil, 2, "c_c1", NoType, None)
+      val c_a2 = new ResultValue("a2", "", Nil, 2, "c_a2", NoType, None)
 
       Stream.emits(Seq(a_a1, a_a2)).through(a.results.enqueue).compile.drain.unsafeRunSync()
       Stream.emit(b_b1).through(b.results.enqueue).compile.drain.unsafeRunSync()

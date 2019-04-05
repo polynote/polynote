@@ -86,6 +86,14 @@ body {
 
   .toolbar.settings {
     float: right;
+
+    .vim {
+      color: gray;
+
+      &.enabled {
+        color: green;
+      }
+    }
   }
 
   .floating-menu {
@@ -365,6 +373,17 @@ body {
       }
       .exec-timestamp::after {
         content: " took "
+      }
+    }
+
+    .vim-status {
+      margin-left: @cell-margin-width;
+      &::before {
+        content: "VIM: "
+      }
+
+      &.hide {
+        display: none !important;
       }
     }
   }
@@ -1624,6 +1643,7 @@ button {
 
 .drag-handle {
   position: relative;
+  border-left: 1px solid @ui-background;
   .inner {
     position: absolute;
     left: -2px;
@@ -1907,6 +1927,10 @@ button {
         margin-left: 24px;
         display: none;
       }
+
+      span {
+        white-space: nowrap;
+      }
     }
 
     li.leaf {
@@ -1980,7 +2004,6 @@ button {
   }
 
   .ui-panel-content {
-    position: absolute;
     min-width: 100%;
     max-height: 100%;
     background: white;
@@ -2338,6 +2361,10 @@ button {
     right: 1em;
     cursor: pointer;
   }
+}
+
+.currently-executing {
+  background-color: #d9edf7;
 }
 
 @keyframes highlight {

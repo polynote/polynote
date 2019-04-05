@@ -315,3 +315,6 @@ object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3) {
     case (k, v) => ShortString(k) -> v
   }.toMap))
 }
+
+final case class ExecutionStatus(cellID: CellID, pos: Option[(Int, Int)]) extends KernelStatusUpdate
+object ExecutionStatus extends KernelStatusUpdateCompanion[ExecutionStatus](4)

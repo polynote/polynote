@@ -12,7 +12,11 @@ object Runtime {
   private val externalValues = new ConcurrentHashMap[String, Any]()
 
   def getValue(name: String): Any = externalValues.get(name)
-  def putValue(name: String, value: Any): Unit = externalValues.put(name, value)
+  def putValue(name: String, value: Any): Unit =
+    if (value != null)
+      externalValues.put(name, value)
+    else
+      externalValues.remove(name)
 
   object display {
     def html(html: String): Unit = displayer("text/html", html)
@@ -20,6 +24,9 @@ object Runtime {
   }
 
   def setProgress(progress: Double, detail: String): Unit = progressSetter(progress, detail)
+
+  def setExecutionStatus(startPos: Int, endPos: Int): Unit = executionStatusSetter(Some((startPos, endPos)))
+  def clearExecutionStatus(): Unit = executionStatusSetter(None)
 
   private var displayer: (String, String) => Unit = (_, _) => println("Display publisher is not correctly configured.")
 
@@ -29,6 +36,11 @@ object Runtime {
 
   def setProgressSetter(fn: (Double,String) => Unit): Unit = progressSetter = fn
 
+  private var executionStatusSetter: Option[(Int, Int)] => Unit = (_ => ())
+
+  def setExecutionStatusSetter(fn: Option[(Int, Int)] => Unit): Unit = executionStatusSetter = fn
+
   def clear(): Unit = externalValues.clear()
 
+  def currentRuntime: Runtime.type = this
 }

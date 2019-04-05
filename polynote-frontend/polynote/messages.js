@@ -5,7 +5,7 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int16, int32, uint32, bool
 } from './codec.js'
 
-import { Result, KernelErrorWithCause } from './result.js'
+import { Result, KernelErrorWithCause, PosRange } from './result.js'
 import {float64, Pair} from "./codec";
 import {StreamingDataRepr} from "./value_repr";
 import {ExecutionInfo} from "./result";
@@ -675,11 +675,29 @@ export class KernelInfo extends KernelStatusUpdate {
 
 KernelInfo.codec = combined(mapCodec(uint8, shortStr, str)).to(KernelInfo);
 
+export class ExecutionStatus extends KernelStatusUpdate {
+    static get msgTypeId() { return 4; }
+
+    static unapply(inst) {
+        return [inst.cellId, inst.pos];
+    }
+
+    constructor(cellId, pos) {
+        super(cellId, pos);
+        this.cellId = cellId;
+        this.pos = pos;
+        Object.freeze(this);
+    }
+}
+
+ExecutionStatus.codec = combined(int16, optional(PosRange.codec)).to(ExecutionStatus);
+
 KernelStatusUpdate.codecs = [
     UpdatedSymbols,   // 0
     UpdatedTasks,     // 1
     KernelBusyState,  // 2
     KernelInfo,       // 3
+    ExecutionStatus,  // 4
 ];
 
 KernelStatusUpdate.codec = discriminated(
