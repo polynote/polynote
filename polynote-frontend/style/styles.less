@@ -30,6 +30,7 @@
 @ui-background-bright: lighten(@ui-background, 20%);
 @ui-background-dark: darken(@ui-background, 20%);
 @ui-background-accent: rgb(198, 207, 223);
+@ui-sidebar-header: rgb(226, 230, 236);
 @ui-border:     rgb(225, 225, 225);
 @ui-border-dark: darken(@ui-border, 20%);
 @ui-selected:   rgb(67, 104, 234);
@@ -353,8 +354,6 @@ body {
       color: #808080;
       padding: 4px;
       border-bottom: 1px dashed @ui-border;
-      //border-right: 1px solid @ui-border;
-      //border-right: 2pt solid transparent;
       display: none;
 
       &.output {
@@ -1397,7 +1396,7 @@ button {
   }
 
   & > h2 {
-    background-color: rgb(226, 230, 236);
+    background-color: @ui-sidebar-header;
     grid-area: head;
     position: relative;
     .buttons {
@@ -1777,8 +1776,80 @@ button {
   bottom: 0;
   left: 0;
   right: 0;
+  display: grid;
+  grid-template-areas: "left leftdrag center rightdrag right";
+  grid-template-columns: max-content 1px auto 1px max-content;
   grid-template-rows: 100%;
   overflow: hidden;
+
+  &.right-collapsed {
+    grid-template-columns: max-content 1px auto 1px 2em;
+
+    .kernel-ui h2 {
+      transform: translateY(-100%) rotate(90deg);
+      transform-origin: bottom left;
+      width: fit-content;
+      &:hover {
+        background-color: @ui-background-accent;
+      }
+
+      .buttons {
+        display: none;
+      }
+    }
+
+    .drag-handle.right .inner {
+      display: none;
+    }
+
+    .grid-shell.right {
+      background-color: @ui-sidebar-header;
+      width: unset !important;
+    }
+
+    .kernel-ui .ui-panel-content {
+      display: none;
+    }
+  }
+
+  &.left-collapsed {
+    grid-template-columns: 2em 1px auto 1px max-content;
+
+    .notebooks-list {
+      border: unset;
+    }
+
+    .notebooks-list h2 {
+      transform: translateY(-100%) rotate(90deg);
+      transform-origin: bottom left;
+      width: fit-content;
+
+      &:hover {
+        background-color: @ui-background-accent;
+      }
+
+      .buttons {
+        display: none;
+      }
+    }
+
+    .drag-handle.left .inner {
+      display: none;
+    }
+
+    .grid-shell.left {
+      background-color: @ui-sidebar-header;
+      width: unset !important;
+    }
+
+    .notebooks-list .ui-panel-content {
+      display: none;
+    }
+  }
+
+  &.left-collapsed.right-collapsed {
+    grid-template-columns: 2em 1px auto 1px 2em;
+  }
 }
 
 .tab-view {
@@ -1903,7 +1974,6 @@ button {
 .notebooks-list {
   position: relative;
   border: 1px solid @ui-border;
-  background: white;
 
   .tree-view {
     padding: .5em 0;
@@ -1913,7 +1983,7 @@ button {
     position: absolute;
     min-width: 100%;
     max-height: 100%;
-
+    background: white;
   }
 }
 
