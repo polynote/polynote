@@ -335,19 +335,20 @@ export class SplitView {
         this.left = left;
         this.center = center;
         this.right = right;
-        let classes = [id];
         let children = [];
-        this.templates = {};
-        this.areas = [];
-
 
         if (left) {
             const prefId = `${id}.leftSize`;
-            classes.push('l');
-            children.push(left.el);
+            left.el.classList.add("left");
             left.el.style.gridArea = 'left';
-            let leftDragger = div(['drag-handle'], [div(['inner'], [])])
-                .attr('draggable', 'true');
+            left.el.style.width = prefs.get(prefId) || '300px';
+
+            let leftDragger = div(['drag-handle', 'left'], [
+                div(['inner'], []).attr('draggable', 'true')
+            ]);
+            leftDragger.style.gridArea = 'leftdrag';
+
+            children.push(left.el);
             children.push(leftDragger);
 
             leftDragger.addEventListener('dragstart', (evt) => {
@@ -358,36 +359,34 @@ export class SplitView {
             leftDragger.addEventListener('drag', (evt) => {
                 evt.preventDefault();
                 if (evt.clientX) {
-                    this.templates.left = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX )) + "px";
-                    this.layout();
+                    left.el.style.width = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX )) + "px";
                 }
             });
 
             leftDragger.addEventListener('dragend', (evt) => {
-                prefs.set(prefId, this.templates.left);
+                prefs.set(prefId, left.el.style.width);
                 window.dispatchEvent(new CustomEvent('resize', {}));
             });
-
-            leftDragger.style.gridArea = 'leftdrag';
-
-            this.templates.left = prefs.get(prefId) || '300px';
-            this.templates.leftdrag = '1px';
-            this.areas.push('left');
-            this.areas.push('leftdrag')
         }
+
         if (center) {
-            classes.push('c');
             children.push(center.el);
-            this.templates.center = 'auto';
-            this.areas.push('center');
         }
+
         if (right) {
             const prefId = `${id}.rightSize`;
-            classes.push('r');
+            right.el.classList.add("right");
+            right.el.style.gridArea = 'right';
+            right.el.style.width = prefs.get(prefId) || '300px';
 
-            let rightDragger = div(['drag-handle'], [div(['inner'], [])])
-                .attr('draggable', 'true');
+            let rightDragger = div(['drag-handle', 'right'], [
+                div(['inner'], []).attr('draggable', 'true')
+            ]);
+
             rightDragger.style.gridArea = 'rightdrag';
+
+            children.push(rightDragger);
+            children.push(right.el);
 
             rightDragger.addEventListener('dragstart', (evt) => {
                 rightDragger.initialX = evt.clientX;
@@ -397,38 +396,29 @@ export class SplitView {
             rightDragger.addEventListener('drag', (evt) => {
                 evt.preventDefault();
                 if (evt.clientX) {
-                    this.templates.right = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
-                    this.layout();
+                    right.el.style.width = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
                 }
             });
 
             rightDragger.addEventListener('dragend', evt => {
-                prefs.set(prefId, this.templates.right);
+                prefs.set(prefId, right.el.style.width);
                 window.dispatchEvent(new CustomEvent('resize', {}));
             });
-
-            children.push(rightDragger);
-
-            children.push(right.el);
-            right.el.style.gridArea = 'right';
-            this.templates.rightdrag = '1px';
-            this.templates.right = prefs.get(prefId) || '300px';
-            this.areas.push('rightdrag');
-            this.areas.push('right');
         }
 
-        this.el = div(['split-view', ...classes], children);
-        this.el.style.display = 'grid';
-        this.el.style.gridTemplateAreas = `"${this.areas.join(' ')}"`;
-        this.layout();
+        this.el = div(['split-view', id], children);
     }
 
-    layout() {
-        let templateValues = [];
-        for (const area of this.areas) {
-            templateValues.push(this.templates[area]);
+    collapse(side, force) {
+        if (side === 'left') {
+            this.el.classList.toggle('left-collapsed', force || undefined) // undefined because we want it to toggle normally if we aren't forcing it.
+            window.dispatchEvent(new CustomEvent('resize', {}));
+        } else if (side === 'right') {
+            this.el.classList.toggle('right-collapsed', force || undefined)
+            window.dispatchEvent(new CustomEvent('resize', {}));
+        } else {
+            throw `Supported values are 'right' and 'left', got ${side}`
         }
-        this.el.style.gridTemplateColumns = templateValues.join(' ');
     }
 }
 
@@ -444,11 +434,11 @@ export class KernelUI extends UIEventTarget {
                 this.status = span(['status'], ['●']),
                 'Kernel',
                 span(['buttons'], [
-                  iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect()),
-                  iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.startKernel()),
-                  iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => this.killKernel())
+                  iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect(evt)),
+                  iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.startKernel(evt)),
+                  iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => this.killKernel(evt))
                 ])
-            ]),
+            ]).click(evt => this.collapse()),
             div(['ui-panel-content'], [
                 this.info.el,
                 this.symbols.el,
@@ -457,15 +447,34 @@ export class KernelUI extends UIEventTarget {
         ]);
     }
 
-    connect() {
+    // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
+    init() {
+        const prefs = this.getPrefs();
+        if (prefs && prefs.collapsed) {
+            this.collapse(true);
+        }
+    }
+
+    getPrefs() {
+        return prefs.get("KernelUI")
+    }
+
+    setPrefs(obj) {
+        prefs.set("KernelUI", {...this.getPrefs(), ...obj})
+    }
+
+    connect(evt) {
+        evt.stopPropagation();
         this.dispatchEvent(new UIEvent('Connect'))
     }
 
-    startKernel() {
+    startKernel(evt) {
+        evt.stopPropagation();
         this.dispatchEvent(new UIEvent('StartKernel'))
     }
 
-    killKernel() {
+    killKernel(evt) {
+        evt.stopPropagation();
         if (confirm("Kill running kernel? State will be lost.")) {
             this.dispatchEvent(new UIEvent('KillKernel'))
         }
@@ -481,6 +490,19 @@ export class KernelUI extends UIEventTarget {
             }
         } else {
             throw "State must be one of [busy, idle, dead, disconnected]";
+        }
+    }
+
+    collapse(force) {
+        const prefs = this.getPrefs();
+        if (force) {
+            this.dispatchEvent(new UIEvent('ToggleKernelUI', {force: true}))
+        } else if (prefs && prefs.collapsed) {
+            this.setPrefs({collapsed: false});
+            this.dispatchEvent(new UIEvent('ToggleKernelUI'))
+        } else {
+            this.setPrefs({collapsed: true});
+            this.dispatchEvent(new UIEvent('ToggleKernelUI'))
         }
     }
 }
@@ -1542,12 +1564,28 @@ export class NotebookListUI extends UIEventTarget {
                     span(['buttons'], [
                         iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => this.dispatchEvent(new UIEvent('NewNotebook')))
                     ])
-                ]),
+                ]).click(evt => this.collapse()),
                 div(['ui-panel-content'], [
                     this.treeView = div(['tree-view'], [])
                 ])
             ]
         );
+    }
+
+    // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
+    init() {
+        const prefs = this.getPrefs();
+        if (prefs && prefs.collapsed) {
+            this.collapse(true);
+        }
+    }
+
+    getPrefs() {
+        return prefs.get("NotebookListUI")
+    }
+
+    setPrefs(obj) {
+        prefs.set("NotebookListUI", {...this.getPrefs(), ...obj})
     }
 
     setItems(items) {
@@ -1651,6 +1689,19 @@ export class NotebookListUI extends UIEventTarget {
         if (!el) return;
         el.classList.toggle('expanded');
     }
+
+    collapse(force) {
+        const prefs = this.getPrefs();
+        if (force) {
+            this.dispatchEvent(new UIEvent('ToggleNotebookListUI', {force: true}))
+        } else if (prefs && prefs.collapsed) {
+            this.setPrefs({collapsed: false});
+            this.dispatchEvent(new UIEvent('ToggleNotebookListUI'))
+        } else {
+            this.setPrefs({collapsed: true});
+            this.dispatchEvent(new UIEvent('ToggleNotebookListUI'))
+        }
+    }
 }
 
 export class WelcomeUI extends UIEventTarget {
@@ -1704,6 +1755,8 @@ export class MainUI extends EventTarget {
         this.mainView.left.el.appendChild(this.browseUI.el);
         this.addEventListener('TriggerItem', evt => this.loadNotebook(evt.detail.item));
         this.browseUI.addEventListener('NewNotebook', evt => this.createNotebook(evt));
+        this.browseUI.addEventListener('ToggleNotebookListUI', (evt) => this.mainView.collapse('left', evt.detail && evt.detail.force));
+        this.browseUI.init();
 
         this.socket = socket;
 
@@ -1863,7 +1916,13 @@ export class MainUI extends EventTarget {
                 if (this.currentNotebook.notebookUI === notebookUI) {
                     notebookUI.onCellLanguageSelected(evt.newValue, path);
                 }
-            })
+            });
+
+            notebookUI.kernelUI.addEventListener('ToggleKernelUI', (evt) => {
+                this.mainView.collapse('right', evt.detail && evt.detail.force)
+            });
+            notebookUI.kernelUI.init();
+
         } else {
             this.tabUI.activateTab(notebookTab);
         }
