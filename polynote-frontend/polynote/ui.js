@@ -1890,6 +1890,18 @@ export class MainUI extends EventTarget {
             prefs.clear();
             location.reload(); //TODO: can we avoid reloading?
         });
+
+        this.toolbarUI.addEventListener('ToggleVIM', () => {
+            const currentVim = prefs.get('VIM');
+            if (currentVim) {
+                prefs.set('VIM', false);
+            } else {
+                prefs.set('VIM', true);
+            }
+
+            this.toolbarUI.settingsToolbar.colorVim();
+        });
+
     }
 
     showWelcome() {
