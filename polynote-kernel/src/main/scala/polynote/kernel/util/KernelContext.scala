@@ -86,7 +86,7 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
 
   private val reprsOfCache = new mutable.HashMap[global.Type, ReprsOf[Any]]()
 
-  def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = {
+  def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = if (value == null) List(StringRepr("null")) else {
     val otherReprs = try {
       reprsOfCache.getOrElseUpdate(typ,
         {
