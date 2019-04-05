@@ -270,7 +270,7 @@ body {
 
 
 .cell-container {
-  margin: 1em 0;
+  margin: 1em 0.2em;
   border-width: 1px 1px 1px 8px;
   border-color: transparent;
   border-style: solid;
@@ -280,6 +280,12 @@ body {
 
   &.selected, &.active {
     border-color: @ui-selected;
+    box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.50);
+
+  }
+
+  &.active .cell-input .cell-input-tools button {
+    display: block;
   }
 
   &.running {
@@ -304,12 +310,13 @@ body {
       bottom: 0;
       width: @cell-margin-width;
       background: @ui-background;
-      border: 1px solid @ui-border;
+      border-top-left-radius: 10px;
+      box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.25);
       padding: 4px;
       box-sizing: border-box;
 
       button {
-        display: block;
+        display: none;
         float: left;
       }
 
@@ -330,10 +337,10 @@ body {
       }
     }
 
-
     .cell-input-editor {
-      border: 1px solid @ui-border;
-      border-left: 2pt solid transparent;
+      //border: 1px solid @ui-border;
+      padding: 3pt;
+      padding-left: 5pt;
       margin-left: @cell-margin-width;
       min-height: 3em;
       overflow: hidden;
@@ -342,9 +349,11 @@ body {
     .exec-info {
       text-align: right;
       font-style: italic;
+      font-size: 0.8em;
+      color: #808080;
       padding: 4px;
-      border-bottom: 1px solid @ui-border;
-      border-right: 1px solid @ui-border;
+      border-bottom: 1px dashed @ui-border;
+      //border-right: 1px solid @ui-border;
       //border-right: 2pt solid transparent;
       display: none;
 
@@ -353,7 +362,7 @@ body {
       }
 
       .exec-timestamp::before {
-        content: "Execution on ";
+        content: "Ran on ";
       }
       .exec-timestamp::after {
         content: " took "
@@ -1157,18 +1166,15 @@ body {
       left: 0;
       bottom: 0;
       width: @cell-margin-width;
-      border: 1px solid @ui-border;
-      border-top: none;
-      border-bottom: none;
       background: @ui-background;
+      border-bottom-left-radius: 10px;
+      box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.25);
       box-sizing: border-box;
     }
 
     .cell-output-tools {
       display: none;
       padding: 0.1em 0.1em 0.1em @cell-margin-width;
-      border-right: 1px solid @ui-border;
-      border-bottom: 1px solid @ui-border;
       resize: vertical;
       position: relative;
       min-height: @tab-view-height;
@@ -1204,9 +1210,6 @@ body {
       left: 0;
       bottom: 0;
       width: @cell-margin-width;
-      border-left: 1px solid @ui-border;
-      border-right: 1px solid @ui-border;
-      background: @ui-background;
       box-sizing: border-box;
     }
 
@@ -2274,3 +2277,5 @@ button {
     background-color: rgba(253, 246, 227, 0.0);
   }
 }
+
+
