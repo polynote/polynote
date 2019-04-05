@@ -38,7 +38,7 @@ class SparkSqlInterpreter(val kernelContext: KernelContext) extends LanguageInte
   private lazy val datasetType = global.typeOf[Dataset[Any]].typeConstructor
 
   private def dataFrames(symbols: Seq[ResultValue]) = symbols.collect {
-    case rv@ResultValue(_, _, _, _, _, scalaType: global.Type) if scalaType.typeConstructor <:< datasetType => rv
+    case rv@ResultValue(_, _, _, _, _, scalaType: global.Type, _) if scalaType.typeConstructor <:< datasetType => rv
   }.toList
 
   private def registerTempViews(identifiers: List[Parser.TableIdentifier], cellContext: CellContext) = {

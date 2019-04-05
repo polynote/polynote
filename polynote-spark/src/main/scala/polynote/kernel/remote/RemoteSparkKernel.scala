@@ -93,7 +93,7 @@ class RemoteSparkKernel(
   }
 
   private def transformResult(result: Result): Result = result match {
-    case rv @ ResultValue(_, _, reprs, _, _, _) =>
+    case rv @ ResultValue(_, _, reprs, _, _, _, _) =>
       // the ResultValue will be missing its JVM value and its type. Also, any handle-based reprs won't refer to handles
       // within this JVM. We shouldn't need the value or type outside of the actual kernel, but we do have to fix
       // the repr handles.

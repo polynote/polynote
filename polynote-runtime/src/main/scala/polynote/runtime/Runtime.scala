@@ -21,6 +21,9 @@ object Runtime {
 
   def setProgress(progress: Double, detail: String): Unit = progressSetter(progress, detail)
 
+  def setExecutionStatus(startPos: Int, endPos: Int): Unit = executionStatusSetter(Some((startPos, endPos)))
+  def clearExecutionStatus(): Unit = executionStatusSetter(None)
+
   private var displayer: (String, String) => Unit = (_, _) => println("Display publisher is not correctly configured.")
 
   def setDisplayer(fn: (String, String) => Unit): Unit = displayer = fn
@@ -29,6 +32,11 @@ object Runtime {
 
   def setProgressSetter(fn: (Double,String) => Unit): Unit = progressSetter = fn
 
+  private var executionStatusSetter: Option[(Int, Int)] => Unit = (_ => ())
+
+  def setExecutionStatusSetter(fn: Option[(Int, Int)] => Unit): Unit = executionStatusSetter = fn
+
   def clear(): Unit = externalValues.clear()
 
+  def currentRuntime: Runtime.type = this
 }

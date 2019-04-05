@@ -1,7 +1,7 @@
 'use strict';
 
 import {
-    Codec, DataReader, DataWriter, discriminated, combined, arrayCodec,
+    Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, optional,
     str, shortStr, tinyStr, uint8, uint16, int32, ior
 } from './codec.js'
 
@@ -202,21 +202,36 @@ ClearResults.codec = Object.freeze({
   decode: (reader) => ClearResults.instance
 });
 
+export class PosRange {
+    static unapply(inst) {
+        return [inst.start, inst.end];
+    }
+
+    constructor(start, end) {
+        this.start = start;
+        this.end = end;
+        Object.freeze(this);
+    }
+}
+
+PosRange.codec = combined(int32, int32).to(PosRange);
+
 export class ResultValue extends Result {
     static get msgTypeId() { return 4; }
 
     static unapply(inst) {
-        return [inst.name, inst.typeName, inst.reprs, inst.sourceCell];
+        return [inst.name, inst.typeName, inst.reprs, inst.sourceCell, inst.pos];
     }
 
-    constructor(name, typeName, reprs, sourceCell) {
-        super(name, typeName, reprs, sourceCell);
+    constructor(name, typeName, reprs, sourceCell, pos) {
+        super(name, typeName, reprs, sourceCell, pos);
         this.name = name;
         this.typeName = typeName;
         if (reprs instanceof Array) { // conditional is so IntelliJ knows it's an array. Dem completions.
             this.reprs = reprs;
         }
         this.sourceCell = sourceCell;
+        this.pos = pos;
         Object.freeze(this);
     }
 
@@ -244,7 +259,7 @@ export class ResultValue extends Result {
     }
 }
 
-ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), int16).to(ResultValue);
+ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), int16, optional(PosRange.codec)).to(ResultValue);
 
 export class ExecutionInfo extends Result {
     static get msgTypeId() { return 5; }

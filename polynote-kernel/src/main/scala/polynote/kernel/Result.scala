@@ -155,7 +155,8 @@ final case class ResultValue(
   reprs: TinyList[ValueRepr],
   sourceCell: CellID,
   value: Any,
-  scalaType: Universe#Type
+  scalaType: Universe#Type,
+  pos: Option[(Int, Int)]
 ) extends Result {
 
   def isCellResult: Boolean = name == "Out"
@@ -170,27 +171,21 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
     globalType -> ctx.formatType(globalType)
   }
 
-  def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: CellID): ResultValue = {
+  def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: CellID, pos: Option[(Int, Int)] = None): ResultValue = {
     val (globalType, typeStr) = toGlobalType(ctx, typ)
-    ResultValue(name, typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ)
+    ResultValue(name, typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ, pos)
   }
 
   def apply(ctx: KernelContext, name: String, value: Any, sourceCell: CellID): ResultValue =
     apply(ctx, name, ctx.inferType(value), value, sourceCell)
 
-  def apply(ctx: KernelContext, name: String, reprs: TinyList[ValueRepr], typ: Universe#Type, value: Any, sourceCell: CellID): ResultValue = {
-    val (_, typeStr) = toGlobalType(ctx, typ)
-    ResultValue(name, typeStr, reprs, sourceCell, value, typ)
-  }
-
-
   // manual codec - we'll never encode nor decode `value` nor `scalaType`.
   implicit val codec: Codec[ResultValue] =
-    (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec(ValueReprCodec.codec) ~ short16).xmap(
+    (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec(ValueReprCodec.codec) ~ short16 ~ optional(bool(8), int32 ~ int32)).xmap(
       {
-        case (((name, typeName), reprs), sourceCell) => ResultValue(name, typeName, reprs, sourceCell, Unit, scala.reflect.runtime.universe.NoType)
+        case ((((name, typeName), reprs), sourceCell), optPos) => ResultValue(name, typeName, reprs, sourceCell, Unit, scala.reflect.runtime.universe.NoType, optPos)
       },
-      v => (((v.name, v.typeName), v.reprs), v.sourceCell)
+      v => ((((v.name, v.typeName), v.reprs), v.sourceCell), v.pos)
     )
 
 }

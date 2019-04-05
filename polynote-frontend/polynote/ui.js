@@ -85,7 +85,7 @@ export class KernelSymbolsUI {
         return this.addRow(name, type, value, this.resultSymbols);
     }
 
-    addSymbol(name, type, value, cellId) {
+    addSymbol(name, type, value, cellId, pos) {
         if (!this.symbols[cellId]) {
             this.symbols[cellId] = {};
         }
@@ -778,6 +778,13 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
+    setPos(id, pos) {
+        const cell = this.getCell(id);
+        if (cell instanceof CodeCell) {
+            cell.setExecutionPos(pos);
+        }
+    }
+
     firstCell() {
         return this.getCells()[0];
     }
@@ -1257,6 +1264,10 @@ export class NotebookUI extends UIEventTarget {
                     case messages.KernelInfo:
                         this.kernelUI.info.updateInfo(update.content);
                         break;
+
+                    case messages.ExecutionStatus:
+                        this.cellUI.setPos(update.cellId, update.pos);
+                        break;
                 }
             }
         });
@@ -1348,7 +1359,8 @@ export class NotebookUI extends UIEventTarget {
                         result.name,
                         result.typeName,
                         result.valueText,
-                        result.sourceCell);
+                        result.sourceCell,
+                        result.pos);
                 }
             }
         });
