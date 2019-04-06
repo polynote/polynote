@@ -138,15 +138,20 @@ class SocketSession(
             Stream.eval(notebookRef.info).map(info => info.map(KernelStatus(path, _))).unNone
       }
 
-    case CreateNotebook(path) =>
-      notebookManager.createNotebook(path).map {
-        actualPath => CreateNotebook(ShortString(actualPath))
+    case DownloadNotebook(path) =>
+      notebookManager.getRawNotebook(path).map {
+        nb =>
+          Stream.emit(NotebookFile(nb))
+      }
+
+    case CreateNotebook(path, maybeContent) =>
+      notebookManager.createNotebook(path, maybeContent).map {
+        actualPath => CreateNotebook(ShortString(actualPath), None)
       }.attempt.map {
         // TODO: is there somewhere more universal we can put this mapping?
         case Left(throwable) => Error(0, throwable)
         case Right(m) => m
       }.map(Stream.emit)
-
 
     case upConfig @ UpdateConfig(path, _, _, config) =>
       getNotebook(path).flatMap {

@@ -1574,7 +1574,10 @@ export class NotebookListUI extends UIEventTarget {
                 h2([], [
                     'Notebooks',
                     span(['buttons'], [
-                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => this.dispatchEvent(new UIEvent('NewNotebook')))
+                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => {
+                            evt.stopPropagation();
+                            this.dispatchEvent(new UIEvent('NewNotebook'));
+                        })
                     ])
                 ]).click(evt => this.collapse()),
                 div(['ui-panel-content'], [
@@ -1914,6 +1917,14 @@ export class MainUI extends EventTarget {
             this.toolbarUI.settingsToolbar.colorVim();
         });
 
+        this.toolbarUI.addEventListener('DownloadNotebook', () => {
+            const handler = this.socket.addMessageListener(messages.NotebookFile, (file) => {
+                this.socket.removeMessageListener(handler)
+                MainUI.download(window.location.pathname + "?download=true", this.currentNotebook.path);
+            });
+            this.socket.send(new messages.DownloadNotebook(this.currentNotebook.path))
+        });
+
     }
 
     showWelcome() {
@@ -1964,16 +1975,36 @@ export class MainUI extends EventTarget {
     }
 
     createNotebook(evt) {
-        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension)");
-        if (notebookPath) {
-            const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
-                this.socket.removeMessageListener(handler);
-                this.browseUI.addItem(actualPath);
-                this.loadNotebook(actualPath);
-            });
+        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension), or the URL of another Polynote instance.");
 
+        const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
+            this.socket.removeMessageListener(handler);
+            this.browseUI.addItem(actualPath);
+            this.loadNotebook(actualPath);
+        });
+
+        if (notebookPath.startsWith("http")) {
+            console.log("requesting notebook from somewhere else")
+            const xhr = new XMLHttpRequest();
+            const targetPath = notebookPath + "?download=true";
+            xhr.open("GET", targetPath);
+            xhr.responseType = "text";
+            xhr.onload = (event) => {
+                const res = xhr.response;
+                console.log("got this res", res)
+                this.socket.send(new messages.CreateNotebook("CopyOf"+notebookPath.split("/").pop(), res))
+            };
+            xhr.send(null);
+        } else if (notebookPath) {
             this.socket.send(new messages.CreateNotebook(notebookPath))
         }
+    }
+
+    static download(path, filename) {
+        const link = document.createElement('a');
+        link.setAttribute("href", path)
+        link.setAttribute("download", filename);
+        link.click()
     }
 }
 

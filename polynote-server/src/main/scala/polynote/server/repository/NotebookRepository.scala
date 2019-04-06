@@ -16,11 +16,15 @@ trait NotebookRepository[F[_]] {
 
   def loadNotebook(path: String): F[Notebook]
 
+  def loadRawNotebook(path: String): F[String]
+
   def saveNotebook(path: String, cells: Notebook): F[Unit]
 
   def listNotebooks(): F[List[String]]
 
   def createNotebook(path: String): F[String]
+
+  def createRawNotebook(path: String, contents: String): F[String]
 
 }
 
@@ -30,11 +34,15 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   def executionContext: ExecutionContext
   def config: PolynoteConfig
 
+  implicit val contextShift: ContextShift[IO]
+
   protected def pathOf(relativePath: String): Path = path.resolve(relativePath)
 
-  protected def loadString(path: String)(implicit contextShift: ContextShift[IO]): IO[String] = for {
+  protected def loadString(path: String): IO[String] = for {
     content <- readBytes(Files.newInputStream(pathOf(path)), chunkSize, executionContext)
   } yield new String(content.toArray, StandardCharsets.UTF_8)
+
+  override def loadRawNotebook(path: String): IO[String] = loadString(path)
 
   def writeString(relativePath: String, content: String): IO[Unit] = IO {
     val nbPath = pathOf(relativePath)
@@ -79,22 +87,35 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.exclusions.map(TinyString.apply)), Option(config.repositories), Option(config.spark)))
   )
 
-  def createNotebook(relativePath: String): IO[String] = {
+  def createNotebook(relativePath: String, saveFn: (String, String) => IO[Unit]): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
-
-    val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
 
     if (relativeDepth(relativePath) > maxDepth) {
       IO.raiseError(new IllegalArgumentException(s"Input path ($relativePath) too deep, maxDepth is $maxDepth"))
     } else {
       notebookExists(extPath).flatMap {
         case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
-        case false => saveNotebook(extPath, emptyNotebook(extPath, defaultTitle)).map {
+        case false => saveFn(extPath, noExtPath).map {
           _ => extPath
         }
       }
     }
+  }
+
+  def createNotebook(relativePath: String): IO[String] = {
+    createNotebook(relativePath, (extPath: String, noExtPath:String) => {
+      val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
+
+      saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))
+    })
+  }
+
+  override def createRawNotebook(path: String, contents: String): IO[String] = {
+    println(s"**** Creating notebook from path $path and contents $contents")
+    createNotebook(path, (extPath: String, _: String) => {
+      writeString(extPath, contents)
+    })
   }
 }

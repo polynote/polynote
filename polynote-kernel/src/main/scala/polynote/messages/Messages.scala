@@ -51,6 +51,12 @@ object Error extends MessageCompanion[Error](0) {
 final case class LoadNotebook(path: ShortString) extends Message
 object LoadNotebook extends MessageCompanion[LoadNotebook](1)
 
+final case class DownloadNotebook(path: ShortString) extends Message
+object DownloadNotebook extends MessageCompanion[DownloadNotebook](21)
+
+final case class NotebookFile(content: String) extends Message
+object NotebookFile extends MessageCompanion[NotebookFile](22)
+
 final case class CellMetadata(
   disableRun: Boolean = false,
   hideSource: Boolean = false,
@@ -220,7 +226,7 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
 final case class ListNotebooks(paths: List[ShortString]) extends Message
 object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 
-final case class CreateNotebook(path: ShortString) extends Message
+final case class CreateNotebook(path: ShortString, contents: Option[String]) extends Message
 object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
 final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate

@@ -5,6 +5,7 @@ import java.net.{URI, URL}
 import java.util.{Date, ServiceLoader}
 
 import cats.effect._
+import cats.implicits._
 import org.http4s._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeBuilder
@@ -37,10 +38,20 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     }
   }
 
+  def downloadFile(path: String, req: Request[IO]): IO[Response[IO]] = {
+    val nbLoc = new File(System.getProperty("user.dir")).toPath.resolve(s"notebooks/$path").toString
+    StaticFile.fromString(nbLoc, executionContext, Some(req)).getOrElseF(NotFound())
+  }
+
+  object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
+
   def route(notebookManager: NotebookManager[IO], watchUI: Boolean)(implicit timer: Timer[IO]): HttpRoutes[IO] = {
     HttpRoutes.of[IO] {
       case GET -> Root / "ws" => SocketSession(notebookManager).flatMap(_.toResponse)
       case req @ GET -> Root  => serveFile(indexFile, req, watchUI)
+      case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => IO {
+        logger.info(s"Download request for ${path}")
+      } *> downloadFile(path.toList.mkString("/"), req)
       case req @ GET -> "notebook" /: _ => serveFile(indexFile, req, watchUI)
       case req @ GET -> (Root / "polynote-assembly.jar") =>
         StaticFile.fromFile[IO](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), executionContext).getOrElseF(NotFound())

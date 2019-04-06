@@ -80,6 +80,38 @@ export class LoadNotebook extends Message {
 
 LoadNotebook.codec = combined(shortStr).to(LoadNotebook);
 
+export class DownloadNotebook extends Message {
+    static get msgTypeId() { return 21; }
+
+    static unapply(inst) {
+        return [inst.path];
+    }
+
+    constructor(path) {
+        super(path);
+        this.path = path;
+        Object.freeze(this);
+    }
+}
+
+DownloadNotebook.codec = combined(shortStr).to(DownloadNotebook);
+
+export class NotebookFile extends Message {
+    static get msgTypeId() { return 22; }
+
+    static unapply(inst) {
+        return [inst.content];
+    }
+
+    constructor(content) {
+        super(content);
+        this.content = content;
+        Object.freeze(this);
+    }
+}
+
+NotebookFile.codec = combined(str).to(NotebookFile);
+
 export class CellMetadata {
     static unapply(inst) {
         return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.executionInfo];
@@ -798,17 +830,18 @@ ListNotebooks.codec = combined(arrayCodec(int32, shortStr)).to(ListNotebooks);
 export class CreateNotebook extends Message {
     static get msgTypeId() { return 14; }
     static unapply(inst) {
-        return [inst.path];
+        return [inst.path, inst.contents];
     }
 
-    constructor(path) {
-        super(path);
+    constructor(path, contents) {
+        super(path, contents);
         this.path = path;
+        this.contents = contents;
         Object.freeze(this);
     }
 }
 
-CreateNotebook.codec = combined(shortStr).to(CreateNotebook);
+CreateNotebook.codec = combined(shortStr, optional(str)).to(CreateNotebook);
 
 export class DeleteCell extends NotebookUpdate {
     static get msgTypeId() { return 15; }
@@ -968,27 +1001,29 @@ export class ReleaseHandle extends Message {
 ReleaseHandle.codec = combined(shortStr, uint8, int32).to(ReleaseHandle);
 
 Message.codecs = [
-    Error,           // 0
-    LoadNotebook,    // 1
-    NotebookCells,   // 2
-    RunCell,         // 3
-    CellResult,      // 4
-    UpdateCell,      // 5
-    InsertCell,      // 6
-    CompletionsAt,   // 7
-    ParametersAt,    // 8
-    KernelStatus,    // 9
-    UpdateConfig,    // 10
-    SetCellLanguage, // 11
-    StartKernel,     // 12
-    ListNotebooks,   // 13
-    CreateNotebook,  // 14
-    DeleteCell,      // 15
-    ServerHandshake, // 16
-    HandleData,      // 17
-    CancelTasks,     // 18
-    ModifyStream,    // 19
-    ReleaseHandle,   // 20
+    Error,            // 0
+    LoadNotebook,     // 1
+    NotebookCells,    // 2
+    RunCell,          // 3
+    CellResult,       // 4
+    UpdateCell,       // 5
+    InsertCell,       // 6
+    CompletionsAt,    // 7
+    ParametersAt,     // 8
+    KernelStatus,     // 9
+    UpdateConfig,     // 10
+    SetCellLanguage,  // 11
+    StartKernel,      // 12
+    ListNotebooks,    // 13
+    CreateNotebook,   // 14
+    DeleteCell,       // 15
+    ServerHandshake,  // 16
+    HandleData,       // 17
+    CancelTasks,      // 18
+    ModifyStream,     // 19
+    ReleaseHandle,    // 20
+    DownloadNotebook, // 21
+    NotebookFile      // 22
 ];
 
 

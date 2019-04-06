@@ -72,7 +72,7 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers {
 
         repo.notebookExists(resultingPath).unsafeRunSync() shouldBe true
 
-        repo.loadString(s"$nbName.test")(IO.contextShift(repo.executionContext)).unsafeRunSync() should (include("foo") and include("This is a text cell"))
+        repo.loadString(s"$nbName.test").unsafeRunSync() should (include("foo") and include("This is a text cell"))
       }
 
       "should validate notebook paths by extension" in {
@@ -109,6 +109,18 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers {
 
         repo.listNotebooks().unsafeRunSync() should contain theSameElementsAs nbs.map(_ + ".test") :+ repo.path.relativize(extra).toString
       }
+
+      "should roundtrip raw notebooks" in {
+        val repo = new SimpleFileBasedRepo
+
+        val path = "bananas"
+        val content = "B! A! N! A! N! A! S!"
+
+        val loc = repo.createRawNotebook(path, content).unsafeRunSync()
+        loc shouldEqual "bananas.test"
+
+        repo.loadRawNotebook(loc).unsafeRunSync() shouldEqual content
+      }
     }
   }
 
@@ -137,6 +149,8 @@ class SimpleFileBasedRepo extends FileBasedRepository {
 
   override def executionContext: ExecutionContext = ExecutionContext.global
 
+  implicit val contextShift: ContextShift[IO] = IO.contextShift(executionContext)
+
   override protected def defaultExtension: String = "test"
 
   override def loadNotebook(path: String): IO[Notebook] = ???
@@ -144,8 +158,7 @@ class SimpleFileBasedRepo extends FileBasedRepository {
   override def saveNotebook(path: String, notebook: Notebook): IO[Unit] = writeString(path, notebook.cells.map(_.content).mkString)
 
   // visible for testing
-  override def loadString(path: String)(implicit contextShift: ContextShift[IO]): IO[String] = super.loadString(path)
+  override def loadString(path: String): IO[String] = super.loadString(path)
   override def validNotebook(path: Path): Boolean = super.validNotebook(path)
   override def maxDepth: Int = super.maxDepth
-
 }
