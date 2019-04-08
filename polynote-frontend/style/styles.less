@@ -286,9 +286,6 @@ body {
   // overflow: hidden;
   position: relative;
 
-  &.code-cell {
-    border: 1px solid #efefef;
-  }
 
   &.selected, &.active {
     border-radius: 6px;
@@ -324,8 +321,6 @@ body {
       bottom: 0;
       width: @cell-margin-width;
       background: @ui-background;
-      //border-top-left-radius: 5px;
-      box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.1);
       padding: 4px;
       box-sizing: border-box;
 
@@ -366,7 +361,6 @@ body {
       font-size: 0.8em;
       color: #808080;
       padding: 4px;
-      border-bottom: 1px dashed @ui-border;
       display: none;
 
       &.output {
@@ -391,6 +385,10 @@ body {
         display: none !important;
       }
     }
+  }
+
+  &.code-cell .cell-input {
+    border: 1px solid #efefef;
   }
 
   &.code-cell .cell-input .cell-input-editor {
@@ -1189,9 +1187,7 @@ body {
       left: 0;
       bottom: 0;
       width: @cell-margin-width;
-      background: @ui-background;
-      //border-bottom-left-radius: 5px;
-      box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.1);
+      //background: @ui-background;
       box-sizing: border-box;
     }
 
@@ -1240,8 +1236,7 @@ body {
       display: none;
       padding-top: 0.5em;
       padding-bottom: 0.5em;
-      border-right: 1px solid @ui-border;
-      border-bottom: 1px solid @ui-border;
+      border-bottom: 1px dashed @ui-border;
       left: @cell-margin-width;
       width: calc(100% - @cell-margin-width - 1px);
       overflow: auto;
