@@ -1197,6 +1197,7 @@ body {
       resize: vertical;
       position: relative;
       min-height: @tab-view-height;
+      overflow: scroll;
 
 
       .tab-container {
@@ -1391,6 +1392,10 @@ button {
 
 .notebook-content {
   overflow-y: auto;
+  padding: 2px;
+  border-left: 1px solid @ui-border;
+  border-right: 1px solid @ui-border;
+  border-bottom: 1px solid @ui-border;
 }
 
 @keyframes fadeOut {
@@ -1892,17 +1897,29 @@ button {
     flex-direction: row;
     flex-wrap: nowrap;
     justify-content: flex-start;
-    border: 1px solid @ui-border;
+    //border: 1px solid @ui-border;
     background: @ui-background;
     padding-top: 2px;
 
+    &:last-child:after {
+      border-bottom: 1px solid @ui-border;
+      content: "";
+      width: 100%;
+    }
+
+    &:not(:first-child):before {
+
+    }
+
     .tab {
       border-right: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
       border-top: 1px solid @ui-border;
 
       background: @ui-background-dark;
       display: grid;
       grid-template-columns: 1fr 1.5em;
+      flex-shrink: 0;
 
       user-select: none;
 
@@ -1914,11 +1931,18 @@ button {
       .close-button {
         opacity: 0.8;
       }
+
+      &:first-child {
+        border-left: 1px solid@ui-border;
+      }
+      &:last-child {
+        border-right: 1px solid @ui-border;
+      }
     }
 
     .tab.active {
       background: white;
-      flex-shrink: 0;
+      border-bottom: none;
     }
   }
 }
