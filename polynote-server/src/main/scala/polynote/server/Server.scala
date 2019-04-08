@@ -50,7 +50,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
       case GET -> Root / "ws" => SocketSession(notebookManager).flatMap(_.toResponse)
       case req @ GET -> Root  => serveFile(indexFile, req, watchUI)
       case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) =>
-        IO(logger.info(s"Download request for $path from ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req)
+        IO(logger.info(s"Download request for ${req.pathInfo} ffrom ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req)
       case req @ GET -> "notebook" /: _ => serveFile(indexFile, req, watchUI)
       case req @ GET -> (Root / "polynote-assembly.jar") =>
         StaticFile.fromFile[IO](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), executionContext).getOrElseF(NotFound())

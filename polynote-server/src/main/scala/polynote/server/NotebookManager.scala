@@ -76,8 +76,6 @@ class IONotebookManager(
 
   override def listNotebooks(): IO[List[String]] = repository.listNotebooks()
 
-  override def createNotebook(path: String, content: Option[String]): IO[String] = content match {
-    case None => repository.createNotebook(path)
-    case Some(content) => repository.createRawNotebook(path, content)
-  }
+  override def createNotebook(path: String, content: Option[String]): IO[String] =
+    repository.createNotebook(path, content)
 }
