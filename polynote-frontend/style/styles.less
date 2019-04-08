@@ -280,17 +280,22 @@ body {
 
 .cell-container {
   margin: 1em 1em;
-  border-width: 1px 1px 1px 8px;
-  border-color: transparent;
-  border-style: solid;
-  border-radius: 6px;
+  //border-width: 1px 1px 1px 8px;
+  //border-color: transparent;
+  //border-style: solid;
   // overflow: hidden;
   position: relative;
 
-  &.selected, &.active {
-    border-color: @ui-selected;
-    box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.50);
+  &.code-cell {
+    border: 1px solid #efefef;
+  }
 
+  &.selected, &.active {
+    border-radius: 6px;
+    border: 1px solid @ui-selected;
+    border-left-width: 8px;
+    box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
+    margin-left: 6px;
   }
 
   &.active .cell-input .cell-input-tools button {
@@ -319,8 +324,8 @@ body {
       bottom: 0;
       width: @cell-margin-width;
       background: @ui-background;
-      border-top-left-radius: 5px;
-      box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.25);
+      //border-top-left-radius: 5px;
+      box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.1);
       padding: 4px;
       box-sizing: border-box;
 
@@ -1185,8 +1190,8 @@ body {
       bottom: 0;
       width: @cell-margin-width;
       background: @ui-background;
-      border-bottom-left-radius: 5px;
-      box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.25);
+      //border-bottom-left-radius: 5px;
+      box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.1);
       box-sizing: border-box;
     }
 
