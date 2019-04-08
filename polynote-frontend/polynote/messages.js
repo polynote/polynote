@@ -80,38 +80,6 @@ export class LoadNotebook extends Message {
 
 LoadNotebook.codec = combined(shortStr).to(LoadNotebook);
 
-export class DownloadNotebook extends Message {
-    static get msgTypeId() { return 21; }
-
-    static unapply(inst) {
-        return [inst.path];
-    }
-
-    constructor(path) {
-        super(path);
-        this.path = path;
-        Object.freeze(this);
-    }
-}
-
-DownloadNotebook.codec = combined(shortStr).to(DownloadNotebook);
-
-export class NotebookFile extends Message {
-    static get msgTypeId() { return 22; }
-
-    static unapply(inst) {
-        return [inst.content];
-    }
-
-    constructor(content) {
-        super(content);
-        this.content = content;
-        Object.freeze(this);
-    }
-}
-
-NotebookFile.codec = combined(str).to(NotebookFile);
-
 export class CellMetadata {
     static unapply(inst) {
         return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.executionInfo];
@@ -1022,8 +990,6 @@ Message.codecs = [
     CancelTasks,      // 18
     ModifyStream,     // 19
     ReleaseHandle,    // 20
-    DownloadNotebook, // 21
-    NotebookFile      // 22
 ];
 
 

@@ -138,12 +138,6 @@ class SocketSession(
             Stream.eval(notebookRef.info).map(info => info.map(KernelStatus(path, _))).unNone
       }
 
-    case DownloadNotebook(path) =>
-      notebookManager.getRawNotebook(path).map {
-        nb =>
-          Stream.emit(NotebookFile(nb))
-      }
-
     case CreateNotebook(path, maybeContent) =>
       notebookManager.createNotebook(path, maybeContent).map {
         actualPath => CreateNotebook(ShortString(actualPath), None)

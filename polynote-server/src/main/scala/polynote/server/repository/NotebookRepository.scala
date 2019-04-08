@@ -16,8 +16,6 @@ trait NotebookRepository[F[_]] {
 
   def loadNotebook(path: String): F[Notebook]
 
-  def loadRawNotebook(path: String): F[String]
-
   def saveNotebook(path: String, cells: Notebook): F[Unit]
 
   def listNotebooks(): F[List[String]]
@@ -41,8 +39,6 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   protected def loadString(path: String): IO[String] = for {
     content <- readBytes(Files.newInputStream(pathOf(path)), chunkSize, executionContext)
   } yield new String(content.toArray, StandardCharsets.UTF_8)
-
-  override def loadRawNotebook(path: String): IO[String] = loadString(path)
 
   def writeString(relativePath: String, content: String): IO[Unit] = IO {
     val nbPath = pathOf(relativePath)

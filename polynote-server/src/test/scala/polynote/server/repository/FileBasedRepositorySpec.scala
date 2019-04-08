@@ -119,7 +119,7 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers {
         val loc = repo.createRawNotebook(path, content).unsafeRunSync()
         loc shouldEqual "bananas.test"
 
-        repo.loadRawNotebook(loc).unsafeRunSync() shouldEqual content
+        repo.loadString(loc).unsafeRunSync() shouldEqual content
       }
     }
   }

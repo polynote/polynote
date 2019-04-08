@@ -20,8 +20,6 @@ import scala.collection.immutable.SortedMap
   */
 abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
 
-  def getRawNotebook(path: String): F[String]
-
   def getNotebook(path: String): F[SharedNotebook[F]]
 
   def listNotebooks(): F[List[String]]
@@ -82,6 +80,4 @@ class IONotebookManager(
     case None => repository.createNotebook(path)
     case Some(content) => repository.createRawNotebook(path, content)
   }
-
-  override def getRawNotebook(path: String): IO[String] = repository.loadRawNotebook(path)
 }

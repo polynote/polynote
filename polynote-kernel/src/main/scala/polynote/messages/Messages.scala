@@ -51,12 +51,6 @@ object Error extends MessageCompanion[Error](0) {
 final case class LoadNotebook(path: ShortString) extends Message
 object LoadNotebook extends MessageCompanion[LoadNotebook](1)
 
-final case class DownloadNotebook(path: ShortString) extends Message
-object DownloadNotebook extends MessageCompanion[DownloadNotebook](21)
-
-final case class NotebookFile(content: String) extends Message
-object NotebookFile extends MessageCompanion[NotebookFile](22)
-
 final case class CellMetadata(
   disableRun: Boolean = false,
   hideSource: Boolean = false,

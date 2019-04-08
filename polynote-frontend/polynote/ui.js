@@ -766,7 +766,7 @@ export class NotebookCellsUI extends UIEventTarget {
         this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.cells = {};
         this.cellCount = 0;
-        window.addEventListener('resize', this.onWindowResize.bind(this));
+        window.addEventListener('resize', this.forceLayout.bind(this));
     }
 
     setStatus(id, status) {
@@ -837,7 +837,7 @@ export class NotebookCellsUI extends UIEventTarget {
         return result;
     }
 
-    onWindowResize(evt) {
+    forceLayout(evt) {
         if (this.resizeTimeout) {
             clearTimeout(this.resizeTimeout);
         }
@@ -1794,6 +1794,7 @@ export class MainUI extends EventTarget {
                 window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
                 this.currentNotebookPath = tab.name;
                 this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
+                this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
                 window.history.pushState({notebook: tab.name}, 'Polynote', '/');
             }
@@ -1918,11 +1919,7 @@ export class MainUI extends EventTarget {
         });
 
         this.toolbarUI.addEventListener('DownloadNotebook', () => {
-            const handler = this.socket.addMessageListener(messages.NotebookFile, (file) => {
-                this.socket.removeMessageListener(handler)
-                MainUI.download(window.location.pathname + "?download=true", this.currentNotebook.path);
-            });
-            this.socket.send(new messages.DownloadNotebook(this.currentNotebook.path))
+            MainUI.browserDownload(window.location.pathname + "?download=true", this.currentNotebook.path);
         });
 
     }
@@ -1986,11 +1983,12 @@ export class MainUI extends EventTarget {
         if (notebookPath.startsWith("http")) {
             const xhr = new XMLHttpRequest();
             const targetPath = notebookPath + "?download=true";
+            const nbFile = decodeURI(notebookPath.split("/").pop());
             xhr.open("GET", targetPath);
             xhr.responseType = "text";
             xhr.onload = (event) => {
                 const res = xhr.response;
-                this.socket.send(new messages.CreateNotebook(notebookPath.split("/").pop(), res))
+                this.socket.send(new messages.CreateNotebook(nbFile, res))
             };
             xhr.send(null);
         } else if (notebookPath) {
@@ -1998,7 +1996,7 @@ export class MainUI extends EventTarget {
         }
     }
 
-    static download(path, filename) {
+    static browserDownload(path, filename) {
         const link = document.createElement('a');
         link.setAttribute("href", path);
         link.setAttribute("download", filename);
