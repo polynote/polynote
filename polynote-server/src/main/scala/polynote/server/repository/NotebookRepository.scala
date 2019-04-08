@@ -80,7 +80,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.exclusions.map(TinyString.apply)), Option(config.repositories), Option(config.spark)))
   )
 
-  def createNotebook(relativePath: String, contents: Option[String]): IO[String] = {
+  def createNotebook(relativePath: String, contents: Option[String] = None): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
