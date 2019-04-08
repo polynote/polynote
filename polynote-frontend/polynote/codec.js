@@ -107,8 +107,8 @@ export class DataWriter {
     }
 
     ensureBufSize(newSize) {
-        while (this.buffer.byteLength < newSize) {
-            const newBuf = new ArrayBuffer(this.buffer.byteLength + this.chunkSize);
+        if (this.buffer.byteLength < newSize) {
+            const newBuf = new ArrayBuffer(this.buffer.byteLength + this.chunkSize * Math.ceil(newSize / this.chunkSize));
             new Uint8Array(newBuf).set(new Uint8Array(this.buffer));
             this.buffer = newBuf;
             this.dataView = new DataView(this.buffer);
