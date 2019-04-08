@@ -113,7 +113,6 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   }
 
   override def createRawNotebook(path: String, contents: String): IO[String] = {
-    println(s"**** Creating notebook from path $path and contents $contents")
     createNotebook(path, (extPath: String, _: String) => {
       writeString(extPath, contents)
     })

@@ -1975,7 +1975,7 @@ export class MainUI extends EventTarget {
     }
 
     createNotebook(evt) {
-        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension), or the URL of another Polynote instance.");
+        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension), or the full URL of another Polynote instance.");
 
         const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
             this.socket.removeMessageListener(handler);
@@ -1984,15 +1984,13 @@ export class MainUI extends EventTarget {
         });
 
         if (notebookPath.startsWith("http")) {
-            console.log("requesting notebook from somewhere else")
             const xhr = new XMLHttpRequest();
             const targetPath = notebookPath + "?download=true";
             xhr.open("GET", targetPath);
             xhr.responseType = "text";
             xhr.onload = (event) => {
                 const res = xhr.response;
-                console.log("got this res", res)
-                this.socket.send(new messages.CreateNotebook("CopyOf"+notebookPath.split("/").pop(), res))
+                this.socket.send(new messages.CreateNotebook(notebookPath.split("/").pop(), res))
             };
             xhr.send(null);
         } else if (notebookPath) {
@@ -2002,7 +2000,7 @@ export class MainUI extends EventTarget {
 
     static download(path, filename) {
         const link = document.createElement('a');
-        link.setAttribute("href", path)
+        link.setAttribute("href", path);
         link.setAttribute("download", filename);
         link.click()
     }
