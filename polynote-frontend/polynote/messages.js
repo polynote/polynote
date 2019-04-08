@@ -969,27 +969,27 @@ export class ReleaseHandle extends Message {
 ReleaseHandle.codec = combined(shortStr, uint8, int32).to(ReleaseHandle);
 
 Message.codecs = [
-    Error,            // 0
-    LoadNotebook,     // 1
-    NotebookCells,    // 2
-    RunCell,          // 3
-    CellResult,       // 4
-    UpdateCell,       // 5
-    InsertCell,       // 6
-    CompletionsAt,    // 7
-    ParametersAt,     // 8
-    KernelStatus,     // 9
-    UpdateConfig,     // 10
-    SetCellLanguage,  // 11
-    StartKernel,      // 12
-    ListNotebooks,    // 13
-    CreateNotebook,   // 14
-    DeleteCell,       // 15
-    ServerHandshake,  // 16
-    HandleData,       // 17
-    CancelTasks,      // 18
-    ModifyStream,     // 19
-    ReleaseHandle,    // 20
+    Error,           // 0
+    LoadNotebook,    // 1
+    NotebookCells,   // 2
+    RunCell,         // 3
+    CellResult,      // 4
+    UpdateCell,      // 5
+    InsertCell,      // 6
+    CompletionsAt,   // 7
+    ParametersAt,    // 8
+    KernelStatus,    // 9
+    UpdateConfig,    // 10
+    SetCellLanguage, // 11
+    StartKernel,     // 12
+    ListNotebooks,   // 13
+    CreateNotebook,  // 14
+    DeleteCell,      // 15
+    ServerHandshake, // 16
+    HandleData,      // 17
+    CancelTasks,     // 18
+    ModifyStream,    // 19
+    ReleaseHandle,   // 20
 ];
 
 

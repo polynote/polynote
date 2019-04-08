@@ -20,10 +20,7 @@ trait NotebookRepository[F[_]] {
 
   def listNotebooks(): F[List[String]]
 
-  def createNotebook(path: String): F[String]
-
-  def createRawNotebook(path: String, contents: String): F[String]
-
+  def createNotebook(path: String, contents: Option[String]): F[String]
 }
 
 trait FileBasedRepository extends NotebookRepository[IO] {
@@ -83,7 +80,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.exclusions.map(TinyString.apply)), Option(config.repositories), Option(config.spark)))
   )
 
-  def createNotebook(relativePath: String, saveFn: (String, String) => IO[Unit]): IO[String] = {
+  def createNotebook(relativePath: String, contents: Option[String]): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
@@ -93,24 +90,15 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     } else {
       notebookExists(extPath).flatMap {
         case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
-        case false => saveFn(extPath, noExtPath).map {
-          _ => extPath
-        }
+        case false =>
+          (contents match {
+            case Some(rawContents) =>
+              writeString(extPath, rawContents)
+            case None =>
+              val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
+              saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))
+          }) map (_ => extPath)
       }
     }
-  }
-
-  def createNotebook(relativePath: String): IO[String] = {
-    createNotebook(relativePath, (extPath: String, noExtPath:String) => {
-      val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
-
-      saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))
-    })
-  }
-
-  override def createRawNotebook(path: String, contents: String): IO[String] = {
-    createNotebook(path, (extPath: String, _: String) => {
-      writeString(extPath, contents)
-    })
   }
 }
