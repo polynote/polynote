@@ -355,6 +355,11 @@ body {
       overflow: hidden;
     }
 
+    .cell-footer {
+      display: grid;
+      grid-template-columns: [vim] auto [exec-info] 25%;
+    }
+
     .exec-info {
       text-align: right;
       font-style: italic;
@@ -362,6 +367,7 @@ body {
       color: #808080;
       padding: 4px;
       display: none;
+      grid-area: exec-info;
 
       &.output {
         display: block;
@@ -377,9 +383,12 @@ body {
 
     .vim-status {
       margin-left: @cell-margin-width;
-      &::before {
-        content: "VIM: "
-      }
+      padding: 2px 4px 2px 4px;
+      white-space: pre;
+      line-height: 1.5;
+      font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+      font-size: 11pt;
+      grid-area: vim;
 
       &.hide {
         display: none !important;

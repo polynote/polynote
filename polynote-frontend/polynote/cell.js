@@ -100,7 +100,10 @@ export class Cell extends UIEventTarget {
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
                 this.editorEl = div(['cell-input-editor'], []),
-                this.execInfoEl = div(["exec-info"], []),
+                div(['cell-footer'], [
+                    this.statusLine = div(["vim-status"], []),
+                    this.execInfoEl = div(["exec-info"], []),
+                ])
             ]),
             this.cellOutput = div(['cell-output'], [
                 div(['cell-output-container'], [
@@ -279,8 +282,6 @@ export class CodeCell extends Cell {
             this.setExecutionInfo(this.metadata.executionInfo);
         }
     }
-
-
 
     onChangeModelContent(event) {
         this.updateEditorHeight();
@@ -680,7 +681,7 @@ export class CodeCell extends Cell {
                     this.statusLine = div(["vim-status"], []);
                 }
                 this.vim = createVim(this.editor, this.statusLine);
-                this.cellInput.insertBefore(this.statusLine, this.execInfoEl);
+                this.cellInput.querySelector(".cell-footer").insertBefore(this.statusLine, this.execInfoEl);
             }
             this.statusLine.classList.toggle('hide', false);
         } else {
