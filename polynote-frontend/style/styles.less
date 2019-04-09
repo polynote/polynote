@@ -280,6 +280,9 @@ body {
 
 .cell-container {
   margin: 1em 1em;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  border-left-width: 8px;
   //border-width: 1px 1px 1px 8px;
   //border-color: transparent;
   //border-style: solid;
@@ -292,11 +295,10 @@ body {
     border: 1px solid @ui-selected;
     border-left-width: 8px;
     box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
-    margin-left: 6px;
   }
 
   &.active .cell-input .cell-input-tools button {
-    display: block;
+    visibility: visible;
   }
 
   &.running {
@@ -313,20 +315,33 @@ body {
 
   .cell-input {
     position: relative;
+    display: grid;
+    grid-template-rows: [header] 2.5em [content] auto [footer] 2em;
+    grid-template-columns: 100%;
 
     .cell-input-tools {
-      position: absolute;
+      //position: absolute;
       left: 0;
       top: 0;
       bottom: 0;
-      width: @cell-margin-width;
-      background: @ui-background;
+      //width: @cell-margin-width;
+      //background: @ui-background;
       padding: 4px;
       box-sizing: border-box;
+      grid-row: header;
+
+      display: grid;
+      grid-template-columns: [button] max-content [label] auto;
+      grid-template-rows: 100%;
 
       button {
-        display: none;
-        float: left;
+        visibility: hidden;
+        //float: left;
+      }
+
+      .run-cell {
+        padding: 0 4px;
+        grid-column: button;
       }
 
       button.run-cell.refresh .icon {
@@ -334,30 +349,48 @@ body {
       }
 
       .cell-label {
-        font-family: @code-fonts;
-        text-align: right;
-        font-size: 11pt;
-        float: right;
-        line-height: 34px
+        font-family: serif;
+        //text-align: right;
+        font-size: 14pt;
+        //float: right;
+        line-height: 34px;
+        grid-column: label;
+        margin-left: 1em;
+      }
+
+      .cell-label:before {
+        content: 'Cell '
       }
 
       .cell-label:after {
-        content: ':'
+        content: '. '
       }
     }
 
     .cell-input-editor {
-      //border: 1px solid @ui-border;
-      padding: 3pt;
-      padding-left: 5pt;
-      margin-left: @cell-margin-width;
+      border-top: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
+
+      padding: 3pt 3pt 3pt 20pt;
+      //margin-left: @cell-margin-width;
       min-height: 3em;
       overflow: hidden;
+      grid-row: content;
     }
 
     .cell-footer {
       display: grid;
-      grid-template-columns: [vim] auto [exec-info] 25%;
+      grid-template-columns: [vim] auto [exec-info] max-content;
+      grid-template-rows: auto;
+      grid-row: footer;
+      margin-left: 1.5em;
+      padding: 2px 4px 2px 4px;
+      line-height: 1.5;
+      font-size: 11pt;
+
+      &.text-cell {
+        display: none;
+      }
     }
 
     .exec-info {
@@ -382,12 +415,8 @@ body {
     }
 
     .vim-status {
-      margin-left: @cell-margin-width;
-      padding: 2px 4px 2px 4px;
       white-space: pre;
-      line-height: 1.5;
       font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
-      font-size: 11pt;
       grid-area: vim;
 
       &.hide {
@@ -397,7 +426,7 @@ body {
   }
 
   &.code-cell .cell-input {
-    border: 1px solid #efefef;
+    //border: 1px solid #efefef;
   }
 
   &.code-cell .cell-input .cell-input-editor {
@@ -425,6 +454,7 @@ body {
 
     .cell-input {
       border-left: @cell-margin-width solid transparent;
+      grid-template-rows: auto;
     }
 
     .cell-input-tools {
@@ -1195,26 +1225,29 @@ body {
       top: 0;
       left: 0;
       bottom: 0;
-      width: @cell-margin-width;
+      //width: @cell-margin-width;
       //background: @ui-background;
       box-sizing: border-box;
     }
 
     .cell-output-tools {
       display: none;
-      padding: 0.1em 0.1em 0.1em @cell-margin-width;
-      resize: vertical;
+      padding: 0.1em;
       position: relative;
       min-height: @tab-view-height;
-      overflow: scroll;
+      overflow: auto;
 
 
       .tab-container {
         border-right: 0px;
       }
 
+      .repr-ui {
+        padding-left: 1em;
+      }
+
       .repr-ui-content .output {
-        padding: 0.5em 1em;
+        //padding: 0.5em 1em;
       }
 
     }
@@ -1223,35 +1256,35 @@ body {
       color: #D84315;
       font-family: @code-fonts;
       font-size: 11pt;
-      position: absolute;
-      left: 0;
-      top: 6px;
-      width: @cell-margin-width;
-      padding: 0 4px;
-      text-align: right;
-      box-sizing: border-box;
+      //position: absolute;
+      //left: 0;
+      //top: 6px;
+      //width: @cell-margin-width;
+      //text-align: right;
+      //box-sizing: border-box;
     }
 
-    .cell-output-container::before {
-      content: " ";
-      position: absolute;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      width: @cell-margin-width;
-      box-sizing: border-box;
-    }
+    //.cell-output-container::before {
+    //  content: " ";
+    //  position: absolute;
+    //  top: 0;
+    //  left: 0;
+    //  bottom: 0;
+    //  width: @cell-margin-width;
+    //  box-sizing: border-box;
+    //}
 
     .cell-output-display {
       display: none;
       padding-top: 0.5em;
       padding-bottom: 0.5em;
+      margin-left: 1.5em;
+      margin-bottom: 1em;
       border-bottom: 1px dashed @ui-border;
-      left: @cell-margin-width;
-      width: calc(100% - @cell-margin-width - 1px);
       overflow: auto;
       resize: vertical;
       position: relative;
+      background-color: @ui-background;
 
       .output {
         padding-left: 1em;
@@ -2073,6 +2106,8 @@ button {
 
 .notebook-cells {
   position: relative;
+  padding-left: 1em;
+  padding-right: 1em;
 }
 
 .latex-editor {

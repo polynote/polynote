@@ -96,12 +96,15 @@ export class Cell extends UIEventTarget {
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
-                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
+                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run').click((evt) => {
+                        evt.stopPropagation();
+                        this.dispatchEvent(new RunCellEvent(this.id));
+                    }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
                 this.editorEl = div(['cell-input-editor'], []),
                 div(['cell-footer'], [
-                    this.statusLine = div(["vim-status"], []),
+                    this.statusLine = div(["vim-status", "hide"], []),
                     this.execInfoEl = div(["exec-info"], []),
                 ])
             ]),
@@ -117,11 +120,6 @@ export class Cell extends UIEventTarget {
         ]).withId(`Cell${id}`);
 
         this.container.cell = this;
-
-        // TODO: this is incomplete (hook up all the run buttons etc)
-        this.cellInput.querySelector('.run-cell').onclick = (evt) => {
-            this.dispatchEvent(new RunCellEvent(this.id));
-        };
 
         // clicking anywhere in a cell should select it
         this.container.addEventListener('mousedown', evt => this.makeActive());
@@ -214,7 +212,7 @@ export class CodeCell extends Cell {
         super(id, content, language, path, metadata);
         this.container.classList.add('code-cell');
 
-        this.cellInputTools.insertBefore(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
+        this.cellInputTools.appendChild(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
 
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
