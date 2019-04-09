@@ -8,8 +8,8 @@ import { default as Diff } from './diff.js'
 import {ReprUI} from "./repr_ui";
 import {details} from "./tags";
 import {ExecutionInfo} from "./result";
-import { initVimMode } from 'monaco-vim';
 import {prefs} from "./prefs";
+import {createVim} from "./vim";
 
 const JsDiff = new Diff();
 
@@ -275,6 +275,8 @@ export class CodeCell extends Cell {
             this.setExecutionInfo(this.metadata.executionInfo);
         }
     }
+
+
 
     onChangeModelContent(event) {
         this.updateEditorHeight();
@@ -669,7 +671,7 @@ export class CodeCell extends Cell {
                 if (!this.statusLine) {
                     this.statusLine = div(["vim-status"], []);
                 }
-                this.vim = initVimMode(this.editor, this.statusLine);
+                this.vim = createVim(this.editor, this.statusLine);
                 this.cellInput.insertBefore(this.statusLine, this.execInfoEl);
             }
             this.statusLine.classList.toggle('hide', false);
