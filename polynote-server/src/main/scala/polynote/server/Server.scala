@@ -9,7 +9,6 @@ import cats.implicits._
 import org.http4s._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeBuilder
-import org.http4s.server.middleware.{CORS, CORSConfig}
 import org.log4s.{Logger, getLogger}
 import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.CoursierFetcher
@@ -20,7 +19,6 @@ import polynote.buildinfo.BuildInfo
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
 
 trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
 
@@ -124,10 +122,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     exitCode        <- BlazeBuilder[IO]
                         .bindHttp(port, address)
                         .withWebSockets(true)
-                        .mountService(CORS(route(notebookManager, args.watchUI), CORSConfig(
-                          anyOrigin = true,
-                          allowCredentials = true,
-                          maxAge = 1.day.toSeconds)), "/")
+                        .mountService(route(notebookManager, args.watchUI), "/")
                         .serve
                         .compile
                         .toList
