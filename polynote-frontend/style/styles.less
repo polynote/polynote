@@ -298,7 +298,14 @@ body {
   }
 
   &.active .cell-input .cell-input-tools button {
-    visibility: visible;
+    display: block;
+    line-height: 2;
+    background-size: 20px 20px;
+    font-size: 24px;
+  }
+
+  &.active .cell-label {
+    display: none;
   }
 
   &.running {
@@ -316,32 +323,28 @@ body {
   .cell-input {
     position: relative;
     display: grid;
-    grid-template-rows: [header] 2.5em [content] auto [footer] 2em;
-    grid-template-columns: 100%;
+    grid-template-areas: "tools content"
+                         "footer footer";
+    grid-template-columns: 3em auto;
 
     .cell-input-tools {
       //position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
+      //left: 0;
+      //top: 0;
+      //bottom: 0;
       //width: @cell-margin-width;
       //background: @ui-background;
-      padding: 4px;
       box-sizing: border-box;
-      grid-row: header;
-
-      display: grid;
-      grid-template-columns: [button] max-content [label] auto;
-      grid-template-rows: 100%;
+      grid-area: tools;
 
       button {
-        visibility: hidden;
+        display: none;
         //float: left;
       }
 
       .run-cell {
         padding: 0 4px;
-        grid-column: button;
+        grid-area: tools;
       }
 
       button.run-cell.refresh .icon {
@@ -349,21 +352,11 @@ body {
       }
 
       .cell-label {
-        font-family: serif;
+        font-family: @code-fonts;
         //text-align: right;
-        font-size: 14pt;
+        font-size: 24pt;
         //float: right;
-        line-height: 34px;
-        grid-column: label;
-        margin-left: 1em;
-      }
-
-      .cell-label:before {
-        content: 'Cell '
-      }
-
-      .cell-label:after {
-        content: '. '
+        color: @ui-background-dark;
       }
     }
 
@@ -371,19 +364,19 @@ body {
       border-top: 1px solid @ui-border;
       border-bottom: 1px solid @ui-border;
 
-      padding: 3pt 3pt 3pt 20pt;
+      padding: 3pt;
       //margin-left: @cell-margin-width;
       min-height: 3em;
       overflow: hidden;
-      grid-row: content;
+      grid-area: content;
     }
 
     .cell-footer {
       display: grid;
       grid-template-columns: [vim] auto [exec-info] max-content;
       grid-template-rows: auto;
-      grid-row: footer;
-      margin-left: 1.5em;
+      grid-area: footer;
+      margin-left: 2.5em;
       padding: 2px 4px 2px 4px;
       line-height: 1.5;
       font-size: 11pt;
@@ -1170,6 +1163,7 @@ body {
 
   .cell-output {
     position: relative;
+    margin-left: 2.5em;
 
     .errors, .output {
       display: block !important;
@@ -1278,7 +1272,6 @@ body {
       display: none;
       padding-top: 0.5em;
       padding-bottom: 0.5em;
-      margin-left: 1.5em;
       margin-bottom: 1em;
       border-bottom: 1px dashed @ui-border;
       overflow: auto;
