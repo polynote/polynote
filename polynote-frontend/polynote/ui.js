@@ -1981,16 +1981,9 @@ export class MainUI extends EventTarget {
         });
 
         if (notebookPath.startsWith("http")) {
-            const xhr = new XMLHttpRequest();
-            const targetPath = notebookPath + "?download=true";
             const nbFile = decodeURI(notebookPath.split("/").pop());
-            xhr.open("GET", targetPath);
-            xhr.responseType = "text";
-            xhr.onload = (event) => {
-                const res = xhr.response;
-                this.socket.send(new messages.CreateNotebook(nbFile, res))
-            };
-            xhr.send(null);
+            const targetPath = notebookPath + "?download=true";
+            this.socket.send(new messages.CreateNotebook(nbFile, targetPath));
         } else if (notebookPath) {
             this.socket.send(new messages.CreateNotebook(notebookPath))
         }

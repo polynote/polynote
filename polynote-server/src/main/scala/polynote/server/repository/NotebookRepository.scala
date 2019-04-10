@@ -5,6 +5,8 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
 
 import scala.collection.JavaConverters._
 import cats.effect.{ContextShift, IO}
+import org.http4s.client._
+import org.http4s.client.blaze._
 import polynote.config.{DependencyConfigs, PolynoteConfig}
 import polynote.messages._
 
@@ -20,7 +22,7 @@ trait NotebookRepository[F[_]] {
 
   def listNotebooks(): F[List[String]]
 
-  def createNotebook(path: String, contents: Option[String]): F[String]
+  def createNotebook(path: String, maybeURI: Option[String]): F[String]
 }
 
 trait FileBasedRepository extends NotebookRepository[IO] {
@@ -80,7 +82,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.exclusions.map(TinyString.apply)), Option(config.repositories), Option(config.spark)))
   )
 
-  def createNotebook(relativePath: String, contents: Option[String] = None): IO[String] = {
+  def createNotebook(relativePath: String, maybeURI: Option[String] = None): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
@@ -91,9 +93,13 @@ trait FileBasedRepository extends NotebookRepository[IO] {
       notebookExists(extPath).flatMap {
         case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
         case false =>
-          (contents match {
-            case Some(rawContents) =>
-              writeString(extPath, rawContents)
+          (maybeURI match {
+            case Some(uri) =>
+              BlazeClientBuilder[IO](executionContext).resource.use { client =>
+                client.expect[String](uri)
+              }.flatMap { contents =>
+                writeString(extPath, contents)
+              }
             case None =>
               val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
               saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))

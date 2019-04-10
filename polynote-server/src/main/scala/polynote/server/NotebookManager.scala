@@ -24,7 +24,7 @@ abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
 
   def listNotebooks(): F[List[String]]
 
-  def createNotebook(path: String, content: Option[String]): F[String]
+  def createNotebook(path: String, maybeURI: Option[String]): F[String]
 
   def interpreterNames: Map[String, String]
 
@@ -76,6 +76,6 @@ class IONotebookManager(
 
   override def listNotebooks(): IO[List[String]] = repository.listNotebooks()
 
-  override def createNotebook(path: String, content: Option[String]): IO[String] =
-    repository.createNotebook(path, content)
+  override def createNotebook(path: String, maybeURI: Option[String]): IO[String] =
+    repository.createNotebook(path, maybeURI)
 }

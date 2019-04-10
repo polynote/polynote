@@ -84,6 +84,7 @@ val `polynote-server` = project.settings(
     "org.http4s" %% "http4s-core" % versions.http4s,
     "org.http4s" %% "http4s-dsl" % versions.http4s,
     "org.http4s" %% "http4s-blaze-server" % versions.http4s,
+    "org.http4s" %% "http4s-blaze-client" % versions.http4s,
     "org.scodec" %% "scodec-core" % "1.10.3",
     "io.circe" %% "circe-parser" % "0.10.0",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",

@@ -809,7 +809,7 @@ export class CreateNotebook extends Message {
     }
 }
 
-CreateNotebook.codec = combined(shortStr, optional(str)).to(CreateNotebook);
+CreateNotebook.codec = combined(shortStr, optional(shortStr)).to(CreateNotebook);
 
 export class DeleteCell extends NotebookUpdate {
     static get msgTypeId() { return 15; }

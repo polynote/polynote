@@ -138,8 +138,8 @@ class SocketSession(
             Stream.eval(notebookRef.info).map(info => info.map(KernelStatus(path, _))).unNone
       }
 
-    case CreateNotebook(path, maybeContent) =>
-      notebookManager.createNotebook(path, maybeContent).map {
+    case CreateNotebook(path, maybeUri) =>
+      notebookManager.createNotebook(path, maybeUri).map {
         actualPath => CreateNotebook(ShortString(actualPath), None)
       }.attempt.map {
         // TODO: is there somewhere more universal we can put this mapping?
