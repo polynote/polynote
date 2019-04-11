@@ -425,7 +425,7 @@ export class CodeCell extends Cell {
 
 
             if (!this.stdOutEl || !this.stdOutEl.parentNode) {
-                this.stdOutEl = this.mimeEl(mimeType, args, document.createTextNode(content));
+                this.stdOutEl = this.mimeEl(mimeType, args, []);
                 this.stdOutLines = lines.length;
                 this.cellOutputDisplay.appendChild(this.stdOutEl);
             } else {
@@ -458,7 +458,11 @@ export class CodeCell extends Cell {
                     ]);
 
                     // split the existing text node into first 5 lines and the rest
-                    const textNode = this.stdOutEl.childNodes[0];
+                    let textNode = this.stdOutEl.childNodes[0];
+                    if (!textNode) {
+                        textNode = document.createTextNode(content);
+                        this.stdOutEl.appendChild(textNode);
+                    }
                     const hidden = splitAtLine(textNode, 6);
                     const after = splitAtLine(hidden, numHiddenLines);
 
