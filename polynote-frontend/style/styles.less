@@ -299,14 +299,14 @@ body {
 
   &.active .cell-input .cell-input-tools button {
     display: block;
-    line-height: 2;
+    line-height: 1;
     background-size: 20px 20px;
     font-size: 24px;
   }
 
-  &.active .cell-label {
-    display: none;
-  }
+  //&.active .cell-label {
+  //  display: none;
+  //}
 
   &.running {
     border-color: green;
@@ -343,7 +343,7 @@ body {
       }
 
       .run-cell {
-        padding: 0 4px;
+        //padding: 0 4px;
         grid-area: tools;
       }
 
@@ -351,20 +351,20 @@ body {
         font-size: 8px;
       }
 
-      .cell-label {
-        font-family: @code-fonts;
-        //text-align: right;
-        font-size: 24pt;
-        //float: right;
-        color: @ui-background-dark;
-      }
+      //.cell-label {
+      //  font-family: @code-fonts;
+      //  //text-align: right;
+      //  font-size: 24pt;
+      //  //float: right;
+      //  color: @ui-background-dark;
+      //}
     }
 
     .cell-input-editor {
       border-top: 1px solid @ui-border;
       border-bottom: 1px solid @ui-border;
 
-      padding: 3pt;
+      //padding: 3pt;
       //margin-left: @cell-margin-width;
       min-height: 3em;
       overflow: hidden;
@@ -399,11 +399,19 @@ body {
         display: block;
       }
 
+      .cell-label::before {
+        content: "Cell ";
+      }
+
+      .cell-label::after {
+        content: " ";
+      }
+
       .exec-timestamp::before {
-        content: "Ran on ";
+        content: "ran on ";
       }
       .exec-timestamp::after {
-        content: " took "
+        content: " took ";
       }
     }
 
@@ -416,6 +424,10 @@ body {
         display: none !important;
       }
     }
+  }
+
+  &.code-cell .exec-info {
+    display: block;
   }
 
   &.code-cell .cell-input {
@@ -446,7 +458,6 @@ body {
     }
 
     .cell-input {
-      border-left: @cell-margin-width solid transparent;
       grid-template-rows: auto;
     }
 
@@ -456,7 +467,7 @@ body {
 
     .cell-input-editor {
       margin: 0;
-      padding: 1em;
+      padding: 1.5em;
       border: none;
       min-height: 1em;
     }
@@ -1237,7 +1248,7 @@ body {
       }
 
       .repr-ui {
-        padding-left: 1em;
+        padding-left: 2.5em;
       }
 
       .repr-ui-content .output {
@@ -1280,7 +1291,7 @@ body {
       background-color: @ui-background;
 
       .output {
-        padding-left: 1em;
+        padding-left: 2.5em;
       }
 
       .errors {

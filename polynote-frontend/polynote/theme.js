@@ -9,6 +9,7 @@ export const theme = {
   colors: {
     'editor.lineHighlightBackground': '#f3f3f3',
     'editor.lineHighlightBorder': '#00000000',
+    'editorGutter.background': '#f5f5f5',
     'editorOverviewRuler.border': "#00000000"
   }
 };

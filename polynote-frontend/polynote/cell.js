@@ -97,7 +97,6 @@ export class Cell extends UIEventTarget {
             this.cellInput = div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', '', 'Run').click((evt) => {
-                        evt.stopPropagation();
                         this.dispatchEvent(new RunCellEvent(this.id));
                     }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
@@ -105,7 +104,7 @@ export class Cell extends UIEventTarget {
                 this.editorEl = div(['cell-input-editor'], []),
                 div(['cell-footer'], [
                     this.statusLine = div(["vim-status", "hide"], []),
-                    this.execInfoEl = div(["exec-info"], []),
+                    this.execInfoEl = div(["exec-info"], [span(["cell-label"], [id + ""])]),
                 ])
             ]),
             this.cellOutput = div(['cell-output'], [
@@ -211,8 +210,6 @@ export class CodeCell extends Cell {
     constructor(id, content, language, path, metadata) {
         super(id, content, language, path, metadata);
         this.container.classList.add('code-cell');
-
-        this.cellInputTools.appendChild(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
 
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
@@ -595,8 +592,8 @@ export class CodeCell extends Cell {
             this.execInfoEl.innerHTML = '';
 
             // populate display
+            this.execInfoEl.appendChild(span(["cell-label"], [this.id + ""]));
             this.execInfoEl.appendChild(span(['exec-timestamp'], [date.toLocaleString("en-US", {timeZoneName: "short"})]));
-
             this.execInfoEl.appendChild(span(['exec-duration'], [CodeCell.prettyDuration(result.durationMs)]));
             this.execInfoEl.classList.add('output');
         } else {
