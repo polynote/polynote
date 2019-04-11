@@ -2003,6 +2003,19 @@ button {
     max-height: 100%;
     background: white;
   }
+
+  &.highlight {
+    .tree-view {
+      border: 5px dashed green;
+      border-radius: 10px;
+      transition: border 200ms;
+      ul {
+        filter: blur(2px);
+        opacity: 0.5;
+        transition: all 200ms;
+      }
+    }
+  }
 }
 
 .create-notebook {

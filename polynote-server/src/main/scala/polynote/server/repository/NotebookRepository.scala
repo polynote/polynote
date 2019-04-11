@@ -8,6 +8,7 @@ import cats.effect.{ContextShift, IO}
 import org.http4s.client._
 import org.http4s.client.blaze._
 import polynote.config.{DependencyConfigs, PolynoteConfig}
+import polynote.kernel.util.Nand
 import polynote.messages._
 
 import scala.concurrent.ExecutionContext
@@ -22,7 +23,7 @@ trait NotebookRepository[F[_]] {
 
   def listNotebooks(): F[List[String]]
 
-  def createNotebook(path: String, maybeURI: Option[String]): F[String]
+  def createNotebook(path: String, maybeUriOrContent: Nand[String, String]): F[String]
 }
 
 trait FileBasedRepository extends NotebookRepository[IO] {
@@ -82,7 +83,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.exclusions.map(TinyString.apply)), Option(config.repositories), Option(config.spark)))
   )
 
-  def createNotebook(relativePath: String, maybeURI: Option[String] = None): IO[String] = {
+  def createNotebook(relativePath: String, maybeUriOrContent: Nand[String, String] = Nand.Neither): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
@@ -93,17 +94,22 @@ trait FileBasedRepository extends NotebookRepository[IO] {
       notebookExists(extPath).flatMap {
         case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
         case false =>
-          (maybeURI match {
-            case Some(uri) =>
+          maybeUriOrContent.fold(
+            uri => {
               BlazeClientBuilder[IO](executionContext).resource.use { client =>
                 client.expect[String](uri)
-              }.flatMap { contents =>
-                writeString(extPath, contents)
+              }.flatMap { content =>
+                writeString(extPath, content)
               }
-            case None =>
+            },
+            content => {
+              writeString(extPath, content)
+            },
+            {
               val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
               saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))
-          }) map (_ => extPath)
+            }
+          ) map (_ => extPath)
       }
     }
   }

@@ -2,11 +2,10 @@
 
 import {
     DataReader, DataWriter, Codec, combined, arrayCodec, discriminated, optional, mapCodec, bufferCodec,
-    str, shortStr, tinyStr, uint8, uint16, int16, int32, uint32, bool
+    str, shortStr, tinyStr, uint8, uint16, int16, int32, uint32, bool, either, float64, Pair
 } from './codec.js'
 
 import { Result, KernelErrorWithCause, PosRange } from './result.js'
-import {float64, Pair} from "./codec";
 import {StreamingDataRepr} from "./value_repr";
 import {ExecutionInfo} from "./result";
 
@@ -798,18 +797,18 @@ ListNotebooks.codec = combined(arrayCodec(int32, shortStr)).to(ListNotebooks);
 export class CreateNotebook extends Message {
     static get msgTypeId() { return 14; }
     static unapply(inst) {
-        return [inst.path, inst.contents];
+        return [inst.path, inst.uriOrContents];
     }
 
-    constructor(path, contents) {
-        super(path, contents);
+    constructor(path, uriOrContents) {
+        super(path, uriOrContents);
         this.path = path;
-        this.contents = contents;
+        this.uriOrContents = uriOrContents;
         Object.freeze(this);
     }
 }
 
-CreateNotebook.codec = combined(shortStr, optional(shortStr)).to(CreateNotebook);
+CreateNotebook.codec = combined(shortStr, optional(either(shortStr, str))).to(CreateNotebook);
 
 export class DeleteCell extends NotebookUpdate {
     static get msgTypeId() { return 15; }

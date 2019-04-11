@@ -16,6 +16,7 @@ import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
 import {ExecutionInfo} from "./result";
 import {CellMetadata} from "./messages";
+import {Either} from "./codec";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -1585,6 +1586,11 @@ export class NotebookListUI extends UIEventTarget {
                 ])
             ]
         );
+
+        // Drag n' drop!
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+            this.el.addEventListener(evt, this.fileHandler.bind(this), false)
+        });
     }
 
     // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
@@ -1715,6 +1721,33 @@ export class NotebookListUI extends UIEventTarget {
         } else {
             this.setPrefs({collapsed: true});
             this.dispatchEvent(new UIEvent('ToggleNotebookListUI'))
+        }
+    }
+
+    fileHandler(evt) {
+        // prevent browser from displaying the ipynb file.
+        evt.stopPropagation();
+        evt.preventDefault();
+
+        // handle highlighting
+        if (evt.type === "dragenter" || evt.type === "dragover") {
+            this.dragEnter = evt.target;
+            this.el.classList.add('highlight');
+        } else if (evt.type === "drop" || (evt.type === "dragleave" && evt.target === this.dragEnter)) {
+            this.el.classList.remove('highlight');
+        }
+
+        // actually handle the file
+        if (evt.type === "drop") {
+            const xfer = evt.dataTransfer;
+            const files = xfer.files;
+            [...files].forEach((file) => {
+                const reader = new FileReader();
+                reader.readAsText(file);
+                reader.onloadend = () => {
+                    this.dispatchEvent(new UIEvent('NewNotebook', {name: file.name, content: reader.result}))
+                }
+            })
         }
     }
 }
@@ -1972,20 +2005,24 @@ export class MainUI extends EventTarget {
     }
 
     createNotebook(evt) {
-        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension), or the full URL of another Polynote instance.");
-
         const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
             this.socket.removeMessageListener(handler);
             this.browseUI.addItem(actualPath);
             this.loadNotebook(actualPath);
         });
 
-        if (notebookPath.startsWith("http")) {
-            const nbFile = decodeURI(notebookPath.split("/").pop());
-            const targetPath = notebookPath + "?download=true";
-            this.socket.send(new messages.CreateNotebook(nbFile, targetPath));
-        } else if (notebookPath) {
-            this.socket.send(new messages.CreateNotebook(notebookPath))
+        if (evt.detail && evt.detail.name) { // the evt has all we need
+            this.socket.send(new messages.CreateNotebook(evt.detail.name, Either.right(evt.detail.content)));
+        } else {
+            const notebookPath = prompt("Enter the name of the new notebook (no need for an extension), or the full URL of another Polynote instance.");
+
+            if (notebookPath && notebookPath.startsWith("http")) {
+                const nbFile = decodeURI(notebookPath.split("/").pop());
+                const targetPath = notebookPath + "?download=true";
+                this.socket.send(new messages.CreateNotebook(nbFile, Either.left(targetPath)));
+            } else if (notebookPath) {
+                this.socket.send(new messages.CreateNotebook(notebookPath))
+            }
         }
     }
 
