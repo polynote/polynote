@@ -5,7 +5,7 @@ import java.nio.file.{FileAlreadyExistsException, Files, Path, Paths}
 import cats.effect.{ContextShift, IO}
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.config.PolynoteConfig
-import polynote.kernel.util.Nand
+import polynote.kernel.util.OptionEither
 import polynote.messages.Notebook
 
 import scala.concurrent.ExecutionContext
@@ -117,7 +117,7 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers {
         val path = "bananas"
         val content = "B! A! N! A! N! A! S!"
 
-        val loc = repo.createNotebook(path, Nand.Right(content)).unsafeRunSync()
+        val loc = repo.createNotebook(path, OptionEither.Right(content)).unsafeRunSync()
         loc shouldEqual "bananas.test"
 
         repo.loadString(loc).unsafeRunSync() shouldEqual content

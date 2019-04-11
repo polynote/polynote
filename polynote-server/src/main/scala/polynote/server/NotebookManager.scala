@@ -9,7 +9,7 @@ import cats.effect.{ContextShift, Fiber, IO}
 import cats.effect.concurrent.Semaphore
 import polynote.config.PolynoteConfig
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.Nand
+import polynote.kernel.util.OptionEither
 import polynote.server.repository.NotebookRepository
 
 import scala.collection.immutable.SortedMap
@@ -25,7 +25,7 @@ abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
 
   def listNotebooks(): F[List[String]]
 
-  def createNotebook(path: String, maybeUriOrContent: Nand[String, String]): F[String]
+  def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): F[String]
 
   def interpreterNames: Map[String, String]
 
@@ -77,6 +77,6 @@ class IONotebookManager(
 
   override def listNotebooks(): IO[List[String]] = repository.listNotebooks()
 
-  override def createNotebook(path: String, maybeUriOrContent: Nand[String, String]): IO[String] =
+  override def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): IO[String] =
     repository.createNotebook(path, maybeUriOrContent)
 }

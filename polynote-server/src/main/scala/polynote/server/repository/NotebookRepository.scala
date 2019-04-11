@@ -8,7 +8,7 @@ import cats.effect.{ContextShift, IO}
 import org.http4s.client._
 import org.http4s.client.blaze._
 import polynote.config.{DependencyConfigs, PolynoteConfig}
-import polynote.kernel.util.Nand
+import polynote.kernel.util.OptionEither
 import polynote.messages._
 
 import scala.concurrent.ExecutionContext
@@ -23,7 +23,7 @@ trait NotebookRepository[F[_]] {
 
   def listNotebooks(): F[List[String]]
 
-  def createNotebook(path: String, maybeUriOrContent: Nand[String, String]): F[String]
+  def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): F[String]
 }
 
 trait FileBasedRepository extends NotebookRepository[IO] {
@@ -83,7 +83,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.exclusions.map(TinyString.apply)), Option(config.repositories), Option(config.spark)))
   )
 
-  def createNotebook(relativePath: String, maybeUriOrContent: Nand[String, String] = Nand.Neither): IO[String] = {
+  def createNotebook(relativePath: String, maybeUriOrContent: OptionEither[String, String] = OptionEither.Neither): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
