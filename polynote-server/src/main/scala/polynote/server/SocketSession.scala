@@ -16,7 +16,7 @@ import org.http4s.websocket.WebSocketFrame
 import WebSocketFrame._
 import org.log4s.getLogger
 import polynote.kernel._
-import polynote.kernel.util.{ReadySignal, WindowBuffer}
+import polynote.kernel.util.{OptionEither, ReadySignal, WindowBuffer}
 import polynote.messages._
 import polynote.server.repository.NotebookRepository
 
@@ -138,15 +138,14 @@ class SocketSession(
             Stream.eval(notebookRef.info).map(info => info.map(KernelStatus(path, _))).unNone
       }
 
-    case CreateNotebook(path) =>
-      notebookManager.createNotebook(path).map {
-        actualPath => CreateNotebook(ShortString(actualPath))
+    case CreateNotebook(path, maybeUriOrContent) =>
+      notebookManager.createNotebook(path, maybeUriOrContent).map {
+        actualPath => CreateNotebook(ShortString(actualPath), OptionEither.Neither)
       }.attempt.map {
         // TODO: is there somewhere more universal we can put this mapping?
         case Left(throwable) => Error(0, throwable)
         case Right(m) => m
       }.map(Stream.emit)
-
 
     case upConfig @ UpdateConfig(path, _, _, config) =>
       getNotebook(path).flatMap {

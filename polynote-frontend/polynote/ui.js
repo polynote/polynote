@@ -16,6 +16,7 @@ import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
 import {ExecutionInfo} from "./result";
 import {CellMetadata} from "./messages";
+import {Either} from "./codec";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -766,7 +767,7 @@ export class NotebookCellsUI extends UIEventTarget {
         this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.cells = {};
         this.cellCount = 0;
-        window.addEventListener('resize', this.onWindowResize.bind(this));
+        window.addEventListener('resize', this.forceLayout.bind(this));
     }
 
     setStatus(id, status) {
@@ -837,7 +838,7 @@ export class NotebookCellsUI extends UIEventTarget {
         return result;
     }
 
-    onWindowResize(evt) {
+    forceLayout(evt) {
         if (this.resizeTimeout) {
             clearTimeout(this.resizeTimeout);
         }
@@ -1574,7 +1575,10 @@ export class NotebookListUI extends UIEventTarget {
                 h2([], [
                     'Notebooks',
                     span(['buttons'], [
-                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => this.dispatchEvent(new UIEvent('NewNotebook')))
+                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => {
+                            evt.stopPropagation();
+                            this.dispatchEvent(new UIEvent('NewNotebook'));
+                        })
                     ])
                 ]).click(evt => this.collapse()),
                 div(['ui-panel-content'], [
@@ -1582,6 +1586,11 @@ export class NotebookListUI extends UIEventTarget {
                 ])
             ]
         );
+
+        // Drag n' drop!
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+            this.el.addEventListener(evt, this.fileHandler.bind(this), false)
+        });
     }
 
     // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
@@ -1714,6 +1723,33 @@ export class NotebookListUI extends UIEventTarget {
             this.dispatchEvent(new UIEvent('ToggleNotebookListUI'))
         }
     }
+
+    fileHandler(evt) {
+        // prevent browser from displaying the ipynb file.
+        evt.stopPropagation();
+        evt.preventDefault();
+
+        // handle highlighting
+        if (evt.type === "dragenter" || evt.type === "dragover") {
+            this.dragEnter = evt.target;
+            this.el.classList.add('highlight');
+        } else if (evt.type === "drop" || (evt.type === "dragleave" && evt.target === this.dragEnter)) {
+            this.el.classList.remove('highlight');
+        }
+
+        // actually handle the file
+        if (evt.type === "drop") {
+            const xfer = evt.dataTransfer;
+            const files = xfer.files;
+            [...files].forEach((file) => {
+                const reader = new FileReader();
+                reader.readAsText(file);
+                reader.onloadend = () => {
+                    this.dispatchEvent(new UIEvent('NewNotebook', {name: file.name, content: reader.result}))
+                }
+            })
+        }
+    }
 }
 
 export class WelcomeUI extends UIEventTarget {
@@ -1791,6 +1827,7 @@ export class MainUI extends EventTarget {
                 window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
                 this.currentNotebookPath = tab.name;
                 this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
+                this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
                 window.history.pushState({notebook: tab.name}, 'Polynote', '/');
             }
@@ -1914,6 +1951,10 @@ export class MainUI extends EventTarget {
             this.toolbarUI.settingsToolbar.colorVim();
         });
 
+        this.toolbarUI.addEventListener('DownloadNotebook', () => {
+            MainUI.browserDownload(window.location.pathname + "?download=true", this.currentNotebook.path);
+        });
+
     }
 
     showWelcome() {
@@ -1964,16 +2005,32 @@ export class MainUI extends EventTarget {
     }
 
     createNotebook(evt) {
-        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension)");
-        if (notebookPath) {
-            const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
-                this.socket.removeMessageListener(handler);
-                this.browseUI.addItem(actualPath);
-                this.loadNotebook(actualPath);
-            });
+        const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
+            this.socket.removeMessageListener(handler);
+            this.browseUI.addItem(actualPath);
+            this.loadNotebook(actualPath);
+        });
 
-            this.socket.send(new messages.CreateNotebook(notebookPath))
+        if (evt.detail && evt.detail.name) { // the evt has all we need
+            this.socket.send(new messages.CreateNotebook(evt.detail.name, Either.right(evt.detail.content)));
+        } else {
+            const notebookPath = prompt("Enter the name of the new notebook (no need for an extension), or the full URL of another Polynote instance.");
+
+            if (notebookPath && notebookPath.startsWith("http")) {
+                const nbFile = decodeURI(notebookPath.split("/").pop());
+                const targetPath = notebookPath + "?download=true";
+                this.socket.send(new messages.CreateNotebook(nbFile, Either.left(targetPath)));
+            } else if (notebookPath) {
+                this.socket.send(new messages.CreateNotebook(notebookPath))
+            }
         }
+    }
+
+    static browserDownload(path, filename) {
+        const link = document.createElement('a');
+        link.setAttribute("href", path);
+        link.setAttribute("download", filename);
+        link.click()
     }
 }
 

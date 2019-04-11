@@ -19,7 +19,7 @@ class IPythonNotebookRepository(
   saveVersion: Int = 4,
   val chunkSize: Int = 8192,
   val executionContext: ExecutionContext = ExecutionContext.global)(implicit
-  contextShift: ContextShift[IO]
+  val contextShift: ContextShift[IO]
 ) extends FileBasedRepository {
 
   override protected val defaultExtension: String = "ipynb"
@@ -37,6 +37,5 @@ class IPythonNotebookRepository(
     str    = Printer.spaces2.copy(dropNullValues = true).pretty(json)
     _     <- writeString(path, str)
   } yield ()
-
 }
 
