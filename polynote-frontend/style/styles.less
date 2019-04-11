@@ -54,6 +54,12 @@ body {
 
 }
 
+.monaco-editor {
+  .view-lines {
+    padding-left: 3pt;
+  }
+}
+
 .toolbar-container {
   height: @toolbar-height;
   background: @ui-background;
@@ -1174,7 +1180,7 @@ body {
 
   .cell-output {
     position: relative;
-    margin-left: 2.5em;
+    margin-left: 3em;
 
     .errors, .output {
       display: block !important;
@@ -1248,7 +1254,7 @@ body {
       }
 
       .repr-ui {
-        padding-left: 2.5em;
+        padding-left: 2em;
       }
 
       .repr-ui-content .output {
@@ -1291,7 +1297,7 @@ body {
       background-color: @ui-background;
 
       .output {
-        padding-left: 2.5em;
+        padding-left: 2em;
       }
 
       .errors {

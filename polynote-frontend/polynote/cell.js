@@ -122,6 +122,12 @@ export class Cell extends UIEventTarget {
 
         // clicking anywhere in a cell should select it
         this.container.addEventListener('mousedown', evt => this.makeActive());
+        // clicking outside the cell should deselect it
+        document.addEventListener('mousedown', evt => {
+           if (!this.container.contains(evt.target)) {
+                this.blur();
+           }
+        });
 
     }
 
@@ -241,7 +247,7 @@ export class CodeCell extends Cell {
         });
 
         this.editor.onDidBlurEditorWidget(() => {
-            this.blur();
+            // this.blur();
             this.editor.updateOptions({ renderLineHighlight: "none" });
         });
 
