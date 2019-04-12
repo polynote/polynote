@@ -17,7 +17,7 @@
 * Fix bug preventing selection of leftmost tab when notebook panel was collapsed [#228]
 * Fix bug causing output doubling [#227]
 * Fix bug causing run script to fail when certain values were present in the config file [#232]
-* Logging and Error visibility improvements [#215]
+* Logging and Error visibility improvements [#218]
   * Kernel Error task message now includes stack trace
   * Log kernel errors to Polynote output instead of just UI. 
   * Run script by default tees logs to file to help debugging later
