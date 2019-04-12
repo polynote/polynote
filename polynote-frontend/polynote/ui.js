@@ -17,6 +17,7 @@ import match from "./match.js";
 import {ExecutionInfo} from "./result";
 import {CellMetadata} from "./messages";
 import {Either} from "./codec";
+import {errorDisplay} from "./cell";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -1343,10 +1344,13 @@ export class NotebookUI extends UIEventTarget {
 
         socket.addMessageListener(messages.Error, (code, err) => {
             console.log("Kernel error:", err);
+
+            const {el, messageStr, cellLine} = errorDisplay(err);
+
             const id = err.id;
             const message = div(["message"], [
                 para([], `${err.className}: ${err.message}`),
-                para([], err.extraContent)
+                para([], el)
             ]);
             this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
 

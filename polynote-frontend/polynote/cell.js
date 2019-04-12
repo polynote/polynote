@@ -167,7 +167,8 @@ export class Cell extends UIEventTarget {
     }
 }
 
-function errorDisplay(error, currentFile, maxDepth, nested) {
+// TODO: it's a bit hacky to export this, should probably put this in some utils module
+export function errorDisplay(error, currentFile, maxDepth, nested) {
     maxDepth = maxDepth || 0;
     nested = nested || false;
     let cellLine = null;
@@ -195,7 +196,7 @@ function errorDisplay(error, currentFile, maxDepth, nested) {
     const causeEl = (maxDepth > 0 && error.cause)
                     ? [errorDisplay(error.cause, currentFile, maxDepth - 1, true).el]
                     : [];
-    const label = nested ? "Caused by" : "Uncaught exception";
+    const label = nested ? "Caused by: " : "Uncaught exception: ";
     const summaryContent = [span(['severity'], [label]), span(['message'], [messageStr])];
     const traceContent = [tag('ul', ['stack-trace'], {}, traceItems), ...causeEl];
     const el = traceItems.length

@@ -17,4 +17,4 @@ jar xf ${polynote_jar} ${scala_jar}
 
 actual_command=$(java -cp ${scala_jar}:${polynote_jar} polynote.server.SparkServer --printCommand 2>&1 | sed -n "s/^.*SparkSubmit: \(.*\).*$/\1/p")
 echo "${actual_command}"
-${actual_command}
+${actual_command} | tee polynote-server-`date +"%Y-%m-%dT%H:%MZ"`.log

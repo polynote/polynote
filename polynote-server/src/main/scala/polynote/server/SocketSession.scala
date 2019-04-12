@@ -40,6 +40,10 @@ class SocketSession(
   }
 
   private def logMessage(message: Message): IO[Unit]= IO(logger.info(message.toString))
+  private def logErrorMessage(message: Message): IO[Unit]= message match {
+    case Error(_, err) => logError(err)
+    case _ => IO.unit
+  }
   private def logError(error: Throwable): IO[Unit] = IO(logger.error(error)(error.getMessage))
 
   private val closeSignal = ReadySignal()
@@ -98,6 +102,7 @@ class SocketSession(
                 Stream.eval(logError(re).map(_ => Error(0, re)))
             }
             //.evalTap(logMessage)
+            .evalTap(logErrorMessage)
             .evalMap(toFrame).handleErrorWith {
             err =>
               Stream.eval(logError(UnrecoverableError(err))).drain
