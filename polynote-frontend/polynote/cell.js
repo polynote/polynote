@@ -167,6 +167,7 @@ export class Cell extends UIEventTarget {
     }
 }
 
+// TODO: it's a bit hacky to export this, should probably put this in some utils module
 export function errorDisplay(error, currentFile, maxDepth, nested) {
     maxDepth = maxDepth || 0;
     nested = nested || false;
