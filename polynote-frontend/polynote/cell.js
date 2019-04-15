@@ -231,17 +231,20 @@ export class CodeCell extends Cell {
             lineNumbers: true,
             lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
+            renderLineHighlight: "none"
         });
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
         this.editor.layout();
 
         this.editor.onDidFocusEditorWidget(() => {
+            this.editor.updateOptions({ renderLineHighlight: "all" });
             this.makeActive();
         });
 
         this.editor.onDidBlurEditorWidget(() => {
             this.blur();
+            this.editor.updateOptions({ renderLineHighlight: "none" });
         });
 
         this.lastLineCount = this.editor.getModel().getLineCount();

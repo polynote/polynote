@@ -279,16 +279,24 @@ body {
 
 
 .cell-container {
-  margin: 1em 0;
-  border-width: 1px 1px 1px 8px;
-  border-color: transparent;
-  border-style: solid;
-  border-radius: 6px;
+  margin: 1em 1em;
+  //border-width: 1px 1px 1px 8px;
+  //border-color: transparent;
+  //border-style: solid;
   // overflow: hidden;
   position: relative;
 
+
   &.selected, &.active {
-    border-color: @ui-selected;
+    border-radius: 6px;
+    border: 1px solid @ui-selected;
+    border-left-width: 8px;
+    box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
+    margin-left: 6px;
+  }
+
+  &.active .cell-input .cell-input-tools button {
+    display: block;
   }
 
   &.running {
@@ -313,12 +321,11 @@ body {
       bottom: 0;
       width: @cell-margin-width;
       background: @ui-background;
-      border: 1px solid @ui-border;
       padding: 4px;
       box-sizing: border-box;
 
       button {
-        display: block;
+        display: none;
         float: left;
       }
 
@@ -339,10 +346,10 @@ body {
       }
     }
 
-
     .cell-input-editor {
-      border: 1px solid @ui-border;
-      border-left: 2pt solid transparent;
+      //border: 1px solid @ui-border;
+      padding: 3pt;
+      padding-left: 5pt;
       margin-left: @cell-margin-width;
       min-height: 3em;
       overflow: hidden;
@@ -351,10 +358,9 @@ body {
     .exec-info {
       text-align: right;
       font-style: italic;
+      font-size: 0.8em;
+      color: #808080;
       padding: 4px;
-      border-bottom: 1px solid @ui-border;
-      border-right: 1px solid @ui-border;
-      font-size: small;
       display: none;
 
       &.output {
@@ -362,7 +368,7 @@ body {
       }
 
       .exec-timestamp::before {
-        content: "Execution on ";
+        content: "Ran on ";
       }
       .exec-timestamp::after {
         content: " took "
@@ -379,6 +385,10 @@ body {
         display: none !important;
       }
     }
+  }
+
+  &.code-cell .cell-input {
+    border: 1px solid #efefef;
   }
 
   &.code-cell .cell-input .cell-input-editor {
@@ -1177,18 +1187,13 @@ body {
       left: 0;
       bottom: 0;
       width: @cell-margin-width;
-      border: 1px solid @ui-border;
-      border-top: none;
-      border-bottom: none;
-      background: @ui-background;
+      //background: @ui-background;
       box-sizing: border-box;
     }
 
     .cell-output-tools {
       display: none;
       padding: 0.1em 0.1em 0.1em @cell-margin-width;
-      border-right: 1px solid @ui-border;
-      border-bottom: 1px solid @ui-border;
       resize: vertical;
       position: relative;
       min-height: @tab-view-height;
@@ -1224,9 +1229,6 @@ body {
       left: 0;
       bottom: 0;
       width: @cell-margin-width;
-      border-left: 1px solid @ui-border;
-      border-right: 1px solid @ui-border;
-      background: @ui-background;
       box-sizing: border-box;
     }
 
@@ -1234,8 +1236,7 @@ body {
       display: none;
       padding-top: 0.5em;
       padding-bottom: 0.5em;
-      border-right: 1px solid @ui-border;
-      border-bottom: 1px solid @ui-border;
+      border-bottom: 1px dashed @ui-border;
       left: @cell-margin-width;
       width: calc(100% - @cell-margin-width - 1px);
       overflow: auto;
@@ -2403,3 +2404,5 @@ button {
     background-color: rgba(253, 246, 227, 0.0);
   }
 }
+
+
