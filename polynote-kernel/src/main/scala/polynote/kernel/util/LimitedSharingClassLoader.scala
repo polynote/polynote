@@ -40,7 +40,7 @@ class LimitedSharingClassLoader(
         case lc => lc
       }
     } catch {
-      case err: ClassNotFoundException =>
+      case _: ClassNotFoundException | _: LinkageError =>
         super.loadClass(name, resolve)
     }
 
