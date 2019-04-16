@@ -104,14 +104,16 @@ export class Cell extends UIEventTarget {
                 this.editorEl = div(['cell-input-editor'], []),
                 div(['cell-footer'], [
                     this.statusLine = div(["vim-status", "hide"], []),
-                    this.execInfoEl = div(["exec-info"], [span(["cell-label"], [id + ""])]),
+                    this.execInfoEl = div(["exec-info"], []),
                 ])
             ]),
             this.cellOutput = div(['cell-output'], [
+                div(['cell-output-margin'], []),
                 div(['cell-output-container'], [
                     this.cellOutputDisplay = div(['cell-output-display'], []),
                 ]),
                 // TODO: maybe a progress bar here?
+                this.cellResultMargin = div(['cell-result-margin']),
                 this.cellOutputTools = div(['cell-output-tools'], [
                     this.resultTabs = div(["result-tabs"], [])
                 ]),
@@ -210,6 +212,8 @@ export class CodeCell extends Cell {
         super(id, content, language, path, metadata);
         this.container.classList.add('code-cell');
 
+        this.cellInputTools.appendChild(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
+
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
             value: content,
@@ -240,6 +244,7 @@ export class CodeCell extends Cell {
         });
 
         this.editor.onDidBlurEditorWidget(() => {
+            this.blur();
             this.editor.updateOptions({ renderLineHighlight: "none" });
         });
 
@@ -513,7 +518,8 @@ export class CodeCell extends Cell {
                 // TODO: have a way to display these if desired
             } else if (result.reprs.length) {
                 const outLabel = div(['out-ident', 'with-reprs'], `Out:`);
-                this.resultTabs.appendChild(outLabel);
+                this.cellResultMargin.innerHTML = '';
+                this.cellResultMargin.appendChild(outLabel);
 
                 const [mime, content] = result.displayRepr;
                 const [mimeType, args] = this.parseContentType(mime);
@@ -590,7 +596,6 @@ export class CodeCell extends Cell {
             this.execInfoEl.innerHTML = '';
 
             // populate display
-            this.execInfoEl.appendChild(span(["cell-label"], [this.id + ""]));
             this.execInfoEl.appendChild(span(['exec-timestamp'], [date.toLocaleString("en-US", {timeZoneName: "short"})]));
             this.execInfoEl.appendChild(span(['exec-duration'], [CodeCell.prettyDuration(result.durationMs)]));
             this.execInfoEl.classList.add('output');
