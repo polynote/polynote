@@ -2,6 +2,11 @@
 
 * 
 
+# 0.1.4 (April 16, 2019) 
+
+* Style fixes and tweaks [#219], [#230]
+* Fix delegation of failed classloadings [#246]
+
 # 0.1.3 (April 12, 2019)
 
 * Import and Export of Notebooks [#215]
