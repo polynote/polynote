@@ -32,6 +32,7 @@
 @ui-background-accent: rgb(198, 207, 223);
 @ui-sidebar-header: rgb(226, 230, 236);
 @ui-border:     rgb(225, 225, 225);
+@ui-border-light: #efefef;
 @ui-border-dark: darken(@ui-border, 20%);
 @ui-selected:   rgb(67, 104, 234);
 @ui-text:       rgb(50, 60, 68);
@@ -51,12 +52,6 @@ body {
 
 #Logo {
 
-}
-
-.monaco-editor {
-  .view-lines {
-    padding-left: 3pt;
-  }
 }
 
 .toolbar-container {
@@ -298,7 +293,7 @@ body {
     border-radius: 6px;
     border: 1px solid @ui-selected;
     border-left-width: 8px;
-    box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
+    //box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
   }
 
   &.running {
@@ -367,8 +362,7 @@ body {
     .cell-input-editor {
       border-bottom: 1px dashed @ui-border;
 
-      //padding: 3pt;
-      //margin-left: @cell-margin-width;
+      padding: 3pt;
       min-height: 3em;
       overflow: hidden;
       grid-area: content;
@@ -425,15 +419,15 @@ body {
   }
 
   &.code-cell .cell-input {
-    border-left: 1px solid @ui-border;
-    border-right: 1px solid @ui-border;
-    border-top: 1px solid @ui-border;
+    border-left: 1px solid @ui-border-light;
+    border-right: 1px solid @ui-border-light;
+    border-top: 1px solid @ui-border-light;
   }
 
   &.code-cell .cell-output {
-    border-left: 1px solid @ui-border;
-    border-right: 1px solid @ui-border;
-    border-bottom: 1px solid @ui-border;
+    border-left: 1px solid @ui-border-light;
+    border-right: 1px solid @ui-border-light;
+    border-bottom: 1px solid @ui-border-light;
   }
 
   &.code-cell .cell-input .cell-input-editor {
