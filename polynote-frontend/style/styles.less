@@ -32,14 +32,14 @@
 @ui-background-accent: rgb(198, 207, 223);
 @ui-sidebar-header: rgb(226, 230, 236);
 @ui-border:     rgb(225, 225, 225);
+@ui-border-light: #efefef;
 @ui-border-dark: darken(@ui-border, 20%);
 @ui-selected:   rgb(67, 104, 234);
 @ui-text:       rgb(50, 60, 68);
 @code-fonts:    'Hasklig', 'Fira Code', 'Menlo', fixed;
 
 @toolbar-height: 68px;
-@cell-margin-width: 55pt;
-@cell-margin-width-plus-padding: 65pt;
+@cell-margin-width: 6em;
 @tab-view-height: 1.5em;
 @tab-view-height-plus-padding: 2.5em;
 
@@ -280,23 +280,20 @@ body {
 
 .cell-container {
   margin: 1em 1em;
-  //border-width: 1px 1px 1px 8px;
-  //border-color: transparent;
-  //border-style: solid;
-  // overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  border-left-width: 8px;
   position: relative;
 
+  display: grid;
+  grid-template-areas: "input"
+                       "output";
 
   &.selected, &.active {
     border-radius: 6px;
     border: 1px solid @ui-selected;
     border-left-width: 8px;
-    box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
-    margin-left: 6px;
-  }
-
-  &.active .cell-input .cell-input-tools button {
-    display: block;
+    //box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
   }
 
   &.running {
@@ -314,19 +311,35 @@ body {
   .cell-input {
     position: relative;
 
+    grid-area: input;
+
+    display: grid;
+    grid-template-areas: "tools content"
+                         "tools footer";
+    grid-template-columns: @cell-margin-width auto;
+
     .cell-input-tools {
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: @cell-margin-width;
       background: @ui-background;
-      padding: 4px;
       box-sizing: border-box;
+      grid-area: tools;
+
+      display: grid;
+      grid-template-areas: "button label"
+                           ". .";
+      grid-template-columns: auto auto;
+      grid-template-rows: min-content;
+
 
       button {
-        display: none;
-        float: left;
+        display: block;
+        line-height: 1;
+        background-size: 20px 20px;
+        font-size: 24px;
+      }
+
+      .run-cell {
+        //padding: 0 4px;
+        grid-area: button;
       }
 
       button.run-cell.refresh .icon {
@@ -337,22 +350,36 @@ body {
         font-family: @code-fonts;
         text-align: right;
         font-size: 11pt;
-        float: right;
-        line-height: 34px
-      }
+        grid-column: label;
+        padding: 0.5em;
 
-      .cell-label:after {
-        content: ':'
+        &:after {
+          content: ':';
+        }
       }
     }
 
     .cell-input-editor {
-      //border: 1px solid @ui-border;
+      border-bottom: 1px dashed @ui-border;
+
       padding: 3pt;
-      padding-left: 5pt;
-      margin-left: @cell-margin-width;
       min-height: 3em;
       overflow: hidden;
+      grid-area: content;
+    }
+
+    .cell-footer {
+      display: grid;
+      grid-template-columns: [vim] auto [exec-info] max-content;
+      grid-template-rows: auto;
+      grid-area: footer;
+      padding: 2px 4px 2px 4px;
+      line-height: 1.5;
+      font-size: 11pt;
+
+      &.text-cell {
+        display: none;
+      }
     }
 
     .exec-info {
@@ -362,6 +389,7 @@ body {
       color: #808080;
       padding: 4px;
       display: none;
+      grid-area: exec-info;
 
       &.output {
         display: block;
@@ -371,15 +399,14 @@ body {
         content: "Ran on ";
       }
       .exec-timestamp::after {
-        content: " took "
+        content: " took ";
       }
     }
 
     .vim-status {
-      margin-left: @cell-margin-width;
-      &::before {
-        content: "VIM: "
-      }
+      white-space: pre;
+      font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+      grid-area: vim;
 
       &.hide {
         display: none !important;
@@ -387,8 +414,20 @@ body {
     }
   }
 
+  &.code-cell .exec-info {
+    display: block;
+  }
+
   &.code-cell .cell-input {
-    border: 1px solid #efefef;
+    border-left: 1px solid @ui-border-light;
+    border-right: 1px solid @ui-border-light;
+    border-top: 1px solid @ui-border-light;
+  }
+
+  &.code-cell .cell-output {
+    border-left: 1px solid @ui-border-light;
+    border-right: 1px solid @ui-border-light;
+    border-bottom: 1px solid @ui-border-light;
   }
 
   &.code-cell .cell-input .cell-input-editor {
@@ -415,7 +454,7 @@ body {
     }
 
     .cell-input {
-      border-left: @cell-margin-width solid transparent;
+      grid-template-rows: auto;
     }
 
     .cell-input-tools {
@@ -424,7 +463,7 @@ body {
 
     .cell-input-editor {
       margin: 0;
-      padding: 1em;
+      padding: 1.5em;
       border: none;
       min-height: 1em;
     }
@@ -1130,10 +1169,24 @@ body {
   }
 
   .cell-output {
-    position: relative;
+    grid-area: output;
+
+    display: grid;
+    grid-template-areas: "margin output"
+                         "results-margin results";
+    grid-template-columns: @cell-margin-width auto;
+
+    .cell-output-margin {
+      background: @ui-background;
+    }
+
+    .cell-output-container {
+      grid-area: output;
+      display: inherit;
+    }
 
     .errors, .output {
-      display: block !important;
+      display: inherit !important;
     }
 
     .output[mime-type='text/plain'] {
@@ -1180,31 +1233,30 @@ body {
       }
     }
 
-    .cell-output-tools::before {
-      content: " ";
-      position: absolute;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      width: @cell-margin-width;
-      //background: @ui-background;
-      box-sizing: border-box;
+    .cell-result-margin {
+      background: @ui-background;
     }
 
     .cell-output-tools {
       display: none;
-      padding: 0.1em 0.1em 0.1em @cell-margin-width;
-      resize: vertical;
+      padding: 0.1em;
       position: relative;
       min-height: @tab-view-height;
+      overflow: auto;
+
+      grid-area: results;
 
 
       .tab-container {
         border-right: 0px;
       }
 
+      .repr-ui {
+        //padding: 0.5em 1em;
+      }
+
       .repr-ui-content .output {
-        padding: 0.5em 1em;
+        padding-left: 2em;
       }
 
     }
@@ -1213,38 +1265,22 @@ body {
       color: #D84315;
       font-family: @code-fonts;
       font-size: 11pt;
-      position: absolute;
-      left: 0;
-      top: 6px;
-      width: @cell-margin-width;
-      padding: 0 4px;
       text-align: right;
-      box-sizing: border-box;
-    }
-
-    .cell-output-container::before {
-      content: " ";
-      position: absolute;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      width: @cell-margin-width;
-      box-sizing: border-box;
     }
 
     .cell-output-display {
       display: none;
       padding-top: 0.5em;
       padding-bottom: 0.5em;
+      margin-bottom: 1em;
       border-bottom: 1px dashed @ui-border;
-      left: @cell-margin-width;
-      width: calc(100% - @cell-margin-width - 1px);
       overflow: auto;
       resize: vertical;
       position: relative;
+      //background-color: @ui-background;
 
       .output {
-        padding-left: 1em;
+        padding-left: 2em;
       }
 
       .errors {
@@ -1391,6 +1427,10 @@ button {
 
 .notebook-content {
   overflow-y: auto;
+  padding: 2px;
+  border-left: 1px solid @ui-border;
+  border-right: 1px solid @ui-border;
+  border-bottom: 1px solid @ui-border;
 }
 
 @keyframes fadeOut {
@@ -1892,17 +1932,29 @@ button {
     flex-direction: row;
     flex-wrap: nowrap;
     justify-content: flex-start;
-    border: 1px solid @ui-border;
+    //border: 1px solid @ui-border;
     background: @ui-background;
     padding-top: 2px;
 
+    &:last-child:after {
+      border-bottom: 1px solid @ui-border;
+      content: "";
+      width: 100%;
+    }
+
+    &:not(:first-child):before {
+
+    }
+
     .tab {
       border-right: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
       border-top: 1px solid @ui-border;
 
       background: @ui-background-dark;
       display: grid;
       grid-template-columns: 1fr 1.5em;
+      flex-shrink: 0;
 
       user-select: none;
 
@@ -1914,11 +1966,18 @@ button {
       .close-button {
         opacity: 0.8;
       }
+
+      &:first-child {
+        border-left: 1px solid@ui-border;
+      }
+      &:last-child {
+        border-right: 1px solid @ui-border;
+      }
     }
 
     .tab.active {
       background: white;
-      flex-shrink: 0;
+      border-bottom: none;
     }
   }
 }

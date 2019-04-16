@@ -96,17 +96,24 @@ export class Cell extends UIEventTarget {
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
-                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
+                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run').click((evt) => {
+                        this.dispatchEvent(new RunCellEvent(this.id));
+                    }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
                 this.editorEl = div(['cell-input-editor'], []),
-                this.execInfoEl = div(["exec-info"], []),
+                div(['cell-footer'], [
+                    this.statusLine = div(["vim-status", "hide"], []),
+                    this.execInfoEl = div(["exec-info"], []),
+                ])
             ]),
             this.cellOutput = div(['cell-output'], [
+                div(['cell-output-margin'], []),
                 div(['cell-output-container'], [
                     this.cellOutputDisplay = div(['cell-output-display'], []),
                 ]),
                 // TODO: maybe a progress bar here?
+                this.cellResultMargin = div(['cell-result-margin']),
                 this.cellOutputTools = div(['cell-output-tools'], [
                     this.resultTabs = div(["result-tabs"], [])
                 ]),
@@ -115,14 +122,8 @@ export class Cell extends UIEventTarget {
 
         this.container.cell = this;
 
-        // TODO: this is incomplete (hook up all the run buttons etc)
-        this.cellInput.querySelector('.run-cell').onclick = (evt) => {
-            this.dispatchEvent(new RunCellEvent(this.id));
-        };
-
         // clicking anywhere in a cell should select it
-        this.container.addEventListener('mousedown', evt => this.makeActive());
-
+        this.container.addEventListener('click', evt => this.makeActive());
     }
 
     focus() {
@@ -211,7 +212,7 @@ export class CodeCell extends Cell {
         super(id, content, language, path, metadata);
         this.container.classList.add('code-cell');
 
-        this.cellInputTools.insertBefore(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
+        this.cellInputTools.appendChild(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
 
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
@@ -279,8 +280,6 @@ export class CodeCell extends Cell {
             this.setExecutionInfo(this.metadata.executionInfo);
         }
     }
-
-
 
     onChangeModelContent(event) {
         this.updateEditorHeight();
@@ -519,7 +518,8 @@ export class CodeCell extends Cell {
                 // TODO: have a way to display these if desired
             } else if (result.reprs.length) {
                 const outLabel = div(['out-ident', 'with-reprs'], `Out:`);
-                this.resultTabs.appendChild(outLabel);
+                this.cellResultMargin.innerHTML = '';
+                this.cellResultMargin.appendChild(outLabel);
 
                 const [mime, content] = result.displayRepr;
                 const [mimeType, args] = this.parseContentType(mime);
@@ -597,7 +597,6 @@ export class CodeCell extends Cell {
 
             // populate display
             this.execInfoEl.appendChild(span(['exec-timestamp'], [date.toLocaleString("en-US", {timeZoneName: "short"})]));
-
             this.execInfoEl.appendChild(span(['exec-duration'], [CodeCell.prettyDuration(result.durationMs)]));
             this.execInfoEl.classList.add('output');
         } else {
@@ -680,7 +679,7 @@ export class CodeCell extends Cell {
                     this.statusLine = div(["vim-status"], []);
                 }
                 this.vim = createVim(this.editor, this.statusLine);
-                this.cellInput.insertBefore(this.statusLine, this.execInfoEl);
+                this.cellInput.querySelector(".cell-footer").insertBefore(this.statusLine, this.execInfoEl);
             }
             this.statusLine.classList.toggle('hide', false);
         } else {
