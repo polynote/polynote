@@ -690,6 +690,7 @@ export class CodeCell extends Cell {
     deactivateVim() {
         if (this.vim) {
             this.vim.dispose();
+            this.statusLine.innerHTML = '';
             delete this.vim;
         }
         this.hideVim();
