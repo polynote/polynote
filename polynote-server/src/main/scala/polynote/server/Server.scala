@@ -38,19 +38,19 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     }
   }
 
-  def downloadFile(path: String, req: Request[IO]): IO[Response[IO]] = {
-    val nbLoc = new File(System.getProperty("user.dir")).toPath.resolve(s"notebooks/$path").toString
+  def downloadFile(path: String, req: Request[IO], config: PolynoteConfig): IO[Response[IO]] = {
+    val nbLoc = new File(System.getProperty("user.dir")).toPath.resolve(s"${config.storage.dir}/$path").toString
     StaticFile.fromString(nbLoc, executionContext, Some(req)).getOrElseF(NotFound())
   }
 
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
 
-  def route(notebookManager: NotebookManager[IO], watchUI: Boolean)(implicit timer: Timer[IO]): HttpRoutes[IO] = {
+  def route(notebookManager: NotebookManager[IO], config: PolynoteConfig, watchUI: Boolean)(implicit timer: Timer[IO]): HttpRoutes[IO] = {
     HttpRoutes.of[IO] {
       case GET -> Root / "ws" => SocketSession(notebookManager).flatMap(_.toResponse)
       case req @ GET -> Root  => serveFile(indexFile, req, watchUI)
       case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) =>
-        IO(logger.info(s"Download request for ${req.pathInfo} ffrom ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req)
+        IO(logger.info(s"Download request for ${req.pathInfo} ffrom ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req, config)
       case req @ GET -> "notebook" /: _ => serveFile(indexFile, req, watchUI)
       case req @ GET -> (Root / "polynote-assembly.jar") =>
         StaticFile.fromFile[IO](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), executionContext).getOrElseF(NotFound())
@@ -76,7 +76,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
   }
 
   protected def createRepository(config: PolynoteConfig): NotebookRepository[IO] = new IPythonNotebookRepository(
-    new File(System.getProperty("user.dir")).toPath.resolve("notebooks"),
+    new File(System.getProperty("user.dir")).toPath.resolve(config.storage.dir),
     config,
     executionContext = executionContext)
 
@@ -122,7 +122,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     exitCode        <- BlazeBuilder[IO]
                         .bindHttp(port, address)
                         .withWebSockets(true)
-                        .mountService(route(notebookManager, args.watchUI), "/")
+                        .mountService(route(notebookManager, config, args.watchUI), "/")
                         .serve
                         .compile
                         .toList
