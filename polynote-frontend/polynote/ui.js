@@ -1579,6 +1579,10 @@ export class NotebookListUI extends UIEventTarget {
                 h2([], [
                     'Notebooks',
                     span(['buttons'], [
+                        iconButton(['import-notebook'], 'Import a notebook', '', 'Import').click(evt => {
+                            evt.stopPropagation();
+                            this.dispatchEvent(new UIEvent('ImportNotebook'));
+                        }),
                         iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => {
                             evt.stopPropagation();
                             this.dispatchEvent(new UIEvent('NewNotebook'));
@@ -1749,7 +1753,7 @@ export class NotebookListUI extends UIEventTarget {
                 const reader = new FileReader();
                 reader.readAsText(file);
                 reader.onloadend = () => {
-                    this.dispatchEvent(new UIEvent('NewNotebook', {name: file.name, content: reader.result}))
+                    this.dispatchEvent(new UIEvent('ImportNotebook', {name: file.name, content: reader.result}))
                 }
             })
         }
@@ -1806,7 +1810,8 @@ export class MainUI extends EventTarget {
         this.browseUI = new NotebookListUI().setEventParent(this);
         this.mainView.left.el.appendChild(this.browseUI.el);
         this.addEventListener('TriggerItem', evt => this.loadNotebook(evt.detail.item));
-        this.browseUI.addEventListener('NewNotebook', evt => this.createNotebook(evt));
+        this.browseUI.addEventListener('NewNotebook', () => this.createNotebook());
+        this.browseUI.addEventListener('ImportNotebook', evt => this.importNotebook(evt));
         this.browseUI.addEventListener('ToggleNotebookListUI', (evt) => this.mainView.collapse('left', evt.detail && evt.detail.force));
         this.browseUI.init();
 
@@ -2008,7 +2013,20 @@ export class MainUI extends EventTarget {
         })
     }
 
-    createNotebook(evt) {
+    createNotebook() {
+        const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
+            this.socket.removeMessageListener(handler);
+            this.browseUI.addItem(actualPath);
+            this.loadNotebook(actualPath);
+        });
+
+        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension)");
+        if (notebookPath) {
+            this.socket.send(new messages.CreateNotebook(notebookPath))
+        }
+    }
+
+    importNotebook(evt) {
         const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
             this.socket.removeMessageListener(handler);
             this.browseUI.addItem(actualPath);
@@ -2018,14 +2036,12 @@ export class MainUI extends EventTarget {
         if (evt.detail && evt.detail.name) { // the evt has all we need
             this.socket.send(new messages.CreateNotebook(evt.detail.name, Either.right(evt.detail.content)));
         } else {
-            const notebookPath = prompt("Enter the name of the new notebook (no need for an extension), or the full URL of another Polynote instance.");
+            const notebookPath = prompt("Enter the full URL of another Polynote instance.");
 
             if (notebookPath && notebookPath.startsWith("http")) {
                 const nbFile = decodeURI(notebookPath.split("/").pop());
                 const targetPath = notebookPath + "?download=true";
                 this.socket.send(new messages.CreateNotebook(nbFile, Either.left(targetPath)));
-            } else if (notebookPath) {
-                this.socket.send(new messages.CreateNotebook(notebookPath))
             }
         }
     }
