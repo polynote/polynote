@@ -40,6 +40,7 @@
 
 @toolbar-height: 68px;
 @cell-margin-width: 6em;
+@cell-left-border-width: 8px;
 @tab-view-height: 1.5em;
 @tab-view-height-plus-padding: 2.5em;
 
@@ -277,12 +278,28 @@ body {
   }
 }
 
+.new-cell-divider {
+  height: 0.5em;
+  text-align: center;
+  line-height: 0.5em;
+  padding-top: 1px; // correct '+' location
+  white-space: pre;
+  font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+  margin-left: @cell-left-border-width;
+
+  &:hover {
+    background: rgba(48, 113, 169, 0.09); // zep's color ;-)
+
+    &:after {
+      content: '+';
+    }
+  }
+}
 
 .cell-container {
-  margin: 1em 1em;
   border-radius: 6px;
   border: 1px solid transparent;
-  border-left-width: 8px;
+  border-left-width: @cell-left-border-width;
   position: relative;
 
   display: grid;
