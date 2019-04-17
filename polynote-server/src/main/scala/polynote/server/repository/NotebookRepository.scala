@@ -5,11 +5,13 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
 
 import scala.collection.JavaConverters._
 import cats.effect.{ContextShift, IO}
+import io.circe.Printer
 import org.http4s.client._
 import org.http4s.client.blaze._
 import polynote.config.{DependencyConfigs, PolynoteConfig}
 import polynote.kernel.util.OptionEither
 import polynote.messages._
+import polynote.server.repository.ipynb.ZeppelinNotebook
 
 import scala.concurrent.ExecutionContext
 
@@ -103,7 +105,19 @@ trait FileBasedRepository extends NotebookRepository[IO] {
               }
             },
             content => {
-              writeString(extPath, content)
+              if (relativePath.endsWith(".json")) { // assume zeppelin
+                import io.circe.syntax._
+                import io.circe.parser.parse
+                for {
+                  parsed <- IO.fromEither(parse(content))
+                  zep <- IO.fromEither(parsed.as[ZeppelinNotebook])
+                  jup = zep.toJupyterNotebook
+                  jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
+                  io <- writeString(extPath, jupStr)
+                } yield io
+              } else {
+                writeString(extPath, content)
+              }
             },
             {
               val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
