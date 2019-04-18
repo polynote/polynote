@@ -1,6 +1,8 @@
 # UNRELEASED 
 
-* 
+* Can now click between cells to create a new cell [#235]
+
+[#235]: https://github.com/polynote/polynote/issues/235
 
 # 0.1.4 (April 16, 2019) 
 
