@@ -1,6 +1,8 @@
 # UNRELEASED 
 
-* 
+* New clear output button - deletes all results/outputs of a notebook from UI and underlying file [#237]
+
+[#237]: https://github.com/polynote/polynote/issues/237
 
 # 0.1.4 (April 16, 2019) 
 
