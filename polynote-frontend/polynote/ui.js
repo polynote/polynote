@@ -1964,6 +1964,10 @@ export class MainUI extends EventTarget {
             MainUI.browserDownload(window.location.pathname + "?download=true", this.currentNotebook.path);
         });
 
+        this.toolbarUI.addEventListener('ClearOutput', () => {
+            this.socket.send(new messages.ClearOutput(this.currentNotebookPath))
+        });
+
     }
 
     showWelcome() {

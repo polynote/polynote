@@ -378,6 +378,20 @@ class IOSharedNotebook(
     override def cancelTasks(): IO[Unit] = ifKernelStarted(_.cancelTasks(), ())
 
     override def updateNotebook(version: GlobalVersion, update: NotebookUpdate): IO[Unit] = IO.unit
+
+    override def clearOutput(): IO[Stream[IO, CellResult]] = {
+      ref.update {
+        case (ver, nb) =>
+          val updatedNb = nb.cells.map(_.id).foldLeft(nb) {
+            (updatedNb, id) => updatedNb.setResults(id, Nil)
+          }
+          ver -> updatedNb
+      } *> get.map { nb =>
+        Stream.emits(nb.cells.map(_.id)).map { id =>
+          CellResult(nb.path, id, ClearResults())
+        }
+      }
+    }
   }
 
 }
@@ -435,4 +449,8 @@ abstract class NotebookRef[F[_]](implicit F: Monad[F]) extends KernelAPI[F] {
 
   def messages: Stream[F, Message]
 
+  /**
+    * Clear all outputs
+    */
+  def clearOutput(): F[Stream[F, CellResult]]
 }

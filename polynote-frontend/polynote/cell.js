@@ -630,6 +630,8 @@ export class CodeCell extends Cell {
     clearResult() {
         this.container.classList.remove('error', 'success');
         this.execInfoEl.classList.remove('output');
+        this.cellOutputTools.innerHTML = '';
+        this.cellOutputTools.classList.remove('output');
         this.cellOutputDisplay.innerHTML = '';
         this.cellOutputDisplay.classList.remove('errors');
         this.cellOutput.classList.remove('output');
