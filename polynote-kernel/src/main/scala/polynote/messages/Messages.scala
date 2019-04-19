@@ -13,7 +13,6 @@ import polynote.config.{DependencyConfigs, RepositoryConfig}
 import polynote.data.Rope
 import polynote.kernel.util.OptionEither
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import shapeless.Lazy
 
 sealed trait Message
 

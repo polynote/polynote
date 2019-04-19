@@ -73,7 +73,8 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-generic" % "0.10.0",
     "io.circe" %% "circe-generic-extras" % "0.10.0",
     "io.get-coursier" %% "coursier" % "1.1.0-M9",
-    "io.get-coursier" %% "coursier-cache" % "1.1.0-M9"
+    "io.get-coursier" %% "coursier-cache" % "1.1.0-M9",
+    "org.apache.ivy" % "ivy" % "2.4.0"
   )
 ).dependsOn(`polynote-runtime`)
 
