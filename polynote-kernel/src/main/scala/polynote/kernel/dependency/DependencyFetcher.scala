@@ -11,7 +11,6 @@ import cats.syntax.apply._
 import cats.syntax.either._
 import cats.instances.either._
 import cats.instances.list._
-import coursier.Cache
 import polynote.config.{DependencyConfigs, RepositoryConfig}
 import polynote.kernel._
 import polynote.kernel.util.{DownloadableFileProvider, Publish}
