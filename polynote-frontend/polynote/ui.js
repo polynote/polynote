@@ -764,11 +764,23 @@ export class NotebookCellsUI extends UIEventTarget {
         super();
         this.configUI = new NotebookConfigUI().setEventParent(this);
         this.path = path;
-        this.el = div(['notebook-cells'], [this.configUI.el]);
+        this.el = div(['notebook-cells'], [this.configUI.el, this.newCellDivider()]);
         this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.cells = {};
         this.cellCount = 0;
         window.addEventListener('resize', this.forceLayout.bind(this));
+    }
+
+    newCellDivider() {
+        const self = this;
+        return div(['new-cell-divider'], []).click(function() {
+            const nextCell = self.getCellAfterEl(this);
+            if (nextCell) {
+                self.dispatchEvent(new UIEvent('InsertCellBefore', {cellId: nextCell.id}));
+            } else { // last cell
+                self.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: self.getCellBeforeEl(this).id}));
+            }
+        });
     }
 
     setStatus(id, status) {
@@ -817,6 +829,30 @@ export class NotebookCellsUI extends UIEventTarget {
         return this.cells[cellId];
     }
 
+    getCellBeforeEl(el) {
+        let before = this.el.firstElementChild;
+        let cell = undefined;
+        while(before !== el) {
+            if (before && before.cell) {
+                cell = before.cell;
+            }
+            before = before.nextElementSibling;
+        }
+        return cell
+    }
+
+    getCellAfterEl(el) {
+        let after = this.el.lastElementChild;
+        let cell = undefined;
+        while(after !== el) {
+            if (after && after.cell) {
+                cell = after.cell;
+            }
+            after = after.previousElementSibling;
+        }
+        return cell
+    }
+
     getCells() {
         return Array.from(this.el.children)
             .map(container => container.cell)
@@ -855,6 +891,7 @@ export class NotebookCellsUI extends UIEventTarget {
     addCell(cell) {
         this.cellCount++;
         this.el.appendChild(cell.container);
+        this.el.appendChild(this.newCellDivider());
         this.setupCell(cell);
     }
 
@@ -869,14 +906,26 @@ export class NotebookCellsUI extends UIEventTarget {
         }
 
         this.cellCount++;
-        this.el.insertBefore(cell.container, prevCell.nextSibling);
+
+        const prevCellDivider = prevCell.nextElementSibling;
+
+        const newDivider = this.newCellDivider();
+        this.el.insertBefore(cell.container, prevCellDivider);
+        this.el.insertBefore(newDivider, cell.container);
+
         this.setupCell(cell);
     }
 
     removeCell(cellId) {
         const cell = this.getCell(cellId);
         if (cell) {
+            const divider = cell.container.nextElementSibling;
             this.el.removeChild(cell.container);
+            if (divider) {
+                this.el.removeChild(divider);
+            } else {
+                throw ["couldn't find divider after", cell.container] // why wasn't the divider there??
+            }
             delete this.cells[cellId];
             cell.dispose();
             cell.container.innerHTML = '';
@@ -889,6 +938,14 @@ export class NotebookCellsUI extends UIEventTarget {
             cell.editor.layout();
         }
         cell.setEventParent(this);
+
+        cell.nextCell = () => {
+            return this.getCellAfterEl(cell.container);
+        };
+
+        cell.prevCell = () => {
+            return this.getCellBeforeEl(cell.container);
+        }
     }
 
     setCellLanguage(cell, language) {
@@ -1040,12 +1097,12 @@ export class NotebookUI extends UIEventTarget {
         this.cellUI.addEventListener('AdvanceCell', evt => {
             if (Cell.currentFocus) {
                 if (evt.backward) {
-                    const prev = Cell.currentFocus.container.previousSibling && cellUI.getCell(Cell.currentFocus.container.previousSibling.cell.id);
+                    const prev = Cell.currentFocus.prevCell();
                     if (prev) {
                         prev.focus();
                     }
                 } else {
-                    const next = Cell.currentFocus.container.nextSibling && cellUI.getCell(Cell.currentFocus.container.nextSibling.cell.id);
+                    const next = Cell.currentFocus.nextCell();
                     if (next) {
                         next.focus();
                     } else {
@@ -1075,7 +1132,7 @@ export class NotebookUI extends UIEventTarget {
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, null);
             } else {
-                const prev = current.container.previousSibling.cell;
+                const prev = current.prevCell();
                 const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, new messages.NotebookCell(newCell.id, newCell.language, ''), prev.id);
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, prev);
@@ -1097,10 +1154,9 @@ export class NotebookUI extends UIEventTarget {
                 const update = new messages.DeleteCell(path, this.globalVersion, ++this.localVersion, current.id);
                 this.socket.send(update);
                 this.editBuffer.push(this.localVersion, update);
-                const nextCell = current.container.nextSibling && cellUI.getCell(current.container.nextSibling.cell.id);
+                const nextCell = current.nextCell();
 
                 const cell = new messages.NotebookCell(current.id, current.language, current.content);
-                this.cellUI.removeCell(current.id);
 
                 const undoEl = div(['undo-delete'], [
                     span(['close-button', 'fa'], ['']).click(evt => {
@@ -1123,11 +1179,13 @@ export class NotebookUI extends UIEventTarget {
                     ])
                 ]);
 
-                nextCell.container.parentNode.insertBefore(undoEl, nextCell.container);
-
                 if (nextCell) {
                     nextCell.focus();
+                    nextCell.container.parentNode.insertBefore(undoEl, nextCell.container);
+                } else {
+                    current.container.parentNode.insertBefore(undoEl, current.container);
                 }
+                this.cellUI.removeCell(current.id);
             }
         });
 
