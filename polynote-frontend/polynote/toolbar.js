@@ -60,7 +60,8 @@ class NotebookToolbarUI extends UIEventTarget {
                 iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
                     .click(() => this.dispatchEvent(new ToolbarEvent("RunAll"))),
                 iconButton(["branch"], "Create branch", "", "Branch").disable(),
-                iconButton(["download"], "Download", "", "Download").click(() => this.dispatchEvent(new ToolbarEvent("DownloadNotebook")))
+                iconButton(["download"], "Download", "", "Download").click(() => this.dispatchEvent(new ToolbarEvent("DownloadNotebook"))),
+                iconButton(["clear"], "Clear notebook output", "", "Clear").click(() => this.dispatchEvent(new ToolbarEvent("ClearOutput")))
             ], [
                 iconButton(["schedule-notebook"], "Schedule notebook", "", "Schedule").disable(),
             ]

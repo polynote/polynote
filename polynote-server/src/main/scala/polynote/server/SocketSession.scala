@@ -231,6 +231,12 @@ class SocketSession(
         _           <- notebookRef.cancelTasks()
       } yield Stream.empty
 
+    case ClearOutput(path) =>
+      for {
+        notebookRef   <- getNotebook(path)
+        clearMessages <- notebookRef.clearOutput()
+      } yield clearMessages
+
     case ms @ ModifyStream(path, fromHandle, ops, _) =>
       for {
         notebookRef <- getNotebook(path)
