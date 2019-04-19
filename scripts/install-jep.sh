@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-pip3 install jep ipython nbconvert jedi
+set -e
+
+pip3 install --user jep ipython nbconvert jedi
 
 # this all assumes that jep was installed to a normal place
-jep_site_packages_path=`pip3 show jep |grep "^Location:" |cut -d ':' -f 2 |cut -d ' ' -f 2`
+jep_site_packages_path=`pip3 show jep | grep "^Location:" | cut -d ':' -f 2 | cut -d ' ' -f 2`
 jep_path=${jep_site_packages_path}/jep
 jep_lib_path=`realpath ${jep_site_packages_path}/../../`
 
