@@ -10,7 +10,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
   "PolynoteConfig" should "Ser/De" in {
 
     val cfg = PolynoteConfig(
-      Listen(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), Map("key" -> "val")
+      Listen(), Storage(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), Map("key" -> "val")
     )
     val js = cfg.asJson
     val cfgString = cfg.asJson.spaces2
@@ -26,6 +26,9 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |listen:
         |  host: 1.1.1.1
         |  port: 8193
+        |
+        |storage:
+        |  dir: foo
         |
         |# Default repositories can be specified. Uncommenting the following lines would add four default repositories which are inherited by new notebooks.
         |repositories:
@@ -65,6 +68,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         host = "1.1.1.1",
         port = 8193
       ),
+      Storage("foo"),
       List(
         ivy("https://my-artifacts.org/artifacts/"),
         ivy(

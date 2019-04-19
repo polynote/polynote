@@ -19,8 +19,16 @@ object Listen {
   implicit val decoder: Decoder[Listen] = deriveDecoder
 }
 
+final case class Storage(dir: String = "notebooks")
+
+object Storage {
+  implicit val encoder: ObjectEncoder[Storage] = deriveEncoder
+  implicit val decoder: Decoder[Storage] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
+  storage: Storage = Storage(),
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,

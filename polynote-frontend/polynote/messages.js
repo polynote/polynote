@@ -967,6 +967,22 @@ export class ReleaseHandle extends Message {
 
 ReleaseHandle.codec = combined(shortStr, uint8, int32).to(ReleaseHandle);
 
+export class ClearOutput extends Message {
+    static get msgTypeId() { return 21; }
+
+    static unapply(inst) {
+        return [inst.path];
+    }
+
+    constructor(path) {
+        super(path);
+        this.path = path;
+        Object.freeze(this);
+    }
+}
+
+ClearOutput.codec = combined(shortStr).to(ClearOutput);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -989,6 +1005,7 @@ Message.codecs = [
     CancelTasks,     // 18
     ModifyStream,    // 19
     ReleaseHandle,   // 20
+    ClearOutput,     // 20
 ];
 
 

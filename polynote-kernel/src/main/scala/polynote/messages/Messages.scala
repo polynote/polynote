@@ -235,6 +235,10 @@ object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 final case class CancelTasks(path: ShortString) extends Message
 object CancelTasks extends MessageCompanion[CancelTasks](18)
 
+final case class ClearOutput(path: ShortString) extends Message
+object ClearOutput extends MessageCompanion[ClearOutput](21)
+
+
 /*****************************************
  ** Stuff for stream-ish value handling **
  *****************************************/

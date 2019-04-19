@@ -1,6 +1,20 @@
-# UNRELEASED 
+# UNRELEASED
 
 * Update coursier, giving an order-of-magnitude performance boost to dependency resolution (especially for deep dependency trees)
+
+# 0.1.5 (April 19, 2019)
+
+* Support for importing Zeppelin notebooks [#185]
+  * Just drag and drop your `note.json` onto the tree view. 
+  * Notebook creation and URL import are now two separate buttons. 
+* Can now click between cells to create a new cell [#235]
+* New clear output button - deletes all results/outputs of a notebook from UI and underlying file [#237]
+* Fix scrolling behavior for selected cell [#240]
+
+[#185]: https://github.com/polynote/polynote/issues/185
+[#235]: https://github.com/polynote/polynote/issues/235
+[#237]: https://github.com/polynote/polynote/issues/237
+[#240]: https://github.com/polynote/polynote/issues/240
 
 # 0.1.4 (April 16, 2019) 
 
