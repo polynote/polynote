@@ -109,7 +109,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
 
   def addCell(cell: NotebookCell): Notebook = copy(cells = ShortList(cells :+ cell))
 
-  def insertCell(cell: NotebookCell, after: Short): Notebook = {
+  def insertCell(cell: NotebookCell, after: CellID): Notebook = {
     require(!cells.exists(_.id == cell.id), s"Cell ids must be unique, a cell with id ${cell.id} already exists")
 
     val insertIndex = cells.indexWhere(_.id == after)
