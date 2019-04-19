@@ -2,9 +2,11 @@
 
 * Can now click between cells to create a new cell [#235]
 * New clear output button - deletes all results/outputs of a notebook from UI and underlying file [#237]
+* Fix scrolling behavior for selected cell [#240]
 
 [#235]: https://github.com/polynote/polynote/issues/235
 [#237]: https://github.com/polynote/polynote/issues/237
+[#240]: https://github.com/polynote/polynote/issues/240
 
 # 0.1.4 (April 16, 2019) 
 

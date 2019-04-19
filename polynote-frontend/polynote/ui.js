@@ -1078,15 +1078,19 @@ export class NotebookUI extends UIEventTarget {
             // notify toolbar of context change
             mainUI.toolbarUI.onContextChanged();
 
-            // ensure cell is visible in the viewport
-            const container = evt.detail.cell.container;
-            const cellY = container.offsetTop;
-            const cellHeight = container.offsetHeight;
+            // check if element is in viewport
             const viewport = mainUI.notebookContent;
             const viewportScrollTop = viewport.scrollTop;
-            const viewportHeight = viewport.clientHeight;
-            if (cellY + cellHeight > viewportScrollTop + viewportHeight || cellY < viewportScrollTop) {
-                setTimeout(() => viewport.scrollTop = cellY, 0);
+            const viewportScrollBottom = viewportScrollTop + viewport.clientHeight;
+
+            const container = evt.detail.cell.container;
+            const elTop = container.offsetTop;
+            const elBottom = elTop + container.offsetHeight;
+
+            if (elBottom < viewportScrollTop) { // need to scroll up
+                evt.detail.cell.container.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
+            } else if (elTop > viewportScrollBottom) { // need to scroll down
+                evt.detail.cell.container.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
             }
 
             // update the symbol table to reflect what's visible from this cell
