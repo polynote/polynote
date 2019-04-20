@@ -115,7 +115,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
         results <- remoteKernel.runCell(2.toShort).flatMap(_.compile.toList)
 
         repr = results match {
-          case rv @ ResultValue(TinyString("twoStream"), TinyString("DataFrame"), TinyList((repr : StreamingDataRepr) :: Nil), _, _, _) :: Nil => repr
+          case rv @ ResultValue(TinyString("twoStream"), TinyString("DataFrame"), TinyList((repr : StreamingDataRepr) :: Nil), _, _, _, _) :: Nil => repr
           case other => fail(s"Expected a single ResultValue with a single StreamingDataRepr, got $other")
         }
 
@@ -168,7 +168,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
           results <- kernel.runCell(2.toShort).flatMap(_.compile.toList)
 
           repr = results match {
-            case rv @ ResultValue(TinyString("twoStream"), TinyString("DataFrame"), TinyList((repr : StreamingDataRepr) :: Nil), _, _, _) :: Nil => repr
+            case rv @ ResultValue(TinyString("twoStream"), TinyString("DataFrame"), TinyList((repr : StreamingDataRepr) :: Nil), _, _, _, _) :: Nil => repr
             case other => fail(s"Expected a single ResultValue with a single StreamingDataRepr, got $other")
           }
 

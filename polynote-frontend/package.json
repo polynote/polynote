@@ -5,6 +5,7 @@
     "markdown-it": "latest",
     "markdown-it-katex": "latest",
     "monaco-editor": "^0.16.2",
+    "monaco-vim": "0.0.11",
     "monaco-editor-webpack-plugin": "^1.7.0",
     "requirejs": "latest",
     "vega": "^5.2.0",

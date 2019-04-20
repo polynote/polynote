@@ -95,11 +95,11 @@ object MockKernel {
   )
 
   val results: Map[CellID, List[Result]] = Map(
-    (-1).cell -> List(ResultValue("kernel", "Runtime", List(StringRepr("kernel")), (-1).cell, Unit, NoType)),
+    (-1).cell -> List(ResultValue("kernel", "Runtime", List(StringRepr("kernel")), (-1).cell, Unit, NoType, None)),
     0.cell -> Nil,
-    1.cell -> List(Output("foo/bar", "Cell one"), ResultValue("one", "one", List(StringRepr("one")), 1.cell, Unit, NoType)),
+    1.cell -> List(Output("foo/bar", "Cell one"), ResultValue("one", "one", List(StringRepr("one")), 1.cell, Unit, NoType, None)),
     2.cell -> List(
-      ResultValue("twoStream", "DataFrame", List(twoStreamRepr), 2.cell, Unit, NoType)
+      ResultValue("twoStream", "DataFrame", List(twoStreamRepr), 2.cell, Unit, NoType, None)
     )
   )
 }

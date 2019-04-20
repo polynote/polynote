@@ -92,7 +92,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
       )
 
       output should contain theSameElementsAs Seq(
-        Output("text/plain; rel=stdout", "1 + 2 = 3")
+        Output("text/plain; rel=stdout", "1 + 2 = 3\n")
       )
       displayed shouldBe empty
     }
@@ -107,7 +107,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
     assertPythonOutput(code) { case (vars, output, displayed) =>
       vars.toSeq shouldBe empty
 
-      output should contain  only Output("text/plain; rel=stdout", "Do you like muffins?")
+      output should contain  only Output("text/plain; rel=stdout", "Do you like muffins?\n")
       displayed shouldBe empty
     }
   }

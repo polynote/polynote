@@ -20,8 +20,7 @@ pushd ${DIR}/../
     rm -r ${distDir} || true
     mkdir ${distDir}
     pushd ${distDir}
-        # TODO: figure out how to handle version when we are no longer at 0.1.0-SNAPSHOT
-        cp ${root}/polynote-spark/target/scala-2.11/polynote-spark-assembly-0.1.0-SNAPSHOT.jar ./polynote-spark-assembly.jar
+        cp ${root}/polynote-spark/target/scala-2.11/polynote-spark-assembly-0.1.5-SNAPSHOT.jar ./polynote-spark-assembly.jar
         cp ${root}/config-template.yml ./
         cp ${root}/scripts/install-jep.sh ./
         cp ${root}/scripts/run.sh ./

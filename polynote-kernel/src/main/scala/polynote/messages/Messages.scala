@@ -11,7 +11,9 @@ import scodec.codecs.implicits._
 import io.circe.generic.semiauto._
 import polynote.config.{DependencyConfigs, RepositoryConfig}
 import polynote.data.Rope
+import polynote.kernel.util.OptionEither
 import polynote.runtime.{StreamingDataRepr, TableOp}
+import shapeless.Lazy
 
 sealed trait Message
 
@@ -220,7 +222,7 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
 final case class ListNotebooks(paths: List[ShortString]) extends Message
 object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 
-final case class CreateNotebook(path: ShortString) extends Message
+final case class CreateNotebook(path: ShortString, externalURI: OptionEither[ShortString, String] = OptionEither.Neither) extends Message
 object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
 final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate
@@ -233,6 +235,10 @@ object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 
 final case class CancelTasks(path: ShortString) extends Message
 object CancelTasks extends MessageCompanion[CancelTasks](18)
+
+final case class ClearOutput(path: ShortString) extends Message
+object ClearOutput extends MessageCompanion[ClearOutput](21)
+
 
 /*****************************************
  ** Stuff for stream-ish value handling **

@@ -16,6 +16,8 @@ import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
 import {ExecutionInfo} from "./result";
 import {CellMetadata} from "./messages";
+import {Either} from "./codec";
+import {errorDisplay} from "./cell";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -85,7 +87,7 @@ export class KernelSymbolsUI {
         return this.addRow(name, type, value, this.resultSymbols);
     }
 
-    addSymbol(name, type, value, cellId) {
+    addSymbol(name, type, value, cellId, pos) {
         if (!this.symbols[cellId]) {
             this.symbols[cellId] = {};
         }
@@ -335,19 +337,20 @@ export class SplitView {
         this.left = left;
         this.center = center;
         this.right = right;
-        let classes = [id];
         let children = [];
-        this.templates = {};
-        this.areas = [];
-
 
         if (left) {
             const prefId = `${id}.leftSize`;
-            classes.push('l');
-            children.push(left.el);
+            left.el.classList.add("left");
             left.el.style.gridArea = 'left';
-            let leftDragger = div(['drag-handle'], [div(['inner'], [])])
-                .attr('draggable', 'true');
+            left.el.style.width = prefs.get(prefId) || '300px';
+
+            let leftDragger = div(['drag-handle', 'left'], [
+                div(['inner'], []).attr('draggable', 'true')
+            ]);
+            leftDragger.style.gridArea = 'leftdrag';
+
+            children.push(left.el);
             children.push(leftDragger);
 
             leftDragger.addEventListener('dragstart', (evt) => {
@@ -358,36 +361,34 @@ export class SplitView {
             leftDragger.addEventListener('drag', (evt) => {
                 evt.preventDefault();
                 if (evt.clientX) {
-                    this.templates.left = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX )) + "px";
-                    this.layout();
+                    left.el.style.width = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX )) + "px";
                 }
             });
 
             leftDragger.addEventListener('dragend', (evt) => {
-                prefs.set(prefId, this.templates.left);
+                prefs.set(prefId, left.el.style.width);
                 window.dispatchEvent(new CustomEvent('resize', {}));
             });
-
-            leftDragger.style.gridArea = 'leftdrag';
-
-            this.templates.left = prefs.get(prefId) || '300px';
-            this.templates.leftdrag = '1px';
-            this.areas.push('left');
-            this.areas.push('leftdrag')
         }
+
         if (center) {
-            classes.push('c');
             children.push(center.el);
-            this.templates.center = 'auto';
-            this.areas.push('center');
         }
+
         if (right) {
             const prefId = `${id}.rightSize`;
-            classes.push('r');
+            right.el.classList.add("right");
+            right.el.style.gridArea = 'right';
+            right.el.style.width = prefs.get(prefId) || '300px';
 
-            let rightDragger = div(['drag-handle'], [div(['inner'], [])])
-                .attr('draggable', 'true');
+            let rightDragger = div(['drag-handle', 'right'], [
+                div(['inner'], []).attr('draggable', 'true')
+            ]);
+
             rightDragger.style.gridArea = 'rightdrag';
+
+            children.push(rightDragger);
+            children.push(right.el);
 
             rightDragger.addEventListener('dragstart', (evt) => {
                 rightDragger.initialX = evt.clientX;
@@ -397,38 +398,29 @@ export class SplitView {
             rightDragger.addEventListener('drag', (evt) => {
                 evt.preventDefault();
                 if (evt.clientX) {
-                    this.templates.right = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
-                    this.layout();
+                    right.el.style.width = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
                 }
             });
 
             rightDragger.addEventListener('dragend', evt => {
-                prefs.set(prefId, this.templates.right);
+                prefs.set(prefId, right.el.style.width);
                 window.dispatchEvent(new CustomEvent('resize', {}));
             });
-
-            children.push(rightDragger);
-
-            children.push(right.el);
-            right.el.style.gridArea = 'right';
-            this.templates.rightdrag = '1px';
-            this.templates.right = prefs.get(prefId) || '300px';
-            this.areas.push('rightdrag');
-            this.areas.push('right');
         }
 
-        this.el = div(['split-view', ...classes], children);
-        this.el.style.display = 'grid';
-        this.el.style.gridTemplateAreas = `"${this.areas.join(' ')}"`;
-        this.layout();
+        this.el = div(['split-view', id], children);
     }
 
-    layout() {
-        let templateValues = [];
-        for (const area of this.areas) {
-            templateValues.push(this.templates[area]);
+    collapse(side, force) {
+        if (side === 'left') {
+            this.el.classList.toggle('left-collapsed', force || undefined) // undefined because we want it to toggle normally if we aren't forcing it.
+            window.dispatchEvent(new CustomEvent('resize', {}));
+        } else if (side === 'right') {
+            this.el.classList.toggle('right-collapsed', force || undefined)
+            window.dispatchEvent(new CustomEvent('resize', {}));
+        } else {
+            throw `Supported values are 'right' and 'left', got ${side}`
         }
-        this.el.style.gridTemplateColumns = templateValues.join(' ');
     }
 }
 
@@ -444,11 +436,11 @@ export class KernelUI extends UIEventTarget {
                 this.status = span(['status'], ['●']),
                 'Kernel',
                 span(['buttons'], [
-                  iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect()),
-                  iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.startKernel()),
-                  iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => this.killKernel())
+                  iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect(evt)),
+                  iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.startKernel(evt)),
+                  iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => this.killKernel(evt))
                 ])
-            ]),
+            ]).click(evt => this.collapse()),
             div(['ui-panel-content'], [
                 this.info.el,
                 this.symbols.el,
@@ -457,15 +449,34 @@ export class KernelUI extends UIEventTarget {
         ]);
     }
 
-    connect() {
+    // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
+    init() {
+        const prefs = this.getPrefs();
+        if (prefs && prefs.collapsed) {
+            this.collapse(true);
+        }
+    }
+
+    getPrefs() {
+        return prefs.get("KernelUI")
+    }
+
+    setPrefs(obj) {
+        prefs.set("KernelUI", {...this.getPrefs(), ...obj})
+    }
+
+    connect(evt) {
+        evt.stopPropagation();
         this.dispatchEvent(new UIEvent('Connect'))
     }
 
-    startKernel() {
+    startKernel(evt) {
+        evt.stopPropagation();
         this.dispatchEvent(new UIEvent('StartKernel'))
     }
 
-    killKernel() {
+    killKernel(evt) {
+        evt.stopPropagation();
         if (confirm("Kill running kernel? State will be lost.")) {
             this.dispatchEvent(new UIEvent('KillKernel'))
         }
@@ -481,6 +492,19 @@ export class KernelUI extends UIEventTarget {
             }
         } else {
             throw "State must be one of [busy, idle, dead, disconnected]";
+        }
+    }
+
+    collapse(force) {
+        const prefs = this.getPrefs();
+        if (force) {
+            this.dispatchEvent(new UIEvent('ToggleKernelUI', {force: true}))
+        } else if (prefs && prefs.collapsed) {
+            this.setPrefs({collapsed: false});
+            this.dispatchEvent(new UIEvent('ToggleKernelUI'))
+        } else {
+            this.setPrefs({collapsed: true});
+            this.dispatchEvent(new UIEvent('ToggleKernelUI'))
         }
     }
 }
@@ -740,11 +764,23 @@ export class NotebookCellsUI extends UIEventTarget {
         super();
         this.configUI = new NotebookConfigUI().setEventParent(this);
         this.path = path;
-        this.el = div(['notebook-cells'], [this.configUI.el]);
+        this.el = div(['notebook-cells'], [this.configUI.el, this.newCellDivider()]);
         this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.cells = {};
         this.cellCount = 0;
-        window.addEventListener('resize', this.onWindowResize.bind(this));
+        window.addEventListener('resize', this.forceLayout.bind(this));
+    }
+
+    newCellDivider() {
+        const self = this;
+        return div(['new-cell-divider'], []).click(function() {
+            const nextCell = self.getCellAfterEl(this);
+            if (nextCell) {
+                self.dispatchEvent(new UIEvent('InsertCellBefore', {cellId: nextCell.id}));
+            } else { // last cell
+                self.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: self.getCellBeforeEl(this).id}));
+            }
+        });
     }
 
     setStatus(id, status) {
@@ -778,12 +814,43 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
+    setPos(id, pos) {
+        const cell = this.getCell(id);
+        if (cell instanceof CodeCell) {
+            cell.setExecutionPos(pos);
+        }
+    }
+
     firstCell() {
         return this.getCells()[0];
     }
 
     getCell(cellId) {
         return this.cells[cellId];
+    }
+
+    getCellBeforeEl(el) {
+        let before = this.el.firstElementChild;
+        let cell = undefined;
+        while(before !== el) {
+            if (before && before.cell) {
+                cell = before.cell;
+            }
+            before = before.nextElementSibling;
+        }
+        return cell
+    }
+
+    getCellAfterEl(el) {
+        let after = this.el.lastElementChild;
+        let cell = undefined;
+        while(after !== el) {
+            if (after && after.cell) {
+                cell = after.cell;
+            }
+            after = after.previousElementSibling;
+        }
+        return cell
     }
 
     getCells() {
@@ -808,7 +875,7 @@ export class NotebookCellsUI extends UIEventTarget {
         return result;
     }
 
-    onWindowResize(evt) {
+    forceLayout(evt) {
         if (this.resizeTimeout) {
             clearTimeout(this.resizeTimeout);
         }
@@ -824,6 +891,7 @@ export class NotebookCellsUI extends UIEventTarget {
     addCell(cell) {
         this.cellCount++;
         this.el.appendChild(cell.container);
+        this.el.appendChild(this.newCellDivider());
         this.setupCell(cell);
     }
 
@@ -838,14 +906,26 @@ export class NotebookCellsUI extends UIEventTarget {
         }
 
         this.cellCount++;
-        this.el.insertBefore(cell.container, prevCell.nextSibling);
+
+        const prevCellDivider = prevCell.nextElementSibling;
+
+        const newDivider = this.newCellDivider();
+        this.el.insertBefore(cell.container, prevCellDivider);
+        this.el.insertBefore(newDivider, cell.container);
+
         this.setupCell(cell);
     }
 
     removeCell(cellId) {
         const cell = this.getCell(cellId);
         if (cell) {
+            const divider = cell.container.nextElementSibling;
             this.el.removeChild(cell.container);
+            if (divider) {
+                this.el.removeChild(divider);
+            } else {
+                throw ["couldn't find divider after", cell.container] // why wasn't the divider there??
+            }
             delete this.cells[cellId];
             cell.dispose();
             cell.container.innerHTML = '';
@@ -858,6 +938,14 @@ export class NotebookCellsUI extends UIEventTarget {
             cell.editor.layout();
         }
         cell.setEventParent(this);
+
+        cell.nextCell = () => {
+            return this.getCellAfterEl(cell.container);
+        };
+
+        cell.prevCell = () => {
+            return this.getCellBeforeEl(cell.container);
+        }
     }
 
     setCellLanguage(cell, language) {
@@ -990,15 +1078,19 @@ export class NotebookUI extends UIEventTarget {
             // notify toolbar of context change
             mainUI.toolbarUI.onContextChanged();
 
-            // ensure cell is visible in the viewport
-            const container = evt.detail.cell.container;
-            const cellY = container.offsetTop;
-            const cellHeight = container.offsetHeight;
+            // check if element is in viewport
             const viewport = mainUI.notebookContent;
             const viewportScrollTop = viewport.scrollTop;
-            const viewportHeight = viewport.clientHeight;
-            if (cellY + cellHeight > viewportScrollTop + viewportHeight || cellY < viewportScrollTop) {
-                setTimeout(() => viewport.scrollTop = cellY, 0);
+            const viewportScrollBottom = viewportScrollTop + viewport.clientHeight;
+
+            const container = evt.detail.cell.container;
+            const elTop = container.offsetTop;
+            const elBottom = elTop + container.offsetHeight;
+
+            if (elBottom < viewportScrollTop) { // need to scroll up
+                evt.detail.cell.container.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
+            } else if (elTop > viewportScrollBottom) { // need to scroll down
+                evt.detail.cell.container.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
             }
 
             // update the symbol table to reflect what's visible from this cell
@@ -1009,12 +1101,12 @@ export class NotebookUI extends UIEventTarget {
         this.cellUI.addEventListener('AdvanceCell', evt => {
             if (Cell.currentFocus) {
                 if (evt.backward) {
-                    const prev = Cell.currentFocus.container.previousSibling && cellUI.getCell(Cell.currentFocus.container.previousSibling.cell.id);
+                    const prev = Cell.currentFocus.prevCell();
                     if (prev) {
                         prev.focus();
                     }
                 } else {
-                    const next = Cell.currentFocus.container.nextSibling && cellUI.getCell(Cell.currentFocus.container.nextSibling.cell.id);
+                    const next = Cell.currentFocus.nextCell();
                     if (next) {
                         next.focus();
                     } else {
@@ -1044,7 +1136,7 @@ export class NotebookUI extends UIEventTarget {
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, null);
             } else {
-                const prev = current.container.previousSibling.cell;
+                const prev = current.prevCell();
                 const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, new messages.NotebookCell(newCell.id, newCell.language, ''), prev.id);
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, prev);
@@ -1066,10 +1158,9 @@ export class NotebookUI extends UIEventTarget {
                 const update = new messages.DeleteCell(path, this.globalVersion, ++this.localVersion, current.id);
                 this.socket.send(update);
                 this.editBuffer.push(this.localVersion, update);
-                const nextCell = current.container.nextSibling && cellUI.getCell(current.container.nextSibling.cell.id);
+                const nextCell = current.nextCell();
 
                 const cell = new messages.NotebookCell(current.id, current.language, current.content);
-                this.cellUI.removeCell(current.id);
 
                 const undoEl = div(['undo-delete'], [
                     span(['close-button', 'fa'], ['']).click(evt => {
@@ -1092,11 +1183,13 @@ export class NotebookUI extends UIEventTarget {
                     ])
                 ]);
 
-                nextCell.container.parentNode.insertBefore(undoEl, nextCell.container);
-
                 if (nextCell) {
                     nextCell.focus();
+                    nextCell.container.parentNode.insertBefore(undoEl, nextCell.container);
+                } else {
+                    current.container.parentNode.insertBefore(undoEl, current.container);
                 }
+                this.cellUI.removeCell(current.id);
             }
         });
 
@@ -1257,6 +1350,10 @@ export class NotebookUI extends UIEventTarget {
                     case messages.KernelInfo:
                         this.kernelUI.info.updateInfo(update.content);
                         break;
+
+                    case messages.ExecutionStatus:
+                        this.cellUI.setPos(update.cellId, update.pos);
+                        break;
                 }
             }
         });
@@ -1309,10 +1406,13 @@ export class NotebookUI extends UIEventTarget {
 
         socket.addMessageListener(messages.Error, (code, err) => {
             console.log("Kernel error:", err);
+
+            const {el, messageStr, cellLine} = errorDisplay(err);
+
             const id = err.id;
             const message = div(["message"], [
                 para([], `${err.className}: ${err.message}`),
-                para([], err.extraContent)
+                para([], el)
             ]);
             this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
 
@@ -1348,7 +1448,8 @@ export class NotebookUI extends UIEventTarget {
                         result.name,
                         result.typeName,
                         result.valueText,
-                        result.sourceCell);
+                        result.sourceCell,
+                        result.pos);
                 }
             }
         });
@@ -1540,14 +1641,42 @@ export class NotebookListUI extends UIEventTarget {
                 h2([], [
                     'Notebooks',
                     span(['buttons'], [
-                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => this.dispatchEvent(new UIEvent('NewNotebook')))
+                        iconButton(['import-notebook'], 'Import a notebook', '', 'Import').click(evt => {
+                            evt.stopPropagation();
+                            this.dispatchEvent(new UIEvent('ImportNotebook'));
+                        }),
+                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => {
+                            evt.stopPropagation();
+                            this.dispatchEvent(new UIEvent('NewNotebook'));
+                        })
                     ])
-                ]),
+                ]).click(evt => this.collapse()),
                 div(['ui-panel-content'], [
                     this.treeView = div(['tree-view'], [])
                 ])
             ]
         );
+
+        // Drag n' drop!
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+            this.el.addEventListener(evt, this.fileHandler.bind(this), false)
+        });
+    }
+
+    // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
+    init() {
+        const prefs = this.getPrefs();
+        if (prefs && prefs.collapsed) {
+            this.collapse(true);
+        }
+    }
+
+    getPrefs() {
+        return prefs.get("NotebookListUI")
+    }
+
+    setPrefs(obj) {
+        prefs.set("NotebookListUI", {...this.getPrefs(), ...obj})
     }
 
     setItems(items) {
@@ -1651,6 +1780,46 @@ export class NotebookListUI extends UIEventTarget {
         if (!el) return;
         el.classList.toggle('expanded');
     }
+
+    collapse(force) {
+        const prefs = this.getPrefs();
+        if (force) {
+            this.dispatchEvent(new UIEvent('ToggleNotebookListUI', {force: true}))
+        } else if (prefs && prefs.collapsed) {
+            this.setPrefs({collapsed: false});
+            this.dispatchEvent(new UIEvent('ToggleNotebookListUI'))
+        } else {
+            this.setPrefs({collapsed: true});
+            this.dispatchEvent(new UIEvent('ToggleNotebookListUI'))
+        }
+    }
+
+    fileHandler(evt) {
+        // prevent browser from displaying the ipynb file.
+        evt.stopPropagation();
+        evt.preventDefault();
+
+        // handle highlighting
+        if (evt.type === "dragenter" || evt.type === "dragover") {
+            this.dragEnter = evt.target;
+            this.el.classList.add('highlight');
+        } else if (evt.type === "drop" || (evt.type === "dragleave" && evt.target === this.dragEnter)) {
+            this.el.classList.remove('highlight');
+        }
+
+        // actually handle the file
+        if (evt.type === "drop") {
+            const xfer = evt.dataTransfer;
+            const files = xfer.files;
+            [...files].forEach((file) => {
+                const reader = new FileReader();
+                reader.readAsText(file);
+                reader.onloadend = () => {
+                    this.dispatchEvent(new UIEvent('ImportNotebook', {name: file.name, content: reader.result}))
+                }
+            })
+        }
+    }
 }
 
 export class WelcomeUI extends UIEventTarget {
@@ -1703,7 +1872,10 @@ export class MainUI extends EventTarget {
         this.browseUI = new NotebookListUI().setEventParent(this);
         this.mainView.left.el.appendChild(this.browseUI.el);
         this.addEventListener('TriggerItem', evt => this.loadNotebook(evt.detail.item));
-        this.browseUI.addEventListener('NewNotebook', evt => this.createNotebook(evt));
+        this.browseUI.addEventListener('NewNotebook', () => this.createNotebook());
+        this.browseUI.addEventListener('ImportNotebook', evt => this.importNotebook(evt));
+        this.browseUI.addEventListener('ToggleNotebookListUI', (evt) => this.mainView.collapse('left', evt.detail && evt.detail.force));
+        this.browseUI.init();
 
         this.socket = socket;
 
@@ -1726,6 +1898,7 @@ export class MainUI extends EventTarget {
                 window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
                 this.currentNotebookPath = tab.name;
                 this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
+                this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
                 window.history.pushState({notebook: tab.name}, 'Polynote', '/');
             }
@@ -1837,6 +2010,26 @@ export class MainUI extends EventTarget {
             prefs.clear();
             location.reload(); //TODO: can we avoid reloading?
         });
+
+        this.toolbarUI.addEventListener('ToggleVIM', () => {
+            const currentVim = prefs.get('VIM');
+            if (currentVim) {
+                prefs.set('VIM', false);
+            } else {
+                prefs.set('VIM', true);
+            }
+
+            this.toolbarUI.settingsToolbar.colorVim();
+        });
+
+        this.toolbarUI.addEventListener('DownloadNotebook', () => {
+            MainUI.browserDownload(window.location.pathname + "?download=true", this.currentNotebook.path);
+        });
+
+        this.toolbarUI.addEventListener('ClearOutput', () => {
+            this.socket.send(new messages.ClearOutput(this.currentNotebookPath))
+        });
+
     }
 
     showWelcome() {
@@ -1863,7 +2056,13 @@ export class MainUI extends EventTarget {
                 if (this.currentNotebook.notebookUI === notebookUI) {
                     notebookUI.onCellLanguageSelected(evt.newValue, path);
                 }
-            })
+            });
+
+            notebookUI.kernelUI.addEventListener('ToggleKernelUI', (evt) => {
+                this.mainView.collapse('right', evt.detail && evt.detail.force)
+            });
+            notebookUI.kernelUI.init();
+
         } else {
             this.tabUI.activateTab(notebookTab);
         }
@@ -1880,17 +2079,44 @@ export class MainUI extends EventTarget {
         })
     }
 
-    createNotebook(evt) {
+    createNotebook() {
+        const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
+            this.socket.removeMessageListener(handler);
+            this.browseUI.addItem(actualPath);
+            this.loadNotebook(actualPath);
+        });
+
         const notebookPath = prompt("Enter the name of the new notebook (no need for an extension)");
         if (notebookPath) {
-            const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
-                this.socket.removeMessageListener(handler);
-                this.browseUI.addItem(actualPath);
-                this.loadNotebook(actualPath);
-            });
-
             this.socket.send(new messages.CreateNotebook(notebookPath))
         }
+    }
+
+    importNotebook(evt) {
+        const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
+            this.socket.removeMessageListener(handler);
+            this.browseUI.addItem(actualPath);
+            this.loadNotebook(actualPath);
+        });
+
+        if (evt.detail && evt.detail.name) { // the evt has all we need
+            this.socket.send(new messages.CreateNotebook(evt.detail.name, Either.right(evt.detail.content)));
+        } else {
+            const notebookPath = prompt("Enter the full URL of another Polynote instance.");
+
+            if (notebookPath && notebookPath.startsWith("http")) {
+                const nbFile = decodeURI(notebookPath.split("/").pop());
+                const targetPath = notebookPath + "?download=true";
+                this.socket.send(new messages.CreateNotebook(nbFile, Either.left(targetPath)));
+            }
+        }
+    }
+
+    static browserDownload(path, filename) {
+        const link = document.createElement('a');
+        link.setAttribute("href", path);
+        link.setAttribute("download", filename);
+        link.click()
     }
 }
 

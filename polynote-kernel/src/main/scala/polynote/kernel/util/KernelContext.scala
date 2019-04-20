@@ -86,7 +86,7 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
 
   private val reprsOfCache = new mutable.HashMap[global.Type, ReprsOf[Any]]()
 
-  def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = {
+  def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = if (value == null) List(StringRepr("null")) else {
     val otherReprs = try {
       reprsOfCache.getOrElseUpdate(typ,
         {
@@ -169,8 +169,7 @@ object KernelContext {
     /**
       * The class loader which loads the dependencies
       */
-    val dependencyClassLoader: URLClassLoader =
-    new LimitedSharingClassLoader(
+    val dependencyClassLoader: URLClassLoader = new LimitedSharingClassLoader(
       "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j)\\.",
       dependencyClassPath,
       parentClassLoader)

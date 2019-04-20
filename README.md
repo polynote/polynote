@@ -176,6 +176,15 @@ To create and run a distribution on a remote machine all in one go, you can use 
 
     env REMOTE_HOST=me.myhost.mytld ./scripts/e2e.sh
 
+### Releasing
+
+1. Update version numbers. Currently this is a manual process. You'll need to update `build.sbt` and `make-distribution.sh` 
+   (and maybe others, so make sure to grep for the version string just in case)
+2. Update the changelog
+3. Commit and tag the commit with the new version
+4. Push the commit and tag. You can push directly to master.
+5. Release a new version by [making a distribution](#making-a-distribution) and publishing it.
+
 ## Documentation
 
 TODO

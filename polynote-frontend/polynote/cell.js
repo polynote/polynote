@@ -8,6 +8,8 @@ import { default as Diff } from './diff.js'
 import {ReprUI} from "./repr_ui";
 import {details} from "./tags";
 import {ExecutionInfo} from "./result";
+import {prefs} from "./prefs";
+import {createVim} from "./vim";
 
 const JsDiff = new Diff();
 
@@ -94,17 +96,24 @@ export class Cell extends UIEventTarget {
         this.container = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
-                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run'),
+                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run').click((evt) => {
+                        this.dispatchEvent(new RunCellEvent(this.id));
+                    }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
                 this.editorEl = div(['cell-input-editor'], []),
-                this.execInfoEl = div(["exec-info"], []),
+                div(['cell-footer'], [
+                    this.statusLine = div(["vim-status", "hide"], []),
+                    this.execInfoEl = div(["exec-info"], []),
+                ])
             ]),
             this.cellOutput = div(['cell-output'], [
+                div(['cell-output-margin'], []),
                 div(['cell-output-container'], [
                     this.cellOutputDisplay = div(['cell-output-display'], []),
                 ]),
                 // TODO: maybe a progress bar here?
+                this.cellResultMargin = div(['cell-result-margin']),
                 this.cellOutputTools = div(['cell-output-tools'], [
                     this.resultTabs = div(["result-tabs"], [])
                 ]),
@@ -113,14 +122,8 @@ export class Cell extends UIEventTarget {
 
         this.container.cell = this;
 
-        // TODO: this is incomplete (hook up all the run buttons etc)
-        this.cellInput.querySelector('.run-cell').onclick = (evt) => {
-            this.dispatchEvent(new RunCellEvent(this.id));
-        };
-
         // clicking anywhere in a cell should select it
-        this.container.addEventListener('mousedown', evt => this.makeActive());
-
+        this.container.addEventListener('click', evt => this.makeActive());
     }
 
     focus() {
@@ -165,7 +168,8 @@ export class Cell extends UIEventTarget {
     }
 }
 
-function errorDisplay(error, currentFile, maxDepth, nested) {
+// TODO: it's a bit hacky to export this, should probably put this in some utils module
+export function errorDisplay(error, currentFile, maxDepth, nested) {
     maxDepth = maxDepth || 0;
     nested = nested || false;
     let cellLine = null;
@@ -193,7 +197,7 @@ function errorDisplay(error, currentFile, maxDepth, nested) {
     const causeEl = (maxDepth > 0 && error.cause)
                     ? [errorDisplay(error.cause, currentFile, maxDepth - 1, true).el]
                     : [];
-    const label = nested ? "Caused by" : "Uncaught exception";
+    const label = nested ? "Caused by: " : "Uncaught exception: ";
     const summaryContent = [span(['severity'], [label]), span(['message'], [messageStr])];
     const traceContent = [tag('ul', ['stack-trace'], {}, traceItems), ...causeEl];
     const el = traceItems.length
@@ -208,7 +212,7 @@ export class CodeCell extends Cell {
         super(id, content, language, path, metadata);
         this.container.classList.add('code-cell');
 
-        this.cellInputTools.insertBefore(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
+        this.cellInputTools.appendChild(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
 
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
@@ -228,17 +232,20 @@ export class CodeCell extends Cell {
             lineNumbers: true,
             lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
+            renderLineHighlight: "none"
         });
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
         this.editor.layout();
 
         this.editor.onDidFocusEditorWidget(() => {
+            this.editor.updateOptions({ renderLineHighlight: "all" });
             this.makeActive();
         });
 
         this.editor.onDidBlurEditorWidget(() => {
             this.blur();
+            this.editor.updateOptions({ renderLineHighlight: "none" });
         });
 
         this.lastLineCount = this.editor.getModel().getLineCount();
@@ -327,12 +334,13 @@ export class CodeCell extends Cell {
             reportInfos
         );
 
-        // clear the display
-        this.cellOutputDisplay.innerHTML = '';
-        this.stdOutDetails = null;
-        this.stdOutEl = null;
-        if (reports.length) {
+        // clear the display if there was a compile error
+        if (reportInfos.find(report => report.originalSeverity > 1)) {
+            this.clearResult();
             this.container.classList.add('error');
+        }
+
+        if (reports.length) {
             this.cellOutputDisplay.classList.add('errors');
             this.cellOutputDisplay.appendChild(
                 div(
@@ -348,9 +356,6 @@ export class CodeCell extends Cell {
                     })
                 )
             );
-        } else {
-            this.cellOutputDisplay.classList.remove('errors');
-            this.cellOutput.classList.remove('output');
         }
     }
 
@@ -423,7 +428,7 @@ export class CodeCell extends Cell {
 
 
             if (!this.stdOutEl || !this.stdOutEl.parentNode) {
-                this.stdOutEl = this.mimeEl(mimeType, args, document.createTextNode(''));
+                this.stdOutEl = this.mimeEl(mimeType, args, []);
                 this.stdOutLines = lines.length;
                 this.cellOutputDisplay.appendChild(this.stdOutEl);
             } else {
@@ -456,7 +461,11 @@ export class CodeCell extends Cell {
                     ]);
 
                     // split the existing text node into first 5 lines and the rest
-                    const textNode = this.stdOutEl.childNodes[0];
+                    let textNode = this.stdOutEl.childNodes[0];
+                    if (!textNode) {
+                        textNode = document.createTextNode(content);
+                        this.stdOutEl.appendChild(textNode);
+                    }
                     const hidden = splitAtLine(textNode, 6);
                     const after = splitAtLine(hidden, numHiddenLines);
 
@@ -509,7 +518,8 @@ export class CodeCell extends Cell {
                 // TODO: have a way to display these if desired
             } else if (result.reprs.length) {
                 const outLabel = div(['out-ident', 'with-reprs'], `Out:`);
-                this.resultTabs.appendChild(outLabel);
+                this.cellResultMargin.innerHTML = '';
+                this.cellResultMargin.appendChild(outLabel);
 
                 const [mime, content] = result.displayRepr;
                 const [mimeType, args] = this.parseContentType(mime);
@@ -525,6 +535,24 @@ export class CodeCell extends Cell {
             }
         } else {
             throw "Result must be a ResultValue"
+        }
+    }
+
+    setExecutionPos(pos) {
+        if (pos) {
+            const oldExecutionPos = this.executionDecorations || [];
+            const model = this.editor.getModel();
+            const startPos = model.getPositionAt(pos.start);
+            const endPos = model.getPositionAt(pos.end);
+            this.executionDecorations = this.editor.deltaDecorations(oldExecutionPos, [
+                {
+                    range: monaco.Range.fromPositions(startPos, endPos),
+                    options: { className: "currently-executing" }
+                }
+            ]);
+        } else if (this.executionDecorations) {
+            this.editor.deltaDecorations(this.executionDecorations, []);
+            this.executionDecorations = [];
         }
     }
 
@@ -569,7 +597,6 @@ export class CodeCell extends Cell {
 
             // populate display
             this.execInfoEl.appendChild(span(['exec-timestamp'], [date.toLocaleString("en-US", {timeZoneName: "short"})]));
-
             this.execInfoEl.appendChild(span(['exec-duration'], [CodeCell.prettyDuration(result.durationMs)]));
             this.execInfoEl.classList.add('output');
         } else {
@@ -603,7 +630,13 @@ export class CodeCell extends Cell {
     clearResult() {
         this.container.classList.remove('error', 'success');
         this.execInfoEl.classList.remove('output');
-        this.setErrors([]);
+        this.cellOutputTools.innerHTML = '';
+        this.cellOutputTools.classList.remove('output');
+        this.cellOutputDisplay.innerHTML = '';
+        this.cellOutputDisplay.classList.remove('errors');
+        this.cellOutput.classList.remove('output');
+        this.stdOutDetails = null;
+        this.stdOutEl = null;
     }
 
     requestCompletion(pos) {
@@ -620,6 +653,7 @@ export class CodeCell extends Cell {
 
     makeActive() {
         super.makeActive();
+        this.activateVim();
     }
 
     focus() {
@@ -629,12 +663,45 @@ export class CodeCell extends Cell {
 
     blur() {
         super.blur();
+        this.hideVim();
     }
 
     dispose() {
         super.dispose();
         window.removeEventListener('resize', this.onWindowResize);
         this.editor.dispose();
+        this.deactivateVim();
+    }
+
+    activateVim() {
+        if (prefs.get('VIM')) {
+            if (!this.vim) {
+                console.log("init vim for cell", this.id)
+                if (!this.statusLine) {
+                    this.statusLine = div(["vim-status"], []);
+                }
+                this.vim = createVim(this.editor, this.statusLine);
+                this.cellInput.querySelector(".cell-footer").insertBefore(this.statusLine, this.execInfoEl);
+            }
+            this.statusLine.classList.toggle('hide', false);
+        } else {
+            this.deactivateVim();
+        }
+    }
+
+    deactivateVim() {
+        if (this.vim) {
+            this.vim.dispose();
+            this.statusLine.innerHTML = '';
+            delete this.vim;
+        }
+        this.hideVim();
+    }
+
+    hideVim() {
+        if (this.statusLine && !this.statusLine.contains(document.activeElement)) {
+            this.statusLine.classList.toggle('hide', true);
+        }
     }
 
     get content() {

@@ -2,11 +2,10 @@
 
 import {
     DataReader, DataWriter, Codec, combined, arrayCodec, discriminated, optional, mapCodec, bufferCodec,
-    str, shortStr, tinyStr, uint8, uint16, int16, int32, uint32, bool
+    str, shortStr, tinyStr, uint8, uint16, int16, int32, uint32, bool, either, float64, Pair
 } from './codec.js'
 
-import { Result, KernelErrorWithCause } from './result.js'
-import {float64, Pair} from "./codec";
+import { Result, KernelErrorWithCause, PosRange } from './result.js'
 import {StreamingDataRepr} from "./value_repr";
 import {ExecutionInfo} from "./result";
 
@@ -675,11 +674,29 @@ export class KernelInfo extends KernelStatusUpdate {
 
 KernelInfo.codec = combined(mapCodec(uint8, shortStr, str)).to(KernelInfo);
 
+export class ExecutionStatus extends KernelStatusUpdate {
+    static get msgTypeId() { return 4; }
+
+    static unapply(inst) {
+        return [inst.cellId, inst.pos];
+    }
+
+    constructor(cellId, pos) {
+        super(cellId, pos);
+        this.cellId = cellId;
+        this.pos = pos;
+        Object.freeze(this);
+    }
+}
+
+ExecutionStatus.codec = combined(int16, optional(PosRange.codec)).to(ExecutionStatus);
+
 KernelStatusUpdate.codecs = [
     UpdatedSymbols,   // 0
     UpdatedTasks,     // 1
     KernelBusyState,  // 2
     KernelInfo,       // 3
+    ExecutionStatus,  // 4
 ];
 
 KernelStatusUpdate.codec = discriminated(
@@ -780,17 +797,18 @@ ListNotebooks.codec = combined(arrayCodec(int32, shortStr)).to(ListNotebooks);
 export class CreateNotebook extends Message {
     static get msgTypeId() { return 14; }
     static unapply(inst) {
-        return [inst.path];
+        return [inst.path, inst.uriOrContents];
     }
 
-    constructor(path) {
-        super(path);
+    constructor(path, uriOrContents) {
+        super(path, uriOrContents);
         this.path = path;
+        this.uriOrContents = uriOrContents;
         Object.freeze(this);
     }
 }
 
-CreateNotebook.codec = combined(shortStr).to(CreateNotebook);
+CreateNotebook.codec = combined(shortStr, optional(either(shortStr, str))).to(CreateNotebook);
 
 export class DeleteCell extends NotebookUpdate {
     static get msgTypeId() { return 15; }
@@ -949,6 +967,22 @@ export class ReleaseHandle extends Message {
 
 ReleaseHandle.codec = combined(shortStr, uint8, int32).to(ReleaseHandle);
 
+export class ClearOutput extends Message {
+    static get msgTypeId() { return 21; }
+
+    static unapply(inst) {
+        return [inst.path];
+    }
+
+    constructor(path) {
+        super(path);
+        this.path = path;
+        Object.freeze(this);
+    }
+}
+
+ClearOutput.codec = combined(shortStr).to(ClearOutput);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -971,6 +1005,7 @@ Message.codecs = [
     CancelTasks,     // 18
     ModifyStream,    // 19
     ReleaseHandle,   // 20
+    ClearOutput,     // 20
 ];
 
 

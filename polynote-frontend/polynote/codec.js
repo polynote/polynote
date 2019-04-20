@@ -108,7 +108,7 @@ export class DataWriter {
 
     ensureBufSize(newSize) {
         if (this.buffer.byteLength < newSize) {
-            const newBuf = new ArrayBuffer(this.buffer.byteLength + this.chunkSize);
+            const newBuf = new ArrayBuffer(this.buffer.byteLength + this.chunkSize * Math.ceil((newSize - this.buffer.byteLength) / this.chunkSize));
             new Uint8Array(newBuf).set(new Uint8Array(this.buffer));
             this.buffer = newBuf;
             this.dataView = new DataView(this.buffer);
@@ -478,7 +478,7 @@ export function mapCodec(lengthCodec, keyCodec, valueCodec) {
 
 export function optional(elementCodec) {
     const encode = (value, writer) => {
-        if (value === null) {
+        if (value === null || value === undefined) {
             writer.writeUint8(0x00);
         } else {
             writer.writeUint8(0xFF);
@@ -492,6 +492,57 @@ export function optional(elementCodec) {
             return elementCodec.decode(reader);
         } else {
             return null;
+        }
+    };
+
+    return Object.freeze({
+        encode: encode,
+        decode: decode
+    });
+}
+
+export class Either {
+    constructor(left, right) {
+        if (left && right) {
+            throw "Can't assign both left and right to an either!"
+        }
+        if (!left && !right) {
+            throw "Must assign value to either left or right!"
+        }
+        this.left = left;
+        this.right = right;
+    }
+
+    static left(left) {
+        return new Either(left, undefined);
+    }
+
+    static right(right) {
+        return new Either(undefined, right);
+    }
+}
+
+export function either(leftCodec, rightCodec) {
+    const encode = (value, writer) => {
+        if (value.left && value.right) {
+            throw "Can't assign both left and right to an either!"
+        } else if (value.left) {
+            writer.writeUint8(0x00); // false indicates Left
+            leftCodec.encode(value.left, writer);
+        } else if (value.right) {
+            writer.writeUint8(0xFF); // true indicates Right
+            rightCodec.encode(value.right, writer);
+        } else {
+            throw "Neither left or right of either is defined!"
+        }
+    };
+
+    const decode = (reader) => {
+        const isRight = reader.readUint8();
+        if (isRight !== 0) {
+            return Either.right(leftCodec.decode(reader));
+        } else {
+            return Either.left(rightCodec.decode(reader));
         }
     };
 

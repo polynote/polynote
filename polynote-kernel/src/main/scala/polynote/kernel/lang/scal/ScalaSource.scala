@@ -76,7 +76,7 @@ class ScalaSource[G <: Global](
     transformer.transform(tree)
   }
 
-  private val cellName = ScalaSource.nameFor(cellContext)
+  val cellName: String = ScalaSource.nameFor(cellContext)
 
   // the parsed trees, but only successful if there weren't any parse errors
   lazy val parsed: Ior[Throwable, List[Tree]] = afterParse.asInstanceOf[Ior[Throwable, List[Tree]]]
@@ -130,30 +130,42 @@ class ScalaSource[G <: Global](
   private lazy val moduleClassTrees = results.map {
     case (_, trees) =>
       import global.Quasiquote
-      trees.foldLeft((Vector.empty[Tree], Vector.empty[Tree])) {
-        case ((moduleTrees, classTrees), tree) => tree match {
-          case tree: global.ValDef =>
-            if (!tree.mods.hasFlag(global.Flag.PRIVATE) && !tree.mods.hasFlag(global.Flag.PROTECTED)) {
-              // make a lazy val accessor in the companion
-              (moduleTrees :+ q"lazy val ${tree.name} = INSTANCE.${tree.name}", classTrees :+ tree)
-            } else {
-              (moduleTrees, classTrees :+ tree)
-            }
-          case tree: global.DefDef =>
-            // make a proxy method in the companion
-            val typeArgs = tree.tparams.map(tp => global.Ident(tp.name))
-            val valueArgs = tree.vparamss.map(_.map(param => global.Ident(param.name)))
-            (moduleTrees :+ tree.copy(rhs = q"INSTANCE.${tree.name}[..$typeArgs](...$valueArgs)"), classTrees :+ tree)
-          case tree: global.MemberDef =>
-            // move class/type definition to the companion object and import it within the cell's class body
-            (moduleTrees :+ tree, q"import $moduleName.${tree.name}" +: classTrees)
-          case tree: global.Import =>
-            // imports need to be in both because they might be in type annotations/params?
-            (moduleTrees :+ tree, classTrees :+ tree)
-          case tree =>
-            // anything else, just leave it in the class body
-            (moduleTrees, classTrees :+ tree)
-        }
+      val numTrees = trees.size
+      trees.zipWithIndex.foldLeft((Vector.empty[Tree], Vector.empty[Tree])) {
+        case ((moduleTrees, classTrees), (tree, index)) =>
+          val treeProgress = index.toDouble / numTrees
+          val lineStr = s"Line ${tree.pos.line}"
+          // code to notify kernel of progress in the cell
+          def setProgress(detail: String) = q"""polynote.runtime.Runtime.currentRuntime.setProgress($treeProgress, $detail)"""
+          def setPos(mark: Tree) =
+            if(mark.pos.isRange)
+              Some(q"""polynote.runtime.Runtime.currentRuntime.setExecutionStatus(${mark.pos.start}, ${mark.pos.end})""")
+            else None
+
+          tree match {
+            case tree: global.ValDef =>
+              if (!tree.mods.hasFlag(global.Flag.PRIVATE) && !tree.mods.hasFlag(global.Flag.PROTECTED)) {
+                // make a lazy val accessor in the companion
+                (moduleTrees :+ atPos(tree.pos)(q"lazy val ${tree.name} = INSTANCE.${tree.name}"),
+                  (classTrees :+ setProgress(tree.name.toString)) ++ setPos(tree.rhs).toVector :+ tree)
+              } else {
+                (moduleTrees, (classTrees :+ setProgress(tree.name.toString)) ++ setPos(tree.rhs).toVector :+ tree)
+              }
+            case tree: global.DefDef =>
+              // make a proxy method in the companion
+              val typeArgs = tree.tparams.map(tp => global.Ident(tp.name))
+              val valueArgs = tree.vparamss.map(_.map(param => global.Ident(param.name)))
+              (moduleTrees :+ atPos(tree.pos)(tree.copy(rhs = q"INSTANCE.${tree.name}[..$typeArgs](...$valueArgs)")), classTrees :+ tree)
+            case tree: global.MemberDef =>
+              // move class/type definition to the companion object and import it within the cell's class body
+              (moduleTrees :+ tree, q"import $moduleName.${tree.name}" +: classTrees)
+            case tree: global.Import =>
+              // imports need to be in both because they might be in type annotations/params?
+              (moduleTrees :+ tree, classTrees :+ tree)
+            case tree =>
+              // anything else, just leave it in the class body
+              (moduleTrees, (classTrees :+ setProgress(lineStr)) ++ setPos(tree).toVector :+ tree)
+          }
       } match {
         case (moduleTrees, classTrees) => moduleTrees.toList -> classTrees.toList
       }
@@ -237,7 +249,7 @@ class ScalaSource[G <: Global](
                   global.Template(
                     List(atPos(end)(scalaDot(global.typeNames.AnyRef))),
                     atPos(end)(global.noSelfType.copy()),
-                    atPos(end)(constructor) :: atPos(end)(q"private val INSTANCE = new ${moduleName.toTypeName}") :: moduleTrees.map(forcePos(end, _))
+                    atPos(end)(constructor) :: atPos(end)(q"private val INSTANCE = new ${moduleName.toTypeName}") :: moduleTrees
                   )
                 }
               )

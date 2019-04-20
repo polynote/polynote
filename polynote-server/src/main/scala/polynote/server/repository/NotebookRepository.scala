@@ -5,8 +5,13 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
 
 import scala.collection.JavaConverters._
 import cats.effect.{ContextShift, IO}
+import io.circe.Printer
+import org.http4s.client._
+import org.http4s.client.blaze._
 import polynote.config.{DependencyConfigs, PolynoteConfig}
+import polynote.kernel.util.OptionEither
 import polynote.messages._
+import polynote.server.repository.ipynb.ZeppelinNotebook
 
 import scala.concurrent.ExecutionContext
 
@@ -20,8 +25,7 @@ trait NotebookRepository[F[_]] {
 
   def listNotebooks(): F[List[String]]
 
-  def createNotebook(path: String): F[String]
-
+  def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): F[String]
 }
 
 trait FileBasedRepository extends NotebookRepository[IO] {
@@ -30,9 +34,11 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   def executionContext: ExecutionContext
   def config: PolynoteConfig
 
+  implicit val contextShift: ContextShift[IO]
+
   protected def pathOf(relativePath: String): Path = path.resolve(relativePath)
 
-  protected def loadString(path: String)(implicit contextShift: ContextShift[IO]): IO[String] = for {
+  protected def loadString(path: String): IO[String] = for {
     content <- readBytes(Files.newInputStream(pathOf(path)), chunkSize, executionContext)
   } yield new String(content.toArray, StandardCharsets.UTF_8)
 
@@ -79,21 +85,45 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.exclusions.map(TinyString.apply)), Option(config.repositories), Option(config.spark)))
   )
 
-  def createNotebook(relativePath: String): IO[String] = {
+  def createNotebook(relativePath: String, maybeUriOrContent: OptionEither[String, String] = OptionEither.Neither): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
     val extPath = noExtPath + ext
-
-    val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
 
     if (relativeDepth(relativePath) > maxDepth) {
       IO.raiseError(new IllegalArgumentException(s"Input path ($relativePath) too deep, maxDepth is $maxDepth"))
     } else {
       notebookExists(extPath).flatMap {
         case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
-        case false => saveNotebook(extPath, emptyNotebook(extPath, defaultTitle)).map {
-          _ => extPath
-        }
+        case false =>
+          maybeUriOrContent.fold(
+            uri => {
+              BlazeClientBuilder[IO](executionContext).resource.use { client =>
+                client.expect[String](uri)
+              }.flatMap { content =>
+                writeString(extPath, content)
+              }
+            },
+            content => {
+              if (relativePath.endsWith(".json")) { // assume zeppelin
+                import io.circe.syntax._
+                import io.circe.parser.parse
+                for {
+                  parsed <- IO.fromEither(parse(content))
+                  zep <- IO.fromEither(parsed.as[ZeppelinNotebook])
+                  jup = zep.toJupyterNotebook
+                  jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
+                  io <- writeString(extPath, jupStr)
+                } yield io
+              } else {
+                writeString(extPath, content)
+              }
+            },
+            {
+              val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
+              saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))
+            }
+          ) map (_ => extPath)
       }
     }
   }

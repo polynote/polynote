@@ -27,7 +27,7 @@ class MarkdownNotebookRepository(
   val config: PolynoteConfig,
   val chunkSize: Int = 8192,
   val executionContext: ExecutionContext = ExecutionContext.global)(implicit
-  contextShift: ContextShift[IO]
+  val contextShift: ContextShift[IO]
 ) extends FileBasedRepository {
 
   private lazy val parser = Parser.builder().extensions(List(YamlFrontMatterExtension.create()).asJava).build()
@@ -111,7 +111,7 @@ class MarkdownNotebookRepository(
       </div>.toString()
 
     case ClearResults() => ""
-    case ResultValue(_, _, _, _, _, _) => "" // TODO
+    case ResultValue(_, _, _, _, _, _, _) => "" // TODO
     case ExecutionInfo(_, _) => "" // TODO
   }
 
@@ -173,5 +173,4 @@ class MarkdownNotebookRepository(
       cells.config.map(_.asJson).map(printer.pretty).map(yml => s"---\n$yml\n---\n\n").mkString + cells.cells.map(cellToMarkdown).mkString("\n\n").stripPrefix("\n").stripPrefix("\n")
     writeString(path, str)
   }
-
 }

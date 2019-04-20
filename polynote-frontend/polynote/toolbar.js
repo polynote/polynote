@@ -3,6 +3,7 @@ import {FakeSelect} from "./fake_select";
 import {Cell, CodeCell, TextCell} from "./cell";
 import {LaTeXEditor} from "./latex_editor";
 import {UIEvent, UIEventTarget} from "./ui_event";
+import {prefs} from "./prefs";
 
 export class ToolbarEvent extends UIEvent {
     constructor(eventId, details) {
@@ -59,7 +60,8 @@ class NotebookToolbarUI extends UIEventTarget {
                 iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
                     .click(() => this.dispatchEvent(new ToolbarEvent("RunAll"))),
                 iconButton(["branch"], "Create branch", "", "Branch").disable(),
-                iconButton(["publish"], "Publish", "", "Publish").disable(),
+                iconButton(["download"], "Download", "", "Download").click(() => this.dispatchEvent(new ToolbarEvent("DownloadNotebook"))),
+                iconButton(["clear"], "Clear notebook output", "", "Clear").click(() => this.dispatchEvent(new ToolbarEvent("ClearOutput")))
             ], [
                 iconButton(["schedule-notebook"], "Schedule notebook", "", "Schedule").disable(),
             ]
@@ -237,6 +239,9 @@ class SettingsToolbarUI extends UIEventTarget {
     constructor() {
         super();
         this.el = toolbarElem("settings", [[
+            // TODO: better icon
+            this.vimButton = iconButton(["vim"], "Toggle VIM mode", "Vim", "VIM")
+                .click(() => this.dispatchEvent(new ToolbarEvent("ToggleVIM"))),
             this.viewButton = iconButton(["view"], "View UI Preferences", "", "View")
                 .click(() => this.dispatchEvent(new ToolbarEvent("ViewPrefs", {elem: this.floatingMenu, anchor: this.viewButton}))),
             iconButton(["reset"], "Reset UI Preferences", "", "Reset")
@@ -246,5 +251,12 @@ class SettingsToolbarUI extends UIEventTarget {
         this.floatingMenu = div(['floating-menu'], []);
 
         this.el.appendChild(this.floatingMenu)
+
+        this.colorVim();
+    }
+
+    colorVim() {
+        const vimSetting = prefs.get('VIM') || false;
+        this.vimButton.classList.toggle('enabled', vimSetting)
     }
 }

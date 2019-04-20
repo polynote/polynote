@@ -77,7 +77,7 @@ trait KernelSpec {
             // make  sure everything has been processed
             _       <- done.complete
             (vars, outputs) = output.map {
-              case ResultValue(name, _, _, _, value, _) => Either.left(name -> value)
+              case ResultValue(name, _, _, _, value, _, _) => Either.left(name -> value)
               case result => Either.right(result)
             }.separate
             _       <- assertion(interp, vars.toMap, outputs, displayed) *> IO(polynote.runtime.Runtime.clear())
