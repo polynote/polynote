@@ -3,7 +3,7 @@ scala:
    - 2.11.11
 
 before_install:
-   - sudo apt-get install python3 python3-pip python3-numpy
+   - sudo apt-get install python3 python3-pip python3-numpy realpath
 
 install:
    - source ./scripts/install-jep.sh
