@@ -1,6 +1,6 @@
 # UNRELEASED
 
-*
+* Update coursier, giving an order-of-magnitude performance boost to dependency resolution (especially for deep dependency trees)
 
 # 0.1.5 (April 19, 2019)
 

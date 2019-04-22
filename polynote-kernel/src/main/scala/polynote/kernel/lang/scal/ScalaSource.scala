@@ -339,20 +339,22 @@ class ScalaSource[G <: Global](
       case global.Select(qual: global.Tree, _) if qual != null =>
 
         // this brings in completions that are available through implicit enrichments
-        def addContext(scope: global.Scope): global.Scope = getContext(tree).map {
+        def addContext(scope: global.Scope): global.Scope = getContext(tree).flatMap {
           context =>
             val ownerTpe = qual.tpe match {
               case global.MethodType(List(), rtpe) => rtpe
               case _ => qual.tpe
             }
-            val allImplicits = new global.analyzer.ImplicitSearch(qual, global.definitions.functionType(List(ownerTpe), global.definitions.AnyTpe), isView = true, context0 = context).allImplicits
-            val implicitScope = scope.cloneScope
-            allImplicits.foreach {
-              result =>
-                val members = result.tree.tpe.finalResultType.members
-                members.foreach(implicitScope.enterIfNew)
-            }
-            implicitScope
+            if (ownerTpe != null) Either.catchNonFatal {
+              val allImplicits = new global.analyzer.ImplicitSearch(qual, global.definitions.functionType(List(ownerTpe), global.definitions.AnyTpe), isView = true, context0 = context).allImplicits
+              val implicitScope = scope.cloneScope
+              allImplicits.foreach {
+                result =>
+                  val members = result.tree.tpe.finalResultType.members
+                  members.foreach(implicitScope.enterIfNew)
+              }
+              implicitScope
+            } else Either.left(NoOwnerType)
         }.right.getOrElse{
           scope
         }
@@ -493,3 +495,4 @@ object ScalaSource {
 }
 
 case object NoApplyTree extends Throwable
+case object NoOwnerType extends Throwable

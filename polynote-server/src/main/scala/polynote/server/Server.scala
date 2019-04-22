@@ -11,13 +11,10 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeBuilder
 import org.log4s.{Logger, getLogger}
 import polynote.config.PolynoteConfig
-import polynote.kernel.dependency.CoursierFetcher
-import polynote.kernel.lang.{LanguageInterpreter, LanguageInterpreterService}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
 import polynote.buildinfo.BuildInfo
 
-import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
 trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
