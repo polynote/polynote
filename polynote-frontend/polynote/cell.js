@@ -255,6 +255,25 @@ export class CodeCell extends Cell {
 
         this.editor.getModel().cellInstance = this;
 
+        this.editor.onKeyDown((evt) => {
+            const currentPos = this.editor.getPosition();
+            const modelRange = this.editor.getModel().getFullModelRange();
+            if (evt.code === "ArrowUp") {
+                if (currentPos.lineNumber === modelRange.startLineNumber && currentPos.column === modelRange.startColumn) {
+                    this.dispatchEvent(new AdvanceCellEvent(this.id, true));
+
+                }
+            } else if (evt.code === "ArrowDown") {
+                let endColumn = modelRange.endColumn;
+                if (this.vim && !this.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
+                    endColumn -= 1;
+                }
+                if (currentPos.lineNumber === modelRange.endLineNumber && currentPos.column === endColumn) {
+                    this.dispatchEvent(new AdvanceCellEvent(this.id, false));
+                }
+            }
+        });
+
         this.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
             this.dispatchEvent(new RunCellEvent(this.id));
             this.dispatchEvent(new AdvanceCellEvent(this.id));
@@ -830,6 +849,16 @@ export class TextCell extends Cell {
                 this.dispatchEvent(new AdvanceCellEvent(this.id, false));
             } else if (evt.key === 'PageUp') {
                 this.dispatchEvent(new AdvanceCellEvent(this.id, true));
+            }
+        } else if (evt.key === 'ArrowUp') {
+            const selection = document.getSelection();
+            if (selection.anchorOffset === 0) {
+                this.dispatchEvent(new AdvanceCellEvent(this.id, true));
+            }
+        } else if (evt.key === 'ArrowDown') {
+            const selection = document.getSelection();
+            if (selection.anchorOffset === selection.anchorNode.length) {
+                this.dispatchEvent(new AdvanceCellEvent(this.id, false));
             }
         }
     }
