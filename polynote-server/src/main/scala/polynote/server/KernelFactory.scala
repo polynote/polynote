@@ -2,7 +2,7 @@ package polynote.server
 
 import java.io.File
 
-import cats.effect.{ContextShift, Fiber, IO}
+import cats.effect.{ContextShift, Fiber, IO, Timer}
 import cats.effect.concurrent.Ref
 import cats.instances.list._
 import cats.syntax.parallel._
@@ -30,7 +30,8 @@ trait KernelFactory[F[_]] {
 
 class IOKernelFactory(
   dependencyFetchers: Map[String, DependencyFetcher[IO]])(implicit
-  contextShift: ContextShift[IO]
+  contextShift: ContextShift[IO],
+  timer: Timer[IO]
 ) extends KernelFactory[IO] {
 
   protected def settings: scala.tools.nsc.Settings = PolyKernel.defaultBaseSettings

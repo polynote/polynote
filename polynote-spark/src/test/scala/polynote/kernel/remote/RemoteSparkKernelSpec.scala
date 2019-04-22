@@ -14,6 +14,7 @@ import polynote.messages._
 import polynote.kernel.util.Publish._
 import polynote.runtime.StreamingDataRepr
 import polynote.server.{IOSharedNotebook, SparkRemoteKernelFactory}
+import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
 
@@ -120,7 +121,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
 
         _ = repr.handle shouldNot equal (MockKernel.twoStreamRepr.handle)
 
-        buffers <- remoteKernel.getHandleData(Streaming, repr.handle, 2)
+        buffers = StreamingDataRepr.getHandle(repr.handle).get.iterator.toList.map(ByteVector.apply)
         _ = buffers shouldEqual MockKernel.twoStream
         _ <- remoteKernel.shutdown()
         _ <- remoteClient.shutdown()
@@ -159,7 +160,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
   "actual (local) networking" - {
     "run cell, handle mapping, stream proxy" in {
       runTest {
-        val transport = new SocketTransport(new LocalTestDeploy(mockKernelFactory))
+        val transport = new SocketTransport(new LocalTestDeploy(mockKernelFactory), Some("127.0.0.1"))
         for {
           currentNotebook <- Ref[IO].of(initialNotebook)
           kernel <- RemoteSparkKernel(statusUpdates, currentNotebook.get _, config, transport)
@@ -173,7 +174,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
 
           _ = repr.handle shouldNot equal (MockKernel.twoStreamRepr.handle)
 
-          buffers <- kernel.getHandleData(Streaming, repr.handle, 2)
+          buffers = StreamingDataRepr.getHandle(repr.handle).get.iterator.toList.map(ByteVector.apply)
           _ = buffers shouldEqual MockKernel.twoStream
           _ <- kernel.shutdown()
         } yield ()
