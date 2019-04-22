@@ -2086,17 +2086,13 @@ button {
 .notebooks-list {
   position: relative;
   border: 1px solid @ui-border;
-  grid-template-rows: 2em 100%;
-  height: -webkit-fill-available; // chrome only!
-  padding-bottom: 1em;
+  overflow: auto;
 
   .tree-view {
-    padding: .5em 0;
+    padding: .5em 0 1.5em;
   }
 
   .ui-panel-content {
-    min-width: 100%;
-    max-height: 100%;
     background: white;
   }
 
@@ -2112,6 +2108,10 @@ button {
       }
     }
   }
+}
+
+.left-collapsed .notebooks-list {
+  overflow: visible;
 }
 
 .create-notebook {
