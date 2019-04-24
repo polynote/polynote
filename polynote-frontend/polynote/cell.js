@@ -693,6 +693,8 @@ export class CodeCell extends Cell {
             const duration = Number(endTs) - Number(result.startTs);
             // clear display
             this.execInfoEl.innerHTML = '';
+            clearInterval(this.execDurationUpdater);
+            delete this.execDurationUpdater;
 
             // populate display
             this.execInfoEl.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
@@ -700,8 +702,6 @@ export class CodeCell extends Cell {
             this.execInfoEl.classList.add('output');
             if (result.endTs) {
                 this.execInfoEl.classList.toggle("running", false);
-                clearInterval(this.execDurationUpdater);
-                delete this.execDurationUpdater;
             } else {
                 this.execInfoEl.classList.toggle("running", true);
                 // update exec info every so often
