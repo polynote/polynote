@@ -10,6 +10,8 @@ import {details} from "./tags";
 import {ExecutionInfo} from "./result";
 import {prefs} from "./prefs";
 import {createVim} from "./vim";
+import {DeleteCell} from "./messages";
+import {KeyPress} from "./keypress";
 
 const JsDiff = new Diff();
 
@@ -59,8 +61,18 @@ export class AdvanceCellEvent extends CellEvent {
 }
 
 export class InsertCellEvent extends CellEvent {
+    constructor(cellId, before) {
+        if (before) {
+            super('InsertCellBefore', cellId);
+        } else {
+            super('InsertCellAfter', cellId);
+        }
+    }
+}
+
+export class DeleteCellEvent extends CellEvent {
     constructor(cellId) {
-        super('InsertCellAfter', cellId);
+        super('DeleteCell', cellId);
     }
 }
 
@@ -124,6 +136,38 @@ export class Cell extends UIEventTarget {
 
         // clicking anywhere in a cell should select it
         this.container.addEventListener('click', evt => this.makeActive());
+
+        // TODO: some way to display the KeyMap to users
+        this.keyMap = new Map([
+            [KeyPress.of("ArrowUp").h, (pos, range, selection, cell) => {
+                if (!selection && pos.lineNumber === range.startLineNumber && pos.column === range.startColumn) {
+                    cell.dispatchEvent(new AdvanceCellEvent(cell.id, true));
+
+                }
+            }],
+            [KeyPress.of("ArrowDown").h, (pos, range, selection, cell) => {
+                if (!selection && pos.lineNumber === range.endLineNumber && pos.column === range.endColumn) {
+                    cell.dispatchEvent(new AdvanceCellEvent(cell.id, false));
+
+                }
+            }],
+            [KeyPress.of("Enter", {shift: true}).h, () => {
+                this.dispatchEvent(new AdvanceCellEvent(this.id));
+            }],
+            [KeyPress.of("Enter", {shift: true, meta: true}).h, () => {
+                this.dispatchEvent(new InsertCellEvent(this.id));
+            }],
+            [KeyPress.of("PageDown", {meta: true}).h,
+                () => this.dispatchEvent(new AdvanceCellEvent(this.id, false))],
+            [KeyPress.of("PageUp", {meta: true}).h,
+                () => this.dispatchEvent(new AdvanceCellEvent(this.id, true))],
+            [KeyPress.of("KeyA", {ctrl: true, alt: true}).h, // A for Above (from Zep)
+                () => this.dispatchEvent(new InsertCellEvent(this.id, true))],
+            [KeyPress.of("KeyB", {ctrl: true, alt: true}).h, // B for Below (from Zep)
+                () => this.dispatchEvent(new InsertCellEvent(this.id))],
+            [KeyPress.of("KeyD", {ctrl: true, alt: true}).h, // D for Delete ;-) (from Zep)
+                () => this.dispatchEvent(new DeleteCellEvent(this.id))],
+        ])
     }
 
     focus() {
@@ -165,6 +209,45 @@ export class Cell extends UIEventTarget {
 
     applyEdits(edits) {
         throw "applyEdits not implemented for this cell type";
+    }
+
+    updateKeyHandler(key, handler) {
+        const prevHandler = this.keyMap.get(key);
+        this.keyMap.set(key, handler(prevHandler));
+    }
+
+    onKeyDown(evt) {
+        const eventKP = KeyPress.fromEvent(evt);
+        for (const [key, handler] of this.keyMap) {
+            if (key === eventKP.h) {
+                const pos = this.getPosition();
+                const range = this.getRange();
+                const selection = this.getCurrentSelection();
+                handler(pos, range, selection, this);
+                return true
+            }
+        }
+        return false
+    }
+
+    getPosition() {
+        return {
+            lineNumber: 0,
+            column: 0
+        }
+    }
+
+    getRange() {
+        return {
+            startLineNumber: 0,
+            startColumn: 0,
+            endLineNumber: 0,
+            endColumn: 0
+        }
+    }
+
+    getCurrentSelection() {
+        return ""
     }
 }
 
@@ -255,42 +338,37 @@ export class CodeCell extends Cell {
 
         this.editor.getModel().cellInstance = this;
 
-        this.editor.onKeyDown((evt) => {
-            const currentPos = this.editor.getPosition();
-            const modelRange = this.editor.getModel().getFullModelRange();
-            if (evt.code === "ArrowUp") {
-                if (currentPos.lineNumber === modelRange.startLineNumber && currentPos.column === modelRange.startColumn) {
-                    this.dispatchEvent(new AdvanceCellEvent(this.id, true));
-
+        // modification for vim mode
+        this.updateKeyHandler(KeyPress.of("ArrowDown").h, (prev) => {
+            return (pos, range, selection, cell) => {
+                if (this.vim && !this.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected
+                    range.endColumn -= 1
                 }
-            } else if (evt.code === "ArrowDown") {
-                let endColumn = modelRange.endColumn;
-                if (this.vim && !this.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
-                    endColumn -= 1;
-                }
-                if (currentPos.lineNumber === modelRange.endLineNumber && currentPos.column === endColumn) {
-                    this.dispatchEvent(new AdvanceCellEvent(this.id, false));
-                }
+                prev(pos, range, selection, cell);
             }
         });
 
-        this.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
-            this.dispatchEvent(new RunCellEvent(this.id));
-            this.dispatchEvent(new AdvanceCellEvent(this.id));
+        // run cell on enter
+        this.updateKeyHandler(KeyPress.of("Enter", {shift: true}).h, (prev) => {
+            return () => {
+                this.dispatchEvent(new RunCellEvent(this.id));
+                prev();
+            }
+        });
+        this.updateKeyHandler(KeyPress.of("Enter", {shift: true, meta: true}).h, (prev) => {
+            return () => {
+                this.dispatchEvent(new RunCellEvent(this.id));
+                prev();
+            }
         });
 
-        this.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-            this.dispatchEvent(new InsertCellEvent(this.id));
-            this.dispatchEvent(new RunCellEvent(this.id));
+        // actually bind keydown
+        this.editor.onKeyDown((evt) => {
+            if (this.onKeyDown(evt)) {
+                evt.stopPropagation();
+                evt.preventDefault();
+            }
         });
-
-        this.editor.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown,
-            () => this.dispatchEvent(new AdvanceCellEvent(this.id, false)));
-
-        this.editor.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp,
-            () => this.dispatchEvent(new AdvanceCellEvent(this.id, true)));
 
         this.onWindowResize = (evt) => this.editor.layout();
         window.addEventListener('resize', this.onWindowResize);
@@ -772,6 +850,18 @@ export class CodeCell extends Cell {
         }
         // this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
     }
+
+    getPosition() {
+        return this.editor.getPosition();
+    }
+
+    getRange() {
+        return this.editor.getModel().getFullModelRange();
+    }
+
+    getCurrentSelection() {
+        return this.editor.getModel().getValueInRange(this.editor.getSelection())
+    }
 }
 
 export class TextCell extends Cell {
@@ -834,35 +924,6 @@ export class TextCell extends Cell {
         }
     }
 
-    onKeyDown(evt) {
-        if (evt.key === 'Enter' || evt.keyCode === 13) {
-            if (evt.shiftKey) {
-                evt.preventDefault();
-                if (evt.ctrlKey) {
-                    this.dispatchEvent(new InsertCellEvent(this.id));
-                } else {
-                    this.dispatchEvent(new AdvanceCellEvent(this.id));
-                }
-            }
-        } else if (evt.metaKey) {
-            if (evt.key === 'PageDown') {
-                this.dispatchEvent(new AdvanceCellEvent(this.id, false));
-            } else if (evt.key === 'PageUp') {
-                this.dispatchEvent(new AdvanceCellEvent(this.id, true));
-            }
-        } else if (evt.key === 'ArrowUp') {
-            const selection = document.getSelection();
-            if (selection.anchorOffset === 0) {
-                this.dispatchEvent(new AdvanceCellEvent(this.id, true));
-            }
-        } else if (evt.key === 'ArrowDown') {
-            const selection = document.getSelection();
-            if (selection.anchorOffset === selection.anchorNode.length) {
-                this.dispatchEvent(new AdvanceCellEvent(this.id, false));
-            }
-        }
-    }
-
     focus() {
         super.focus();
         this.editor.focus();
@@ -883,5 +944,54 @@ export class TextCell extends Cell {
     applyEdits(edits) {
         // TODO: implement applyEdits for TextCell once rich text editor is figured out
         super.applyEdits(edits);
+    }
+
+    getContentNodes() {
+        return Array.from(this.editorEl.childNodes)
+            // there are a bunch of text nodes with newlines we don't care about.
+            .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
+    }
+
+    // Note: lines in contenteditable are inherently weird, don't rely on this for anything aside from beginning and end
+    getPosition() {
+        // get selection
+        const selection = document.getSelection();
+        // ok, now we just care about the current cursor location
+        let selectedNode = selection.focusNode;
+        let selectionCol = selection.focusOffset;
+        if (selectedNode === this.editorEl) { // this means we need to find the selected node using the offset
+            selectedNode = this.editorEl.childNodes[selectionCol];
+            selectionCol = 0;
+        }
+        // ok, now which line number?
+        let selectionLineNum = -1;
+        const contentNodes = this.getContentNodes();
+        contentNodes.forEach((node, idx) => {
+            if (node === selectedNode || node.contains(selectedNode)) {
+                selectionLineNum = idx;
+            }
+        });
+        return {
+            lineNumber: selectionLineNum + 1, // lines start at 1 like Monaco
+            column: selectionCol
+        };
+    }
+
+    getRange() {
+        const contentLines = this.getContentNodes();
+
+        const lastLine = (contentLines[contentLines.length - 1] && contentLines[contentLines.length - 1].textContent) || "";
+
+        return {
+            startLineNumber: 1, // start at 1 like Monaco
+            startColumn: 0,
+            endLineNumber: contentLines.length,
+            endColumn: lastLine.length
+        };
+
+    }
+
+    getCurrentSelection() {
+        return document.getSelection().toString()
     }
 }
