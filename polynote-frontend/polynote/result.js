@@ -265,20 +265,20 @@ export class ExecutionInfo extends Result {
     static get msgTypeId() { return 5; }
 
     static unapply(inst) {
-        return [inst.durationMs, inst.timestamp];
+        return [inst.startTs, inst.endTs];
     }
 
-    constructor(durationMs, timestamp) {
-        super(durationMs, timestamp);
+    constructor(startTs, endTs) {
+        super(startTs, endTs);
 
-        this.durationMs = durationMs;
-        this.timestamp = timestamp;
+        this.startTs = startTs;
+        this.endTs = endTs;
 
         Object.freeze(this);
     }
 }
 
-ExecutionInfo.codec = combined(int32, int64).to(ExecutionInfo);
+ExecutionInfo.codec = combined(int64, optional(int64)).to(ExecutionInfo);
 
 Result.codecs = [
   Output,           // 0

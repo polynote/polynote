@@ -190,7 +190,7 @@ object ResultValue extends ResultCompanion[ResultValue](4) {
 
 }
 
-final case class ExecutionInfo(durationMs: Int, timestamp: Long) extends Result
+final case class ExecutionInfo(startTs: Long, endTs: Option[Long]) extends Result
 
 object ExecutionInfo extends ResultCompanion[ExecutionInfo](5) {
   implicit val encoder: Encoder[ExecutionInfo] = deriveEncoder[ExecutionInfo]
