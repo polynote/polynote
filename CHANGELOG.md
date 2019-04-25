@@ -1,11 +1,16 @@
 # UNRELEASED
 
+*
+
+# 0.1.6 (April 25, 2019)
+
 * Update coursier, giving an order-of-magnitude performance boost to dependency resolution (especially for deep dependency trees)
 * Hotkey revamp [#241]
   * Share implementation across monaco and text cells
   * Added new hotkeys: Delete cell (ctrl-option-D), add cell above (ctrl-option-A), add cell below (ctrl-option-B)
   * Up and Down arrows now transition to neighboring cells if cursor is at start/end of cell text
 * Display cell execution time while it is running [#253]
+* Fix RuntimeError when using a numpy array. 
 
 [#241]: https://github.com/polynote/polynote/issues/241
 [#253]: https://github.com/polynote/polynote/issues/253

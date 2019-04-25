@@ -9,7 +9,7 @@ val versions = new {
 }
 
 val commonSettings = Seq(
-  version := "0.1.5-SNAPSHOT",
+  version := "0.1.6-SNAPSHOT",
   scalaVersion := "2.11.11",
   scalacOptions ++= Seq(
     "-Ypartial-unification",
@@ -24,6 +24,7 @@ val commonSettings = Seq(
   ),
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
+    case PathList("coursier", "shaded", xs @ _*) => MergeStrategy.first // coursier shades some of the same classes. assembly somehow can't dedupe even though they seem identical to me. 
     case x =>
       val oldStrategy = (assemblyMergeStrategy in assembly).value
       oldStrategy(x)
