@@ -102,6 +102,8 @@ class IOSharedNotebook(
 
   private val statusUpdates = Publish.PublishTopic(outputMessages).contramap[KernelStatusUpdate](KernelStatus(ShortString(path), _))
 
+  private val queued = Ref.unsafe[IO, Set[CellID]](Set.empty)
+
   def shutdown(): IO[Unit] = for {
     _         <- subscribers.values().asScala.toList.parTraverse(_.close())
     kernelOpt <- kernelRef.get
@@ -176,6 +178,98 @@ class IOSharedNotebook(
   } yield subscriber
 
   def versions: Stream[IO, (GlobalVersion, Notebook)] = ref.discrete
+
+  private def withInterpreterLaunch[A](id: CellID)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
+    kernel        <- ensureKernel()
+    predefResults <- kernel.startInterpreterFor(id)
+    _             <- predefResults.map(result => CellResult(ShortString(path), -1, result)).through(outputMessages.publish).compile.drain
+    result        <- fn(kernel)
+  } yield result
+
+  /**
+    * If the [[ResultValue]] has any [[UpdatingDataRepr]]s, create a [[SignallingRef]] to capture its updates in a
+    * Stream. When the finalizer of the repr is run, the stream will terminate.
+    */
+  private def watchUpdatingValues(value: ResultValue) = {
+    value.reprs.collect {
+      case updating: UpdatingDataRepr => updating
+    } match {
+      case Nil => Stream.empty
+      case updatingReprs =>
+        Stream.emits(updatingReprs).evalMap {
+          repr => SignallingRef[IO, Option[Option[ByteVector32]]](Some(None)).flatMap {
+            ref => IO {
+              UpdatingDataRepr.getHandle(repr.handle)
+                .getOrElse(throw new IllegalStateException("Created UpdatingDataRepr handle not found"))
+                .setUpdater {
+                  buf =>
+                    val b = buf.duplicate()
+                    b.rewind()
+                    ref.set(Some(Some(ByteVector32(ByteVector(b))))).unsafeRunSync()
+                }.setFinalizer {
+                () => ref.set(None).unsafeRunSync()
+              }
+            } as {
+              ref.discrete.unNoneTerminate.unNone.map {
+                update => HandleData(ShortString(path), Updating, repr.handle, 1, Array(update))
+              }
+            }
+          }
+        }.flatten
+    }
+  }
+
+  /**
+    * - Launch the interpreter for the cell, if necessary
+    * - Create a queue to stream back the results to the Subscriber who queued the cell
+    * - Queue the cell in the kernel
+    * - Tap the resulting stream into a window buffer as well as the broadcast topic, so other clients will get the results
+    * - At each result, update the notebook with the buffered results
+    * - Start the stream and run it independently of the requesting subscriber. A copy of the stream will be returned
+    *   to the caller through the indirection of the created Queue, so the evaluation of effects won't depend on whether
+    *   the caller is listening.
+    */
+  private def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = ref.get.flatMap {
+    case (_, notebook) =>
+      notebook.getCell(id).filterNot(_.language == "text").fold[IO[IO[Stream[IO, Result]]]](IO.pure(IO.pure(Stream.empty))) {
+        cell =>
+          withInterpreterLaunch(id) {
+            kernel =>
+              Queue.unbounded[IO, Result].flatMap {
+                resultsOut =>
+                  val buf = new WindowBuffer[Result](1000)
+
+                  def updateNotebookResults() = ref.update {
+                    case (ver, nb) =>
+                      val bufList = buf.toList
+                      val execInfo = bufList.collect {
+                        case executionInfo: ExecutionInfo => executionInfo
+                      }.lastOption
+                      val newMetadata = cell.metadata.copy(executionInfo = execInfo)
+
+                      ver -> nb.setResults(id, bufList).setMetadata(id, newMetadata)
+                  }
+
+                  kernel.queueCell(id).map {
+                    ioResult => ioResult.flatMap {
+                      results =>
+                        results.evalTap {
+                          result => IO(buf.add(result)) *> outputMessages.publish1(CellResult(ShortString(path), id, result))
+                        }.evalTap {
+                          // if there are any UpdatingDataReprs, watch for their updates and broadcast
+                          case v: ResultValue => watchUpdatingValues(v).through(outputMessages.publish).compile.drain.start.as(())
+                          case _ => IO.unit
+                        }.evalTap{
+                          _ => updateNotebookResults()
+                        }.onFinalize {
+                          updateNotebookResults()
+                        }.through(resultsOut.enqueue).compile.drain.start.as(resultsOut.dequeue)
+                    }.handleErrorWith(ErrorResult.toStream)
+                  }
+              }
+          }
+      }
+  }.uncancelable
 
   class Subscriber(
     subscriberId: Int,
@@ -256,13 +350,6 @@ class IOSharedNotebook(
 
     def init(): IO[Unit] = ensureKernel().as(())
 
-    private def withInterpreterLaunch[A](id: CellID)(fn: KernelAPI[IO] => IO[A]): IO[A] = for {
-      kernel        <- ensureKernel()
-      predefResults <- kernel.startInterpreterFor(id)
-      _             <- predefResults.map(result => CellResult(ShortString(path), -1, result)).through(outputMessages.publish).compile.drain
-      result        <- fn(kernel)
-    } yield result
-
     private def ifKernelStarted[A](yes: KernelAPI[IO] => IO[A], no: => A): IO[A] = isKernelStarted.flatMap {
       case true  => ensureKernel().flatMap(yes)
       case false => IO(no)
@@ -270,80 +357,9 @@ class IOSharedNotebook(
 
     def startInterpreterFor(id: CellID): IO[Stream[IO, Result]] = ensureKernel().flatMap(_.startInterpreterFor(id))
 
-
-    /**
-      * If the [[ResultValue]] has any [[UpdatingDataRepr]]s, create a [[SignallingRef]] to capture its updates in a
-      * Stream. When the finalizer of the repr is run, the stream will terminate.
-      */
-    private def watchUpdatingValues(value: ResultValue) = {
-      value.reprs.collect {
-        case updating: UpdatingDataRepr => updating
-      } match {
-        case Nil => Stream.empty
-        case updatingReprs =>
-          Stream.emits(updatingReprs).evalMap {
-            repr => SignallingRef[IO, Option[Option[ByteVector32]]](Some(None)).flatMap {
-              ref => IO {
-                UpdatingDataRepr.getHandle(repr.handle)
-                  .getOrElse(throw new IllegalStateException("Created UpdatingDataRepr handle not found"))
-                  .setUpdater {
-                    buf =>
-                      val b = buf.duplicate()
-                      b.rewind()
-                      ref.set(Some(Some(ByteVector32(ByteVector(b))))).unsafeRunSync()
-                  }.setFinalizer {
-                    () => ref.set(None).unsafeRunSync()
-                  }
-              } as {
-                ref.discrete.unNoneTerminate.unNone.map {
-                  update => HandleData(ShortString(path), Updating, repr.handle, 1, Array(update))
-                }
-              }
-            }
-          }.flatten
-      }
-    }
-
     override def runCell(id: CellID): IO[Stream[IO, Result]] = queueCell(id).flatten
 
-    def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = get.flatMap {
-      notebook =>
-        notebook.getCell(id).filterNot(_.language == "text").fold[IO[IO[Stream[IO, Result]]]](IO.pure(IO.pure(Stream.empty))) {
-          cell =>
-            withInterpreterLaunch(id) {
-              kernel =>
-                val buf = new WindowBuffer[Result](1000)
-                kernel.queueCell(id).map {
-                  ioResult => ioResult.map {
-                    results =>
-                      results.evalTap {
-                        // buffer the result and also broadcast to all clients
-                        result => IO(buf.add(result)).flatMap {
-                          _ =>
-                            outputMessages.publish1(CellResult(ShortString(path), id, result))
-                        }
-                      }.evalTap {
-                        // if there are any UpdatingDataReprs, watch for their updates and broadcast
-                        case v: ResultValue => watchUpdatingValues(v).through(outputMessages.publish).compile.drain.start.as(()) // TODO: is it wise to forget the fiber?
-                        case _ => IO.unit
-                      }.onFinalize {
-                        // write the buffered results to the notebook
-                        ref.update {
-                          case (ver, nb) =>
-                            val bufList = buf.toList
-                            val execInfo = bufList.collect {
-                              case executionInfo: ExecutionInfo => executionInfo
-                            }.lastOption
-                            val newMetadata = cell.metadata.copy(executionInfo = execInfo)
-
-                            ver -> nb.setResults(id, bufList).setMetadata(id, newMetadata)
-                        }
-                      }
-                  }.handleErrorWith(ErrorResult.toStream)
-                }
-            }
-        }
-    }
+    def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = IOSharedNotebook.this.queueCell(id)
 
     def completionsAt(id: CellID, pos: Int): IO[List[Completion]] =
       withInterpreterLaunch(id)(_.completionsAt(id, pos))
