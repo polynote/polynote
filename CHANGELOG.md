@@ -1,6 +1,12 @@
 # UNRELEASED
 
 * Update coursier, giving an order-of-magnitude performance boost to dependency resolution (especially for deep dependency trees)
+* Hotkey revamp [#241]
+  * Share implementation across monaco and text cells
+  * Added new hotkeys: Delete cell (ctrl-option-D), add cell above (ctrl-option-A), add cell below (ctrl-option-B)
+  * Up and Down arrows now transition to neighboring cells if cursor is at start/end of cell text
+
+[#241]: https://github.com/polynote/polynote/issues/241
 
 # 0.1.5 (April 19, 2019)
 
