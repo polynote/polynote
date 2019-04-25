@@ -413,11 +413,20 @@ body {
         display: block;
       }
 
-      .exec-timestamp::before {
+      .exec-start::before {
         content: "Ran on ";
       }
-      .exec-timestamp::after {
+      .exec-start::after {
         content: " took ";
+      }
+
+      &.running {
+        .exec-start::before {
+          content: "Started at ";
+        }
+        .exec-start::after {
+          content: " running for ";
+        }
       }
     }
 

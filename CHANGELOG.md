@@ -5,8 +5,10 @@
   * Share implementation across monaco and text cells
   * Added new hotkeys: Delete cell (ctrl-option-D), add cell above (ctrl-option-A), add cell below (ctrl-option-B)
   * Up and Down arrows now transition to neighboring cells if cursor is at start/end of cell text
+* Display cell execution time while it is running [#253]
 
 [#241]: https://github.com/polynote/polynote/issues/241
+[#253]: https://github.com/polynote/polynote/issues/253
 
 # 0.1.5 (April 19, 2019)
 

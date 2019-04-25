@@ -184,15 +184,14 @@ class PolyKernel private[kernel] (
                         }
 
                         for {
-                          start  <- clock.monotonic(MILLISECONDS)
+                          start  <- clock.realTime(MILLISECONDS)
                           res    <- results
                         } yield {
-                          res.onComplete {
+                          Stream.emit(ExecutionInfo(start, None)) ++ res.onComplete {
                             Stream.eval {
                               for {
-                                end <- clock.monotonic(MILLISECONDS)
-                                timestamp <- clock.realTime(MILLISECONDS)
-                              } yield ExecutionInfo((end - start).toInt, timestamp)
+                                end <- clock.realTime(MILLISECONDS)
+                              } yield ExecutionInfo(start, Option(end))
                             }
                           }.onFinalize(statusUpdates.publish1(ExecutionStatus(id, None))).onFinalize {
                             // if the interpreter didn't make a module for the cell, use the scala interpreter to make one

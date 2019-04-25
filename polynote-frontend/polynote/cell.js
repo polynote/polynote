@@ -688,14 +688,27 @@ export class CodeCell extends Cell {
 
     setExecutionInfo(result) {
         if (result instanceof ExecutionInfo) {
-            const date = new Date(Number(result.timestamp));
+            const start = new Date(Number(result.startTs));
+            const endTs = result.endTs || Date.now();
+            const duration = Number(endTs) - Number(result.startTs);
             // clear display
             this.execInfoEl.innerHTML = '';
+            clearInterval(this.execDurationUpdater);
+            delete this.execDurationUpdater;
 
             // populate display
-            this.execInfoEl.appendChild(span(['exec-timestamp'], [date.toLocaleString("en-US", {timeZoneName: "short"})]));
-            this.execInfoEl.appendChild(span(['exec-duration'], [CodeCell.prettyDuration(result.durationMs)]));
+            this.execInfoEl.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
+            this.execInfoEl.appendChild(span(['exec-duration'], [CodeCell.prettyDuration(duration)]));
             this.execInfoEl.classList.add('output');
+            if (result.endTs) {
+                this.execInfoEl.classList.toggle("running", false);
+            } else {
+                this.execInfoEl.classList.toggle("running", true);
+                // update exec info every so often
+                if (!this.execDurationUpdater) {
+                    this.execDurationUpdater = setInterval(() => this.setExecutionInfo(result), 333)
+                }
+            }
         } else {
             throw "Result must be an ExecutionInfo"
         }
