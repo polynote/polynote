@@ -102,8 +102,6 @@ class IOSharedNotebook(
 
   private val statusUpdates = Publish.PublishTopic(outputMessages).contramap[KernelStatusUpdate](KernelStatus(ShortString(path), _))
 
-  private val queued = Ref.unsafe[IO, Set[CellID]](Set.empty)
-
   def shutdown(): IO[Unit] = for {
     _         <- subscribers.values().asScala.toList.parTraverse(_.close())
     kernelOpt <- kernelRef.get
