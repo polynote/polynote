@@ -18,6 +18,7 @@ import cats.instances.option._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
 import polynote.config.PolynoteConfig
+import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal, WindowBuffer}
 import polynote.messages._
@@ -233,10 +234,10 @@ class IOSharedNotebook(
         cell =>
           withInterpreterLaunch(id) {
             kernel =>
-              Queue.unbounded[IO, Result].flatMap {
+              Queue.unbounded[IO, Option[Result]].flatMap {
                 resultsOut =>
                   val buf = new WindowBuffer[Result](1000)
-
+                  val queueSome = new EnqueueSome(resultsOut)
                   def updateNotebookResults() = ref.update {
                     case (ver, nb) =>
                       val bufList = buf.toList
@@ -260,8 +261,8 @@ class IOSharedNotebook(
                         }.evalTap{
                           _ => updateNotebookResults()
                         }.onFinalize {
-                          updateNotebookResults()
-                        }.through(resultsOut.enqueue).compile.drain.start.as(resultsOut.dequeue)
+                          updateNotebookResults() *> resultsOut.enqueue1(None)
+                        }.through(queueSome.enqueue).compile.drain.start.as(resultsOut.dequeue.unNoneTerminate)
                     }.handleErrorWith(ErrorResult.toStream)
                   }
               }
