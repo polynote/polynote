@@ -2,6 +2,7 @@ package polynote.kernel.lang
 package python
 
 import java.io.File
+import java.nio.{ByteBuffer, DoubleBuffer, FloatBuffer, IntBuffer, LongBuffer}
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicReference
 
@@ -9,7 +10,7 @@ import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
-import jep.{Jep, JepConfig, NamingConventionClassEnquirer}
+import jep.{DirectNDArray, Jep, JepConfig, NamingConventionClassEnquirer}
 import org.log4s.Logger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
@@ -282,6 +283,29 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
           case err: Throwable =>
             logger.info(err)("Error getting python object")
             None
+        }
+
+      case "ndarray" =>
+        // TODO: I'm a little torn here. Jep's native codepath won't allow us to get a PyObject for an ndarray; we have
+        //       to convert it to a Java array which involves copying. Should we avoid doing that and just not export
+        //       ndarrays? They can be pretty large. We ought to fix this up in jep itself so that we can either
+        //       get a DirectNDArray out of python (currently those have to be created in Java) or just be able to get
+        //       a PyObject.
+        //       For now we'll go a head and copy out the Java array if possible.
+        {
+          jep.getValue(s"$accessor.dtype.name", classOf[String]) match {
+            case "int64"   => Some(classOf[Array[Long]] -> typeOf[Array[LongBuffer]])
+            case "int32"   => Some(classOf[Array[IntBuffer]] -> typeOf[Array[IntBuffer]])
+            case "float64" => Some(classOf[Array[DoubleBuffer]] -> typeOf[Array[DoubleBuffer]])
+            case "float32" => Some(classOf[Array[FloatBuffer]] -> typeOf[Array[FloatBuffer]])
+            case "bool"    => Some(classOf[Array[Boolean]] -> typeOf[Array[Boolean]])
+            case "int16"   => Some(classOf[Array[Short]] -> typeOf[Array[Short]])
+            case _ => None
+          }
+        }.flatMap {
+          case (cls, typ) => Option(jep.getValue(accessor, cls)).map {
+            arrayObj => arrayObj -> Some(typ)
+          }
         }
 
       case name =>
