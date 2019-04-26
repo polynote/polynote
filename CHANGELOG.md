@@ -1,6 +1,8 @@
 # UNRELEASED
 
-*
+# 0.1.7 (April 25, 2019)
+
+* Fix an embarrassingly bad bug in [#241]
 
 # 0.1.6 (April 25, 2019)
 
