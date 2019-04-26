@@ -341,8 +341,11 @@ class IOSharedNotebook(
     override def runCells(ids: List[CellID]): IO[Stream[IO, CellResult]] =
       ids.map {
         id => queueCell(id).map(_.map(_.map(result => CellResult(ShortString(path), id, result))))
-      }.sequence.map {
-        queued => Stream.emits(queued).flatMap(run => Stream.eval(run).flatten)
+      }.sequence.flatMap {
+        queued =>
+          queued.map(_.start).sequence.map {
+            fibers => Stream.emits(fibers).evalMap(_.join).flatten
+          }
       }
 
     def startKernel(): IO[Unit] = ensureKernel().as(())
