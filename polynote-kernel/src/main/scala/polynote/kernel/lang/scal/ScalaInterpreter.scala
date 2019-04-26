@@ -222,7 +222,7 @@ class ScalaInterpreter(
     code: String
   ): IO[Stream[IO, Result]] = {
     val previous = cellContext.collectBack {
-      case c if previousSources contains c.id => previousSources(c.id)
+      case c if c.id != cellContext.id && (previousSources contains c.id) => previousSources(c.id)
     }.reverse
 
     val source = ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
