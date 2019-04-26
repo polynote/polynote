@@ -746,6 +746,7 @@ export class CodeCell extends Cell {
         this.container.classList.remove('error', 'success');
         this.execInfoEl.classList.remove('output');
         this.cellOutputTools.innerHTML = '';
+        this.cellOutputTools.appendChild(this.resultTabs);
         this.cellOutputTools.classList.remove('output');
         this.cellOutputDisplay.innerHTML = '';
         this.cellOutputDisplay.classList.remove('errors');
