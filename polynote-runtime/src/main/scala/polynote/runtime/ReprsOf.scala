@@ -13,7 +13,7 @@ trait ReprsOf[T] extends Serializable {
   def apply(value: T): Array[ValueRepr]
 }
 
-object ReprsOf extends ExpandedScopeReprs {
+object ReprsOf extends CollectionReprs {
 
   def instance[T](reprs: T => Array[ValueRepr]): ReprsOf[T] = new ReprsOf[T] {
     def apply(value: T): Array[ValueRepr] = reprs(value)
@@ -63,13 +63,11 @@ object ReprsOf extends ExpandedScopeReprs {
         (0xFF & (long >> 56)).toByte, (0xFF & (long >> 48)).toByte, (0xFF & (long >> 40)).toByte, (0xFF & (long >> 32)).toByte,
         (0xFF & (long >> 24)).toByte, (0xFF & (long >> 16)).toByte, (0xFF & (long >> 8)).toByte, (0xFF & long).toByte))
 
-  implicit def fromDataReprs[T](implicit dataReprsOfT: DataReprsOf[T]): ReprsOf[T] = dataReprsOfT
-
   val empty: ReprsOf[Any] = instance(_ => Array.empty)
 
 }
 
-private[runtime] trait CollectionReprs { self: ReprsOf.type =>
+private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.type =>
 
   implicit def seq[F[X] <: GenSeq[X], A](implicit dataReprsOfA: DataReprsOf[A]): ReprsOf[F[A]] = instance {
     seq => Array(StreamingDataRepr(dataReprsOfA.dataType, seq.size, seq.iterator.map(dataReprsOfA.encode)))
@@ -88,6 +86,10 @@ private[runtime] trait CollectionReprs { self: ReprsOf.type =>
       Array(repr)
   }
 
+}
+
+private[runtime] trait FromDataReprs extends ExpandedScopeReprs { self: ReprsOf.type =>
+  implicit def fromDataReprs[T](implicit dataReprsOfT: DataReprsOf[T]): ReprsOf[T] = dataReprsOfT
 }
 
 private[runtime] trait ExpandedScopeReprs { self: ReprsOf.type =>

@@ -210,7 +210,7 @@ class ScalaSource[G <: Global](
           val moduleSym = next.compiledModule.right.get.asModule
 
           // grab all the non-private members declared in the module
-          accum ++ moduleSym.info.nonPrivateDecls.map {
+          accum ++ next.decls.right.get.map {
             decl =>
               // Mapping with decl's name to clobber duplicates, keep track of decl Name and the Module it came from
               decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.name.asInstanceOf[global.Name])
@@ -444,9 +444,9 @@ class ScalaSource[G <: Global](
 
   lazy val compiledModule: Either[Throwable, global.Symbol] = successfulParse.flatMap {
     _ =>
+      val run = new global.Run()
       compileUnit.flatMap { unit =>
         withCompiler {
-          val run = new global.Run()
           unit.body = global.resetAttrs(unit.body)
           reporter.attempt(run.compileUnits(List(unit), run.namerPhase))
         }.flatMap(identity).flatMap {
@@ -461,7 +461,16 @@ class ScalaSource[G <: Global](
       }
   }
 
-  def compile: Either[Throwable, global.Symbol] = compiledModule
+  lazy val decls = compiledModule.flatMap {
+    sym => withCompiler {
+      global.exitingTyper(sym.info.nonPrivateDecls)
+    }
+  }
+
+  def compile: Either[Throwable, global.Symbol] = {
+    val _ = decls
+    compiledModule
+  }
 
 }
 

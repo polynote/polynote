@@ -5,10 +5,11 @@ import java.net.URL
 import java.util.concurrent.{ExecutorService, Executors, ThreadFactory}
 
 import cats.effect.IO
+import cats.syntax.either._
 import polynote.messages.truncateTinyString
 import polynote.runtime.{ReprsOf, StringRepr, ValueRepr}
 
-import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile}
+import scala.reflect.internal.util.{AbstractFileClassLoader, BatchSourceFile, RangePosition}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
 import scala.reflect.runtime.{universe => ru}
@@ -17,6 +18,7 @@ import scala.tools.nsc.interactive.Global
 import scala.tools.reflect.ToolBox
 import org.log4s.{Logger, getLogger}
 import polynote.kernel.KernelStatusUpdate
+import polynote.kernel.lang.scal.CellSourceFile
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
@@ -25,6 +27,8 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
   import global.{Type, Symbol}
 
   private val logger = getLogger
+
+  private val reporter = global.reporter.asInstanceOf[KernelReporter]
 
   val runtimeMirror: ru.Mirror = ru.runtimeMirror(classLoader)
 
@@ -84,25 +88,27 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
     }
   }
 
-  private val reprsOfCache = new mutable.HashMap[global.Type, ReprsOf[Any]]()
+  private val reprsOfCache = new mutable.HashMap[global.Type, (ReprsOf[Any], global.Tree)]()
 
   def reprsOf(value: Any, typ: global.Type): List[ValueRepr] = if (value == null) List(StringRepr("null")) else {
     val otherReprs = try {
       reprsOfCache.getOrElseUpdate(typ,
         {
-          val run = new global.Run()
+         // val run = new global.Run()
           val appliedType = global.appliedType(global.typeOf[ReprsOf[_]].typeConstructor, typ)
 
-          val runtimeType = importToRuntime.importType(appliedType)
-          runtimeTools.inferImplicitValue(runtimeType) match {
-            case ru.EmptyTree =>
-              ReprsOf.empty
-            case tree =>
-              val untyped = runtimeTools.untypecheck(tree)
-              runtimeTools.eval(untyped).asInstanceOf[ReprsOf[Any]]
+          val fromGlobal = inferImplicit(appliedType).flatMap {
+            tree => Either.catchNonFatal {
+              val imported = importToRuntime.importTree(tree)
+              runtimeTools.eval(runtimeTools.untypecheck(imported)).asInstanceOf[ReprsOf[Any]] -> tree
+            }
+          }
+
+          fromGlobal.getOrElse {
+            ReprsOf.empty -> global.EmptyTree
           }
         }
-      ).apply(value)
+      )._1.apply(value)
     } catch {
       case err: Throwable =>
         val e = err
@@ -118,6 +124,45 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
 
 
     stringRepr.toList ++ otherReprs.toList
+  }
+
+  def inferImplicit(typ: global.Type): Either[Throwable, global.Tree] = {
+    import global.{reporter => _, _}
+    val objectName = freshTermName("anonImplicit")(global.globalFreshNameCreator)
+    val termName = freshTermName("value")(global.globalFreshNameCreator)
+    val sourceFile = CellSourceFile(objectName.toString)
+    val unit = new RichCompilationUnit(sourceFile)
+    val cachedImports = reprsOfCache.toList.filter(_._2._2 != EmptyTree).collect {
+      case (cachedTyp, (_, cachedTree@Select(qual, cachedName))) =>
+        val copyOfCached = Select(qual, cachedName)
+        q"private implicit def ${cachedName.toTermName}: _root_.polynote.runtime.ReprsOf[$cachedTyp] = $copyOfCached"
+    }
+
+    unit.body =
+      atPos(new RangePosition(sourceFile, 0, 0, 0)) {
+        q"""
+          package anonImplicits {
+            object $objectName extends scala.Serializable {
+              ..$cachedImports
+              lazy val $termName: $typ = implicitly[$typ]
+            }
+          }
+        """
+      }
+
+    val result = global.ask {
+      () =>
+        reporter.attempt {
+          val run = new Run()
+          run.compileUnits(List(unit), run.namerPhase)
+          global.exitingTyper(unit.body)
+          new Run()
+        }
+    }.map {
+      tree => q"anonImplicits.$objectName.$termName"
+    }
+
+    result
   }
 
   @volatile private var currentTaskThread: Thread = _
@@ -238,3 +283,5 @@ object KernelContext {
     KernelContext(global, classPath, notebookClassLoader)
   }
 }
+
+case object NoReprs extends Throwable
