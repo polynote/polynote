@@ -140,22 +140,24 @@ export class Cell extends UIEventTarget {
         // TODO: some way to display the KeyMap to users
         this.keyMap = new Map([
             [KeyPress.of("ArrowUp").h, (pos, range, selection, cell) => {
-                if (!selection && pos.lineNumber === range.startLineNumber && pos.column === range.startColumn) {
+                if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
                     cell.dispatchEvent(new AdvanceCellEvent(cell.id, true));
 
                 }
             }],
             [KeyPress.of("ArrowDown").h, (pos, range, selection, cell) => {
-                if (!selection && pos.lineNumber === range.endLineNumber && pos.column === range.endColumn) {
+                if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
                     cell.dispatchEvent(new AdvanceCellEvent(cell.id, false));
 
                 }
             }],
             [KeyPress.of("Enter", {shift: true}).h, () => {
                 this.dispatchEvent(new AdvanceCellEvent(this.id));
+                return true; // prevent default
             }],
             [KeyPress.of("Enter", {shift: true, meta: true}).h, () => {
                 this.dispatchEvent(new InsertCellEvent(this.id));
+                return true; // prevent default
             }],
             [KeyPress.of("PageDown", {meta: true}).h,
                 () => this.dispatchEvent(new AdvanceCellEvent(this.id, false))],
@@ -223,8 +225,7 @@ export class Cell extends UIEventTarget {
                 const pos = this.getPosition();
                 const range = this.getRange();
                 const selection = this.getCurrentSelection();
-                handler(pos, range, selection, this);
-                return true
+                return handler(pos, range, selection, this);
             }
         }
         return false
@@ -352,21 +353,25 @@ export class CodeCell extends Cell {
         this.updateKeyHandler(KeyPress.of("Enter", {shift: true}).h, (prev) => {
             return () => {
                 this.dispatchEvent(new RunCellEvent(this.id));
-                prev();
+                return prev();
             }
         });
         this.updateKeyHandler(KeyPress.of("Enter", {shift: true, meta: true}).h, (prev) => {
             return () => {
                 this.dispatchEvent(new RunCellEvent(this.id));
-                prev();
+                return prev();
             }
         });
 
         // actually bind keydown
         this.editor.onKeyDown((evt) => {
-            if (this.onKeyDown(evt)) {
-                evt.stopPropagation();
-                evt.preventDefault();
+            // this is really ugly, is there a better way to tell whether the widget is visible??
+            const suggestionsVisible = this.editor.getContribution('editor.contrib.suggestController')._widget._value.suggestWidgetVisible.get();
+            if (!suggestionsVisible) { // don't do stuff when suggestions are visible
+                if (this.onKeyDown(evt)) {
+                    evt.stopPropagation();
+                    evt.preventDefault();
+                }
             }
         });
 
