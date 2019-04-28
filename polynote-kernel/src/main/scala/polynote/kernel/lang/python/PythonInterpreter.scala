@@ -294,10 +294,10 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         //       For now we'll go a head and copy out the Java array if possible.
         {
           jep.getValue(s"$accessor.dtype.name", classOf[String]) match {
-            case "int64"   => Some(classOf[Array[Long]] -> typeOf[Array[LongBuffer]])
-            case "int32"   => Some(classOf[Array[IntBuffer]] -> typeOf[Array[IntBuffer]])
-            case "float64" => Some(classOf[Array[DoubleBuffer]] -> typeOf[Array[DoubleBuffer]])
-            case "float32" => Some(classOf[Array[FloatBuffer]] -> typeOf[Array[FloatBuffer]])
+            case "int64"   => Some(classOf[Array[Long]] -> typeOf[Array[Long]])
+            case "int32"   => Some(classOf[Array[Int]] -> typeOf[Array[Int]])
+            case "float64" => Some(classOf[Array[Double]] -> typeOf[Array[Double]])
+            case "float32" => Some(classOf[Array[Float]] -> typeOf[Array[Float]])
             case "bool"    => Some(classOf[Array[Boolean]] -> typeOf[Array[Boolean]])
             case "int16"   => Some(classOf[Array[Short]] -> typeOf[Array[Short]])
             case _ => None
