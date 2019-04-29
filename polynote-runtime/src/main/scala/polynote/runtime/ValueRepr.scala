@@ -261,7 +261,9 @@ object StreamingDataRepr {
         val handle = handles.get(handleId)
         if (handle != null) {
           try handle.release() catch {
-            case err: Throwable => 
+            case err: Throwable =>
+              System.err.println("Error cleaning streaming handle")
+              err.printStackTrace()
           }
           handles.remove(handleId)
         }
