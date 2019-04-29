@@ -238,6 +238,35 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
     }
   }
 
+  it should "convert numpy arrays" in {
+    val code =
+      """import numpy as np
+        |arr_bool = np.array([True, False])
+        |arr_long = np.array([1,2,3])
+        |arr_int = arr_long.astype(np.int32)
+        |arr_short = arr_long.astype(np.int16)
+        |arr_double = np.array([1.1, 2.2, 3.3])
+        |arr_float = arr_double.astype(np.float32)
+      """.stripMargin
+
+    assertPythonOutput(code) {
+      case (vars, _, _) =>
+        val arrBool = vars("arr_bool").asInstanceOf[Array[Boolean]]
+        val arrLong = vars("arr_long").asInstanceOf[Array[Long]]
+        val arrInt = vars("arr_int").asInstanceOf[Array[Int]]
+        val arrShort = vars("arr_short").asInstanceOf[Array[Short]]
+        val arrDouble = vars("arr_double").asInstanceOf[Array[Double]]
+        val arrFloat = vars("arr_float").asInstanceOf[Array[Float]]
+
+        arrBool should contain theSameElementsInOrderAs Seq(true, false)
+        arrLong should contain theSameElementsInOrderAs Seq(1L, 2L, 3L)
+        arrInt should contain theSameElementsInOrderAs Seq(1, 2, 3)
+        arrShort should contain theSameElementsInOrderAs Seq(1.toShort, 2.toShort, 3.toShort)
+        arrDouble should contain theSameElementsInOrderAs Seq(1.1, 2.2, 3.3)
+        arrFloat should contain theSameElementsInOrderAs Seq(1.1f, 2.2f, 3.3f)
+    }
+  }
+
   "PythonFunction" should "allow positional and keyword args" in {
 
     val code =
