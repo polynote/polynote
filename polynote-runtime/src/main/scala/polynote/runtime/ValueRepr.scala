@@ -260,7 +260,9 @@ object StreamingDataRepr {
       def run(): Unit = {
         val handle = handles.get(handleId)
         if (handle != null) {
-          handle.release()
+          try handle.release() catch {
+            case err: Throwable => 
+          }
           handles.remove(handleId)
         }
       }

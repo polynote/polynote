@@ -111,7 +111,7 @@ class LocalTestTransport(implicit contextShift: ContextShift[IO]) extends Transp
 
 class LocalTestTransportServer(transport: LocalTestTransport)(implicit contextShift: ContextShift[IO]) extends TransportServer {
 
-  private val deferredClient = Deferred.unsafe[IO, LocalTestTransportClient]
+  private val deferredClient = Deferred.tryable[IO, LocalTestTransportClient].unsafeRunSync()
   val isClosed: SignallingRef[IO, Boolean] = SignallingRef[IO, Boolean](false).unsafeRunSync()
   val requestsOut: Queue[IO, RemoteRequest] = Queue.unbounded[IO, RemoteRequest].unsafeRunSync()
 
@@ -124,6 +124,11 @@ class LocalTestTransportServer(transport: LocalTestTransport)(implicit contextSh
   def sendRequest(req: RemoteRequest): IO[Unit] = transport.logReq(req) *> requestsOut.enqueue1(req)
   def close(): IO[Unit] = isClosed.set(true)
   def connected: IO[Unit] = deferredClient.get.as(())
+
+  override def isConnected: IO[Boolean] = deferredClient.tryGet.flatMap {
+    case Some(client) => client.isClosed.get.map(closed => !closed)
+    case None => IO.pure(false)
+  }
 }
 
 class LocalTestTransportClient(server: LocalTestTransportServer, transport: LocalTestTransport)(implicit contextShift: ContextShift[IO]) extends TransportClient {

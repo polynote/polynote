@@ -317,7 +317,10 @@ class RemoteSparkKernel(
 
     override def release(): Unit = {
       super.release()
-      request1[UnitResponse](ReleaseHandleRequest(_, Streaming, remoteHandle)).unsafeRunSync()
+      transport.isConnected.flatMap {
+        case true => request1[UnitResponse](ReleaseHandleRequest(_, Streaming, remoteHandle)).as(())
+        case false => IO.unit
+      }.unsafeRunSync()
     }
   }
 

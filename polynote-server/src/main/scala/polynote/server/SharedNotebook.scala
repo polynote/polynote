@@ -206,8 +206,8 @@ class IOSharedNotebook(
                     b.rewind()
                     ref.set(Some(Some(ByteVector32(ByteVector(b))))).unsafeRunSync()
                 }.setFinalizer {
-                () => ref.set(None).unsafeRunSync()
-              }
+                  () => ref.set(None).unsafeRunSync()
+                }
             } as {
               ref.discrete.unNoneTerminate.unNone.map {
                 update => HandleData(ShortString(path), Updating, repr.handle, 1, Array(update))

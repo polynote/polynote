@@ -7,7 +7,7 @@ import java.nio.channels.{ServerSocketChannel, SocketChannel}
 
 import cats.data.OptionT
 import cats.effect.{ContextShift, Fiber, IO, Timer}
-import cats.effect.concurrent.{Deferred, Ref}
+import cats.effect.concurrent.{Deferred, Ref, TryableDeferred}
 import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.flatMap._
@@ -48,6 +48,11 @@ trait TransportServer {
   def close(): IO[Unit]
 
   /**
+    * @return whether the transport is connected (i.e. can a request be sent)
+    */
+  def isConnected: IO[Boolean]
+
+  /**
     * @return an IO that waits for the client to connect
     */
   def connected: IO[Unit]
@@ -81,7 +86,9 @@ class SocketTransportServer(
 
   private val logger = getLogger
 
-  private val connectedChannel: Deferred[IO, Either[Throwable, FramedSocket]] = Deferred.unsafe
+  private val connectedChannel: TryableDeferred[IO, Either[Throwable, FramedSocket]] =
+    Deferred.tryable[IO, Either[Throwable, FramedSocket]].unsafeRunSync()
+
   private val closed = ReadySignal()
 
   Stream.awakeEvery[IO](Duration(1, SECONDS)).evalMap(_ => process.exitStatus)
@@ -120,6 +127,11 @@ class SocketTransportServer(
       case Left(_) => IO.unit
       case Right(channel) => channel.close()
     }
+  }
+
+  override def isConnected: IO[Boolean] = connectedChannel.tryGet.map {
+    case Some(Left(_)) | None => false
+    case Some(Right(socket)) => socket.isConnected
   }
 
   override def connected: IO[Unit] = connectedChannel.get.flatMap(IO.fromEither).as(())
@@ -304,6 +316,8 @@ object SocketTransport {
     }
 
     def close(): IO[Unit] = IO(outgoingLengthBuffer.synchronized(socketChannel.close()))
+
+    def isConnected: Boolean = socketChannel.isConnected
 
     val bitVectors: Stream[IO, BitVector] =
       Stream.repeatEval(IO(read())).unNone
