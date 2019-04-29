@@ -33,7 +33,7 @@ import scala.tools.nsc.interactive.Global
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
 class SparkPolyKernel(
   getNotebook: () => IO[Notebook],
-  notebookContext: SignallingRef[IO, NotebookContext],
+  notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
   ctx: KernelContext,
   dependencies: Map[String, List[(String, File)]],
   statusUpdates: Publish[IO, KernelStatusUpdate],
@@ -166,7 +166,7 @@ class SparkPolyKernel(
 object SparkPolyKernel {
   def apply(
     getNotebook: () => IO[Notebook],
-    notebookContext: SignallingRef[IO, NotebookContext],
+    notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
     dependencies: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],

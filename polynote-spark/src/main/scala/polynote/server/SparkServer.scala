@@ -11,7 +11,7 @@ import polynote.kernel.{KernelAPI, KernelStatusUpdate, PolyKernel, SparkPolyKern
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.remote.{RemoteSparkKernel, SocketTransport, Transport}
 import polynote.kernel.util.{NotebookContext, Publish, SparkSubmitCommand}
-import polynote.messages.Notebook
+import polynote.messages.{Notebook, NotebookUpdate}
 
 import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
@@ -54,7 +54,7 @@ class SparkKernelFactory(
 ) extends IOKernelFactory(dependencyFetchers) {
   override protected def mkKernel(
     getNotebook: () => IO[Notebook],
-    notebookContext: SignallingRef[IO, NotebookContext],
+    notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
     deps: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
@@ -67,7 +67,7 @@ class SparkKernelFactory(
 
   override def launchKernel(
     getNotebook: () => IO[Notebook],
-    notebookContext: SignallingRef[IO, NotebookContext],
+    notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     polynoteConfig: PolynoteConfig
   ): IO[KernelAPI[IO]] = if (polynoteConfig.spark.get("polynote.kernel.remote") contains "true") {
@@ -82,6 +82,6 @@ class SparkRemoteKernelFactory(
   contextShift: ContextShift[IO],
   timer: Timer[IO]
 ) extends KernelFactory[IO] {
-  def launchKernel(getNotebook: () => IO[Notebook], notebookContext: SignallingRef[IO, NotebookContext], statusUpdates: Publish[IO, KernelStatusUpdate], config: PolynoteConfig): IO[KernelAPI[IO]] =
-    RemoteSparkKernel(statusUpdates, getNotebook, config, transport)
+  def launchKernel(getNotebook: () => IO[Notebook], notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])], statusUpdates: Publish[IO, KernelStatusUpdate], config: PolynoteConfig): IO[KernelAPI[IO]] =
+    RemoteSparkKernel(statusUpdates, getNotebook, notebookContext, config, transport)
 }

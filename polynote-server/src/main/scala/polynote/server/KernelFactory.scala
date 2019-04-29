@@ -13,7 +13,7 @@ import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel._
 import polynote.kernel.util.{NotebookContext, Publish, ReadySignal}
-import polynote.messages.{Notebook, NotebookConfig, TinyMap}
+import polynote.messages.{Notebook, NotebookConfig, NotebookUpdate, TinyMap}
 
 import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
@@ -22,7 +22,7 @@ trait KernelFactory[F[_]] {
 
   def launchKernel(
     getNotebook: () => F[Notebook],
-    notebookContext: SignallingRef[F, NotebookContext],
+    notebookContext: SignallingRef[F, (NotebookContext, Option[NotebookUpdate])],
     statusUpdates: Publish[F, KernelStatusUpdate],
     config: PolynoteConfig
   ): F[KernelAPI[F]]
@@ -42,7 +42,7 @@ class IOKernelFactory(
 
   protected def mkKernel(
     getNotebook: () => IO[Notebook],
-    notebookContext: SignallingRef[IO, NotebookContext],
+    notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
     deps: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
@@ -55,8 +55,7 @@ class IOKernelFactory(
 
   override def launchKernel(
     getNotebook: () => IO[Notebook],
-    notebookContext: SignallingRef[IO, NotebookContext],
-    statusUpdates: Publish[IO, KernelStatusUpdate],
+    notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],    statusUpdates: Publish[IO, KernelStatusUpdate],
     polynoteConfig: PolynoteConfig
   ): IO[KernelAPI[IO]] = for {
     notebook <- getNotebook()

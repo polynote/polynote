@@ -88,7 +88,7 @@ class IOSharedNotebook(
   val path: String,
   ref: SignallingRef[IO, (GlobalVersion, Notebook)],            // the Int is the global version, which can wrap around back to zero if necessary
   kernelRef: Ref[IO, Option[KernelAPI[IO]]],
-  notebookContext: SignallingRef[IO, NotebookContext],
+  notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
   updates: Queue[IO, Option[(SubscriberId, NotebookUpdate, Deferred[IO, GlobalVersion])]],   // the canonical series of edits
   updatesTopic: Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]],  // a subscribe-able channel for watching updates,
   kernelFactory: KernelFactory[IO],
@@ -150,17 +150,19 @@ class IOSharedNotebook(
           update match {
             case InsertCell(_, _, _, cell, after) => CellContext(cell.id).flatMap {
               cellContext => notebookContext.update {
-                nbCtx =>
+                case (nbCtx, _) =>
                   nbCtx.insert(cellContext, Option(after))
-                  nbCtx
+                  (nbCtx, Option(update))
               }
             }
             case DeleteCell(_, _, _, id) => notebookContext.update {
-              nbCtx =>
+              case (nbCtx, _) =>
                 nbCtx.remove(id)
-                nbCtx
+                (nbCtx, Option(update))
             }
-            case _ => IO.unit
+            case _ => notebookContext.update {
+              case (nbCtx, _) => (nbCtx, Option(update))
+            }
           }
       }
 
@@ -376,9 +378,9 @@ class IOSharedNotebook(
       notebook => if (notebook.cells.isEmpty) IO.unit else {
         notebook.cells.map {
           cell => CellContext(cell.id).flatMap(context => notebookContext.update {
-            ctx =>
+            case (ctx, _) =>
               ctx.insertLast(context)
-              ctx
+              (ctx, None)
           })
         }.sequence.as(())
       }
@@ -456,7 +458,7 @@ object IOSharedNotebook {
   ): IO[IOSharedNotebook] = for {
     ref             <- SignallingRef[IO, (GlobalVersion, Notebook)](0 -> initial)
     kernel          <- Ref[IO].of[Option[KernelAPI[IO]]](None)
-    notebookContext <- SignallingRef[IO, NotebookContext](new NotebookContext)
+    notebookContext <- SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])]((new NotebookContext, None))
     updates         <- Queue.unbounded[IO, Option[(SubscriberId, NotebookUpdate, Deferred[IO, GlobalVersion])]]
     updatesTopic    <- Topic[IO, Option[(GlobalVersion, SubscriberId, NotebookUpdate)]](None)
     outputMessages  <- Topic[IO, Message](KernelStatus(ShortString(path), KernelBusyState(busy = false, alive = false)))

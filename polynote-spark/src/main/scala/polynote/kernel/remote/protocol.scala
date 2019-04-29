@@ -74,18 +74,18 @@ object ReleaseHandleRequest extends RemoteRequestCompanion[ReleaseHandleRequest]
 final case class CancelTasksRequest(reqId: Int) extends RemoteRequest
 object CancelTasksRequest extends RemoteRequestCompanion[CancelTasksRequest](14)
 
-//final case class UpdateNotebookRequest(reqId: Int, version: Int, update: NotebookUpdate) extends RemoteRequest
-//object UpdateNotebookRequest extends RemoteRequestCompanion[UpdateNotebookRequest](15) {
-//  private implicit val notebookUpdateCodec: Codec[NotebookUpdate] = Message.codec.exmap[NotebookUpdate](
-//    _ match {
-//      case msg: NotebookUpdate => Attempt.successful(msg)
-//      case _ => Attempt.failure(Err("Not a notebook update message"))
-//    },
-//    msg => Attempt.successful(msg)
-//  )
-//
-//  implicit val codec: Codec[UpdateNotebookRequest] = cachedImplicit
-//}
+final case class UpdateNotebookRequest(reqId: Int, update: NotebookUpdate) extends RemoteRequest
+object UpdateNotebookRequest extends RemoteRequestCompanion[UpdateNotebookRequest](15) {
+  private implicit val notebookUpdateCodec: Codec[NotebookUpdate] = Message.codec.exmap[NotebookUpdate](
+    _ match {
+      case msg: NotebookUpdate => Attempt.successful(msg)
+      case _ => Attempt.failure(Err("Not a notebook update message"))
+    },
+    msg => Attempt.successful(msg)
+  )
+
+  implicit val codec: Codec[UpdateNotebookRequest] = cachedImplicit
+}
 
 object RemoteRequest {
   implicit val discriminated: Discriminated[RemoteRequest, Byte] = Discriminated(byte)

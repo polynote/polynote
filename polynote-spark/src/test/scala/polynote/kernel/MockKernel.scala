@@ -30,7 +30,7 @@ import CellIdSyntax._
 class MockKernelFactory(val kernel: MockKernel) extends KernelFactory[IO] {
   def launchKernel(
     getNotebook: () => IO[Notebook],
-    notebookContext: SignallingRef[IO, NotebookContext],
+    notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     config: PolynoteConfig
   ): IO[KernelAPI[IO]] = IO.pure(kernel)

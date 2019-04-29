@@ -32,7 +32,7 @@ import scala.reflect.io.{AbstractFile, VirtualDirectory}
 import scala.tools.nsc.Settings
 
 class PolyKernel private[kernel] (
-  private val notebookContext: SignallingRef[IO, NotebookContext],
+  private val notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
   val kernelContext: KernelContext,
   val outputDir: AbstractFile,
   dependencies: Map[String, List[(String, File)]],
@@ -59,7 +59,7 @@ class PolyKernel private[kernel] (
     interp.init() *> notebookContext.get.flatMap { nbCtx =>
       // Since there can be multiple predefs (one per interpreter), they get monotonically decreasing negative cell IDs
       // starting with -1. Get the smallest existing ID, make sure it's 0 or less, and subtract one.
-      val cellId = math.min(0, nbCtx.first.map(_.id).getOrElse(0.toShort)) - 1
+      val cellId = math.min(0, nbCtx._1.first.map(_.id).getOrElse(0.toShort)) - 1
 
       CellContext(cellId, None).flatMap {
         cellContext =>
@@ -69,9 +69,10 @@ class PolyKernel private[kernel] (
                 results => results.collect {
                   case v: ResultValue => v
                 }.through(cellContext.results.tap)
-              } <* notebookContext.update { ctx =>
-                ctx.insertFirst(cellContext)
-                ctx
+              } <* notebookContext.update {
+                case (ctx, _) =>
+                  ctx.insertFirst(cellContext)
+                  (ctx, None)
               }
 
             case None => IO.pure(Stream.empty)
@@ -163,9 +164,9 @@ class PolyKernel private[kernel] (
 
                 CellContext(cell.id).flatMap {
                   cellContext =>
-                    notebookContext.modify { nbctx =>
+                    notebookContext.modify { case (nbctx, _) =>
                       val prevCtx = nbctx.tryUpdate(cellContext)
-                      (nbctx, prevCtx)
+                      ((nbctx, None), (prevCtx, None))
                     }.flatMap {
                       prevContext =>
                         val results = interp.runCode(
@@ -178,9 +179,9 @@ class PolyKernel private[kernel] (
                           }
                         }.handleErrorWith {
                           err =>
-                            notebookContext.update { nbctx =>
-                              prevContext.map(nbctx.tryUpdate)
-                              nbctx
+                            notebookContext.update { case (nbctx, _) =>
+                              prevContext._1.map(nbctx.tryUpdate)
+                              (nbctx, None)
                             } *> IO.raiseError(err) // restore previous context on error
                         }
 
@@ -240,15 +241,15 @@ class PolyKernel private[kernel] (
 
   def completionsAt(cell: NotebookCell, pos: Int): IO[List[Completion]] = withLaunchedInterpreter(cell) {
     (cell, interp) =>
-      notebookContext.get.flatMap(_.getIO(cell.id)).flatMap(ctx => interp.completionsAt(ctx, cell.content.toString, pos))
+      notebookContext.get.flatMap(_._1.getIO(cell.id)).flatMap(ctx => interp.completionsAt(ctx, cell.content.toString, pos))
   }.map(_.getOrElse(Nil))
 
   def parametersAt(cell: NotebookCell, pos: Int): IO[Option[Signatures]] = withLaunchedInterpreter(cell) {
     (cell, interp) =>
-      notebookContext.get.flatMap(_.getIO(cell.id)).flatMap(ctx => interp.parametersAt(ctx, cell.content.toString, pos))
+      notebookContext.get.flatMap(_._1.getIO(cell.id)).flatMap(ctx => interp.parametersAt(ctx, cell.content.toString, pos))
   }.map(_.flatten)
 
-  def currentSymbols(): IO[List[ResultValue]] = notebookContext.get.map(_.allResultValues)
+  def currentSymbols(): IO[List[ResultValue]] = notebookContext.get.map(_._1.allResultValues)
 
   def currentTasks(): IO[List[TaskInfo]] = taskManager.allTasks
 
@@ -270,7 +271,7 @@ class PolyKernel private[kernel] (
     // TODO: This should really be in the ServerHandshake as it isn't a Kernel-level thing...
     Option(KernelInfo(
       "Polynote Version:" -> s"""<span id="version">${BuildInfo.version}</span>""",
-      "Build Commit:"            -> s"""<span id="commit">${BuildInfo.commit}</span>"""
+      "Build Commit:"     -> s"""<span id="commit">${BuildInfo.commit}</span>"""
     ))
   )
 
@@ -333,7 +334,7 @@ object PolyKernel {
   }
 
   def apply(
-    notebookContext: SignallingRef[IO, NotebookContext],
+    notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
     dependencies: Map[String, List[(String, File)]],
     availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],

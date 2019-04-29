@@ -5,11 +5,12 @@ import java.util.concurrent.{Executors, ThreadFactory}
 import cats.effect.concurrent.Ref
 import cats.effect.{ContextShift, IO, Timer}
 import cats.implicits._
-import fs2.concurrent.{Queue, Topic}
+import fs2.concurrent.{Queue, SignallingRef, Topic}
 import org.scalactic.source.Position
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.config.PolynoteConfig
 import polynote.kernel._
+import polynote.kernel.util.NotebookContext
 import polynote.messages._
 import polynote.kernel.util.Publish._
 import polynote.runtime.StreamingDataRepr
@@ -80,12 +81,14 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
       transport.run {
         await =>
           for {
+            nbctx        <- SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])]((new NotebookContext(), None))
             startKernelF <- RemoteSparkKernel(
               statusUpdates,
               () => currentNotebook.get,
+              nbctx,
               config,
               transport).start
-            remoteClient = new RemoteSparkKernelClient(transport.client, mockKernelFactory)
+            remoteClient = new RemoteSparkKernelClient(transport.client, nbctx, mockKernelFactory)
             runRemote <- remoteClient.run().start
             remoteKernel <- startKernelF.join
             _ <- await
@@ -101,12 +104,14 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
     runTest {
       val transport = new LocalTestTransport
       for {
+        nbctx             <- SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])]((new NotebookContext(), None))
         currentNotebook   <- Ref[IO].of(initialNotebook)
-        remoteClient = new RemoteSparkKernelClient(transport.client, mockKernelFactory)
+        remoteClient = new RemoteSparkKernelClient(transport.client, nbctx, mockKernelFactory)
         runRemoteClient <- remoteClient.run().start
         startRemoteKernel <- RemoteSparkKernel(
           statusUpdates,
           () => currentNotebook.get,
+          nbctx,
           config,
           transport).start
 
@@ -139,12 +144,13 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
 
         val sparkKernelFactory = new SparkRemoteKernelFactory(transport)
         val kernelFactory = mockKernelFactory
-        val remoteClient = new RemoteSparkKernelClient(transport.client, kernelFactory)
 
         for {
           sharedNotebook  <- IOSharedNotebook(path, initialNotebook, sparkKernelFactory, config)
           subscriber      <- sharedNotebook.open("test client")
           ready           <- subscriber.init().start
+          nbctx           <- SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])]((new NotebookContext(), None))
+          remoteClient     = new RemoteSparkKernelClient(transport.client, nbctx, kernelFactory)
           runRemoteClient <- remoteClient.run().start
           _               <- ready.join
           update = UpdateCell(path, 0, 0, 0.toShort, ContentEdits(Insert(2, "insert")))
@@ -164,10 +170,11 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
         val transport = new SocketTransport(new LocalTestDeploy(mockKernelFactory), Some("127.0.0.1"))
         for {
           currentNotebook <- Ref[IO].of(initialNotebook)
-          kernel <- RemoteSparkKernel(statusUpdates, currentNotebook.get _, config, transport)
+          nbctx           <- SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])]((new NotebookContext(), None))
+          kernel          <- RemoteSparkKernel(statusUpdates, currentNotebook.get _, nbctx, config, transport)
 
-          nb <- currentNotebook.get
-          results <- kernel.runCell(nb.cell(2)).flatMap(_.compile.toList)
+          nb              <- currentNotebook.get
+          results         <- kernel.runCell(nb.cell(2)).flatMap(_.compile.toList)
 
           repr = results match {
             case rv @ ResultValue(TinyString("twoStream"), TinyString("DataFrame"), TinyList((repr : StreamingDataRepr) :: Nil), _, _, _, _) :: Nil => repr

@@ -15,11 +15,11 @@ import cats.syntax.functor._
 import cats.syntax.traverse._
 import cats.instances.list._
 import fs2.{Chunk, Stream}
-import fs2.concurrent.Queue
+import fs2.concurrent.{Queue, SignallingRef}
 import org.log4s.getLogger
 import polynote.config.PolynoteConfig
 import polynote.kernel._
-import polynote.kernel.util.{Publish, ReadySignal}
+import polynote.kernel.util.{NotebookContext, Publish, ReadySignal}
 import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Lazy, Notebook, NotebookCell, NotebookUpdate, ShortString, Streaming, Updating}
 import polynote.runtime._
 import polynote.util.Memoize
@@ -29,9 +29,17 @@ import scala.concurrent.duration.{Duration, MINUTES}
 import scala.collection.JavaConverters._
 import scala.concurrent.CancellationException
 
+/**
+  * This class is responsible for talking to the remote kernel - it runs in the same JVM as the main Polynote server.
+  *
+  * It translates Kernel requests to messages which are sent to the remote kernel - and listens for responses back.
+  *
+  * It is responsible for notifying the remote kernel of important stuff, like updates to the notebook.
+  */
 class RemoteSparkKernel(
   val statusUpdates: Publish[IO, KernelStatusUpdate],
-  getNotebook: () => IO[Notebook],
+  getNotebook: () => IO[Notebook], // TODO: signallingref also
+  notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
   config: PolynoteConfig,
   transport: TransportServer)(implicit
   contextShift: ContextShift[IO]
@@ -46,6 +54,14 @@ class RemoteSparkKernel(
   private val streamRequests = new ConcurrentHashMap[Int, ResultStreamRequest]()
 
   private val logger = getLogger
+
+  // listen to NotebookUpdates and apply them.
+  notebookContext.discrete.evalMap {
+    case (_, Some(update)) =>
+      request1[UnitResponse](UpdateNotebookRequest(_, update))
+    case _ => IO.unit
+  }.interruptWhen(shutdownSignal()).compile.drain.unsafeRunAsyncAndForget()
+
 
   /**
     * Send the given message, expecting the given response, and return an IO representing the response being received.
@@ -369,6 +385,7 @@ object RemoteSparkKernel {
   def apply[ServerAddress](
     statusUpdates: Publish[IO, KernelStatusUpdate],
     getNotebook: () => IO[Notebook],
+    notebookContext: SignallingRef[IO, (NotebookContext, Option[NotebookUpdate])],
     config: PolynoteConfig,
     transport: Transport[ServerAddress])(implicit
     contextShift: ContextShift[IO],
@@ -379,7 +396,7 @@ object RemoteSparkKernel {
       _        <- publish("Starting kernel process", 0)
       notebook <- getNotebook()
       server   <- transport.serve(config, notebook)
-      kernel    = new RemoteSparkKernel(statusUpdates, getNotebook, config, server)
+      kernel    = new RemoteSparkKernel(statusUpdates, getNotebook, notebookContext, config, server)
       start    <- kernel.init().start
       _        <- publish("Awaiting remote kernel", 64)
       _        <- server.connected
