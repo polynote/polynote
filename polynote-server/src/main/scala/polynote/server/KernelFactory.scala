@@ -7,12 +7,12 @@ import cats.effect.concurrent.Ref
 import cats.instances.list._
 import cats.syntax.parallel._
 import fs2.Stream
-import fs2.concurrent.Topic
+import fs2.concurrent.{SignallingRef, Topic}
 import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel._
-import polynote.kernel.util.{Publish, ReadySignal}
+import polynote.kernel.util.{NotebookContext, Publish, ReadySignal}
 import polynote.messages.{Notebook, NotebookConfig, TinyMap}
 
 import scala.reflect.io.AbstractFile
@@ -22,6 +22,7 @@ trait KernelFactory[F[_]] {
 
   def launchKernel(
     getNotebook: () => F[Notebook],
+    notebookContext: SignallingRef[F, NotebookContext],
     statusUpdates: Publish[F, KernelStatusUpdate],
     config: PolynoteConfig
   ): F[KernelAPI[F]]
@@ -41,6 +42,7 @@ class IOKernelFactory(
 
   protected def mkKernel(
     getNotebook: () => IO[Notebook],
+    notebookContext: SignallingRef[IO, NotebookContext],
     deps: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
@@ -49,17 +51,21 @@ class IOKernelFactory(
     settings: Settings,
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
-  ): IO[PolyKernel] = IO.pure(PolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader, config))
+  ): IO[PolyKernel] = IO.pure(PolyKernel(notebookContext, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader, config))
 
-  override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate], polynoteConfig: PolynoteConfig): IO[KernelAPI[IO]] = for {
+  override def launchKernel(
+    getNotebook: () => IO[Notebook],
+    notebookContext: SignallingRef[IO, NotebookContext],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
+    polynoteConfig: PolynoteConfig
+  ): IO[KernelAPI[IO]] = for {
     notebook <- getNotebook()
-    path      = notebook.path
     config    = notebook.config.getOrElse(NotebookConfig.empty)
     taskInfo  = TaskInfo("kernel", "Start", "Kernel starting", TaskStatus.Running)
     deps     <- fetchDependencies(config, statusUpdates)
     numDeps   = deps.values.map(_.size).sum
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = (numDeps.toDouble / (numDeps + 1) * 255).toByte) :: Nil))
-    kernel   <- mkKernel(getNotebook, deps, LanguageInterpreter.factories, statusUpdates, polynoteConfig, extraClassPath, settings, outputDir, parentClassLoader)
+    kernel   <- mkKernel(getNotebook, notebookContext, deps, LanguageInterpreter.factories, statusUpdates, polynoteConfig, extraClassPath, settings, outputDir, parentClassLoader)
     _        <- kernel.init()
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = 255.toByte, status = TaskStatus.Complete) :: Nil))
     _        <- statusUpdates.publish1(KernelBusyState(busy = false, alive = true))

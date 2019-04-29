@@ -12,7 +12,7 @@ import cats.effect.IO
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.syntax.flatMap._
 import cats.syntax.apply._
-import fs2.concurrent.Topic
+import fs2.concurrent.{SignallingRef, Topic}
 import org.apache.spark.{SparkConf, Success}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler._
@@ -22,8 +22,7 @@ import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.KernelContext
-import polynote.kernel.util.{KernelContext, Publish}
+import polynote.kernel.util.{KernelContext, NotebookContext, Publish}
 import polynote.messages._
 
 import scala.reflect.internal.util.AbstractFileClassLoader
@@ -34,6 +33,7 @@ import scala.tools.nsc.interactive.Global
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
 class SparkPolyKernel(
   getNotebook: () => IO[Notebook],
+  notebookContext: SignallingRef[IO, NotebookContext],
   ctx: KernelContext,
   dependencies: Map[String, List[(String, File)]],
   statusUpdates: Publish[IO, KernelStatusUpdate],
@@ -41,7 +41,7 @@ class SparkPolyKernel(
   subKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
   parentClassLoader: ClassLoader,
   config: PolynoteConfig
-) extends PolyKernel(getNotebook, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels, config) {
+) extends PolyKernel(notebookContext, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels, config) {
 
   import kernelContext.global
 
@@ -166,6 +166,7 @@ class SparkPolyKernel(
 object SparkPolyKernel {
   def apply(
     getNotebook: () => IO[Notebook],
+    notebookContext: SignallingRef[IO, NotebookContext],
     dependencies: Map[String, List[(String, File)]],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
@@ -174,10 +175,6 @@ object SparkPolyKernel {
     parentClassLoader: ClassLoader = defaultParentClassLoader,
     config: PolynoteConfig
   ): SparkPolyKernel = {
-
-    val notebookFilename = getNotebook().map {
-      nb => new File(nb.path).getName
-    }.unsafeRunSync()
 
     val outputPath = org.apache.spark.repl.Main.outputDir.toPath
     outputPath.toFile.deleteOnExit()
@@ -194,6 +191,7 @@ object SparkPolyKernel {
 
     val kernel = new SparkPolyKernel(
       getNotebook,
+      notebookContext,
       kernelContext,
       dependencies,
       statusUpdates,

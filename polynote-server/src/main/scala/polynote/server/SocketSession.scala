@@ -14,6 +14,7 @@ import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
 import WebSocketFrame._
+import cats.data.OptionT
 import org.log4s.getLogger
 import polynote.kernel._
 import polynote.kernel.util.{OptionEither, ReadySignal, WindowBuffer}
@@ -170,15 +171,21 @@ class SocketSession(
       }
 
     case RunCell(path, ids) =>
-      getNotebook(path).flatMap {
-        notebookRef => notebookRef.runCells(ids).map(_.drain) // we throw away the messages because they already come through the notebook's messages stream
-      }
+      for {
+        notebookRef <- getNotebook(path)
+        notebook <- notebookRef.get
+        cells = ids.map(notebook.cell)
+        results <- notebookRef.runCells(cells)
+      } yield results.drain   // we throw away the messages because they already come through the notebook's messages stream
+
       // TODO: do we need to emit a kernel status here any more?
 
     case req@CompletionsAt(notebook, id, pos, _) =>
       for {
         notebookRef <- getNotebook(notebook)
-        completions <- notebookRef.completionsAt(id, pos).handleErrorWith {
+        notebook    <- notebookRef.get
+        cell         = notebook.cell(id)
+        completions <- notebookRef.completionsAt(cell, pos).handleErrorWith {
           case RuntimeError(err) => IO.raiseError(err) // Since a completion request could start the Kernel, make sure to bubble these up
           case err =>
             IO(err.printStackTrace(System.err)).map(_ => Nil)
@@ -188,7 +195,9 @@ class SocketSession(
     case req@ParametersAt(notebook, id, pos, _) =>
       for {
         notebookRef <- getNotebook(notebook)
-        parameters  <- notebookRef.parametersAt(id, pos)
+        notebook    <- notebookRef.get
+        cell         = notebook.cell(id)
+        parameters  <- notebookRef.parametersAt(cell, pos)
       } yield Stream.emit(req.copy(signatures = parameters))
 
     case KernelStatus(path, _) =>

@@ -4,7 +4,7 @@ import cats.effect.concurrent.Ref
 import fs2.Stream
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
-import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, NotebookUpdate, ShortString, TinyList, TinyMap, TinyString}
+import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, NotebookCell, NotebookUpdate, ShortString, TinyList, TinyMap, TinyString}
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.codecs.implicits._
@@ -12,7 +12,6 @@ import scodec.{Attempt, Codec, Err}
 
 import scala.reflect.internal.util.Position
 import scala.util.Try
-
 import shapeless.cachedImplicit
 
 /**
@@ -35,14 +34,14 @@ trait KernelAPI[F[_]] {
   /**
     * Start the language interpreter needed for the given cell
     */
-  def startInterpreterFor(id: CellID): F[Stream[F, Result]]
+  def startInterpreterFor(cell: NotebookCell): F[Stream[F, Result]]
 
   /**
     * Run the given cell.
     * @return A [[Stream]] of [[Result]] values which result from running the cell, inside of an [[F]] effect. The effect
     *         represents the cell execution starting such that it can begin a stream of results.
     */
-  def runCell(id: CellID): F[Stream[F, Result]]
+  def runCell(cell: NotebookCell): F[Stream[F, Result]]
 
   /**
     * Queue the cell - the outer F represents the queueing of the cell, while the inner F represents the cell execution
@@ -52,22 +51,22 @@ trait KernelAPI[F[_]] {
     *         The outer layer represents queueing the cell, while the inner layer represents defining the cell's result
     *         stream.
     */
-  def queueCell(id: CellID): F[F[Stream[F, Result]]]
+  def queueCell(cell: NotebookCell): F[F[Stream[F, Result]]]
 
   /**
     * Run multiple cells, combining their result streams into one stream of [[CellResult]] messages
     */
-  def runCells(ids: List[CellID]): F[Stream[F, CellResult]]
+  def runCells(cells: List[NotebookCell]): F[Stream[F, Result]]
 
   /**
     * @return Completion candidates at the given position within the given cell
     */
-  def completionsAt(id: CellID, pos: Int): F[List[Completion]]
+  def completionsAt(cell: NotebookCell, pos: Int): F[List[Completion]]
 
   /**
     * @return Optional parameter hints at the given position within the given cell
     */
-  def parametersAt(id: CellID, pos: Int): F[Option[Signatures]]
+  def parametersAt(cell: NotebookCell, pos: Int): F[Option[Signatures]]
 
   /**
     * @return A list of currently defined [[ResultValue]]s in the notebook's most recent execution state
@@ -118,14 +117,14 @@ trait KernelAPI[F[_]] {
     */
   def cancelTasks(): F[Unit]
 
-  /**
-    * Notify the kernel of a notebook update. This may do nothing if the kernel already has access to the changing
-    * notebook state, but it will be invoked whenever a [[NotebookUpdate]] occurs; kernels can use this to keep a
-    * synchronized copy of the notebook if needed.
-    *
-    * @see [[NotebookUpdate.applyTo()]]
-    */
-  def updateNotebook(version: Int, update: NotebookUpdate): F[Unit]
+//  /**
+//    * Notify the kernel of a notebook update. This may do nothing if the kernel already has access to the changing
+//    * notebook state, but it will be invoked whenever a [[NotebookUpdate]] occurs; kernels can use this to keep a
+//    * synchronized copy of the notebook if needed.
+//    *
+//    * @see [[NotebookUpdate.applyTo()]]
+//    */
+//  def updateNotebook(version: Int, update: NotebookUpdate): F[Unit]
 
 }
 

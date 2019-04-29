@@ -7,13 +7,15 @@ import cats.effect._
 import cats.syntax.apply._
 import cats.syntax.either._
 import cats.syntax.functor._
-import fs2.{Chunk, Pipe, Stream}
-import fs2.concurrent.Queue
+import cats.syntax.traverse._
+import cats.instances.list._
+import fs2.{Chunk, INothing, Pipe, Stream}
+import fs2.concurrent.{Queue, SignallingRef}
 import polynote.config.PolynoteConfig
-import polynote.kernel.util.{Publish, ReadySignal}
+import polynote.kernel.util.{CellContext, NotebookContext, Publish, ReadySignal}
 import Publish.enqueueToPublish
 import polynote.kernel._
-import polynote.messages.{Notebook, NotebookConfig, ShortList, Streaming}
+import polynote.messages.{CellID, DeleteCell, InsertCell, Notebook, NotebookCell, NotebookConfig, ShortList, Streaming}
 import polynote.runtime.{StreamingDataRepr, ValueRepr}
 import polynote.server.{KernelFactory, KernelLaunching, SparkKernelFactory, StreamingHandleManager}
 
@@ -85,15 +87,14 @@ class RemoteSparkKernelClient(
       Stream.eval(shutdown(reqId, kernel)).drain
 
     case StartInterpreterFor(reqId, cell) =>
-      Stream.eval(kernel.startInterpreterFor(cell)).flatMap(respondResultStream(reqId, _))
+      Stream.eval(notebookRef.get).map(_.cell(cell)).evalMap(cell => kernel.startInterpreterFor(cell)).flatMap(respondResultStream(reqId, _))
 
-    case QueueCell(reqId, cell) => Stream.eval(kernel.queueCell(cell)).flatMap {
+    case QueueCell(reqId, cell) => Stream.eval(notebookRef.get).map(_.cell(cell)).map(cell => kernel.queueCell(cell)).flatMap {
       ioResultStream =>
-        Stream.emit(CellQueued(reqId)) ++
-        Stream.eval(ioResultStream).flatMap(respondResultStream(reqId, _))
+        Stream.emit(CellQueued(reqId)) ++ Stream.eval(ioResultStream).evalMap(identity).flatMap(respondResultStream(reqId, _))
     }
-    case CompletionsAt(reqId, cell, pos) => Stream.eval(kernel.completionsAt(cell, pos).map(CompletionsResponse(reqId, _)))
-    case ParametersAt(reqId, cell, pos) => Stream.eval(kernel.parametersAt(cell, pos).map(ParameterHintsResponse(reqId, _)))
+    case CompletionsAt(reqId, cell, pos) => Stream.eval(notebookRef.get).map(_.cell(cell)).evalMap(cell => kernel.completionsAt(cell, pos).map(CompletionsResponse(reqId, _)))
+    case ParametersAt(reqId, cell, pos) => Stream.eval(notebookRef.get).map(_.cell(cell)).evalMap(cell => kernel.parametersAt(cell, pos).map(ParameterHintsResponse(reqId, _)))
     case CurrentSymbols(reqId) => Stream.eval(kernel.currentSymbols().map(CurrentSymbolsResponse(reqId, _)))
     case CurrentTasks(reqId) => Stream.eval(kernel.currentTasks().map(CurrentTasksResponse(reqId, _)))
     case IdleRequest(reqId) => Stream.eval(kernel.idle().map(IdleResponse(reqId, _)))
@@ -110,8 +111,33 @@ class RemoteSparkKernelClient(
       }) *> kernel.releaseHandle(handleType, handleId).as(UnitResponse(reqId))
     )
     case CancelTasksRequest(reqId) => Stream.eval(kernel.cancelTasks().as(UnitResponse(reqId)))
-    case UpdateNotebookRequest(reqId, version, update) => Stream.eval(notebookRef.update(update.applyTo) *> kernel.updateNotebook(version, update).as(UnitResponse(reqId)))
+//    case UpdateNotebookRequest(reqId, version, update) => Stream.eval(notebookRef.update(update.applyTo).flatMap { _ =>
+//      update match {
+//        case InsertCell(_, _, _, cell, after) => CellContext(cell.id).flatMap {
+//          cellContext => notebookContext.update {
+//            nbCtx =>
+//              nbCtx.insert(cellContext, Option(after))
+//              nbCtx
+//          }
+//        }
+//        case DeleteCell(_, _, _, id) => notebookContext.update {
+//          nbCtx =>
+//            nbCtx.remove(id)
+//            nbCtx
+//        }
+//        case _ => IO.unit
+//      }
+//    }.as(UnitResponse(reqId)))
   }.parJoinUnbounded
+
+  def prepareNotebookContext(notebook: Notebook): IO[NotebookContext] = {
+    val ctx = new NotebookContext
+    if (notebook.cells.isEmpty) IO.pure(ctx) else {
+      notebook.cells.map {
+        cell => CellContext(cell.id).flatMap(context => IO(ctx.insertLast(context)))
+      }
+    }.sequence.as(ctx)
+  }
 
   def run(): IO[ExitCode] = for {
     outputMessages <- Queue.unbounded[IO, RemoteResponse]
@@ -123,10 +149,12 @@ class RemoteSparkKernelClient(
     notebook        = notebookReq.notebook
     nbConfig        = notebook.config.getOrElse(NotebookConfig.empty)
     notebookRef    <- Ref[IO].of(notebook)
+    nbCtx          <- prepareNotebookContext(notebook)
+    nbCtxRef       <- SignallingRef[IO, NotebookContext](nbCtx)
     conf            = configFromNotebookConfig(nbConfig)
     statusUpdates   = outputMessages.contramap[KernelStatusUpdate](update => KernelStatusResponse(update))
     _              <- IO(logger.info("Launching kernel"))
-    kernel         <- kernelFactory.launchKernel(notebookRef.get _, statusUpdates, conf)
+    kernel         <- kernelFactory.launchKernel(notebookRef.get _, nbCtxRef, statusUpdates, conf)
     mainFiber      <- transport.requests.through(handleRequests(kernel, notebookRef)).through(outputMessages.enqueue).interruptWhen(shutdownSignal()).compile.drain.start
     _              <- Stream.repeatEval(kernel.idle()).takeWhile(_ == false).compile.drain // wait until kernel is idle
     _              <- IO(logger.info("Kernel ready"))

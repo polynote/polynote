@@ -112,7 +112,8 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
 
         remoteKernel <- startRemoteKernel.join
 
-        results <- remoteKernel.runCell(2.toShort).flatMap(_.compile.toList)
+        nb <- currentNotebook.get
+        results <- remoteKernel.runCell(nb.cell(2)).flatMap(_.compile.toList)
 
         repr = results match {
           case rv @ ResultValue(TinyString("twoStream"), TinyString("DataFrame"), TinyList((repr : StreamingDataRepr) :: Nil), _, _, _, _) :: Nil => repr
@@ -165,7 +166,8 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
           currentNotebook <- Ref[IO].of(initialNotebook)
           kernel <- RemoteSparkKernel(statusUpdates, currentNotebook.get _, config, transport)
 
-          results <- kernel.runCell(2.toShort).flatMap(_.compile.toList)
+          nb <- currentNotebook.get
+          results <- kernel.runCell(nb.cell(2)).flatMap(_.compile.toList)
 
           repr = results match {
             case rv @ ResultValue(TinyString("twoStream"), TinyString("DataFrame"), TinyList((repr : StreamingDataRepr) :: Nil), _, _, _, _) :: Nil => repr

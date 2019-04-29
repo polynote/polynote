@@ -7,10 +7,11 @@ import cats.syntax.traverse._
 import cats.instances.list._
 import fs2.Stream
 import polynote.config.PolynoteConfig
-import polynote.kernel.util.Publish
-import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Notebook, NotebookUpdate, Streaming}
+import polynote.kernel.util.{NotebookContext, Publish}
+import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Notebook, NotebookCell, NotebookUpdate, Streaming}
 import polynote.runtime._
 import DataEncoder.StructDataEncoder
+import fs2.concurrent.SignallingRef
 import polynote.server.KernelFactory
 import scodec.bits.ByteVector
 
@@ -27,8 +28,12 @@ object CellIdSyntax {
 import CellIdSyntax._
 
 class MockKernelFactory(val kernel: MockKernel) extends KernelFactory[IO] {
-  def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate], config: PolynoteConfig): IO[KernelAPI[IO]] =
-    IO.pure(kernel)
+  def launchKernel(
+    getNotebook: () => IO[Notebook],
+    notebookContext: SignallingRef[IO, NotebookContext],
+    statusUpdates: Publish[IO, KernelStatusUpdate],
+    config: PolynoteConfig
+  ): IO[KernelAPI[IO]] = IO.pure(kernel)
 }
 
 
@@ -37,20 +42,20 @@ class MockKernel(@volatile private var notebook: Notebook) extends KernelAPI[IO]
   def init(): IO[Unit] = IO.unit
   def shutdown(): IO[Unit] = IO.unit
 
-  def startInterpreterFor(id: CellID): IO[Stream[IO, Result]] = IO.pure {
+  def startInterpreterFor(cell: NotebookCell): IO[Stream[IO, Result]] = IO.pure {
     Stream.emits(MockKernel.results((-1).cell))
   }
 
-  def runCell(id: CellID): IO[Stream[IO, Result]] = IO.pure(Stream.emits(MockKernel.results(id)))
+  def runCell(cell: NotebookCell): IO[Stream[IO, Result]] = IO.pure(Stream.emits(MockKernel.results(cell.id)))
 
-  def queueCell(id: CellID): IO[IO[Stream[IO, Result]]] = IO.pure(runCell(id))
+  def queueCell(cell: NotebookCell): IO[IO[Stream[IO, Result]]] = IO.pure(runCell(cell))
 
-  def runCells(ids: List[CellID]): IO[Stream[IO, CellResult]] =
-    ids.map(cell => runCell(cell).map(_.map(CellResult(notebook.path, cell, _)))).sequence.map(Stream.emits).map(_.flatten)
+  def runCells(cells: List[NotebookCell]): IO[Stream[IO, Result]] =
+    cells.map(cell => runCell(cell)).sequence.map(Stream.emits).map(_.flatten)
 
-  def completionsAt(id: CellID, pos: Int): IO[List[Completion]] = IO.pure(Nil)
+  def completionsAt(cell: NotebookCell, pos: Int): IO[List[Completion]] = IO.pure(Nil)
 
-  def parametersAt(id: CellID, pos: Int): IO[Option[Signatures]] = IO.pure(None)
+  def parametersAt(cell: NotebookCell, pos: Int): IO[Option[Signatures]] = IO.pure(None)
 
   def currentSymbols(): IO[List[ResultValue]] = IO.pure(Nil)
 
@@ -70,10 +75,6 @@ class MockKernel(@volatile private var notebook: Notebook) extends KernelAPI[IO]
   def releaseHandle(handleType: HandleType, handleId: Int): IO[Unit] = IO.unit
 
   def cancelTasks(): IO[Unit] = IO.unit
-
-  def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] = IO {
-    this.notebook = update.applyTo(notebook)
-  }
 
   def currentNotebook: Notebook = this.notebook
 }

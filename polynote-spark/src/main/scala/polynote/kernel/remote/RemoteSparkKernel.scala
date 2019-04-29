@@ -20,7 +20,7 @@ import org.log4s.getLogger
 import polynote.config.PolynoteConfig
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal}
-import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Lazy, Notebook, NotebookUpdate, ShortString, Streaming, Updating}
+import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Lazy, Notebook, NotebookCell, NotebookUpdate, ShortString, Streaming, Updating}
 import polynote.runtime._
 import polynote.util.Memoize
 import scodec.bits.ByteVector
@@ -154,39 +154,39 @@ class RemoteSparkKernel(
           transport.close() *>
           IO(logger.info("Kernel server stopped")))
 
-  def startInterpreterFor(cell: CellID): IO[Stream[IO, Result]] = for {
+  def startInterpreterFor(cell: NotebookCell): IO[Stream[IO, Result]] = for {
     reqId    <- IO(requestId.getAndIncrement())
-    req       = StartInterpreterFor(reqId, cell)
+    req       = StartInterpreterFor(reqId, cell.id)
     ioStream <- prepareResultStream(req)
     _        <- transport.sendRequest(req)
     stream   <- ioStream
   } yield stream
 
-  def runCell(cell: CellID): IO[Stream[IO, Result]] = queueCell(cell).flatten
+  def runCell(cell: NotebookCell): IO[Stream[IO, Result]] = queueCell(cell).flatten
 
-  def queueCell(cell: CellID): IO[IO[Stream[IO, Result]]] = for {
+  def queueCell(cell: NotebookCell): IO[IO[Stream[IO, Result]]] = for {
     reqId    <- IO(requestId.getAndIncrement())
-    req       = QueueCell(reqId, cell)
+    req       = QueueCell(reqId, cell.id)
     ioStream <- prepareResultStream(req)
     queued   <- send1[CellQueued](req).flatten
   } yield ioStream
 
   // we want to queue all the cells, but evaluate them in order. So the outer IO of the result runs the outer IO of queueCell for all the cells.
-  override def runCells(cells: List[CellID]): IO[Stream[IO, CellResult]] =
+  override def runCells(cells: List[NotebookCell]): IO[Stream[IO, Result]] =
     getNotebook().flatMap {
       notebook =>
         cells.map {
-          id => queueCell(id).map(_.map(_.map(result => CellResult(ShortString(notebook.path), id, result))))
+          id => queueCell(id)
         }.sequence.map {
           queued => Stream.emits(queued).flatMap(run => Stream.eval(run).flatten)
         }
     }
 
-  def completionsAt(cell: CellID, pos: Int): IO[List[Completion]] =
-    request1[CompletionsResponse](CompletionsAt(_, cell, pos)).map(_.completions)
+  def completionsAt(cell: NotebookCell, pos: Int): IO[List[Completion]] =
+    request1[CompletionsResponse](CompletionsAt(_, cell.id, pos)).map(_.completions)
 
-  def parametersAt(cell: CellID, pos: Int): IO[Option[Signatures]] =
-    request1[ParameterHintsResponse](ParametersAt(_, cell, pos)).map(_.signatures)
+  def parametersAt(cell: NotebookCell, pos: Int): IO[Option[Signatures]] =
+    request1[ParameterHintsResponse](ParametersAt(_, cell.id, pos)).map(_.signatures)
 
   def currentSymbols(): IO[List[ResultValue]] =
     request1[CurrentSymbolsResponse](CurrentSymbols(_)).map(_.symbols)
@@ -252,8 +252,8 @@ class RemoteSparkKernel(
   def cancelTasks(): IO[Unit] =
     request1[UnitResponse](CancelTasksRequest(_)).as(())
 
-  def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] =
-    request1[UnitResponse](UpdateNotebookRequest(_, version, update)).as(())
+//  def updateNotebook(version: Int, update: NotebookUpdate): IO[Unit] =
+//    request1[UnitResponse](UpdateNotebookRequest(_, version, update)).as(())
 
   /**
     * Transform a repr from the remote kernel into local JVM space
