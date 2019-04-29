@@ -1,5 +1,15 @@
 # UNRELEASED
 
+*
+
+# 0.1.8 (April 29, 2019)
+
+* Fix some bugs that caused cell execution to hang
+* Fix regression which caused repr display not to show up
+* Fix some scala interpreter bugs, including one that prevented case classes (and other things) defined in a class from 
+  being visible to other cells
+* Better numpy support, fix for `Message class can only inherit from Message` error
+
 # 0.1.7 (April 25, 2019)
 
 * Fix an embarrassingly bad bug in [#241]
