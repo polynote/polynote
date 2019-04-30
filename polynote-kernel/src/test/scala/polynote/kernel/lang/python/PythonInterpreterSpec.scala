@@ -102,12 +102,20 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
   it should "not bother to return any value if the python code just prints" in {
     val code =
       """
-        |print("Do you like muffins?")
+        |print("Pssst! Do you like muffins?")
+        |print("Yeah, I guess so")
+        |print("What kind of muffins?")
+        |print("Uh, blueberry muffins are pretty good...")
       """.stripMargin
     assertPythonOutput(code) { case (vars, output, displayed) =>
       vars.toSeq shouldBe empty
 
-      output should contain  only Output("text/plain; rel=stdout", "Do you like muffins?\n")
+      output should contain  theSameElementsAs Seq(
+        Output("text/plain; rel=stdout", "Pssst! Do you like muffins?\n"),
+        Output("text/plain; rel=stdout", "Yeah, I guess so\n"),
+        Output("text/plain; rel=stdout", "What kind of muffins?\n"),
+        Output("text/plain; rel=stdout", "Uh, blueberry muffins are pretty good...\n")
+      )
       displayed shouldBe empty
     }
   }
@@ -119,6 +127,16 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
     assertPythonOutput(code) {
       case (vars, output, displayed) =>
         output shouldBe empty
+        displayed shouldBe empty
+    }
+  }
+
+  it should "not error when the cell contains an empty print" in {
+    val code = "print('')"
+
+    assertPythonOutput(code) {
+      case (vars, output, displayed) =>
+        output should contain only Output("text/plain; rel=stdout", "\n")
         displayed shouldBe empty
     }
   }

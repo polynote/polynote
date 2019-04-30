@@ -416,7 +416,7 @@ class PythonDisplayHook(out: Enqueue[IO, Result]) {
     if (str contains '\n') {
       val lines = current.split('\n')
       output((lines.dropRight(1) :+ "").mkString("\n"))
-      current = lines.last + "\n"
+      current = lines.lastOption.fold("\n")(_ + "\n")
     }
   }
 
