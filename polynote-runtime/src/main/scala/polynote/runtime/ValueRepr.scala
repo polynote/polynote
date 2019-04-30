@@ -232,7 +232,10 @@ object StreamingDataRepr {
     iter: => Iterator[ByteBuffer]
   ) extends Handle {
     def iterator: Iterator[ByteBuffer] = iter
-    def modify(ops: List[TableOp]): Either[Throwable, Int => Handle] = Left(new UnsupportedOperationException("Table operators are not supported for this data type"))
+    def modify(ops: List[TableOp]): Either[Throwable, Int => Handle] = ops match {
+      case Nil => Right(new DefaultHandle(_, dataType, knownSize, iter))
+      case _   => Left(new UnsupportedOperationException("Table operators are not supported for this data type"))
+    }
   }
 
   private val handles: ConcurrentHashMap[Int, Handle] = new ConcurrentHashMap()

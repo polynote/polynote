@@ -275,12 +275,35 @@ class RemoteSparkKernel(
   /**
     * An iterator that fetches data from the remote kernel stream handle
     */
-  private class RemoteStreamIterator(remoteHandle: Int, batchSize: Int = 512, fetchAhead: Int = 4) extends Iterator[ByteBuffer] {
+  private class RemoteStreamIterator(baseRemoteHandle: Int, batchSize: Int = 512, fetchAhead: Int = 4) extends Iterator[ByteBuffer] {
+
+    // use a no-op modify to make a copy of the remote handle for this iterator
+    private val getRemoteCopyHandle = request1[ModifyStreamResponse](ModifyStreamRequest(_, baseRemoteHandle, Nil)).flatMap {
+      case ModifyStreamResponse(_, Some(repr)) => IO.pure(repr.handle)
+    }.start.unsafeRunSync()
+
+
     private val fetchComplete = new AtomicBoolean(false)
-    private def fetchNext(): IO[Unit] = request1[HandleDataResponse](GetHandleDataRequest(_, Streaming, remoteHandle, batchSize)).flatMap {
-      case rep if rep.data.isEmpty => IO(fetchComplete.set(true))
-      case rep =>
-        offerChunk(rep) *> (if (rep.data.length < batchSize) IO(fetchComplete.set(true)) else fetchNext())
+
+    private def finished(): IO[Unit] = {
+      IO(fetchComplete.set(true)) *> getRemoteCopyHandle.join.flatMap {
+        remoteHandle =>
+          request1[UnitResponse](ReleaseHandleRequest(_, Streaming, remoteHandle)).as(()).handleErrorWith {
+            err => IO(logger.error(err)("Error releasing remote streaming handle"))
+          }
+      }
+    }
+
+    private def fetchNext(): IO[Unit] = getRemoteCopyHandle.join.flatMap {
+      remoteHandle =>
+        request1[HandleDataResponse](GetHandleDataRequest(_, Streaming, remoteHandle, batchSize)).flatMap {
+          case rep if rep.data.isEmpty => finished()
+          case rep if rep.data.length < batchSize =>
+            fetchComplete.set(true)
+            offerChunk(rep) *> finished()
+          case rep =>
+            offerChunk(rep) *> fetchNext()
+        }
     }
 
     private def offerChunk(rep: HandleDataResponse) =
@@ -315,6 +338,7 @@ class RemoteSparkKernel(
         .unsafeRunSync()    // no choice but to run this synchronously – the Handle API doesn't have cats-effect so can't express in IO
         .flatMap(either => either)
 
+    // TODO: should cancel all the iterators from this handle
     override def release(): Unit = {
       super.release()
       transport.isConnected.flatMap {

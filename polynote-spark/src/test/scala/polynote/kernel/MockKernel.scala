@@ -65,7 +65,10 @@ class MockKernel(@volatile private var notebook: Notebook) extends KernelAPI[IO]
     case _ => IO.raiseError(new IllegalArgumentException("No handle with that id"))
   }
 
-  def modifyStream(handleId: Int, ops: List[TableOp]): IO[Option[StreamingDataRepr]] = IO.pure(None)
+  def modifyStream(handleId: Int, ops: List[TableOp]): IO[Option[StreamingDataRepr]] = ops match {
+    case Nil => IO.pure(Some(MockKernel.twoStreamRepr))
+    case _ => IO.pure(None)
+  }
 
   def releaseHandle(handleType: HandleType, handleId: Int): IO[Unit] = IO.unit
 
