@@ -102,7 +102,12 @@ class RemoteSparkKernelClient(
       case Streaming => Stream.eval(streams.getStreamData(handle, count).map(HandleDataResponse(reqId, _)))
       case _ => Stream.eval(kernel.getHandleData(handleType, handle, count).map(HandleDataResponse(reqId, _)))
     }
-    case ModifyStreamRequest(reqId, handleId, ops) => Stream.eval(kernel.modifyStream(handleId, ops).map(ModifyStreamResponse(reqId, _)))
+    case ModifyStreamRequest(reqId, handleId, ops) => Stream.eval(
+      kernel.modifyStream(handleId, ops).map(ModifyStreamResponse(reqId, _)).handleErrorWith {
+        err =>
+          IO(logger.error(err)("Error servicing streaming modification request")).as(ModifyStreamResponse(reqId, None))
+      }
+    )
     case ReleaseHandleRequest(reqId, handleType, handleId) => Stream.eval(
       (handleType match {
         case Streaming => streams.releaseStreamHandle(handleId)
@@ -138,7 +143,7 @@ class RemoteSparkKernelClient(
     _              <- IO(logger.info("Kernel stopped"))
   } yield ExitCode.Success
 
-  def shutdown(): IO[Unit] = shutdownSignal.complete
+  def shutdown(): IO[Unit] = shutdownSignal.complete.attempt.as(())
 }
 
 object RemoteSparkKernelClient extends IOApp with KernelLaunching {
