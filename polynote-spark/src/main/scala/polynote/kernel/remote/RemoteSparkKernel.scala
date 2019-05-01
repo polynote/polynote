@@ -114,7 +114,7 @@ class RemoteSparkKernel(
     case Announce(remoteAddress) =>
       IO.pure {
         Stream.eval(getNotebook().flatMap(notebook => request1[UnitResponse](InitialNotebook(_, notebook)).as(()))) ++
-          Stream.eval(remoteAddr.complete(remoteAddress).handleErrorWith(_ => IO.unit))
+          Stream.eval(remoteAddr.complete(remoteAddress).attempt.as(()))
       }
     case KernelStatusResponse(update) =>
       IO.pure(Stream.eval(statusUpdates.publish1(update)))
@@ -141,7 +141,7 @@ class RemoteSparkKernel(
 
   private def cancelRequests() = for {
     reqs <- IO(requests.values.asScala.toList)
-    _    <- reqs.map(_.complete(Left(new CancellationException("Request cancelled")))).sequence
+    _    <- reqs.map(_.complete(Left(new CancellationException("Request cancelled"))).attempt.as(())).sequence
   } yield ()
 
   def shutdown(): IO[Unit] =
