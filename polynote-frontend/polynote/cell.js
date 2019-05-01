@@ -430,17 +430,18 @@ export class CodeCell extends Cell {
             };
         });
 
-        monaco.editor.setModelMarkers(
-            model,
-            this.id,
-            reportInfos
-        );
-
         // clear the display if there was a compile error
         if (reportInfos.find(report => report.originalSeverity > 1)) {
             this.clearResult();
             this.container.classList.add('error');
         }
+
+
+        monaco.editor.setModelMarkers(
+            model,
+            this.id,
+            reportInfos
+        );
 
         if (reports.length) {
             this.cellOutputDisplay.classList.add('errors');
@@ -743,6 +744,7 @@ export class CodeCell extends Cell {
     }
 
     clearResult() {
+        monaco.editor.setModelMarkers(this.editor.getModel(), this.id, []);
         this.container.classList.remove('error', 'success');
         this.execInfoEl.classList.remove('output');
         this.cellOutputTools.innerHTML = '';
