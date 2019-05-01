@@ -143,7 +143,7 @@ class RemoteSparkKernelClient(
     _              <- IO(logger.info("Kernel stopped"))
   } yield ExitCode.Success
 
-  def shutdown(): IO[Unit] = shutdownSignal.complete.attempt.as(())
+  def shutdown(): IO[Unit] = shutdownSignal.complete
 }
 
 object RemoteSparkKernelClient extends IOApp with KernelLaunching {
