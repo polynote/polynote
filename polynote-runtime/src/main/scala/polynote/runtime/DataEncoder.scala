@@ -8,9 +8,10 @@ import shapeless.labelled.FieldType
 import shapeless.{::, Generic, HList, HNil, LabelledGeneric, Lazy, Witness}
 
 import scala.collection.GenTraversable
-import scala.reflect.macros.whitebox
+import polynote.runtime.macros.StructDataEncoderMacros
 
-trait DataEncoder[@specialized T] {
+trait DataEncoder[@specialized T] extends Serializable {
+  final type In = T
   def encode(dataOutput: DataOutput, value: T): Unit
   def encodeAnd(dataOutput: DataOutput, value: T): DataOutput = {
     encode(dataOutput, value)
@@ -18,38 +19,43 @@ trait DataEncoder[@specialized T] {
   }
   def dataType: DataType
   def sizeOf(t: T): Int
+  def numeric: Option[Numeric[T]]
 }
 
 object DataEncoder extends DataEncoderDerivations {
 
-  def sizedInstance[@specialized T](typ: DataType, size: T => Int)(fn: (DataOutput, T) => Unit): DataEncoder[T] = new DataEncoder[T] {
+  def sizedInstance[@specialized T](typ: DataType, size: T => Int, numericOpt: Option[Numeric[T]] = None)(fn: (DataOutput, T) => Unit): DataEncoder[T] = new DataEncoder[T] {
     def encode(dataOutput: DataOutput, value: T): Unit = fn(dataOutput, value)
     val dataType: DataType = typ
     override def sizeOf(t: T): Int = size(t)
+    val numeric: Option[Numeric[T]] = numericOpt
   }
 
   def instance[@specialized T](typ: DataType)(fn: (DataOutput, T) => Unit): DataEncoder[T] = sizedInstance[T](typ, _ => typ.size)(fn)
 
+  def numericInstance[@specialized T : Numeric](typ: DataType)(fn: (DataOutput, T) => Unit): DataEncoder[T] =
+    sizedInstance(typ, (_: T) => typ.size, Some(implicitly[Numeric[T]]))(fn)
+
   implicit val byte: DataEncoder[Byte] = instance(ByteType)(_ writeByte _)
   implicit val boolean: DataEncoder[Boolean] = instance(BoolType)(_ writeBoolean _)
-  implicit val short: DataEncoder[Short] = instance(ShortType)(_ writeShort _)
-  implicit val int: DataEncoder[Int] = instance(IntType)(_ writeInt _)
-  implicit val long: DataEncoder[Long] = instance(LongType)(_ writeLong _)
-  implicit val float: DataEncoder[Float] = instance(FloatType)(_ writeFloat _)
-  implicit val double: DataEncoder[Double] = instance(DoubleType)(_ writeDouble _)
+  implicit val short: DataEncoder[Short] = numericInstance(ShortType)(_ writeShort _)
+  implicit val int: DataEncoder[Int] = numericInstance(IntType)(_ writeInt _)
+  implicit val long: DataEncoder[Long] = numericInstance(LongType)(_ writeLong _)
+  implicit val float: DataEncoder[Float] = numericInstance(FloatType)(_ writeFloat _)
+  implicit val double: DataEncoder[Double] = numericInstance(DoubleType)(_ writeDouble _)
   implicit val string: DataEncoder[String] = instance(StringType) {
     (out, str) =>
       out.writeInt(str.length)
       out.write(str.getBytes(StandardCharsets.UTF_8))
   }
 
-  implicit val byteArray: DataEncoder[Array[Byte]] = instance(BinaryType) {
+  implicit val byteArray: DataEncoder[Array[Byte]] = sizedInstance[Array[Byte]](BinaryType, arr => arr.length + 4) {
     (out, bytes) =>
       out.writeInt(bytes.length)
       out.write(bytes)
   }
 
-  implicit val byteBuffer: DataEncoder[ByteBuffer] = instance(BinaryType) {
+  implicit val byteBuffer: DataEncoder[ByteBuffer] = sizedInstance[ByteBuffer](BinaryType, buf => buf.limit() + 4) {
     (out, bytes) =>
       val b = bytes.duplicate()
       b.rewind()
@@ -130,34 +136,59 @@ object DataEncoder extends DataEncoderDerivations {
 
 private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
 
-  class StructDataEncoder[T](
-    val dataType: StructType,
-    encodeFn: (DataOutput, T) => Unit,
-    sizeFn: T => Int
+  abstract class StructDataEncoder[T](
+    val dataType: StructType
   ) extends DataEncoder[T] {
-    override def encode(dataOutput: DataOutput, value: T): Unit = encodeFn(dataOutput, value)
-    def sizeOf(t: T): Int = sizeFn(t)
+    val numeric: Option[Numeric[T]] = None
+    def field(name: String): Option[(T => Any, DataEncoder[_])]
   }
 
   object StructDataEncoder {
-    def instance[T](dataType: StructType)(encodeFn: (DataOutput, T) => Unit)(sizeFn: T => Int): StructDataEncoder[T] = new StructDataEncoder(dataType, encodeFn, sizeFn)
 
-    implicit val hnil: StructDataEncoder[HNil] = instance[HNil](StructType(Nil))((_, _) => ())(_ => 0)
+    implicit val hnil: StructDataEncoder[HNil] = new StructDataEncoder[HNil](StructType(Nil)) {
+      def encode(dataOutput: DataOutput, value: HNil): Unit = ()
+      def sizeOf(t: HNil): Int = 0
+      def field(name: String): Option[(HNil => Any, DataEncoder[_])] = None
+    }
 
     implicit def hcons[K <: Symbol, H, T <: HList](implicit
       label: Witness.Aux[K],
       encoderH: DataEncoder[H],
       encoderT: StructDataEncoder[T]
     ): StructDataEncoder[FieldType[K, H] :: T] =
-      instance[FieldType[K, H] :: T](StructType(StructField(label.value.name, encoderH.dataType) :: encoderT.dataType.fields)) {
-        (output, ht) =>
-          encoderT.encode(encoderH.encodeAnd(output, ht.head), ht.tail)
-      } {
-        ht => combineSize(encoderH.sizeOf(ht.head), encoderT.sizeOf(ht.tail))
+      new StructDataEncoder[FieldType[K, H] :: T](StructType(StructField(label.value.name, encoderH.dataType) :: encoderT.dataType.fields)) {
+        val fieldName: String = label.value.name
+        def encode(output: DataOutput, value: FieldType[K, H] :: T): Unit = encoderT.encode(encoderH.encodeAnd(output, value.head), value.tail)
+        def sizeOf(value: FieldType[K, H] :: T): Int = combineSize(encoderH.sizeOf(value.head), encoderT.sizeOf(value.tail))
+
+        // Note: the returned getter here is very slow.
+        def field(name: String): Option[((FieldType[K, H] :: T) => Any, DataEncoder[_])] = if (name == fieldName) {
+          val getter: (FieldType[K, H] :: T) => Any = ht => ht.head
+          Some(getter -> encoderH)
+        } else {
+          encoderT.field(name).map {
+            case (getterT, enc) =>
+              val getter: (FieldType[K, H] :: T) => Any = getterT.compose(_.tail)
+              getter -> enc
+          }
+        }
       }
 
+    implicit def caseClassMacro[A <: Product]: StructDataEncoder[A] = macro StructDataEncoderMacros.materialize[A]
+
+  }
+
+  trait LowPriorityStructDataEncoder { self: StructDataEncoder.type =>
+
+    // This is lower priority, so that the macro (which is specialized and voids O(N) field access overhead) can be preferred
     implicit def caseClass[A <: Product, L <: HList](implicit gen: LabelledGeneric.Aux[A, L], encoderL: Lazy[StructDataEncoder[L]]): StructDataEncoder[A] =
-      instance[A](encoderL.value.dataType)((output, a) => encoderL.value.encode(output, gen.to(a)))(a => encoderL.value.sizeOf(gen.to(a)))
+      new StructDataEncoder[A](encoderL.value.dataType) {
+        def encode(output: DataOutput, a: A): Unit = encoderL.value.encode(output, gen.to(a))
+        def sizeOf(a: A): Int = encoderL.value.sizeOf(gen.to(a))
+        def field(name: String): Option[(A => Any, DataEncoder[_])] = encoderL.value.field(name).map {
+          case (getter, enc) => getter.compose(gen.to) -> enc
+        }
+      }
   }
 
   implicit def fromStructDataEncoder[T](implicit structDataEncoderT: StructDataEncoder[T]): DataEncoder[T] = structDataEncoderT

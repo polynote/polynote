@@ -4,6 +4,7 @@ import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
+import polynote.runtime
 import shapeless.HNil
 
 import scala.collection.GenSeq
@@ -13,7 +14,7 @@ trait ReprsOf[T] extends Serializable {
   def apply(value: T): Array[ValueRepr]
 }
 
-object ReprsOf extends CollectionReprs {
+object ReprsOf extends ExpandedScopeReprs {
 
   def instance[T](reprs: T => Array[ValueRepr]): ReprsOf[T] = new ReprsOf[T] {
     def apply(value: T): Array[ValueRepr] = reprs(value)
@@ -67,7 +68,17 @@ object ReprsOf extends CollectionReprs {
 
 }
 
+
+private[runtime] trait ExpandedScopeReprs extends CollectionReprs { self: ReprsOf.type =>
+
+  implicit def expanded[T]: ReprsOf[T] = macro macros.ExpandedScopeMacros.resolveFromScope
+
+}
+
 private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.type =>
+
+  implicit def structSeq[F[X] <: Seq[X], A](implicit structEncoder: DataEncoder.StructDataEncoder[A]): ReprsOf[F[A]] =
+    instance(seq => Array(StreamingDataRepr.fromHandle(new StructSeqStreamHandle[A, A](_, seq, identity, structEncoder))))
 
   implicit def seq[F[X] <: GenSeq[X], A](implicit dataReprsOfA: DataReprsOf[A]): ReprsOf[F[A]] = instance {
     seq => Array(StreamingDataRepr(dataReprsOfA.dataType, seq.size, seq.iterator.map(dataReprsOfA.encode)))
@@ -86,14 +97,173 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       Array(repr)
   }
 
+  private[runtime] case class StructSeqStreamHandle[A, B](handle: Int, data: Seq[A], transform: Seq[A] => Seq[B], enc: DataEncoder.StructDataEncoder[B]) extends StreamingDataRepr.Handle {
+    def dataType: DataType = enc.dataType
+    lazy val knownSize: Option[Int] = if (data.hasDefiniteSize) Some(data.size) else None
+    def iterator: Iterator[ByteBuffer] = transform(data).iterator.map(b => DataEncoder.writeSized[B](b)(enc))
+
+    private trait Aggregator[T] {
+      def accumulate(value: B): Unit
+      def summarize(): T
+      def encoder: DataEncoder[T]
+      def resultName: String
+    }
+
+    private class QuartileAggregator(name: String, getter: B => Double) extends Aggregator[Quartiles] {
+      private val values = new Array[Double](data.size)
+      private var index = 0
+      private var mean = 0.0
+
+      override def accumulate(value: B): Unit = {
+        val x = getter(value)
+        values(index) = x
+        index += 1
+        val delta = x - mean
+        mean += delta / index
+      }
+
+      override def summarize(): Quartiles = {
+        java.util.Arrays.sort(values, 0, index)
+
+        val quarter = index >> 2
+
+        Quartiles(
+          values(0),
+          values(quarter),
+          values(index >> 1),
+          mean,
+          values(index - quarter),
+          values(index - 1)
+        )
+      }
+
+      val encoder: DataEncoder[Quartiles] = Quartiles.dataEncoder
+      val resultName: String = s"quartiles($name)"
+    }
+
+    private class SumAggregator(name: String, getter: B => Double) extends Aggregator[Double] {
+      private var sum = 0.0
+      override def accumulate(value: B): Unit = sum += getter(value)
+      override def summarize(): Double = sum
+      val encoder: DataEncoder[Double] = DataEncoder.double
+      val resultName: String = s"sum($name)"
+    }
+
+    private class CountAggregator(name: String) extends Aggregator[Long] {
+      private var count = 0L
+      override def accumulate(value: B): Unit = count += 1
+      override def summarize(): Long = count
+      val encoder: DataEncoder[Long] = DataEncoder.long
+      val resultName: String = s"count($name)"
+    }
+
+    private class MeanAggregator(name: String, getter: B => Double) extends Aggregator[Double] {
+      private var count = 0
+      private var mean = 0.0
+      private var sumSquaredDiffs = 0.0
+
+      override def accumulate(value: B): Unit = {
+        val x = getter(value)
+        count += 1
+        val delta = x - mean
+        mean += delta / count
+      }
+
+      override def summarize(): Double = mean
+      val encoder: DataEncoder[Double] = DataEncoder.double
+      val resultName: String = s"mean($name)"
+    }
+
+    private def aggregate(col: String, aggName: String): Aggregator[_] = {
+      def numericEncoder = enc.field(col) match {
+        case Some((getter, colEnc)) if colEnc.numeric.nonEmpty =>
+          val numeric = colEnc.numeric.get.asInstanceOf[Numeric[Any]]
+          getter andThen numeric.toDouble
+        case Some(_) => throw new IllegalArgumentException(s"Field $col is not numeric; cannot compute $aggName")
+        case None => throw new IllegalArgumentException(s"No field $col in struct")
+      }
+
+      aggName match {
+        case "quartiles" => new QuartileAggregator(col, numericEncoder)
+        case "sum"       => new SumAggregator(col, numericEncoder)
+        case "count"     => new CountAggregator(col)
+        case "mean"      => new MeanAggregator(col, numericEncoder)
+        case _ => throw new IllegalArgumentException(s"No aggregation $aggName available")
+      }
+    }
+
+    def modify(ops: List[TableOp]): Either[Throwable, Int => StreamingDataRepr.Handle] = {
+      ops match {
+        case Nil => Right(StructSeqStreamHandle[A, B](_, data, transform, enc))
+        case GroupAgg(cols, aggs) :: rest if cols.nonEmpty =>
+          try {
+            val groupingFields = cols.map {
+              col => enc.field(col).getOrElse(throw new IllegalArgumentException(s"No field $col in struct"))
+            }
+
+            val getters = groupingFields.map(_._1)
+
+            val aggregators = aggs.map {
+              case (col, aggName) => aggregate(col, aggName)
+            }
+
+            val groupTransform = (bs: Seq[B]) => bs.groupBy(b => getters.map(_.apply(b))).toSeq.map {
+              case (groupCols, group) =>
+                group.foreach {
+                  b => aggregators.foreach {
+                    agg => agg.accumulate(b)
+                  }
+                }
+                val aggregates = aggregators.map(_.summarize())
+                (groupCols ::: aggregates).toArray
+            }
+
+            val groupedType = StructType(
+              (cols.zip(groupingFields.map(_._2.dataType)) ++ aggregators.map(agg => agg.resultName -> agg.encoder.dataType))
+                .map((StructField.apply _).tupled))
+
+            val groupedEncoders = groupingFields.map(_._2.asInstanceOf[DataEncoder[Any]]) ++ aggregators.map(_.encoder.asInstanceOf[DataEncoder[Any]])
+
+            val groupedEncoder = new runtime.DataEncoder.StructDataEncoder[Array[Any]](groupedType) {
+              def field(name: String): Option[(Array[Any] => Any, DataEncoder[_])] = {
+                groupedType.fields.indexWhere(_.name == name) match {
+                  case -1 => None
+                  case index => Some((arr => arr(index), groupedEncoders(index)))
+                }
+              }
+
+              def encode(dataOutput: DataOutput, value: Array[Any]): Unit = {
+                val encs = groupedEncoders.iterator
+                var i = 0
+                while (i < value.length) {
+                  encs.next().encode(dataOutput, value(i))
+                  i += 1
+                }
+              }
+
+              def sizeOf(t: Array[Any]): Int = {
+                val encs = groupedEncoders.iterator
+                var size = encs.next().sizeOf(t(0))
+                var i = 1
+                while (i < t.length) {
+                  size = DataEncoder.combineSize(size, encs.next().sizeOf(t(i)))
+                  i += 1
+                }
+                size
+              }
+            }
+
+            Right((newHandle: Int) => new StructSeqStreamHandle[A, Array[Any]](newHandle, data, transform andThen groupTransform, groupedEncoder))
+          } catch {
+            case err: Throwable => Left(err)
+          }
+      }
+    }
+  }
+
+
 }
 
-private[runtime] trait FromDataReprs extends ExpandedScopeReprs { self: ReprsOf.type =>
+private[runtime] trait FromDataReprs { self: ReprsOf.type =>
   implicit def fromDataReprs[T](implicit dataReprsOfT: DataReprsOf[T]): ReprsOf[T] = dataReprsOfT
-}
-
-private[runtime] trait ExpandedScopeReprs { self: ReprsOf.type =>
-
-  implicit def expanded[T]: ReprsOf[T] = macro macros.ExpandedScopeMacros.resolveFromScope
-
 }
