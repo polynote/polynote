@@ -1,9 +1,11 @@
 package polynote.runtime
 
+import java.io.DataOutput
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+import polynote.runtime
 import sun.misc.Cleaner
 
 /**
@@ -285,4 +287,31 @@ final case class GroupAgg(columns: List[String], aggregations: List[(String, Str
 final case class QuantileBin(column: String, binCount: Int, err: Double) extends TableOp
 final case class Select(columns: List[String]) extends TableOp
 
+// the standard structure to hold quartile data
+final case class Quartiles(min: Double, q1: Double, median: Double, mean: Double, q3: Double, max: Double)
+object Quartiles {
+  val fields: List[StructField] = List("min", "q1", "median", "mean", "q3", "max").map(StructField(_, DoubleType))
+  implicit val dataEncoder: DataEncoder.StructDataEncoder[Quartiles] =
+    new runtime.DataEncoder.StructDataEncoder[Quartiles](StructType(fields)) {
+      def field(name: String): Option[(Quartiles => Any, DataEncoder[_])] = name match {
+        case "min"    => Some((_.min, DataEncoder.double))
+        case "q1"     => Some((_.q1, DataEncoder.double))
+        case "median" => Some((_.median, DataEncoder.double))
+        case "mean"   => Some((_.mean, DataEncoder.double))
+        case "q3"     => Some((_.q3, DataEncoder.double))
+        case "max"    => Some((_.max, DataEncoder.double))
+        case _ => None
+      }
+      def encode(dataOutput: DataOutput, value: Quartiles): Unit = {
+        dataOutput.writeDouble(value.min)
+        dataOutput.writeDouble(value.q1)
+        dataOutput.writeDouble(value.median)
+        dataOutput.writeDouble(value.mean)
+        dataOutput.writeDouble(value.q3)
+        dataOutput.writeDouble(value.max)
+      }
+
+      def sizeOf(t: Quartiles): Int = 6 * 8
+    }
+}
 
