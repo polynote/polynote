@@ -525,9 +525,14 @@ export class CodeCell extends Cell {
         }
 
         if (mimeType === 'text/plain' && args.rel === 'stdout') {
+            // first, strip ANSI control codes
+            // TODO: we probably want to parse & render the colors, but it would complicate things at the moment
+            //       given that the folding logic relies on text nodes and that would require using elements
+            content = content.replace(/\u001b\[\d+m/g, '');
+
 
             // if there are too many lines, fold some
-            const lines = content.split(/\r?\n/g);
+            const lines = content.split(/\n/g);
 
 
             if (!this.stdOutEl || !this.stdOutEl.parentNode) {
@@ -590,6 +595,13 @@ export class CodeCell extends Cell {
 
             // collapse the adjacent text nodes
             this.stdOutEl.normalize();
+
+            // handle carriage returns in the last text node – they erase back to the start of the line
+            const lastTextNode = [...this.stdOutEl.childNodes].filter(node => node.nodeType === 3).pop();
+            if (lastTextNode) {
+                const eat = /^(?:.|\r)+\r(.*)$/gm; // remove everything before the last CR in each line
+                lastTextNode.nodeValue = lastTextNode.nodeValue.replace(eat, '$1');
+            }
 
         } else {
             this.buildOutput(mimeType, args, content).then(el => {

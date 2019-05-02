@@ -177,7 +177,7 @@ class ScalaInterpreter(
                 }
             }.flatMap(results => saveSource.as(results)).uncancelable
 
-            val eval = Queue.unbounded[IO, Option[Chunk[Byte]]].map(new QueueOutputStream(_)).flatMap {
+            val eval = Queue.unbounded[IO, Option[Chunk[Byte]]].map(new QueuePrintStream(_, 4096)).flatMap {
               stdOut =>
                 val outputs = stdOut.queue.dequeue
                   .unNoneTerminate
@@ -189,9 +189,8 @@ class ScalaInterpreter(
 
                 // we need to capture and release *on the thread that is executing the code* because Console.setOut is set **per thread**!
                 val runWithCapturedStdout = IO {
-                  val newOut = new PrintStream(stdOut)
-                  System.setOut(newOut)
-                  Console.setOut(newOut)
+                  System.setOut(stdOut)
+                  Console.setOut(stdOut)
                 }.bracket(_ => run <* IO(stdOut.flush())) {
                   _ => IO {
                     System.setOut(originalOut)

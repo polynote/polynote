@@ -1,6 +1,6 @@
 package polynote.kernel.util
 
-import java.io.OutputStream
+import java.io.{OutputStream, PrintStream}
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -56,4 +56,16 @@ class QueueOutputStream(
       queue.enqueue1(None).unsafeRunSync()
     }
   }
+}
+
+class QueuePrintStream(val queue: Queue[IO, Option[Chunk[Byte]]], bufSize: Int = 256) extends PrintStream(new QueueOutputStream(queue, bufSize)) {
+
+  override def print(s: String): Unit = {
+    super.print(s)
+    if (s startsWith "\r")
+      flush()
+  }
+
+
+
 }
