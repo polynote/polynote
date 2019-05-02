@@ -10,7 +10,9 @@ class IPythonNotebookRepositorySpec extends FreeSpec with Matchers {
     // this is needed for compatibility with jupyter tooling
     val cell = JupyterCell(Code, Some(1), metadata = None, Some("scala"), Nil, None).asJsonObject
     assert(cell("metadata").isDefined)
-    cell("metadata").flatMap(_.asObject).get.keys.toList shouldEqual Nil
+    cell("metadata").flatMap(_.asObject).get.toMap shouldEqual Map(
+      "language" -> "scala".asJson
+    )
   }
 
 }
