@@ -169,7 +169,11 @@ final case class JupyterCell(
 
 object JupyterCell {
   implicit val encoder: ObjectEncoder[JupyterCell] = deriveEncoder[JupyterCell].contramapObject[JupyterCell] {
-    cell => if (cell.metadata.isEmpty) cell.copy(metadata = Some(JsonObject.empty)) else cell
+    cell =>
+      if (cell.metadata.isEmpty)
+        cell.copy(metadata = Some(cell.language.map(lang => JsonObject.singleton("language", lang.asJson)).getOrElse(JsonObject.empty)))
+      else
+        cell
   }
 
   implicit val decoder: Decoder[JupyterCell] = deriveDecoder[JupyterCell]
@@ -177,7 +181,7 @@ object JupyterCell {
   def toNotebookCell(cell: JupyterCell, index: Int): NotebookCell = {
     val language = cell.cell_type match {
       case Markdown => "text"
-      case Code     => cell.language.getOrElse("scala")
+      case Code     => cell.language orElse cell.metadata.flatMap(_("language").flatMap(_.asString)) getOrElse "scala"
     }
 
     val meta = cell.metadata.map {
@@ -202,13 +206,13 @@ object JupyterCell {
     }
 
     val meta = cell.metadata match {
-      case CellMetadata(false, false, false, None) => None
+      case CellMetadata(false, false, false, None) => Some(JsonObject.singleton("language", cell.language.toString.asJson))
       case meta => Some {
         JsonObject.fromMap(List(
           "cell.metadata.run_control.frozen" -> meta.disableRun,
           "jupyter.source_hidden" -> meta.hideSource,
           "jupyter.outputs_hidden" -> meta.hideOutput).filter(_._2).toMap.mapValues(Json.fromBoolean)
-          ++ Map("cell.metadata.exec_info" -> meta.executionInfo.asJson)
+          ++ Map("cell.metadata.exec_info" -> meta.executionInfo.asJson, "language" -> cell.language.toString.asJson)
         )
       }
     }
