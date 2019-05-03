@@ -2,6 +2,15 @@
 
 *
 
+# 0.1.9 (May 3, 2019)
+
+* Fix error when printing empty lines in python
+* Fix data streaming on remote kernels
+* Add table operations for sequences of case classes (supports plotting)
+* Clear error squigglies when cell is run
+* Save cell language into metadata field of ipynb
+* Improved support for terminal output
+
 # 0.1.8 (April 29, 2019)
 
 * Fix some bugs that caused cell execution to hang
