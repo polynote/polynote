@@ -116,10 +116,10 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   private val executionContext = ExecutionContext.fromExecutor(jepExecutor)
 
-  private val shift: ContextShift[IO] = IO.contextShift(executionContext)
-  private val listenerShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutor(externalListener))
+  private val jepShift: ContextShift[IO] = IO.contextShift(executionContext)
+  private implicit val globalShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
 
-  def withJep[T](t: => T): IO[T] = shift.evalOn(executionContext)(IO.delay(t))
+  def withJep[T](t: => T): IO[T] = jepShift.evalOn(executionContext)(IO.delay(t))
 
   protected def sharedModules: List[String] = List("numpy", "google")
 
@@ -137,7 +137,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
     }
   }.get()
 
-  private val shutdownSignal = ReadySignal()(listenerShift)
+  private val shutdownSignal = ReadySignal()
 
   private def expandGlobals(): Unit = {
     jep.eval("__polynote_globals__ = __pn_expand_globals__(__polynote_globals__)")
@@ -153,8 +153,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
     val cellName = s"Cell$cell"
     global.newCompilationUnit("", cellName)
 
-    val shiftEffect = IO.ioConcurrentEffect(shift) // TODO: we can also create an implicit shift instead of doing this, which is better?
-    Queue.unbounded[IO, Option[Result]](shiftEffect).flatMap { maybeResultQ =>
+    Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
       // TODO: Jep doesn't give us a good way to construct a dict... should we wrap cell context in a class that emulates dict instead?
       val globals = cellContext.visibleValues.view.map {
         rv => Array(rv.name, rv.value)
@@ -165,7 +164,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       val stdout = new PythonDisplayHook(resultQ)
 
 
-      withJep {
+      val run = withJep {
 
         jep.set("__polynote_displayhook__", stdout)
         jep.eval("import sys\n")
@@ -212,16 +211,15 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
           _ <- Stream.emits(resultSymbols.toSeq).to(resultQ.enqueue).compile.drain
           // make sure to flush stdout
           _ <- IO(stdout.flush())
-        } yield {
-
-          // resultQ will be in this approximate order (not that it should matter I hope):
-          //    1. stdout while running the cell
-          //    2. The symbols defined in the cell
-          //    3. The final output (if any) of the cell
-          //    4. Anything that might come out of stdout being flushed (probably nothing)
-          maybeResultQ.dequeue.unNoneTerminate
-        }
+        } yield ()
+      }.handleErrorWith {
+        err => resultQ.enqueue1(RuntimeError(err))
       }.guarantee(maybeResultQ.enqueue1(None))
+
+      run.start.map {
+        fiber =>
+          maybeResultQ.dequeue.unNoneTerminate ++ Stream.eval(fiber.join).drain
+      }
     }
   }
 
@@ -405,11 +403,12 @@ object PythonInterpreter {
 
 }
 
-class PythonDisplayHook(out: Enqueue[IO, Result]) {
+class PythonDisplayHook(out: Enqueue[IO, Result])(implicit contextShift: ContextShift[IO]) {
   private var current = ""
   def output(str: String): Unit =
-    if (str != null && str.nonEmpty)
-      out.enqueue1(Output("text/plain; rel=stdout", str)).unsafeRunSync() // TODO: probably should do better than this
+    if (str != null && str.nonEmpty) {
+      contextShift.shift.flatMap(_ => out.enqueue1(Output("text/plain; rel=stdout", str))).unsafeRunSync() // TODO: probably should do better than this
+    }
 
   def write(str: String): Unit = synchronized {
     current = current + str
