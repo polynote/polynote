@@ -1,6 +1,7 @@
 # UNRELEASED
 
 * Can now bust cache of URL dependencies (e.g., `file:///`, `s3://`, etc) by adding URL parameter `?nocache` to the end of the path [#292]
+* Support `s3n` and `s3a` URLs as well (just a config change on our end). 
 
 [#292]: https://github.com/polynote/polynote/issues/292
 
