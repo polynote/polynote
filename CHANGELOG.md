@@ -1,6 +1,8 @@
 # UNRELEASED
 
-*
+* Can now bust cache of URL dependencies (e.g., `file:///`, `s3://`, etc) by adding URL parameter `?nocache` to the end of the path [#292]
+
+[#292]: https://github.com/polynote/polynote/issues/292
 
 # 0.1.9 (May 3, 2019)
 
