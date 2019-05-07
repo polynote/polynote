@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.collection.mutable
 
 // TODO: can we make this a class instantiated per-kernel? Currently we rely on the ClassLoader to prevent cross-contamination
-object Runtime {
+object Runtime extends Serializable {
 
   def init(): Unit = ()
 
@@ -28,15 +28,15 @@ object Runtime {
   def setExecutionStatus(startPos: Int, endPos: Int): Unit = executionStatusSetter(Some((startPos, endPos)))
   def clearExecutionStatus(): Unit = executionStatusSetter(None)
 
-  private var displayer: (String, String) => Unit = (_, _) => println("Display publisher is not correctly configured.")
+  @transient private var displayer: (String, String) => Unit = (_, _) => println("Display publisher is not correctly configured.")
 
   def setDisplayer(fn: (String, String) => Unit): Unit = displayer = fn
 
-  private var progressSetter: (Double, String) => Unit = (_, _) => ()
+  @transient private var progressSetter: (Double, String) => Unit = (_, _) => ()
 
   def setProgressSetter(fn: (Double,String) => Unit): Unit = progressSetter = fn
 
-  private var executionStatusSetter: Option[(Int, Int)] => Unit = (_ => ())
+  @transient private var executionStatusSetter: Option[(Int, Int)] => Unit = (_ => ())
 
   def setExecutionStatusSetter(fn: Option[(Int, Int)] => Unit): Unit = executionStatusSetter = fn
 

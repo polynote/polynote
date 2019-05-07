@@ -13,7 +13,7 @@ import cats.syntax.flatMap._
 import cats.syntax.functor._
 import cats.syntax.traverse._
 import fs2.Stream
-import fs2.concurrent.{Enqueue, Queue}
+import fs2.concurrent.{Enqueue, Queue, SignallingRef}
 import org.log4s.{Logger, getLogger}
 import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
@@ -30,6 +30,19 @@ import scala.concurrent.duration.MILLISECONDS
 import scala.collection.immutable.SortedMap
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
 import scala.tools.nsc.Settings
+
+class NotebookSomething(
+  val updates: Stream[IO, NotebookUpdate]
+) {
+
+  val ref: SignallingRef[IO, Notebook] = ???
+
+  val joined = updates.evalMap {
+    update => ref.modify(nb => update.applyTo(nb) -> nb).map(_ -> update)
+  }
+
+
+}
 
 class PolyKernel private[kernel] (
   private val getNotebook: () => IO[Notebook],
@@ -71,6 +84,10 @@ class PolyKernel private[kernel] (
                 results => results.collect {
                   case v: ResultValue => v
                 }.through(cellContext.results.tap)
+              }.handleErrorWith {
+                err =>
+                  logger.error(err)(s"Failed to run predef for $language")
+                  IO.raiseError(err)
               } <* IO(notebookContext.insertFirst(cellContext))
 
             case None => IO.pure(Stream.empty)
