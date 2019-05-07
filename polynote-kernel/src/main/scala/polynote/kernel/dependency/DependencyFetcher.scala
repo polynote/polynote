@@ -89,7 +89,7 @@ trait URLDependencyFetcher extends DependencyFetcher[IO] {
 
       if (inputAsFile.exists()) {
         IO.pure(inputAsFile)
-      } else if (cacheFile.exists()) {
+      } else if (cacheFile.exists() && !Option(uri.getQuery).exists(_.contains("nocache"))) {
         IO.pure(cacheFile)
       } else {
         // ok we actually have to fetch it I guess
