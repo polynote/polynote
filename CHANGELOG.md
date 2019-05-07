@@ -1,6 +1,6 @@
 # UNRELEASED
 
-*
+* Support `s3n` and `s3a` URLs as well (just a config change on our end). 
 
 # 0.1.9 (May 3, 2019)
 
