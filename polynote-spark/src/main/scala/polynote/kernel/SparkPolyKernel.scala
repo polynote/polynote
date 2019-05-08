@@ -1,7 +1,7 @@
 package polynote.kernel
 
 import java.io.File
-import java.net.{JarURLConnection, URL, URLDecoder}
+import java.net.{JarURLConnection, URL, URLClassLoader, URLDecoder}
 import java.nio.file.{FileSystems, Files, Path, StandardCopyOption}
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -29,6 +29,7 @@ import polynote.messages._
 import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.reflect.io.{AbstractFile, Directory, PlainDirectory, VirtualDirectory}
 import scala.tools.nsc.{Settings, io}
+import scala.collection.JavaConverters._
 import scala.tools.nsc.interactive.Global
 
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
@@ -184,10 +185,14 @@ object SparkPolyKernel {
 
     val outputDir = new PlainDirectory(new Directory(outputPath.toFile))
 
-    val sparkClasspath = System.getProperty("java.class.path")
-      .split(File.pathSeparatorChar)
+    val availableJars = getClass.getClassLoader match {
+      case u: URLClassLoader =>
+        u.getURLs.map(u => new File(u.toURI))
+      case _                 => System.getProperty("java.class.path").split(File.pathSeparatorChar).map(new File(_))
+    }
+
+    val sparkClasspath = availableJars
       .view
-      .map(new File(_))
       .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
 
     val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)

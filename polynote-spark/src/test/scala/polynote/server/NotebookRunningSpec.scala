@@ -1,8 +1,9 @@
 package polynote.server
 
 import java.nio.file.{Path, Paths}
+import java.util.concurrent.Executors
 
-import cats.effect.{ContextShift, ExitCode, IO}
+import cats.effect.{ContextShift, ExitCode, IO, Timer}
 import fs2.concurrent.Queue
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.config.PolynoteConfig
@@ -16,9 +17,9 @@ import scala.concurrent.ExecutionContext
 // idk, probably should have a better name
 class NotebookRunningSpec extends FreeSpec with Matchers  {
 
-  private implicit val executionContext: ExecutionContext = ExecutionContext.global
+  private implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   private implicit val cs: ContextShift[IO] = IO.contextShift(executionContext)
-  private implicit val timer = IO.timer(executionContext)
+  private implicit val timer: Timer[IO] = IO.timer(executionContext)
 
   val nbManager = {
     val config = PolynoteConfig()
@@ -31,7 +32,6 @@ class NotebookRunningSpec extends FreeSpec with Matchers  {
     val run = for {
       sharedNB <- nbManager.getNotebook(path)
       ref <- sharedNB.open("tester")
-      _ <- ref.startKernel()
       nb <- ref.get
       cellIds = nb.cells.map(_.id)
       res <- ref.runCells(cellIds)
