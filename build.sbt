@@ -133,7 +133,7 @@ lazy val `polynote-spark` = project.settings(
       copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get) // sneak scala-lang jar into the assembly
     )
   }.taskValue,
-  fork in Test := false,
+  fork in Test := true,
   parallelExecution in Test := false
 ) dependsOn (`polynote-server`, `polynote-spark-runtime`)
 
