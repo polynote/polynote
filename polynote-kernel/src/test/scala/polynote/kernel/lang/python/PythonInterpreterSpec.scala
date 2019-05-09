@@ -304,4 +304,12 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         mixed shouldEqual 6
     }
   }
+
+  "foo" should "bar" in {
+    assertPythonOutput("this is a syntax error") { case (vars, output, displayed) =>
+      vars.toSeq shouldBe empty
+      output shouldBe empty
+      displayed should contain only "text/html" -> "hi"
+    }
+  }
 }

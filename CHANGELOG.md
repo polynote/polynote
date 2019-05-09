@@ -1,6 +1,8 @@
 # UNRELEASED
 
-*
+* Python `SyntaxError`s raised by parsing cell contents now raised as `CompileErrors` rather than Runtime Errors. [#301]
+
+[#301]: https://github.com/polynote/polynote/issues/301
 
 # 0.1.10 (May 9, 2019)
 
