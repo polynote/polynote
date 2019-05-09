@@ -68,6 +68,27 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       """.stripMargin.trim)
 
 
+    // this class is used to convert the last expression to an assignment
+    jep.eval("import ast\n")
+    jep.eval(
+      """
+        |class LastExprAssigner(ast.NodeTransformer):
+        |
+        |    # keep track of last line of initial tree passed in
+        |    lastLine = None
+        |
+        |    def visit(self, node):
+        |        if (not self.lastLine):
+        |            self.lastLine = node.body[-1].lineno
+        |        return super(ast.NodeTransformer, self).visit(node)
+        |
+        |    def visit_Expr(self, node):
+        |        if node.lineno == self.lastLine:
+        |            return ast.copy_location(ast.Assign(targets=[ast.Name(id='Out', ctx=ast.Store())], value=node.value), node)
+        |        else:
+        |            return node
+      """.stripMargin.trim)
+
   }
 
   private val jepThread: AtomicReference[Thread] = new AtomicReference[Thread](null)
@@ -176,31 +197,21 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         jep.set("__polynote_cell__", cellName)
         jep.set("__polynote_globals__", globals)
         expandGlobals()
-        // all of this parsing is just so if the last statement is an expression, we can print the value like the repl does
-        // TODO: should probably just use ipython to evaluate it instead
-        jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec').body\n")
-        val numStats = jep.getValue("len(__polynote_parsed__)", classOf[java.lang.Long])
+
+        jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec')\n")
+
+        val numStats = jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Long])
 
         if (numStats > 0) {
-          jep.eval("__polynote_last__ = __polynote_parsed__[-1]")
-          val lastIsExpr = jep.getValue("isinstance(__polynote_last__, ast.Expr)", classOf[java.lang.Boolean])
+          jep.eval("__polynote_parsed__ = LastExprAssigner().visit(__polynote_parsed__)")
+          jep.eval("__polynote_parsed__ = ast.fix_missing_locations(__polynote_parsed__)")
+          jep.eval("__polynote_code__ = compile(__polynote_parsed__, '<ast>', 'exec')")
 
-          val resultName = "Out"
-          val maybeModifiedCode = if (lastIsExpr) {
-            val lastLine = jep.getValue("__polynote_last__.lineno", classOf[java.lang.Integer]) - 1
-            val (prevCode, lastCode) = code.linesWithSeparators.toSeq.splitAt(lastLine)
-
-            (prevCode ++ s"$resultName = (${lastCode.mkString})\n").mkString
-          } else code
-
-          jep.set("__polynote_code__", maybeModifiedCode)
           kernelContext.runInterruptible {
-
             jep.eval("exec(__polynote_code__, __polynote_globals__, __polynote_locals__)\n")
           }
           jep.eval("globals().update(__polynote_locals__)")
           val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
-
 
           getPyResults(newDecls, cell).filterNot(_._2.value == null).values
         } else Nil
