@@ -124,13 +124,15 @@ class ScalaInterpreter(
         case method if method.isMethod && (method.isOverloaded || method.isModuleOrModuleClass || method.asMethod.paramLists.flatten.nonEmpty) => method
       }
 
+      // Now, if it definitely doesn't have parameters, it could still be an `object`, like a companion object of a case class
+      // We don't want those, because they will actually cause an error if you try to treat it like a method.
       if (methodWithParams.nonEmpty) {
         None
       } else if (sym.isVal) {
         Some(sym)
-      } else if (sym.isAccessor && !sym.isModule) {
+      } else if (sym.isAccessor && !sym.isModuleOrModuleClass) { // it's an accessor and not an `object`
         Some(sym)
-      } else if (sym.isGetter && !sym.isModuleOrModuleClass) {
+      } else if (sym.isGetter && !sym.isModuleOrModuleClass) {   // it's a getter and not an `object`
         Some(sym)
       } else None
     }
@@ -139,12 +141,18 @@ class ScalaInterpreter(
   // matches a definition that we'll publish to the symbol table as a function (if possible)
   private object Def {
     def unapply(sym: global.Symbol): Option[global.MethodSymbol] = if (sym.isMethod) {
-      if (sym.isOverloaded || sym.isModuleOrModuleClass)
+      if (sym.isOverloaded || sym.isModuleOrModuleClass) {
+        // If it's an overloaded method, we can't eta-expand it to a function because which overload would we use?
+        // If it's a module (i.e. companion object of a case class) then it is also a method and we have to ignore it here.
         None
-      else if (sym.alternatives.exists(!_.isMethod) && sym.alternatives.exists(_.isMethod))
+      } else if (sym.alternatives.exists(!_.isMethod) && sym.alternatives.exists(_.isMethod)) {
+        // If it's a symbol that's both a method and not-a-method, then it's overloaded (even though isOverloaded is false)
+        // and it will blow up if we try to treat it as a method
         None
-      else
+      } else {
+        // Now it should be safe to eta-expand
         Some(sym.asMethod)
+      }
     } else None
   }
 
@@ -174,11 +182,7 @@ class ScalaInterpreter(
                       // if the decl is a val, evaluate it and push it to the symbol table
                       val name = accessor.decodedName.toString
                       val tpe = global.exitingTyper(accessor.info.resultType)
-                      val method = try {runtimeType.decl(scala.reflect.runtime.universe.TermName(name)).asMethod} catch {
-                        case err: Throwable =>
-                          val e = err
-                          throw e
-                      }
+                      val method = runtimeType.decl(scala.reflect.runtime.universe.TermName(name)).asMethod
                       val owner = method.owner
 
                       // invoke the accessor for its side effect(s), even if it returns Unit

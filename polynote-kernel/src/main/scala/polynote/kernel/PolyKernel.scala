@@ -31,19 +31,6 @@ import scala.collection.immutable.SortedMap
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
 import scala.tools.nsc.Settings
 
-class NotebookSomething(
-  val updates: Stream[IO, NotebookUpdate]
-) {
-
-  val ref: SignallingRef[IO, Notebook] = ???
-
-  val joined = updates.evalMap {
-    update => ref.modify(nb => update.applyTo(nb) -> nb).map(_ -> update)
-  }
-
-
-}
-
 class PolyKernel private[kernel] (
   private val getNotebook: () => IO[Notebook],
   val kernelContext: KernelContext,
