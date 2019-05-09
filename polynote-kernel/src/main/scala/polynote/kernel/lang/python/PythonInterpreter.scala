@@ -165,7 +165,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
     jep.eval("__polynote_globals__ = __pn_expand_globals__(__polynote_globals__)")
   }
 
-  private def evalWithCompilerErrors(cellName: String, cellContents: String)(jepCode: String): Either[CompileErrors, Unit] = {
+  private def evalWithCompilerErrors(cellName: String, cellContents: String)(jepCode: String): Either[List[CompileErrors], Unit] = {
     jep.eval("__polynote_err__ = []")
     jep.eval(
       s"""
@@ -176,7 +176,8 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       """.stripMargin.trim)
     val syntaxErrorInfo = jep.getValue("__polynote_err__", classOf[java.util.List[String]])
     if (syntaxErrorInfo.isEmpty) {
-      Right(jep.eval("del __polynote_err__"))
+      jep.eval("del __polynote_err__")
+      Right(())
     } else {
       val line :: offset :: text :: msg :: Nil = syntaxErrorInfo.asScala.toList
 
@@ -187,7 +188,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       val pos = Pos(cellName, start, end, start) // point is also the start?
       val errs = CompileErrors(List(KernelReport(pos, msg, KernelReport.Error)))
       jep.eval("del __polynote_err__")
-      Left(errs)
+      Left(List(errs))
     }
 
   }
@@ -232,6 +233,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
         val pyResults = for {
           _ <- wrapEval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec')").right
+          _ <- (if (jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Integer]) > 0) Right(List.empty[Result]) else Left(List.empty[CompileErrors])).right
           _ <- wrapEval("__polynote_parsed__ = LastExprAssigner().visit(__polynote_parsed__)").right
           _ <- wrapEval("__polynote_parsed__ = ast.fix_missing_locations(__polynote_parsed__)").right
           _ <- wrapEval("__polynote_code__ = compile(__polynote_parsed__, '<ast>', 'exec')").right
@@ -242,13 +244,13 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
           jep.eval("globals().update(__polynote_locals__)")
           val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 
-          getPyResults(newDecls, cell).filterNot(_._2.value == null).values
+          getPyResults(newDecls, cell).filterNot(_._2.value == null).values.toList
         }
         pyResults match {
           case Left(err) =>
-            List(err)
+            err
           case Right(res) =>
-            res.toList
+            res
         }
       }.flatMap { resultSymbols =>
 
