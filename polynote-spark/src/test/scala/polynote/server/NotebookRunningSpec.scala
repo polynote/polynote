@@ -57,7 +57,7 @@ class NotebookRunningSpec extends FreeSpec with Matchers  {
         ResultValue("x","Long",List(StringRepr("3"), DataRepr(LongType,null)),6.toShort,3,null,None),
         ResultValue("z","List[Long]",List(StringRepr("List(1, 2, 3, 4)"), StreamingDataRepr(0,LongType,Some(4))),6.toShort,List(1, 2, 3, 4),null,None)
       ),
-      7 -> List(ResultValue("Out","List[Int]",List(StringRepr("List(2, 3, 4, 5)"), StreamingDataRepr(1,IntType,Some(4))),7.toShort,List(2, 3, 4, 5),null,Some((68,68))))
+      7 -> List(ResultValue("Out","List[Int]",List(StringRepr("List(2, 3, 4, 5)"), StreamingDataRepr(0,IntType,Some(4))),7.toShort,List(2, 3, 4, 5),null,Some((68,68))))
     )
 
     cellResults.size shouldEqual expectedCellResults.size
@@ -72,6 +72,7 @@ class NotebookRunningSpec extends FreeSpec with Matchers  {
 
             val filteredReprs = reprs.collect {
               case DataRepr(dataType, buffer) => DataRepr(dataType, null)
+              case StreamingDataRepr(_, dataType, size) => StreamingDataRepr(0, dataType, size)
               case other => other
             }
 
