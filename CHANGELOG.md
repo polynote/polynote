@@ -1,11 +1,17 @@
 # UNRELEASED
 
+*
+
+# 0.1.10 (May 9, 2019)
+
 * Can now bust cache of URL dependencies (e.g., `file:///`, `s3://`, etc) by adding URL parameter `?nocache` to the end of the path [#292]
 * Support `s3n` and `s3a` URLs as well (just a config change on our end). 
 * Fix bug in how we were assigning Python cell expressions to `Out` [#291]
+* Fix Spark serialization issues [#300]
 
 [#292]: https://github.com/polynote/polynote/issues/292
 [#291]: https://github.com/polynote/polynote/issues/291
+[#300]: https://github.com/polynote/polynote/pull/300
 
 # 0.1.9 (May 3, 2019)
 
