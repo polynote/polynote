@@ -2,7 +2,7 @@ package polynote.kernel.lang.python
 
 import jep.python.{PyCallable, PyObject}
 import org.scalatest._
-import polynote.kernel.Output
+import polynote.kernel.{CompileErrors, KernelReport, Output, Pos}
 import polynote.kernel.lang.KernelSpec
 import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
@@ -285,6 +285,16 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
     }
   }
 
+  it should "Raise SyntaxErrors as CompileErrors" in {
+    assertPythonOutput("syntax error") { case (vars, output, displayed) =>
+      vars.toSeq shouldBe empty
+      output should contain theSameElementsAs Seq(
+        CompileErrors(List(KernelReport(Pos("Cell0", 12, 13, 12), "invalid syntax", KernelReport.Error)))
+      )
+      displayed shouldBe empty
+    }
+  }
+
   "PythonFunction" should "allow positional and keyword args" in {
 
     val code =
@@ -302,14 +312,6 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
 
         val mixed = hello(1, 2, three = 3)
         mixed shouldEqual 6
-    }
-  }
-
-  "foo" should "bar" in {
-    assertPythonOutput("this is a syntax error") { case (vars, output, displayed) =>
-      vars.toSeq shouldBe empty
-      output shouldBe empty
-      displayed should contain only "text/html" -> "hi"
     }
   }
 }
