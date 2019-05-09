@@ -36,6 +36,7 @@ class ScalaSource[G <: Global](
   }
 
   def moduleRef: global.Select = global.Select(global.Ident(global.TermName(notebookPackage)), moduleName)
+  def moduleInstanceRef: global.Tree = global.Select(moduleRef, global.TermName("INSTANCE"))
 
   private def ensurePositions(sourceFile: SourceFile, tree: Tree, parentPos: Position): Position = {
     if (tree.pos != null && tree.pos.isDefined) {
@@ -100,6 +101,8 @@ class ScalaSource[G <: Global](
 
   lazy val moduleName: global.TermName = global.TermName(s"Eval$$$cellName$$$executionId")
 
+  // the code, rewritten so that the last expression, if it is a free expression, is assigned to Out
+  // returns the name of the last expression (Out unless it was a ValDef, in which case it's the name from the ValDef)
   private lazy val results = parsedTrees.flatMap {
     trees => Either.catchNonFatal {
       trees.last match {
@@ -118,21 +121,13 @@ class ScalaSource[G <: Global](
     }
   }
 
-  /**
-    * We have to create both a class and an object – the class needs to actually run the code, so that it won't be run
-    * in a static initializer. But, we also want the declarations to be available in the object, and we want class
-    * definitions and such to go there too so that we don't have inner classes which cause lots of problems.
-    *
-    * So this does some rewriting - class declarations are moved to the object, and we make lazy val accessors
-    * into the INSTANCE for val definitions. We also make proxy methods that delegate to any methods defined in the cell.
-    * Everything else (statements etc) stays in the class.
-    */
-  private lazy val moduleClassTrees = results.map {
+  // The code, decorated with extra calls to update the progress and position within the cell during execution
+  private lazy val decoratedTrees = results.map {
     case (_, trees) =>
       import global.Quasiquote
       val numTrees = trees.size
-      trees.zipWithIndex.foldLeft((Vector.empty[Tree], Vector.empty[Tree])) {
-        case ((moduleTrees, classTrees), (tree, index)) =>
+      trees.zipWithIndex.flatMap {
+        case (tree, index) =>
           val treeProgress = index.toDouble / numTrees
           val lineStr = s"Line ${tree.pos.line}"
           // code to notify kernel of progress in the cell
@@ -142,47 +137,30 @@ class ScalaSource[G <: Global](
               Some(q"""polynote.runtime.Runtime.currentRuntime.setExecutionStatus(${mark.pos.start}, ${mark.pos.end})""")
             else None
 
+          def wrapWithProgress(name: String, tree: Tree): List[Tree] =
+            setPos(tree).toList ++ List(setProgress(name), tree)
+
           tree match {
-            case tree: global.ValDef =>
-              if (!tree.mods.hasFlag(global.Flag.PRIVATE) && !tree.mods.hasFlag(global.Flag.PROTECTED)) {
-                // make a lazy val accessor in the companion
-                (moduleTrees :+ atPos(tree.pos)(q"lazy val ${tree.name} = INSTANCE.${tree.name}"),
-                  (classTrees :+ setProgress(tree.name.toString)) ++ setPos(tree.rhs).toVector :+ tree)
-              } else {
-                (moduleTrees, (classTrees :+ setProgress(tree.name.toString)) ++ setPos(tree.rhs).toVector :+ tree)
-              }
-            case tree: global.DefDef =>
-              // make a proxy method in the companion
-              val typeArgs = tree.tparams.map(tp => global.Ident(tp.name))
-              val valueArgs = tree.vparamss.map(_.map(param => global.Ident(param.name)))
-              (moduleTrees :+ atPos(tree.pos)(tree.copy(rhs = q"INSTANCE.${tree.name}[..$typeArgs](...$valueArgs)")), classTrees :+ tree)
-            case tree: global.MemberDef =>
-              // move class/type definition to the companion object and import it within the cell's class body
-              (moduleTrees :+ tree, q"import $moduleName.${tree.name}" +: classTrees)
-            case tree: global.Import =>
-              // imports need to be in both because they might be in type annotations/params?
-              (moduleTrees :+ tree, classTrees :+ tree)
-            case tree =>
-              // anything else, just leave it in the class body
-              (moduleTrees, (classTrees :+ setProgress(lineStr)) ++ setPos(tree).toVector :+ tree)
+            case tree: global.ValDef => wrapWithProgress(tree.name.decodedName.toString, tree)
+            case tree: global.MemberDef => List(tree)
+            case tree: global.Import => List(tree)
+            case tree => wrapWithProgress(lineStr, tree)
           }
-      } match {
-        case (moduleTrees, classTrees) => moduleTrees.toList -> classTrees.toList
       }
   }
 
   lazy val resultName: Option[global.TermName] = results.right.toOption.flatMap(_._1)
 
-  lazy val wrapped: Either[Throwable, Tree] = moduleClassTrees.right.flatMap {
-    case (moduleTrees, classTrees) => Either.catchNonFatal {
-      val allTrees = moduleTrees ++ classTrees
-      val source = allTrees.head.pos.source
-      val endPos = allTrees.map(_.pos).collect {
+  lazy val wrapped: Either[Throwable, Tree] = decoratedTrees.right.flatMap {
+    trees => Either.catchNonFatal {
+      val source = trees.head.pos.source
+      val endPos = trees.map(_.pos).collect {
         case pos if pos != null && pos.isRange => pos.end
       } match {
         case Nil => 0
         case poss => poss.max
       }
+
       val range = new RangePosition(source, 0, 0, endPos)
       val beginning = new RangePosition(source, 0, 0, 0)
       val end = new RangePosition(source, endPos, endPos, endPos)
@@ -215,9 +193,15 @@ class ScalaSource[G <: Global](
               // Mapping with decl's name to clobber duplicates, keep track of decl Name and the Module it came from
               decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.name.asInstanceOf[global.Name])
           }.toMap
-        }.map {
-          case (_, (module, name)) => q"import $module.$name"
-        }
+        }.toList.groupBy(_._2._1).flatMap {
+          case (module, imports) =>
+            val localValName = global.freshTermName(module.name.toString + "$INSTANCE")(global.currentFreshNameCreator)
+            val localVal = q"val $localValName = $module.INSTANCE"
+            localVal +: imports.map {
+              case (_, (_, name)) => q"import $localValName.$name"
+            }
+          //case (_, (module, name)) => q"import $module.INSTANCE.$name"
+        }.toList
 
       // This gnarly thing is building a synthetic object {} tree around the statements.
       // Quasiquotes won't do the trick, because we have to assign positions to every tree or the compiler freaks out.
@@ -228,7 +212,7 @@ class ScalaSource[G <: Global](
       val wrappedSource = atPos(range) {
         global.PackageDef(
           atPos(beginning)(global.Ident(global.TermName(notebookPackage))),
-          (directImports ++ impliedImports).map(forcePos(beginning, _)).map(global.resetAttrs) ::: List(
+          directImports.map(forcePos(beginning, _)).map(global.resetAttrs) ::: List(
             atPos(range) {
               global.ClassDef(
                 global.Modifiers(),
@@ -238,7 +222,7 @@ class ScalaSource[G <: Global](
                   global.Template(
                     List(atPos(beginning)(scalaDot(global.typeNames.AnyRef)), atPos(beginning)(scalaDot(global.typeNames.Serializable))), // extends AnyRef with Serializable
                     atPos(beginning)(global.noSelfType.copy()),
-                    atPos(beginning)(constructor) :: classTrees)
+                    atPos(beginning)(constructor) :: impliedImports.map(atPos(beginning)) ::: trees)
                 })
             },
             atPos(end) {
@@ -249,7 +233,7 @@ class ScalaSource[G <: Global](
                   global.Template(
                     List(atPos(end)(scalaDot(global.typeNames.AnyRef))),
                     atPos(end)(global.noSelfType.copy()),
-                    atPos(end)(constructor) :: atPos(end)(q"private val INSTANCE = new ${moduleName.toTypeName}") :: moduleTrees
+                    atPos(end)(constructor) :: atPos(end)(q"val INSTANCE = new ${moduleName.toTypeName}") :: Nil
                   )
                 }
               )
@@ -438,7 +422,7 @@ class ScalaSource[G <: Global](
     for {
       stats <- parsed
     } yield stats.collect {
-      case i @ global.Import(expr, selectors) => global.Import(reassignThis(moduleRef)(expr), selectors)
+      case i @ global.Import(expr, selectors) => global.Import(reassignThis(moduleInstanceRef)(expr), selectors)
     }
   }.right.getOrElse(Nil)
 
@@ -463,7 +447,7 @@ class ScalaSource[G <: Global](
 
   lazy val decls = compiledModule.flatMap {
     sym => withCompiler {
-      global.exitingTyper(sym.info.nonPrivateDecls)
+      global.exitingTyper(sym.info.decl(global.TermName("INSTANCE")).info.nonPrivateDecls)
     }
   }
 

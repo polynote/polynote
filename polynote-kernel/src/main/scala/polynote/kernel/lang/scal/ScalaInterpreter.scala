@@ -26,7 +26,7 @@ class ScalaInterpreter(
   val kernelContext: KernelContext
 ) extends LanguageInterpreter[IO] {
 
-  import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime}
+  import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime, formatType}
   private val logger = getLogger
 
   protected implicit val contextShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
@@ -48,6 +48,17 @@ class ScalaInterpreter(
   def predefCode: Option[String] = Some("val kernel = polynote.runtime.Runtime")
 
   override def init(): IO[Unit] = IO.unit // pass for now
+
+  protected def mkSource(
+    cellContext: CellContext,
+    code: String
+  ): ScalaSource[global.type] = {
+    val previous = cellContext.collectBack {
+      case c if c.id != cellContext.id && (previousSources contains c.id) => previousSources(c.id)
+    }.reverse
+
+    ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
+  }
 
   // Compile and initialize the module, but don't reflect its values or output anything
   def compileAndInit(source: ScalaSource[kernelContext.global.type]): IO[Unit] = {
@@ -76,6 +87,75 @@ class ScalaInterpreter(
     }
   }
 
+  private def importCellInstance(sym: global.ModuleSymbol) = {
+    val symType = global.exitingTyper(sym.toType)
+    val instanceSym = global.exitingTyper(symType.decl(global.TermName("INSTANCE")))
+    val instanceTyp = global.exitingTyper(instanceSym.info.finalResultType)
+
+    kernelContext.runInterruptibleIO(importToRuntime.importSymbol(sym)).flatMap {
+      runtimeSym =>
+        kernelContext.runInterruptibleIO {
+          try {
+            val moduleMirror = runtimeMirror.reflectModule(runtimeSym.asModule)
+            val moduleInst = runtimeMirror.reflect(moduleMirror.instance)
+            val runtimeInstanceSym = moduleInst.symbol.info.decl(runtime.universe.TermName("INSTANCE")).asTerm.accessed.asTerm
+            val instanceFieldMirror = moduleInst.reflectField(runtimeInstanceSym)
+            val instMirror = runtimeMirror.reflect(instanceFieldMirror.get)
+            (instMirror, instanceTyp, runtimeSym)
+          } catch {
+            case err: ExceptionInInitializerError =>
+              val e = err
+              throw RuntimeError(err.getCause)
+            case err: Throwable =>
+              val e = err
+              throw RuntimeError(err)
+          }
+        }
+    }
+  }
+
+  // matches a definition that we'll publish to the symbol table as a value
+  private object Val {
+    def unapply(sym: global.Symbol): Option[global.Symbol] = {
+
+      // make sure it doesn't have any parameters and isn't overloaded, or an object/case class constructor, or has parameters
+      // (have to check that it isn't a module first, or asMethod will fail even though isMethod is true. Yeesh.)
+      val methodWithParams = sym.alternatives.collect {
+        case method if method.isMethod && (method.isOverloaded || method.isModuleOrModuleClass || method.asMethod.paramLists.flatten.nonEmpty) => method
+      }
+
+      // Now, if it definitely doesn't have parameters, it could still be an `object`, like a companion object of a case class
+      // We don't want those, because they will actually cause an error if you try to treat it like a method.
+      if (methodWithParams.nonEmpty) {
+        None
+      } else if (sym.isVal) {
+        Some(sym)
+      } else if (sym.isAccessor && !sym.isModuleOrModuleClass) { // it's an accessor and not an `object`
+        Some(sym)
+      } else if (sym.isGetter && !sym.isModuleOrModuleClass) {   // it's a getter and not an `object`
+        Some(sym)
+      } else None
+    }
+  }
+
+  // matches a definition that we'll publish to the symbol table as a function (if possible)
+  private object Def {
+    def unapply(sym: global.Symbol): Option[global.MethodSymbol] = if (sym.isMethod) {
+      if (sym.isOverloaded || sym.isModuleOrModuleClass) {
+        // If it's an overloaded method, we can't eta-expand it to a function because which overload would we use?
+        // If it's a module (i.e. companion object of a case class) then it is also a method and we have to ignore it here.
+        None
+      } else if (sym.alternatives.exists(!_.isMethod) && sym.alternatives.exists(_.isMethod)) {
+        // If it's a symbol that's both a method and not-a-method, then it's overloaded (even though isOverloaded is false)
+        // and it will blow up if we try to treat it as a method
+        None
+      } else {
+        // Now it should be safe to eta-expand
+        Some(sym.asMethod)
+      }
+    } else None
+  }
+
   def compileAndRun(source: ScalaSource[kernelContext.global.type]): IO[Stream[IO, Result]] = {
     import source.cellContext, cellContext.id
     val originalOut = System.out
@@ -85,33 +165,20 @@ class ScalaInterpreter(
         case sym =>
           val saveSource = IO.delay[Unit](previousSources.put(id, source))
           val setModule = cellContext.module.complete(sym.asModule)
-          val symType = global.exitingTyper(sym.asModule.toType)
 
           setModule *> Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
             val resultQ = new EnqueueSome(maybeResultQ)
-            val run = IO(kernelContext.runInterruptible(importToRuntime.importSymbol(sym))).map {
-              runtimeSym =>
+            val run = importCellInstance(sym.asModule).map {
+              case (instMirror, symType, runtimeModuleSym) =>
                 kernelContext.runInterruptible {
-                  val moduleMirror = try runtimeMirror.reflectModule(runtimeSym.asModule) catch {
-                    case err: ExceptionInInitializerError => throw RuntimeError(err.getCause)
-                    case err: Throwable =>
-                      throw RuntimeError(err) // could be linkage errors which won't get handled by IO#handleErrorWith
-                  }
-
-                  val instMirror = try runtimeMirror.reflect(moduleMirror.instance) catch {
-                    case err: ExceptionInInitializerError => throw RuntimeError(err.getCause)
-                    case err: Throwable =>
-                      throw RuntimeError(err)
-                  }
-
                   val runtimeType = instMirror.symbol.info
 
                   // collect term definitions and values from the cell's object, and publish them to the symbol table
                   // TODO: We probably also want to publish some output for types, like "Defined class Foo" or "Defined type alias Bar".
                   //       But the class story is still WIP (i.e. we might want to pull them out of cells into the notebook package)
-                  symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor && !d.isSetter).collect {
+                  symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor && !d.isSetter && !d.name.decodedName.toString.contains("$INSTANCE")).collect {
 
-                    case accessor if accessor.isGetter || (accessor.isMethod && !accessor.isOverloaded && accessor.asMethod.paramLists.isEmpty && accessor.isStable) =>
+                    case Val(accessor) =>
                       // if the decl is a val, evaluate it and push it to the symbol table
                       val name = accessor.decodedName.toString
                       val tpe = global.exitingTyper(accessor.info.resultType)
@@ -129,7 +196,7 @@ class ScalaInterpreter(
                       else
                         Some(ResultValue(kernelContext, accessor.name.toString, tpe, value, id, Some((accessor.pos.start, accessor.pos.end))))
 
-                    case method if method.isMethod && method.originalInfo.typeParams.isEmpty =>
+                    case Def(method) =>
                       // If the decl is a def, we push an anonymous (fully eta-expanded) function value to the symbol table.
                       // The Scala interpreter uses the original method, but other interpreters can use the function.
                       val runtimeMethod = importToRuntime.importSymbol(method.asMethod).asMethod
@@ -154,9 +221,9 @@ class ScalaInterpreter(
 
                           // eta-expand if necessary
                           val call = fnSymbol.paramLists.size match {
-                            case 0 => q"$fnSymbol"
-                            case 1 => q"$fnSymbol(..$fnArgs)"
-                            case _ => q"$fnSymbol(..$fnArgs) _"
+                            case 0 => q"$runtimeModuleSym.INSTANCE.$fnSymbol"
+                            case 1 => q"$runtimeModuleSym.INSTANCE.$fnSymbol(..$fnArgs)"
+                            case _ => q"$runtimeModuleSym.INSTANCE.$fnSymbol(..$fnArgs) _"
                           }
                           val tree = Function(args.flatten, call)
                           val typ = runtimeTools.typecheck(tree).tpe
@@ -167,10 +234,12 @@ class ScalaInterpreter(
                         // I guess we're saying a "def" shouldn't become the cell result?
                         Some(ResultValue(kernelContext, method.name.toString, methodType, runtimeFn, id, Some((method.pos.start, method.pos.end))))
                       } catch {
-                        case err: Throwable => Some(CompileErrors(List(KernelReport(
-                          Pos(source.cellName, method.pos.start, method.pos.end, method.pos.start),
-                          s"Unable to create eta-expanded method for ${method.name}; it may not be available to other languages",
-                          KernelReport.Warning))))
+                        case err: Throwable =>
+                          val e = err
+                          Some(CompileErrors(List(KernelReport(
+                            Pos(source.cellName, method.pos.start, method.pos.end, method.pos.start),
+                            s"Unable to create eta-expanded method for ${method.name}; it may not be available to other languages",
+                            KernelReport.Warning))))
                       }
 
                   }.flatten
@@ -220,13 +289,8 @@ class ScalaInterpreter(
     cellContext: CellContext,
     code: String
   ): IO[Stream[IO, Result]] = {
-    val previous = cellContext.collectBack {
-      case c if c.id != cellContext.id && (previousSources contains c.id) => previousSources(c.id)
-    }.reverse
-
-    val source = ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
+    val source = mkSource(cellContext, code)
     compileAndRun(source)
-
   }
 
   override def completionsAt(
@@ -234,11 +298,7 @@ class ScalaInterpreter(
     code: String,
     pos: Int
   ): IO[List[Completion]] = {
-    val previous = cellContext.collectBack {
-      case c if previousSources contains c.id => previousSources(c.id)
-    }.reverse
-
-    IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).completionsAt(pos)).map {
+    IO.fromEither(mkSource(cellContext, code).completionsAt(pos)).map {
       case (typ, completions) => completions.map { sym =>
         val name = sym.name.decodedName.toString
         val symType = sym.typeSignatureIn(typ)
@@ -263,11 +323,7 @@ class ScalaInterpreter(
     code: String,
     pos: Int
   ): IO[Option[Signatures]] = {
-    val previous = cellContext.collectBack {
-      case c if previousSources contains c.id => previousSources(c.id)
-    }.reverse
-
-    IO.fromEither(ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code).signatureAt(pos)).map {
+    IO.fromEither(mkSource(cellContext, code).signatureAt(pos)).map {
       case (typ: global.MethodType, syms, n, d) =>
         val hints = syms.map {
           sym =>
@@ -308,31 +364,6 @@ class ScalaInterpreter(
       case NoApplyTree => IO.pure(None)
       case err => IO(logger.error(err)("Completions error")).as(None)
     }
-  }
-
-
-
-  def formatType(typ: global.Type): String = typ match {
-    case mt @ global.MethodType(params, result) =>
-      val paramStr = params.map {
-        sym => s"${sym.nameString}: ${formatType(sym.typeSignatureIn(mt))}"
-      }.mkString(", ")
-      val resultType = formatType(result)
-      s"($paramStr) => $resultType"
-
-    case _ =>
-      val typName = typ.typeSymbol.name
-      val typNameStr = typ.typeSymbol.nameString
-      typ.typeArgs.map(formatType) match {
-        case Nil => typNameStr
-        case a if typNameStr == "<byname>" => s"=> $a"
-        case a :: b :: Nil if typName.isOperatorName => s"$a $typNameStr $b"
-        case a :: b :: Nil if typ.typeSymbol.owner.nameString == "scala" && (typNameStr == "Function1") =>
-          s"$a => $b"
-        case args if typ.typeSymbol.owner.nameString == "scala" && (typNameStr startsWith "Function") =>
-          s"(${args.dropRight(1).mkString(",")}) => ${args.last}"
-        case args => s"$typName[${args.mkString(", ")}]"
-      }
   }
 
   def completionType(sym: global.Symbol): CompletionType =

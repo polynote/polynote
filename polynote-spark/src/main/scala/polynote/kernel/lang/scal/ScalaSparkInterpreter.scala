@@ -5,13 +5,23 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.IO
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.{KernelContext}
+import polynote.kernel.util.{CellContext, KernelContext}
 
 class ScalaSparkInterpreter(ctx: KernelContext) extends ScalaInterpreter(ctx) {
   import kernelContext.global
 
   // need a unique package, in case of a shared spark session
   override lazy val notebookPackageName = s"$$notebook${ScalaSparkInterpreter.nextNotebookId}"
+
+  override protected def mkSource(cellContext: CellContext, code: String): ScalaSource[kernelContext.global.type] = {
+
+    // without this line, inner classes have issues (i.e. no Spark Encoder can be found for case class)
+    val codeWithOuterScopes =
+      s"""org.apache.spark.sql.catalyst.encoders.OuterScopes.addOuterScope(this)
+         |$code""".stripMargin
+
+    super.mkSource(cellContext, codeWithOuterScopes)
+  }
 
   override def predefCode: Option[String] = Some {
     s"""${super.predefCode.getOrElse("")}

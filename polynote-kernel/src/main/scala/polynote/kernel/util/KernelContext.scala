@@ -186,6 +186,8 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
     result
   }
 
+  def runInterruptibleIO[T](thunk: => T): IO[T] = IO.delay(runInterruptible(thunk))
+
   def interrupt(): Unit = {
     taskThreadMonitor.synchronized(Option(currentTaskThread)) match {
       case None => ()

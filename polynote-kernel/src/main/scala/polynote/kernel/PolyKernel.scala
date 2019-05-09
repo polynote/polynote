@@ -13,7 +13,7 @@ import cats.syntax.flatMap._
 import cats.syntax.functor._
 import cats.syntax.traverse._
 import fs2.Stream
-import fs2.concurrent.{Enqueue, Queue}
+import fs2.concurrent.{Enqueue, Queue, SignallingRef}
 import org.log4s.{Logger, getLogger}
 import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
@@ -71,6 +71,10 @@ class PolyKernel private[kernel] (
                 results => results.collect {
                   case v: ResultValue => v
                 }.through(cellContext.results.tap)
+              }.handleErrorWith {
+                err =>
+                  logger.error(err)(s"Failed to run predef for $language")
+                  IO.raiseError(err)
               } <* IO(notebookContext.insertFirst(cellContext))
 
             case None => IO.pure(Stream.empty)
