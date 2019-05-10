@@ -13,14 +13,9 @@ class ScalaSparkInterpreter(ctx: KernelContext) extends ScalaInterpreter(ctx) {
   // need a unique package, in case of a shared spark session
   override lazy val notebookPackageName = s"$$notebook${ScalaSparkInterpreter.nextNotebookId}"
 
-  override protected def mkSource(cellContext: CellContext, code: String): ScalaSource[kernelContext.global.type] = {
-
+  override protected def mkSource(cellContext: CellContext, code: String, prepend: String = ""): ScalaSource[kernelContext.global.type] = {
     // without this line, inner classes have issues (i.e. no Spark Encoder can be found for case class)
-    val codeWithOuterScopes =
-      s"""org.apache.spark.sql.catalyst.encoders.OuterScopes.addOuterScope(this)
-         |$code""".stripMargin
-
-    super.mkSource(cellContext, codeWithOuterScopes)
+    super.mkSource(cellContext, code, prepend + "org.apache.spark.sql.catalyst.encoders.OuterScopes.addOuterScope(this)\n")
   }
 
   override def predefCode: Option[String] = Some {
