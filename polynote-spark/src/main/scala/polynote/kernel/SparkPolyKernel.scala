@@ -185,14 +185,10 @@ object SparkPolyKernel {
 
     val outputDir = new PlainDirectory(new Directory(outputPath.toFile))
 
-    val availableJars = getClass.getClassLoader match {
-      case u: URLClassLoader =>
-        u.getURLs.map(u => new File(u.toURI))
-      case _                 => System.getProperty("java.class.path").split(File.pathSeparatorChar).map(new File(_))
-    }
-
-    val sparkClasspath = availableJars
+    val sparkClasspath = System.getProperty("java.class.path")
+      .split(File.pathSeparatorChar)
       .view
+      .map(new File(_))
       .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
 
     val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
