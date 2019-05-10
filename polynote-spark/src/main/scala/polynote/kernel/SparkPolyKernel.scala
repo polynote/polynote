@@ -1,7 +1,7 @@
 package polynote.kernel
 
 import java.io.File
-import java.net.{JarURLConnection, URL, URLClassLoader, URLDecoder}
+import java.net.{JarURLConnection, URL, URLDecoder}
 import java.nio.file.{FileSystems, Files, Path, StandardCopyOption}
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -29,7 +29,6 @@ import polynote.messages._
 import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.reflect.io.{AbstractFile, Directory, PlainDirectory, VirtualDirectory}
 import scala.tools.nsc.{Settings, io}
-import scala.collection.JavaConverters._
 import scala.tools.nsc.interactive.Global
 
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
