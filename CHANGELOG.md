@@ -2,6 +2,10 @@
 
 *
 
+# 0.1.11 (May 10, 2019)
+* Fix positioning regression introduced in 0.1.10
+* Only close over cells that are referenced in the current cell
+
 # 0.1.10 (May 9, 2019)
 
 * Can now bust cache of URL dependencies (e.g., `file:///`, `s3://`, etc) by adding URL parameter `?nocache` to the end of the path [#292]
