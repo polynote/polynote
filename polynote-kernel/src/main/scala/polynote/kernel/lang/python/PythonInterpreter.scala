@@ -7,6 +7,7 @@ import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicReference
 
 import cats.effect.{ContextShift, IO}
+import cats.syntax.either._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
@@ -232,11 +233,11 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
 
         val pyResults = for {
-          _ <- wrapEval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec')").right
-          _ <- (if (jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Integer]) > 0) Right(List.empty[Result]) else Left(List.empty[CompileErrors])).right
-          _ <- wrapEval("__polynote_parsed__ = LastExprAssigner().visit(__polynote_parsed__)").right
-          _ <- wrapEval("__polynote_parsed__ = ast.fix_missing_locations(__polynote_parsed__)").right
-          _ <- wrapEval("__polynote_code__ = compile(__polynote_parsed__, '<ast>', 'exec')").right
+          _ <- wrapEval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec')")
+          _ <- if (jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Integer]) > 0) Right(List.empty[Result]) else Left(List.empty[CompileErrors])
+          _ <- wrapEval("__polynote_parsed__ = LastExprAssigner().visit(__polynote_parsed__)")
+          _ <- wrapEval("__polynote_parsed__ = ast.fix_missing_locations(__polynote_parsed__)")
+          _ <- wrapEval("__polynote_code__ = compile(__polynote_parsed__, '<ast>', 'exec')")
         } yield {
           kernelContext.runInterruptible {
             jep.eval("exec(__polynote_code__, __polynote_globals__, __polynote_locals__)\n")
