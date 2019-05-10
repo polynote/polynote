@@ -1,6 +1,8 @@
 # UNRELEASED
 
-*
+* Fix Python output folding issue [#295]
+
+[#295]: https://github.com/polynote/polynote/issues/295
 
 # 0.1.11 (May 10, 2019)
 * Fix positioning regression introduced in 0.1.10
