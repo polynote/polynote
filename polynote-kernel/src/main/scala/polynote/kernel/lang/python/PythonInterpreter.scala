@@ -2,7 +2,7 @@ package polynote.kernel.lang
 package python
 
 import java.io.File
-import java.nio.{ByteBuffer, DoubleBuffer, FloatBuffer, IntBuffer, LongBuffer}
+import java.nio._
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicReference
 
@@ -10,7 +10,7 @@ import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
-import jep.{DirectNDArray, Jep, JepConfig, NamingConventionClassEnquirer}
+import jep._
 import org.log4s.Logger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
@@ -262,15 +262,22 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       case "tuple" => getPyResult(s"list($accessor)")
       case "dict" =>
         // prevent infinite recursion and access to "private" polynote variables
-        jep.eval(s"$accessor = {k:v for k,v in $accessor.items() if k != '$accessor' and not k.startswith('__polynote_')}")
+        val safeIndices = s"[idx for idx,(k,v) in enumerate($accessor.items()) if not str(k).startswith('__polynote_') and v != $accessor and v != globals()]"
 
-        for {
-          keys <- getPyResult(s"list($accessor.keys())")
-          values <- getPyResult(s"list($accessor.values())")
-        } yield {
-          keys._1.asInstanceOf[List[Any]].zip(values._1.asInstanceOf[List[Any]]).toMap -> Some(typeOf[Map[Any, Any]])
-        }
-      case "list" =>
+        Option(jep.getValue(safeIndices, classOf[java.util.List[java.lang.Number]]).asScala)
+          .filterNot(_.isEmpty)
+          .map(
+            _.flatMap {
+              idx =>
+                for {
+                  k <- getPyResult(s"list($accessor.keys())[$idx]")
+                  v <- getPyResult(s"list($accessor.values())[$idx]")
+                } yield {
+                  (k._1, v._1)
+                }
+            }.toMap -> Some(typeOf[Map[Any, Any]])
+          )
+      case "list" | "PyJArray" =>
         // TODO: this in particular is pretty inefficient... it does a JNI call for every element of the list.
         val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
         val (elems, types) = (0L until numElements).flatMap(n => getPyResult(s"$accessor[$n]")).toList.unzip
@@ -287,8 +294,9 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         }
 
         Option(elems -> Some(listType))
-      case "PyJObject" =>
-        Option(jep.getValue(accessor) -> Some(typeOf[AnyRef]))
+      case "PyJObject" | "PyJCallable" | "PyJAutoCloseable" => // these all come from scala-lang, so we can infer their types.
+        val thing = jep.getValue(accessor)
+        Option(thing -> Some(kernelContext.inferType(thing)))
       case "module" =>
         None
       case "function" | "builtin_function_or_method" | "type" =>
