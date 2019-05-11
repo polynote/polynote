@@ -260,12 +260,16 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       case "str" => Option(jep.getValue(accessor, classOf[String]) -> Some(typeOf[String]))
       case "bool" => Option(jep.getValue(accessor, classOf[java.lang.Boolean]).booleanValue() -> Some(typeOf[Boolean]))
       case "tuple" => getPyResult(s"list($accessor)")
-      case "dict" => for {
-        keys <- getPyResult(s"list($accessor.keys())")
-        values <- getPyResult(s"list($accessor.values())")
-      } yield {
-        keys._1.asInstanceOf[List[Any]].zip(values._1.asInstanceOf[List[Any]]).toMap -> Some(typeOf[Map[Any, Any]])
-      }
+      case "dict" =>
+        // prevent infinite recursion and access to "private" polynote variables
+        jep.eval(s"$accessor = {k:v for k,v in $accessor.items() if k != '$accessor' and not k.startswith('__polynote_')}")
+
+        for {
+          keys <- getPyResult(s"list($accessor.keys())")
+          values <- getPyResult(s"list($accessor.values())")
+        } yield {
+          keys._1.asInstanceOf[List[Any]].zip(values._1.asInstanceOf[List[Any]]).toMap -> Some(typeOf[Map[Any, Any]])
+        }
       case "list" =>
         // TODO: this in particular is pretty inefficient... it does a JNI call for every element of the list.
         val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
