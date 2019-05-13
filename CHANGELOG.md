@@ -1,12 +1,19 @@
 # UNRELEASED
 
+*
+
+# 0.1.12 (May 13, 2019)
+
 * Fix Python output folding issue [#295]
 * Duplicate notebook names now handled gracefully, we'll just increment the filename until there's no conflict [#296]
 * Python `SyntaxError`s raised by parsing cell contents now raised as `CompileErrors` rather than Runtime Errors. [#301]
+* Fix regression which broke implicits [#313]
+* Improve performance of UI pane resizing, other minor UI improvements
 
 [#295]: https://github.com/polynote/polynote/issues/295
 [#296]: https://github.com/polynote/polynote/issues/296
 [#301]: https://github.com/polynote/polynote/issues/301
+[#313]: https://github.com/polynote/polynote/pull/313
 
 # 0.1.11 (May 10, 2019)
 * Fix positioning regression introduced in 0.1.10
