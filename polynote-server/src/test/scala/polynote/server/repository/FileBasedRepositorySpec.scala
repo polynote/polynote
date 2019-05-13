@@ -26,7 +26,7 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers {
         }
       }
 
-      "should error if the notebook already exists" in {
+      "should add a number to the end of the name if the notebook already exists" in {
 
         val repo = new SimpleFileBasedRepo
 
@@ -36,8 +36,8 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers {
         repo.notebookExists(resultingPath).unsafeRunSync() shouldBe true
         Files.exists(repo.path.resolve(resultingPath)) shouldBe true
 
-        a[FileAlreadyExistsException] should be thrownBy {
-          repo.createNotebook(nbName).unsafeRunSync()
+        (2 to 10) foreach { i =>
+          repo.createNotebook(nbName).unsafeRunSync() shouldEqual s"$nbName$i.${repo.defaultExtension}"
         }
       }
 
@@ -152,7 +152,7 @@ class SimpleFileBasedRepo extends FileBasedRepository {
 
   implicit val contextShift: ContextShift[IO] = IO.contextShift(executionContext)
 
-  override protected def defaultExtension: String = "test"
+  override def defaultExtension: String = "test"
 
   override def loadNotebook(path: String): IO[Notebook] = ???
 

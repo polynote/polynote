@@ -1,6 +1,8 @@
 # UNRELEASED
 
-*
+* Duplicate notebook names now handled gracefully, we'll just increment the filename until there's no conflict [#296]
+
+[#296]: https://github.com/polynote/polynote/issues/296
 
 # 0.1.11 (May 10, 2019)
 * Fix positioning regression introduced in 0.1.10
