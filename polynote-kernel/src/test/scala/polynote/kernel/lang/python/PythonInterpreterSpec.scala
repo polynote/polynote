@@ -2,7 +2,7 @@ package polynote.kernel.lang.python
 
 import jep.python.{PyCallable, PyObject}
 import org.scalatest._
-import polynote.kernel.Output
+import polynote.kernel.{CompileErrors, KernelReport, Output, Pos}
 import polynote.kernel.lang.KernelSpec
 import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
@@ -282,6 +282,16 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
         arrShort should contain theSameElementsInOrderAs Seq(1.toShort, 2.toShort, 3.toShort)
         arrDouble should contain theSameElementsInOrderAs Seq(1.1, 2.2, 3.3)
         arrFloat should contain theSameElementsInOrderAs Seq(1.1f, 2.2f, 3.3f)
+    }
+  }
+
+  it should "Raise SyntaxErrors as CompileErrors" in {
+    assertPythonOutput("syntax error") { case (vars, output, displayed) =>
+      vars.toSeq shouldBe empty
+      output should contain theSameElementsAs Seq(
+        CompileErrors(List(KernelReport(Pos("Cell0", 12, 13, 12), "invalid syntax", KernelReport.Error)))
+      )
+      displayed shouldBe empty
     }
   }
 

@@ -2,15 +2,16 @@ package polynote.kernel.lang
 package python
 
 import java.io.File
-import java.nio.{ByteBuffer, DoubleBuffer, FloatBuffer, IntBuffer, LongBuffer}
+import java.nio._
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicReference
 
 import cats.effect.{ContextShift, IO}
+import cats.syntax.either._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
-import jep.{DirectNDArray, Jep, JepConfig, NamingConventionClassEnquirer}
+import jep._
 import org.log4s.Logger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
@@ -20,6 +21,7 @@ import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
+import scala.reflect.{ClassTag, classTag}
 
 class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterpreter[IO] {
   import kernelContext.global
@@ -164,6 +166,34 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
     jep.eval("__polynote_globals__ = __pn_expand_globals__(__polynote_globals__)")
   }
 
+  private def evalWithCompilerErrors(cellName: String, cellContents: String)(jepCode: String): Either[List[CompileErrors], Unit] = {
+    jep.eval("__polynote_err__ = []")
+    jep.eval(
+      s"""
+        |try:
+        |    $jepCode
+        |except SyntaxError as err:
+        |    __polynote_err__ = [str(err.lineno), str(err.offset), err.text, err.msg]
+      """.stripMargin.trim)
+    val syntaxErrorInfo = jep.getValue("__polynote_err__", classOf[java.util.List[String]])
+    if (syntaxErrorInfo.isEmpty) {
+      jep.eval("del __polynote_err__")
+      Right(())
+    } else {
+      val line :: offset :: text :: msg :: Nil = syntaxErrorInfo.asScala.toList
+
+      val cellLines = cellContents.split("\n")
+      val start = cellLines.take(line.toInt - 1).mkString("\n").length + offset.toInt
+      val end = start + 1
+
+      val pos = Pos(cellName, start, end, start) // point is also the start?
+      val errs = CompileErrors(List(KernelReport(pos, msg, KernelReport.Error)))
+      jep.eval("del __polynote_err__")
+      Left(List(errs))
+    }
+
+  }
+
   override def runCode(
     cellContext: CellContext,
     code: String
@@ -172,6 +202,9 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
     val cell = cellContext.id
     val cellName = s"Cell$cell"
+
+    val wrapEval = evalWithCompilerErrors(cellName, code)(_)
+
     global.newCompilationUnit("", cellName)
 
     Queue.unbounded[IO, Option[Result]].flatMap { maybeResultQ =>
@@ -198,28 +231,33 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         jep.set("__polynote_globals__", globals)
         expandGlobals()
 
-        jep.eval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec')\n")
 
-        val numStats = jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Long])
-
-        if (numStats > 0) {
-          jep.eval("__polynote_parsed__ = LastExprAssigner().visit(__polynote_parsed__)")
-          jep.eval("__polynote_parsed__ = ast.fix_missing_locations(__polynote_parsed__)")
-          jep.eval("__polynote_code__ = compile(__polynote_parsed__, '<ast>', 'exec')")
-
+        val pyResults = for {
+          _ <- wrapEval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec')")
+          _ <- if (jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Integer]) > 0) Right(List.empty[Result]) else Left(List.empty[CompileErrors])
+          _ <- wrapEval("__polynote_parsed__ = LastExprAssigner().visit(__polynote_parsed__)")
+          _ <- wrapEval("__polynote_parsed__ = ast.fix_missing_locations(__polynote_parsed__)")
+          _ <- wrapEval("__polynote_code__ = compile(__polynote_parsed__, '<ast>', 'exec')")
+        } yield {
           kernelContext.runInterruptible {
             jep.eval("exec(__polynote_code__, __polynote_globals__, __polynote_locals__)\n")
           }
           jep.eval("globals().update(__polynote_locals__)")
           val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 
-          getPyResults(newDecls, cell).filterNot(_._2.value == null).values
-        } else Nil
+          getPyResults(newDecls, cell).filterNot(_._2.value == null).values.toList
+        }
+        pyResults match {
+          case Left(err) =>
+            err
+          case Right(res) =>
+            res
+        }
       }.flatMap { resultSymbols =>
 
         for {
           // send all symbols to resultQ
-          _ <- Stream.emits(resultSymbols.toSeq).to(resultQ.enqueue).compile.drain
+          _ <- Stream.emits(resultSymbols).to(resultQ.enqueue).compile.drain
           // make sure to flush stdout
           _ <- IO(stdout.flush())
         } yield ()
