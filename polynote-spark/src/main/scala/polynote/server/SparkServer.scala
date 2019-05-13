@@ -32,7 +32,8 @@ object SparkServer extends Server {
     case _ => super.run(args)
   }
 
-  override protected def kernelFactory: KernelFactory[IO] =
+  // visible for testing
+  override protected[server] def kernelFactory: KernelFactory[IO] =
     new SparkKernelFactory(dependencyFetchers = Map("scala" -> dependencyFetcher))
 }
 

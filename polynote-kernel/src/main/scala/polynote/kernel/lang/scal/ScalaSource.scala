@@ -189,7 +189,7 @@ class ScalaSource[G <: Global](
       val directImports: List[global.Tree] = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]])
 
       //... and also import all public declarations from previous cells
-      val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Name)]) {
+      val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
         (accum, next) =>
           // grab this source's compiled module
           val moduleSym = next.compiledModule.right.get.asModule
@@ -198,14 +198,19 @@ class ScalaSource[G <: Global](
           accum ++ next.decls.right.get.map {
             decl =>
               // Mapping with decl's name to clobber duplicates, keep track of decl Name and the Module it came from
-              decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.name.asInstanceOf[global.Name])
+              decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.asInstanceOf[global.Symbol])
           }.toMap
-        }.filter(usedIdents contains _._1).toList.groupBy(_._2._1).flatMap {
+        }
+//        TODO: can't do this filtering so easily - would have to wrap plainly, typecheck, then do filtering and re-wrap
+//        .filter {
+//          case (nameStr, (module, sym)) => (usedIdents contains nameStr) || module.isImplicit
+//        }
+        .toList.groupBy(_._2._1).flatMap {
           case (module, imports) =>
             val localValName = global.freshTermName(module.name.toString + "$INSTANCE")(global.currentFreshNameCreator)
             val localVal = q"val $localValName = $module.INSTANCE"
             localVal +: imports.map {
-              case (_, (_, name)) => q"import $localValName.$name"
+              case (_, (_, sym)) => q"import $localValName.${sym.name}"
             }
         }.toList
 

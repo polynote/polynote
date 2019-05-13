@@ -2,7 +2,7 @@ target
 out
 dist
 node_modules
-notebooks
+/notebooks/
 libjep.dylib
 .idea
 .DS_Store

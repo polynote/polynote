@@ -691,19 +691,21 @@ export class CodeCell extends Cell {
 
         const duration = [];
         if (durationDays) {
-            duration.push(`${durationDays}d`)
-        }
-        if (durationHrs) {
-            duration.push(`${durationHrs}h`)
-        }
-        if (durationMin) {
-            duration.push(`${durationMin}m`)
-        }
-        if (durationSec) {
-            duration.push(`${durationSec}s`)
-        }
-        if (durationMs) {
-            duration.push(`${durationMs}ms`)
+            duration.push(`${durationDays}d`);
+            duration.push(`${durationHrs}h`);
+            duration.push(`${durationMin}m`);
+            duration.push(`${durationSec}s`);
+        } else if (durationHrs) {
+            duration.push(`${durationHrs}h`);
+            duration.push(`${durationMin}m`);
+            duration.push(`${durationSec}s`);
+        } else if (durationMin) {
+            duration.push(`${durationMin}m`);
+            duration.push(`${durationSec}s`);
+        } else if (durationSec) {
+            duration.push(`${durationSec}s`);
+        } else if (durationMs) {
+            duration.push(`${durationMs}ms`);
         }
 
         return duration.join(":")
