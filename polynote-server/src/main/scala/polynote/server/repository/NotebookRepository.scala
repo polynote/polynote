@@ -69,6 +69,22 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     IO(repoPath.toFile.exists())
   }
 
+  val EndsWithNum = """^(.*)(\d+)$""".r
+
+  def findUniqueName(path: String, ext: String): IO[String] = {
+    notebookExists(path + ext).flatMap {
+      case true =>
+        path match {
+          case EndsWithNum(base, num) =>
+            findUniqueName(s"$base${num.toInt + 1}", ext)
+          case _ =>
+            findUniqueName(s"${path}2", ext) // start at two because the first one is implicitly #1? Or is that weird?
+        }
+      case false =>
+        IO.pure(path)
+    }
+  }
+
   def relativeDepth(relativePath: String): Int = {
 
     val fullPath = pathOf(relativePath).iterator().asScala
@@ -88,42 +104,40 @@ trait FileBasedRepository extends NotebookRepository[IO] {
   def createNotebook(relativePath: String, maybeUriOrContent: OptionEither[String, String] = OptionEither.Neither): IO[String] = {
     val ext = s".$defaultExtension"
     val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
-    val extPath = noExtPath + ext
 
     if (relativeDepth(relativePath) > maxDepth) {
       IO.raiseError(new IllegalArgumentException(s"Input path ($relativePath) too deep, maxDepth is $maxDepth"))
     } else {
-      notebookExists(extPath).flatMap {
-        case true  => IO.raiseError(new FileAlreadyExistsException(extPath))
-        case false =>
-          maybeUriOrContent.fold(
-            uri => {
-              BlazeClientBuilder[IO](executionContext).resource.use { client =>
-                client.expect[String](uri)
-              }.flatMap { content =>
-                writeString(extPath, content)
-              }
-            },
-            content => {
-              if (relativePath.endsWith(".json")) { // assume zeppelin
-                import io.circe.syntax._
-                import io.circe.parser.parse
-                for {
-                  parsed <- IO.fromEither(parse(content))
-                  zep <- IO.fromEither(parsed.as[ZeppelinNotebook])
-                  jup = zep.toJupyterNotebook
-                  jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
-                  io <- writeString(extPath, jupStr)
-                } yield io
-              } else {
-                writeString(extPath, content)
-              }
-            },
-            {
-              val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
-              saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))
+      findUniqueName(noExtPath, ext).flatMap { name =>
+        val extPath = name + ext
+        maybeUriOrContent.fold(
+          uri => {
+            BlazeClientBuilder[IO](executionContext).resource.use { client =>
+              client.expect[String](uri)
+            }.flatMap { content =>
+              writeString(extPath, content)
             }
-          ) map (_ => extPath)
+          },
+          content => {
+            if (relativePath.endsWith(".json")) { // assume zeppelin
+              import io.circe.syntax._
+              import io.circe.parser.parse
+              for {
+                parsed <- IO.fromEither(parse(content))
+                zep <- IO.fromEither(parsed.as[ZeppelinNotebook])
+                jup = zep.toJupyterNotebook
+                jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
+                io <- writeString(extPath, jupStr)
+              } yield io
+            } else {
+              writeString(extPath, content)
+            }
+          },
+          {
+            val defaultTitle = name.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
+            saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))
+          }
+        ) map (_ => extPath)
       }
     }
   }

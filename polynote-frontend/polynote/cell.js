@@ -568,11 +568,16 @@ export class CodeCell extends Cell {
                         tag('summary', [], {}, [span([], '')])
                     ]);
 
+                    // collapse into single node
+                    this.stdOutEl.normalize();
                     // split the existing text node into first 5 lines and the rest
                     let textNode = this.stdOutEl.childNodes[0];
                     if (!textNode) {
                         textNode = document.createTextNode(content);
                         this.stdOutEl.appendChild(textNode);
+                    } else {
+                        // add the current content to the text node before folding
+                        textNode.nodeValue += content;
                     }
                     const hidden = splitAtLine(textNode, 6);
                     const after = splitAtLine(hidden, numHiddenLines);
@@ -581,8 +586,8 @@ export class CodeCell extends Cell {
                     this.stdOutEl.insertBefore(this.stdOutDetails, after);
                 } else {
                     const textNode = this.stdOutDetails.nextSibling;
+                    textNode.nodeValue += content;
                     const after = splitAtLine(textNode, lines.length);
-                    after.nodeValue += content;
                     this.stdOutDetails.appendChild(textNode);
                     this.stdOutEl.appendChild(after);
                 }
@@ -686,19 +691,21 @@ export class CodeCell extends Cell {
 
         const duration = [];
         if (durationDays) {
-            duration.push(`${durationDays}d`)
-        }
-        if (durationHrs) {
-            duration.push(`${durationHrs}h`)
-        }
-        if (durationMin) {
-            duration.push(`${durationMin}m`)
-        }
-        if (durationSec) {
-            duration.push(`${durationSec}s`)
-        }
-        if (durationMs) {
-            duration.push(`${durationMs}ms`)
+            duration.push(`${durationDays}d`);
+            duration.push(`${durationHrs}h`);
+            duration.push(`${durationMin}m`);
+            duration.push(`${durationSec}s`);
+        } else if (durationHrs) {
+            duration.push(`${durationHrs}h`);
+            duration.push(`${durationMin}m`);
+            duration.push(`${durationSec}s`);
+        } else if (durationMin) {
+            duration.push(`${durationMin}m`);
+            duration.push(`${durationSec}s`);
+        } else if (durationSec) {
+            duration.push(`${durationSec}s`);
+        } else if (durationMs) {
+            duration.push(`${durationMs}ms`);
         }
 
         return duration.join(":")

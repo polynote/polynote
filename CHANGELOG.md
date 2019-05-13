@@ -1,8 +1,16 @@
 # UNRELEASED
 
+* Fix Python output folding issue [#295]
+* Duplicate notebook names now handled gracefully, we'll just increment the filename until there's no conflict [#296]
 * Python `SyntaxError`s raised by parsing cell contents now raised as `CompileErrors` rather than Runtime Errors. [#301]
 
+[#295]: https://github.com/polynote/polynote/issues/295
+[#296]: https://github.com/polynote/polynote/issues/296
 [#301]: https://github.com/polynote/polynote/issues/301
+
+# 0.1.11 (May 10, 2019)
+* Fix positioning regression introduced in 0.1.10
+* Only close over cells that are referenced in the current cell
 
 # 0.1.10 (May 9, 2019)
 

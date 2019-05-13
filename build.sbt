@@ -9,7 +9,7 @@ val versions = new {
 }
 
 val commonSettings = Seq(
-  version := "0.1.10-SNAPSHOT",
+  version := "0.1.11-SNAPSHOT",
   scalaVersion := "2.11.11",
   scalacOptions ++= Seq(
     "-Ypartial-unification",
@@ -133,7 +133,7 @@ lazy val `polynote-spark` = project.settings(
       copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get) // sneak scala-lang jar into the assembly
     )
   }.taskValue,
-  fork in Test := false,
+  fork in Test := true,
   parallelExecution in Test := false
 ) dependsOn (`polynote-server`, `polynote-spark-runtime`)
 

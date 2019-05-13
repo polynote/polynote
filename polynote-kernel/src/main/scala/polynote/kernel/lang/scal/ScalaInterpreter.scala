@@ -51,13 +51,14 @@ class ScalaInterpreter(
 
   protected def mkSource(
     cellContext: CellContext,
-    code: String
+    code: String,
+    prepend: String = ""
   ): ScalaSource[global.type] = {
     val previous = cellContext.collectBack {
       case c if c.id != cellContext.id && (previousSources contains c.id) => previousSources(c.id)
     }.reverse
 
-    ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code)
+    ScalaSource(kernelContext, cellContext, previous, notebookPackageName, code, prepend)
   }
 
   // Compile and initialize the module, but don't reflect its values or output anything
@@ -315,7 +316,7 @@ class ScalaInterpreter(
         val symTypeStr = if (sym.isMethod) formatType(symType.finalResultType) else ""
         Completion(TinyString(name), tParams, params, ShortString(symTypeStr), completionType(sym))
       }
-    }.handleErrorWith(err => IO(logger.error(err)("Completions error")).as(Nil))
+    }.handleErrorWith(err => IO(logger.debug(err)("Completions error")).as(Nil))
   }
 
   override def parametersAt(

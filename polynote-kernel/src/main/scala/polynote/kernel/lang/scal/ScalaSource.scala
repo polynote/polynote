@@ -24,7 +24,8 @@ class ScalaSource[G <: Global](
   val cellContext: CellContext,
   previousSources: List[ScalaSource[G]],
   notebookPackage: String,
-  afterParse: => Ior[Throwable, List[G#Tree]]
+  afterParse: => Ior[Throwable, List[G#Tree]],
+  prepend: Option[List[G#Tree]] = None
 ) {
 
   import global.{Tree, atPos}
@@ -178,11 +179,17 @@ class ScalaSource[G <: Global](
           atPos(beginning)(global.Block(
             atPos(beginning)(global.PrimarySuperCall(ListOfNil)), atPos(beginning)(global.gen.mkSyntheticUnit()))))
 
+      val usedIdents = trees.flatMap {
+        tree => tree.collect {
+          case global.Ident(name) => name.toString
+        }
+      }.toSet
+
       // import everything imported by previous cells...
       val directImports: List[global.Tree] = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]])
 
       //... and also import all public declarations from previous cells
-      val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Name)]) {
+      val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
         (accum, next) =>
           // grab this source's compiled module
           val moduleSym = next.compiledModule.right.get.asModule
@@ -191,16 +198,20 @@ class ScalaSource[G <: Global](
           accum ++ next.decls.right.get.map {
             decl =>
               // Mapping with decl's name to clobber duplicates, keep track of decl Name and the Module it came from
-              decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.name.asInstanceOf[global.Name])
+              decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.asInstanceOf[global.Symbol])
           }.toMap
-        }.toList.groupBy(_._2._1).flatMap {
+        }
+//        TODO: can't do this filtering so easily - would have to wrap plainly, typecheck, then do filtering and re-wrap
+//        .filter {
+//          case (nameStr, (module, sym)) => (usedIdents contains nameStr) || module.isImplicit
+//        }
+        .toList.groupBy(_._2._1).flatMap {
           case (module, imports) =>
             val localValName = global.freshTermName(module.name.toString + "$INSTANCE")(global.currentFreshNameCreator)
             val localVal = q"val $localValName = $module.INSTANCE"
             localVal +: imports.map {
-              case (_, (_, name)) => q"import $localValName.$name"
+              case (_, (_, sym)) => q"import $localValName.${sym.name}"
             }
-          //case (_, (module, name)) => q"import $module.INSTANCE.$name"
         }.toList
 
       // This gnarly thing is building a synthetic object {} tree around the statements.
@@ -222,7 +233,10 @@ class ScalaSource[G <: Global](
                   global.Template(
                     List(atPos(beginning)(scalaDot(global.typeNames.AnyRef)), atPos(beginning)(scalaDot(global.typeNames.Serializable))), // extends AnyRef with Serializable
                     atPos(beginning)(global.noSelfType.copy()),
-                    atPos(beginning)(constructor) :: impliedImports.map(atPos(beginning)) ::: trees)
+                    atPos(beginning)(constructor) ::
+                      impliedImports.map(atPos(beginning)) :::
+                      prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(atPos(beginning)) :::
+                      trees)
                 })
             },
             atPos(end) {
@@ -465,18 +479,29 @@ object ScalaSource {
     cellContext: CellContext,
     previousSources: List[ScalaSource[_ <: Global]],
     notebookPackage: String,
-    code: String
+    code: String,
+    prependCode: String = ""
   ): ScalaSource[kernelContext.global.type] = {
     import kernelContext.global
     val reporter = global.reporter.asInstanceOf[KernelReporter]
     val cellName = nameFor(cellContext)
     val unitParser = global.newUnitParser(code, cellName)
+    val parsed = reporter.attemptIor(unitParser.parseStats())
+
+    val prependParsed = Option(prependCode).filterNot(_.isEmpty).flatMap {
+      prependCode =>
+        val prependParser = global.newUnitParser(prependCode)
+        reporter.attemptIor(prependParser.parseStats()).toOption
+    }
+
     new ScalaSource[kernelContext.global.type](
       global,
       cellContext,
       previousSources.asInstanceOf[List[ScalaSource[kernelContext.global.type]]],
       notebookPackage,
-      reporter.attemptIor(unitParser.parseStats()))
+      parsed,
+      prependParsed
+    )
   }
 
   def fromTrees(kernelContext: KernelContext)(cellContext: CellContext, notebookPackage: String, trees: List[kernelContext.global.Tree]): ScalaSource[kernelContext.global.type] = {
