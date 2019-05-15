@@ -33,25 +33,27 @@ trait KernelSpec {
   implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
 
   def assertPythonOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
-    assertOutputWith((kernelContext: KernelContext) => PythonInterpreter.factory()(Nil, kernelContext), code) {
+    assertOutputWith((kernelContext: KernelContext, _) => PythonInterpreter.factory()(Nil, kernelContext), code) {
       (interp, vars, output, displayed) => interp.withJep(assertion(vars, output, displayed))
     }
   }
 
   def assertScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
-    assertOutput((kernelContext: KernelContext) => ScalaInterpreter.factory()(Nil, kernelContext), code)(assertion)
+    assertOutput((kernelContext: KernelContext, _) => ScalaInterpreter.factory()(Nil, kernelContext), code)(assertion)
   }
 
-  def assertOutput[K <: LanguageInterpreter[IO]](mkInterp: KernelContext => K, code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit =
+  def assertOutput[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit =
     assertOutputWith(mkInterp, code) {
       (_, vars, output, displayed) => IO(assertion(vars, output, displayed))
     }
 
+  def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(Map.empty, updates, Nil)
+
   // TODO: for unit tests we'd ideally want to hook directly to runCode without needing all this!
-  def assertOutputWith[K <: LanguageInterpreter[IO]](mkInterp: KernelContext => K, code: String)(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {
+  def assertOutputWith[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: String)(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {
     Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap { updates =>
-      val kernelContext = KernelContext.default(Map.empty, updates, Nil)
-      val interp = mkInterp(kernelContext)
+      val kernelContext = getKernelContext(updates)
+      val interp = mkInterp(kernelContext, updates)
       val displayed = mutable.ArrayBuffer.empty[(String, String)]
       polynote.runtime.Runtime.setDisplayer((mimeType, input) => displayed.append((mimeType, input)))
 
