@@ -2,6 +2,16 @@
 
 *
 
+# 0.1.13 (May 16, 2019)
+
+* Add support for simple references to `globals()` [#19]
+* Fix Python scoping issue causing NameErrors for imports references inside inner scopes (e.g., in a function) [#315]
+* Add `@transient` annotation to `polynote.runtime.Runtime.externalValues`, preventing Spark from serializing it. [#316]
+
+[#19]: https://github.com/polynote/polynote/issues/19
+[#315]: https://github.com/polynote/polynote/pull/315
+[#316]: https://github.com/polynote/polynote/issues/316
+
 # 0.1.12 (May 13, 2019)
 
 * Fix Python output folding issue [#295]
