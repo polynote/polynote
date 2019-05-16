@@ -100,7 +100,66 @@ class ScalaSource[G <: Global](
 
   private lazy val executionId = global.currentRunId
 
+  private def blockify(tree: Tree): Tree = {
+    import global.Quasiquote
+    val usedIdents = tree.collect {
+      case i: global.Ident => i
+    }
+    val transformer = new global.Transformer {
+      override def transform(tree: global.Tree): global.Tree = {
+        tree match {
+          case v @ global.ValDef(mods, name, tpt, rhs: global.Select) =>
+            val usedIdents = tree.collect {
+              case i: global.Ident =>
+                val x = i
+                i // TODO: how to tell whether ident is a variable??
+            }
+            val newVals = usedIdents.map {
+              ident =>
+                val name = global.newTermName(ident.name + "_enc")
+                q"""val $name = $ident"""
+            }
+
+            val selectTransformer = new global.Transformer {
+              override def transform(tree: global.Tree): global.Tree = tree match {
+                case global.Ident(name) if usedIdents.map(_.name).contains(name) =>
+                  val x = global.Ident(name + "_enc")
+                  x
+                case global.Select(qual, name) =>
+                  val x = global.Select(this.transform(qual), name)
+                  x
+                case _ => super.transform(tree)
+              }
+            }
+
+            val newRHS = global.Block(
+              newVals,
+              {
+                val x = selectTransformer.transform(rhs)
+                x
+              }
+            )
+            v.copy(rhs = newRHS) // IntelliJ doesn't like this line but it's fine
+          case x =>
+            val foo = x
+            super.transform(tree)
+        }
+      }
+    }
+    if (usedIdents.nonEmpty) {
+      transformer.transform(tree)
+    } else tree // nothing to be done
+  }
+
   lazy val moduleName: global.TermName = global.TermName(s"Eval$$$cellName$$$executionId")
+
+  // the code, rewritten to prevent closing over entire cells by transforming any expressions referencing other values
+  // to blocks enclosing proxies to those value references. Hope this description makes sense....
+  private lazy val blockyTrees = parsedTrees.flatMap {
+    trees => Either.catchNonFatal {
+      trees.map(blockify)
+    }
+  }
 
   // the code, rewritten so that the last expression, if it is a free expression, is assigned to Out
   // returns the name of the last expression (Out unless it was a ValDef, in which case it's the name from the ValDef)
@@ -112,7 +171,7 @@ class ScalaSource[G <: Global](
           val accessorName = global.TermName("Out")
           val pos = t.pos.withStart(t.pos.end)
           (Some(accessorName), trees.dropRight(1) :+
-            global.ValDef(global.Modifiers(), accessorName, tpt, global.Ident(name).setPos(pos)).setPos(pos))
+            global.ValDef(global.Modifiers(), accessorName, tpt, global.Ident(name).setPos(pos)).setPos(pos)) // IntelliJ doesn't like this line but it's fine
         case expr if expr.isTerm =>
           val accessorName = global.TermName("Out")
           (Some(accessorName), trees.dropRight(1) :+
@@ -150,7 +209,7 @@ class ScalaSource[G <: Global](
       }
   }
 
-  lazy val resultName: Option[global.TermName] = results.right.toOption.flatMap(_._1)
+  lazy val resultName: Option[global.TermName] = results.right.toOption.flatMap(_._1) // IntelliJ doesn't like this line but it's fine
 
   lazy val wrapped: Either[Throwable, Tree] = decoratedTrees.right.flatMap {
     trees => Either.catchNonFatal {
@@ -189,7 +248,7 @@ class ScalaSource[G <: Global](
       val directImports: List[global.Tree] = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]])
 
       //... and also import all public declarations from previous cells
-      val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
+      val previousDecls = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
         (accum, next) =>
           // grab this source's compiled module
           val moduleSym = next.compiledModule.right.get.asModule
@@ -205,7 +264,9 @@ class ScalaSource[G <: Global](
 //        .filter {
 //          case (nameStr, (module, sym)) => (usedIdents contains nameStr) || module.isImplicit
 //        }
-        .toList.groupBy(_._2._1).flatMap {
+        .toList.groupBy(_._2._1)
+
+      val impliedImports = previousDecls.flatMap {
           case (module, imports) =>
             val localValName = global.freshTermName(module.name.toString + "$INSTANCE")(global.currentFreshNameCreator)
             val localVal = q"val $localValName = $module.INSTANCE"
@@ -213,6 +274,72 @@ class ScalaSource[G <: Global](
               case (_, (_, sym)) => q"import $localValName.${sym.name}"
             }
         }.toList
+
+
+      // rewrite the code to prevent closing over entire cells by transforming any expressions referencing other values
+      // to blocks enclosing proxies to those value references. Hope this description makes sense....
+      val blockifiedTrees = trees.foldLeft(List.empty[global.Tree]) {
+        (acc, next) =>
+
+          val currentIdents = next.collect {
+            case global.Ident(name) => name.toString
+          }
+
+          val refToPrevDefs = acc.collect {
+            case global.ValDef(_, name, _, _) if currentIdents.contains(name.toString) => name.toString
+          }
+
+          val refToOtherCellDefs = previousDecls.values.flatten.collect {
+            case (name, _) if currentIdents.contains(name) => name
+          }
+
+          val refsToRewrite = refToPrevDefs ++ refToOtherCellDefs
+
+          val transformer = new global.Transformer {
+            override def transform(tree: global.Tree): global.Tree = {
+              tree match {
+                case v @ global.ValDef(mods, name, tpt, rhs: global.Select) =>
+                  val newVals = refsToRewrite.map {
+                    ident =>
+                      val name = global.newTermName(ident + "_enc")
+                      q"""val $name = ${global.newTermName(ident)}"""
+                  }
+
+                  val selectTransformer = new global.Transformer {
+                    override def transform(tree: global.Tree): global.Tree = tree match {
+                      case global.Ident(name) if refsToRewrite.contains(name.toString) =>
+                        val x = global.Ident(name + "_enc")
+                        x
+                      case global.Select(qual, name) =>
+                        val x = global.Select(this.transform(qual), name)
+                        x
+                      case _ => super.transform(tree)
+                    }
+                  }
+
+                  val newRHS = global.Block(
+                    newVals,
+                    {
+                      val x = selectTransformer.transform(rhs)
+                      x
+                    }
+                  )
+                  v.copy(rhs = newRHS) // IntelliJ doesn't like this line but it's fine
+                case x =>
+                  val foo = x
+                  super.transform(tree)
+              }
+            }
+          }
+          if (refsToRewrite.nonEmpty) {
+            acc :+ transformer.transform(next)
+          } else acc :+ next
+      }
+
+
+
+
+
 
       // This gnarly thing is building a synthetic object {} tree around the statements.
       // Quasiquotes won't do the trick, because we have to assign positions to every tree or the compiler freaks out.
@@ -236,7 +363,7 @@ class ScalaSource[G <: Global](
                     atPos(beginning)(constructor) ::
                       impliedImports.map(atPos(beginning)) :::
                       prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(atPos(beginning)) :::
-                      trees)
+                      blockifiedTrees)
                 })
             },
             atPos(end) {
@@ -344,6 +471,7 @@ class ScalaSource[G <: Global](
               case _ => qual.tpe
             }
             if (ownerTpe != null) Either.catchNonFatal {
+              // IntelliJ doesn't like this line but it's fine
               val allImplicits = new global.analyzer.ImplicitSearch(qual, global.definitions.functionType(List(ownerTpe), global.definitions.AnyTpe), isView = true, context0 = context).allImplicits
               val implicitScope = scope.cloneScope
               allImplicits.foreach {
@@ -436,14 +564,14 @@ class ScalaSource[G <: Global](
     for {
       stats <- parsed
     } yield stats.collect {
-      case i @ global.Import(expr, selectors) => global.Import(reassignThis(moduleInstanceRef)(expr), selectors)
+      case i @ global.Import(expr, selectors) => global.Import(reassignThis(moduleInstanceRef)(expr), selectors) // IntelliJ doesn't like this line but it's fine
     }
   }.right.getOrElse(Nil)
 
   lazy val compiledModule: Either[Throwable, global.Symbol] = successfulParse.flatMap {
     _ =>
       val run = new global.Run()
-      compileUnit.flatMap { unit =>
+      compileUnit.flatMap {unit =>
         withCompiler {
           unit.body = global.resetAttrs(unit.body)
           reporter.attempt(run.compileUnits(List(unit), run.namerPhase))
@@ -495,7 +623,7 @@ object ScalaSource {
     }
 
     new ScalaSource[kernelContext.global.type](
-      global,
+      global, // IntelliJ doesn't like this line but it's fine
       cellContext,
       previousSources.asInstanceOf[List[ScalaSource[kernelContext.global.type]]],
       notebookPackage,
@@ -505,7 +633,7 @@ object ScalaSource {
   }
 
   def fromTrees(kernelContext: KernelContext)(cellContext: CellContext, notebookPackage: String, trees: List[kernelContext.global.Tree]): ScalaSource[kernelContext.global.type] = {
-    new ScalaSource[kernelContext.global.type](kernelContext.global, cellContext, Nil, notebookPackage, Ior.right(trees))
+    new ScalaSource[kernelContext.global.type](kernelContext.global, cellContext, Nil, notebookPackage, Ior.right(trees)) // IntelliJ doesn't like this line but it's fine
   }
 
   private def nameFor(cell: CellContext): String = s"Cell${cell.id}"

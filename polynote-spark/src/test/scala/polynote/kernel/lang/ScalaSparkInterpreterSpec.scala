@@ -34,5 +34,25 @@ class ScalaSparkInterpreterSpec extends FlatSpec with Matchers with SparkKernelS
       vars("Out") shouldEqual List(2, 3, 4)
     }
   }
+
+  it should "not be affected by unused unserializable values" in {
+    val code =
+      """
+        |val x = 1
+        |val y = new {}
+        |val z = {
+        |  val foo = 1
+        |  foo
+        |}
+        |def f(i) = i + x
+        |spark.sparkContext.parallelize(Seq(1,2,3)).map(_ + x).collect.toList
+      """.stripMargin
+    assertSparkScalaOutput(code) { case (vars, output, displayed) =>
+      vars("kernel") shouldEqual polynote.runtime.Runtime
+      vars("spark") shouldBe a[SparkSession]
+      vars("x") shouldEqual 1
+      vars("Out") shouldEqual List(2, 3, 4)
+    }
+  }
 }
 
