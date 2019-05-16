@@ -295,6 +295,29 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
     }
   }
 
+  it should "properly handle imports in local scopes" in {
+    assertPythonOutput(
+      """
+        |import math
+        |
+        |def func(x):
+        |    result = math.sin(x)  # create a local var to make sure it doesn't appear in the outputs
+        |    return result
+        |
+        |func(math.pi/2)
+      """.stripMargin) {
+      case (vars, output, displayed) =>
+        vars should have size 2
+        val f = vars("func")
+        f shouldBe a[PythonFunction]
+        val fInstance = f.asInstanceOf[PythonFunction]
+        fInstance(Math.PI/2) shouldEqual 1.0
+        vars("Out") shouldEqual 1.0
+        output shouldBe empty
+        displayed shouldBe empty
+      }
+  }
+
   "PythonFunction" should "allow positional and keyword args" in {
 
     val code =

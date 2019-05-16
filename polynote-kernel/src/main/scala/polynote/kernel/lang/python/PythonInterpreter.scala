@@ -168,13 +168,15 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   private def evalWithCompilerErrors(cellName: String, cellContents: String)(jepCode: String): Either[List[CompileErrors], Unit] = {
     jep.eval("__polynote_err__ = []")
-    jep.eval(
-      s"""
-        |try:
-        |    $jepCode
-        |except SyntaxError as err:
-        |    __polynote_err__ = [str(err.lineno), str(err.offset), err.text, err.msg]
-      """.stripMargin.trim)
+    kernelContext.runInterruptible {
+      jep.eval(
+        s"""
+         |try:
+         |    $jepCode
+         |except SyntaxError as err:
+         |    __polynote_err__ = [str(err.lineno), str(err.offset), err.text, err.msg]
+         """.stripMargin.trim)
+    }
     val syntaxErrorInfo = jep.getValue("__polynote_err__", classOf[java.util.List[String]])
     if (syntaxErrorInfo.isEmpty) {
       jep.eval("del __polynote_err__")
@@ -237,10 +239,17 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
           _ <- if (jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Integer]) > 0) Right(List.empty[Result]) else Left(List.empty[CompileErrors])
           _ <- wrapEval("__polynote_parsed__ = LastExprAssigner().visit(__polynote_parsed__)")
           _ <- wrapEval("__polynote_parsed__ = ast.fix_missing_locations(__polynote_parsed__)")
-          _ <- wrapEval("__polynote_code__ = compile(__polynote_parsed__, '<ast>', 'exec')")
+          // compile and exec each statement in the cell one at a time
+          // this is (essentially) what ipython does:
+          //   see: https://github.com/ipython/ipython/blob/master/IPython/core/interactiveshell.py#L3068
+          //   which calls: https://github.com/ipython/ipython/blob/master/IPython/core/interactiveshell.py#L3149
+          _ <- wrapEval("__polynote_compiled__ = list(map(lambda node: compile(ast.Module([node]), '<ast>', 'exec'), __polynote_parsed__.body))")
         } yield {
           kernelContext.runInterruptible {
-            jep.eval("exec(__polynote_code__, __polynote_globals__, __polynote_locals__)\n")
+            jep.getValue("list(range(0, len(__polynote_compiled__)))", classOf[java.util.List[java.lang.Long]]).asScala.foreach { idx =>
+              jep.eval(s"exec(__polynote_compiled__[$idx], __polynote_globals__, __polynote_locals__)")
+              jep.eval("__polynote_globals__.update(__polynote_locals__)")
+            }
           }
           jep.eval("globals().update(__polynote_locals__)")
           val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
