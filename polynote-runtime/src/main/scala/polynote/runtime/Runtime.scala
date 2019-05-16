@@ -2,14 +2,12 @@ package polynote.runtime
 
 import java.util.concurrent.ConcurrentHashMap
 
-import scala.collection.mutable
-
 // TODO: can we make this a class instantiated per-kernel? Currently we rely on the ClassLoader to prevent cross-contamination
 object Runtime extends Serializable {
 
   def init(): Unit = ()
 
-  private val externalValues = new ConcurrentHashMap[String, Any]()
+  @transient private val externalValues = new ConcurrentHashMap[String, Any]()
 
   def getValue(name: String): Any = externalValues.get(name)
   def putValue(name: String, value: Any): Unit =

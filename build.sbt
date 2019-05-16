@@ -95,7 +95,7 @@ val `polynote-server` = project.settings(
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
-) dependsOn `polynote-kernel`
+) dependsOn `polynote-kernel` % "compile->compile;test->test"
 
 def copyRuntimeJar(targetDir: File, targetName: String, file: File) = {
     val targetFile = targetDir / targetName
@@ -135,6 +135,6 @@ lazy val `polynote-spark` = project.settings(
   }.taskValue,
   fork in Test := true,
   parallelExecution in Test := false
-) dependsOn (`polynote-server`, `polynote-spark-runtime`)
+) dependsOn (`polynote-server` % "compile->compile;test->test", `polynote-spark-runtime`)
 
 val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`)
