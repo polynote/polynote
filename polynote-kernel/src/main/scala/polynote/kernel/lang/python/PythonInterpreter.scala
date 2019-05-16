@@ -307,13 +307,24 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       case "str" => Option(jep.getValue(accessor, classOf[String]) -> Some(typeOf[String]))
       case "bool" => Option(jep.getValue(accessor, classOf[java.lang.Boolean]).booleanValue() -> Some(typeOf[Boolean]))
       case "tuple" => getPyResult(s"list($accessor)")
-      case "dict" => for {
-        keys <- getPyResult(s"list($accessor.keys())")
-        values <- getPyResult(s"list($accessor.values())")
-      } yield {
-        keys._1.asInstanceOf[List[Any]].zip(values._1.asInstanceOf[List[Any]]).toMap -> Some(typeOf[Map[Any, Any]])
-      }
-      case "list" =>
+      case "dict" =>
+        // prevent infinite recursion and access to "private" polynote variables
+        val safeIndices = s"[idx for idx,(k,v) in enumerate($accessor.items()) if not str(k).startswith('__polynote_') and v != $accessor and v != globals()]"
+
+        Option(jep.getValue(safeIndices, classOf[java.util.List[java.lang.Number]]).asScala)
+          .filterNot(_.isEmpty)
+          .map(
+            _.flatMap {
+              idx =>
+                for {
+                  k <- getPyResult(s"list($accessor.keys())[$idx]")
+                  v <- getPyResult(s"list($accessor.values())[$idx]")
+                } yield {
+                  (k._1, v._1)
+                }
+            }.toMap -> Some(typeOf[Map[Any, Any]])
+          )
+      case "list" | "PyJArray" =>
         // TODO: this in particular is pretty inefficient... it does a JNI call for every element of the list.
         val numElements = jep.getValue(s"len($accessor)", classOf[java.lang.Number]).longValue()
         val (elems, types) = (0L until numElements).flatMap(n => getPyResult(s"$accessor[$n]")).toList.unzip
@@ -330,8 +341,9 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
         }
 
         Option(elems -> Some(listType))
-      case "PyJObject" =>
-        Option(jep.getValue(accessor) -> Some(typeOf[AnyRef]))
+      case "PyJObject" | "PyJCallable" | "PyJAutoCloseable" => // these all come from scala-lang, so we can infer their types.
+        val thing = jep.getValue(accessor)
+        Option(thing -> Some(kernelContext.inferType(thing)))
       case "module" =>
         None
       case "function" | "builtin_function_or_method" | "type" =>
