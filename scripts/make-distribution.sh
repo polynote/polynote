@@ -20,7 +20,7 @@ pushd ${DIR}/../
     rm -r ${distDir} || true
     mkdir ${distDir}
     pushd ${distDir}
-        cp ${root}/polynote-spark/target/scala-2.11/polynote-spark-assembly-0.1.13-SNAPSHOT.jar ./polynote-spark-assembly.jar
+        cp ${root}/polynote-spark/target/scala-2.11/polynote-spark-assembly-0.1.14-SNAPSHOT.jar ./polynote-spark-assembly.jar
         cp ${root}/config-template.yml ./
         cp ${root}/scripts/install-jep.sh ./
         cp ${root}/scripts/run.sh ./

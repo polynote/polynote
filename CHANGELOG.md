@@ -2,6 +2,12 @@
 
 *
 
+# 0.1.14 (May 20, 2019)
+
+* Fix lingering positioning bugs (completions should work better now; no `OuterScopes` stuff)
+* Fix spark serializer issue
+* Minor style fixes
+
 # 0.1.13 (May 16, 2019)
 
 * Add support for simple references to `globals()` [#19]
