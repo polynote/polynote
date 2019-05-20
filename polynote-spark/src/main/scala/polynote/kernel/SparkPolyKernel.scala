@@ -13,7 +13,7 @@ import cats.effect.concurrent.{Deferred, Ref}
 import cats.syntax.flatMap._
 import cats.syntax.apply._
 import fs2.concurrent.Topic
-import org.apache.spark.{SparkConf, Success}
+import org.apache.spark.{SparkConf, SparkEnv, Success}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.SparkSession
@@ -118,7 +118,9 @@ class SparkPolyKernel(
     //    conf.set("spark.executor.userClassPathFirst", "true")
     // TODO: experimental
 
+    Thread.currentThread().setContextClassLoader(kernelContext.classLoader)
     val sess = org.apache.spark.repl.Main.createSparkSession()
+    SparkEnv.get.serializer.setDefaultClassLoader(kernelContext.classLoader)
 
     // for some reason the jars aren't totally working...
 
