@@ -345,7 +345,7 @@ body {
                            ". .";
       grid-template-columns: auto auto;
       grid-template-rows: min-content;
-
+      border-right: 1px solid @ui-border;
 
       button {
         display: block;
@@ -395,9 +395,6 @@ body {
       font-size: 11pt;
       min-height: 1.5em; // remove jumpiness due to vim statusbar
 
-      &.text-cell {
-        display: none;
-      }
     }
 
     .exec-info {
@@ -478,10 +475,21 @@ body {
           border-left-color: #e1e1e1;
         }
       }
+
+      .cell-input-tools {
+        display: block;
+        * {
+          display: none;
+        }
+      }
     }
 
     .cell-input {
       grid-template-rows: auto;
+
+      .cell-footer {
+        display: none;
+      }
     }
 
     .cell-input-tools {
@@ -1205,6 +1213,7 @@ body {
 
     .cell-output-margin {
       background: @ui-background;
+      border-right: 1px solid @ui-border;
     }
 
     .cell-output-container {
@@ -1266,6 +1275,7 @@ body {
 
     .cell-result-margin {
       background: @ui-background;
+      border-right: 1px solid @ui-border;
     }
 
     .cell-output-tools {
