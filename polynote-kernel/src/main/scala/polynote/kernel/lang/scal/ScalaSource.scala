@@ -235,7 +235,7 @@ class ScalaSource[G <: Global](
                     atPos(beginning)(global.noSelfType.copy()),
                     atPos(beginning)(constructor) ::
                       impliedImports.map(atPos(beginning)) :::
-                      prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(atPos(beginning)) :::
+                      prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(forcePos(beginning, _)) :::
                       trees)
                 })
             },
