@@ -2,6 +2,12 @@
 
 *
 
+# 0.1.15 (May 20, 2019)
+
+* Install jep globally rather than locally [#324]
+
+[#324]: https://github.com/polynote/polynote/pull/324
+
 # 0.1.14 (May 20, 2019)
 
 * Fix lingering positioning bugs (completions should work better now; no `OuterScopes` stuff)
