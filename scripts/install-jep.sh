@@ -2,8 +2,8 @@
 
 set -e
 
-pip3 uninstall jep
-pip3 install jep ipython nbconvert jedi
+pip3 install --upgrade --force-reinstall jep # Jep was installed in a bad location, so we need to keep this for a bit.
+pip3 install ipython nbconvert jedi
 
 # this all assumes that jep was installed to a normal place
 jep_site_packages_path=`pip3 show jep | grep "^Location:" | cut -d ':' -f 2 | cut -d ' ' -f 2`
