@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
+set -x
 
 pip3 install --upgrade --force-reinstall jep # Jep was installed in a bad location, so we need to keep this for a bit.
 pip3 install ipython nbconvert jedi
