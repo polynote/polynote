@@ -179,14 +179,68 @@ class ScalaSource[G <: Global](
           atPos(beginning)(global.Block(
             atPos(beginning)(global.PrimarySuperCall(ListOfNil)), atPos(beginning)(global.gen.mkSyntheticUnit()))))
 
-      val usedIdents = trees.flatMap {
-        tree => tree.collect {
-          case global.Ident(name) => name.toString
-        }
-      }.toSet
-
       // import everything imported by previous cells...
       val directImports: List[global.Tree] = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]])
+
+      def deepCopyTree(t: Tree): Tree = {
+        val treeDuplicator = new global.Transformer {
+          // by default Transformers don’t copy trees which haven’t been modified,
+          // so we need to use use strictTreeCopier
+          override val treeCopy = global.newStrictTreeCopier
+        }
+
+        treeDuplicator.transform(t)
+      }
+
+      // we deepcopy the trees to make sure we don't mess with the ones we want.
+      val throwawayTrees = trees.map(deepCopyTree)
+
+      // we don't yet know which cells are used, so import all of them.
+      val allImports = previousSources.map {
+        source =>
+          val moduleSym = source.compiledModule.right.get.asModule
+          q"import ${moduleSym.asInstanceOf[global.ModuleSymbol]}.INSTANCE._"
+      }
+
+      // compile and type the tree
+      val packagedTrees = global.PackageDef(
+        global.Ident(global.TermName(notebookPackage)),
+          directImports ::: List(global.ClassDef(
+            global.Modifiers(),
+            moduleName.toTypeName,
+            Nil,
+            global.Template(
+              List(scalaDot(global.typeNames.AnyRef), scalaDot(global.typeNames.Serializable)),
+              global.noSelfType.copy(),
+              constructor :: allImports ::: prepend.toList.flatten.asInstanceOf[List[global.Tree]] ::: throwawayTrees))))
+
+      val compiledTrees = {
+        val sourceFile = CellSourceFile(cellName)
+        val unit = new global.RichCompilationUnit(sourceFile)
+        unit.body = packagedTrees
+        unit.status = global.JustParsed
+        global.unitOfFile.put(sourceFile.file, unit)
+        unit
+      }
+
+      val typedTrees = {
+        val run = new global.Run()
+        run.namerPhase.asInstanceOf[global.GlobalPhase].apply(compiledTrees)
+        run.typerPhase.asInstanceOf[global.GlobalPhase].apply(compiledTrees)
+        global.exitingTyper(compiledTrees.body)
+      }
+
+      val prevCellNames = previousSources.map(_.compiledModule.right.get.asModule.name)
+      val usedIdents = scala.collection.mutable.HashMap.empty[String, global.Tree]
+      val cellRefFinder = new global.Transformer {
+        override def transform(tree: global.Tree): global.Tree = tree match {
+          case t @ global.Select(global.Select(qualifier: global.Ident, global.TermName("INSTANCE")), name) if prevCellNames.contains(qualifier.name) =>
+            usedIdents += name.toString -> t
+            super.transform(t)
+          case _ => super.transform(tree)
+        }
+      }
+      cellRefFinder.transform(typedTrees)
 
       //... and also import all public declarations from previous cells
       val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
@@ -201,18 +255,57 @@ class ScalaSource[G <: Global](
               decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.asInstanceOf[global.Symbol])
           }.toMap
         }
-//        TODO: can't do this filtering so easily - would have to wrap plainly, typecheck, then do filtering and re-wrap
-//        .filter {
-//          case (nameStr, (module, sym)) => (usedIdents contains nameStr) || module.isImplicit
-//        }
-        .toList.groupBy(_._2._1).flatMap {
+        .filter {
+          case (nameStr, (module, sym)) => usedIdents contains nameStr
+        }
+        .toList.groupBy(_._2._1).toList.map {
           case (module, imports) =>
-            val localValName = global.freshTermName(module.name.toString + "$INSTANCE")(global.currentFreshNameCreator)
-            val localVal = q"val $localValName = $module.INSTANCE"
-            localVal +: imports.map {
-              case (_, (_, sym)) => q"import $localValName.${sym.name}"
+            if (imports.exists(_._2._2.isClass)) { // if there's a class def, we have to just wildcard import.
+              val localValName = global.freshTermName(module.name.toString + "$INSTANCE")(global.currentFreshNameCreator)
+              val localVal = q"val $localValName = $module.INSTANCE"
+              val importLocalVal = q"import $localValName._"
+              (List(localVal, importLocalVal), Nil)
+            } else { // no class def! We can wildcard import, hooray.
+              (Nil, imports.map {
+                case (_, (_, sym)) =>
+                  val proxyName = global.freshTermName(s"${module.name.toString}$$PROXY$$${sym.name.toString}")(global.currentFreshNameCreator)
+                  if (sym.isImplicit) {
+                    sym.name.toString -> q"private implicit val $proxyName = $module.INSTANCE.${sym.name.toTermName}"
+                  } else {
+                    sym.name.toString -> q"private val $proxyName = $module.INSTANCE.${sym.name.toTermName}"
+                  }
+              })
             }
-        }.toList
+//            val localValName = global.freshTermName(module.name.toString + "$INSTANCE")(global.currentFreshNameCreator)
+//            val localVal = q"val $localValName = $module.INSTANCE"
+//            val importLocalVal = q"import $localValName._"
+//            (List(localVal, importLocalVal), imports.map {
+//              case (_, (_, sym)) =>
+//                val proxyName = global.freshTermName(s"${module.name.toString}$$${sym.name.toString}")(global.currentFreshNameCreator)
+//                sym.name.toString -> q"val $proxyName = $module.INSTANCE.${sym.name.toTermName}"
+//            })
+        }
+
+      val (unzippedPrevCellImports, unzippedPrevCellProxies) = impliedImports.unzip
+      val prevCellImports = unzippedPrevCellImports.flatten
+      val prevCellProxies = unzippedPrevCellProxies.flatten.toMap
+
+      val proxySubstituter = new global.Transformer {
+        override def transform(tree: global.Tree): global.Tree = tree match {
+          case n @ global.Ident(name) if usedIdents.contains(name.toString) =>
+            val x = n
+            val replacementIdent = prevCellProxies.get(name.toString) match {
+              case Some(global.ValDef(_, proxyName, _, _)) =>
+                global.Ident(proxyName.toString)
+              case None => tree
+            }
+            super.transform(replacementIdent)
+          case _ =>
+            super.transform(tree)
+        }
+      }
+
+      val modifiedTrees = trees.map(proxySubstituter.transform)
 
       // This gnarly thing is building a synthetic object {} tree around the statements.
       // Quasiquotes won't do the trick, because we have to assign positions to every tree or the compiler freaks out.
@@ -234,9 +327,10 @@ class ScalaSource[G <: Global](
                     List(atPos(beginning)(scalaDot(global.typeNames.AnyRef)), atPos(beginning)(scalaDot(global.typeNames.Serializable))), // extends AnyRef with Serializable
                     atPos(beginning)(global.noSelfType.copy()),
                     atPos(beginning)(constructor) ::
-                      impliedImports.map(atPos(beginning)) :::
+                      prevCellImports.map(atPos(beginning)) :::
+                      prevCellProxies.values.map(atPos(beginning)).toList :::
                       prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(forcePos(beginning, _)) :::
-                      trees)
+                      modifiedTrees)
                 })
             },
             atPos(end) {
@@ -442,6 +536,7 @@ class ScalaSource[G <: Global](
 
   lazy val compiledModule: Either[Throwable, global.Symbol] = successfulParse.flatMap {
     _ =>
+      val _ = compileUnit
       val run = new global.Run()
       compileUnit.flatMap { unit =>
         withCompiler {

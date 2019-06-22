@@ -18,10 +18,14 @@ trait SparkKernelSpec extends KernelSpec {
     sparkKernel.kernelContext
   }
 
-  def assertSparkScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
+  def assertSparkScalaOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
     assertOutput({ (kernelContext: KernelContext, updates: Topic[IO, KernelStatusUpdate]) =>
       interpFactory(Nil, kernelContext)
     }, code)(assertion)
+  }
+
+  def assertSparkScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
+    assertSparkScalaOutput(Seq(code))(assertion)
   }
 
 }

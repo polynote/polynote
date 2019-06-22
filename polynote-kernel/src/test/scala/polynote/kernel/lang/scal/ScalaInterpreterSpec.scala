@@ -51,6 +51,13 @@ class ScalaInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
   it should "assign a value to result of code if it ends in an expression" in {
     val code =
       """
+        |val k = kernel
+        |import scala.collection.immutable.ListMap
+        |val m: ListMap[String, Int] = ListMap.empty
+        |def foo(a: Int)(implicit b: Int) = a + b
+        |val bar = foo(1)
+        |val meep = implicitly[Int]
+        |//val f = new Foo
         |val x = 1
         |val y = 2
         |x + y

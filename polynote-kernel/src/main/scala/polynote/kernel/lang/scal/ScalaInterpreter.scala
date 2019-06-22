@@ -45,7 +45,10 @@ class ScalaInterpreter(
   protected lazy val notebookPackageSymbol = global.internal.newModuleAndClassSymbol(global.rootMirror.RootPackage, notebookPackageTerm)
 
   // TODO: we want to get rid of predef and load `kernel` from the KernelContext
-  def predefCode: Option[String] = Some("val kernel = polynote.runtime.Runtime")
+  def predefCode: Option[String] = Some(
+    """//implicit val banana: Int = 100
+      |//class Foo {}
+      |val kernel = polynote.runtime.Runtime""".stripMargin)
 
   override def init(): IO[Unit] = IO.unit // pass for now
 
@@ -177,7 +180,7 @@ class ScalaInterpreter(
                   // collect term definitions and values from the cell's object, and publish them to the symbol table
                   // TODO: We probably also want to publish some output for types, like "Defined class Foo" or "Defined type alias Bar".
                   //       But the class story is still WIP (i.e. we might want to pull them out of cells into the notebook package)
-                  symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor && !d.isSetter && !d.name.decodedName.toString.contains("$INSTANCE")).collect {
+                  symType.nonPrivateDecls.filter(d => d.isTerm && !d.isConstructor && !d.isSetter && !d.name.decodedName.toString.contains("$INSTANCE") && !d.name.decodedName.toString.contains("$PROXY$")).collect {
 
                     case Val(accessor) =>
                       // if the decl is a val, evaluate it and push it to the symbol table
