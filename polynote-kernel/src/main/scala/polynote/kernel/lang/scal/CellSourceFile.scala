@@ -5,7 +5,7 @@ import scala.reflect.io.VirtualFile
 
 final case class CellSourceFile(id: String) extends SourceFile {
   def content: Array[Char] = NoSourceFile.content
-  object file extends VirtualFile(id, id)
+  val file = new VirtualFile(id, id)
   def isLineBreak(idx: Int): Boolean = NoSourceFile.isLineBreak(idx)
   def isEndOfLine(idx: Int): Boolean = NoSourceFile.isEndOfLine(idx)
   def isSelfContained: Boolean = NoSourceFile.isSelfContained

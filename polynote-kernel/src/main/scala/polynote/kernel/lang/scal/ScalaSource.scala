@@ -186,7 +186,7 @@ class ScalaSource[G <: Global](
         val treeDuplicator = new global.Transformer {
           // by default Transformers don’t copy trees which haven’t been modified,
           // so we need to use use strictTreeCopier
-          override val treeCopy = global.newStrictTreeCopier
+          override val treeCopy: global.TreeCopier = global.newStrictTreeCopier
         }
 
         treeDuplicator.transform(t)
@@ -194,6 +194,7 @@ class ScalaSource[G <: Global](
 
       // we deepcopy the trees to make sure we don't mess with the ones we want.
       val throwawayTrees = trees.map(deepCopyTree)
+      val throwawayPrepend = prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(deepCopyTree)
 
       // we don't yet know which cells are used, so import all of them.
       val allImports = previousSources.map {
@@ -202,33 +203,42 @@ class ScalaSource[G <: Global](
           q"import ${moduleSym.asInstanceOf[global.ModuleSymbol]}.INSTANCE._"
       }
 
+      val x = q"org.apache.spark.sql.catalyst.encoders.OuterScopes.addOuterScope(this)"
+      val y = prepend.get.head
+
       // compile and type the tree
       val packagedTrees = global.PackageDef(
-        global.Ident(global.TermName(notebookPackage)),
+        global.Ident(global.newTermName("ThrowawayPackage")),
           directImports ::: List(global.ClassDef(
             global.Modifiers(),
-            moduleName.toTypeName,
+            global.newTypeName(s"ThrowawayClass"),
             Nil,
             global.Template(
               List(scalaDot(global.typeNames.AnyRef), scalaDot(global.typeNames.Serializable)),
-              global.noSelfType.copy(),
-              constructor :: allImports ::: prepend.toList.flatten.asInstanceOf[List[global.Tree]] ::: throwawayTrees))))
+              global.noSelfType,
+              constructor :: allImports ::: throwawayPrepend /*::: List(q"org.apache.spark.sql.catalyst.encoders.OuterScopes.addOuterScope(this)")*/ ::: throwawayTrees
+            ))))
 
-      val compiledTrees = {
-        val sourceFile = CellSourceFile(cellName)
+      val compiledTrees = withCompiler {
+        val sourceFile = CellSourceFile("throwaway")
         val unit = new global.RichCompilationUnit(sourceFile)
         unit.body = packagedTrees
         unit.status = global.JustParsed
         global.unitOfFile.put(sourceFile.file, unit)
         unit
-      }
+//        packagedTrees
+      }.right.get
 
-      val typedTrees = {
+      val typedTrees = withCompiler {
         val run = new global.Run()
         run.namerPhase.asInstanceOf[global.GlobalPhase].apply(compiledTrees)
         run.typerPhase.asInstanceOf[global.GlobalPhase].apply(compiledTrees)
-        global.exitingTyper(compiledTrees.body)
-      }
+        val x = global.exitingTyper(compiledTrees.body)
+//        global.askReset()
+        x
+      }.right.get
+
+//      val run = new global.Run()
 
       val prevCellNames = previousSources.map(_.compiledModule.right.get.asModule.name)
       val usedIdents = scala.collection.mutable.HashMap.empty[String, global.Tree]
@@ -305,9 +315,13 @@ class ScalaSource[G <: Global](
         }
       }
 
-      val modifiedTrees = trees.map(proxySubstituter.transform)
+      val modifiedTrees = trees.map(proxySubstituter.transform).map(global.resetAttrs)
 
       // This gnarly thing is building a synthetic object {} tree around the statements.
+      // each expression gets its own object and class (and imports previous expressions)
+      // TODO: Not yet done:
+      //    * extracting values no longer works (Scala interpreter doesn't know that it needs to go one more level in)
+      //    * importing previous cell not yet implemented properly
       // Quasiquotes won't do the trick, because we have to assign positions to every tree or the compiler freaks out.
       // We just smush the positions of the wrapper code to the beginning and end.
       // We don't just make a new code string and re-parse, because we want the real positions in the cell to be
@@ -316,37 +330,106 @@ class ScalaSource[G <: Global](
       val wrappedSource = atPos(range) {
         global.PackageDef(
           atPos(beginning)(global.Ident(global.TermName(notebookPackage))),
-          directImports.map(forcePos(beginning, _)).map(global.resetAttrs) ::: List(
-            atPos(range) {
-              global.ClassDef(
-                global.Modifiers(),
-                moduleName.toTypeName,
-                Nil,
-                atPos(range) {
-                  global.Template(
-                    List(atPos(beginning)(scalaDot(global.typeNames.AnyRef)), atPos(beginning)(scalaDot(global.typeNames.Serializable))), // extends AnyRef with Serializable
-                    atPos(beginning)(global.noSelfType.copy()),
-                    atPos(beginning)(constructor) ::
-                      prevCellImports.map(atPos(beginning)) :::
-                      prevCellProxies.values.map(atPos(beginning)).toList :::
-                      prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(forcePos(beginning, _)) :::
-                      modifiedTrees)
-                })
-            },
-            atPos(end) {
+          directImports.map(forcePos(beginning, _)).map(global.resetAttrs) :::
+            List(atPos(beginning) {
               global.ModuleDef(
                 global.Modifiers(),
                 moduleName,
                 atPos(end) {
                   global.Template(
                     List(atPos(end)(scalaDot(global.typeNames.AnyRef))),
-                    atPos(end)(global.noSelfType.copy()),
-                    atPos(end)(constructor) :: atPos(end)(q"val INSTANCE = new ${moduleName.toTypeName}") :: Nil
+                    atPos(end)(global.noSelfType),
+                    List(atPos(end)(constructor)) :::
+                      modifiedTrees.foldLeft((List.empty[Tree], 0)) {
+                        case ((acc, idx), tree) =>
+//                          tree match {
+//                            case _: global.Import =>  // if its an import, don't give it its own class
+//                              (acc :+ tree, idx)
+//                            case _ =>
+                              val name = s"$moduleName$$tree$idx"
+                              (acc ::: List[global.Tree](
+                                atPos(range) {
+                                  global.ClassDef(
+                                    global.Modifiers(),
+                                    global.TypeName(name),
+                                    Nil,
+                                    atPos(range) {
+                                      global.Template(
+                                        List(atPos(beginning)(scalaDot(global.typeNames.AnyRef)), atPos(beginning)(scalaDot(global.typeNames.Serializable))), // extends AnyRef with Serializable
+                                        atPos(beginning)(global.noSelfType),
+                                        atPos(beginning)(constructor) ::
+                                          prevCellImports.map(atPos(beginning)) :::
+                                          prevCellProxies.values.map(atPos(beginning)).toList :::
+                                          // need to import previous trees and all imports in previous trees too
+                                          {
+                                            acc.foldLeft(List.empty[global.Tree]) {
+                                              case (a, n) =>
+                                                n match {
+                                                  case global.ClassDef(_, _, _, global.Template(_, _, body)) =>
+                                                    a ::: body.collect {
+                                                      case imp: global.Import if !imp.toString.contains("INSTANCE") && !a.contains(imp) =>
+                                                        imp
+                                                    }
+                                                  case m @ global.ModuleDef(_, modName, _) =>
+                                                    val x = m
+                                                    val y =  q"import $modName.INSTANCE._"
+                                                    val z = global.TermName(s"$modName")
+                                                    val w = q"import $z.INSTANCE._"
+                                                    val localValName = global.freshTermName(modName.toString + "$INSTANCE")(global.currentFreshNameCreator)
+                                                    val localVal = q"val $localValName = $modName.INSTANCE"
+                                                    val importLocalVal = q"import $localValName._"
+
+                                                    a ::: localVal :: importLocalVal :: Nil
+                                                  case _ => a
+                                                }
+                                            }
+                                          } :::
+
+//                                          (0 to idx).flatMap {
+//                                            i =>
+//                                              val importName = global.TermName(s"$moduleName$$tree$i")
+//                                              val importPrev = q"import $importName.INSTANCE._"
+//                                              val prevDirectImports = acc() match {
+//                                                case imp: global.Import if !imp.toString.contains("INSTANCE") => List(imp)
+//                                                case _ => Nil
+//                                              }
+//                                              importPrev :: prevDirectImports
+//                                          }.toList :::
+                                          prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(forcePos(beginning, _)) :::
+                                          tree :: Nil)
+                                    })
+                                },
+                                atPos(end) {
+                                  global.ModuleDef(
+                                    global.Modifiers(),
+                                    global.TermName(name),
+                                    atPos(end) {
+                                      global.Template(
+                                        List(atPos(end)(scalaDot(global.typeNames.AnyRef))),
+                                        atPos(end)(global.noSelfType.copy()),
+                                        atPos(end)(constructor) ::
+                                          atPos(end) {
+                                            val instanceName = global.TypeName(name)
+                                            q"val INSTANCE = new $instanceName"
+                                          } :: Nil
+                                      )
+                                    }
+                                  )
+                                }
+                              ) /*::: {
+                                val localValName = global.freshTermName(name.toString + "$INSTANCE")(global.currentFreshNameCreator)
+                                val instanceName = global.TermName(name)
+                                val localVal = q"val $localValName = $instanceName.INSTANCE"
+                                val importLocalVal = q"import $localValName._"
+                                List(localVal, importLocalVal).map(atPos(end)(_))
+                              }*/, idx + 1)
+//                          }
+                    }._1
                   )
                 }
               )
-            }
-          ))
+            })
+        )
       }
       ensurePositions(
         source,
@@ -354,6 +437,8 @@ class ScalaSource[G <: Global](
         range
       )
 
+
+//      val untypedTrees = global.resetAttrs(typedTrees)   // works!
       wrappedSource
     }
   }

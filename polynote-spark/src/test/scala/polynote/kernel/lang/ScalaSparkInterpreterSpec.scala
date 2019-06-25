@@ -10,7 +10,8 @@ class ScalaSparkInterpreterSpec extends FlatSpec with Matchers with SparkKernelS
     val code =
       """
         |val x = 1
-        |spark.sparkContext.parallelize(Seq(1,2,3)).map(_ + x).collect.toList
+        |val y = this
+        |//spark.sparkContext.parallelize(Seq(1,2,3)).map(_ + x).collect.toList
       """.stripMargin
     assertSparkScalaOutput(code) { case (vars, output, displayed) =>
         vars("kernel") shouldEqual polynote.runtime.Runtime

@@ -46,6 +46,7 @@ case class KernelReporter(settings: Settings) extends AbstractReporter {
       result
     } catch {
       case err: Throwable =>
+        val x = err
         Left(err)
     } finally {
       restoreState(state)

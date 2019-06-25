@@ -20,6 +20,7 @@ class ScalaSparkInterpreter(ctx: KernelContext) extends ScalaInterpreter(ctx) {
 
   override def predefCode: Option[String] = Some {
     s"""${super.predefCode.getOrElse("")}
+       |org.apache.spark.sql.catalyst.encoders.OuterScopes.addOuterScope(this)
        |import org.apache.spark.sql.SparkSession
        |@transient val spark: SparkSession = if (org.apache.spark.repl.Main.sparkSession != null) {
        |            org.apache.spark.repl.Main.sparkSession
@@ -27,7 +28,7 @@ class ScalaSparkInterpreter(ctx: KernelContext) extends ScalaInterpreter(ctx) {
        |            org.apache.spark.repl.Main.createSparkSession()
        |          }
        |import org.apache.spark.sql.{DataFrame, Dataset}
-       |import this.spark.implicits._
+       |import spark.implicits._
        |import org.apache.spark.sql.functions._
      """.stripMargin
   }
