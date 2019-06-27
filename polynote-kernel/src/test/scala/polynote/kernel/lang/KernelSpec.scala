@@ -32,17 +32,26 @@ trait KernelSpec {
 
   implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
 
+
   def assertPythonOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
+    assertPythonOutput(Seq(code))(assertion)
+  }
+
+  def assertPythonOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
     assertOutputWith((kernelContext: KernelContext, _) => PythonInterpreter.factory()(Nil, kernelContext), code) {
       (interp, vars, output, displayed) => interp.withJep(assertion(vars, output, displayed))
     }
   }
 
-  def assertScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
+  def assertScalaOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
     assertOutput((kernelContext: KernelContext, _) => ScalaInterpreter.factory()(Nil, kernelContext), code)(assertion)
   }
 
-  def assertOutput[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit =
+  def assertScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
+    assertScalaOutput(Seq(code))(assertion)
+  }
+
+  def assertOutput[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit =
     assertOutputWith(mkInterp, code) {
       (_, vars, output, displayed) => IO(assertion(vars, output, displayed))
     }
@@ -50,7 +59,7 @@ trait KernelSpec {
   def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(Map.empty, updates, Nil)
 
   // TODO: for unit tests we'd ideally want to hook directly to runCode without needing all this!
-  def assertOutputWith[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: String)(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {
+  def assertOutputWith[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: Seq[String])(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {
     Topic[IO, KernelStatusUpdate](UpdatedTasks(Nil)).flatMap { updates =>
       val kernelContext = getKernelContext(updates)
       val interp = mkInterp(kernelContext, updates)
@@ -74,7 +83,18 @@ trait KernelSpec {
             // TODO: ideally we wouldn't need to run predef specially
             predefResults <- runPredef.flatMap(_.compile.toVector)
             cellContext <- CellContext(0.toShort, Some(predefContext))
-            results <- interp.runCode(cellContext, code).flatMap(_.compile.toVector)
+            runResults <-
+            code.zipWithIndex.foldLeft(IO.pure((cellContext, IO.pure(Vector.empty[Result])))) {
+              case (accIO, (c, idx)) =>
+                for {
+                  acc <- accIO
+                  (prevCtx, prevRes) = acc
+                  ctx <- CellContext((idx + 1).toShort, Some(prevCtx))
+                  prev <- prevRes
+                  curr <- interp.runCode(ctx, c).flatMap(_.compile.toVector)
+                } yield (ctx, IO.pure(prev ++ curr))
+            }
+            results <- runResults._2
             output  = predefResults ++ results
             // make  sure everything has been processed
             _       <- done.complete
