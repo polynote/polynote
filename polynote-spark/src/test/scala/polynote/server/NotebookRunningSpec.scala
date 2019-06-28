@@ -27,7 +27,7 @@ class NotebookRunningSpec extends FreeSpec with Matchers  {
     new IONotebookManager(config, repository, SparkServer.kernelFactory)
   }
 
-  "test.ipynb should run prooperly" in {
+  "test.ipynb should run properly" in {
     val path = "test.ipynb"
     val run = for {
       sharedNB <- nbManager.getNotebook(path)
@@ -50,14 +50,14 @@ class NotebookRunningSpec extends FreeSpec with Matchers  {
       1 -> List(ResultValue("Out","Int",List(StringRepr("2"), DataRepr(IntType,null)),1.toShort,2,null,Some((0,0)))),
       2 -> List(Output("text/plain; rel=stdout","three\n")),
       3 -> List(Output("text/html","<strong>HTML!</strong>")),
-      4 -> List(ResultValue("x","Int",List(StringRepr("2"), DataRepr(IntType,null)),4.toShort,2,null,Some((4,4)))),
+      4 -> List(ResultValue("x","Int",List(StringRepr("2"), DataRepr(IntType,null)),4.toShort,2,null,Some((0,0)))),
       5 -> List(ResultValue("y","String",List(StringRepr("hi!"), DataRepr(StringType,null)),5.toShort,"hi!",null,None)),
       6 -> List(
         ResultValue("y","String",List(StringRepr("bye"), DataRepr(StringType,null)),6.toShort,"bye",null,None),
         ResultValue("x","Long",List(StringRepr("3"), DataRepr(LongType,null)),6.toShort,3,null,None),
         ResultValue("z","List[Long]",List(StringRepr("List(1, 2, 3, 4)"), StreamingDataRepr(0,LongType,Some(4))),6.toShort,List(1, 2, 3, 4),null,None)
       ),
-      7 -> List(ResultValue("Out","List[Int]",List(StringRepr("List(2, 3, 4, 5)"), StreamingDataRepr(0,IntType,Some(4))),7.toShort,List(2, 3, 4, 5),null,Some((68,68))))
+      7 -> List(ResultValue("Out","List[Int]",List(StringRepr("List(2, 3, 4, 5)"), StreamingDataRepr(0,IntType,Some(4))),7.toShort,List(2, 3, 4, 5),null,Some((0,0))))
     )
 
     cellResults.size shouldEqual expectedCellResults.size

@@ -286,8 +286,21 @@ class ScalaSource[G <: Global](
     }
   }
 
-  private lazy val compileUnit: Either[Throwable, global.CompilationUnit] = wrapped.right.flatMap {
+  private lazy val compileUnit: Either[Throwable, global.CompilationUnit] = wrapped.right.map {
     tree =>
+      val sourceFile = CellSourceFile(cellName)
+      val unit = new global.RichCompilationUnit(sourceFile) //new global.CompilationUnit(CellSourceFile(id))
+      unit.body = tree
+      unit.status = global.JustParsed
+      global.unitOfFile.put(sourceFile.file, unit)
+      unit
+  }
+
+  // compiled unit but this time with all our fancy substitutions to help prevent serialization issues
+  lazy val compileUnitWithSubstitutions: Either[Throwable, global.CompilationUnit] = compileUnit.right.flatMap {
+    unit =>
+      val tree = unit.body
+
       Either.catchNonFatal {
         // ok, so case classes can't handle being put through the typer twice (and we can't roll back the changes that
         // the typer does to them...) so, what we'll do here is copy any case classes we have in the tree before we type it.
@@ -307,12 +320,6 @@ class ScalaSource[G <: Global](
                 o.name.toString -> deepCopyTree(o)
             }
         }).toMap
-
-        val sourceFile = CellSourceFile(cellName)
-        val unit = new global.RichCompilationUnit(sourceFile) //new global.CompilationUnit(CellSourceFile(id))
-        unit.body = tree
-        unit.status = global.JustParsed
-        global.unitOfFile.put(sourceFile.file, unit)
 
         import global.Quasiquote
 
@@ -625,7 +632,7 @@ class ScalaSource[G <: Global](
 
   lazy val compiledModule: Either[Throwable, global.Symbol] = successfulParse.flatMap {
     _ =>
-      compileUnit.flatMap { unit =>
+      compileUnitWithSubstitutions.flatMap { unit =>
         val run = new global.Run()
         withCompiler {
           unit.body = global.resetAttrs(unit.body)

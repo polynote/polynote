@@ -163,7 +163,8 @@ class ScalaInterpreter(
     interpreterLock.acquire.bracket { _ =>
       IO.fromEither(source.compile).flatMap {
         case global.NoSymbol => IO.pure(Stream.empty)
-        case sym =>
+        case sym if sym.name == source.moduleName =>
+
           val saveSource = IO.delay[Unit](previousSources.put(id, source))
           val setModule = cellContext.module.complete(sym.asModule)
 
@@ -288,6 +289,8 @@ class ScalaInterpreter(
                 ).parJoinUnbounded
             }
           }
+        case userDefinedObject => // TODO: do we want these user-defined objects to show up in the symbol table?
+          IO.pure(Stream.empty)
       }
     }(_ => interpreterLock.release)
   }
