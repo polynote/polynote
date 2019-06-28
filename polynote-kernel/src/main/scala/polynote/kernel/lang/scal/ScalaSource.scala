@@ -316,6 +316,7 @@ class ScalaSource[G <: Global](
 
         import global.Quasiquote
 
+        // type the tree so we can reify implicits and all that nice stuff.
         val typedPkg = reporter.attempt {
           val run = new global.Run()
           global.globalPhase = run.namerPhase // make sure globalPhase matches run phase
@@ -328,6 +329,7 @@ class ScalaSource[G <: Global](
           case Left(err) => throw err
         }
 
+        // now that we've typed it all up we can look for references to previous cells.
         val prevCellNames = previousSources.map(_.compiledModule.right.get.asModule.name)
         val usedIdents = scala.collection.mutable.HashMap.empty[String, global.Tree]
         val cellRefFinder = new global.Transformer {
@@ -340,7 +342,7 @@ class ScalaSource[G <: Global](
         }
         cellRefFinder.transform(typedPkg)
 
-        // now, find all references to previous cells and figure out what to do with them
+        // now, find all referenced decls from previous cells and generate proper imports and proxy variables (to avoid closing over the whole cell if possible)
         val importAndProxyFinder = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
           (accum, next) =>
             // grab this source's compiled module
