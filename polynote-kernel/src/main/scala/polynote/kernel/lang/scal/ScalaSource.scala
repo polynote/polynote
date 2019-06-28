@@ -299,9 +299,9 @@ class ScalaSource[G <: Global](
   // compiled unit but this time with all our fancy substitutions to help prevent serialization issues
   lazy val compileUnitWithSubstitutions: Either[Throwable, global.CompilationUnit] = compileUnit.right.flatMap {
     unit =>
-      val tree = unit.body
-
       Either.catchNonFatal {
+        val tree = unit.body
+
         // ok, so case classes can't handle being put through the typer twice (and we can't roll back the changes that
         // the typer does to them...) so, what we'll do here is copy any case classes we have in the tree before we type it.
         // later, we'll sub the typed case class for the untyped case class so it can go through the typer again happily.
@@ -565,7 +565,14 @@ class ScalaSource[G <: Global](
         for {
           context    <- getContext(tree)
         } yield global.NoType ->
-          (context.scope.filter(_.name.startsWith(name)).toList ++ context.imports.flatMap(_.allImportedSymbols.filter(_.name.startsWith(name))))
+          (context.scope.filter(_.name.startsWith(name)).toList
+            ++ context.imports.flatMap(_.allImportedSymbols.filter(_.name.startsWith(name))
+            ++ context.enclClass.scope.filter { // need to check whether this is a top-level class / object
+              sym =>
+                !previousSources.exists(_.moduleName == sym.name) && // but we don't want to complete the cell classes themselves!
+                  sym.name.startsWith(name)
+              false
+          }))
 
       // this works pretty well. Really helps with imports. But is there a way we can index classes & auto-import them like IntelliJ does?
       case global.Import(qual: global.Tree, List(name)) if !qual.isErrorTyped =>
@@ -585,7 +592,7 @@ class ScalaSource[G <: Global](
     for {
       treeOpt <- typedTreeAt(offset)
       results <- treeOpt.fold[Either[Throwable, (global.Type, List[global.Symbol])]](Right(global.NoType -> Nil))(completionResults)
-    } yield results
+    } yield (results._1, results._2.distinct)
   }
 
 
