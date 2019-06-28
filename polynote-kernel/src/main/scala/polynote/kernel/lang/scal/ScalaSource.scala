@@ -619,21 +619,17 @@ class ScalaSource[G <: Global](
     for {
       stats <- parsed
     } yield stats.collect {
-      case i @ global.Import(expr, selectors) =>
-        global.Import(reassignThis(moduleInstanceRef)(expr), selectors)
+      case i @ global.Import(expr, selectors) => global.Import(reassignThis(moduleInstanceRef)(expr), selectors)
     }
   }.right.getOrElse(Nil)
 
   lazy val compiledModule: Either[Throwable, global.Symbol] = successfulParse.flatMap {
     _ =>
-//      val run = new global.Run()
       compileUnit.flatMap { unit =>
-//        val x = reporter.attempt(quickTyped)
         val run = new global.Run()
-        val _ = global.newTyperRun()
         withCompiler {
           unit.body = global.resetAttrs(unit.body)
-          reporter.attempt(global.currentRun.compileUnits(List(unit), global.currentRun.namerPhase))
+          reporter.attempt(run.compileUnits(List(unit), run.namerPhase))
         }.flatMap(identity).flatMap {
           _ =>
             withCompiler {
