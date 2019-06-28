@@ -96,10 +96,49 @@ class ScalaSparkInterpreterSpec extends FlatSpec with Matchers with SparkKernelS
   it should "work with class defs" in {
     val code = Seq(
       "case class Foo(i: Int)",
-      "val foo = Foo(1)")
+      """class Bar(j: Int) {
+        |  def i: Int = j
+        |}
+      """.stripMargin,
+      "abstract class Baz(val i: Int)",
+      "class BazImpl(i: Int) extends Baz(i)",
+      """trait Quux {
+        |  def i: Int
+        |  def j: Int = 1000
+        |}""".stripMargin,
+      """class QuuxImpl extends Quux {
+        |  override def i: Int = 100
+        |}
+      """.stripMargin,
+      """
+        |case class Beep(s: String)
+        |object Beep {
+        |  def apply(i: Int): Beep = Beep(i.toString)
+        |}
+        |""".stripMargin,
+      "object Bop { val i = Foo(4).i + 1 }",
+      """
+        |val foo = Foo(1).i
+        |val bar = new Bar(2).i
+        |val baz = new BazImpl(3).i
+        |val quux = new QuuxImpl()
+        |val quuxI = quux.i
+        |val quuxJ = quux.j
+        |val beep1 = Beep("four").s
+        |val beep2 = Beep(4).s
+        |val bop = Bop.i
+        |""".stripMargin)
     assertSparkScalaOutput(code) { case (vars, output, displayed) =>
       vars("kernel") shouldEqual polynote.runtime.Runtime
       vars("spark") shouldBe a[SparkSession]
+      vars("foo") shouldEqual 1
+      vars("bar") shouldEqual 2
+      vars("baz") shouldEqual 3
+      vars("quuxI") shouldEqual 100
+      vars("quuxJ") shouldEqual 1000
+      vars("beep1") shouldEqual "four"
+      vars("beep2") shouldEqual "4"
+      vars("bop") shouldEqual 5
     }
   }
 }
