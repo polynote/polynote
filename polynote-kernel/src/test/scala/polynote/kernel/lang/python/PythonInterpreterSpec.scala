@@ -289,7 +289,7 @@ class PythonInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
     assertPythonOutput("syntax error") { case (vars, output, displayed) =>
       vars.toSeq shouldBe empty
       output should contain theSameElementsAs Seq(
-        CompileErrors(List(KernelReport(Pos("Cell0", 12, 13, 12), "invalid syntax", KernelReport.Error)))
+        CompileErrors(List(KernelReport(Pos("Cell1", 12, 13, 12), "invalid syntax", KernelReport.Error)))
       )
       displayed shouldBe empty
     }
