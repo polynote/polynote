@@ -2,7 +2,7 @@ package polynote.config
 
 /**
   * Yeah I know another Logger class. Well, we need to log stuff too. And Spark is a total jerk and hijacks all the
-  * logging and we don't want to deal with it. So, we're doing this and it'll work and it won't be a big pain in the ...
+  * logging and we don't want to deal with it. So, we're doing this and it'll work and it won't be a big pain in the apricot.
   */
 class PolyLogger(debug: Boolean) {
   private val outStream = System.err
