@@ -613,14 +613,11 @@ class ScalaSource[G <: Global](
       case global.Ident(name: global.Name) =>
         for {
           context    <- getContext(tree)
+          results    <- results
         } yield global.NoType ->
           (context.scope.filter(_.name.startsWith(name)).toList
             ++ context.imports.flatMap(_.allImportedSymbols.filter(_.name.startsWith(name))
-            ++ context.enclClass.scope.filter { // need to check whether this is a top-level class / object
-              sym =>
-                !previousSources.exists(_.moduleName == sym.name) && // but we don't want to complete the cell classes themselves!
-                  sym.name.startsWith(name)
-          }))
+            ++ results._2.filter(_.symbol != global.NoSymbol).map(_.symbol)))
 
       // this works pretty well. Really helps with imports. But is there a way we can index classes & auto-import them like IntelliJ does?
       case global.Import(qual: global.Tree, List(name)) if !qual.isErrorTyped =>
