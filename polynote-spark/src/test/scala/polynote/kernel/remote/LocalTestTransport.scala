@@ -14,7 +14,6 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.immutable.{Queue => ScalaQueue}
 
 class LocalTestTransport(implicit contextShift: ContextShift[IO]) extends Transport[LocalTestTransportServer] {
-  private val logger = org.log4s.getLogger
 
   val log: ListBuffer[Either[RemoteRequest, RemoteResponse]] = new ListBuffer[Either[RemoteRequest, RemoteResponse]]
 
@@ -34,7 +33,7 @@ class LocalTestTransport(implicit contextShift: ContextShift[IO]) extends Transp
     complete.complete(result).map(_ => isDone = true)
 
   def logReq(req: RemoteRequest): IO[Unit] = IO {
-    logger.info(s"--> $req")
+    System.err.println(s"--> $req")
     synchronized {
       if (runningExpectations) {
         val dequeued = expectation.dequeueOption
@@ -57,7 +56,7 @@ class LocalTestTransport(implicit contextShift: ContextShift[IO]) extends Transp
   }.handleErrorWith(err => finish(Left(err)))
 
   def logRep(rep: RemoteResponse): IO[Unit] = IO {
-    logger.info(s"<-- $rep")
+    System.err.println(s"<-- $rep")
     synchronized {
       if (runningExpectations) {
         val dequeued = expectation.dequeueOption

@@ -9,8 +9,7 @@ import cats.implicits._
 import org.http4s._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeBuilder
-import org.log4s.{Logger, getLogger}
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
 import polynote.buildinfo.BuildInfo
@@ -23,8 +22,6 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
   private val indexFile = "/index.html"
 
   private implicit val executionContext: ExecutionContext = ExecutionContext.global  // TODO: use a real one
-
-  protected val logger: Logger = getLogger
 
   def serveFile(path: String, req: Request[IO], watchUI: Boolean)(implicit syncIO: Sync[IO]): IO[Response[IO]] = {
     if (watchUI) {
@@ -44,10 +41,10 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
 
   def route(notebookManager: NotebookManager[IO], config: PolynoteConfig, watchUI: Boolean)(implicit timer: Timer[IO]): HttpRoutes[IO] = {
     HttpRoutes.of[IO] {
-      case GET -> Root / "ws" => SocketSession(notebookManager).flatMap(_.toResponse)
+      case GET -> Root / "ws" => SocketSession(notebookManager, config).flatMap(_.toResponse)
       case req @ GET -> Root  => serveFile(indexFile, req, watchUI)
       case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) =>
-        IO(logger.info(s"Download request for ${req.pathInfo} ffrom ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req, config)
+        IO(config.logger.info(s"Download request for ${req.pathInfo} from ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req, config)
       case req @ GET -> "notebook" /: _ => serveFile(indexFile, req, watchUI)
       case req @ GET -> (Root / "polynote-assembly.jar") =>
         StaticFile.fromFile[IO](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), executionContext).getOrElseF(NotFound())
@@ -57,7 +54,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
   }
 
   protected def splash: IO[Unit] = IO {
-    logger.info(
+    System.err.println(
       raw"""
            |
            |  _____      _                   _
@@ -91,7 +88,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
         val asURL = try new URL(loc) catch {
           case err: Throwable => getClass.getClassLoader.getResource(loc)
         }
-        logger.info(s"Resetting log4j.configuration to $asURL")
+        System.err.println(s"Resetting log4j.configuration to $asURL")
         System.setProperty("log4j.configuration", asURL.toString)
     }
   }
@@ -104,6 +101,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
   def run(args: List[String]): IO[ExitCode] = for {
     tuple           <- getConfigs(args)
     (args, config)   = tuple // tuple decomposition in for-comprehension doesn't seem work I guess...
+    logger           = config.logger
     port             = config.listen.port
     address          = config.listen.host
     _               <- IO(logger.info(s"Read config from ${args.configFile.getAbsolutePath}: $config"))

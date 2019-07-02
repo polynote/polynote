@@ -1,7 +1,7 @@
 package polynote.server
 
 import cats.effect.{ContextShift, IO, Timer}
-import polynote.kernel.dependency.{CoursierFetcher, DependencyFetcher, IvyFetcher}
+import polynote.kernel.dependency.{CoursierFetcher, DependencyFetcher}
 
 
 trait KernelLaunching {

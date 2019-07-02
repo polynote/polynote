@@ -7,7 +7,6 @@ import cats.syntax.either._
 import cats.syntax.functor._
 import io.circe.generic.extras.semiauto._
 import io.circe._
-import org.log4s.{Logger, getLogger}
 
 final case class Listen(
   port: Int = 8192,
@@ -32,15 +31,16 @@ final case class PolynoteConfig(
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,
-  spark: Map[String, String] = Map.empty
-)
+  spark: Map[String, String] = Map.empty,
+  debug: Boolean = false
+) {
+  lazy val logger: PolyLogger = new PolyLogger(debug)
+}
 
 
 object PolynoteConfig {
   implicit val encoder: ObjectEncoder[PolynoteConfig] = deriveEncoder
   implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder
-
-  private val logger: Logger = getLogger
 
   def parse(content: String): Either[Throwable, PolynoteConfig] = yaml.parser.parse(content).flatMap(_.as[PolynoteConfig])
 
@@ -50,10 +50,14 @@ object PolynoteConfig {
       IO.fromEither(yaml.parser.parse(reader).flatMap(_.as[PolynoteConfig]))
         .guarantee(IO(reader.close()))
     } handleErrorWith {
-      case err: MatchError =>
+      case _: MatchError =>
         IO.pure(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
-      case err: FileNotFoundException =>
-        IO(logger.warn(s"Configuration file $file not found; using default configuration")).as(PolynoteConfig())
+      case _: FileNotFoundException =>
+        IO {
+          val conf = PolynoteConfig()
+          conf.logger.info(s"Configuration file $file not found; using default configuration")
+          conf
+        }
       case err: Throwable => IO.raiseError(err)
     }
 

@@ -13,7 +13,7 @@ import cats.syntax.either._
 import cats.syntax.traverse._
 import cats.instances.list._
 import cats.instances.either._
-import polynote.config.{DependencyConfigs, RepositoryConfig, ivy, maven}
+import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, ivy, maven}
 import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 import polynote.kernel.util.Publish
 import org.apache.ivy.Ivy
@@ -30,16 +30,15 @@ import org.apache.ivy.plugins.repository.{ArtifactResourceResolver, Resource, Re
 import org.apache.ivy.plugins.resolver.util.ResolvedResource
 import org.apache.ivy.plugins.resolver.{CacheResolver, ChainResolver, IBiblioResolver, URLResolver}
 import org.apache.ivy.util.filter.{Filter => IvyFilter}
-import org.log4s.getLogger
 
 import scala.concurrent.ExecutionContext
 import scala.collection.JavaConverters._
 
-class IvyFetcher extends URLDependencyFetcher {
+class IvyFetcher(config: PolynoteConfig) extends URLDependencyFetcher {
   protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
 
-  private val logger = getLogger
+  private val logger = config.logger
 
   private val settings = new IvySettings()
   private val cachePath = settings.getDefaultCache.toPath

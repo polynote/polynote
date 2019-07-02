@@ -7,6 +7,8 @@
 #storage:
 #  dir: notebooks
 
+# Whether to enable debug mode
+#debug: true
 
 # Default repositories can be specified. Uncommenting the following lines would add four default repositories which are inherited by new notebooks.
 #repositories:

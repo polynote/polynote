@@ -12,7 +12,6 @@ import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
 import jep._
-import org.log4s.Logger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.util._
@@ -26,7 +25,7 @@ import scala.reflect.{ClassTag, classTag}
 class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterpreter[IO] {
   import kernelContext.global
 
-  protected val logger: Logger = org.log4s.getLogger
+  protected val logger = kernelContext.config.logger
 
   val predefCode: Option[String] = None
 
@@ -349,7 +348,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
       case "function" | "builtin_function_or_method" | "type" =>
         try Option(new PythonFunction(jep.getValue(accessor, classOf[PyCallable]), runner) -> Some(typeOf[PythonFunction])) catch {
           case err: Throwable =>
-            logger.info(err)("Error getting python object")
+            logger.error(err)("Error getting python object")
             None
         }
 
