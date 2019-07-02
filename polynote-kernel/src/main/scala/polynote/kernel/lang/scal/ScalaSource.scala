@@ -2,7 +2,7 @@ package polynote.kernel.lang.scal
 
 import cats.data.Ior
 import cats.syntax.either._
-import polynote.kernel.EmptyCell
+import polynote.kernel.{EmptyCell, RuntimeError}
 import polynote.kernel.util.{CellContext, KernelContext, KernelReporter}
 import org.log4s.getLogger
 
@@ -695,7 +695,12 @@ class ScalaSource[G <: Global](
         }.flatMap(identity).flatMap {
           _ =>
             withCompiler {
-              unit.body.asInstanceOf[global.PackageDef].stats(1).symbol.companionModule
+              // we return the companion object of the cell class for inspection by the scala interpreter.
+              val companion: global.ClassDef = unit.body.asInstanceOf[global.PackageDef].stats.collectFirst[global.ClassDef] {
+                case cls @ global.ClassDef(_, name, _, _) if cls.symbol.isModuleClass && name.toString == moduleName.toString => cls
+              }.getOrElse(throw RuntimeError(new Exception(s"Unable to find companion object for $moduleName!!! Something is very wrong!")))
+
+              companion.symbol.companionModule
             }
         }
       }.leftFlatMap {

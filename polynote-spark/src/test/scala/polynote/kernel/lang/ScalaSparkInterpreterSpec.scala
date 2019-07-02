@@ -95,7 +95,10 @@ class ScalaSparkInterpreterSpec extends FlatSpec with Matchers with SparkKernelS
 
   it should "work with class defs" in {
     val code = Seq(
-      "case class Foo(i: Int)",
+      """
+        |case class Foo(i: Int)
+        |val fooInstance = Foo(1)
+        |""".stripMargin,
       """class Bar(j: Int) {
         |  def i: Int = j
         |}
@@ -118,7 +121,7 @@ class ScalaSparkInterpreterSpec extends FlatSpec with Matchers with SparkKernelS
         |""".stripMargin,
       "object Bop { val i = Foo(4).i + 1 }",
       """
-        |val foo = Foo(1).i
+        |val foo = Foo(0).i + fooInstance.i
         |val bar = new Bar(2).i
         |val baz = new BazImpl(3).i
         |val quux = new QuuxImpl()
