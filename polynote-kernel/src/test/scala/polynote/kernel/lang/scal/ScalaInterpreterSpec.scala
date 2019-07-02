@@ -40,7 +40,7 @@ class ScalaInterpreterSpec extends FlatSpec with Matchers with KernelSpec {
           "hm" -> Map(1 -> "foo", "foo" -> 100, "hey!" ->  List(100, List(1, "foo", Map("sup?" -> "nm"), false))),
           "humm" -> Map(1 -> "foo", "foo" -> 100, "hey!" ->  List(100, List(1, "foo", Map("sup?" -> "nm"), false))))
       )
-      vars("z").toString should (include("$notebook.Eval") and include("$MyNewClass"))
+      vars("z").toString should include("$notebook.MyNewClass")
 
 
       displayed shouldBe empty

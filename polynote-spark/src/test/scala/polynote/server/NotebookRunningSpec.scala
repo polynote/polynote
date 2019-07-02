@@ -27,7 +27,7 @@ class NotebookRunningSpec extends FreeSpec with Matchers  {
     new IONotebookManager(config, repository, SparkServer.kernelFactory)
   }
 
-  "test.ipynb should run prooperly" in {
+  "test.ipynb should run properly" in {
     val path = "test.ipynb"
     val run = for {
       sharedNB <- nbManager.getNotebook(path)

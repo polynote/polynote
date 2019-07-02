@@ -1,15 +1,13 @@
 package polynote.kernel.lang.scal
 
 import cats.data.Ior
-import cats.effect.IO
 import cats.syntax.either._
-import polynote.kernel.EmptyCell
-import polynote.kernel.lang.LanguageInterpreter
+import polynote.kernel.{EmptyCell, RuntimeError}
 import polynote.kernel.util.{CellContext, KernelContext, KernelReporter}
-import polynote.messages.CellID
+import org.log4s.getLogger
 
 import scala.annotation.tailrec
-import scala.collection.immutable.{ListMap, Queue}
+import scala.collection.immutable.ListMap
 import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFile}
 import scala.tools.nsc.interactive.Global
 
@@ -29,6 +27,8 @@ class ScalaSource[G <: Global](
 ) {
 
   import global.{Tree, atPos}
+
+  private val logger = getLogger
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
 
@@ -59,13 +59,20 @@ class ScalaSource[G <: Global](
     }
   }
 
-  private def forcePos(pos: Position, tree: Tree): Tree = {
+  private def ensurePositions(tree: Tree): Position = {
+    val source = tree.pos.source
+    val endPos = tree.pos.end
+    val range = new RangePosition(source, 0, 0, endPos)
+    ensurePositions(source, tree, range)
+  }
+
+  private def forcePos[T <: global.Tree](pos: Position, tree: T): T = {
     val transformer = new global.Transformer {
       override def transform(tree: global.Tree): global.Tree = {
         super.transform(tree).setPos(pos)
       }
     }
-    transformer.transform(tree)
+    transformer.transform(tree).asInstanceOf[T]
   }
 
   private def reassignThis(to: global.Tree)(tree: global.Tree): global.Tree = {
@@ -76,6 +83,17 @@ class ScalaSource[G <: Global](
       }
     }
     transformer.transform(tree)
+  }
+
+  // little helper for deep copying trees
+  def deepCopyTree(t: Tree): Tree = {
+    val treeDuplicator = new global.Transformer {
+      // by default Transformers don’t copy trees which haven’t been modified,
+      // so we need to use use strictTreeCopier
+      override val treeCopy: global.TreeCopier = global.newStrictTreeCopier
+    }
+
+    treeDuplicator.transform(t)
   }
 
   val cellName: String = ScalaSource.nameFor(cellContext)
@@ -179,14 +197,11 @@ class ScalaSource[G <: Global](
           atPos(beginning)(global.Block(
             atPos(beginning)(global.PrimarySuperCall(ListOfNil)), atPos(beginning)(global.gen.mkSyntheticUnit()))))
 
-      val usedIdents = trees.flatMap {
-        tree => tree.collect {
-          case global.Ident(name) => name.toString
-        }
-      }.toSet
-
       // import everything imported by previous cells...
-      val directImports: List[global.Tree] = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]])
+      val (directImports: List[global.Tree], localImports: List[global.Tree]) = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]]).partition {
+        // basically, differentiates `import org.apache.spark....` from `val spark = ???; import spark.implicits._`
+        case global.Import(expr, _) => expr.tpe.prefixChain.last.typeSymbol.hasPackageFlag
+      }
 
       //... and also import all public declarations from previous cells
       val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
@@ -194,23 +209,18 @@ class ScalaSource[G <: Global](
           // grab this source's compiled module
           val moduleSym = next.compiledModule.right.get.asModule
 
-          // grab all the non-private members declared in the module
-          accum ++ next.decls.right.get.map {
+          // grab all the non-private, non-constructor members declared in the module
+          accum ++ next.decls.right.get.filterNot(_.isConstructor).map {
             decl =>
               // Mapping with decl's name to clobber duplicates, keep track of decl Name and the Module it came from
               decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.asInstanceOf[global.Symbol])
           }.toMap
         }
-//        TODO: can't do this filtering so easily - would have to wrap plainly, typecheck, then do filtering and re-wrap
-//        .filter {
-//          case (nameStr, (module, sym)) => (usedIdents contains nameStr) || module.isImplicit
-//        }
         .toList.groupBy(_._2._1).flatMap {
           case (module, imports) =>
-            val localValName = global.freshTermName(module.name.toString + "$INSTANCE")(global.currentFreshNameCreator)
-            val localVal = q"val $localValName = $module.INSTANCE"
-            localVal +: imports.map {
-              case (_, (_, sym)) => q"import $localValName.${sym.name}"
+            imports.map {
+              case (_, (_, sym)) =>
+                q"import ${module.name}.INSTANCE.${sym.name}"
             }
         }.toList
 
@@ -223,7 +233,8 @@ class ScalaSource[G <: Global](
       val wrappedSource = atPos(range) {
         global.PackageDef(
           atPos(beginning)(global.Ident(global.TermName(notebookPackage))),
-          directImports.map(forcePos(beginning, _)).map(global.resetAttrs) ::: List(
+          directImports.map(forcePos(beginning, _)).map(global.resetAttrs) :::
+          List(
             atPos(range) {
               global.ClassDef(
                 global.Modifiers(),
@@ -232,9 +243,10 @@ class ScalaSource[G <: Global](
                 atPos(range) {
                   global.Template(
                     List(atPos(beginning)(scalaDot(global.typeNames.AnyRef)), atPos(beginning)(scalaDot(global.typeNames.Serializable))), // extends AnyRef with Serializable
-                    atPos(beginning)(global.noSelfType.copy()),
-                    atPos(beginning)(constructor) ::
+                    atPos(beginning)(global.noSelfType),
+                    forcePos(beginning, constructor) ::
                       impliedImports.map(atPos(beginning)) :::
+                      localImports.map(forcePos(beginning, _)).map(global.resetAttrs) :::
                       prepend.toList.flatten.asInstanceOf[List[global.Tree]].map(forcePos(beginning, _)) :::
                       trees)
                 })
@@ -246,8 +258,8 @@ class ScalaSource[G <: Global](
                 atPos(end) {
                   global.Template(
                     List(atPos(end)(scalaDot(global.typeNames.AnyRef))),
-                    atPos(end)(global.noSelfType.copy()),
-                    atPos(end)(constructor) :: atPos(end)(q"val INSTANCE = new ${moduleName.toTypeName}") :: Nil
+                    atPos(end)(global.noSelfType),
+                    forcePos(end, constructor) :: atPos(end)(q"val INSTANCE = new ${moduleName.toTypeName}") :: Nil
                   )
                 }
               )
@@ -264,7 +276,7 @@ class ScalaSource[G <: Global](
     }
   }
 
-  private lazy val compileUnit: Either[Throwable, global.CompilationUnit] = wrapped.right.map {
+  private lazy val compileUnit: Either[Throwable, global.RichCompilationUnit] = wrapped.right.map {
     tree =>
       val sourceFile = CellSourceFile(cellName)
       val unit = new global.RichCompilationUnit(sourceFile) //new global.CompilationUnit(CellSourceFile(id))
@@ -274,12 +286,239 @@ class ScalaSource[G <: Global](
       unit
   }
 
+  // compiled unit but this time with all our fancy substitutions to help prevent serialization issues
+  lazy val compileUnitWithSubstitutions: Either[Throwable, global.RichCompilationUnit] = compileUnit.right.flatMap {
+    unit =>
+      import global.Quasiquote
+
+      logger.debug(s"*********** START pre-processed cell ${moduleName} ********** ")
+      logger.debug(unit.body.toString)
+      logger.debug(s"*********** END pre-processed cell ${moduleName} ********** ")
+
+      Either.catchNonFatal {
+        // first step is lifting up all class definitions and their companion objects (if present) to the package level
+        // this makes things easier because then there are no inner classes around and we can make sure users can't
+        // close over the whole world in their classes.
+
+        // so, we'll first collect the names of the classes so we can find companion objects
+        val classes: Map[String, global.Tree] = unit.body match {
+          case global.PackageDef(_, stats) =>
+            stats.collect {
+              case global.ClassDef(_, name, _, tmpl) if name.toString == moduleName.toString =>
+                tmpl match {
+                  case global.Template(_, _, body) =>
+                    body.collect {
+                      case c: global.ClassDef => c.name.toString -> c
+                    }
+                }
+            }.flatten.toMap
+        }
+
+        // and now we can find companion objects
+        val companionObjects: Map[String, global.Tree] = unit.body match {
+          case global.PackageDef(_, stats) =>
+            stats.collect {
+              case global.ClassDef(_, name, _, tmpl) if name.toString == moduleName.toString =>
+                tmpl match {
+                  case global.Template(_, _, body) =>
+                    body.collect {
+                      case o: global.ModuleDef if classes.contains(o.name.toString) => o.name.toString -> o
+                    }
+                }
+            }.flatten.toMap
+        }
+
+        // ok, now we know what we're dealing with! Let's lift these guys up to the package level.
+        val liftedTree = unit.body match {
+          case pkg @ global.PackageDef(_, stats) =>
+            pkg.copy(stats = stats.flatMap {
+              case cls @ global.ClassDef(_, name, _, tmpl) if name.toString == moduleName.toString =>
+                // remove the unlifted classes and objects
+                val newClass = cls.copy(impl = tmpl match {
+                  case global.Template(_, _, body) =>
+                    tmpl.copy(body = body.filter {
+                      // all classdefs have been accounted for
+                      case _: global.ClassDef => false
+                      // only remove companion objects
+                      case global.ModuleDef(_, n, _) => !companionObjects.contains(n.toString)
+                      // the rest is ok
+                      case _ => true
+                    }).setPos(tmpl.pos)
+                }).setPos(cls.pos)
+
+                // insert the classes and their companion objects. They go before the cell class definition.
+                val lifted: List[global.Tree] = classes.flatMap {
+                  case (n, c) =>
+                    c :: companionObjects.get(n).toList
+                }.map(forcePos(new RangePosition(cls.pos.source, cls.pos.start, cls.pos.start, cls.pos.start), _)).toList
+
+                lifted :+ newClass
+
+              case other => List(other)
+            }).setPos(pkg.pos)
+        }
+
+        unit.body = liftedTree
+        global.unitOfFile.put(unit.source.file, unit) // make sure to update
+
+        // so there's one more thing we need to consider. Apparently, case classes can't handle being put through the
+        // typer twice (and we can't roll back the changes that the typer does to them...) so, what we'll do here is
+        // copy any case classes we have in the tree before we type it.
+        // later, we'll sub the typed case class for the untyped case class so it can go through the typer again happily.
+        // we have to do the same thing for their companion objects as well.
+        val caseClasses = classes.collect {
+          case (k, cls: global.ClassDef) if cls.mods.isCase => k -> deepCopyTree(cls)
+        }
+        // we also need to keep track of any user-defined companion objects there might be, so that we can substitute them too.
+        val caseClassCompanionObjects = companionObjects.collect {
+          case (k, o: global.ModuleDef) if caseClasses.contains(o.name.toString) => k -> deepCopyTree(o)
+        }
+
+        // type the tree so we can reify implicits and all that nice stuff.
+        val typedPkg = reporter.attempt {
+          val run = new global.Run()
+          global.globalPhase = run.namerPhase // make sure globalPhase matches run phase
+          run.namerPhase.asInstanceOf[global.GlobalPhase].apply(unit)
+          global.globalPhase = run.typerPhase // make sure globalPhase matches run phase
+          run.typerPhase.asInstanceOf[global.GlobalPhase].apply(unit)
+          global.exitingTyper(unit.body)
+        } match {
+          case Right(t) => t
+          case Left(err) => throw err
+        }
+
+        // now that we've typed it all up we can look for references to previous cells.
+        val prevCellNames = previousSources.map(_.compiledModule.right.get.asModule.name)
+        val usedIdents = typedPkg.collect {
+          case t @ global.Select(global.Select(qualifier: global.Ident, global.TermName("INSTANCE")), name) if prevCellNames.contains(qualifier.name) =>
+            name.toString -> t
+        }.toMap
+
+        // now, find all referenced decls from previous cells and generate proper imports and proxy variables (to avoid closing over the whole cell if possible)
+        val importAndProxyFinder = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
+          (accum, next) =>
+            // grab this source's compiled module
+            val moduleSym = next.compiledModule.right.get.asModule
+
+            // grab all the non-private members declared in the module
+            accum ++ next.decls.right.get.map {
+              decl =>
+                // Mapping with decl's name to clobber duplicates, keep track of decl Name and the Module it came from
+                decl.name.toString -> (moduleSym.asInstanceOf[global.ModuleSymbol], decl.asInstanceOf[global.Symbol])
+            }.toMap
+        }.filter {
+          case (nameStr, (_, _)) => usedIdents contains nameStr
+        }.groupBy(_._2._1).toList.map {
+          case (module, imports) =>
+
+            // for each module, we need to generate:
+            //   1. new imports and proxy variable definitions
+            //   2. substitutions for existing variables
+
+            // lazy to avoid needlessly allocating a fresh term name unless we need to
+            lazy val moduleProxyName = global.freshTermName(module.name.toString + "$PROXY$INSTANCE")(global.currentFreshNameCreator)
+            lazy val moduleProxy = q"private val $moduleProxyName = $module.INSTANCE"
+
+            // we only want to insert the module proxy if it's needed. We'd rather not if we can help it, because that
+            // way we avoid closing over that entire cell.
+            def getSymFromModuleProxy(sym: global.Symbol): Boolean = sym.isSourceMethod || sym.isClass
+
+            val moduleProxyNeeded = imports.exists {
+              case (_, (_, sym)) => getSymFromModuleProxy(sym)
+            }
+
+            val maybeModuleProxy = if (moduleProxyNeeded) List(moduleProxy) else Nil
+
+            val (newTrees, substitutions) = imports.toList.map {
+              case (_, (_, sym)) =>
+                if (getSymFromModuleProxy(sym)) { // if it's a method/class, we'll rewrite that reference to point to the proxied
+                  (Nil, sym.name.toString -> q"$moduleProxyName.${sym.name.toTermName}")
+                } else { // otherwise, try to proxy it directly
+                  val proxyName = global.freshTermName(s"${module.name.toString}$$PROXY$$${sym.name.toString}$$")(global.currentFreshNameCreator)
+                  (List(q"private val $proxyName = $module.INSTANCE.${sym.name.toTermName}"), sym.name.toString -> global.Ident(proxyName.toString))
+                }
+            }.unzip
+
+            (maybeModuleProxy ::: newTrees.flatten, substitutions.toMap)
+        }
+
+        val (unzippedNewTrees, unzippedSubstitutions) = importAndProxyFinder.unzip
+        val newProxyTrees = unzippedNewTrees.flatten
+        val proxySubstitutions = unzippedSubstitutions.flatten.toMap
+
+        // we replace references to previous cells with a reference to the proxy name instead.
+        val substituter = new global.Transformer {
+          override def transform(tree: global.Tree): global.Tree = tree match {
+            case s @ global.Select(global.Select(_, global.TermName("INSTANCE")), name) if usedIdents.contains(name.toString) =>
+              val replacement = proxySubstitutions.get(name.toString) match {
+                case Some(s: global.Select) =>
+                  forcePos(tree.pos, s)
+                case Some(global.Ident(n)) =>
+                  forcePos(tree.pos, q"${n.toTermName}")
+                case _ => tree
+              }
+              super.transform(replacement)
+
+            case _ =>
+              super.transform(tree)
+          }
+        }
+        val proxiedPkg = substituter.transform(typedPkg)
+
+        // ok, now we need to do some cleanup.
+        //   * remove the cell imports we added in the wrapping stage and replace them with our proxies.
+        //   * replace the typed case class definitions with the original, fresh defs
+        //   * remove the auto-generated companion object (if there was a user-defined companion object, we replace it)
+        // the whole thing is a little ugly because we lose position information when we use copy()
+        val cleanedPkg = proxiedPkg match {
+          case pkg @ global.PackageDef(_, stats) =>
+            pkg.copy(stats = stats.flatMap {
+              // clean the cell imports
+              case cls @ global.ClassDef(_, name, _, tmpl) if name.toString == moduleName.toString =>
+                List(cls.copy(impl = tmpl match {
+                  case global.Template(_, _, body) =>
+                    val cleanedBody = body.flatMap {
+                      case global.Import(global.Select(_, global.TermName("INSTANCE")), _) => Nil
+                      case other => List(other)
+                    }
+                    tmpl.copy(body = newProxyTrees ++ cleanedBody).setPos(tmpl.pos)
+                }).setPos(cls.pos))
+
+              // replace case classes
+              case caseCls @ global.ClassDef(mods, name, _, _) if mods.isCase =>
+                List(caseClasses(name.toString))
+
+              // remove or (if user-defined) replace companion objects
+              case o @ global.ModuleDef(mods, name, _) if caseClasses.isDefinedAt(name.toString) =>
+                caseClassCompanionObjects.get(name.toString).toList
+
+              case other => List(other)
+            }).setPos(pkg.pos)
+        }
+
+        // we manipulated the tree a bunch, so let's run this again.
+        val positionedPkg = global.resetAttrs(cleanedPkg)
+        ensurePositions(positionedPkg)
+        val repositionedPkg = global.resetAttrs(positionedPkg) // for some reason we need to do this again...
+
+        unit.body = repositionedPkg // repositionedPkg
+
+        logger.debug(s"*********** START post-processed cell ${moduleName} ********** ")
+        logger.debug(unit.body.toString)
+        logger.debug(s"*********** END post-processed cell ${moduleName} ********** ")
+
+        unit
+      }
+  }
+
   // just type the tree – doesn't advance to subsequent phases (for completions etc)
   lazy val quickTyped: Either[Throwable, global.Tree] = for {
     unit <- compileUnit
     tree <- Either.catchNonFatal {
       val run = new global.Run()
+      global.globalPhase = run.namerPhase // make sure globalPhase matches run phase
       run.namerPhase.asInstanceOf[global.GlobalPhase].apply(unit)
+      global.globalPhase = run.typerPhase // make sure globalPhase matches run phase
       run.typerPhase.asInstanceOf[global.GlobalPhase].apply(unit)
       global.exitingTyper(unit.body)
     }
@@ -375,7 +614,13 @@ class ScalaSource[G <: Global](
         for {
           context    <- getContext(tree)
         } yield global.NoType ->
-          (context.scope.filter(_.name.startsWith(name)).toList ++ context.imports.flatMap(_.allImportedSymbols.filter(_.name.startsWith(name))))
+          (context.scope.filter(_.name.startsWith(name)).toList
+            ++ context.imports.flatMap(_.allImportedSymbols.filter(_.name.startsWith(name))
+            ++ context.enclClass.scope.filter { // need to check whether this is a top-level class / object
+              sym =>
+                !previousSources.exists(_.moduleName == sym.name) && // but we don't want to complete the cell classes themselves!
+                  sym.name.startsWith(name)
+          }))
 
       // this works pretty well. Really helps with imports. But is there a way we can index classes & auto-import them like IntelliJ does?
       case global.Import(qual: global.Tree, List(name)) if !qual.isErrorTyped =>
@@ -395,7 +640,7 @@ class ScalaSource[G <: Global](
     for {
       treeOpt <- typedTreeAt(offset)
       results <- treeOpt.fold[Either[Throwable, (global.Type, List[global.Symbol])]](Right(global.NoType -> Nil))(completionResults)
-    } yield results
+    } yield (results._1, results._2.distinct)
   }
 
 
@@ -442,15 +687,20 @@ class ScalaSource[G <: Global](
 
   lazy val compiledModule: Either[Throwable, global.Symbol] = successfulParse.flatMap {
     _ =>
-      val run = new global.Run()
-      compileUnit.flatMap { unit =>
+      compileUnitWithSubstitutions.flatMap { unit =>
+        val run = new global.Run()
         withCompiler {
           unit.body = global.resetAttrs(unit.body)
           reporter.attempt(run.compileUnits(List(unit), run.namerPhase))
         }.flatMap(identity).flatMap {
           _ =>
             withCompiler {
-              unit.body.asInstanceOf[global.PackageDef].stats(1).symbol.companionModule
+              // we return the companion object of the cell class for inspection by the scala interpreter.
+              val companion: global.ClassDef = unit.body.asInstanceOf[global.PackageDef].stats.collectFirst[global.ClassDef] {
+                case cls @ global.ClassDef(_, name, _, _) if cls.symbol.isModuleClass && name.toString == moduleName.toString => cls
+              }.getOrElse(throw RuntimeError(new Exception(s"Unable to find companion object for $moduleName!!! Something is very wrong!")))
+
+              companion.symbol.companionModule
             }
         }
       }.leftFlatMap {
