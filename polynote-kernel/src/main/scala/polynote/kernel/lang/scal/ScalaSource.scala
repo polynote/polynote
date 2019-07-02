@@ -4,10 +4,10 @@ import cats.data.Ior
 import cats.syntax.either._
 import polynote.kernel.EmptyCell
 import polynote.kernel.util.{CellContext, KernelContext, KernelReporter}
+import org.log4s.getLogger
 
 import scala.annotation.tailrec
 import scala.collection.immutable.ListMap
-import scala.collection.mutable
 import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFile}
 import scala.tools.nsc.interactive.Global
 
@@ -27,6 +27,8 @@ class ScalaSource[G <: Global](
 ) {
 
   import global.{Tree, atPos}
+
+  private val logger = getLogger
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
 
@@ -289,6 +291,10 @@ class ScalaSource[G <: Global](
     unit =>
       import global.Quasiquote
 
+      logger.debug(s"*********** START pre-processed cell ${moduleName} ********** ")
+      logger.debug(unit.body.toString)
+      logger.debug(s"*********** END pre-processed cell ${moduleName} ********** ")
+
       Either.catchNonFatal {
         // first step is lifting up all class definitions and their companion objects (if present) to the package level
         // this makes things easier because then there are no inner classes around and we can make sure users can't
@@ -383,16 +389,10 @@ class ScalaSource[G <: Global](
 
         // now that we've typed it all up we can look for references to previous cells.
         val prevCellNames = previousSources.map(_.compiledModule.right.get.asModule.name)
-        val usedIdents = scala.collection.mutable.HashMap.empty[String, global.Tree]
-        val cellRefFinder = new global.Transformer {
-          override def transform(tree: global.Tree): global.Tree = tree match {
-            case t @ global.Select(global.Select(qualifier: global.Ident, global.TermName("INSTANCE")), name) if prevCellNames.contains(qualifier.name) =>
-              usedIdents += name.toString -> t
-              super.transform(t)
-            case _ => super.transform(tree)
-          }
-        }
-        cellRefFinder.transform(typedPkg)
+        val usedIdents = typedPkg.collect {
+          case t @ global.Select(global.Select(qualifier: global.Ident, global.TermName("INSTANCE")), name) if prevCellNames.contains(qualifier.name) =>
+            name.toString -> t
+        }.toMap
 
         // now, find all referenced decls from previous cells and generate proper imports and proxy variables (to avoid closing over the whole cell if possible)
         val importAndProxyFinder = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
@@ -429,7 +429,7 @@ class ScalaSource[G <: Global](
 
             val maybeModuleProxy = if (moduleProxyNeeded) List(moduleProxy) else Nil
 
-            val (newTrees, substitutions) = imports.map {
+            val (newTrees, substitutions) = imports.toList.map {
               case (_, (_, sym)) =>
                 if (getSymFromModuleProxy(sym)) { // if it's a method/class, we'll rewrite that reference to point to the proxied
                   (Nil, sym.name.toString -> q"$moduleProxyName.${sym.name.toTermName}")
@@ -439,7 +439,7 @@ class ScalaSource[G <: Global](
                 }
             }.unzip
 
-            (maybeModuleProxy ::: newTrees.flatten.toList, substitutions.toMap)
+            (maybeModuleProxy ::: newTrees.flatten, substitutions.toMap)
         }
 
         val (unzippedNewTrees, unzippedSubstitutions) = importAndProxyFinder.unzip
@@ -502,6 +502,10 @@ class ScalaSource[G <: Global](
         val repositionedPkg = global.resetAttrs(positionedPkg) // for some reason we need to do this again...
 
         unit.body = repositionedPkg // repositionedPkg
+
+        logger.debug(s"*********** START post-processed cell ${moduleName} ********** ")
+        logger.debug(unit.body.toString)
+        logger.debug(s"*********** END post-processed cell ${moduleName} ********** ")
 
         unit
       }
