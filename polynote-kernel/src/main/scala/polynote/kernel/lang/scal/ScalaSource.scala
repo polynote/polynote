@@ -620,7 +620,9 @@ class ScalaSource[G <: Global](
             importInfo => importInfo.allImportedSymbols.filter(sym => !sym.isImplicit && sym.isPublic && sym.name.startsWith(name))
           }
 
-          val fromScopes = context.enclosingContextChain.filter(_.scope.nonEmpty).flatMap {
+          val enclScope = context.enclClass.enclosingContextChain.dropWhile(!_.scope.exists(_ != null)).headOption
+
+          val fromScopes = enclScope.toList.flatMap {
             c => c.scope.filter(sym => sym.name.startsWith(name) && !sym.decodedName.contains('$'))
           }.distinct
 
