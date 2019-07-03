@@ -180,9 +180,9 @@ class ScalaSource[G <: Global](
         case poss => poss.max
       }
 
-      val range = new RangePosition(source, 0, 0, endPos)
-      val beginning = new RangePosition(source, 0, 0, 0)
-      val end = new RangePosition(source, endPos, endPos, endPos)
+      val range = Position.range(source, 0, 0, endPos)
+      val beginning = Position.transparent(source, -1, -1, -1)
+      val end = Position.transparent(source, endPos, endPos, endPos)
 
       import global.Quasiquote
       import global.treeBuilder.scalaDot
@@ -540,7 +540,7 @@ class ScalaSource[G <: Global](
       unit <- compileUnit
       tree <- quickTyped
     } yield {
-      val trees = treesAtPos(tree, Position.offset(unit.source, offset))
+      val trees = treesAtPos(tree, Position.offset(unit.source, offset)).filter(_.pos.isOpaqueRange)
       trees.find {
         tree => tree.tpe != null && tree.tpe != global.NoType
       } orElse trees.headOption
@@ -613,14 +613,26 @@ class ScalaSource[G <: Global](
       case global.Ident(name: global.Name) =>
         for {
           context    <- getContext(tree)
-        } yield global.NoType ->
-          (context.scope.filter(_.name.startsWith(name)).toList
-            ++ context.imports.flatMap(_.allImportedSymbols.filter(_.name.startsWith(name))
-            ++ context.enclClass.scope.filter { // need to check whether this is a top-level class / object
-              sym =>
-                !previousSources.exists(_.moduleName == sym.name) && // but we don't want to complete the cell classes themselves!
-                  sym.name.startsWith(name)
-          }))
+          results    <- results
+        } yield {
+
+          val imports = context.imports.flatMap {
+            importInfo => importInfo.allImportedSymbols.filter(sym => !sym.isImplicit && sym.isPublic && sym.name.startsWith(name))
+          }
+
+          val enclScope = context.enclClass.enclosingContextChain.dropWhile(!_.scope.exists(_ != null)).headOption
+
+          val fromScopes = enclScope.toList.flatMap {
+            c => c.scope.filter(sym => sym.name.startsWith(name) && !sym.decodedName.contains('$'))
+          }.distinct
+
+          global.NoType ->
+            (context.scope.filter(_.name.startsWith(name)).toList
+              ++ results._2.filter(_.symbol != global.NoSymbol).map(_.symbol)
+              ++ fromScopes
+              ++ imports)
+
+        }
 
       // this works pretty well. Really helps with imports. But is there a way we can index classes & auto-import them like IntelliJ does?
       case global.Import(qual: global.Tree, List(name)) if !qual.isErrorTyped =>

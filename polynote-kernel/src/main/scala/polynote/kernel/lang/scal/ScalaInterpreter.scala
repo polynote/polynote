@@ -314,13 +314,15 @@ class ScalaInterpreter(
         val symType = sym.typeSignatureIn(typ)
         val tParams = TinyList(sym.typeParams.map(tp => TinyString(tp.nameString)))
         val params = TinyList {
-          for {
-            pl <- sym.paramLists
-          } yield TinyList {
+          {
             for {
-              p <- pl
-            } yield (TinyString(p.name.decodedName.toString), ShortString(formatType(p.typeSignatureIn(symType))))
-          }
+              pl <- sym.paramLists
+            } yield TinyList {
+              for {
+                p <- pl
+              } yield (TinyString(p.name.decodedName.toString), ShortString(formatType(p.typeSignatureIn(symType))))
+            }
+          }.distinct
         }
         val symTypeStr = if (sym.isMethod) formatType(symType.finalResultType) else ""
         Completion(TinyString(name), tParams, params, ShortString(symTypeStr), completionType(sym))
