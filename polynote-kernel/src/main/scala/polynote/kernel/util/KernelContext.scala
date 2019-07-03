@@ -6,6 +6,7 @@ import java.util.concurrent.{ExecutorService, Executors, ThreadFactory}
 
 import cats.effect.IO
 import cats.syntax.either._
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.messages.truncateTinyString
 import polynote.runtime.{ReprsOf, StringRepr, ValueRepr}
 
@@ -16,7 +17,6 @@ import scala.reflect.runtime.{universe => ru}
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
 import scala.tools.reflect.ToolBox
-import org.log4s.{Logger, getLogger}
 import polynote.kernel.KernelStatusUpdate
 import polynote.kernel.lang.scal.CellSourceFile
 
@@ -26,7 +26,7 @@ import scala.concurrent.ExecutionContext
 final case class KernelContext(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
   import global.{Type, Symbol}
 
-  private val logger = getLogger
+  private val logger = new PolyLogger
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
 

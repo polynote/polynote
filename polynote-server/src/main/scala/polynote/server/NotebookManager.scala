@@ -3,11 +3,10 @@ package polynote.server
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
-import org.log4s.{Logger, getLogger}
 import cats.Monad
 import cats.effect.{ContextShift, Fiber, IO}
 import cats.effect.concurrent.Semaphore
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.OptionEither
 import polynote.server.repository.NotebookRepository
@@ -42,7 +41,7 @@ class IONotebookManager(
   private val notebooks = new ConcurrentHashMap[String, SharedNotebook[IO]]
   private val loadingNotebook = Semaphore[IO](1).unsafeRunSync()
 
-  protected val logger: Logger = getLogger
+  protected val logger = new PolyLogger
 
   private def writeChanges(notebook: SharedNotebook[IO]): IO[Fiber[IO, Unit]] = notebook.versions.map(_._2).evalMap {
     updated => repository.saveNotebook(notebook.path, updated)

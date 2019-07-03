@@ -14,7 +14,7 @@ import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
 import WebSocketFrame._
-import org.log4s.getLogger
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel._
 import polynote.kernel.util.{OptionEither, ReadySignal, WindowBuffer}
 import polynote.messages._
@@ -31,7 +31,7 @@ class SocketSession(
 ) {
 
   private val name: String = "Anonymous"  // TODO
-  private[this] val logger = getLogger
+  private[this] val logger = new PolyLogger
   private val loadingNotebook = Semaphore[IO](1).unsafeRunSync()
   private val notebooks = new ConcurrentHashMap[String, NotebookRef[IO]]()
 

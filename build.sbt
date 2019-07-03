@@ -68,7 +68,6 @@ val `polynote-kernel` = project.settings(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
     "org.typelevel" %% "cats-effect" % versions.catsEffect,
     "co.fs2" %% "fs2-io" % versions.fs2,
-    "org.log4s" %% "log4s" % "1.6.1",
     "org.scodec" %% "scodec-core" % "1.10.3",
     "io.circe" %% "circe-yaml" % "0.9.0",
     "io.circe" %% "circe-generic" % "0.10.0",

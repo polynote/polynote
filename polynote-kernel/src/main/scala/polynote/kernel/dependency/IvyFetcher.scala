@@ -7,39 +7,34 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.{ContextShift, IO}
+import cats.instances.list._
 import cats.syntax.apply._
 import cats.syntax.parallel._
-import cats.syntax.either._
-import cats.syntax.traverse._
-import cats.instances.list._
-import cats.instances.either._
-import polynote.config.{DependencyConfigs, RepositoryConfig, ivy, maven}
-import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
-import polynote.kernel.util.Publish
 import org.apache.ivy.Ivy
-import org.apache.ivy.core.cache.{CacheDownloadOptions, RepositoryCacheManager}
 import org.apache.ivy.core.module.descriptor.{Artifact, DefaultDependencyDescriptor, DefaultModuleDescriptor}
 import org.apache.ivy.core.module.id.ModuleRevisionId
-import org.apache.ivy.core.report.{ArtifactDownloadReport, DownloadReport, DownloadStatus}
+import org.apache.ivy.core.report.DownloadReport
 import org.apache.ivy.core.resolve.{DownloadOptions, ResolveOptions}
 import org.apache.ivy.core.settings.IvySettings
 import org.apache.ivy.plugins.namespace.NameSpaceHelper
 import org.apache.ivy.plugins.repository.file.FileResource
 import org.apache.ivy.plugins.repository.url.URLResource
-import org.apache.ivy.plugins.repository.{ArtifactResourceResolver, Resource, ResourceDownloader, TransferEvent, TransferListener}
+import org.apache.ivy.plugins.repository._
 import org.apache.ivy.plugins.resolver.util.ResolvedResource
 import org.apache.ivy.plugins.resolver.{CacheResolver, ChainResolver, IBiblioResolver, URLResolver}
 import org.apache.ivy.util.filter.{Filter => IvyFilter}
-import org.log4s.getLogger
+import polynote.config.{DependencyConfigs, PolyLogger, RepositoryConfig, ivy, maven}
+import polynote.kernel.util.Publish
+import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 
-import scala.concurrent.ExecutionContext
 import scala.collection.JavaConverters._
+import scala.concurrent.ExecutionContext
 
 class IvyFetcher extends URLDependencyFetcher {
   protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
 
-  private val logger = getLogger
+  private val logger = new PolyLogger
 
   private val settings = new IvySettings()
   private val cachePath = settings.getDefaultCache.toPath

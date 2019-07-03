@@ -7,14 +7,15 @@ import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef}
 import org.scalatest.Assertions
 import org.scalatest.exceptions.TestFailedException
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.messages.Notebook
 
 import scala.collection.mutable.ListBuffer
 import scala.collection.immutable.{Queue => ScalaQueue}
 
 class LocalTestTransport(implicit contextShift: ContextShift[IO]) extends Transport[LocalTestTransportServer] {
-  private val logger = org.log4s.getLogger
+
+  private val logger = new PolyLogger
 
   val log: ListBuffer[Either[RemoteRequest, RemoteResponse]] = new ListBuffer[Either[RemoteRequest, RemoteResponse]]
 

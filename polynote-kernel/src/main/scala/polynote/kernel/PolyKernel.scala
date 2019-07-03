@@ -14,9 +14,8 @@ import cats.syntax.functor._
 import cats.syntax.traverse._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue, SignallingRef}
-import org.log4s.{Logger, getLogger}
 import polynote.buildinfo.BuildInfo
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.lang.scal.{ScalaInterpreter, ScalaSource}
@@ -41,7 +40,7 @@ class PolyKernel private[kernel] (
   config: PolynoteConfig
 ) extends KernelAPI[IO] {
 
-  protected val logger: Logger = getLogger
+  protected val logger: PolyLogger = new PolyLogger
 
   protected implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
 

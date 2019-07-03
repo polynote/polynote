@@ -2,9 +2,9 @@ package polynote.kernel.lang.scal
 
 import cats.data.Ior
 import cats.syntax.either._
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel.{EmptyCell, RuntimeError}
 import polynote.kernel.util.{CellContext, KernelContext, KernelReporter}
-import org.log4s.getLogger
 
 import scala.annotation.tailrec
 import scala.collection.immutable.ListMap
@@ -28,7 +28,7 @@ class ScalaSource[G <: Global](
 
   import global.{Tree, atPos}
 
-  private val logger = getLogger
+  private val logger = new PolyLogger
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
 

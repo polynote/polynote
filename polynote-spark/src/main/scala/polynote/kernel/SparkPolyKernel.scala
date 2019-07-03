@@ -18,6 +18,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.thief.DAGSchedulerThief
+import org.log4s
 import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyFetcher
@@ -130,7 +131,7 @@ class SparkPolyKernel(
     if (sess.conf.get("spark.repl.class.outputDir") != outputPath.toString) {
       val realOutputPathStr = sess.conf.get("spark.repl.class.outputDir")
       // TODO: should have some way to push arbitrary user-facing messages (warnings etc) to the frontend
-      logger.warn(s"Spark session is shared with another notebook; changing compiler target directory to $realOutputPathStr. Dependencies are late-added, and shared with existing notebook sessions (this can cause problems!)")
+      logger.info(s"Spark session is shared with another notebook; changing compiler target directory to $realOutputPathStr. Dependencies are late-added, and shared with existing notebook sessions (this can cause problems!)")
 
       val dir = new PlainDirectory(new Directory(new File(realOutputPathStr)))
       realOutputPath.complete(dir).unsafeRunSync()

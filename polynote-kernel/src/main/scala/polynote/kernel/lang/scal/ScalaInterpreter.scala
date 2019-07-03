@@ -10,7 +10,7 @@ import cats.syntax.all._
 import cats.instances.list._
 import fs2.{Chunk, Stream}
 import fs2.concurrent.{Enqueue, Queue, Topic}
-import org.log4s.getLogger
+import polynote.config.PolyLogger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.lang.LanguageInterpreter
@@ -27,7 +27,7 @@ class ScalaInterpreter(
 ) extends LanguageInterpreter[IO] {
 
   import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime, formatType}
-  private val logger = getLogger
+  private val logger = new PolyLogger
 
   protected implicit val contextShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
 

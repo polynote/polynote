@@ -13,8 +13,7 @@ import cats.syntax.either._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import fs2.Stream
-import org.log4s.getLogger
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel
 import polynote.kernel.remote.SocketTransport.FramedSocket
 import polynote.kernel.util.{ReadySignal, SparkSubmitCommand}
@@ -84,7 +83,7 @@ class SocketTransportServer(
   timer: Timer[IO]
 ) extends TransportServer {
 
-  private val logger = getLogger
+  private val logger = new PolyLogger
 
   private val connectedChannel: TryableDeferred[IO, Either[Throwable, FramedSocket]] =
     Deferred.tryable[IO, Either[Throwable, FramedSocket]].unsafeRunSync()
@@ -141,8 +140,6 @@ class SocketTransportClient(channel: FramedSocket)(implicit contextShift: Contex
   private val shutdownSignal: ReadySignal = ReadySignal()
   private val requestStream = channel.bitVectors.through(decode.pipe[IO, RemoteRequest]).interruptWhen(shutdownSignal())
 
-  private val logger = org.log4s.getLogger
-
   def sendResponse(rep: RemoteResponse): IO[Unit] = for {
     bytes <- IO.fromEither(RemoteResponse.codec.encode(rep).toEither.leftMap(err => new RuntimeException(err.message)))
     _     <- channel.write(bytes)
@@ -164,7 +161,7 @@ class SocketTransport(
   implicit timer: Timer[IO]
 ) extends Transport[InetSocketAddress] {
 
-  private val logger = org.log4s.getLogger
+  private val logger = new PolyLogger
 
   private def openServerChannel: IO[ServerSocketChannel] = IO {
     ServerSocketChannel.open().bind(
@@ -212,7 +209,9 @@ object SocketTransport {
     * Deployment implementation which shells out to spark-submit
     */
   class DeploySubprocess extends Deploy {
-    private val logger = org.log4s.getLogger
+
+    private val logger = new PolyLogger
+
     override def deployKernel(transport: SocketTransport, config: PolynoteConfig, notebookConfig: NotebookConfig, serverAddress: InetSocketAddress)(implicit
       contextShift: ContextShift[IO]
     ): IO[DeployedProcess] = {

@@ -7,7 +7,6 @@
 #storage:
 #  dir: notebooks
 
-
 # Default repositories can be specified. Uncommenting the following lines would add four default repositories which are inherited by new notebooks.
 #repositories:
 #  - ivy:

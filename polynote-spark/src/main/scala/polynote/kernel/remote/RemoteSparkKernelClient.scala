@@ -9,7 +9,7 @@ import cats.syntax.either._
 import cats.syntax.functor._
 import fs2.{Chunk, Pipe, Stream}
 import fs2.concurrent.Queue
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel.util.{Publish, ReadySignal}
 import Publish.enqueueToPublish
 import polynote.kernel._
@@ -32,7 +32,7 @@ class RemoteSparkKernelClient(
   protected val timer: Timer[IO]
 ) extends Serializable {
 
-  private val logger = org.log4s.getLogger
+  private val logger = new PolyLogger
 
   private val myAddress = InetAddress.getLocalHost.getHostAddress
 
@@ -148,9 +148,9 @@ class RemoteSparkKernelClient(
 
 object RemoteSparkKernelClient extends IOApp with KernelLaunching {
 
-  private val logger = org.log4s.getLogger
-
   import scala.concurrent.ExecutionContext.Implicits.global
+
+  private val logger = new PolyLogger
 
   override protected def kernelFactory: KernelFactory[IO] = new SparkKernelFactory(dependencyFetchers)
 

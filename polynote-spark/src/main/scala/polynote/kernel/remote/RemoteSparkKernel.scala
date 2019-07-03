@@ -16,8 +16,7 @@ import cats.syntax.traverse._
 import cats.instances.list._
 import fs2.{Chunk, Stream}
 import fs2.concurrent.Queue
-import org.log4s.getLogger
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel._
 import polynote.kernel.util.{Publish, ReadySignal}
 import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Lazy, Notebook, NotebookUpdate, ShortString, Streaming, Updating}
@@ -45,7 +44,7 @@ class RemoteSparkKernel(
   private val requests = new ConcurrentHashMap[Int, Deferred[IO, Either[Throwable, RemoteResponse]]]()
   private val streamRequests = new ConcurrentHashMap[Int, ResultStreamRequest]()
 
-  private val logger = getLogger
+  private val logger = new PolyLogger
 
   /**
     * Send the given message, expecting the given response, and return an IO representing the response being received.

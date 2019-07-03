@@ -12,6 +12,7 @@ import cats.syntax.alternative._
 import cats.syntax.either._
 import fs2.Stream
 import fs2.concurrent.{Queue, Topic}
+import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel.lang.python.PythonInterpreter
 import polynote.kernel.lang.scal.ScalaInterpreter
