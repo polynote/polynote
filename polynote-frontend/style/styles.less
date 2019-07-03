@@ -1216,9 +1216,13 @@ body {
       border-right: 1px solid @ui-border;
     }
 
-    .cell-output-container {
+    .cell-output-block {
       grid-area: output;
-      display: block;
+      display: block; // must be block for performance reasons.
+    }
+
+    .cell-output-container {
+      display: grid;
     }
 
     .errors, .output {
