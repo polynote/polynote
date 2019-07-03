@@ -150,6 +150,10 @@ of the Polynote server process. This will be resolved by [this issue](https://gi
     
 ## Development tips
 
+### Debug logging
+
+To turn on debug logging, set the `POLYNOTE_DEBUG` env variable to `true` or run Polynote with `-Dpolynote.debug=true`. 
+
 ### UI development
 
 To watch UI assets and reload them after making changes, run Polynote with the `--watch` flag and then run:

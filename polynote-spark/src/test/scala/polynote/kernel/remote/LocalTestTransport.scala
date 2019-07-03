@@ -7,13 +7,15 @@ import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef}
 import org.scalatest.Assertions
 import org.scalatest.exceptions.TestFailedException
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.messages.Notebook
 
 import scala.collection.mutable.ListBuffer
 import scala.collection.immutable.{Queue => ScalaQueue}
 
 class LocalTestTransport(implicit contextShift: ContextShift[IO]) extends Transport[LocalTestTransportServer] {
+
+  private val logger = new PolyLogger
 
   val log: ListBuffer[Either[RemoteRequest, RemoteResponse]] = new ListBuffer[Either[RemoteRequest, RemoteResponse]]
 
@@ -33,7 +35,7 @@ class LocalTestTransport(implicit contextShift: ContextShift[IO]) extends Transp
     complete.complete(result).map(_ => isDone = true)
 
   def logReq(req: RemoteRequest): IO[Unit] = IO {
-    System.err.println(s"--> $req")
+    logger.info(s"--> $req")
     synchronized {
       if (runningExpectations) {
         val dequeued = expectation.dequeueOption
@@ -56,7 +58,7 @@ class LocalTestTransport(implicit contextShift: ContextShift[IO]) extends Transp
   }.handleErrorWith(err => finish(Left(err)))
 
   def logRep(rep: RemoteResponse): IO[Unit] = IO {
-    System.err.println(s"<-- $rep")
+    logger.info(s"<-- $rep")
     synchronized {
       if (runningExpectations) {
         val dequeued = expectation.dequeueOption

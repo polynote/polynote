@@ -2,7 +2,7 @@ package polynote.kernel.lang.scal
 
 import cats.data.Ior
 import cats.syntax.either._
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel.{EmptyCell, RuntimeError}
 import polynote.kernel.util.{CellContext, KernelContext, KernelReporter}
 
@@ -23,13 +23,12 @@ class ScalaSource[G <: Global](
   previousSources: List[ScalaSource[G]],
   notebookPackage: String,
   afterParse: => Ior[Throwable, List[G#Tree]],
-  config: PolynoteConfig,
   prepend: Option[List[G#Tree]] = None
 ) {
 
   import global.{Tree, atPos}
 
-  private val logger = config.logger
+  private val logger = new PolyLogger
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
 
@@ -763,13 +762,12 @@ object ScalaSource {
       previousSources.asInstanceOf[List[ScalaSource[kernelContext.global.type]]],
       notebookPackage,
       parsed,
-      kernelContext.config,
       prependParsed
     )
   }
 
   def fromTrees(kernelContext: KernelContext)(cellContext: CellContext, notebookPackage: String, trees: List[kernelContext.global.Tree]): ScalaSource[kernelContext.global.type] = {
-    new ScalaSource[kernelContext.global.type](kernelContext.global, cellContext, Nil, notebookPackage, Ior.right(trees), kernelContext.config)
+    new ScalaSource[kernelContext.global.type](kernelContext.global, cellContext, Nil, notebookPackage, Ior.right(trees))
   }
 
   private def nameFor(cell: CellContext): String = s"Cell${cell.id}"

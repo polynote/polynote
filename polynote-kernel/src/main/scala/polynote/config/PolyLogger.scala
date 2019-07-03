@@ -4,7 +4,8 @@ package polynote.config
   * Yeah I know another Logger class. Well, we need to log stuff too. And Spark is a total jerk and hijacks all the
   * logging and we don't want to deal with it. So, we're doing this and it'll work and it won't be a big pain in the apricot.
   */
-class PolyLogger(debug: Boolean) {
+class PolyLogger {
+  private val debug = sys.props.get("polynote.debug").orElse(sys.env.get("POLYNOTE_DEBUG")).exists(_.toBoolean)
   private val outStream = System.err
 
   def info(msg: String): Unit = outStream.println(msg)

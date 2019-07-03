@@ -14,7 +14,7 @@ import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
 import WebSocketFrame._
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel._
 import polynote.kernel.util.{OptionEither, ReadySignal, WindowBuffer}
 import polynote.messages._
@@ -25,14 +25,13 @@ import scala.collection.JavaConverters._
 
 class SocketSession(
   notebookManager: NotebookManager[IO],
-  oq: Queue[IO, Message],
-  config: PolynoteConfig)(implicit
+  oq: Queue[IO, Message])(implicit
   contextShift: ContextShift[IO],
   timer: Timer[IO]
 ) {
 
   private val name: String = "Anonymous"  // TODO
-  private[this] val logger = config.logger
+  private[this] val logger = new PolyLogger
   private val loadingNotebook = Semaphore[IO](1).unsafeRunSync()
   private val notebooks = new ConcurrentHashMap[String, NotebookRef[IO]]()
 
@@ -263,12 +262,11 @@ class SocketSession(
 object SocketSession {
 
   def apply(
-    notebookManager: NotebookManager[IO],
-    config: PolynoteConfig)(implicit
+    notebookManager: NotebookManager[IO])(implicit
     contextShift: ContextShift[IO],
     timer: Timer[IO]
   ): IO[SocketSession] = Queue.unbounded[IO, Message].map {
-    oq => new SocketSession(notebookManager, oq, config)
+    oq => new SocketSession(notebookManager, oq)
   }
 
 }

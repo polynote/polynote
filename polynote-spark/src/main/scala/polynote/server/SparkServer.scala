@@ -27,7 +27,7 @@ object SparkServer extends Server {
         val cmd = SparkSubmitCommand(config.spark).map {
           str => if (str contains " ") s""""$str"""" else str
         }.mkString(" ")
-        println(s"SparkSubmit: $cmd")
+        println(s"SparkSubmit: $cmd") // must be println because this stdout is what gets parsed by callers.
       } *> IO.pure(ExitCode.Success)
     case _ => super.run(args)
   }

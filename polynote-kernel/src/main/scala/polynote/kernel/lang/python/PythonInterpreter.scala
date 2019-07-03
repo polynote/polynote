@@ -12,6 +12,7 @@ import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import jep.python.{PyCallable, PyObject}
 import jep._
+import polynote.config.PolyLogger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
 import polynote.kernel.util._
@@ -25,7 +26,7 @@ import scala.reflect.{ClassTag, classTag}
 class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterpreter[IO] {
   import kernelContext.global
 
-  protected val logger = kernelContext.config.logger
+  protected val logger = new PolyLogger
 
   val predefCode: Option[String] = None
 

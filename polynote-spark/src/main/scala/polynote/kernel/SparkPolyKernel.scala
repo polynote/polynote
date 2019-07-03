@@ -193,7 +193,7 @@ object SparkPolyKernel {
       .map(new File(_))
       .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
 
-    val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader, config)
+    val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
 
     val kernel = new SparkPolyKernel(
       getNotebook,

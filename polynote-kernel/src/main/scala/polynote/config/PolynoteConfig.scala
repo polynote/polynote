@@ -31,16 +31,15 @@ final case class PolynoteConfig(
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,
-  spark: Map[String, String] = Map.empty,
-  debug: Boolean = false
-) {
-  lazy val logger: PolyLogger = new PolyLogger(debug)
-}
+  spark: Map[String, String] = Map.empty
+)
 
 
 object PolynoteConfig {
   implicit val encoder: ObjectEncoder[PolynoteConfig] = deriveEncoder
   implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder
+
+  private val logger = new PolyLogger
 
   def parse(content: String): Either[Throwable, PolynoteConfig] = yaml.parser.parse(content).flatMap(_.as[PolynoteConfig])
 
@@ -53,11 +52,7 @@ object PolynoteConfig {
       case _: MatchError =>
         IO.pure(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
       case _: FileNotFoundException =>
-        IO {
-          val conf = PolynoteConfig()
-          conf.logger.info(s"Configuration file $file not found; using default configuration")
-          conf
-        }
+        IO(logger.error(s"Configuration file $file not found; using default configuration")).as(PolynoteConfig())
       case err: Throwable => IO.raiseError(err)
     }
 

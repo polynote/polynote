@@ -6,7 +6,7 @@ import java.util.concurrent.{ExecutorService, Executors, ThreadFactory}
 
 import cats.effect.IO
 import cats.syntax.either._
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.messages.truncateTinyString
 import polynote.runtime.{ReprsOf, StringRepr, ValueRepr}
 
@@ -23,10 +23,10 @@ import polynote.kernel.lang.scal.CellSourceFile
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 
-final case class KernelContext(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader, config: PolynoteConfig) {
+final case class KernelContext(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
   import global.{Type, Symbol}
 
-  private val logger = config.logger
+  private val logger = new PolyLogger
 
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
 
@@ -230,9 +230,8 @@ object KernelContext {
   def default(
     dependencies: Map[String, List[(String, File)]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
-    extraClassPath: List[File],
-    config: PolynoteConfig
-  ): KernelContext = apply(dependencies, statusUpdates, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader, config)
+    extraClassPath: List[File]
+  ): KernelContext = apply(dependencies, statusUpdates, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader)
 
   def apply(
     dependencies: Map[String, List[(String, File)]],
@@ -240,8 +239,7 @@ object KernelContext {
     baseSettings: Settings,
     extraClassPath: List[File],
     outputDir: AbstractFile,
-    parentClassLoader: ClassLoader,
-    config: PolynoteConfig
+    parentClassLoader: ClassLoader
   ): KernelContext = {
 
     val settings = baseSettings.copy()
@@ -284,7 +282,7 @@ object KernelContext {
 
     val notebookClassLoader = genNotebookClassLoader(dependencies, extraClassPath, outputDir, parentClassLoader)
 
-    KernelContext(global, classPath, notebookClassLoader, config)
+    KernelContext(global, classPath, notebookClassLoader)
   }
 }
 

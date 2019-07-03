@@ -23,6 +23,8 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
 
   private implicit val executionContext: ExecutionContext = ExecutionContext.global  // TODO: use a real one
 
+  private val logger = new PolyLogger
+
   def serveFile(path: String, req: Request[IO], watchUI: Boolean)(implicit syncIO: Sync[IO]): IO[Response[IO]] = {
     if (watchUI) {
       val outputLoc = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/$path").toString
@@ -41,10 +43,10 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
 
   def route(notebookManager: NotebookManager[IO], config: PolynoteConfig, watchUI: Boolean)(implicit timer: Timer[IO]): HttpRoutes[IO] = {
     HttpRoutes.of[IO] {
-      case GET -> Root / "ws" => SocketSession(notebookManager, config).flatMap(_.toResponse)
+      case GET -> Root / "ws" => SocketSession(notebookManager).flatMap(_.toResponse)
       case req @ GET -> Root  => serveFile(indexFile, req, watchUI)
       case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) =>
-        IO(config.logger.info(s"Download request for ${req.pathInfo} from ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req, config)
+        IO(logger.info(s"Download request for ${req.pathInfo} from ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req, config)
       case req @ GET -> "notebook" /: _ => serveFile(indexFile, req, watchUI)
       case req @ GET -> (Root / "polynote-assembly.jar") =>
         StaticFile.fromFile[IO](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), executionContext).getOrElseF(NotFound())
@@ -54,7 +56,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
   }
 
   protected def splash: IO[Unit] = IO {
-    System.err.println(
+    logger.info(
       raw"""
            |
            |  _____      _                   _
@@ -88,7 +90,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
         val asURL = try new URL(loc) catch {
           case err: Throwable => getClass.getClassLoader.getResource(loc)
         }
-        System.err.println(s"Resetting log4j.configuration to $asURL")
+        logger.info(s"Resetting log4j.configuration to $asURL")
         System.setProperty("log4j.configuration", asURL.toString)
     }
   }
@@ -101,9 +103,9 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
   def run(args: List[String]): IO[ExitCode] = for {
     tuple           <- getConfigs(args)
     (args, config)   = tuple // tuple decomposition in for-comprehension doesn't seem work I guess...
-    logger           = config.logger
     port             = config.listen.port
     address          = config.listen.host
+    _               <- IO(logger.debug("Debug logging is ON"))
     _               <- IO(logger.info(s"Read config from ${args.configFile.getAbsolutePath}: $config"))
     _               <- adjustSystemProperties()
     host             = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address

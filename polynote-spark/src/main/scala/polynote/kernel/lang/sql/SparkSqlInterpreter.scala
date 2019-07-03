@@ -12,6 +12,7 @@ import org.apache.spark.sql.catalyst.parser.{SqlBaseBaseVisitor, SqlBaseParser}
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser.SingleStatementContext
 import org.apache.spark.sql.thief.SessionStateThief
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import polynote.config.PolyLogger
 import polynote.kernel._
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.{CellContext, KernelContext, Publish}
@@ -24,7 +25,7 @@ class SparkSqlInterpreter(val kernelContext: KernelContext) extends LanguageInte
 
   import kernelContext.global, kernelContext.implicits.executionContext
 
-  private val logger = kernelContext.config.logger
+  private val logger = new PolyLogger
 
   Thread.currentThread().setContextClassLoader(kernelContext.classLoader)
 

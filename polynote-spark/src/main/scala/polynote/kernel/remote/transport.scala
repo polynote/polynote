@@ -13,7 +13,7 @@ import cats.syntax.either._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import fs2.Stream
-import polynote.config.PolynoteConfig
+import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel
 import polynote.kernel.remote.SocketTransport.FramedSocket
 import polynote.kernel.util.{ReadySignal, SparkSubmitCommand}
@@ -83,7 +83,7 @@ class SocketTransportServer(
   timer: Timer[IO]
 ) extends TransportServer {
 
-  private val logger = config.logger
+  private val logger = new PolyLogger
 
   private val connectedChannel: TryableDeferred[IO, Either[Throwable, FramedSocket]] =
     Deferred.tryable[IO, Either[Throwable, FramedSocket]].unsafeRunSync()
@@ -161,6 +161,8 @@ class SocketTransport(
   implicit timer: Timer[IO]
 ) extends Transport[InetSocketAddress] {
 
+  private val logger = new PolyLogger
+
   private def openServerChannel: IO[ServerSocketChannel] = IO {
     ServerSocketChannel.open().bind(
       new InetSocketAddress(
@@ -175,7 +177,7 @@ class SocketTransport(
 
   def connect(serverAddress: InetSocketAddress)(implicit contextShift: ContextShift[IO]): IO[TransportClient] = for {
     channel <- IO(SocketChannel.open(serverAddress))
-    _       <- IO(System.err.println(s"Connected to $serverAddress"))
+    _       <- IO(logger.info(s"Connected to $serverAddress"))
   } yield new SocketTransportClient(new FramedSocket(channel))
 }
 
@@ -207,6 +209,9 @@ object SocketTransport {
     * Deployment implementation which shells out to spark-submit
     */
   class DeploySubprocess extends Deploy {
+
+    private val logger = new PolyLogger
+
     override def deployKernel(transport: SocketTransport, config: PolynoteConfig, notebookConfig: NotebookConfig, serverAddress: InetSocketAddress)(implicit
       contextShift: ContextShift[IO]
     ): IO[DeployedProcess] = {
@@ -231,7 +236,7 @@ object SocketTransport {
       }.mkString(" ")
 
       for {
-        _       <- IO(System.err.println(s"Running deploy command: $displayCommand"))
+        _       <- IO(logger.info(s"Running deploy command: $displayCommand"))
         process <- IO(new ProcessBuilder(command: _*).inheritIO().start())
       } yield new DeployedSubprocess(process)
     }

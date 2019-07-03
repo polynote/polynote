@@ -57,7 +57,7 @@ trait KernelSpec {
       (_, vars, output, displayed) => IO(assertion(vars, output, displayed))
     }
 
-  def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(Map.empty, updates, Nil, PolynoteConfig())
+  def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(Map.empty, updates, Nil)
 
   // TODO: for unit tests we'd ideally want to hook directly to runCode without needing all this!
   def assertOutputWith[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: Seq[String])(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {
