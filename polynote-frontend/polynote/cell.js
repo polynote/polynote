@@ -121,8 +121,11 @@ export class Cell extends UIEventTarget {
             ]),
             this.cellOutput = div(['cell-output'], [
                 div(['cell-output-margin'], []),
-                div(['cell-output-container'], [
-                    this.cellOutputDisplay = div(['cell-output-display'], []),
+                // unfortunately we need this extra div for perf reasons (has to be a block)
+                div(['cell-output-block'], [
+                    div(['cell-output-container'], [
+                        this.cellOutputDisplay = div(['cell-output-display'], []),
+                    ])
                 ]),
                 // TODO: maybe a progress bar here?
                 this.cellResultMargin = div(['cell-result-margin']),
