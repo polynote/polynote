@@ -2,6 +2,8 @@
 
 # This script creates the Polynote distribution file
 
+# This script is deprecated and will be removed in a future release.
+
 set -x
 set -e
 

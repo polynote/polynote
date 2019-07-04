@@ -2,6 +2,21 @@
 
 *
 
+# 0.1.16 (July 3, 2019)
+
+* Remove annoying jep uninstall message [#328]
+* Overhaul Scala compilation for better serializability and stability. [#330]
+  * Lift user-defined classes to package namespace (no more inner classes!) 
+  * Only import necessary values from previous cells (rather than everything in that cell). Use proxy values rather 
+    than imports to avoid closing over the entire cell. 
+* Fix regression causing wide output to stretch cell too far [#333]
+* Improvements to completions [#335]
+
+[#328]: https://github.com/polynote/polynote/pull/328
+[#330]: https://github.com/polynote/polynote/pull/330
+[#333]: https://github.com/polynote/polynote/issues/333
+[#335]: https://github.com/polynote/polynote/pull/335
+
 # 0.1.15 (May 20, 2019)
 
 * Install jep globally rather than locally [#324]
