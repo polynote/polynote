@@ -2132,7 +2132,7 @@ export class MainUI extends EventTarget {
         // TODO: we need a better way to tell whether the notebook has been rendered rather than just using setTimeout and hoping the timing will work.
         setTimeout(() => {
             const hash = document.location.hash;
-            // the has can (potentially) have two parts: the selected cell and selected lines.
+            // the hash can (potentially) have two parts: the selected cell and selected lines.
             // for example: #Cell2,6-12 would mean Cell2 lines 6-12
             const [hashId, lines] = hash.slice(1).split(",");
 
