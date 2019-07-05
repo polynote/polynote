@@ -188,6 +188,10 @@ export class Cell extends UIEventTarget {
             Cell.currentFocus = this;
             this.container.classList.add('active');
 
+            if (!document.location.hash.includes(this.container.id)) {
+                document.location.hash = `#${this.container.id}`;
+            }
+
             this.dispatchEvent(new SelectCellEvent(this));
         }
     }
@@ -333,6 +337,27 @@ export class CodeCell extends Cell {
         this.editor.onDidBlurEditorWidget(() => {
             this.blur();
             this.editor.updateOptions({ renderLineHighlight: "none" });
+        });
+
+        this.editor.onDidChangeCursorSelection(evt => {
+            // we only care if the user has selected more than a single character
+            if ([0, 3].includes(evt.reason) && // 0 -> NotSet, 3 -> Explicit.
+                (evt.selection.startLineNumber !== evt.selection.endLineNumber || evt.selection.startColumn !== evt.selection.endColumn)) {
+
+                console.log(evt)
+                let hash = document.location.hash;
+                if (!hash) {
+                    hash = `${this.container.id}`
+                } else {
+                    hash = hash.split(",")[0];
+                }
+                if (evt.selection.startLineNumber === evt.selection.endLineNumber) {
+                    document.location.hash = `${hash},${evt.selection.startLineNumber}`
+                } else {
+                    document.location.hash = `${hash},${evt.selection.startLineNumber}-${evt.selection.endLineNumber}`
+                }
+            }
+
         });
 
         this.lastLineCount = this.editor.getModel().getLineCount();

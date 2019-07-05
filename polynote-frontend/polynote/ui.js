@@ -1895,13 +1895,29 @@ export class MainUI extends EventTarget {
         this.tabUI.addEventListener('TabActivated', evt => {
             const tab = evt.detail.tab;
             if (tab.type === 'notebook') {
-                window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
+                const tabPath = `/notebook/${tab.name}`;
+
+                const href = window.location.href;
+                const hash = window.location.hash;
+
+                 // handle hashes and ensure scrolling works
+                if (hash && window.location.pathname === tabPath) {
+                    window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, href);
+                    this.handleHashChange()
+                } else {
+                    window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, tabPath);
+                }
+
                 this.currentNotebookPath = tab.name;
                 this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
                 this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
                 window.history.pushState({notebook: tab.name}, 'Polynote', '/');
             }
+        });
+
+        window.addEventListener('hashchange', evt => {
+            this.handleHashChange(evt)
         });
 
         this.tabUI.addEventListener('NoActiveTab', () => {
@@ -2110,6 +2126,30 @@ export class MainUI extends EventTarget {
                 this.socket.send(new messages.CreateNotebook(nbFile, Either.left(targetPath)));
             }
         }
+    }
+
+    handleHashChange(evt) {
+        // TODO: we need a better way to tell whether the notebook has been rendered rather than just using setTimeout and hoping the timing will work.
+        setTimeout(() => {
+            const hash = document.location.hash;
+            // the has can (potentially) have two parts: the selected cell and selected lines.
+            // for example: #Cell2,6-12 would mean Cell2 lines 6-12
+            const [hashId, lines] = hash.slice(1).split(",");
+
+            const selected = document.getElementById(hashId);
+            if (selected && selected.cell && selected.cell !== Cell.currentFocus) {
+
+                // highlight lines
+                if (lines) {
+                    let [startLine, endLine] = lines.split("-");
+                    if (!endLine) endLine = startLine;
+                    selected.cell.editor.setSelection(new monaco.Selection(parseInt(startLine), 0, parseInt(endLine), 0))
+                }
+                // select cell and scroll to it.
+                selected.cell.focus();
+            }
+
+        }, 500);
     }
 
     static browserDownload(path, filename) {
