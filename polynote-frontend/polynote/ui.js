@@ -884,7 +884,12 @@ export class NotebookCellsUI extends UIEventTarget {
                 if (cell instanceof CodeCell) {
                     cell.editor.layout();
                 }
-            })
+            });
+            // scroll to previous position, if any
+            const scrollPosition = prefs.get('notebookLocations')[this.path];
+            if (scrollPosition || scrollPosition === 0) {
+                this.el.parentElement.scrollTop = scrollPosition;
+            }
         }, 333);
     }
     
@@ -1604,6 +1609,16 @@ export class TabUI extends EventTarget {
         if (this.currentTab && this.currentTab === tab) {
             return;
         } else if (this.currentTab) {
+            // remember previous location
+            prefs.update('notebookLocations', locations => {
+                if (!locations) {
+                    locations = {};
+                }
+
+                locations[this.currentTab.name] = this.currentTab.content.notebook.parentElement.scrollTop;
+                return locations;
+            });
+
             for (const area in this.contentAreas) {
                 if (this.contentAreas.hasOwnProperty(area)) {
                     if (this.currentTab.content[area] && this.currentTab.content[area].parentNode) {
