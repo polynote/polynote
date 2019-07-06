@@ -2147,6 +2147,7 @@ button {
 
 .notebook-cells {
   position: relative;
+  margin-bottom: 20em; // so that the last cell isn't at the very bottom of the page (eg so context menu displays nicely)
 }
 
 .latex-editor {
@@ -2512,4 +2513,6 @@ button {
   }
 }
 
-
+.monaco-editor {
+  position: absolute !important;  // so the context menu can float over the editor area.
+}

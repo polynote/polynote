@@ -314,7 +314,7 @@ export class CodeCell extends Cell {
             fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
             fontSize: 15,
             fontLigatures: true,
-            contextmenu: false,
+            contextmenu: true,
             fixedOverflowWidgets: true,
             lineNumbers: true,
             lineNumbersMinChars: 1,
