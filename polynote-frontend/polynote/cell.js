@@ -201,7 +201,7 @@ export class Cell extends UIEventTarget {
 
         currentURL.hash = `${this.container.id}`;
 
-        if (maybeSelection) {
+        if (maybeSelection && !maybeSelection.isEmpty()) {
             if (maybeSelection.startLineNumber === maybeSelection.endLineNumber) {
                 currentURL.hash += `,${maybeSelection.startLineNumber}`;
             } else {
@@ -357,9 +357,7 @@ export class CodeCell extends Cell {
 
         this.editor.onDidChangeCursorSelection(evt => {
             // we only care if the user has selected more than a single character
-            if ([0, 3].includes(evt.reason) && // 0 -> NotSet, 3 -> Explicit.
-                (evt.selection.startLineNumber !== evt.selection.endLineNumber || evt.selection.startColumn !== evt.selection.endColumn)
-            ) {
+            if ([0, 3].includes(evt.reason)) { // 0 -> NotSet, 3 -> Explicit
                 this.setUrl(evt.selection);
             }
 
@@ -691,21 +689,24 @@ export class CodeCell extends Cell {
         }
     }
 
-    setExecutionPos(pos) {
+    setHighlight(pos, className) {
+        if (!className) {
+            className = "currently-executing"
+        }
         if (pos) {
-            const oldExecutionPos = this.executionDecorations || [];
+            const oldExecutionPos = this.highlightDecorations || [];
             const model = this.editor.getModel();
             const startPos = pos.startPos || model.getPositionAt(pos.start);
             const endPos = pos.endPos || model.getPositionAt(pos.end);
-            this.executionDecorations = this.editor.deltaDecorations(oldExecutionPos, [
+            this.highlightDecorations = this.editor.deltaDecorations(oldExecutionPos, [
                 {
                     range: monaco.Range.fromPositions(startPos, endPos),
-                    options: { className: "currently-executing" }
+                    options: { className: className }
                 }
             ]);
-        } else if (this.executionDecorations) {
-            this.editor.deltaDecorations(this.executionDecorations, []);
-            this.executionDecorations = [];
+        } else if (this.highlightDecorations) {
+            this.editor.deltaDecorations(this.highlightDecorations, []);
+            this.highlightDecorations = [];
         }
     }
 
@@ -772,6 +773,10 @@ export class CodeCell extends Cell {
         }
     }
 
+    isRunning() {
+        return this.execInfoEl.classList.contains("running")
+    }
+
     static colorize(content, lang) {
         return monaco.editor.colorize(content, lang, {}).then(function(result) {
             const node = div(['result'], []);
@@ -834,6 +839,11 @@ export class CodeCell extends Cell {
     blur() {
         super.blur();
         this.hideVim();
+
+        // clear highlights if not running
+        if (!this.isRunning()) {
+            this.setHighlight()
+        }
     }
 
     dispose() {

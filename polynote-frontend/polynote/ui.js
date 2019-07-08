@@ -815,10 +815,10 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    setPos(id, pos) {
+    setExecutionHighlight(id, pos) {
         const cell = this.getCell(id);
         if (cell instanceof CodeCell) {
-            cell.setExecutionPos(pos);
+            cell.setHighlight(pos, "currently-executing");
         }
     }
 
@@ -1353,7 +1353,7 @@ export class NotebookUI extends UIEventTarget {
                         break;
 
                     case messages.ExecutionStatus:
-                        this.cellUI.setPos(update.cellId, update.pos);
+                        this.cellUI.setExecutionHighlight(update.cellId, update.pos);
                         break;
                 }
             }
@@ -2156,10 +2156,10 @@ export class MainUI extends EventTarget {
                         endPos = Position.lift({lineNumber: startLine + 1, column: 0});
                     }
 
-                    selected.cell.setExecutionPos({
+                    selected.cell.setHighlight({
                         startPos: startPos,
                         endPos: endPos
-                    })
+                    }, "link-highlight")
                 }
                 // select cell and scroll to it.
                 selected.cell.focus();
