@@ -18,6 +18,7 @@ import {ExecutionInfo} from "./result";
 import {CellMetadata} from "./messages";
 import {Either} from "./codec";
 import {errorDisplay} from "./cell";
+import {Position} from "monaco-editor";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -1899,20 +1900,24 @@ export class MainUI extends EventTarget {
 
                 const href = window.location.href;
                 const hash = window.location.hash;
+                const title = `${tab.name.split(/\//g).pop()} | Polynote`;
+                document.title = title; // looks like chrome ignores history title so we need to be explicit here.
 
                  // handle hashes and ensure scrolling works
                 if (hash && window.location.pathname === tabPath) {
-                    window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, href);
+                    window.history.pushState({notebook: tab.name}, title, href);
                     this.handleHashChange()
                 } else {
-                    window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, tabPath);
+                    window.history.pushState({notebook: tab.name}, title, tabPath);
                 }
 
                 this.currentNotebookPath = tab.name;
                 this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
                 this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
-                window.history.pushState({notebook: tab.name}, 'Polynote', '/');
+                const title = 'Polynote'
+                window.history.pushState({notebook: tab.name}, title, '/');
+                document.title = title
             }
         });
 
@@ -2141,9 +2146,20 @@ export class MainUI extends EventTarget {
 
                 // highlight lines
                 if (lines) {
-                    let [startLine, endLine] = lines.split("-");
-                    if (!endLine) endLine = startLine;
-                    selected.cell.editor.setSelection(new monaco.Selection(parseInt(startLine), 0, parseInt(endLine), 0))
+                    let [startLine, endLine] = lines.split("-").map(s => parseInt(s));
+                    const startPos = Position.lift({lineNumber: startLine, column: 0});
+
+                    let endPos;
+                    if (endLine) {
+                        endPos = Position.lift({lineNumber: endLine, column: 0});
+                    } else {
+                        endPos = Position.lift({lineNumber: startLine + 1, column: 0});
+                    }
+
+                    selected.cell.setExecutionPos({
+                        startPos: startPos,
+                        endPos: endPos
+                    })
                 }
                 // select cell and scroll to it.
                 selected.cell.focus();

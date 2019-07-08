@@ -189,11 +189,27 @@ export class Cell extends UIEventTarget {
             this.container.classList.add('active');
 
             if (!document.location.hash.includes(this.container.id)) {
-                document.location.hash = `#${this.container.id}`;
+                this.setUrl();
             }
 
             this.dispatchEvent(new SelectCellEvent(this));
         }
+    }
+
+    setUrl(maybeSelection) {
+        const currentURL = new URL(document.location);
+
+        currentURL.hash = `${this.container.id}`;
+
+        if (maybeSelection) {
+            if (maybeSelection.startLineNumber === maybeSelection.endLineNumber) {
+                currentURL.hash += `,${maybeSelection.startLineNumber}`;
+            } else {
+                currentURL.hash += `,${maybeSelection.startLineNumber}-${maybeSelection.endLineNumber}`;
+            }
+        }
+
+        window.history.replaceState(window.history.state, document.title, currentURL.href)
     }
 
     blur() {
@@ -342,20 +358,9 @@ export class CodeCell extends Cell {
         this.editor.onDidChangeCursorSelection(evt => {
             // we only care if the user has selected more than a single character
             if ([0, 3].includes(evt.reason) && // 0 -> NotSet, 3 -> Explicit.
-                (evt.selection.startLineNumber !== evt.selection.endLineNumber || evt.selection.startColumn !== evt.selection.endColumn)) {
-
-                console.log(evt)
-                let hash = document.location.hash;
-                if (!hash) {
-                    hash = `${this.container.id}`
-                } else {
-                    hash = hash.split(",")[0];
-                }
-                if (evt.selection.startLineNumber === evt.selection.endLineNumber) {
-                    document.location.hash = `${hash},${evt.selection.startLineNumber}`
-                } else {
-                    document.location.hash = `${hash},${evt.selection.startLineNumber}-${evt.selection.endLineNumber}`
-                }
+                (evt.selection.startLineNumber !== evt.selection.endLineNumber || evt.selection.startColumn !== evt.selection.endColumn)
+            ) {
+                this.setUrl(evt.selection);
             }
 
         });
@@ -690,8 +695,8 @@ export class CodeCell extends Cell {
         if (pos) {
             const oldExecutionPos = this.executionDecorations || [];
             const model = this.editor.getModel();
-            const startPos = model.getPositionAt(pos.start);
-            const endPos = model.getPositionAt(pos.end);
+            const startPos = pos.startPos || model.getPositionAt(pos.start);
+            const endPos = pos.endPos || model.getPositionAt(pos.end);
             this.executionDecorations = this.editor.deltaDecorations(oldExecutionPos, [
                 {
                     range: monaco.Range.fromPositions(startPos, endPos),
