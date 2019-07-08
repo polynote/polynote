@@ -113,9 +113,7 @@ export class Cell extends UIEventTarget {
                     }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
-                div(['cell-input-editor'], [
-                    this.editorEl = div(['cell-input-editor-inner'], []),
-                ]),
+                this.editorEl = div(['cell-input-editor'], []),
                 div(['cell-footer'], [
                     this.statusLine = div(["vim-status", "hide"], []),
                     this.execInfoEl = div(["exec-info"], []),
@@ -316,7 +314,7 @@ export class CodeCell extends Cell {
             fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
             fontSize: 15,
             fontLigatures: true,
-            contextmenu: true,
+            contextmenu: false,
             fixedOverflowWidgets: true,
             lineNumbers: true,
             lineNumbersMinChars: 1,
@@ -325,6 +323,7 @@ export class CodeCell extends Cell {
         });
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
+        this.editorEl.contentEditable = true; // so right-click copy/paste can work.
         this.editor.layout();
 
         this.editor.onDidFocusEditorWidget(() => {
