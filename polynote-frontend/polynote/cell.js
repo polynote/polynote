@@ -113,7 +113,9 @@ export class Cell extends UIEventTarget {
                     }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
-                this.editorEl = div(['cell-input-editor'], []),
+                div(['cell-input-editor'], [
+                    this.editorEl = div(['cell-input-editor-inner'], []),
+                ]),
                 div(['cell-footer'], [
                     this.statusLine = div(["vim-status", "hide"], []),
                     this.execInfoEl = div(["exec-info"], []),
