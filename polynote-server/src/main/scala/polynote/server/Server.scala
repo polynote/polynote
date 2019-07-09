@@ -6,9 +6,11 @@ import java.util.{Date, ServiceLoader}
 
 import cats.effect._
 import cats.implicits._
+import fs2.io.file
 import org.http4s._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeBuilder
+import org.http4s.headers.`Content-Type`
 import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
@@ -39,6 +41,19 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     StaticFile.fromString(nbLoc, executionContext, Some(req)).getOrElseF(NotFound())
   }
 
+  def showDir(path: String, req: Request[IO]): IO[Response[IO]] = {
+    val dir = new File(path)
+    val html = dir.listFiles().map { s =>
+      s"<a href='logs/$s'>$s</a><br>"
+    }.mkString("\n")
+    Ok(html, `Content-Type`(MediaType.text.html))
+  }
+
+  def showFile(path: String, req: Request[IO])(implicit syncIO: Sync[IO]): IO[Response[IO]] = {
+    val f = new File(path)
+    Ok(file.readAll[IO](f.toPath, executionContext, StaticFile.DefaultBufferSize))
+  }
+
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
 
   def route(notebookManager: NotebookManager[IO], config: PolynoteConfig, watchUI: Boolean)(implicit timer: Timer[IO]): HttpRoutes[IO] = {
@@ -48,6 +63,8 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
       case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) =>
         IO(logger.info(s"Download request for ${req.pathInfo} from ${req.remoteAddr}")) *> downloadFile(path.toList.mkString("/"), req, config)
       case req @ GET -> "notebook" /: _ => serveFile(indexFile, req, watchUI)
+      case req @ GET -> Root / "logs" => showDir(config.storage.logs, req)
+      case req @ GET -> Root / "logs" / path => showFile(s"${config.storage.logs}/$path", req)
       case req @ GET -> (Root / "polynote-assembly.jar") =>
         StaticFile.fromFile[IO](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), executionContext).getOrElseF(NotFound())
       case req @ GET -> path  =>

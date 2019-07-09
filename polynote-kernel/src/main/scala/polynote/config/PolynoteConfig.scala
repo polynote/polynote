@@ -18,7 +18,7 @@ object Listen {
   implicit val decoder: Decoder[Listen] = deriveDecoder
 }
 
-final case class Storage(dir: String = "notebooks")
+final case class Storage(dir: String = "notebooks", logs: String = ".")
 
 object Storage {
   implicit val encoder: ObjectEncoder[Storage] = deriveEncoder
