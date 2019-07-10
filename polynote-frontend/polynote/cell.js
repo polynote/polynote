@@ -323,6 +323,7 @@ export class CodeCell extends Cell {
         });
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
+        this.editorEl.contentEditable = true; // so right-click copy/paste can work.
         this.editor.layout();
 
         this.editor.onDidFocusEditorWidget(() => {
