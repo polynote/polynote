@@ -32,65 +32,70 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
 
-  override def init(): IO[Unit] = withJep {
-    jep.set("__kernel_ref", polynote.runtime.Runtime)
 
-    // Since Scala uses getter methods instead of class fields (i.e. you'd need `kernel.display().html()` instead of
-    // `kernel.display.html`), we do a little bit of acrobatics here – we create an object in Python that wraps the
-    // Runtime, and dynamically set an attribute `display` on it with Jep so that it's accessible as an attribute
-    // rather than a method.
-    jep.eval(
-      """
-        |class KernelProxy(object):
-        |    def __init__(self, ref):
-        |        self.ref = ref
-        |
-        |    def __getattr__(self, name):
-        |        return getattr(self.ref, name)
-        |""".stripMargin)
-    jep.eval("kernel = KernelProxy(__kernel_ref)")
-    val pykernel = jep.getValue("kernel", classOf[PyObject])
-    pykernel.setAttr("display", polynote.runtime.Runtime.display)
-    jep.eval("del kernel")
-    jep.set("kernel", pykernel)
-    jep.eval("del __kernel_ref")
+  override def init(): IO[Unit] = venv.activate.flatMap { venvCmd =>
+    withJep {
+      jep.eval(venvCmd)
 
-    // this function is used to build a globals dict from the CellContext visibleSymbols, and then merge in the
-    // python interpreter's globals dict. This lets us bring in external values without clobbering any native-python
-    // version that already exists in the python interpreter.
-    // TODO: what about python variables that have since been shadowed by external variables? Maybe should be
-    //       smarter about which things to pull from globals dict?
-    jep.eval(
-      """def __pn_expand_globals__(syms):
-        |    g = globals()
-        |    pg = dict(syms)
-        |    for k in g:
-        |        pg[k] = g[k]
-        |    return pg
-      """.stripMargin.trim)
+      jep.set("__kernel_ref", polynote.runtime.Runtime)
+
+      // Since Scala uses getter methods instead of class fields (i.e. you'd need `kernel.display().html()` instead of
+      // `kernel.display.html`), we do a little bit of acrobatics here – we create an object in Python that wraps the
+      // Runtime, and dynamically set an attribute `display` on it with Jep so that it's accessible as an attribute
+      // rather than a method.
+      jep.eval(
+        """
+          |class KernelProxy(object):
+          |    def __init__(self, ref):
+          |        self.ref = ref
+          |
+          |    def __getattr__(self, name):
+          |        return getattr(self.ref, name)
+          |""".stripMargin)
+      jep.eval("kernel = KernelProxy(__kernel_ref)")
+      val pykernel = jep.getValue("kernel", classOf[PyObject])
+      pykernel.setAttr("display", polynote.runtime.Runtime.display)
+      jep.eval("del kernel")
+      jep.set("kernel", pykernel)
+      jep.eval("del __kernel_ref")
+
+      // this function is used to build a globals dict from the CellContext visibleSymbols, and then merge in the
+      // python interpreter's globals dict. This lets us bring in external values without clobbering any native-python
+      // version that already exists in the python interpreter.
+      // TODO: what about python variables that have since been shadowed by external variables? Maybe should be
+      //       smarter about which things to pull from globals dict?
+      jep.eval(
+        """def __pn_expand_globals__(syms):
+          |    g = globals()
+          |    pg = dict(syms)
+          |    for k in g:
+          |        pg[k] = g[k]
+          |    return pg
+        """.stripMargin.trim)
 
 
-    // this class is used to convert the last expression to an assignment
-    jep.eval("import ast\n")
-    jep.eval(
-      """
-        |class LastExprAssigner(ast.NodeTransformer):
-        |
-        |    # keep track of last line of initial tree passed in
-        |    lastLine = None
-        |
-        |    def visit(self, node):
-        |        if (not self.lastLine):
-        |            self.lastLine = node.body[-1].lineno
-        |        return super(ast.NodeTransformer, self).visit(node)
-        |
-        |    def visit_Expr(self, node):
-        |        if node.lineno == self.lastLine:
-        |            return ast.copy_location(ast.Assign(targets=[ast.Name(id='Out', ctx=ast.Store())], value=node.value), node)
-        |        else:
-        |            return node
-      """.stripMargin.trim)
+      // this class is used to convert the last expression to an assignment
+      jep.eval("import ast\n")
+      jep.eval(
+        """
+          |class LastExprAssigner(ast.NodeTransformer):
+          |
+          |    # keep track of last line of initial tree passed in
+          |    lastLine = None
+          |
+          |    def visit(self, node):
+          |        if (not self.lastLine):
+          |            self.lastLine = node.body[-1].lineno
+          |        return super(ast.NodeTransformer, self).visit(node)
+          |
+          |    def visit_Expr(self, node):
+          |        if node.lineno == self.lastLine:
+          |            return ast.copy_location(ast.Assign(targets=[ast.Name(id='Out', ctx=ast.Store())], value=node.value), node)
+          |        else:
+          |            return node
+        """.stripMargin.trim)
 
+    }
   }
 
   private val jepThread: AtomicReference[Thread] = new AtomicReference[Thread](null)
@@ -141,6 +146,8 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   private val jepShift: ContextShift[IO] = IO.contextShift(executionContext)
   private implicit val globalShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
+  // TODO: this doesn't belong here
+  val venv = new VirtualEnvManager("foo", Seq("requests", "boto==2.49.0").map(PipDependency(_)))
 
   def withJep[T](t: => T): IO[T] = jepShift.evalOn(executionContext)(IO.delay(t))
 

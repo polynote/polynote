@@ -1,9 +1,9 @@
-package polynote.util
+package polynote.kernel.util
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-import cats.effect.{Concurrent, IO}
 import cats.effect.concurrent.{Deferred, Semaphore}
+import cats.effect.{Concurrent, IO}
 import cats.syntax.apply._
 import cats.syntax.functor._
 
