@@ -37,7 +37,22 @@ final case class PolynoteConfig(
 
 object PolynoteConfig {
   implicit val encoder: ObjectEncoder[PolynoteConfig] = deriveEncoder
-  implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder
+  implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder[PolynoteConfig].prepare {
+    cursor =>
+      cursor.downField("base").focus.flatMap {
+        baseFileName =>
+          baseFileName.asString.map {
+            f =>
+              // parse base config to JSON. Note that this means that we only support one level of base configs (e.g., the base can't have its own base).
+              // this is so we don't get into an infinite loop situation where two configs depend on each other.
+              val baseConfigJson = yaml.parser.parse(new FileReader(f)).right.get
+              cursor.withFocus {
+                json =>
+                  baseConfigJson.deepMerge(json) // merge base with precedence going to current Json.
+              }
+          }
+      }.getOrElse(cursor)
+  }
 
   private val logger = new PolyLogger
 
