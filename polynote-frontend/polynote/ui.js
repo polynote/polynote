@@ -18,6 +18,7 @@ import {ExecutionInfo} from "./result";
 import {CellMetadata} from "./messages";
 import {Either} from "./codec";
 import {errorDisplay} from "./cell";
+import {Position} from "monaco-editor";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -814,10 +815,10 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    setPos(id, pos) {
+    setExecutionHighlight(id, pos) {
         const cell = this.getCell(id);
         if (cell instanceof CodeCell) {
-            cell.setExecutionPos(pos);
+            cell.setHighlight(pos, "currently-executing");
         }
     }
 
@@ -1357,7 +1358,7 @@ export class NotebookUI extends UIEventTarget {
                         break;
 
                     case messages.ExecutionStatus:
-                        this.cellUI.setPos(update.cellId, update.pos);
+                        this.cellUI.setExecutionHighlight(update.cellId, update.pos);
                         break;
                 }
             }
@@ -1910,13 +1911,33 @@ export class MainUI extends EventTarget {
         this.tabUI.addEventListener('TabActivated', evt => {
             const tab = evt.detail.tab;
             if (tab.type === 'notebook') {
-                window.history.pushState({notebook: tab.name}, `${tab.name.split(/\//g).pop()} | Polynote`, `/notebook/${tab.name}`);
+                const tabPath = `/notebook/${tab.name}`;
+
+                const href = window.location.href;
+                const hash = window.location.hash;
+                const title = `${tab.name.split(/\//g).pop()} | Polynote`;
+                document.title = title; // looks like chrome ignores history title so we need to be explicit here.
+
+                 // handle hashes and ensure scrolling works
+                if (hash && window.location.pathname === tabPath) {
+                    window.history.pushState({notebook: tab.name}, title, href);
+                    this.handleHashChange()
+                } else {
+                    window.history.pushState({notebook: tab.name}, title, tabPath);
+                }
+
                 this.currentNotebookPath = tab.name;
                 this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
                 this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
-                window.history.pushState({notebook: tab.name}, 'Polynote', '/');
+                const title = 'Polynote'
+                window.history.pushState({notebook: tab.name}, title, '/');
+                document.title = title
             }
+        });
+
+        window.addEventListener('hashchange', evt => {
+            this.handleHashChange(evt)
         });
 
         this.tabUI.addEventListener('NoActiveTab', () => {
@@ -2125,6 +2146,41 @@ export class MainUI extends EventTarget {
                 this.socket.send(new messages.CreateNotebook(nbFile, Either.left(targetPath)));
             }
         }
+    }
+
+    handleHashChange(evt) {
+        // TODO: we need a better way to tell whether the notebook has been rendered rather than just using setTimeout and hoping the timing will work.
+        setTimeout(() => {
+            const hash = document.location.hash;
+            // the hash can (potentially) have two parts: the selected cell and selected lines.
+            // for example: #Cell2,6-12 would mean Cell2 lines 6-12
+            const [hashId, lines] = hash.slice(1).split(",");
+
+            const selected = document.getElementById(hashId);
+            if (selected && selected.cell && selected.cell !== Cell.currentFocus) {
+
+                // highlight lines
+                if (lines) {
+                    let [startLine, endLine] = lines.split("-").map(s => parseInt(s));
+                    const startPos = Position.lift({lineNumber: startLine, column: 0});
+
+                    let endPos;
+                    if (endLine) {
+                        endPos = Position.lift({lineNumber: endLine, column: 0});
+                    } else {
+                        endPos = Position.lift({lineNumber: startLine + 1, column: 0});
+                    }
+
+                    selected.cell.setHighlight({
+                        startPos: startPos,
+                        endPos: endPos
+                    }, "link-highlight")
+                }
+                // select cell and scroll to it.
+                selected.cell.focus();
+            }
+
+        }, 500);
     }
 
     static browserDownload(path, filename) {
