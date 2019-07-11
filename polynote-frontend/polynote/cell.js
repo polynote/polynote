@@ -7,11 +7,12 @@ import {UIEvent, UIEventTarget} from "./ui_event.js"
 import { default as Diff } from './diff.js'
 import {ReprUI} from "./repr_ui";
 import {details} from "./tags";
-import {ExecutionInfo} from "./result";
+import {ClientResult, ExecutionInfo} from "./result";
 import {prefs} from "./prefs";
 import {createVim} from "./vim";
 import {DeleteCell} from "./messages";
 import {KeyPress} from "./keypress";
+import {clientInterpreters} from "./client_interpreter";
 
 const JsDiff = new Diff();
 
@@ -73,6 +74,18 @@ export class InsertCellEvent extends CellEvent {
 export class DeleteCellEvent extends CellEvent {
     constructor(cellId) {
         super('DeleteCell', cellId);
+    }
+}
+
+export class CellExecutionStarted extends CellEvent {
+    constructor(cellId) {
+        super('CellExecutionStarted', cellId);
+    }
+}
+
+export class CellExecutionFinished extends CellEvent {
+    constructor(cellId) {
+        super('CellExecutionFinished', cellId);
     }
 }
 
@@ -301,10 +314,13 @@ export class CodeCell extends Cell {
 
         this.cellInputTools.appendChild(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
 
+        const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
+        this.highlightLanguage = highlightLanguage;
+
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
             value: content,
-            language: language,
+            language: highlightLanguage,
             codeLens: false,
             dragAndDrop: true,
             minimap: { enabled: false },
@@ -656,6 +672,10 @@ export class CodeCell extends Cell {
                 });
 
             }
+        } else if (result instanceof ClientResult) {
+            this.cellOutputTools.classList.add('output');
+            this.resultTabs.innerHTML = '';
+            result.display(this.resultTabs, this);
         } else {
             throw "Result must be a ResultValue"
         }

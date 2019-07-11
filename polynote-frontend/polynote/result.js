@@ -182,6 +182,7 @@ export class RuntimeError extends Result {
 }
 
 RuntimeError.codec = combined(KernelErrorWithCause.codec).to(RuntimeError);
+RuntimeError.fromJS = (err) => new RuntimeError(new KernelErrorWithCause(err.constructor.name, err.message || err.toString(), []));
 
 export class ClearResults extends Result {
     static get msgTypeId() { return 3; }
@@ -249,6 +250,8 @@ export class ResultValue extends Result {
         let index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/html"));
         if (index < 0)
             index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/"));
+        if (index < 0)
+            index = this.reprs.findIndex(repr => repr instanceof MIMERepr);
 
         if (index < 0) {
             return ["text/plain", this.valueText];
@@ -260,6 +263,26 @@ export class ResultValue extends Result {
 }
 
 ResultValue.codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), int16, optional(PosRange.codec)).to(ResultValue);
+
+
+/**
+ * A result originating on the client, from a client-side interpreter. It has to tell us how to display itself and
+ * how it should be saved in the notebook.
+ */
+export class ClientResult extends Result {
+    constructor() {
+        super();
+    }
+
+    display(targetEl, cell) {
+        throw new Error(`Class ${this.constructor.name} does not implement display()`);
+    }
+
+    toOutput() {
+        throw new Error(`Class ${this.constructor.name} does not implement toOutput()`);
+    }
+}
+
 
 export class ExecutionInfo extends Result {
     static get msgTypeId() { return 5; }

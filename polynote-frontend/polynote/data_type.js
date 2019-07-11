@@ -39,6 +39,9 @@ export const DoubleType = SingletonDataType(6, reader => reader.readFloat64(), '
 export const BinaryType = SingletonDataType(7, reader => reader.readBuffer(), 'binary');
 export const StringType = SingletonDataType(8, reader => reader.readString(), 'string');
 
+export const NumericTypes = [ShortType, IntType, LongType, FloatType, DoubleType];
+Object.freeze(NumericTypes);
+
 export class StructField {
     constructor(name, dataType) {
         this.name = name;
