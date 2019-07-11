@@ -44,6 +44,8 @@
 @tab-view-height: 1.5em;
 @tab-view-height-plus-padding: 2.5em;
 
+@line-highlight-color: rgba(253, 246, 227, 1.0);
+
 body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
   font-size: 10pt;
@@ -2498,18 +2500,20 @@ button {
   background-color: #d9edf7;
 }
 
+.link-highlight {
+  background-color: @line-highlight-color;
+}
+
 @keyframes highlight {
   from {
     background-color: rgba(253, 246, 227, 1.0);
   }
 
   50% {
-    background-color: rgba(253, 246, 227, 1.0);
+    background-color: @line-highlight-color;
   }
 
   to {
     background-color: rgba(253, 246, 227, 0.0);
   }
 }
-
-

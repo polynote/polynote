@@ -201,8 +201,28 @@ export class Cell extends UIEventTarget {
             Cell.currentFocus = this;
             this.container.classList.add('active');
 
+            if (!document.location.hash.includes(this.container.id)) {
+                this.setUrl();
+            }
+
             this.dispatchEvent(new SelectCellEvent(this));
         }
+    }
+
+    setUrl(maybeSelection) {
+        const currentURL = new URL(document.location);
+
+        currentURL.hash = `${this.container.id}`;
+
+        if (maybeSelection && !maybeSelection.isEmpty()) {
+            if (maybeSelection.startLineNumber === maybeSelection.endLineNumber) {
+                currentURL.hash += `,${maybeSelection.startLineNumber}`;
+            } else {
+                currentURL.hash += `,${maybeSelection.startLineNumber}-${maybeSelection.endLineNumber}`;
+            }
+        }
+
+        window.history.replaceState(window.history.state, document.title, currentURL.href)
     }
 
     blur() {
@@ -339,6 +359,7 @@ export class CodeCell extends Cell {
         });
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
+        this.editorEl.contentEditable = true; // so right-click copy/paste can work.
         this.editor.layout();
 
         this.editor.onDidFocusEditorWidget(() => {
@@ -349,6 +370,14 @@ export class CodeCell extends Cell {
         this.editor.onDidBlurEditorWidget(() => {
             this.blur();
             this.editor.updateOptions({ renderLineHighlight: "none" });
+        });
+
+        this.editor.onDidChangeCursorSelection(evt => {
+            // we only care if the user has selected more than a single character
+            if ([0, 3].includes(evt.reason)) { // 0 -> NotSet, 3 -> Explicit
+                this.setUrl(evt.selection);
+            }
+
         });
 
         this.lastLineCount = this.editor.getModel().getLineCount();
@@ -681,21 +710,24 @@ export class CodeCell extends Cell {
         }
     }
 
-    setExecutionPos(pos) {
+    setHighlight(pos, className) {
+        if (!className) {
+            className = "currently-executing"
+        }
         if (pos) {
-            const oldExecutionPos = this.executionDecorations || [];
+            const oldExecutionPos = this.highlightDecorations || [];
             const model = this.editor.getModel();
-            const startPos = model.getPositionAt(pos.start);
-            const endPos = model.getPositionAt(pos.end);
-            this.executionDecorations = this.editor.deltaDecorations(oldExecutionPos, [
+            const startPos = pos.startPos || model.getPositionAt(pos.start);
+            const endPos = pos.endPos || model.getPositionAt(pos.end);
+            this.highlightDecorations = this.editor.deltaDecorations(oldExecutionPos, [
                 {
                     range: monaco.Range.fromPositions(startPos, endPos),
-                    options: { className: "currently-executing" }
+                    options: { className: className }
                 }
             ]);
-        } else if (this.executionDecorations) {
-            this.editor.deltaDecorations(this.executionDecorations, []);
-            this.executionDecorations = [];
+        } else if (this.highlightDecorations) {
+            this.editor.deltaDecorations(this.highlightDecorations, []);
+            this.highlightDecorations = [];
         }
     }
 
@@ -762,6 +794,10 @@ export class CodeCell extends Cell {
         }
     }
 
+    isRunning() {
+        return this.execInfoEl.classList.contains("running")
+    }
+
     static colorize(content, lang) {
         return monaco.editor.colorize(content, lang, {}).then(function(result) {
             const node = div(['result'], []);
@@ -824,6 +860,11 @@ export class CodeCell extends Cell {
     blur() {
         super.blur();
         this.hideVim();
+
+        // clear highlights if not running
+        if (!this.isRunning()) {
+            this.setHighlight()
+        }
     }
 
     dispose() {
