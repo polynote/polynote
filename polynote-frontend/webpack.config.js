@@ -1,5 +1,5 @@
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
-const CopyWebpackPlugin = require('copy-webpack-plugin')
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 const path = require('path');
 
 module.exports = {
@@ -16,7 +16,7 @@ module.exports = {
   },
   plugins: [
     new MonacoWebpackPlugin({
-	    languages: ['clojure', 'java', 'markdown', 'python', 'r', 'ruby', 'json', 'sql', 'swift']
+	    languages: ['clojure', 'java', 'markdown', 'python', 'r', 'ruby', 'json', 'javascript', 'typescript', 'sql', 'swift']
     }),
     new CopyWebpackPlugin([
       'index.html',

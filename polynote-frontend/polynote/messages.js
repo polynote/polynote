@@ -7,7 +7,7 @@ import {
 
 import { Result, KernelErrorWithCause, PosRange } from './result.js'
 import {StreamingDataRepr} from "./value_repr";
-import {ExecutionInfo} from "./result";
+import {ExecutionInfo, Output} from "./result";
 
 export function isEqual(a, b) {
     if (a === b)
@@ -983,6 +983,23 @@ export class ClearOutput extends Message {
 
 ClearOutput.codec = combined(shortStr).to(ClearOutput);
 
+export class SetCellOutput extends NotebookUpdate {
+    static get msgTypeId() { return 22; }
+    static unapply(inst) { return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.output]}
+
+    constructor(path, globalVersion, localVersion, id, output) {
+        super(path, globalVersion, localVersion, id, output);
+        this.path = path;
+        this.globalVersion = globalVersion;
+        this.localVersion = localVersion;
+        this.id = id;
+        this.output = output;
+        Object.freeze(this);
+    }
+}
+
+SetCellOutput.codec = combined(shortStr, uint32, uint32, int16, optional(Output.codec)).to(SetCellOutput);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -1005,7 +1022,8 @@ Message.codecs = [
     CancelTasks,     // 18
     ModifyStream,    // 19
     ReleaseHandle,   // 20
-    ClearOutput,     // 20
+    ClearOutput,     // 21
+    SetCellOutput,   // 22
 ];
 
 

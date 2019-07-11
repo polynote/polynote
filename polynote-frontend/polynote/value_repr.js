@@ -5,8 +5,12 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32, uint32
 } from './codec.js'
 
+import match from "./match.js"
+
 import { DataType } from './data_type.js'
-import {HandleData} from "./messages";
+import {GroupAgg, HandleData, ModifyStream, QuantileBin, Select} from "./messages";
+import {Pair} from "./codec";
+import {DoubleType, LongType, NumericTypes, StructField, StructType} from "./data_type";
 
 export class ValueRepr {}
 
@@ -55,6 +59,10 @@ export class DataRepr extends ValueRepr {
         this.dataType = dataType;
         this.data = data;
         Object.freeze(this);
+    }
+
+    decode() {
+        return this.dataType.decodeBuffer(this.data);
     }
 }
 
@@ -142,39 +150,116 @@ function requestNext() {
     this.socket.send(new HandleData(this.path, StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize, []))
 }
 
-
-/**
- * An API for streaming data out of a StreamingDataRepr
- */
-export class DataStream extends EventTarget {
-    constructor(path, repr, socket) {
-        super();
-        this.path = path;
-        this.repr = repr;
-        this.socket = socket;
-
-        this.batchSize = 50;
-
-        this.receivedCount = 0;
-        this.terminated = false;
-        this.stopAfter = Infinity;
-
-        const decodeValues = data => data.map(buf => repr.dataType.decodeBuffer(new DataReader(buf)));
+function setupStream() {
+    if (!this.socketListener) {
+        const decodeValues = data => data.map(buf => this.repr.dataType.decodeBuffer(new DataReader(buf)));
 
         this.socketListener = this.socket.addMessageListener(HandleData, (path, handleType, handleId, count, data) => {
-            if (path === this.path && handleType === StreamingDataRepr.handleTypeId && handleId === repr.handle) {
+            if (path === this.path && handleType === StreamingDataRepr.handleTypeId && handleId === this.repr.handle) {
                 const batch = decodeValues(data);
                 this.dispatchEvent(new DataBatch(batch));
                 if (this.nextPromise) {
                     this.nextPromise.resolve(batch);
                     this.nextPromise = null;
                 }
-                
+
                 if (batch.length < count) {
                     this.kill();
                 }
             }
         });
+    }
+
+    if (!this.setupPromise) {
+        if (this.mods && this.mods.length > 0) {
+            this.setupPromise = this.socket.request(new ModifyStream(this.path, this.repr.handle, this.mods, null)).then(mod => this.repr = mod.newRepr);
+        } else {
+            this.setupPromise = Promise.resolve();
+        }
+    }
+
+    return this.setupPromise;
+}
+
+export const QuartilesType = new StructType([
+    new StructField("min", DoubleType),
+    new StructField("q1", DoubleType),
+    new StructField("median", DoubleType),
+    new StructField("mean", DoubleType),
+    new StructField("q3", DoubleType),
+    new StructField("max", DoubleType)
+]);
+
+function finalDataType() {
+    let dataType = this.repr.dataType;
+    const mods = this.mods;
+
+    if (!mods || !mods.length)
+        return dataType;
+
+    if (!(dataType instanceof StructType)) {
+        throw Error("Illegal state: table modifications on a non-struct stream")
+    }
+
+    for (let mod of this.mods) {
+        match(mod)
+            .when(GroupAgg, (groupCols, aggregations) => {
+                const groupFields = groupCols.map(name => requireField.call(this, name));
+                const aggregateFields = aggregations.map(pair => {
+                    const [name, agg] = Pair.unapply(pair);
+                    let aggregatedType = requireField.call(this, name).dataType;
+                    if (!aggregatedType) {
+                        throw new Error(`Field ${name} not present in data type`);
+                    }
+                    switch (agg) {
+                        case "count":
+                        case "approx_count_distinct":
+                            aggregatedType = LongType;
+                            break;
+                        case "quartiles":
+                            aggregatedType = QuartilesType;
+                            break;
+                    }
+                    return new StructField(`${agg}(${name})`, aggregatedType);
+                });
+                dataType = new StructType([...groupFields, ...aggregateFields]);
+            })
+            .when(QuantileBin, (column, binCount, _) => {
+                dataType = new StructType([...dataType.fields, new StructField(`${column}_quantized`, DoubleType)]);
+            })
+            .when(Select, (columns) => {
+                const fields = columns.map(name => requireField.call(this, name));
+                dataType = new StructType(fields);
+            });
+    }
+    return dataType;
+}
+
+function requireField(name) {
+    const field = this.dataType.fields.find(field => field.name === name);
+    if (!field) {
+        throw new Error(`Field ${name} not present in data type`);
+    }
+    return field;
+}
+
+/**
+ * An API for streaming data out of a StreamingDataRepr
+ */
+export class DataStream extends EventTarget {
+    constructor(path, repr, socket, mods) {
+        super();
+        this.path = path;
+        this.repr = repr;
+        this.socket = socket;
+        this.mods = mods || [];
+        this.dataType = finalDataType.call(this);
+
+        this.batchSize = 50;
+
+        this.receivedCount = 0;
+        this.terminated = false;
+        this.stopAfter = Infinity;
     }
 
     batch(batchSize) {
@@ -212,6 +297,45 @@ export class DataStream extends EventTarget {
         }
     }
 
+    aggregate(groupCols, aggregations) {
+        if (!(aggregations instanceof Array)) {
+            aggregations = [aggregations];
+        }
+
+        const fields = this.dataType.fields;
+
+        const aggPairs = aggregations.flatMap(agg => {
+            const pairs = [];
+            for (let key of Object.keys(agg)) {
+                if (!fields.find(field => field.name === key)) {
+                    throw new Error(`Field ${key} not present in data type`);
+                }
+                pairs.push(new Pair(key, agg[key]));
+            }
+            return pairs;
+        });
+
+        const mod = new GroupAgg(groupCols, aggPairs);
+        return new DataStream(this.path, this.repr, this.socket, [...this.mods, mod]);
+    }
+
+    bin(col, binCount, err) {
+        if (err === undefined) {
+            err = 1.0 / binCount;
+        }
+        const field = requireField.call(this, col);
+        if (NumericTypes.indexOf(field.dataType) < 0) {
+            throw new Error(`Field ${col} must be a numeric type to use bin()`);
+        }
+        return new DataStream(this.path, this.repr, this.socket, [...this.mods, new QuantileBin(col, binCount, err)]);
+    }
+
+    select(...cols) {
+        const fields = cols.map(col => requireField.call(this, col));
+        const mod = new Select(cols);
+        return new DataStream(this.path, this.repr, this.socket, [...this.mods, mod]);
+    }
+
     /**
      * Run the stream until it's killed or it completes
      */
@@ -219,7 +343,6 @@ export class DataStream extends EventTarget {
         if (this.runListener) {
             throw "Stream is already running";
         }
-
 
         this.runListener = this.addEventListener('DataBatch', (evt) => {
            this.receivedCount += evt.batch.length;
@@ -231,17 +354,18 @@ export class DataStream extends EventTarget {
            }
         });
 
-        return new Promise((resolve, reject) => {
+        return setupStream.call(this).then(_ => new Promise((resolve, reject) => {
             this.onComplete = resolve;
             this.onError = reject;
             requestNext.call(this);
-        });
+        }));
     }
 
     /**
      * Fetch the next batch from the stream, for a stream that isn't being automatically run via run()
      */
     requestNext() {
+
         if (this.runListener) {
             throw "Stream is already running";
         }
@@ -250,12 +374,12 @@ export class DataStream extends EventTarget {
             throw "Next batch is already being awaited";
         }
         
-        return new Promise(
+        return setupStream.call(this).then(_ => new Promise(
             (resolve, reject) => {
                 this.nextPromise = {resolve, reject};
                 requestNext.call(this);
             }
-        );
+        ));
     }
 
 

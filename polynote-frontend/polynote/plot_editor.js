@@ -19,9 +19,7 @@ import {SocketSession} from "./comms";
 import {GroupAgg, ModifyStream, ReleaseHandle} from "./messages";
 import {Pair} from "./codec";
 import {DataStream, StreamingDataRepr} from "./value_repr";
-import * as vega from "vega-lib";
-
-const embed = require('vega-embed').default;
+import embed from "vega-embed";
 
 
 function isDimension(dataType) {

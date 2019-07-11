@@ -154,6 +154,7 @@ sealed trait NotebookUpdate extends Message {
     case d @ DeleteCell(_, _, _, _)    => d.copy(globalVersion = global, localVersion = local)
     case u @ UpdateConfig(_, _, _, _)  => u.copy(globalVersion = global, localVersion = local)
     case l @ SetCellLanguage(_, _, _, _, _) => l.copy(globalVersion = global, localVersion = local)
+    case o @ SetCellOutput(_, _, _, _, _) => o.copy(globalVersion = global, localVersion = local)
   }
 
   // transform this update so that it has the same effect when applied after the given update
@@ -178,6 +179,7 @@ sealed trait NotebookUpdate extends Message {
     case UpdateCell(_, _, _, id, edits)   => notebook.editCell(id, edits)
     case UpdateConfig(_, _, _, config)    => notebook.copy(config = Some(config))
     case SetCellLanguage(_, _, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
+    case SetCellOutput(_, _, _, id, output) => notebook.setResults(id, output.toList)
   }
 }
 
@@ -226,6 +228,9 @@ object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
 final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate
 object DeleteCell extends MessageCompanion[DeleteCell](15)
+
+final case class SetCellOutput(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, output: Option[Output]) extends Message with NotebookUpdate
+object SetCellOutput extends MessageCompanion[SetCellOutput](22)
 
 final case class ServerHandshake(
   interpreters: TinyMap[TinyString, TinyString]

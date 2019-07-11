@@ -1,25 +1,26 @@
 {
   "browser": "polynote",
   "dependencies": {
-    "katex": "^0.10.0",
-    "markdown-it": "latest",
+    "acorn": "^6.2.0",
+    "katex": "^0.10.2",
+    "markdown-it": "^9.0.0",
     "markdown-it-katex": "latest",
     "monaco-editor": "^0.16.2",
     "monaco-vim": "0.0.11",
-    "monaco-editor-webpack-plugin": "^1.7.0",
     "requirejs": "latest",
-    "vega": "^5.2.0",
-    "vega-embed": "^4.0.0-rc1",
+    "vega": "^5.4.0",
+    "vega-embed": "^4.2.1",
     "vega-lib": "^4.4.0",
-    "vega-lite": "^3.0.0-rc14"
+    "vega-lite": "^3.3.0"
   },
   "devDependencies": {
     "copy-webpack-plugin": "^4.6.0",
-    "css-loader": "^2.1.0",
+    "css-loader": "^2.1.1",
+    "monaco-editor-webpack-plugin": "^1.7.0",
     "style-loader": "^0.23.1",
-    "ts-loader": "^5.3.3",
-    "webpack": "^4.28.1",
-    "webpack-cli": "^3.2.1"
+    "ts-loader": "^5.4.5",
+    "webpack": "^4.35.3",
+    "webpack-cli": "^3.3.5"
   },
   "scripts": {
     "build": "webpack --config webpack.config.js",

@@ -6,7 +6,7 @@ import {} from './theme.js'
 import { LaTeXEditor } from './latex_editor.js'
 import { UIEvent, UIEventTarget } from './ui_event.js'
 import { FakeSelect } from './fake_select.js'
-import { Cell, TextCell, CodeCell, BeforeCellRunEvent } from "./cell.js"
+import { Cell, TextCell, CodeCell, BeforeCellRunEvent, CellExecutionStarted, CellExecutionFinished } from "./cell.js"
 import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, dropdown } from './tags.js'
 import { TaskStatus } from './messages.js';
 import * as messages from './messages.js'
@@ -14,10 +14,12 @@ import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from '
 import { prefs } from './prefs.js'
 import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
-import {ExecutionInfo} from "./result";
-import {CellMetadata} from "./messages";
+import {ClientResult, ExecutionInfo} from "./result";
+import {CellMetadata, CellResult} from "./messages";
 import {Either} from "./codec";
 import {errorDisplay} from "./cell";
+import {clientInterpreters} from "./client_interpreter";
+import {DataRepr, DataStream, StreamingDataRepr} from "./value_repr";
 import {Position} from "monaco-editor";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
@@ -790,6 +792,7 @@ export class NotebookCellsUI extends UIEventTarget {
 
         switch (status.status) {
             case TaskStatus.Complete:
+                dispatchEvent(new CellExecutionFinished(cell.id));
                 cell.container.classList.remove('running', 'queued', 'error');
                 break;
 
@@ -970,6 +973,11 @@ export class NotebookCellsUI extends UIEventTarget {
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);
+            const clientInterpreter = clientInterpreters[language];
+            if (clientInterpreter && clientInterpreter.highlightLanguage && clientInterpreter.highlightLanguage !== language) {
+                monaco.editor.setModelLanguage(newCell.editor.getModel(), clientInterpreter.highlightLanguage)
+            }
+
             newCell.focus();
         } else if (currentCell instanceof CodeCell && language === 'text') {
             // replace code cell with a text cell
@@ -980,7 +988,8 @@ export class NotebookCellsUI extends UIEventTarget {
             newCell.focus();
         } else {
             // already a code cell, change the language
-            monaco.editor.setModelLanguage(currentCell.editor.getModel(), language);
+            const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
+            monaco.editor.setModelLanguage(currentCell.editor.getModel(), highlightLanguage);
             currentCell.setLanguage(language);
         }
     }
@@ -1054,6 +1063,8 @@ export class NotebookUI extends UIEventTarget {
         this.socket = socket;
         this.cellUI = cellUI;
         this.kernelUI = kernelUI;
+
+        this.cellResults = {};
 
         this.globalVersion = 0;
         this.localVersion = 0;
@@ -1395,6 +1406,13 @@ export class NotebookUI extends UIEventTarget {
                         .when(messages.DeleteCell, (p, g, l, id) => this.cellUI.removeCell(id))
                         .when(messages.UpdateConfig, (p, g, l, config) => this.cellUI.configUI.setConfig(config))
                         .when(messages.SetCellLanguage, (p, g, l, id, language) => this.cellUI.setCellLanguage(this.cellUI.getCell(id), language))
+                        .when(messages.SetCellOutput, (p, g, l, id, output) => {
+                            const cell = this.cellUI.getCell(id);
+                            cell.clearResult();
+                            if (output) {
+                                cell.addOutput(output.contentType, output.content);
+                            }
+                        })
                         .otherwise();
 
 
@@ -1430,48 +1448,128 @@ export class NotebookUI extends UIEventTarget {
         });
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
+            console.log("result");
             if (path === this.path) {
                 const cell = this.cellUI.getCell(id);
-                if (cell instanceof CodeCell) {
-                    if (result instanceof CompileErrors) {
-                        cell.setErrors(result.reports);
-                    } else if (result instanceof RuntimeError) {
-                        console.log(result.error);
-                        cell.setRuntimeError(result.error);
-                    } else if (result instanceof Output) {
-                        cell.addOutput(result.contentType, result.content);
-                    } else if (result instanceof ClearResults) {
-                        cell.clearResult();
-                    } else if (result instanceof ExecutionInfo) {
-                        cell.setExecutionInfo(result);
-                    } else if (result instanceof ResultValue) {
-                        cell.addResult(result);
-                    }
-                }
-
-                if (result instanceof ResultValue) {
-                    this.kernelUI.symbols.addSymbol(
-                        result.name,
-                        result.typeName,
-                        result.valueText,
-                        result.sourceCell,
-                        result.pos);
-                }
+                this.handleResult(result, cell);
             }
         });
+    }
+
+    handleResult(result, cell) {
+        if (cell instanceof CodeCell) {
+            if (result instanceof CompileErrors) {
+                cell.setErrors(result.reports);
+            } else if (result instanceof RuntimeError) {
+                console.log(result.error);
+                cell.setRuntimeError(result.error);
+            } else if (result instanceof Output) {
+                cell.addOutput(result.contentType, result.content);
+            } else if (result instanceof ClearResults) {
+                this.cellResults[cell.id] = {};
+                cell.clearResult();
+            } else if (result instanceof ExecutionInfo) {
+                cell.setExecutionInfo(result);
+            } else if (result instanceof ResultValue) {
+                if (!this.cellResults[cell.id]) {
+                    this.cellResults[cell.id] = {};
+                }
+                this.cellResults[cell.id][result.name] = result;
+                cell.addResult(result);
+            } else if (result instanceof ClientResult) {
+                cell.addResult(result);
+            }
+        }
+
+        if (result instanceof ResultValue) {
+            this.kernelUI.symbols.addSymbol(
+                result.name,
+                result.typeName,
+                result.valueText,
+                result.sourceCell,
+                result.pos);
+        }
+    }
+
+    getCellContext(ids) {
+        const cellContext = {};
+        for (let id of ids) {
+            const results = this.cellResults[id];
+            if (!results) {
+                continue;
+            }
+
+            for (let key of Object.keys(results)) {
+                const result = results[key];
+                let bestValue = result.valueText;
+                if (result.reprs instanceof Array) {
+                    const dataRepr = result.reprs.find(repr => repr instanceof DataRepr);
+                    if (dataRepr) {
+                        bestValue = dataRepr.decode();
+                    } else {
+                        const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
+                        if (streamingRepr) {
+                            bestValue = new DataStream(this.path, streamingRepr, this.socket);
+                        }
+                    }
+                }
+                cellContext[key] = bestValue;
+            }
+        }
+        return cellContext;
     }
 
     runCells(cellIds) {
         if (!(cellIds instanceof Array)) {
             cellIds = [cellIds];
         }
+        const serverRunCells = [];
+        let prevCell;
         cellIds.forEach(id => {
             const cell = this.cellUI.getCell(id);
             if (cell) {
                 cell.dispatchEvent(new BeforeCellRunEvent(id));
+                if (!clientInterpreters[cell.language]) {
+                    serverRunCells.push(id);
+                } else if (cell.language !== 'text') {
+                    const code = cell.content;
+                    const cellsBefore = this.cellUI.getCodeCellIdsBefore(id);
+                    const runCell = () => {
+                        cell.clearResult();
+                        let results = clientInterpreters[cell.language].interpret(
+                            code,
+                            {id, availableValues: this.getCellContext(cellsBefore)}
+                        );
+                        if (results instanceof Array) {
+                            results.forEach(result => {
+                               this.handleResult(result, cell);
+                               if (result instanceof ClientResult) {
+                                   // notify the server of the MIME representation
+                                   result.toOutput().then(output => this.socket.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
+                               }
+                            });
+                        }
+                    };
+                    if (prevCell) {
+                        const predecessor = prevCell;
+                        // when the preceeding cell finishes executing, execute this one
+                        const listener = (evt) => {
+                            if (evt.cellId === predecessor) {
+                                removeEventListener('CellExecutionFinished', listener);
+                                runCell();
+                            }
+                        };
+                        addEventListener('CellExecutionFinished', listener)
+                    } else {
+                        runCell();
+                    }
+                }
+                if (cell.language !== 'text') {
+                    prevCell = id;
+                }
             }
         });
-        this.socket.send(new messages.RunCell(this.path, cellIds));
+        this.socket.send(new messages.RunCell(this.path, serverRunCells));
     }
 
     onCellLanguageSelected(setLanguage, path) {
@@ -1899,7 +1997,14 @@ export class MainUI extends EventTarget {
         socket.send(new messages.ListNotebooks([]));
 
         socket.listenOnceFor(messages.ServerHandshake, (interpreters) => {
-            this.toolbarUI.cellToolbar.setInterpreters(interpreters);
+            const allInterpreters = {};
+            for (let interp of Object.keys(interpreters)) {
+                allInterpreters[interp] = interpreters[interp];
+            }
+            for (let interp of Object.keys(clientInterpreters)) {
+                allInterpreters[interp] = clientInterpreters[interp].languageTitle;
+            }
+            this.toolbarUI.cellToolbar.setInterpreters(allInterpreters);
         });
 
         window.addEventListener('popstate', evt => {
