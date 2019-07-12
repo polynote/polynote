@@ -1,8 +1,3 @@
-# A base config to be merged in with this one. Useful if you want to distribute Polynote with some defaults without
-# having to worry about blasting user's config files
-#base: defaults.yml
-
-
 # The host and port can be set by uncommenting and editing the following lines:
 #listen:
 #  host: 0.0.0.0
