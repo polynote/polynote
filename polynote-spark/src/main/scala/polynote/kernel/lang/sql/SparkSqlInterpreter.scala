@@ -14,6 +14,7 @@ import org.apache.spark.sql.thief.SessionStateThief
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import polynote.config.PolyLogger
 import polynote.kernel._
+import polynote.kernel.dependency.DependencyProvider
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.{CellContext, KernelContext, Publish}
 import polynote.messages.{CellID, ShortString, TinyList, TinyString}
@@ -182,7 +183,7 @@ class SparkSqlInterpreter(val kernelContext: KernelContext) extends LanguageInte
 object SparkSqlInterpreter {
   class Factory extends LanguageInterpreter.Factory[IO] {
     def languageName: String = "SQL"
-    def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[IO] = new SparkSqlInterpreter(kernelContext)
+    def apply(kernelContext: KernelContext, dependencies: DependencyProvider): LanguageInterpreter[IO] = new SparkSqlInterpreter(kernelContext)
   }
 
   def factory(): Factory = new Factory

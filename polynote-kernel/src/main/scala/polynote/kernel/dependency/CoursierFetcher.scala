@@ -25,7 +25,7 @@ import scala.concurrent.ExecutionContext
 
 
 // Fetches only Scala dependencies
-class CoursierFetcher extends URLDependencyFetcher {
+class CoursierFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Publish[IO, KernelStatusUpdate]) extends ScalaDependencyFetcher {
 
   protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
@@ -190,9 +190,7 @@ class CoursierFetcher extends URLDependencyFetcher {
   override protected def resolveDependencies(
     repositories: List[RepositoryConfig],
     dependencies: List[DependencyConfigs],
-    exclusions: List[String],
-    taskInfo: TaskInfo,
-    statusUpdates: Publish[IO, KernelStatusUpdate]
+    exclusions: List[String]
   ): IO[List[(String, IO[File])]] = for {
     repos <- IO.fromEither(repos(repositories))
     res   <- resolution(dependencies, exclusions, repos, statusUpdates, taskInfo)
@@ -202,5 +200,11 @@ class CoursierFetcher extends URLDependencyFetcher {
   protected def cacheLocation(uri: URI): Path = {
     val pathParts = Seq(uri.getScheme, uri.getAuthority, uri.getPath).flatMap(Option(_)) // URI methods sometimes return `null`, great.
     coursier.cache.CacheDefaults.location.toPath.resolve(Paths.get(pathParts.head, pathParts.tail: _*))
+  }
+}
+object CoursierFetcher {
+
+  object Factory extends DependencyManagerFactory[IO] {
+    override def apply(path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]): DependencyManager[IO] = new CoursierFetcher(path, taskInfo, statusUpdates)
   }
 }

@@ -17,6 +17,7 @@ import fs2.concurrent.{Enqueue, Queue, SignallingRef}
 import polynote.buildinfo.BuildInfo
 import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel.PolyKernel.EnqueueSome
+import polynote.kernel.dependency.DependencyProvider
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.lang.scal.{ScalaInterpreter, ScalaSource}
 import polynote.kernel.util._
@@ -34,7 +35,7 @@ class PolyKernel private[kernel] (
   private val getNotebook: () => IO[Notebook],
   val kernelContext: KernelContext,
   val outputDir: AbstractFile,
-  dependencies: Map[String, List[(String, File)]],
+  dependencyProviders: Map[String, DependencyProvider],
   val statusUpdates: Publish[IO, KernelStatusUpdate],
   availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
   config: PolynoteConfig
@@ -90,9 +91,10 @@ class PolyKernel private[kernel] (
         val startInterp = launchingInterpreter.acquire.bracket { _ =>
           Option(interpreters.get(language)).map(interp => IO.pure(interp -> Stream.empty)).getOrElse {
             for {
-              factory <- IO.fromEither(Either.fromOption(availableInterpreters.get(language), new RuntimeException(s"No interpreter for language $language")))
-              interp  <- taskManager.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(dependencies.getOrElse(language, Nil), kernelContext))
-              _        = interpreters.put(language, interp)
+              factory  <- IO.fromEither(Either.fromOption(availableInterpreters.get(language), new RuntimeException(s"No interpreter for language $language")))
+              deps     <- IO.fromEither(Either.fromOption(dependencyProviders.get(language), new RuntimeException(s"No dependency providers for language $language")))
+              interp   <- taskManager.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(kernelContext, deps))
+              _         = interpreters.put(language, interp)
               results  <- runPredef(interp, language)
             } yield (interp, results)
           }
@@ -330,7 +332,7 @@ object PolyKernel {
 
   def apply(
     getNotebook: () => IO[Notebook],
-    dependencies: Map[String, List[(String, File)]],
+    dependencies: Map[String, DependencyProvider],
     availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,

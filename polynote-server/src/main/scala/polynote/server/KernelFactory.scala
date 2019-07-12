@@ -2,18 +2,15 @@ package polynote.server
 
 import java.io.File
 
-import cats.effect.{ContextShift, Fiber, IO, Timer}
-import cats.effect.concurrent.Ref
+import cats.effect.{ContextShift, IO, Timer}
 import cats.instances.list._
 import cats.syntax.parallel._
-import fs2.Stream
-import fs2.concurrent.Topic
 import polynote.config.PolynoteConfig
-import polynote.kernel.dependency.DependencyFetcher
-import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel._
-import polynote.kernel.util.{Publish, ReadySignal}
-import polynote.messages.{Notebook, NotebookConfig, TinyMap}
+import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
+import polynote.kernel.lang.LanguageInterpreter
+import polynote.kernel.util.Publish
+import polynote.messages.{Notebook, NotebookConfig, TinyList, TinyMap, TinyString}
 
 import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
@@ -29,7 +26,7 @@ trait KernelFactory[F[_]] {
 }
 
 class IOKernelFactory(
-  dependencyFetchers: Map[String, DependencyFetcher[IO]])(implicit
+  dependencyManagers: Map[String, DependencyManagerFactory[IO]])(implicit
   contextShift: ContextShift[IO],
   timer: Timer[IO]
 ) extends KernelFactory[IO] {
@@ -41,7 +38,7 @@ class IOKernelFactory(
 
   protected def mkKernel(
     getNotebook: () => IO[Notebook],
-    deps: Map[String, List[(String, File)]],
+    deps: Map[String, DependencyProvider],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     config: PolynoteConfig,
@@ -56,8 +53,8 @@ class IOKernelFactory(
     path      = notebook.path
     config    = notebook.config.getOrElse(NotebookConfig.empty)
     taskInfo  = TaskInfo("kernel", "Start", "Kernel starting", TaskStatus.Running)
-    deps     <- fetchDependencies(config, statusUpdates)
-    numDeps   = deps.values.map(_.size).sum
+    deps     <- fetchDependencyProviders(config, path, statusUpdates)
+    numDeps   = deps.values.map(_.dependencies.size).sum
     _        <- statusUpdates.publish1(UpdatedTasks(taskInfo.copy(progress = (numDeps.toDouble / (numDeps + 1) * 255).toByte) :: Nil))
     kernel   <- mkKernel(getNotebook, deps, LanguageInterpreter.factories, statusUpdates, polynoteConfig, extraClassPath, settings, outputDir, parentClassLoader)
     _        <- kernel.init()
@@ -65,63 +62,24 @@ class IOKernelFactory(
     _        <- statusUpdates.publish1(KernelBusyState(busy = false, alive = true))
   } yield kernel
 
-  private def fetchDependencies(config: NotebookConfig, statusUpdates: Publish[IO, KernelStatusUpdate]) = {
+  private def fetchDependencyProviders(config: NotebookConfig, path: String, statusUpdates: Publish[IO, KernelStatusUpdate]): IO[Map[String, DependencyProvider]] = {
     val dependenciesTask = TaskInfo("Dependencies", "Fetch dependencies", "Resolving dependencies", TaskStatus.Running)
     for {
       _       <- statusUpdates.publish1(UpdatedTasks(dependenciesTask :: Nil))
-      deps    <- resolveDependencies(config, dependenciesTask, statusUpdates)
-      fetched <- downloadDependencies(deps, dependenciesTask, statusUpdates)
+      deps    <- getDependencies(config, path, dependenciesTask, statusUpdates)
       fin      = dependenciesTask.copy(detail = s"Downloaded ${deps.size} dependencies", status = TaskStatus.Complete, progress = 255.toByte)
       _       <- statusUpdates.publish1(UpdatedTasks(fin :: Nil))
-    } yield fetched
+    } yield deps
   }
 
-  private def resolveDependencies(config: NotebookConfig, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]) = {
-    val fetch = config.dependencies.toList
-      .flatMap(_.toList)
-      .flatMap {
-        case (lang, langDeps) => dependencyFetchers.get(lang).map {
-          fetcher =>
-            fetcher.fetchDependencyList(config.repositories.getOrElse(Nil), TinyMap(Map(lang -> langDeps)) :: Nil, config.exclusions.getOrElse(Nil), taskInfo, statusUpdates).map {
-              _.map {
-                case (name, ioFile) => (lang, name, ioFile)
-              }
-            }
-        }
-      }
-    fetch.parSequence.map {
-      depDeps =>
-        val flat = depDeps.flatten
-        flat
-    }
-  }
+  private def getDependencies(config: NotebookConfig, path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]): IO[Map[String, DependencyProvider]] = {
+    val dependencies = config.dependencies.toList.flatMap(_.toList).toMap
 
-  // TODO: ignoring download errors for now, until the weirdness of resolving nonexisting artifacts is solved
-  private def downloadFailed(err: Throwable): IO[Option[(String, String, File)]] = IO {
-    err match {
-      case other =>
-        // don't ignore other errors
-        throw RuntimeError(new Exception(s"Error while downloading dependencies: ${other.getMessage}", other))
-    }
+    dependencyManagers.toList.map {
+      case (lang, makeDepManager) =>
+        val depManager = makeDepManager(path, taskInfo, statusUpdates)
+        val deps = dependencies.getOrElse(lang, TinyList(Nil))
+        depManager.getDependencyProvider(config.repositories.getOrElse(Nil), TinyMap(Map(TinyString(lang) -> deps)) :: Nil, config.exclusions.getOrElse(Nil)).map(lang.toString -> _)
+    }.parSequence.map(_.toMap)
   }
-
-  private def downloadDependencies(deps: List[(String, String, IO[File])], taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]) = {
-    val completedCounter = Ref.unsafe[IO, Int](0)
-    val numDeps = deps.size
-    deps.map {
-      case (lang, name, ioFile) => for {
-        download     <- ioFile.start
-        file         <- download.join
-        _            <- completedCounter.update(_ + 1)
-        numCompleted <- completedCounter.get
-        statusUpdate  = taskInfo.copy(detail = s"Downloaded $numCompleted / $numDeps", progress = ((numCompleted.toDouble * 255) / numDeps).toByte)
-        _            <- statusUpdates.publish1(UpdatedTasks(statusUpdate :: Nil))
-      } yield (lang, name, file)
-    }.map(_.map(Some(_)).handleErrorWith(downloadFailed)).parSequence.map {
-      fetched => fetched.flatten.groupBy(_._1).mapValues(_.map {
-        case (_, name, file) => (name, file)
-      })
-    }
-  }
-
 }

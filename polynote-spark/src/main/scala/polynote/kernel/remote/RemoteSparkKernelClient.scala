@@ -152,7 +152,7 @@ object RemoteSparkKernelClient extends IOApp with KernelLaunching {
 
   private val logger = new PolyLogger
 
-  override protected def kernelFactory: KernelFactory[IO] = new SparkKernelFactory(dependencyFetchers)
+  override protected def kernelFactory: KernelFactory[IO] = new SparkKernelFactory(dependencyManagers)
 
   @tailrec
   private def getArgs(remaining: List[String]): IO[InetSocketAddress] = remaining match {

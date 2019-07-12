@@ -4,6 +4,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.IO
+import polynote.kernel.dependency.DependencyProvider
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.{CellContext, KernelContext}
 
@@ -41,7 +42,7 @@ object ScalaSparkInterpreter {
 
   class Factory extends LanguageInterpreter.Factory[IO] {
     override val languageName: String = "Scala"
-    override def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[IO] =
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): LanguageInterpreter[IO] =
       new ScalaSparkInterpreter(kernelContext)
   }
 

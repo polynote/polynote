@@ -1,48 +1,39 @@
 package polynote.kernel
 
 import java.io.File
-import java.net.{JarURLConnection, URL, URLDecoder}
+import java.net.URLDecoder
 import java.nio.file.{FileSystems, Files, Path, StandardCopyOption}
 import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
-import java.util.function.BiFunction
 
 import cats.data.OptionT
 import cats.effect.IO
-import cats.effect.concurrent.{Deferred, Ref}
-import cats.syntax.flatMap._
+import cats.effect.concurrent.Deferred
 import cats.syntax.apply._
-import fs2.concurrent.Topic
-import org.apache.spark.{SparkConf, SparkEnv, Success}
-import org.apache.spark.rdd.RDD
-import org.apache.spark.scheduler._
+import cats.syntax.flatMap._
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.thief.DAGSchedulerThief
-import org.log4s
 import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
-import polynote.kernel.dependency.DependencyFetcher
+import polynote.kernel.dependency.DependencyProvider
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.KernelContext
 import polynote.kernel.util.{KernelContext, Publish}
 import polynote.messages._
 
-import scala.reflect.internal.util.AbstractFileClassLoader
-import scala.reflect.io.{AbstractFile, Directory, PlainDirectory, VirtualDirectory}
+import scala.reflect.io.{AbstractFile, Directory, PlainDirectory}
 import scala.tools.nsc.{Settings, io}
-import scala.tools.nsc.interactive.Global
 
 // TODO: Should the spark init stuff go into the Spark Scala kernel? That way PolyKernel could be the only Kernel.
 class SparkPolyKernel(
   getNotebook: () => IO[Notebook],
   ctx: KernelContext,
-  dependencies: Map[String, List[(String, File)]],
+  dependencyProviders: Map[String, DependencyProvider],
   statusUpdates: Publish[IO, KernelStatusUpdate],
   outputPath: Path,
   subKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
   parentClassLoader: ClassLoader,
   config: PolynoteConfig
-) extends PolyKernel(getNotebook, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencies, statusUpdates, subKernels, config) {
+) extends PolyKernel(getNotebook, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencyProviders, statusUpdates, subKernels, config) {
 
   import kernelContext.global
 
@@ -77,8 +68,9 @@ class SparkPolyKernel(
     val tmp = Files.createTempDirectory("dependencies")
     tmp.toFile.deleteOnExit()
 
+
     val jars = for {
-      namedFiles <- dependencies.values.toList
+      namedFiles <- dependencyProviders.get("spark").map(_.dependencies).toList
       (_, file) <- namedFiles if file.getName endsWith ".jar"
     } yield file -> tmp.resolve(URLDecoder.decode(file.getName, "utf-8"))
 
@@ -169,7 +161,7 @@ class SparkPolyKernel(
 object SparkPolyKernel {
   def apply(
     getNotebook: () => IO[Notebook],
-    dependencies: Map[String, List[(String, File)]],
+    dependencies: Map[String, DependencyProvider],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File] = Nil,

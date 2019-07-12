@@ -7,6 +7,7 @@ import cats.effect.IO
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import polynote.kernel._
+import polynote.kernel.dependency.DependencyProvider
 import polynote.kernel.util.{CellContext, KernelContext, Publish}
 import polynote.messages.CellID
 
@@ -63,7 +64,7 @@ object LanguageInterpreter {
 
   trait Factory[F[_]] {
     def languageName: String
-    def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[F]
+    def apply(kernelContext: KernelContext, dependencies: DependencyProvider): LanguageInterpreter[F]
   }
 
   lazy val factories: Map[String, Factory[IO]] = ServiceLoader.load(classOf[LanguageInterpreterService]).iterator.asScala.toSeq

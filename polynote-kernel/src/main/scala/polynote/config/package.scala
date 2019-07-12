@@ -12,6 +12,7 @@ import cats.instances.list._
 import cats.instances.either._
 
 package object config {
+  //                               lang      , deps
   type DependencyConfigs = TinyMap[TinyString, TinyList[TinyString]]
 
   sealed trait RepositoryConfig

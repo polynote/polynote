@@ -2,10 +2,15 @@ package polynote.kernel.lang.python
 
 import java.io.File
 
-import sys.process._
-import cats.effect.{ContextShift, IO}
-import jep.Jep
-import polynote.kernel.util.Memoize
+import cats.effect.IO
+import polynote.config
+import polynote.config.DependencyConfigs
+import polynote.kernel.dependency.{DependencyManager, DependencyManagerFactory, DependencyProvider}
+import polynote.kernel.util.Publish
+import polynote.kernel.{KernelStatusUpdate, TaskInfo}
+import polynote.messages.TinyString
+
+import scala.sys.process._
 
 // TODO:
 //    Pip dependencies need to be threaded all the way through from the UI to the interpreter.
@@ -13,65 +18,52 @@ import polynote.kernel.util.Memoize
 //      Maybe dependencies should be keyed by their interpreter, and there should be some way for interpreters to
 //      register some config that'll get to the UI. Maybe some message that gets sent (like interpreters in the handshake)
 
-case class PipDependency(name: String, version: Option[String]) {
-  def toPipDepString: String = version.map(v => s"$name==$v").getOrElse(name)
-}
+class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpdates: Publish[IO, KernelStatusUpdate]) extends DependencyManager[IO] {
 
-object PipDependency {
-  def apply(pipDepString: String): PipDependency = {
-    pipDepString.split("==") match {
-      case Array(name, version) =>
-        PipDependency(name, Option(version))
-      case Array(name) =>
-        PipDependency(name, None)
-      case _ => throw new Exception(s"Unable to parse pip dependency $pipDepString")
-    }
-  }
-}
-
-/**
-  * Class handling interaction with the virtualenv.
-  *
-  * @param pathPrefix where to put the virtualenv. Generally the notebook name.
-  * @param dependencies pip dependencies to install in the virtualenv.
-  */
-class VirtualEnvManager(pathPrefix: String, dependencies: Seq[PipDependency])(implicit contextShift: ContextShift[IO]) {
-
-  lazy val venv: Memoize[File] = Memoize.unsafe(IO {
+  lazy val venv = IO {
 
     // I added the `--system-site-packages` flag so that we can rely on system packages in the majority of cases where
     // users don't need a specific version. That way, e.g., it won't take many minutes to compile numpy every time
     // the kernel starts up...
-    Seq("virtualenv", "--system-site-packages", "--python=python3", pathPrefix).!
+    Seq("virtualenv", "--system-site-packages", "--python=python3", path).!
 
-    dependencies.foreach {
-      dep =>
-        Seq(s"$pathPrefix/bin/pip", "install", dep.toPipDepString).!
-    }
-
-    new File(pathPrefix)
-  })
-
-  // call this on Jep initialization to set the venv properly
-  lazy val activate: IO[String] = venv.get.map {
-    path =>
-      s"""exec(open("${path.getAbsolutePath}/bin/activate_this.py").read(), {'__file__': "${path.getAbsolutePath}/bin/activate_this.py"}) """
+    new File(path)
   }
 
-  /**
-    * Defines a command to be used to add dependencies to Spark.
-    *
-    * TODO: maybe this should go somewhere else?
-    */
-  val pyDepCommand: String =
-    """
-      |import sys, shutil
-      |
-      |# sc is the PySpark Context
-      |def archive(sc):
-      |    loc = next(x for x in sys.path if sys.prefix in x and "site-packages" in x)
-      |    out_file = "./deps.zip"
-      |    shutil.make_archive(out_file, 'zip', loc) # make_archive isn't thread safe (https://bugs.python.org/issue30511) but that should be ok here, right?
-      |    sc.addPyFile(out_file)
-      |""".stripMargin
+  override def getDependencyProvider(
+    repositories: List[config.RepositoryConfig],
+    dependencies: List[DependencyConfigs],
+    exclusions: List[String]
+  ): IO[DependencyProvider] = venv.map {
+    venv =>
+
+      val deps = dependencies.flatMap(_.get(TinyString("python"))).flatMap(_.toList)
+
+      deps.foreach {
+        dep =>
+          Seq(s"${venv.getAbsolutePath}/bin/pip", "install", dep).!
+      }
+
+      mkDependencyProvider(venv, deps.map(_ -> venv))
+  }
+
+  def mkDependencyProvider(venv: File, dependencies: List[(String, File)]) = new VirtualEnvDependencyProvider(venv, dependencies)
+}
+
+class VirtualEnvDependencyProvider(venv: File, val dependencies: List[(String, File)]) extends DependencyProvider {
+
+  private val path = venv.getAbsolutePath
+
+  // call this on Jep initialization to set the venv properly
+  def beforeInit: String =
+    s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"}) """
+
+  // call this after interpreter initialization is complete
+  def afterInit: String = ""
+}
+
+object VirtualEnvManager {
+  object Factory extends DependencyManagerFactory[IO] {
+    override def apply(path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]): DependencyManager[IO] = new VirtualEnvManager(path, taskInfo, statusUpdates)
+  }
 }

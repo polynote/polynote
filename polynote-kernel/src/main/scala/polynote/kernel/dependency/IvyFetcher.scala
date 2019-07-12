@@ -30,7 +30,7 @@ import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
-class IvyFetcher extends URLDependencyFetcher {
+class IvyFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Publish[IO, KernelStatusUpdate]) extends ScalaDependencyFetcher {
   protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
 
@@ -42,9 +42,7 @@ class IvyFetcher extends URLDependencyFetcher {
   override protected def resolveDependencies(
     repositories: List[RepositoryConfig],
     dependencies: List[DependencyConfigs],
-    exclusions: List[String],
-    taskInfo: TaskInfo,
-    statusUpdates: Publish[IO, KernelStatusUpdate]
+    exclusions: List[String]
   ): IO[List[(String, IO[File])]] = {
 
     val settings = createSettings(repositories, statusUpdates)
@@ -297,5 +295,11 @@ class IvyFetcher extends URLDependencyFetcher {
         }
       }
     }
+  }
+}
+object IvyFetcher {
+
+  object Factory extends DependencyManagerFactory[IO] {
+    override def apply(path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]): DependencyManager[IO] = new IvyFetcher(path, taskInfo, statusUpdates)
   }
 }
