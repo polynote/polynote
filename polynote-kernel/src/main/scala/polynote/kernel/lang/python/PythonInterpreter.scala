@@ -162,7 +162,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
   val preInit: IO[Unit] = IO.fromEither(dependencyProvider.as[VirtualEnvDependencyProvider]).map {
     p =>
       withJep {
-        jep.eval(p.beforeInit)
+        jep.eval(p.runBeforeInit)
       }
   }
 

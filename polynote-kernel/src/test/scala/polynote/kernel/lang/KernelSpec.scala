@@ -109,9 +109,6 @@ trait KernelSpec {
   }
 }
 
-class MockVenvDepProvider extends VirtualEnvDependencyProvider(new File("."), Nil) {
-  override def beforeInit: String = ""
-  override def afterInit: String = ""
-}
+class MockVenvDepProvider extends VirtualEnvDependencyProvider(Nil, None)
 class MockCLDepProvider extends ClassLoaderDependencyProvider(Nil)
 

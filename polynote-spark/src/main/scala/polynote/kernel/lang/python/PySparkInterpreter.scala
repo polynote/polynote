@@ -15,7 +15,7 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
   val postInit: IO[Unit] = IO.fromEither(dependencyProvider.as[PySparkVirtualEnvDependencyProvider]).map {
     p =>
       withJep {
-        jep.eval(p.afterInit)
+        jep.eval(p.runAfterInit)
       }
   }
 

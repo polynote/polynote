@@ -10,18 +10,18 @@ import polynote.kernel.util.Publish
 class PySparkVirtualEnvManager(path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate])
   extends VirtualEnvManager(path, taskInfo, statusUpdates) {
 
-  override def mkDependencyProvider(venv: File, dependencies: List[(String, File)]): VirtualEnvDependencyProvider =
-    new PySparkVirtualEnvDependencyProvider(venv, dependencies)
+  override def mkDependencyProvider(dependencies: List[(String, File)], venv: Option[File]): VirtualEnvDependencyProvider =
+    new PySparkVirtualEnvDependencyProvider(dependencies, venv)
 }
 
 class PySparkVirtualEnvDependencyProvider(
-  venv: File,
-  override val dependencies: scala.List[(String, File)]
-) extends VirtualEnvDependencyProvider(venv, dependencies) {
+  override val dependencies: scala.List[(String, File)],
+  venv: Option[File]
+) extends VirtualEnvDependencyProvider(dependencies, venv) {
 
-  override def beforeInit: String =
+  override def beforeInit(path: String): String =
     s"""
-       |${super.beforeInit}
+       |${super.beforeInit(path)}
        |
        |import sys, shutil
        |
@@ -33,7 +33,7 @@ class PySparkVirtualEnvDependencyProvider(
        |    sc.addPyFile(out_file)
      """.stripMargin
 
-  override val afterInit: String = "archive(sc)"
+  override def afterInit(path: String): String = "archive(sc)"
 }
 
 object PySparkVirtualEnvManager {

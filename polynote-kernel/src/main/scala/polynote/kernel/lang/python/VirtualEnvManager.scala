@@ -34,32 +34,41 @@ class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpda
     repositories: List[config.RepositoryConfig],
     dependencies: List[DependencyConfigs],
     exclusions: List[String]
-  ): IO[DependencyProvider] = venv.map {
-    venv =>
+  ): IO[DependencyProvider] = {
 
-      val deps = dependencies.flatMap(_.get(TinyString("python"))).flatMap(_.toList)
+    val deps = dependencies.flatMap(_.get(TinyString("python"))).flatMap(_.toList)
 
-      deps.foreach {
-        dep =>
-          Seq(s"${venv.getAbsolutePath}/bin/pip", "install", dep).!
+    if (deps.nonEmpty) {
+      venv.map {
+        venv =>
+
+          deps.foreach {
+            dep =>
+              Seq(s"${venv.getAbsolutePath}/bin/pip", "install", dep).!
+          }
+
+          // TODO: actual dep locations?
+          mkDependencyProvider(deps.map(_ -> venv), Option(venv))
       }
-
-      mkDependencyProvider(venv, deps.map(_ -> venv))
+    } else {
+      IO.pure(mkDependencyProvider(Nil, None))
+    }
   }
 
-  def mkDependencyProvider(venv: File, dependencies: List[(String, File)]) = new VirtualEnvDependencyProvider(venv, dependencies)
+  def mkDependencyProvider(dependencies: List[(String, File)], venv: Option[File]) = new VirtualEnvDependencyProvider(dependencies, venv)
 }
 
-class VirtualEnvDependencyProvider(venv: File, val dependencies: List[(String, File)]) extends DependencyProvider {
+class VirtualEnvDependencyProvider(val dependencies: List[(String, File)], venv: Option[File]) extends DependencyProvider {
 
-  private val path = venv.getAbsolutePath
+  protected val venvPath: Option[String] = venv.map(_.getAbsolutePath)
 
   // call this on Jep initialization to set the venv properly
-  def beforeInit: String =
-    s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"}) """
+  protected def beforeInit(path: String): String = s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"}) """
+  final def runBeforeInit: String = venvPath.map(beforeInit).getOrElse("")
 
   // call this after interpreter initialization is complete
-  def afterInit: String = ""
+  protected def afterInit(path: String): String = ""
+  final def runAfterInit: String = venvPath.map(afterInit).getOrElse("")
 }
 
 object VirtualEnvManager {
