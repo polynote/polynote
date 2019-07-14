@@ -14,7 +14,7 @@ DataType.delegatedCodec = {
     decode: (reader) => DataType.codec.decode(reader)
 };
 
-function SingletonDataType(msgTypeId, readBuf, name) {
+function SingletonDataType(msgTypeId, readBuf, name, isNumeric) {
     const inst = {
         msgTypeId,
         name: (inst) => name,
@@ -22,7 +22,8 @@ function SingletonDataType(msgTypeId, readBuf, name) {
         codec: {
             encode: (value, writer) => {},
             decode: (reader) => inst,
-        }
+        },
+        isNumeric: isNumeric || false
     };
     Object.setPrototypeOf(inst, DataType);
     inst.constructor = inst;
@@ -31,11 +32,11 @@ function SingletonDataType(msgTypeId, readBuf, name) {
 
 export const ByteType = SingletonDataType(0, reader => reader.readUint8(), 'byte');
 export const BoolType = SingletonDataType(1, reader => reader.readBoolean(), 'boolean');
-export const ShortType = SingletonDataType(2, reader => reader.readInt16(), 'int2');
-export const IntType = SingletonDataType(3, reader => reader.readInt32(), 'int4');
-export const LongType = SingletonDataType(4, reader => reader.readInt64(), 'int8');
-export const FloatType = SingletonDataType(5, reader => reader.readFloat32(), 'float4');
-export const DoubleType = SingletonDataType(6, reader => reader.readFloat64(), 'float8');
+export const ShortType = SingletonDataType(2, reader => reader.readInt16(), 'int2', true);
+export const IntType = SingletonDataType(3, reader => reader.readInt32(), 'int4', true);
+export const LongType = SingletonDataType(4, reader => reader.readInt64(), 'int8', true);
+export const FloatType = SingletonDataType(5, reader => reader.readFloat32(), 'float4', true);
+export const DoubleType = SingletonDataType(6, reader => reader.readFloat64(), 'float8', true);
 export const BinaryType = SingletonDataType(7, reader => reader.readBuffer(), 'binary');
 export const StringType = SingletonDataType(8, reader => reader.readString(), 'string');
 

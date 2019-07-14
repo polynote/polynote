@@ -16,43 +16,6 @@ export class ReprDataRequest extends UIEvent {
     }
 }
 
-export class ReprUI extends UIEventTarget {
-
-    constructor(name, path, reprs, targetEl) {
-        super();
-        this.name = name;
-        this.path = path;
-        this.reprs = reprs;
-        this.targetEl = targetEl;
-        this.contentContainer = div(['repr-ui-content'], []);
-        this.tabUI = new TabUI({ content: this.contentContainer });
-        this.el = div(['repr-ui'], [this.tabUI.el, this.contentContainer]);
-    }
-
-    show() {
-        this.targetEl.parentNode.replaceChild(this.el, this.targetEl);
-        const defaultTab = this.tabUI.addTab('Default', span([],'Default'), {content: this.targetEl});
-        this.reprs.forEach(repr => this.addReprTabs(repr));
-        // kind of hacky way to hide tab if there's only one
-        if (Object.keys(this.tabUI.tabs).length <= 1) {
-           this.tabUI.tabContainer.style.display = "none";
-        }
-        this.tabUI.activateTab(defaultTab);
-    }
-
-    addReprTabs(repr) {
-        if (repr instanceof StreamingDataRepr && repr.dataType instanceof StructType) {
-            // various table views
-            this.tableView = new TableView(repr, this.path);
-            this.tabUI.addTab('Table', span([], 'Data'), {content: this.tableView.el});
-            this.plotView = new PlotEditor(repr, this.path, this.name);
-            this.tabUI.addTab('Plot', span([], 'Plot'), {content: this.plotView.el});
-        }
-    }
-
-
-
-}
 
 function renderData(dataType, data) {
     // TODO: nicer display
@@ -65,7 +28,7 @@ function renderData(dataType, data) {
     return span([], value).attr('title', value);
 }
 
-class TableView {
+export class TableView {
 
     constructor(repr, path) {
         if (!(repr instanceof StreamingDataRepr) || !(repr.dataType instanceof StructType))
@@ -88,7 +51,11 @@ class TableView {
         ]);
 
         this.table.tBodies.item(0).appendChild(
-            tag('tr', ['.initial-msg'], {'colspan': fields.length + ''}, ['Click "next page" (', span(['fas', 'icon'], ''), ') to load data.'])
+            tag('tr', ['initial-msg'], {}, [
+                tag('td', [],  {'colspan': fields.length + ''},[
+                    'Click "next page" (', span(['fas', 'icon'], ''), ') to load data.', tag('br'),
+                    'This will force evaluation of lazy data.'
+                ])])
         );
 
         this.stream = new DataStream(path, repr, SocketSession.current).batch(20);

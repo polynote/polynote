@@ -5,7 +5,7 @@ function appendContent(el, content) {
         content = [content];
     }
 
-    for (var item of content) {
+    for (let item of content) {
         if (typeof item === "string") {
             el.appendChild(document.createTextNode(item));
         } else if (item instanceof Node) {
@@ -15,6 +15,9 @@ function appendContent(el, content) {
 }
 
 export function tag(name, classes, attributes, content) {
+    classes = classes || [];
+    attributes = attributes || {};
+    content = content || [];
     const el = document.createElement(name);
     el.classList.add(...classes);
     for (var attr in attributes) {
