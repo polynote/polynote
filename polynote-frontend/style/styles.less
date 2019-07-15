@@ -304,10 +304,6 @@ body {
   border-left-width: @cell-left-border-width;
   position: relative;
 
-  display: grid;
-  grid-template-areas: "input"
-                       "output";
-
   &.selected, &.active {
     border-radius: 6px;
     border: 1px solid @ui-selected;
@@ -332,28 +328,24 @@ body {
 
     grid-area: input;
 
-    display: grid;
-    grid-template-areas: "tools content"
-                         "tools footer";
-    grid-template-columns: @cell-margin-width auto;
 
     .cell-input-tools {
       background: @ui-background;
       box-sizing: border-box;
-      grid-area: tools;
-
       display: grid;
-      grid-template-areas: "button label"
-                           ". .";
-      grid-template-columns: auto auto;
+      font-size: 11pt;
+      grid-template-areas: "button label lang options exec-info";
+      grid-template-columns: min-content 9ch min-content 2fr 1fr;
       grid-template-rows: min-content;
       border-right: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
 
       button {
-        display: block;
         line-height: 1;
-        background-size: 20px 20px;
-        font-size: 24px;
+        background-size: 12px 12px;
+        background-position: 90% 90%;
+        font-size: inherit;
+        padding: .5em 1ch;
       }
 
       .run-cell {
@@ -367,72 +359,88 @@ body {
 
       .cell-label {
         font-family: @code-fonts;
-        text-align: right;
-        font-size: 11pt;
-        grid-column: label;
-        padding: 0.5em;
+        text-align: left;
+        font-size: inherit;
+        grid-area: label;
+        padding: .5em 1ch;
 
+        &:before {
+          content: 'In(';
+        }
         &:after {
-          content: ':';
+          content: '):';
+        }
+      }
+
+      .lang-selector {
+        grid-area: lang;
+        display: flex;
+        align-items: center;
+      }
+
+      .options {
+        grid-area: options;
+        text-align: left;
+        padding-left: 1em;
+        display: none;
+
+        .toggle-code {
+          font-weight: 900;
+          font-family: @code-fonts;
+          padding: .5em;
+        }
+      }
+
+      .exec-info {
+        text-align: right;
+        font-style: italic;
+        font-size: 8pt;
+        color: #808080;
+        padding: 5.5pt;
+        line-height: 11pt;
+        display: none;
+        grid-area: exec-info;
+
+        &.output {
+          display: block;
+        }
+
+        .exec-start::before {
+          content: "Ran on ";
+        }
+        .exec-start::after {
+          content: " took ";
+        }
+
+        &.running {
+          .exec-start::before {
+            content: "Started at ";
+          }
+          .exec-start::after {
+            content: " running for ";
+          }
         }
       }
     }
 
     .cell-input-editor {
-      border-bottom: 1px dashed @ui-border;
-
       padding: 3pt;
-      min-height: 3em;
       overflow: hidden;
-      grid-area: content;
     }
 
     .cell-footer {
-      display: grid;
+      display: none;
       grid-template-columns: [vim] auto [exec-info] max-content;
       grid-template-rows: auto;
-      grid-area: footer;
       padding: 2px 4px 2px 4px;
       line-height: 1.5;
       font-size: 11pt;
-      min-height: 1.5em; // remove jumpiness due to vim statusbar
-
-    }
-
-    .exec-info {
-      text-align: right;
-      font-style: italic;
-      font-size: 0.8em;
-      color: #808080;
-      padding: 4px;
-      display: none;
-      grid-area: exec-info;
-
-      &.output {
-        display: block;
-      }
-
-      .exec-start::before {
-        content: "Ran on ";
-      }
-      .exec-start::after {
-        content: " took ";
-      }
-
-      &.running {
-        .exec-start::before {
-          content: "Started at ";
-        }
-        .exec-start::after {
-          content: " running for ";
-        }
-      }
+      border-top: 1px dashed @ui-border;
     }
 
     .vim-status {
       white-space: pre;
       font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
-      grid-area: vim;
 
       &.hide {
         display: none !important;
@@ -440,20 +448,22 @@ body {
     }
   }
 
+  &.code-cell:hover .cell-input-tools .options {
+    display: block;
+  }
+
   &.code-cell .exec-info {
     display: block;
   }
 
   &.code-cell .cell-input {
-    border-left: 1px solid @ui-border-light;
-    border-right: 1px solid @ui-border-light;
-    border-top: 1px solid @ui-border-light;
+    border-left: 1px solid @ui-border;
+    border-right: 1px solid @ui-border;
+    border-top: 1px solid @ui-border;
   }
 
   &.code-cell .cell-output {
-    border-left: 1px solid @ui-border-light;
-    border-right: 1px solid @ui-border-light;
-    border-bottom: 1px solid @ui-border-light;
+    border: 1px solid @ui-border;
   }
 
   &.code-cell .cell-input .cell-input-editor {
@@ -479,7 +489,7 @@ body {
       }
 
       .cell-input-tools {
-        display: block;
+        display: none;
         * {
           display: none;
         }
@@ -517,7 +527,6 @@ body {
       color: #24292e;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
       font-size: 16px;
-      line-height: 1.5;
       word-wrap: break-word;
       border-left: 1px solid transparent;
       outline: none;
@@ -1208,23 +1217,15 @@ body {
   .cell-output {
     grid-area: output;
 
-    display: grid;
-    grid-template-areas: "margin output"
-                         "results-margin results";
-    grid-template-columns: @cell-margin-width auto;
-
     .cell-output-margin {
       background: @ui-background;
-      border-right: 1px solid @ui-border;
     }
 
     .cell-output-block {
-      grid-area: output;
       display: block; // must be block for performance reasons.
     }
 
     .cell-output-container {
-      display: grid;
     }
 
     .errors, .output {
@@ -1281,12 +1282,10 @@ body {
 
     .cell-result-margin {
       background: @ui-background;
-      border-right: 1px solid @ui-border;
     }
 
     .cell-output-tools {
       display: none;
-      padding: 0.1em;
       position: relative;
       min-height: @tab-view-height;
       overflow: auto;
@@ -1306,13 +1305,19 @@ body {
         padding-left: 2em;
       }
 
+      .output {
+        padding: 1em 2em;
+      }
+
     }
 
     .out-ident {
       color: #D84315;
       font-family: @code-fonts;
       font-size: 11pt;
-      text-align: right;
+      border-bottom: 1px solid @ui-border;
+      padding: .25em 0 .25em 32pt;
+      position: relative;
     }
 
     .cell-output-display {
@@ -1320,7 +1325,6 @@ body {
       padding-top: 0.5em;
       padding-bottom: 0.5em;
       margin-bottom: 1em;
-      border-bottom: 1px dashed @ui-border;
       overflow: auto;
       resize: vertical;
       position: relative;
@@ -1385,6 +1389,10 @@ body {
   }
 }
 
+.vim-enabled .cell-container.code-cell .cell-input .cell-footer {
+  display: grid;
+  height: 1.5em;
+}
 
 button {
 
@@ -1427,6 +1435,8 @@ button.inspect.icon-button {
   padding: 0;
   background: transparent !important;
   border: none !important;
+  position: absolute;
+  left: 14pt;
 }
 
 .monaco-editor button.inspect.icon-button {

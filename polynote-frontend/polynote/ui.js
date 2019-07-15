@@ -32,8 +32,9 @@ export class MainToolbar extends EventTarget {
     }
 }
 
-export class KernelSymbolsUI {
+export class KernelSymbolsUI extends UIEventTarget {
     constructor(path) {
+        super();
         this.symbols = {};
         this.presentedCell = 0;
         this.visibleCells = [];
@@ -421,7 +422,7 @@ export class KernelUI extends UIEventTarget {
     constructor(socket, path) {
         super();
         this.info = new KernelInfoUI();
-        this.symbols = new KernelSymbolsUI(path);
+        this.symbols = new KernelSymbolsUI(path).setEventParent(this);
         this.tasks = new KernelTasksUI();
         this.socket = socket;
         this.path = path;
@@ -1062,6 +1063,8 @@ export class NotebookUI extends UIEventTarget {
 
         this.editBuffer = new EditBuffer();
 
+        this.addEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, this.path, evt.detail.cellId));
+
         this.cellUI.addEventListener('UpdatedConfig', evt => {
             const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
             this.editBuffer.push(this.localVersion, update);
@@ -1124,7 +1127,7 @@ export class NotebookUI extends UIEventTarget {
             }
         });
 
-        this.cellUI.addEventListener('InsertCellAfter', evt => {
+        this.addEventListener('InsertCellAfter', evt => {
            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.firstCell().id);
            const nextId = maxId(this.cellUI.getCells()) + 1;
            let newCell = evt.detail.mkCell;
@@ -1566,12 +1569,20 @@ export class NotebookUI extends UIEventTarget {
         this.socket.send(new messages.RunCell(this.path, serverRunCells));
     }
 
-    onCellLanguageSelected(setLanguage, path) {
-        if (Cell.currentFocus && this.cellUI.getCell(Cell.currentFocus.id) && this.cellUI.getCell(Cell.currentFocus.id).language !== setLanguage) {
-            const id = Cell.currentFocus.id;
-            this.cellUI.setCellLanguage(Cell.currentFocus, setLanguage);
-            this.socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
+    onCellLanguageSelected(setLanguage, path, id) {
+        if (path !== this.path) {
+            return;
         }
+
+        id = id || Cell.currentFocus.id;
+        if (id) {
+            const cell = this.cellUI.getCell(id);
+            if (cell.language !== setLanguage) {
+                this.cellUI.setCellLanguage(cell, setLanguage);
+                this.socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
+            }
+        }
+
     }
     
     onCellsLoaded(path, cells, config) {
@@ -1959,6 +1970,8 @@ export class WelcomeUI extends UIEventTarget {
     }
 }
 
+export const Interpreters = {};
+
 export class MainUI extends EventTarget {
     constructor(socket) {
         super();
@@ -1991,14 +2004,14 @@ export class MainUI extends EventTarget {
         socket.send(new messages.ListNotebooks([]));
 
         socket.listenOnceFor(messages.ServerHandshake, (interpreters) => {
-            const allInterpreters = {};
             for (let interp of Object.keys(interpreters)) {
-                allInterpreters[interp] = interpreters[interp];
+                Interpreters[interp] = interpreters[interp];
             }
             for (let interp of Object.keys(clientInterpreters)) {
-                allInterpreters[interp] = clientInterpreters[interp].languageTitle;
+                Interpreters[interp] = clientInterpreters[interp].languageTitle;
             }
-            this.toolbarUI.cellToolbar.setInterpreters(allInterpreters);
+
+            this.toolbarUI.cellToolbar.setInterpreters(Interpreters);
         });
 
         window.addEventListener('popstate', evt => {
@@ -2029,7 +2042,7 @@ export class MainUI extends EventTarget {
                 this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
                 this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
-                const title = 'Polynote'
+                const title = 'Polynote';
                 window.history.pushState({notebook: tab.name}, title, '/');
                 document.title = title
             }
@@ -2150,8 +2163,10 @@ export class MainUI extends EventTarget {
             const currentVim = prefs.get('VIM');
             if (currentVim) {
                 prefs.set('VIM', false);
+                document.body.classList.remove('vim-enabled');
             } else {
                 prefs.set('VIM', true);
+                document.body.classList.add('vim-enabled');
             }
 
             this.toolbarUI.settingsToolbar.colorVim();

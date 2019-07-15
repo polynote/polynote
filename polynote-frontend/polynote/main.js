@@ -6,6 +6,7 @@ import { MainUI } from './ui.js'
 import { scala, vega } from './languages.js'
 import { theme } from './theme.js'
 import * as monaco from "monaco-editor";
+import {prefs} from "./prefs";
 
 const md = require('markdown-it');
 
@@ -270,6 +271,10 @@ const socket = new SocketSession();
 const mainUI = new MainUI(socket);
 document.getElementById('Main').appendChild(mainUI.el);
 const path = unescape(window.location.pathname);
+
+if (prefs.get('VIM')) {
+    document.body.classList.add('vim-enabled');
+}
 
 if (path.startsWith('/notebook/')) {
   mainUI.loadNotebook(path.replace(/^\/notebook\//, ''));
