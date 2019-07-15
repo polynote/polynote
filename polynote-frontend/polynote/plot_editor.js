@@ -171,7 +171,7 @@ export class PlotEditor extends UIEventTarget {
         });
 
         this.xAxisDrop.addEventListener('drop', evt => {
-            this.addXField(this.draggingEl);
+            this.setXField(this.draggingEl.field);
             this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
         });
 
@@ -305,17 +305,12 @@ export class PlotEditor extends UIEventTarget {
         return ops;
     }
 
-    set xField(field) {
+    setXField(field) {
         this.xDimension = field;
         this.xAxisDrop.classList.add('nonempty');
         const label = this.xAxisDrop.querySelector('.label');
         [...label.querySelectorAll('.numeric, .dimension')].forEach(node => node.parentNode.removeChild(node));
         label.appendChild(span([this.correctXType], [field.name]));
-    }
-
-    addXField(from) {
-        // TODO: multiple dimensions? Custom groupings?
-        this.xField = from.field;
     }
 
     addYField(from) {
