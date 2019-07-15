@@ -1,8 +1,6 @@
 'use strict';
 
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
-import {} from './scala.js'
-import {} from './theme.js'
 import { LaTeXEditor } from './latex_editor.js'
 import { UIEvent, UIEventTarget } from './ui_event.js'
 import { FakeSelect } from './fake_select.js'

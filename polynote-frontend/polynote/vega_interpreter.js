@@ -9,7 +9,7 @@ import {ClientResult} from "./result";
 export const VegaInterpreter = {
 
     languageTitle: "Vega spec",
-    highlightLanguage: "javascript",
+    highlightLanguage: "vega",
 
     interpret(code, cellContext) {
         code = '(' + code + ')';

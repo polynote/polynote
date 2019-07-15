@@ -3,7 +3,7 @@
 import { SocketSession } from './comms.js'
 import * as messages from './messages.js'
 import { MainUI } from './ui.js'
-import { tokenizer, config } from './scala.js'
+import { scala, vega } from './languages.js'
 import { theme } from './theme.js'
 import * as monaco from "monaco-editor";
 
@@ -252,10 +252,14 @@ MarkdownIt.use(mdk);
 
 window.MarkdownIt = MarkdownIt;
 
-// set up scala highlighter
+// set up custom highlighters
 monaco.languages.register({ id: 'scala' });
-monaco.languages.setMonarchTokensProvider('scala', tokenizer);
-monaco.languages.setLanguageConfiguration('scala', config);
+monaco.languages.setMonarchTokensProvider('scala', scala.tokenizer);
+monaco.languages.setLanguageConfiguration('scala', scala.config);
+
+monaco.languages.register({id: 'vega'});
+monaco.languages.setMonarchTokensProvider('vega', vega.tokenizer);
+monaco.languages.setLanguageConfiguration('vega', vega.config);
 
 // use our theme
 monaco.editor.defineTheme('polynote', theme);

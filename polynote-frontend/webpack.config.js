@@ -16,7 +16,7 @@ module.exports = {
   },
   plugins: [
     new MonacoWebpackPlugin({
-	    languages: ['clojure', 'java', 'markdown', 'python', 'r', 'ruby', 'json', 'javascript', 'typescript', 'sql', 'swift']
+	    languages: ['clojure', 'java', 'markdown', 'python', 'r', 'ruby', 'json', 'sql', 'swift']
     }),
     new CopyWebpackPlugin([
       'index.html',
