@@ -1423,6 +1423,20 @@ button {
   }
 }
 
+button.inspect.icon-button {
+  padding: 0;
+  background: transparent !important;
+  border: none !important;
+}
+
+.monaco-editor button.inspect.icon-button {
+  font-size: 7pt;
+  opacity: 0.2;
+}
+
+.monaco-editor button.inspect.icon-button:hover {
+  opacity: 1.0;
+}
 
 .run-cell .icon {
   //font-size: 16px;
@@ -1684,12 +1698,16 @@ button {
   .kernel-symbols {
     position: relative;
     grid-area: symbols;
+
+    tbody tr {
+      cursor: zoom-in;
+    }
   }
 
   .kernel-info {
     position: relative;
     grid-area: info;
-    z-index: 1;
+    /*z-index: 1;*/
 
     .toggle {
       float: right;
@@ -2282,6 +2300,19 @@ button {
       animation: highlight 2s;
     }
 
+    tr.initial-msg {
+      td {
+        text-align: center;
+        vertical-align: middle;
+        height: 10em;
+        span {
+          display: inline;
+          color: black;
+
+        }
+      }
+    }
+
     th, td {
       text-align: left;
       line-height: 1.2;
@@ -2320,7 +2351,7 @@ button {
   border: 1px solid @ui-border;
   grid-template-areas: "controls plot";
   grid-template-columns: 1fr 4fr;
-
+  padding: 8px;
   .selected-measure {
     display: grid;
     grid-template-columns: 6.5em auto;
@@ -2341,14 +2372,34 @@ button {
     grid-area: controls;
     display: grid;
     overflow-y: auto;
-    grid-template-areas: "plot-type" "measure-title" "measure-list" "dimension-title" "dimension-list" "control-buttons";
-    grid-template-rows: 2em 2em auto 2em auto 2.5em;
+    grid-template-areas: "plot-type-title" "plot-type" "plot-size-title" "plot-size" "measure-title" "measure-list" "dimension-title" "dimension-list" "control-buttons";
+    grid-template-rows: 2em 2em 2em 2em 2em auto 2em auto 2.5em;
+    min-width: 20em;
+    &.numeric-fields {
+      grid-template-areas: "plot-type-title" "plot-type" "plot-size-title" "plot-size" "numeric-field-title" "numeric-field-list" "dimension-title" "dimension-list" "control-buttons";
+      .numeric-field-title, .numeric-field-list {
+        display: block;
+      }
+
+      .measure-title, .measure-list {
+        display: none;
+      }
+    }
 
     h4 {
       margin: 0;
-      padding: 0 .25em;
+      padding: .5em .25em 0 .25em;
+      line-height: 1.5em;
+      position: relative;
+
       button.add {
         color: green;
+        position: absolute;
+        right: 0;
+        bottom: 4px;
+        padding: 0;
+        background-color: transparent;
+        border: none;
       }
     }
 
@@ -2356,6 +2407,24 @@ button {
       grid-area: plot-type;
       position: relative;
       z-index: 4;
+    }
+
+    .plot-type-title {
+      grid-area: plot-type-title;
+    }
+
+    .plot-size-title {
+      grid-area: plot-size-title;
+    }
+
+    .plot-size {
+      grid-area: plot-size;
+      display: grid;
+      grid-template-columns: 1fr 1em 1fr;
+      span {
+        line-height: 2em;
+        text-align: center;
+      }
     }
 
     .dimension-title {
@@ -2378,10 +2447,13 @@ button {
 
     .measure-list {
       grid-area: measure-list;
+    }
+
+    .measure-list, .numeric-field-list {
       border: 1px solid @ui-border;
       background: white;
 
-      .measure {
+      .measure, .numeric {
         clear: left;
       }
     }
@@ -2400,9 +2472,19 @@ button {
       }
     }
 
+    .numeric-field-title {
+      grid-area: numeric-field-title;
+      display: none;
+    }
+
+    .numeric-field-list {
+      grid-area: numeric-field-list;
+      display: none;
+    }
+
   }
 
-  .measure, .dimension {
+  .measure, .dimension, .numeric {
     float: left;
     width: auto;
     margin: 2pt;
@@ -2419,19 +2501,57 @@ button {
   .plot-area {
     min-height: 30em;
     grid-area: plot;
-    display: grid;
+    /*display: grid;
     grid-template-areas: 'y-axis-drop plot-output' 'empty x-axis-drop';
     grid-template-rows: auto 2.5em;
-    grid-template-columns: 2.5em auto;
+    grid-template-columns: 2.5em auto;*/
+    display: flex;
+    align-items: center;
+    justify-items: center;
+    overflow: auto;
+
+    input {
+      font-size: 14pt;
+      width: 24em;
+      text-align: center;
+      display: block;
+      margin: 2px auto;
+      background: transparent;
+      border: none;
+      border-bottom: 1px dotted @ui-border;
+      padding: 4px;
+    }
+
+    .nonempty .placeholder { display: none; }
+
+    .plot-title {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 100%;
+    }
 
     .x-axis-drop {
-      grid-area: x-axis-drop;
       text-align: center;
       line-height: 2em;
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 100%;
+      height: 4.5em;
+
+      .dimension, .numeric {
+        float: none;
+        display: inline-block;
+      }
     }
 
     .y-axis-drop {
-      grid-area: y-axis-drop;
+      position: absolute;
+      right: 100%;
+      top: 0;
+      bottom: 0;
+      width: 4.5em;
 
       .label {
         transform: rotate(-90deg) translate(-50%, 0);
@@ -2441,12 +2561,14 @@ button {
         position: absolute;
         top: 50%;
         line-height: 2em;
+        text-align: center;
 
-        .measure {
+        .measure, .numeric {
           padding: 0 2pt;
           float: none;
           display: inline-block;
           margin: 0;
+          line-height: 1.5em;
           button {
             padding: 1pt;
             margin-left: 2pt;
@@ -2457,8 +2579,10 @@ button {
     }
 
     .plot-output {
-      grid-area: plot-output;
       background: white;
+      border: 1px solid @ui-border;
+      margin: 0 auto;
+      position: relative;
 
       .plot-embed {
         margin: 0 auto;
@@ -2502,6 +2626,124 @@ button {
 
 .link-highlight {
   background-color: @line-highlight-color;
+}
+
+.modal-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 11pt;
+  z-index: 99;
+
+  .modal-background {
+    background-color: rgba(0, 0, 0, 0.3);
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: 0;
+    margin: 0 auto;
+  }
+
+  .modal-window {
+    position: relative;
+    display: grid;
+    grid-template-rows: 24pt 1fr;
+
+    .modal-titlebar {
+      font-size: 12pt;
+      padding: .5em;
+      border-top-left-radius: 5pt;
+      border-top-right-radius: 5pt;
+      border: 1px solid @ui-border;
+      background: linear-gradient(0, @ui-background-dark, @ui-background-bright);
+      position: relative;
+
+      .modal-titlebar-controls {
+        position: absolute;
+        right: 0;
+        top: 0;
+
+        .modal-close {
+          color: red;
+          margin: 6px;
+          border: none;
+          background: transparent;
+          padding: 0;
+        }
+      }
+    }
+
+    .modal-content {
+      border: 1px solid @ui-border;
+      background: @ui-background;
+    }
+  }
+}
+
+.value-inspector {
+  width: 90%;
+  height: 90%;
+
+  .modal-content {
+    display: contents;
+
+    .tab-nav-content {
+      padding: 4px;
+
+      .plaintext, .htmltext {
+        padding: 2em;
+      }
+
+      .plaintext {
+        font-family: monospace;
+      }
+
+      .plot-editor {
+        height: 100%;
+        box-sizing: border-box;
+      }
+    }
+  }
+}
+
+.tab-nav {
+  display: grid;
+  grid-template-columns: 10em 1fr;
+
+  .tab-nav-items {
+    background: @ui-background;
+    border-right: 1px solid @ui-border;
+
+    .tab-nav-item {
+      padding: 1em 2em;
+      width: 100%;
+      box-sizing: border-box;
+      margin-left: 1px;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+
+    .tab-nav-item.active {
+      background: white;
+      border-right: 1px solid white;
+      border-top: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
+    }
+
+    .tab-nav-item.active:first-child {
+      border-top: 1px solid white;
+    }
+  }
+
+  .tab-nav-content {
+    background: white;
+  }
 }
 
 @keyframes highlight {

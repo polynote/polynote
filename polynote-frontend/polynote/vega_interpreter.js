@@ -6,18 +6,10 @@ import {DataStream, MIMERepr} from "./value_repr";
 import embed from "vega-embed";
 import {ClientResult} from "./result";
 
-export class VegaInterpreter {
-    constructor() {
+export const VegaInterpreter = {
 
-    }
-
-    get languageTitle() {
-        return "Vega spec";
-    }
-
-    get highlightLanguage() {
-        return "javascript";
-    }
+    languageTitle: "Vega spec",
+    highlightLanguage: "vega",
 
     interpret(code, cellContext) {
         code = '(' + code + ')';
@@ -63,12 +55,20 @@ export class VegaInterpreter {
     }
 
 
-}
+};
 
 export class VegaClientResult extends ClientResult {
     constructor(spec) {
         super();
         this.spec = spec;
+    }
+
+    setPlot(plot) {
+        if (!this.running) {
+            this.running = Promise.resolve(plot);
+        } else {
+            throw new Error("Plot is already running");
+        }
     }
 
     run(targetEl) {
@@ -105,6 +105,22 @@ export class VegaClientResult extends ClientResult {
         this.run(targetEl).catch(err => cell.setRuntimeError(RuntimeError.fromJS(err)));
     }
 
+    static plotToOutput(plot) {
+        const fromDataURL = (dataURL) => {
+            const el = document.createElement('div');
+            const img = document.createElement('img');
+            img.setAttribute('src', dataURL);
+            el.appendChild(img);
+            const html = el.innerHTML;
+            return new Output("text/html", html);
+        };
+
+        return plot.view.toCanvas()
+            .then(canvas => canvas.toDataURL("image/png"))
+            .then(fromDataURL)
+            .catch(_ => plot.toSVG().then(svgStr => new Output("image/svg", svgStr)))
+    }
+
     toOutput() {
         const fromDataURL = (dataURL) => {
             const el = document.createElement('div');
@@ -115,13 +131,7 @@ export class VegaClientResult extends ClientResult {
             return new Output("text/html", html);
         };
 
-        return this.run()
-            .then(plot =>
-                plot.view.toCanvas()
-                    .then(canvas => canvas.toDataURL("image/png"))
-                    .then(fromDataURL)
-                    .catch(_ => plot.toSVG().then(svgStr => new Output("image/svg", svgStr)))
-            )
+        return this.run().then(VegaClientResult.plotToOutput);
     }
 }
 
@@ -131,5 +141,6 @@ const windowOverride = {};
 for (let key of Object.keys(window)) {
     windowOverride[key] = undefined;
 }
+delete windowOverride.console;
 Object.freeze(windowOverride);
 

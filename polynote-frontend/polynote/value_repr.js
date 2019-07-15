@@ -253,6 +253,7 @@ export class DataStream extends EventTarget {
         this.repr = repr;
         this.socket = socket;
         this.mods = mods || [];
+        this.dataType = repr.dataType;
         this.dataType = finalDataType.call(this);
 
         this.batchSize = 50;

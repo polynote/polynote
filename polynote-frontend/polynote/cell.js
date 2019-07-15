@@ -5,7 +5,6 @@ import { ResultValue } from "./result.js"
 import {RichTextEditor} from "./text_editor.js";
 import {UIEvent, UIEventTarget} from "./ui_event.js"
 import { default as Diff } from './diff.js'
-import {ReprUI} from "./repr_ui";
 import {details} from "./tags";
 import {ClientResult, ExecutionInfo} from "./result";
 import {prefs} from "./prefs";
@@ -13,6 +12,7 @@ import {createVim} from "./vim";
 import {DeleteCell} from "./messages";
 import {KeyPress} from "./keypress";
 import {clientInterpreters} from "./client_interpreter";
+import {valueInspector} from "./value_inspector";
 
 const JsDiff = new Diff();
 
@@ -336,6 +336,7 @@ export class CodeCell extends Cell {
 
         const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
         this.highlightLanguage = highlightLanguage;
+        this.contentWidgets = {};
 
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
@@ -680,26 +681,32 @@ export class CodeCell extends Cell {
             // clear results
             this.resultTabs.innerHTML = '';
 
-            // TODO: keep "result" and "output" separate for UI... have a way to show declarations, results, outputs, etc. separately
-            if (result.name !== "Out") {
-                // don't display this; it's a named declaration
-                // TODO: have a way to display these if desired
+            if (result.name !== "Out" && result.reprs.length > 1) {
+                // TODO: hover for result text?
+                //       Note: tried a "content widget" to bring up the value inspector. It just kinda got in the way.
             } else if (result.reprs.length) {
-                const outLabel = div(['out-ident', 'with-reprs'], `Out:`);
+                let inspectIcon = [];
+                if (result.reprs.length > 1) {
+                    inspectIcon = [
+                        iconButton(['inspect'], 'Inspect', '', 'Inspect').click(
+                            evt => {
+                                valueInspector.setEventParent(this);
+                                valueInspector.inspect(result, this.path)
+                            }
+                        )
+                    ]
+                }
+
+                const outLabel = div(['out-ident', 'with-reprs'], [...inspectIcon, 'Out:']);
                 this.cellResultMargin.innerHTML = '';
                 this.cellResultMargin.appendChild(outLabel);
 
                 const [mime, content] = result.displayRepr;
                 const [mimeType, args] = this.parseContentType(mime);
-                const self = this;
-                this.buildOutput(mime, args, content).then(function(el) {
-                    self.resultTabs.appendChild(el);
-                    const reprUi = new ReprUI(`Cell${self.id}`, self.path, result.reprs, el);
-                    reprUi.setEventParent(self);
-                    reprUi.show();
-                    self.cellOutputTools.classList.add('output');
-                });
-
+                this.buildOutput(mime, args, content).then(el => {
+                    this.resultTabs.appendChild(el);
+                    this.cellOutputTools.classList.add('output');
+                })
             }
         } else if (result instanceof ClientResult) {
             this.cellOutputTools.classList.add('output');
