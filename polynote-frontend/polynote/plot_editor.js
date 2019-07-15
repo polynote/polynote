@@ -156,7 +156,6 @@ export class PlotEditor extends UIEventTarget {
            if (this.draggingEl.classList.contains(this.correctXType)) {
                this.xAxisDrop.classList.add('drop-ok');
            } else {
-               console.log(this.draggingEl);
                this.xAxisDrop.classList.add('drop-disallowed');
            }
         });

@@ -32,8 +32,9 @@ export class MainToolbar extends EventTarget {
     }
 }
 
-export class KernelSymbolsUI {
+export class KernelSymbolsUI extends UIEventTarget {
     constructor(path) {
+        super();
         this.symbols = {};
         this.presentedCell = 0;
         this.visibleCells = [];
@@ -421,7 +422,7 @@ export class KernelUI extends UIEventTarget {
     constructor(socket, path) {
         super();
         this.info = new KernelInfoUI();
-        this.symbols = new KernelSymbolsUI(path);
+        this.symbols = new KernelSymbolsUI(path).setEventParent(this);
         this.tasks = new KernelTasksUI();
         this.socket = socket;
         this.path = path;
@@ -1124,7 +1125,7 @@ export class NotebookUI extends UIEventTarget {
             }
         });
 
-        this.cellUI.addEventListener('InsertCellAfter', evt => {
+        this.addEventListener('InsertCellAfter', evt => {
            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.firstCell().id);
            const nextId = maxId(this.cellUI.getCells()) + 1;
            let newCell = evt.detail.mkCell;
@@ -1833,7 +1834,6 @@ export class NotebookListUI extends UIEventTarget {
                     // leaf - item is the complete path
                     itemEl = tag('li', ['leaf'], {}, [
                         span(['name'], [itemName]).click(evt => {
-                            console.log(`Load ${item}`);
                             this.dispatchEvent(new UIEvent('TriggerItem', {item: item}));
                         })
                     ]);
