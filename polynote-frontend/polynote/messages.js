@@ -85,11 +85,19 @@ export class CellMetadata {
     }
 
     constructor(disableRun, hideSource, hideOutput, executionInfo) {
-        this.disableRun = disableRun;
-        this.hideSource = hideSource;
-        this.hideOutput = hideOutput;
-        this.executionInfo = executionInfo;
+        this.disableRun = disableRun || false;
+        this.hideSource = hideSource || false;
+        this.hideOutput = hideOutput || false;
+        this.executionInfo = executionInfo || null;
         Object.freeze(this);
+    }
+
+    copy(props) {
+        const disableRun = typeof props.disableRun !== 'undefined' ? props.disableRun : this.disableRun;
+        const hideSource = typeof props.hideSource !== 'undefined' ? props.hideSource : this.hideSource;
+        const hideOutput = typeof props.hideOutput !== 'undefined' ? props.hideOutput : this.hideOutput;
+        const executionInfo = typeof props.executionInfo !== 'undefined' ? props.executionInfo : this.executionInfo;
+        return new CellMetadata(disableRun, hideSource, hideOutput, executionInfo);
     }
 }
 
@@ -410,21 +418,22 @@ export class UpdateCell extends NotebookUpdate {
     static get msgTypeId() { return 5; }
 
     static unapply(inst) {
-        return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.edits];
+        return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.edits, inst.metadata];
     }
 
-    constructor(path, globalVersion, localVersion, id, edits) {
+    constructor(path, globalVersion, localVersion, id, edits, metadata) {
         super(path, globalVersion, localVersion, id, edits);
         this.path = path;
         this.globalVersion = globalVersion;
         this.localVersion = localVersion;
         this.id = id;
         this.edits = edits;
+        this.metadata = metadata;
         Object.freeze(this);
     }
 }
 
-UpdateCell.codec = combined(shortStr, uint32, uint32, int16, arrayCodec(uint16, ContentEdit.codec)).to(UpdateCell);
+UpdateCell.codec = combined(shortStr, uint32, uint32, int16, arrayCodec(uint16, ContentEdit.codec), optional(CellMetadata.codec)).to(UpdateCell);
 
 export class InsertCell extends NotebookUpdate {
     static get msgTypeId() { return 6; }

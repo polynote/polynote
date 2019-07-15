@@ -102,7 +102,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
     case cell => cell
   }
 
-  def editCell(id: CellID, edits: ContentEdits): Notebook = updateCell(id) {
+  def editCell(id: CellID, edits: ContentEdits, metadata: Option[CellMetadata]): Notebook = updateCell(id) {
     cell => cell.updateContent(_.withEdits(edits))
   }
 
@@ -149,7 +149,7 @@ sealed trait NotebookUpdate extends Message {
   def notebook: ShortString
 
   def withVersions(global: Int, local: Int): NotebookUpdate = this match {
-    case u @ UpdateCell(_, _, _, _, _) => u.copy(globalVersion = global, localVersion = local)
+    case u @ UpdateCell(_, _, _, _, _, _) => u.copy(globalVersion = global, localVersion = local)
     case i @ InsertCell(_, _, _, _, _) => i.copy(globalVersion = global, localVersion = local)
     case d @ DeleteCell(_, _, _, _)    => d.copy(globalVersion = global, localVersion = local)
     case u @ UpdateConfig(_, _, _, _)  => u.copy(globalVersion = global, localVersion = local)
@@ -163,7 +163,7 @@ sealed trait NotebookUpdate extends Message {
       // we both tried to insert a cell after the same cell. Transform the first update so it inserts after the cell created by the second update.
       i.copy(after = cell2.id)
 
-    case (u@UpdateCell(_, _, _, id1, edits1), UpdateCell(_, _, _, id2, edits2)) if id1 == id2 =>
+    case (u@UpdateCell(_, _, _, id1, edits1, _), UpdateCell(_, _, _, id2, edits2, _)) if id1 == id2 =>
       // we both tried to edit the same cell. Transform first edits so they apply to the document state as it exists after the second edits are already applied.
 
       u.copy(edits = edits1.rebase(edits2))
@@ -176,7 +176,10 @@ sealed trait NotebookUpdate extends Message {
   def applyTo(notebook: Notebook): Notebook = this match {
     case InsertCell(_, _, _, cell, after) => notebook.insertCell(cell, after)
     case DeleteCell(_, _, _, id)          => notebook.deleteCell(id)
-    case UpdateCell(_, _, _, id, edits)   => notebook.editCell(id, edits)
+    case UpdateCell(_, _, _, id, edits, metadata) =>
+      metadata.foldLeft(notebook.editCell(id, edits, metadata)) {
+        (nb, meta) => nb.setMetadata(id, meta)
+      }
     case UpdateConfig(_, _, _, config)    => notebook.copy(config = Some(config))
     case SetCellLanguage(_, _, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
     case SetCellOutput(_, _, _, id, output) => notebook.setResults(id, output.toList)
@@ -190,7 +193,7 @@ object NotebookUpdate {
   }
 }
 
-final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, edits: ContentEdits) extends Message with NotebookUpdate
+final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, edits: ContentEdits, metadata: Option[CellMetadata]) extends Message with NotebookUpdate
 object UpdateCell extends MessageCompanion[UpdateCell](5)
 
 final case class InsertCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cell: NotebookCell, after: CellID) extends Message with NotebookUpdate

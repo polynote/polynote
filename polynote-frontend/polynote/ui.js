@@ -1238,7 +1238,7 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.cellUI.addEventListener('ContentChange', (evt) => {
-            const update = new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits);
+            const update = new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits, evt.detail.metadata || null);
             this.socket.send(update);
             this.editBuffer.push(this.localVersion, update);
         });
@@ -1392,11 +1392,14 @@ export class NotebookUI extends UIEventTarget {
                     this.localVersion++;
 
                     match(update)
-                        .when(messages.UpdateCell, (p, g, l, id, edits) => {
+                        .when(messages.UpdateCell, (p, g, l, id, edits, metadata) => {
                             const cell = this.cellUI.getCell(id);
                             if (cell) {
                                 cell.applyEdits(edits);
                                 this.editBuffer.push(this.localVersion, messages);
+                                if (metadata) {
+                                    cell.setMetadata(metadata);
+                                }
                             }
                         })
                         .when(messages.InsertCell, (p, g, l, cell, after) => {

@@ -382,7 +382,6 @@ body {
         grid-area: options;
         text-align: left;
         padding-left: 1em;
-        display: none;
 
         .toggle-code {
           font-weight: 900;
@@ -476,6 +475,28 @@ body {
 
   &.python .cell-input .cell-input-tools button.run-cell {
     background-image: url(icons/python.png);
+  }
+
+  &.hide-code .cell-input {
+    .cell-input-editor {
+      display: none;
+    }
+
+    .toggle-code {
+      border: 1px solid @ui-border;
+      background-color: white;
+    }
+  }
+
+  &.hide-output .cell-output {
+    .cell-output-block {
+      display: none;
+    }
+
+    .toggle-output {
+      border: 1px solid @ui-border;
+      background-color: white;
+    }
   }
 
   &.text-cell {
