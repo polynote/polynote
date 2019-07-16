@@ -984,16 +984,13 @@ export class CodeCell extends Cell {
     deactivateVim() {
         if (this.vim) {
             this.vim.dispose();
-            this.statusLine.innerHTML = '';
             delete this.vim;
         }
         this.hideVim();
     }
 
     hideVim() {
-        if (this.statusLine && !this.statusLine.contains(document.activeElement)) {
-            this.statusLine.classList.toggle('hide', true);
-        }
+        this.statusLine.innerHTML = '';
     }
 
     get content() {
