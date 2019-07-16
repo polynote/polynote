@@ -17,7 +17,7 @@ class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpda
 
   lazy val venv = IO {
 
-    val venvFile = new File(path)
+    val venvFile = new File(path).toPath.resolve("venv").toFile
 
     if (!venvFile.exists()) {
       // I added the `--system-site-packages` flag so that we can rely on system packages in the majority of cases where

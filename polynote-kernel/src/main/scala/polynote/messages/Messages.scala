@@ -87,7 +87,7 @@ final case class NotebookConfig(
 
   def asPolynoteConfig: PolynoteConfig = {
     val unTinyDependencies = dependencies.map(_.map {
-      case (k, v) => k.toString -> v//.map(_.toString)
+      case (k, v) => k.toString -> v
     }).getOrElse(Map.empty)
     PolynoteConfig(
       repositories = repositories.getOrElse(Nil),

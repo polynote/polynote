@@ -1,6 +1,7 @@
 package polynote.server
 
 import java.io.File
+import java.nio.file.Paths
 
 import cats.effect.{ContextShift, IO, Timer}
 import cats.instances.list._
@@ -49,8 +50,8 @@ class IOKernelFactory(implicit
 
   override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate], polynoteConfig: PolynoteConfig): IO[KernelAPI[IO]] = for {
     notebook <- getNotebook()
-    path      = notebook.path
     config    = notebook.config.getOrElse(NotebookConfig.empty)
+    path      = Paths.get(polynoteConfig.storage.cache, notebook.path).toString
     taskInfo  = TaskInfo("kernel", "Start", "Kernel starting", TaskStatus.Running)
     deps     <- fetchDependencyProviders(config, path, statusUpdates)
     numDeps   = deps.values.map(_.dependencies.size).sum
