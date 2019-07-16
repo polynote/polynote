@@ -7,7 +7,7 @@ export const theme = {
     { token: 'number', foreground: '0000FF' }
   ],
   colors: {
-    'editor.lineHighlightBackground': '#f3f3f3',
+    'editor.lineHighlightBackground': '#FFFAE3',
     'editor.lineHighlightBorder': '#00000000',
     'editorOverviewRuler.border': "#00000000"
   }

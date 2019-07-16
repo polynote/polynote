@@ -335,9 +335,8 @@ body {
       display: grid;
       font-size: 11pt;
       grid-template-areas: "button label lang options exec-info";
-      grid-template-columns: min-content 9ch min-content 2fr 1fr;
+      grid-template-columns: min-content 10ch min-content 2fr 1fr;
       grid-template-rows: min-content;
-      border-right: 1px solid @ui-border;
       border-bottom: 1px solid @ui-border;
 
       button {
@@ -531,7 +530,7 @@ body {
 
     .cell-input-editor {
       margin: 0;
-      padding: 1.5em;
+      padding: 12pt 24pt;
       border: none;
       min-height: 1em;
     }
@@ -1453,7 +1452,7 @@ button {
 }
 
 button.inspect.icon-button {
-  padding: 0;
+  padding: 1pt 0 0;
   background: transparent !important;
   border: none !important;
   position: absolute;
@@ -2198,6 +2197,7 @@ button {
 
 .notebook-cells {
   position: relative;
+  padding: 12pt;
 }
 
 .latex-editor {
