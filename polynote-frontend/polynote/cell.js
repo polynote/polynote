@@ -969,12 +969,11 @@ export class CodeCell extends Cell {
     activateVim() {
         if (prefs.get('VIM')) {
             if (!this.vim) {
-                console.log("init vim for cell", this.id)
                 if (!this.statusLine) {
                     this.statusLine = div(["vim-status"], []);
                 }
                 this.vim = createVim(this.editor, this.statusLine);
-                this.cellInput.querySelector(".cell-footer").insertBefore(this.statusLine, this.execInfoEl);
+                this.cellInput.querySelector(".cell-footer").appendChild(this.statusLine);
             }
             this.statusLine.classList.toggle('hide', false);
         } else {
@@ -985,16 +984,13 @@ export class CodeCell extends Cell {
     deactivateVim() {
         if (this.vim) {
             this.vim.dispose();
-            this.statusLine.innerHTML = '';
             delete this.vim;
         }
         this.hideVim();
     }
 
     hideVim() {
-        if (this.statusLine && !this.statusLine.contains(document.activeElement)) {
-            this.statusLine.classList.toggle('hide', true);
-        }
+        this.statusLine.innerHTML = '';
     }
 
     get content() {
