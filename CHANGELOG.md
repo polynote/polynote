@@ -2,6 +2,20 @@
 
 *
 
+# 0.1.17 (July 16, 2019)
+
+* Move cell controls to top of cell, horizontally
+  * Each cell has lang selector
+  * Buttons to show/hide code and output
+* Add new Vega spec interpreter for generating plots
+* Add new inspection UI
+  * Inspection comes up in a modal
+  * Remove value column from symbol table
+* Upgraded plot editor
+  * Can save plot to a Vega spec cell
+  * Better UI, can edit size and titles, functioning scatter plot
+* Editor size adjusts after code folding
+
 # 0.1.16 (July 3, 2019)
 
 * Remove annoying jep uninstall message [#328]
