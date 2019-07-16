@@ -16,7 +16,7 @@ import {
 import {FakeSelect} from "./fake_select";
 import {fakeSelectElem, span, textbox} from "./tags";
 import {SocketSession} from "./comms";
-import {GroupAgg, ModifyStream, ReleaseHandle} from "./messages";
+import {CellMetadata, GroupAgg, ModifyStream, ReleaseHandle} from "./messages";
 import {Pair} from "./codec";
 import {DataStream, StreamingDataRepr} from "./value_repr";
 import embed from "vega-embed";
@@ -433,7 +433,7 @@ export class PlotEditor extends UIEventTarget {
             } // others TODO
         });
         content = content.replace('"$DATA_STREAM$"', streamSpec);
-        const mkCell = cellId => new CodeCell(cellId, `(${content})`, 'vega', this.path);
+        const mkCell = cellId => new CodeCell(cellId, `(${content})`, 'vega', this.path, new CellMetadata(false, true, false, null));
         VegaClientResult.plotToOutput(this.plot).then(output => {
             const event = new ToolbarEvent('InsertCellAfter', {
                 mkCell,

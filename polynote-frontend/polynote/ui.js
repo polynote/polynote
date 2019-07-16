@@ -1136,7 +1136,7 @@ export class NotebookUI extends UIEventTarget {
            } else {
                newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
            }
-           const notebookCell = new messages.NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || []);
+           const notebookCell = new messages.NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata || null);
            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, current.id);
            this.socket.send(update);
            this.editBuffer.push(this.localVersion, update);
