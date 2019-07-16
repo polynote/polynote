@@ -39,6 +39,10 @@ export class UIEventTarget extends EventTarget {
         event.originalTarget = event.originalTarget || this;
         super.dispatchEvent(event);
         if(this.eventParent && !event.propagationStopped) {
+            if (!this.eventParent.dispatchEvent) {
+                console.log('Event parent is not an event target!', this.eventParent);
+                return;
+            }
             this.eventParent.dispatchEvent(event.copy());
         }
     }

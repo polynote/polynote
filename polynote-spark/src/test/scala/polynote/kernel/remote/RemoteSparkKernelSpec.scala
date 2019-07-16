@@ -146,7 +146,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
           ready           <- subscriber.init().start
           runRemoteClient <- remoteClient.run().start
           _               <- ready.join
-          update = UpdateCell(path, 0, 0, 0.toShort, ContentEdits(Insert(2, "insert")))
+          update = UpdateCell(path, 0, 0, 0.toShort, ContentEdits(Insert(2, "insert")), None)
           _               <- subscriber.update(update)
           _ = kernelFactory.kernel.currentNotebook shouldEqual update.applyTo(initialNotebook)
           _ <- sharedNotebook.shutdown()

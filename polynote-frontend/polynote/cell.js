@@ -5,14 +5,15 @@ import { ResultValue } from "./result.js"
 import {RichTextEditor} from "./text_editor.js";
 import {UIEvent, UIEventTarget} from "./ui_event.js"
 import { default as Diff } from './diff.js'
-import {details} from "./tags";
+import {details, dropdown} from "./tags";
 import {ClientResult, ExecutionInfo} from "./result";
 import {prefs} from "./prefs";
 import {createVim} from "./vim";
-import {DeleteCell} from "./messages";
+import {CellMetadata, DeleteCell} from "./messages";
 import {KeyPress} from "./keypress";
 import {clientInterpreters} from "./client_interpreter";
 import {valueInspector} from "./value_inspector";
+import {Interpreters} from "./ui";
 
 const JsDiff = new Diff();
 
@@ -45,12 +46,11 @@ export class BeforeCellRunEvent extends CellEvent {
 }
 
 export class ContentChangeEvent extends CellEvent {
-    constructor(cellId, edits, newContent) {
-        super('ContentChange', cellId, {edits: edits, newContent: newContent});
+    constructor(cellId, edits, metadata) {
+        super('ContentChange', cellId, {edits: edits, metadata: metadata || null });
     }
 
     get edits() { return this.detail.edits }
-    get newContent() { return this.detail.newContent }
 }
 
 export class AdvanceCellEvent extends CellEvent {
@@ -109,6 +109,13 @@ export class ParamHintRequest extends CellEvent {
     get reject() { return this.detail.reject }
 }
 
+export class SetCellLanguageEvent extends CellEvent {
+    constructor(cellId, language) {
+        super('SetCellLanguage', cellId, { language });
+        this.language = language;
+    }
+}
+
 export class Cell extends UIEventTarget {
     constructor(id, content, language, path, metadata) {
         super(id, content, language);
@@ -128,8 +135,7 @@ export class Cell extends UIEventTarget {
                 ]),
                 this.editorEl = div(['cell-input-editor'], []),
                 div(['cell-footer'], [
-                    this.statusLine = div(["vim-status", "hide"], []),
-                    this.execInfoEl = div(["exec-info"], []),
+                    this.statusLine = div(["vim-status", "hide"], [])
                 ])
             ]),
             this.cellOutput = div(['cell-output'], [
@@ -249,6 +255,10 @@ export class Cell extends UIEventTarget {
         throw "applyEdits not implemented for this cell type";
     }
 
+    setMetadata(metadata) {
+        this.metadata = metadata;
+    }
+
     updateKeyHandler(key, handler) {
         const prevHandler = this.keyMap.get(key);
         this.keyMap.set(key, handler(prevHandler));
@@ -333,10 +343,43 @@ export class CodeCell extends Cell {
         this.container.classList.add('code-cell');
 
         this.cellInputTools.appendChild(div(['cell-label'], [id + ""]), this.cellInputTools.childNodes[0]);
+        this.cellInputTools.appendChild(
+            div(['lang-selector'], [
+                this.langSelector = dropdown(['lang-selector'], Interpreters)
+            ])
+        );
+
+        this.langSelector.setSelectedValue(language);
+        this.langSelector.addEventListener('input', (evt) => {
+            if (this.langSelector.getSelectedValue() !== this.language) {
+                this.dispatchEvent(new SetCellLanguageEvent(this.id, this.langSelector.getSelectedValue()));
+            }
+        });
+
+        this.cellInputTools.appendChild(
+            this.execInfoEl = div(["exec-info"], [])
+        );
+
+        this.cellInputTools.appendChild(
+            div(['options'], [
+                button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
+                iconButton(['toggle-output'], 'Show/Hide Output', '', 'Show/Hide Output').click(evt => this.toggleOutput())
+            ])
+        );
+
+        if (metadata) {
+            if (metadata.hideOutput) {
+                this.container.classList.add('hide-output');
+            }
+
+            if (metadata.hideSource) {
+                this.container.classList.add('hide-code');
+            }
+        }
 
         const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
         this.highlightLanguage = highlightLanguage;
-        this.contentWidgets = {};
+
 
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
@@ -381,7 +424,11 @@ export class CodeCell extends Cell {
 
         });
 
-        this.lastLineCount = this.editor.getModel().getLineCount();
+        this.editor.getContribution('editor.contrib.folding').getFoldingModel().then(
+            foldingModel => foldingModel.onDidChange(() => this.updateEditorHeight())
+        );
+
+        this.lastLineTop = this.editor.getTopForLineNumber(this.editor.getModel().getLineCount());
         this.lineHeight = this.editor.getConfiguration().lineHeight;
 
         this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
@@ -432,6 +479,37 @@ export class CodeCell extends Cell {
         }
     }
 
+    setMetadata(metadata) {
+        const prevMetadata = this.metadata;
+        super.setMetadata(metadata);
+        if (metadata.hideSource) {
+            this.container.classList.add('hide-code');
+        } else if (prevMetadata.hideSource) {
+            this.container.classList.remove('hide-code');
+            this.updateEditorHeight();
+            this.editor.layout();
+        }
+
+        if (metadata.hideOutput) {
+            this.container.classList.add('hide-output');
+        } else {
+            this.container.classList.remove('hide-output');
+        }
+    }
+
+    toggleCode() {
+        const prevMetadata = this.metadata || new CellMetadata();
+        this.setMetadata(prevMetadata.copy({hideSource: !prevMetadata.hideSource}));
+        this.dispatchEvent(new ContentChangeEvent(this.id, [], this.metadata));
+    }
+
+    toggleOutput() {
+        this.container.classList.toggle('hide-output');
+        const prevMetadata = this.metadata || new CellMetadata();
+        this.setMetadata(prevMetadata.copy({hideOutput: !prevMetadata.hideOutput}));
+        this.dispatchEvent(new ContentChangeEvent(this.id, [], this.metadata));
+    }
+
     onChangeModelContent(event) {
         this.updateEditorHeight();
         if (this.applyingServerEdits)
@@ -449,16 +527,23 @@ export class CodeCell extends Cell {
                 return [new messages.Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        this.dispatchEvent(new ContentChangeEvent(this.id, edits, this.editor.getValue()));
+        this.dispatchEvent(new ContentChangeEvent(this.id, edits));
     }
 
     updateEditorHeight() {
+        this.editor.getModel().get
         const lineCount = this.editor.getModel().getLineCount();
-        if (lineCount !== this.lastLineCount) {
-            this.lastLineCount = lineCount;
-            this.editorEl.style.height = (this.lineHeight * lineCount) + "px";
+        const lastPos = this.editor.getTopForLineNumber(lineCount);
+        if (lastPos !== this.lastLineTop) {
+            this.lastLineTop = lastPos;
+            this.editorEl.style.height = (lastPos + this.lineHeight) + "px";
             this.editor.layout();
         }
+    }
+
+    setLanguage(language) {
+        super.setLanguage(language);
+        this.langSelector.setSelectedValue(language);
     }
 
 
@@ -1031,7 +1116,7 @@ export class TextCell extends Cell {
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.dispatchEvent(new ContentChangeEvent(this.id, edits, newContent));
+            this.dispatchEvent(new ContentChangeEvent(this.id, edits));
         }
     }
 

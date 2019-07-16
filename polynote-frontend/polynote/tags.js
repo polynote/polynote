@@ -132,7 +132,15 @@ export function dropdown(classes, options) {
         }
     }
 
-    return tag('select', classes, {}, opts);
+    const select = tag('select', classes, {}, opts);
+    select.setSelectedValue = (value) => {
+        const index = opts.findIndex(opt => opt.value === value);
+        if (index !== -1) {
+            select.selectedIndex = index;
+        }
+    };
+    select.getSelectedValue = () => select.options[select.selectedIndex].value;
+    return select;
 }
 
 // create element that goes into a FakeSelect (but not the FakeSelect itself)
