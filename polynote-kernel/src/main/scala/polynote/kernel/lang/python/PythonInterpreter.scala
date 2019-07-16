@@ -13,7 +13,7 @@ import jep.python.{PyCallable, PyObject}
 import polynote.config.PolyLogger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
-import polynote.kernel.dependency.DependencyProvider
+import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.util._
 import polynote.messages.{CellID, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
@@ -31,7 +31,9 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
   override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
 
 
-  override def init(): IO[Unit] = preInit >> withJep {
+  override def init(): IO[Unit] = preInit >> setup() >> postInit
+
+  def setup(): IO[Unit] = withJep {
     jep.set("__kernel_ref", polynote.runtime.Runtime)
 
     // Since Scala uses getter methods instead of class fields (i.e. you'd need `kernel.display().html()` instead of
@@ -159,10 +161,23 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
     }
   }.get()
 
-  val preInit: IO[Unit] = IO.fromEither(dependencyProvider.as[VirtualEnvDependencyProvider]).map {
+  def preInit: IO[Unit] = IO.fromEither {
+    dependencyProvider.as[VirtualEnvDependencyProvider]
+  }.flatMap {
     p =>
       withJep {
-        jep.eval(p.runBeforeInit)
+        val code = s"""exec(\"\"\"${p.runBeforeInit}\"\"\")""" // wrap in `exec` so it can have multiple statements.
+        jep.eval(code)
+      }
+  }
+
+  def postInit: IO[Unit] = IO.fromEither {
+    dependencyProvider.as[VirtualEnvDependencyProvider]
+  }.flatMap {
+    p =>
+      withJep {
+        val code = s"""exec(\"\"\"${p.runAfterInit}\"\"\")""" // wrap in `exec` so it can have multiple statements.
+        jep.eval(code)
       }
   }
 
@@ -470,7 +485,8 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
 
 object PythonInterpreter {
   class Factory extends LanguageInterpreter.Factory[IO] {
-    override val languageName: String = "Python"
+    override def depManagerFactory: DependencyManagerFactory[IO] = VirtualEnvManager.Factory
+    override def languageName: String = "Python"
     override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): PythonInterpreter =
       new PythonInterpreter(kernelContext, dependencies)
   }

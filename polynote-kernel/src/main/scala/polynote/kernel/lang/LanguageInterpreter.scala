@@ -7,7 +7,7 @@ import cats.effect.IO
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import polynote.kernel._
-import polynote.kernel.dependency.DependencyProvider
+import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.util.{CellContext, KernelContext, Publish}
 import polynote.messages.CellID
 
@@ -63,6 +63,7 @@ trait LanguageInterpreter[F[_]] {
 object LanguageInterpreter {
 
   trait Factory[F[_]] {
+    def depManagerFactory: DependencyManagerFactory[F]
     def languageName: String
     def apply(kernelContext: KernelContext, dependencies: DependencyProvider): LanguageInterpreter[F]
   }
@@ -72,5 +73,4 @@ object LanguageInterpreter {
     .foldLeft(Map.empty[String, LanguageInterpreter.Factory[IO]]) {
       (accum, next) => accum ++ next.interpreters
     }
-
 }

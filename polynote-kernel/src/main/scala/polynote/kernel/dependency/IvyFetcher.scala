@@ -17,13 +17,13 @@ import org.apache.ivy.core.report.DownloadReport
 import org.apache.ivy.core.resolve.{DownloadOptions, ResolveOptions}
 import org.apache.ivy.core.settings.IvySettings
 import org.apache.ivy.plugins.namespace.NameSpaceHelper
+import org.apache.ivy.plugins.repository._
 import org.apache.ivy.plugins.repository.file.FileResource
 import org.apache.ivy.plugins.repository.url.URLResource
-import org.apache.ivy.plugins.repository._
 import org.apache.ivy.plugins.resolver.util.ResolvedResource
 import org.apache.ivy.plugins.resolver.{CacheResolver, ChainResolver, IBiblioResolver, URLResolver}
 import org.apache.ivy.util.filter.{Filter => IvyFilter}
-import polynote.config.{DependencyConfigs, PolyLogger, RepositoryConfig, ivy, maven}
+import polynote.config.{PolyLogger, RepositoryConfig, ivy, maven}
 import polynote.kernel.util.Publish
 import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 
@@ -41,7 +41,7 @@ class IvyFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Pu
 
   override protected def resolveDependencies(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
+    dependencies: List[String],
     exclusions: List[String]
   ): IO[List[(String, IO[File])]] = {
 
@@ -66,7 +66,7 @@ class IvyFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Pu
 
     val updateProgress = (progress: Double) => statusUpdates.publish1(UpdatedTasks(List(taskInfo.copy(progress = (progress * 255).toByte))))
 
-    resolve(ivy, dependencies.flatMap(_.get("scala").toList).flatten, exclusions, updateProgress)
+    resolve(ivy, dependencies, exclusions, updateProgress)
   }
 
 
@@ -77,7 +77,7 @@ class IvyFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Pu
     val cacheResolver = new CacheResolver(settings)
     chain.add(cacheResolver)
 
-    val resolvers = repositories.map {
+    val resolvers = repositories.collect {
       case repo@ivy(base, _, _, changing) =>
         val resolver = new ParallelURLResolver(statusUpdates)
         val normedBase = base.stripSuffix("/") + "/"

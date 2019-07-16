@@ -3,9 +3,9 @@ package polynote.kernel.dependency
 import java.io.File
 import java.net.{URL, URLClassLoader}
 
-import polynote.config.{DependencyConfigs, RepositoryConfig}
-import polynote.kernel.{KernelStatusUpdate, TaskInfo}
+import polynote.config.RepositoryConfig
 import polynote.kernel.util.{LimitedSharingClassLoader, Publish}
+import polynote.kernel.{KernelStatusUpdate, TaskInfo}
 
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.AbstractFileClassLoader
@@ -27,7 +27,7 @@ trait DependencyManager[F[_]] {
 
   def getDependencyProvider(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
+    dependencies: List[String],
     exclusions: List[String]
   ): F[DependencyProvider]
 }

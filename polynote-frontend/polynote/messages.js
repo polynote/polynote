@@ -120,9 +120,7 @@ export class NotebookCell {
 
 NotebookCell.codec = combined(int16, tinyStr, str, arrayCodec(int16, Result.codec), CellMetadata.codec).to(NotebookCell);
 
-export class RepositoryConfig {
-
-}
+export class RepositoryConfig {}
 
 export class IvyRepository extends RepositoryConfig {
     static unapply(inst) {
@@ -159,9 +157,25 @@ export class MavenRepository extends RepositoryConfig {
 
 MavenRepository.codec = combined(str, optional(bool)).to(MavenRepository);
 
+export class PipRepository extends RepositoryConfig {
+    static unapply(inst) {
+        return [inst.url];
+    }
+
+    static get msgTypeId() { return 2; }
+
+    constructor(url) {
+        super();
+        this.url = url;
+    }
+}
+
+PipRepository.codec = combined(str).to(PipRepository);
+
 RepositoryConfig.codecs = [
-    IvyRepository,  // 0
-    MavenRepository // 1
+    IvyRepository,   // 0
+    MavenRepository, // 1
+    PipRepository    // 2
 ];
 
 RepositoryConfig.codec = discriminated(

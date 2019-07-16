@@ -4,51 +4,63 @@ import java.io.File
 
 import cats.effect.IO
 import polynote.config
-import polynote.config.DependencyConfigs
+import polynote.config.pip
 import polynote.kernel.dependency.{DependencyManager, DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.util.Publish
-import polynote.kernel.{KernelStatusUpdate, TaskInfo}
+import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 import polynote.messages.TinyString
 
 import scala.sys.process._
 
-// TODO:
-//    Pip dependencies need to be threaded all the way through from the UI to the interpreter.
-//    Right now all 'Dependencies' are presumed to be Scala, so we should probably fix that
-//      Maybe dependencies should be keyed by their interpreter, and there should be some way for interpreters to
-//      register some config that'll get to the UI. Maybe some message that gets sent (like interpreters in the handshake)
 
 class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpdates: Publish[IO, KernelStatusUpdate]) extends DependencyManager[IO] {
 
   lazy val venv = IO {
 
-    // I added the `--system-site-packages` flag so that we can rely on system packages in the majority of cases where
-    // users don't need a specific version. That way, e.g., it won't take many minutes to compile numpy every time
-    // the kernel starts up...
-    Seq("virtualenv", "--system-site-packages", "--python=python3", path).!
+    val venvFile = new File(path)
 
-    new File(path)
+    if (!venvFile.exists()) {
+      // I added the `--system-site-packages` flag so that we can rely on system packages in the majority of cases where
+      // users don't need a specific version. That way, e.g., it won't take many minutes to compile numpy every time
+      // the kernel starts up...
+      Seq("virtualenv", "--system-site-packages", "--python=python3", path).!
+    }
+
+    venvFile
   }
 
   override def getDependencyProvider(
     repositories: List[config.RepositoryConfig],
-    dependencies: List[DependencyConfigs],
+    dependencies: List[String],
     exclusions: List[String]
   ): IO[DependencyProvider] = {
 
-    val deps = dependencies.flatMap(_.get(TinyString("python"))).flatMap(_.toList)
-
-    if (deps.nonEmpty) {
+    if (dependencies.nonEmpty) {
       venv.map {
         venv =>
 
-          deps.foreach {
-            dep =>
-              Seq(s"${venv.getAbsolutePath}/bin/pip", "install", dep).!
+          val venvTask = TaskInfo("Creating VirtualEnv", "", "", TaskStatus.Running, 0.toByte)
+          statusUpdates.publish1(UpdatedTasks(List(venvTask)))
+
+          val baseCmd = List(s"${venv.getAbsolutePath}/bin/pip", "install")
+
+          val repoCmd: List[String] = repositories.collect {
+            case pip(url) => Seq("--extra-index-url", url)
+          }.flatten
+
+          dependencies.zipWithIndex.foreach {
+            case (dep, idx) =>
+              statusUpdates.publish1(UpdatedTasks(List(
+                venvTask.copy(progress = ((idx / (dependencies.length + 1)) * 255).toByte),
+                taskInfo.copy(progress = ((idx / (dependencies.length + 1)) * 255).toByte)
+              )))
+              (baseCmd ::: repoCmd ::: dep :: Nil).!
           }
 
+          statusUpdates.publish1(UpdatedTasks(List(venvTask.copy(status =  TaskStatus.Complete, progress = 255.toByte))))
+
           // TODO: actual dep locations?
-          mkDependencyProvider(deps.map(_ -> venv), Option(venv))
+          mkDependencyProvider(dependencies.map(_ -> venv), Option(venv))
       }
     } else {
       IO.pure(mkDependencyProvider(Nil, None))

@@ -1,18 +1,17 @@
 package polynote.server.repository
 
 import java.nio.charset.StandardCharsets
-import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
+import java.nio.file.{FileVisitOption, Files, Path}
 
-import scala.collection.JavaConverters._
 import cats.effect.{ContextShift, IO}
 import io.circe.Printer
-import org.http4s.client._
 import org.http4s.client.blaze._
-import polynote.config.{DependencyConfigs, PolynoteConfig}
+import polynote.config.PolynoteConfig
 import polynote.kernel.util.OptionEither
 import polynote.messages._
 import polynote.server.repository.ipynb.ZeppelinNotebook
 
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
 trait NotebookRepository[F[_]] {
@@ -98,7 +97,7 @@ trait FileBasedRepository extends NotebookRepository[IO] {
     ShortList(
       NotebookCell(0, "text", s"# $title\n\nThis is a text cell. Start editing!") :: Nil
     ),
-    Some(NotebookConfig(Option(config.dependencies.asInstanceOf[DependencyConfigs]), Option(config.exclusions.map(TinyString.apply)), Option(config.repositories), Option(config.spark)))
+    Some(NotebookConfig.fromPolynoteConfig(config))
   )
 
   def createNotebook(relativePath: String, maybeUriOrContent: OptionEither[String, String] = OptionEither.Neither): IO[String] = {
@@ -120,8 +119,8 @@ trait FileBasedRepository extends NotebookRepository[IO] {
           },
           content => {
             if (relativePath.endsWith(".json")) { // assume zeppelin
-              import io.circe.syntax._
               import io.circe.parser.parse
+              import io.circe.syntax._
               for {
                 parsed <- IO.fromEither(parse(content))
                 zep <- IO.fromEither(parsed.as[ZeppelinNotebook])

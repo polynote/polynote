@@ -68,9 +68,8 @@ class SparkPolyKernel(
     val tmp = Files.createTempDirectory("dependencies")
     tmp.toFile.deleteOnExit()
 
-
     val jars = for {
-      namedFiles <- dependencyProviders.get("spark").map(_.dependencies).toList
+      namedFiles <- dependencyProviders.get("scala").map(_.dependencies).toList
       (_, file) <- namedFiles if file.getName endsWith ".jar"
     } yield file -> tmp.resolve(URLDecoder.decode(file.getName, "utf-8"))
 

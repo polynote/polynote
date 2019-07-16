@@ -3,7 +3,7 @@ package polynote.kernel.lang.python
 import cats.effect.IO
 import cats.implicits._
 import org.apache.spark.sql.SparkSession
-import polynote.kernel.dependency.DependencyProvider
+import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
 import py4j.GatewayServer
@@ -12,14 +12,7 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
 
   override def sharedModules: List[String] = "pyspark" :: super.sharedModules
 
-  val postInit: IO[Unit] = IO.fromEither(dependencyProvider.as[PySparkVirtualEnvDependencyProvider]).map {
-    p =>
-      withJep {
-        jep.eval(p.runAfterInit)
-      }
-  }
-
-  override def init(): IO[Unit] = super.init() >> withJep {
+  override def setup(): IO[Unit] = super.setup() >> withJep {
     try {
 
       // initialize py4j and pyspark in the way they expect
@@ -73,14 +66,14 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
     } catch {
       case err: Throwable => logger.error(err)("Failed to initialize PySpark")
     }
-  } >> postInit
+  }
 
 }
 
 object PySparkInterpreter {
-  class Factory extends LanguageInterpreter.Factory[IO] {
-    override def languageName: String = "Python"
-    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): LanguageInterpreter[IO] =
+  class Factory extends PythonInterpreter.Factory {
+    override def depManagerFactory: DependencyManagerFactory[IO] = PySparkVirtualEnvManager.Factory
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): PythonInterpreter =
       new PySparkInterpreter(kernelContext, dependencies)
   }
 

@@ -42,8 +42,7 @@ object SparkServer extends Server {
   }
 
   // visible for testing
-  override protected[server] def kernelFactory: KernelFactory[IO] =
-    new SparkKernelFactory(dependencyManagers = Map("scala" -> scalaDep, "python" -> PySparkVirtualEnvManager.Factory))
+  override protected[server] def kernelFactory: KernelFactory[IO] = new SparkKernelFactory
 }
 
 case class SparkServerArgs(
@@ -56,11 +55,10 @@ object SparkServerArgs {
   def apply(printCommand: Boolean, args: ServerArgs): SparkServerArgs = SparkServerArgs(printCommand, args.configFile, args.watchUI)
 }
 
-class SparkKernelFactory(
-  dependencyManagers: Map[String, DependencyManagerFactory[IO]])(implicit
+class SparkKernelFactory(implicit
   contextShift: ContextShift[IO],
   timer: Timer[IO]
-) extends IOKernelFactory(dependencyManagers) {
+) extends IOKernelFactory {
   override protected def mkKernel(
     getNotebook: () => IO[Notebook],
     deps: Map[String, DependencyProvider],

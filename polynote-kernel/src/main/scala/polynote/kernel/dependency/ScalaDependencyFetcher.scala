@@ -3,20 +3,18 @@ package polynote.kernel.dependency
 import java.io._
 import java.net.URI
 import java.nio.file.{Files, Path, Paths}
-import java.util.concurrent.Executors
 
 import cats.effect.concurrent.Ref
 import cats.effect.{ContextShift, IO}
+import cats.instances.either._
+import cats.instances.list._
 import cats.syntax.alternative._
 import cats.syntax.apply._
 import cats.syntax.either._
-import cats.instances.either._
-import cats.instances.list._
 import cats.syntax.parallel._
-import polynote.config.{DependencyConfigs, RepositoryConfig}
+import polynote.config.RepositoryConfig
 import polynote.kernel._
 import polynote.kernel.util.{DownloadableFileProvider, Publish}
-import polynote.messages.{TinyList, TinyMap}
 
 import scala.concurrent.ExecutionContext
 
@@ -27,26 +25,20 @@ trait ScalaDependencyFetcher extends DependencyManager[IO] {
   /**
     * Split the dependencies into actual dependency coordinates vs direct URLs
     */
-  protected def splitDependencies(deps: List[DependencyConfigs]): (List[DependencyConfigs], List[URI]) = {
-    val (dependencies, uriList) = deps.flatMap { dep =>
-      dep.toList.collect {
-        case (k, v) =>
-          val (dependencies, uris) = v.map { s =>
-            val asURI = new URI(s)
+  protected def splitDependencies(deps: List[String]): (List[String], List[URI]) = {
+    val (dependencies, uriList) = deps.map { dep =>
 
-            Either.cond(
-              // Do we support this protocol (if any?)
-              DownloadableFileProvider.isSupported(asURI),
-              asURI,
-              s // an unsupported protocol might be a dependency
-            )
-          }.separate
+      val asURI = new URI(dep)
 
-          (TinyMap(k -> TinyList(dependencies)), uris)
-      }
-    }.unzip
+      Either.cond(
+        // Do we support this protocol (if any?)
+        DownloadableFileProvider.isSupported(asURI),
+        asURI,
+        dep // an unsupported protocol might be a dependency
+      )
+    }.separate
 
-    (dependencies, uriList.flatten)
+    (dependencies, uriList)
   }
 
   /**
@@ -123,13 +115,13 @@ trait ScalaDependencyFetcher extends DependencyManager[IO] {
     */
   protected def resolveDependencies(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
+    dependencies: List[String],
     exclusions: List[String]
   ): IO[List[(String, IO[File])]]
 
   def getDependencyProvider(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
+    dependencies: List[String],
     exclusions: List[String]
   ): IO[DependencyProvider] = for {
     deps <- fetchDependencyList(repositories, dependencies, exclusions)
@@ -138,7 +130,7 @@ trait ScalaDependencyFetcher extends DependencyManager[IO] {
 
   def fetchDependencyList(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
+    dependencies: List[String],
     exclusions: List[String]
   ): IO[List[(String, IO[File])]] = {
     val (deps, urls) = splitDependencies(dependencies)

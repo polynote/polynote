@@ -25,8 +25,7 @@ trait KernelFactory[F[_]] {
 
 }
 
-class IOKernelFactory(
-  dependencyManagers: Map[String, DependencyManagerFactory[IO]])(implicit
+class IOKernelFactory(implicit
   contextShift: ContextShift[IO],
   timer: Timer[IO]
 ) extends KernelFactory[IO] {
@@ -73,13 +72,11 @@ class IOKernelFactory(
   }
 
   private def getDependencies(config: NotebookConfig, path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]): IO[Map[String, DependencyProvider]] = {
-    val dependencies = config.dependencies.toList.flatMap(_.toList).toMap
-
-    dependencyManagers.toList.map {
+    LanguageInterpreter.factories.mapValues(_.depManagerFactory).toList.map {
       case (lang, makeDepManager) =>
         val depManager = makeDepManager(path, taskInfo, statusUpdates)
-        val deps = dependencies.getOrElse(lang, TinyList(Nil))
-        depManager.getDependencyProvider(config.repositories.getOrElse(Nil), TinyMap(Map(TinyString(lang) -> deps)) :: Nil, config.exclusions.getOrElse(Nil)).map(lang.toString -> _)
+        val deps = config.dependencies.flatMap(_.get(lang)).getOrElse(TinyList(Nil))
+        depManager.getDependencyProvider(config.repositories.getOrElse(Nil), deps, config.exclusions.getOrElse(Nil)).map(lang.toString -> _)
     }.parSequence.map(_.toMap)
   }
 }

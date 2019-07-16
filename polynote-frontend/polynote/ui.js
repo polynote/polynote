@@ -512,12 +512,22 @@ export class NotebookConfigUI extends UIEventTarget {
             div(['content'], [
                 div(['notebook-dependencies', 'notebook-config-section'], [
                     h3([], ['Dependencies']),
-                    para([], ['Specify Maven coordinates for your dependencies, e.g. ', span(['pre'], ['org.myorg:package-name_2.11:1.0.1']), ', or URLs like ', span(['pre'], ['s3://path/to/my.jar'])]),
+                    para([], ['You can provide Scala / JVM dependencies using  Maven coordinates , e.g. ', span(['pre'], ['org.myorg:package-name_2.11:1.0.1']), ', or URLs like ', span(['pre'], ['s3://path/to/my.jar'])]),
+                    para([], ['You can also specify pip packages, e.g. ', span(['pre'], ['requests']), ', or with a version like ', span(['pre'], ['urllib3==1.25.3'])]),
                     this.dependencyContainer = div(['dependency-list'], [
                         this.dependencyRowTemplate = div(['dependency-row', 'notebook-config-row'], [
-                            textbox(['dependency'], 'Dependency coordinate or URL'),
+                            dropdown(['dependency-type'], {scala: 'scala/jvm', python: 'pip'}).change(evt => {
+                                const self = evt.currentTarget;
+                                const row = self.parentNode;
+                                const value = self.options[self.selectedIndex].value;
+                                row.className = 'dependency-row';
+                                row.classList.add('notebook-config-row');
+                                row.classList.add(value);
+                            }),
+                            textbox(['dependency'], 'Dependency coordinate, URL, pip package'),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
-                                this.addDependency(evt.currentTarget.parentNode.querySelector('.dependency').value);
+                                const row = evt.currentTarget.parentNode;
+                                this.addDependency(this.mkDependency(row));
                                 this.dependencyRowTemplate.querySelector('.dependency').value = '';
                             }),
                             iconButton(['remove'], 'Remove', '', 'Remove')
@@ -526,10 +536,10 @@ export class NotebookConfigUI extends UIEventTarget {
                 ]),
                 div(['notebook-resolvers', 'notebook-config-section'], [
                     h3([], ['Resolvers']),
-                    para([], ['Specify any custom Ivy or Maven repositories here.']),
+                    para([], ['Specify any custom Ivy, Maven, or Pip repositories here.']),
                     this.resolverContainer = div(['resolver-list'], [
                         this.resolverRowTemplate = div(['resolver-row', 'notebook-config-row', 'ivy'], [
-                            dropdown(['resolver-type'], {ivy: 'Ivy', maven: 'Maven'}).change(evt => {
+                            dropdown(['resolver-type'], {ivy: 'Ivy', maven: 'Maven', pip: 'Pip'}).change(evt => {
                                 const self = evt.currentTarget;
                                 const row = self.parentNode;
                                 const value = self.options[self.selectedIndex].value;
@@ -550,7 +560,7 @@ export class NotebookConfigUI extends UIEventTarget {
                 ]),
                 div(['notebook-exclusions', 'notebook-config-section'], [
                     h3([], ['Exclusions']),
-                    para([], ['Specify organization:module coordinates for your exclusions, i.e. ', span(['pre'], ['org.myorg:package-name_2.11'])]),
+                    para([], ['[Scala only]: Specify organization:module coordinates for your exclusions, i.e. ', span(['pre'], ['org.myorg:package-name_2.11'])]),
                     this.exclusionContainer = div(['exclusion-list'], [
                         this.exclusionRowTemplate = div(['exclusion-row', 'notebook-config-row'], [
                             textbox(['exclusion'], 'Exclusion organization:name'),
@@ -597,6 +607,13 @@ export class NotebookConfigUI extends UIEventTarget {
         ]);
     }
 
+    mkDependency(row) {
+        const typeSelect = row.querySelector('.dependency-type');
+        const type = typeSelect.options[typeSelect.selectedIndex].value;
+        const dep = row.querySelector('.dependency').value;
+        return [type, dep];
+    }
+
     mkResolver(row) {
         const typeSelect = row.querySelector('.resolver-type');
         const type = typeSelect.options[typeSelect.selectedIndex].value;
@@ -612,12 +629,28 @@ export class NotebookConfigUI extends UIEventTarget {
                 row.querySelector('.resolver-url').value,
                 null
             );
+        } else if (type === 'pip') {
+            return new messages.PipRepository(
+                row.querySelector('.resolver-url').value
+            );
         }
     }
 
-    addDependency(value) {
+    addDependency(dep) {
+        const [type, value] = dep;
         const row = this.dependencyRowTemplate.cloneNode(true);
         row.querySelector('.dependency').value = value;
+
+        const typeSelect = row.querySelector('.dependency-type');
+        let idx = -1;
+        [...typeSelect].forEach((option, i) => {
+            if (option.value === type){
+                idx = i
+            }
+        });
+
+        row.querySelector('.dependency-type').selectedIndex = idx;
+
         row.querySelector('.remove').addEventListener('click', evt => {
             row.innerHTML = '';
             row.parentNode.removeChild(row);
@@ -689,9 +722,11 @@ export class NotebookConfigUI extends UIEventTarget {
         this.lastConfig = config;
         this.clearConfig();
 
-        if (config.dependencies && config.dependencies.scala) {
-            for (const dep of config.dependencies.scala) {
-                this.addDependency(dep);
+        if (config.dependencies) {
+            for (const [lang, deps] of Object.entries(config.dependencies)) {
+                for (const dep of deps) {
+                    this.addDependency([lang, dep]);
+                }
             }
         }
 
@@ -715,10 +750,13 @@ export class NotebookConfigUI extends UIEventTarget {
     }
 
     get config() {
-        const deps = [];
-        const depInputs = this.dependencyContainer.querySelectorAll('.dependency-row input');
-        depInputs.forEach(input => {
-            if (input.value) deps.push(input.value);
+        const deps = {};
+        const depInputs = this.dependencyContainer.querySelectorAll('.dependency-row');
+        depInputs.forEach(row => {
+            const [type, dep] = this.mkDependency(row);
+            if (type && dep) {
+                deps[type] = [...(deps[type] || []), dep];
+            }
         });
 
         const exclusions = [];
@@ -745,7 +783,7 @@ export class NotebookConfigUI extends UIEventTarget {
         });
 
         return new messages.NotebookConfig(
-            {scala: deps},
+            deps,
             exclusions,
             repos,
             sparkConfig
