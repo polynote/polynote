@@ -2745,6 +2745,29 @@ button {
       }
     }
   }
+
+  .schema-display {
+    .object-summary {
+      .summary-content::before {
+        content: none;
+      }
+
+      .summary-content * {
+        display: none;
+      }
+
+      .summary-content::after {
+        content: 'struct';
+        font-family: @code-fonts;
+      }
+    }
+
+    .string {
+      color: inherit;
+    }
+
+    .string::before, .string::after { content: none; }
+  }
 }
 
 .tab-nav {
@@ -2778,6 +2801,70 @@ button {
 
   .tab-nav-content {
     background: white;
+  }
+}
+
+.object-display {
+  font-family: @code-fonts;
+
+  .object-summary {
+
+    .summary-content {
+      &::before {
+        content: '{ ';
+      }
+
+      &::after {
+        content: ' }';
+      }
+
+      span::after {
+        content: ', ';
+      }
+
+      span.string::after {
+        content: '", ';
+      }
+
+      span:last-child::after {
+        content: none;
+      }
+
+      span.string:last-child::after {
+        content: '"';
+      }
+    }
+  }
+
+  .field-name {
+    color: #892093;
+    font-weight: bold;
+  }
+
+  .field-name::after {
+    content: ': ';
+  }
+
+  .string {
+    color: #c42426;
+  }
+
+  .string::before, .string::after {
+    color: #c42426;
+    content: '"';
+  }
+  .number, .boolean {
+    color: #2321CC;
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 2em;
+
+    summary {
+      text-indent: -1em;
+    }
   }
 }
 

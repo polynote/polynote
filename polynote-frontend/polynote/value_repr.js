@@ -62,7 +62,7 @@ export class DataRepr extends ValueRepr {
     }
 
     decode() {
-        return this.dataType.decodeBuffer(this.data);
+        return this.dataType.decodeBuffer(new DataReader(this.data));
     }
 }
 

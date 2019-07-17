@@ -14,6 +14,7 @@ import {KeyPress} from "./keypress";
 import {clientInterpreters} from "./client_interpreter";
 import {valueInspector} from "./value_inspector";
 import {Interpreters} from "./ui";
+import {displayContent, parseContentType, prettyDuration} from "./display_content";
 
 const JsDiff = new Diff();
 
@@ -625,18 +626,6 @@ export class CodeCell extends Cell {
         }
     }
 
-    parseContentType(contentType) {
-        const contentTypeParts = contentType.split(';').map(str => str.replace(/(^\s+|\s+$)/g, ""));
-        const mimeType = contentTypeParts.shift();
-        const args = {};
-        contentTypeParts.forEach(part => {
-            const [k, v] = part.split('=');
-            args[k] = v;
-        });
-
-        return [mimeType, args];
-    }
-
     mimeEl(mimeType, args, content) {
         const rel = args.rel || 'none';
         return div(['output'], content).attr('rel', rel).attr('mime-type', mimeType);
@@ -644,7 +633,7 @@ export class CodeCell extends Cell {
 
     buildOutput(mimeType, args, content) {
         const lang = args.lang || null;
-        return CodeCell.parseContent(content, mimeType, lang).then(
+        return displayContent(mimeType, content, args).then(
             result => this.mimeEl(mimeType, args, result)
         ).catch(function(err) {
             return div(['output'], err);
@@ -652,7 +641,7 @@ export class CodeCell extends Cell {
     }
 
     addOutput(contentType, content) {
-        const [mimeType, args] = this.parseContentType(contentType);
+        const [mimeType, args] = parseContentType(contentType);
         this.cellOutputDisplay.classList.add('output');
         if (!this.container.classList.contains('error')) {
             this.container.classList.add('success');
@@ -787,7 +776,7 @@ export class CodeCell extends Cell {
                 this.cellResultMargin.appendChild(outLabel);
 
                 const [mime, content] = result.displayRepr;
-                const [mimeType, args] = this.parseContentType(mime);
+                const [mimeType, args] = parseContentType(mime);
                 this.buildOutput(mime, args, content).then(el => {
                     this.resultTabs.appendChild(el);
                     this.cellOutputTools.classList.add('output');
@@ -823,41 +812,6 @@ export class CodeCell extends Cell {
         }
     }
 
-    // move this somewhere else if it's useful outside Cell...
-    static prettyDuration(milliseconds) {
-        function quotRem(dividend, divisor) {
-            const quotient = Math.floor(dividend / divisor);
-            const remainder = dividend % divisor;
-            return [quotient, remainder];
-        }
-
-        const [durationDays, leftOverHrs] = quotRem(milliseconds, 1000 * 60 * 60 * 24);
-        const [durationHrs, leftOverMin] = quotRem(leftOverHrs, 1000 * 60 * 60);
-        const [durationMin, leftOverSec] = quotRem(leftOverMin, 1000 * 60);
-        const [durationSec, durationMs] = quotRem(leftOverSec, 1000);
-
-        const duration = [];
-        if (durationDays) {
-            duration.push(`${durationDays}d`);
-            duration.push(`${durationHrs}h`);
-            duration.push(`${durationMin}m`);
-            duration.push(`${durationSec}s`);
-        } else if (durationHrs) {
-            duration.push(`${durationHrs}h`);
-            duration.push(`${durationMin}m`);
-            duration.push(`${durationSec}s`);
-        } else if (durationMin) {
-            duration.push(`${durationMin}m`);
-            duration.push(`${durationSec}s`);
-        } else if (durationSec) {
-            duration.push(`${durationSec}s`);
-        } else if (durationMs) {
-            duration.push(`${durationMs}ms`);
-        }
-
-        return duration.join(":")
-    }
-
     setExecutionInfo(result) {
         if (result instanceof ExecutionInfo) {
             const start = new Date(Number(result.startTs));
@@ -870,7 +824,7 @@ export class CodeCell extends Cell {
 
             // populate display
             this.execInfoEl.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
-            this.execInfoEl.appendChild(span(['exec-duration'], [CodeCell.prettyDuration(duration)]));
+            this.execInfoEl.appendChild(span(['exec-duration'], [prettyDuration(duration)]));
             this.execInfoEl.classList.add('output');
             if (result.endTs) {
                 this.execInfoEl.classList.toggle("running", false);
