@@ -9,7 +9,7 @@ import polynote.kernel.dependency.DependencyFetcher
 import polynote.kernel.{KernelAPI, KernelStatusUpdate, PolyKernel, SparkPolyKernel}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.remote.{RemoteSparkKernel, SocketTransport, Transport}
-import polynote.kernel.util.{Publish, SparkSubmitCommand}
+import polynote.kernel.util.{PlainServerCommand, Publish, SparkSubmitCommand}
 import polynote.messages.Notebook
 
 import scala.reflect.io.AbstractFile
@@ -24,10 +24,19 @@ object SparkServer extends Server {
   override def run(args: List[String]): IO[ExitCode] = getConfigs(args).flatMap {
     case (SparkServerArgs(true, _, _), config) =>
       IO {
-        val cmd = SparkSubmitCommand(config.spark).map {
-          str => if (str contains " ") s""""$str"""" else str
-        }.mkString(" ")
-        println(s"SparkSubmit: $cmd") // must be println because this stdout is what gets parsed by callers.
+        // don't launch with SparkSubmit when remote.
+        if (config.spark.get("polynote.kernel.remote") contains "true") {
+          val cmd = PlainServerCommand(config.spark).map {
+            str => if (str contains " ") s""""$str"""" else str
+          }.mkString(" ")
+          // TODO: this should be something other than `SparkSubmit`
+          println(s"SparkSubmit: $cmd") // must be println because this stdout is what gets parsed by callers.
+        } else {
+          val cmd = SparkSubmitCommand(config.spark).map {
+            str => if (str contains " ") s""""$str"""" else str
+          }.mkString(" ")
+          println(s"SparkSubmit: $cmd") // must be println because this stdout is what gets parsed by callers.
+        }
       } *> IO.pure(ExitCode.Success)
     case _ => super.run(args)
   }

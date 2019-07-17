@@ -129,7 +129,9 @@ lazy val `polynote-spark` = project.settings(
     Seq(
       copyRuntimeJar((resourceManaged in Compile).value, "polynote-runtime.jar", (packageBin in (`polynote-runtime`, Compile)).value),
       copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value),
-      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get) // sneak scala-lang jar into the assembly
+      // sneak these scala dependency jars into the assembly so we have them if we need them (but they won't conflict with environment-provided jars)
+      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get), 
+      copyRuntimeJar((resourceManaged in Compile).value, "scala-reflect.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-reflect")).get)
     )
   }.taskValue,
   fork in Test := true,
