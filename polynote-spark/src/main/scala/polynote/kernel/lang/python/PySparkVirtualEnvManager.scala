@@ -38,7 +38,7 @@ class PySparkVirtualEnvDependencyProvider(
       |import shutil
       |
       |# archive venv and send to Spark cluster
-      |for dep in Path('$path', 'deps').glob('*.whl'):
+      |for dep in Path('$path', 'deps').resolve().glob('*.whl'):
       |    # we need to rename the wheels to zips because that's what spark wants... sigh
       |    as_zip = dep.with_suffix('.zip')
       |    if not as_zip.exists():

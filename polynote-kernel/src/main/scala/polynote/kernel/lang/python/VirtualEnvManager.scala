@@ -17,7 +17,8 @@ class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpda
 
   lazy val venv = IO {
 
-    val venvFile = new File(path).toPath.resolve("venv").toFile
+    // replace spaces with underscore because pyspark can't load files from directories with spaces... sigh.
+    val venvFile = new File(path.replace(' ', '_')).toPath.resolve("venv").toFile
 
     if (!venvFile.exists()) {
       // I added the `--system-site-packages` flag so that we can rely on system packages in the majority of cases where
