@@ -12,11 +12,16 @@ import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.reflect.io.AbstractFile
 
 /**
-  * A [[DependencyManager]] handles the fetching and provision of dependencies.
+  * A [[DependencyManager]] handles the fetching and setting up the provision of those dependencies (with a [[DependencyProvider]]).
   *
-  * In this case, dependency *fetching* refers to bringing (e.g., downloading) the dependencies to this machine, and
-  * dependency *providing* refers to making these dependencies available to the runtime (e.g., with a ClassLoader).
+  * The idea is that when we want some dependencies to be available to our code, we typically need to do two things.
+  * First, we need to get those dependencies (and _their_ dependencies, too) from somewhere and (usually) download them
+  * as files onto our machine.
+  * Second, we need to somehow link those dependencies on our filesystem with our running code.
   *
+  * An example of the former would be something like Coursier which download jars from remote repos onto our machine
+  * (in fact, we have a [[CoursierFetcher]]), while an example of the latter would be a classloader that provides the
+  * classes in said jars to our code (e.g., [[ClassLoaderDependencyProvider]]).
   */
 trait DependencyManager[F[_]] {
   // taskInfo to describe fetching the dependencies
@@ -40,6 +45,13 @@ trait DependencyManagerFactory[F[_]] {
   ): DependencyManager[F]
 }
 
+/**
+  * A [[DependencyProvider]] handles actually linking the fetched dependencies with the interpreter itself.
+  *
+  * The idea is similar to how a classloader works (indeed, we even have a [[ClassLoaderDependencyProvider]])
+  *
+  * @see [[DependencyManager]]
+  */
 trait DependencyProvider {
   val dependencies: List[(String, File)]
 
