@@ -37,7 +37,9 @@ final case class PolynoteConfig(
 
 object PolynoteConfig {
   implicit val encoder: ObjectEncoder[PolynoteConfig] = deriveEncoder
-  implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder
+  implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder[PolynoteConfig]
+
+  private val defaultConfig = "default.yml" // we expect this to be in the same directory as the user config
 
   private val logger = new PolyLogger
 
@@ -45,17 +47,31 @@ object PolynoteConfig {
 
   def load(file: File): IO[PolynoteConfig] = {
 
-    IO(new FileReader(file)).flatMap { reader =>
-      IO.fromEither(yaml.parser.parse(reader).flatMap(_.as[PolynoteConfig]))
-        .guarantee(IO(reader.close()))
-    } handleErrorWith {
-      case _: MatchError =>
-        IO.pure(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
-      case _: FileNotFoundException =>
-        IO(logger.error(s"Configuration file $file not found; using default configuration")).as(PolynoteConfig())
-      case err: Throwable => IO.raiseError(err)
+    val configJsonIO = IO(new FileReader(file)).flatMap {
+      configReader =>
+        IO.fromEither(yaml.parser.parse(configReader)).guarantee(IO(configReader.close()))
     }
 
+    val defaultJsonIO = IO(new FileReader(file.toPath.resolveSibling(defaultConfig).toFile)).flatMap {
+      defaultReader =>
+        IO.fromEither(yaml.parser.parse(defaultReader)).guarantee(IO(defaultReader.close()))
+    }.handleErrorWith(_ => IO.pure(Json.fromJsonObject(JsonObject.empty)))
+
+    val configIO = for {
+      configJson <- configJsonIO
+      defaultJson <- defaultJsonIO
+      merged = defaultJson.deepMerge(configJson)
+      parsedConfig <- IO.fromEither(merged.as[PolynoteConfig])
+    } yield parsedConfig
+
+    configIO
+      .handleErrorWith {
+        case _: MatchError =>
+          IO.pure(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
+        case e: FileNotFoundException =>
+          IO(logger.error(e)(s"Configuration file $file not found; using default configuration")).as(PolynoteConfig())
+        case err: Throwable => IO.raiseError(err)
+      }
   }
 
 }
