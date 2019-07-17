@@ -1,18 +1,19 @@
 package polynote.server
 
 import java.io.File
-import java.net.{URI, URL}
-import java.util.{Date, ServiceLoader}
+import java.net.URL
+import java.nio.file.Files
+import java.util.Date
 
 import cats.effect._
 import cats.implicits._
 import org.http4s._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeBuilder
+import polynote.buildinfo.BuildInfo
 import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
-import polynote.buildinfo.BuildInfo
 
 import scala.concurrent.ExecutionContext
 
@@ -100,11 +101,16 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     config          <- PolynoteConfig.load(args.configFile)
   } yield (args, config)
 
+  def createDir(dir: String): IO[Unit] = IO {
+    Files.createDirectory(new File(dir).toPath)
+  }
+
   def run(args: List[String]): IO[ExitCode] = for {
     tuple           <- getConfigs(args)
     (args, config)   = tuple // tuple decomposition in for-comprehension doesn't seem work I guess...
     port             = config.listen.port
     address          = config.listen.host
+    _               <- createDir(config.storage.dir)
     _               <- IO(logger.debug("Debug logging is ON"))
     _               <- IO(logger.info(s"Read config from ${args.configFile.getAbsolutePath}: $config"))
     _               <- adjustSystemProperties()
