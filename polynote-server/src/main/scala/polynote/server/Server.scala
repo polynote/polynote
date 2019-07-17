@@ -102,7 +102,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
   } yield (args, config)
 
   def createDir(dir: String): IO[Unit] = IO {
-    Files.createDirectory(new File(dir).toPath)
+    Files.createDirectories(new File(dir).toPath)
   }
 
   def run(args: List[String]): IO[ExitCode] = for {
