@@ -23,29 +23,28 @@ class PySparkVirtualEnvDependencyProvider(
     s"""
        |${super.beforeInit(path)}
        |
-       |import os, sys, shutil
+       |import os
        |
-       |# first, set environment
+       |# set driver python before setting up pyspark
        |venvPy = os.path.join(os.environ["VIRTUAL_ENV"], "bin", "python")
-       |os.environ["PYSPARK_PYTHON"] = venvPy
        |os.environ["PYSPARK_DRIVER_PYTHON"] = venvPy
-       |
-       |# sc is the PySpark Context
-       |def archive(sc):
-       |    print("got spark context", sc, file=sys.stderr)
-       |    loc = next(x for x in sys.path if sys.prefix in x and "site-packages" in x)
-       |    out_file = shutil.make_archive('deps', 'zip', loc) # make_archive isn't thread safe (https://bugs.python.org/issue30511) but that should be ok here, right?
-       |    sc.addPyFile(out_file)
      """.stripMargin
 
   override def afterInit(path: String): String =
     s"""
       |${super.afterInit(path)}
       |
-      |try:
-      |   archive(sc)
-      |except Exception as e:
-      |   print("Unable to load python dependencies to spark!", e, file=sys.stderr)
+      |from pathlib import Path
+      |import shutil
+      |
+      |# archive venv and send to Spark cluster
+      |for dep in Path('$path', 'deps').glob('*.whl'):
+      |    # we need to rename the wheels to zips because that's what spark wants... sigh
+      |    as_zip = dep.with_suffix('.zip')
+      |    if not as_zip.exists():
+      |        shutil.copy(dep, as_zip)
+      |    sc.addPyFile(str(as_zip))
+      |
     """.stripMargin
 }
 

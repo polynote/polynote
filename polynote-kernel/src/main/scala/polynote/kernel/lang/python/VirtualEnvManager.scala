@@ -23,7 +23,7 @@ class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpda
       // I added the `--system-site-packages` flag so that we can rely on system packages in the majority of cases where
       // users don't need a specific version. That way, e.g., it won't take many minutes to compile numpy every time
       // the kernel starts up...
-      Seq("virtualenv", "--system-site-packages", "--python=python3", path).!
+      Seq("virtualenv", "--system-site-packages", "--python=python3", venvFile.toString).!
     }
 
     venvFile
@@ -42,11 +42,15 @@ class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpda
           val venvTask = TaskInfo("Creating VirtualEnv", "", "", TaskStatus.Running, 0.toByte)
           statusUpdates.publish1(UpdatedTasks(List(venvTask)))
 
-          val baseCmd = List(s"${venv.getAbsolutePath}/bin/pip", "install")
+          def pip(action: String, dep: String, extraOptions: List[String] = Nil): List[String] = {
+            val baseCmd = List(s"${venv.getAbsolutePath}/bin/pip", action)
 
-          val repoCmd: List[String] = repositories.collect {
-            case pip(url) => Seq("--extra-index-url", url)
-          }.flatten
+            val options: List[String] = repositories.collect {
+              case pip(url) => Seq("--extra-index-url", url)
+            }.flatten ::: extraOptions
+
+            baseCmd ::: options ::: dep :: Nil
+          }
 
           dependencies.zipWithIndex.foreach {
             case (dep, idx) =>
@@ -54,7 +58,8 @@ class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpda
                 venvTask.copy(progress = ((idx / (dependencies.length + 1)) * 255).toByte),
                 taskInfo.copy(progress = ((idx / (dependencies.length + 1)) * 255).toByte)
               )))
-              (baseCmd ::: repoCmd ::: dep :: Nil).!
+              pip("install", dep).!
+              pip("download", dep, List("--dest", s"${venv.getAbsolutePath}/deps/")).!
           }
 
           statusUpdates.publish1(UpdatedTasks(List(venvTask.copy(status =  TaskStatus.Complete, progress = 255.toByte))))
@@ -72,7 +77,7 @@ class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpda
 
 class VirtualEnvDependencyProvider(val dependencies: List[(String, File)], venv: Option[File]) extends DependencyProvider {
 
-  protected val venvPath: Option[String] = venv.map(_.getAbsolutePath)
+  final val venvPath: Option[String] = venv.map(_.getAbsolutePath)
 
   // call this on Jep initialization to set the venv properly
   protected def beforeInit(path: String): String = s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"}) """

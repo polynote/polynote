@@ -1,6 +1,7 @@
 package polynote.kernel.lang
 package python
 
+import java.nio.file.Paths
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicReference
 
@@ -147,23 +148,36 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
 
   protected def sharedModules: List[String] = List("numpy", "google")
 
+  private val venvProvider = dependencyProvider.as[VirtualEnvDependencyProvider]
+
   protected val jep: Jep = jepExecutor.submit {
     new Callable[Jep] {
       def call(): Jep = {
-        val jep = new Jep(
-          new JepConfig()
-            .addSharedModules(sharedModules: _*)
-            .setInteractive(false)
-            .setClassLoader(kernelContext.classLoader)
-            .setClassEnquirer(new NamingConventionClassEnquirer(true)))
-        jep
+        // TODO: this is how to use jep installed inside a venv. it would only work for remote kernels though.
+        //       if we ever decide to move towards remote kernels being the only option then we can use this approach
+//        venvProvider.right.toOption.flatMap(_.venvPath).foreach {
+//          path =>
+//            MainInterpreter.setInitParams(new PyConfig().setPythonHome(path))
+//        }
+
+        val conf = new JepConfig()
+          .addSharedModules(sharedModules: _*)
+          .setInteractive(false)
+          .setClassLoader(kernelContext.classLoader)
+          .setClassEnquirer(new NamingConventionClassEnquirer(true))
+
+        // add venv path if present. TODO this might be needed if we are using jep from inside the venv
+//        venvProvider.right.toOption.flatMap(_.venvPath).foreach {
+//          path =>
+//            conf.addIncludePaths(Paths.get(path, "lib", "python3.7", "site-packages").toString)
+//        }
+
+        new Jep(conf)
       }
     }
   }.get()
 
-  def preInit: IO[Unit] = IO.fromEither {
-    dependencyProvider.as[VirtualEnvDependencyProvider]
-  }.flatMap {
+  def preInit: IO[Unit] = IO.fromEither(venvProvider).flatMap {
     p =>
       withJep {
         val code = s"""exec(\"\"\"${p.runBeforeInit}\"\"\")""" // wrap in `exec` so it can have multiple statements.
@@ -171,9 +185,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
       }
   }
 
-  def postInit: IO[Unit] = IO.fromEither {
-    dependencyProvider.as[VirtualEnvDependencyProvider]
-  }.flatMap {
+  def postInit: IO[Unit] = IO.fromEither(venvProvider).flatMap {
     p =>
       withJep {
         val code = s"""exec(\"\"\"${p.runAfterInit}\"\"\")""" // wrap in `exec` so it can have multiple statements.

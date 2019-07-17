@@ -18,6 +18,13 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
       // initialize py4j and pyspark in the way they expect
 
       val spark = SparkSession.builder().getOrCreate()
+
+      // if we are running in local mode we need to set this so the executors can find the venv's python
+      if (spark.sparkContext.master.contains("local")) {
+        jep.eval("""os.environ["PYSPARK_PYTHON"] = os.environ["PYSPARK_DRIVER_PYTHON"]""")
+      } else {
+        jep.eval("""os.environ["PYSPARK_PYTHON"] = "python3" """)
+      }
       jep.eval("from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters, CallbackServerParameters")
       jep.eval("from pyspark.conf import SparkConf")
       jep.eval("from pyspark.context import SparkContext")
