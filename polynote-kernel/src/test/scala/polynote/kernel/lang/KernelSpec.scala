@@ -1,31 +1,26 @@
 package polynote.kernel.lang
 
-import java.io.{BufferedReader, InputStreamReader, PrintWriter}
+import java.io.File
 import java.util.concurrent.Executors
 
-import cats.effect.internals.IOContextShift
 import cats.effect.{ContextShift, IO}
-import cats.instances.vector._
 import cats.instances.either._
-import cats.syntax.apply._
+import cats.instances.vector._
 import cats.syntax.alternative._
+import cats.syntax.apply._
 import cats.syntax.either._
 import fs2.Stream
-import fs2.concurrent.{Queue, Topic}
-import polynote.config.PolynoteConfig
-import polynote.kernel.PolyKernel.EnqueueSome
-import polynote.kernel.lang.python.PythonInterpreter
+import fs2.concurrent.Topic
+import polynote.kernel._
+import polynote.kernel.dependency.ClassLoaderDependencyProvider
+import polynote.kernel.lang.python.{PythonInterpreter, VirtualEnvDependencyProvider, VirtualEnvManager}
 import polynote.kernel.lang.scal.ScalaInterpreter
 import polynote.kernel.util._
-import polynote.kernel._
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.tools.nsc.Settings
-import scala.tools.nsc.interactive.Global
-import scala.tools.nsc.reporters.ConsoleReporter
 
-// TODO: make PythonInterpreterSpec a KernelSpec once it gets merged in
 trait KernelSpec {
   val settings = new Settings()
   settings.classpath.append(System.getProperty("java.class.path"))
@@ -39,13 +34,13 @@ trait KernelSpec {
   }
 
   def assertPythonOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
-    assertOutputWith((kernelContext: KernelContext, _) => PythonInterpreter.factory()(Nil, kernelContext), code) {
+    assertOutputWith((kernelContext: KernelContext, _) => PythonInterpreter.factory()(kernelContext, new MockVenvDepProvider), code) {
       (interp, vars, output, displayed) => interp.withJep(assertion(vars, output, displayed))
     }
   }
 
   def assertScalaOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
-    assertOutput((kernelContext: KernelContext, _) => ScalaInterpreter.factory()(Nil, kernelContext), code)(assertion)
+    assertOutput((kernelContext: KernelContext, _) => ScalaInterpreter.factory()(kernelContext, new MockCLDepProvider), code)(assertion)
   }
 
   def assertScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
@@ -57,7 +52,10 @@ trait KernelSpec {
       (_, vars, output, displayed) => IO(assertion(vars, output, displayed))
     }
 
-  def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(Map.empty, updates, Nil)
+  def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(Map(
+    "scala" -> new MockCLDepProvider,
+    "python" -> new MockVenvDepProvider
+  ), updates, Nil)
 
   // TODO: for unit tests we'd ideally want to hook directly to runCode without needing all this!
   def assertOutputWith[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: Seq[String])(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {
@@ -110,3 +108,7 @@ trait KernelSpec {
     }.unsafeRunSync()
   }
 }
+
+class MockVenvDepProvider extends VirtualEnvDependencyProvider(Nil, None)
+class MockCLDepProvider extends ClassLoaderDependencyProvider(Nil)
+

@@ -7,6 +7,7 @@ import cats.effect.{ContextShift, ExitCode, IO, Timer}
 import fs2.concurrent.Queue
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.config.PolynoteConfig
+import polynote.kernel.lang.MockVenvDepProvider
 import polynote.kernel.{ClearResults, ExecutionInfo, Output, ResultValue}
 import polynote.messages.{CellResult, LoadNotebook, Message, ShortString}
 import polynote.runtime._

@@ -18,10 +18,9 @@ import fs2.{Chunk, Stream}
 import fs2.concurrent.Queue
 import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel._
-import polynote.kernel.util.{Publish, ReadySignal}
+import polynote.kernel.util.{Memoize, Publish, ReadySignal}
 import polynote.messages.{ByteVector32, CellID, CellResult, HandleType, Lazy, Notebook, NotebookUpdate, ShortString, Streaming, Updating}
 import polynote.runtime._
-import polynote.util.Memoize
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.{Duration, MINUTES}

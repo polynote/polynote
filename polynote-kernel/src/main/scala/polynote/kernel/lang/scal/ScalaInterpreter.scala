@@ -13,6 +13,7 @@ import fs2.concurrent.{Enqueue, Queue, Topic}
 import polynote.config.PolyLogger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
+import polynote.kernel.dependency.{ClassLoaderDependencyProvider, CoursierFetcher, DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util._
 import polynote.messages.{CellID, CellResult, ShortList, ShortString, TinyList, TinyString}
@@ -398,8 +399,9 @@ class ScalaInterpreter(
 
 object ScalaInterpreter {
   class Factory() extends LanguageInterpreter.Factory[IO] {
-    override val languageName: String = "Scala"
-    override def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[IO] =
+    override def depManagerFactory: DependencyManagerFactory[IO] = CoursierFetcher.Factory
+    override def languageName: String = "Scala"
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): ScalaInterpreter =
       new ScalaInterpreter(kernelContext)
   }
 

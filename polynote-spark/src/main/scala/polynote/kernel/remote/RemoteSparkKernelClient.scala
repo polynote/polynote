@@ -9,7 +9,7 @@ import cats.syntax.either._
 import cats.syntax.functor._
 import fs2.{Chunk, Pipe, Stream}
 import fs2.concurrent.Queue
-import polynote.config.{PolyLogger, PolynoteConfig}
+import polynote.config.PolyLogger
 import polynote.kernel.util.{Publish, ReadySignal}
 import Publish.enqueueToPublish
 import polynote.kernel._
@@ -51,16 +51,6 @@ class RemoteSparkKernelClient(
       case other => IO.raiseError(new IllegalStateException(s"Initial message was ${other.getClass.getSimpleName} rather than InitialNotebook"))
     }
   } yield notebookReq
-
-  private def configFromNotebookConfig(notebookConfig: NotebookConfig): PolynoteConfig = notebookConfig match {
-    case NotebookConfig(dependencies, exclusions, repositories, spark) =>
-      PolynoteConfig(
-        repositories = repositories.getOrElse(Nil),
-        dependencies = dependencies.map(_.asInstanceOf[Map[String, List[String]]]).getOrElse(Map.empty),
-        exclusions = exclusions.getOrElse(Nil),
-        spark = spark.getOrElse(Map.empty)
-      )
-  }
 
   private def respondResultStream(reqId: Int, resultStream: Stream[IO, Result]) =
     Stream.emit(StreamStarted(reqId)) ++ resultStream.mapChunks {
@@ -128,7 +118,7 @@ class RemoteSparkKernelClient(
     notebook        = notebookReq.notebook
     nbConfig        = notebook.config.getOrElse(NotebookConfig.empty)
     notebookRef    <- Ref[IO].of(notebook)
-    conf            = configFromNotebookConfig(nbConfig)
+    conf            = nbConfig.asPolynoteConfig
     statusUpdates   = outputMessages.contramap[KernelStatusUpdate](update => KernelStatusResponse(update))
     _              <- IO(logger.info("Launching kernel"))
     kernel         <- kernelFactory.launchKernel(notebookRef.get _, statusUpdates, conf)
@@ -152,7 +142,7 @@ object RemoteSparkKernelClient extends IOApp with KernelLaunching {
 
   private val logger = new PolyLogger
 
-  override protected def kernelFactory: KernelFactory[IO] = new SparkKernelFactory(dependencyFetchers)
+  override protected def kernelFactory: KernelFactory[IO] = new SparkKernelFactory()
 
   @tailrec
   private def getArgs(remaining: List[String]): IO[InetSocketAddress] = remaining match {

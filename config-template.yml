@@ -3,9 +3,11 @@
 #  host: 0.0.0.0
 #  port: 8192
 
-# The location Polynote looks for your notebooks in
 #storage:
+#  # The location Polynote looks for your notebooks in
 #  dir: notebooks
+#  # The location Polynote puts various caches, such as virtual environments created for your notebooks.
+#  cache: tmp
 
 # Default repositories can be specified. Uncommenting the following lines would add four default repositories which are inherited by new notebooks.
 #repositories:
@@ -22,11 +24,14 @@
 #      base: http://oss.sonatype.org/content/repositories/snapshots
 #      changing: true
 
-# Default dependencies can be specified. Uncommenting the following lines would add default dependencies for the Scala interpreter, which are inherited by new notebooks.
+# Default dependencies can be specified. Uncommenting the following lines would add some default dependencies which are inherited by new notebooks.
 #dependencies:
 #  scala:
 #    - org.typelevel:cats-core_2.11:1.6.0
 #    - com.mycompany:my-library:jar:all:1.0.0
+#  python:
+#    - requests
+#    - urllib3==1.25.3
 
 #exclusions:
 #  - com.google.guava:guava  # spark, update your guava already!!!

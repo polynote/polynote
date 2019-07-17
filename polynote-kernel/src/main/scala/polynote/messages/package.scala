@@ -55,6 +55,8 @@ package object messages {
   implicit def shortListEncoder[A](implicit listEncoder: Encoder[List[A]]): Encoder[ShortList[A]] = listEncoder.contramap(l => l)
   implicit def shortListDecoder[A](implicit listDecoder: Decoder[List[A]]): Decoder[ShortList[A]] = listDecoder.map(l => ShortList(l))
 
+  implicit def listString2ShortListTinyString(ls: List[String]): TinyList[TinyString] = TinyList(ls.map(TinyString(_)))
+
   trait TinyTag // denotes that the value is expected to be < 256 elements in length
 
   type TinyString = String @@ TinyTag

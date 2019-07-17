@@ -12,6 +12,7 @@ import cats.instances.list._
 import cats.instances.either._
 
 package object config {
+  //                               lang      , deps
   type DependencyConfigs = TinyMap[TinyString, TinyList[TinyString]]
 
   sealed trait RepositoryConfig
@@ -24,7 +25,6 @@ package object config {
 
     def artifactPattern: String = artifactPatternOpt.getOrElse("[orgPath]/[module](_[scalaVersion])(_[sbtVersion])/[revision]/[artifact]-[revision](-[classifier]).[ext]")
     def metadataPattern: String = metadataPatternOpt.getOrElse("[orgPath]/[module](_[scalaVersion])(_[sbtVersion])/[revision]/[module](_[scalaVersion])(_[sbtVersion])-[revision]-ivy.xml")
-
 
   }
 
@@ -39,6 +39,14 @@ package object config {
 
   object maven {
     implicit val discriminator: Discriminator[RepositoryConfig, maven, Byte] = Discriminator(1)
+  }
+
+  final case class pip(
+    url: String
+  ) extends RepositoryConfig
+
+  object pip {
+    implicit val discriminator: Discriminator[RepositoryConfig, pip, Byte] = Discriminator(2)
   }
 
   object RepositoryConfig {

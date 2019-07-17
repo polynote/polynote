@@ -1,31 +1,31 @@
 package polynote.kernel.dependency
 
 import java.io._
-import java.util.concurrent.{ConcurrentHashMap, Executors}
 import java.net.URI
 import java.nio.file.{Path, Paths}
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.{ConcurrentHashMap, Executors}
 
 import cats.data.{Validated, ValidatedNel}
 import cats.effect.{ContextShift, IO}
 import cats.implicits._
-import coursier.cache.{Cache, CacheLogger, FileCache}
-import coursier.ivy.IvyRepository
+import coursier.cache.{CacheLogger, FileCache}
 import coursier.core._
 import coursier.error.ResolutionError
 import coursier.interop.cats._
+import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Repository, Resolution, Resolve}
-import polynote.config.{DependencyConfigs, RepositoryConfig, ivy, maven}
-import polynote.kernel.util.Publish
+import polynote.config.{RepositoryConfig, ivy, maven}
 import polynote.kernel._
+import polynote.kernel.util.Publish
 import polynote.messages.TinyString
 
 import scala.concurrent.ExecutionContext
 
 
 // Fetches only Scala dependencies
-class CoursierFetcher extends URLDependencyFetcher {
+class CoursierFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Publish[IO, KernelStatusUpdate]) extends ScalaDependencyFetcher {
 
   protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
@@ -36,7 +36,7 @@ class CoursierFetcher extends URLDependencyFetcher {
 
 
   private def resolution(
-    dependencies: List[DependencyConfigs],
+    dependencies: List[String],
     exclusions: List[String],
     repositories: List[Repository],
     statusUpdates: Publish[IO, KernelStatusUpdate],
@@ -51,7 +51,7 @@ class CoursierFetcher extends URLDependencyFetcher {
     }.toSet ++ excludedOrgs.map(_ -> Exclusions.allNames)
 
 
-    val coursierDeps = dependencies.flatMap(_.get(TinyString("scala"))).flatten.map {
+    val coursierDeps = dependencies.map {
       moduleStr =>
         val (org, name, typ, config, classifier, ver) = moduleStr.split(':') match {
           case Array(org, name, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier.empty, ver)
@@ -121,7 +121,7 @@ class CoursierFetcher extends URLDependencyFetcher {
       .handleErrorWith(recover)
   }
 
-  private def repos(repositories: List[RepositoryConfig]): Either[Throwable, List[Repository]] = repositories.map {
+  private def repos(repositories: List[RepositoryConfig]): Either[Throwable, List[Repository]] = repositories.collect {
     case repo @ ivy(base, _, _, changing) =>
       val baseUri = base.stripSuffix("/") + "/"
       val artifactPattern = s"$baseUri${repo.artifactPattern}"
@@ -130,7 +130,6 @@ class CoursierFetcher extends URLDependencyFetcher {
     case maven(base, changing) =>
       val repo = MavenRepository(base, changing = changing)
       Validated.validNel(repo)
-
   }.sequence[ValidatedNel[String, ?], Repository].leftMap {
     errs => new RuntimeException(s"Errors parsing repositories:\n- ${errs.toList.mkString("\n- ")}")
   }.toEither
@@ -189,10 +188,8 @@ class CoursierFetcher extends URLDependencyFetcher {
 
   override protected def resolveDependencies(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
-    exclusions: List[String],
-    taskInfo: TaskInfo,
-    statusUpdates: Publish[IO, KernelStatusUpdate]
+    dependencies: List[String],
+    exclusions: List[String]
   ): IO[List[(String, IO[File])]] = for {
     repos <- IO.fromEither(repos(repositories))
     res   <- resolution(dependencies, exclusions, repos, statusUpdates, taskInfo)
@@ -202,5 +199,11 @@ class CoursierFetcher extends URLDependencyFetcher {
   protected def cacheLocation(uri: URI): Path = {
     val pathParts = Seq(uri.getScheme, uri.getAuthority, uri.getPath).flatMap(Option(_)) // URI methods sometimes return `null`, great.
     coursier.cache.CacheDefaults.location.toPath.resolve(Paths.get(pathParts.head, pathParts.tail: _*))
+  }
+}
+object CoursierFetcher {
+
+  object Factory extends DependencyManagerFactory[IO] {
+    override def apply(path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]): DependencyManager[IO] = new CoursierFetcher(path, taskInfo, statusUpdates)
   }
 }

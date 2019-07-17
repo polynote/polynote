@@ -2,14 +2,14 @@ package polynote.server
 import java.io.File
 
 import cats.effect.{ContextShift, ExitCode, IO, Timer}
-import org.apache.spark.sql.thief.ActiveSessionThief
 import cats.implicits._
 import polynote.config.PolynoteConfig
-import polynote.kernel.dependency.DependencyFetcher
-import polynote.kernel.{KernelAPI, KernelStatusUpdate, PolyKernel, SparkPolyKernel}
+import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.lang.LanguageInterpreter
+import polynote.kernel.lang.python.{PySparkVirtualEnvDependencyProvider, PySparkVirtualEnvManager}
 import polynote.kernel.remote.{RemoteSparkKernel, SocketTransport, Transport}
 import polynote.kernel.util.{PlainServerCommand, Publish, SparkSubmitCommand}
+import polynote.kernel.{KernelAPI, KernelStatusUpdate, PolyKernel, SparkPolyKernel}
 import polynote.messages.Notebook
 
 import scala.reflect.io.AbstractFile
@@ -42,8 +42,7 @@ object SparkServer extends Server {
   }
 
   // visible for testing
-  override protected[server] def kernelFactory: KernelFactory[IO] =
-    new SparkKernelFactory(dependencyFetchers = Map("scala" -> dependencyFetcher))
+  override protected[server] def kernelFactory: KernelFactory[IO] = new SparkKernelFactory
 }
 
 case class SparkServerArgs(
@@ -56,14 +55,13 @@ object SparkServerArgs {
   def apply(printCommand: Boolean, args: ServerArgs): SparkServerArgs = SparkServerArgs(printCommand, args.configFile, args.watchUI)
 }
 
-class SparkKernelFactory(
-  dependencyFetchers: Map[String, DependencyFetcher[IO]])(implicit
+class SparkKernelFactory(implicit
   contextShift: ContextShift[IO],
   timer: Timer[IO]
-) extends IOKernelFactory(dependencyFetchers) {
+) extends IOKernelFactory {
   override protected def mkKernel(
     getNotebook: () => IO[Notebook],
-    deps: Map[String, List[(String, File)]],
+    deps: Map[String, DependencyProvider],
     subKernels: Map[String, LanguageInterpreter.Factory[IO]],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     config: PolynoteConfig,

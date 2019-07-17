@@ -4,6 +4,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.IO
+import polynote.kernel.dependency.{ClassLoaderDependencyProvider, CoursierFetcher, DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.{CellContext, KernelContext}
 
@@ -39,9 +40,8 @@ object ScalaSparkInterpreter {
   private val notebookCounter = new AtomicInteger(0)
   private def nextNotebookId = notebookCounter.getAndIncrement()
 
-  class Factory extends LanguageInterpreter.Factory[IO] {
-    override val languageName: String = "Scala"
-    override def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[IO] =
+  class Factory extends ScalaInterpreter.Factory {
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): ScalaInterpreter =
       new ScalaSparkInterpreter(kernelContext)
   }
 

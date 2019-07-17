@@ -1,29 +1,28 @@
 package polynote.kernel.lang
 package python
 
-import java.io.File
-import java.nio._
+import java.nio.file.Paths
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicReference
 
 import cats.effect.{ContextShift, IO}
-import cats.syntax.either._
+import cats.implicits._
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
-import jep.python.{PyCallable, PyObject}
 import jep._
+import jep.python.{PyCallable, PyObject}
 import polynote.config.PolyLogger
 import polynote.kernel.PolyKernel.EnqueueSome
 import polynote.kernel._
+import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.util._
 import polynote.messages.{CellID, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
-import scala.reflect.{ClassTag, classTag}
 
-class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterpreter[IO] {
+class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: DependencyProvider) extends LanguageInterpreter[IO] {
   import kernelContext.global
 
   protected val logger = new PolyLogger
@@ -32,7 +31,10 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
 
-  override def init(): IO[Unit] = withJep {
+
+  override def init(): IO[Unit] = preInit >> setup() >> postInit
+
+  def setup(): IO[Unit] = withJep {
     jep.set("__kernel_ref", polynote.runtime.Runtime)
 
     // Since Scala uses getter methods instead of class fields (i.e. you'd need `kernel.display().html()` instead of
@@ -146,19 +148,50 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
   protected def sharedModules: List[String] = List("numpy", "google")
 
+  private val venvProvider = dependencyProvider.as[VirtualEnvDependencyProvider]
+
   protected val jep: Jep = jepExecutor.submit {
     new Callable[Jep] {
       def call(): Jep = {
-        val jep = new Jep(
-          new JepConfig()
-            .addSharedModules(sharedModules: _*)
-            .setInteractive(false)
-            .setClassLoader(kernelContext.classLoader)
-            .setClassEnquirer(new NamingConventionClassEnquirer(true)))
-        jep
+        // TODO: this is how to use jep installed inside a venv. it would only work for remote kernels though.
+        //       if we ever decide to move towards remote kernels being the only option then we can use this approach
+//        venvProvider.right.toOption.flatMap(_.venvPath).foreach {
+//          path =>
+//            MainInterpreter.setInitParams(new PyConfig().setPythonHome(path))
+//        }
+
+        val conf = new JepConfig()
+          .addSharedModules(sharedModules: _*)
+          .setInteractive(false)
+          .setClassLoader(kernelContext.classLoader)
+          .setClassEnquirer(new NamingConventionClassEnquirer(true))
+
+        // add venv path if present. TODO this might be needed if we are using jep from inside the venv
+//        venvProvider.right.toOption.flatMap(_.venvPath).foreach {
+//          path =>
+//            conf.addIncludePaths(Paths.get(path, "lib", "python3.7", "site-packages").toString)
+//        }
+
+        new Jep(conf)
       }
     }
   }.get()
+
+  def preInit: IO[Unit] = IO.fromEither(venvProvider).flatMap {
+    p =>
+      withJep {
+        val code = s"""exec(\"\"\"${p.runBeforeInit}\"\"\")""" // wrap in `exec` so it can have multiple statements.
+        jep.eval(code)
+      }
+  }
+
+  def postInit: IO[Unit] = IO.fromEither(venvProvider).flatMap {
+    p =>
+      withJep {
+        val code = s"""exec(\"\"\"${p.runAfterInit}\"\"\")""" // wrap in `exec` so it can have multiple statements.
+        jep.eval(code)
+      }
+  }
 
   private val shutdownSignal = ReadySignal()
 
@@ -300,7 +333,7 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
   //       anything being converted to String except Strings.
   def getPyResult(accessor: String): Option[(Any, Option[global.Type])] = {
     val resultType = jep.getValue(s"type($accessor).__name__", classOf[String])
-    import global.{typeOf, weakTypeOf}
+    import global.typeOf
     resultType match {
       case "int" => Option(jep.getValue(accessor, classOf[java.lang.Number]).longValue() -> Some(typeOf[Long]))
       case "float" => Option(jep.getValue(accessor, classOf[java.lang.Number]).doubleValue() -> Some(typeOf[Double]))
@@ -464,9 +497,10 @@ class PythonInterpreter(val kernelContext: KernelContext) extends LanguageInterp
 
 object PythonInterpreter {
   class Factory extends LanguageInterpreter.Factory[IO] {
-    override val languageName: String = "Python"
-    override def apply(dependencies: List[(String, File)], kernelContext: KernelContext): PythonInterpreter =
-      new PythonInterpreter(kernelContext)
+    override def depManagerFactory: DependencyManagerFactory[IO] = VirtualEnvManager.Factory
+    override def languageName: String = "Python"
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): PythonInterpreter =
+      new PythonInterpreter(kernelContext, dependencies)
   }
 
   def factory(): Factory = new Factory()

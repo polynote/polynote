@@ -18,6 +18,7 @@ import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
 import scala.tools.reflect.ToolBox
 import polynote.kernel.KernelStatusUpdate
+import polynote.kernel.dependency.{ClassLoaderDependencyProvider, DependencyProvider}
 import polynote.kernel.lang.scal.CellSourceFile
 
 import scala.collection.mutable
@@ -228,13 +229,13 @@ object KernelContext {
   }
 
   def default(
-    dependencies: Map[String, List[(String, File)]],
+    dependencies: Map[String, DependencyProvider],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File]
   ): KernelContext = apply(dependencies, statusUpdates, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader)
 
   def apply(
-    dependencies: Map[String, List[(String, File)]],
+    dependencyProviders: Map[String, DependencyProvider],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     baseSettings: Settings,
     extraClassPath: List[File],
@@ -243,7 +244,7 @@ object KernelContext {
   ): KernelContext = {
 
     val settings = baseSettings.copy()
-    val jars = dependencies.toList.flatMap(_._2).collect {
+    val jars = dependencyProviders.toList.flatMap(_._2.dependencies).collect {
       case (_, file) if file.getName endsWith ".jar" => file
     }
     val requiredPaths = List(
@@ -280,7 +281,10 @@ object KernelContext {
       () => new global.Run().compileSources(List(new BatchSourceFile("<init>", "class $repl_$init { }")))
     }
 
-    val notebookClassLoader = genNotebookClassLoader(dependencies, extraClassPath, outputDir, parentClassLoader)
+    val notebookClassLoader = dependencyProviders.get("scala")
+      .flatMap(_.as[ClassLoaderDependencyProvider].toOption)
+      .map(_.genNotebookClassLoader(extraClassPath, outputDir, parentClassLoader))
+      .getOrElse(throw new IllegalArgumentException(s"Couldn't find `scala` dependency provider! Available providers: $dependencyProviders"))
 
     KernelContext(global, classPath, notebookClassLoader)
   }

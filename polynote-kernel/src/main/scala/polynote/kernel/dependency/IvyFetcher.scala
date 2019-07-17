@@ -17,20 +17,20 @@ import org.apache.ivy.core.report.DownloadReport
 import org.apache.ivy.core.resolve.{DownloadOptions, ResolveOptions}
 import org.apache.ivy.core.settings.IvySettings
 import org.apache.ivy.plugins.namespace.NameSpaceHelper
+import org.apache.ivy.plugins.repository._
 import org.apache.ivy.plugins.repository.file.FileResource
 import org.apache.ivy.plugins.repository.url.URLResource
-import org.apache.ivy.plugins.repository._
 import org.apache.ivy.plugins.resolver.util.ResolvedResource
 import org.apache.ivy.plugins.resolver.{CacheResolver, ChainResolver, IBiblioResolver, URLResolver}
 import org.apache.ivy.util.filter.{Filter => IvyFilter}
-import polynote.config.{DependencyConfigs, PolyLogger, RepositoryConfig, ivy, maven}
+import polynote.config.{PolyLogger, RepositoryConfig, ivy, maven}
 import polynote.kernel.util.Publish
 import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
-class IvyFetcher extends URLDependencyFetcher {
+class IvyFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Publish[IO, KernelStatusUpdate]) extends ScalaDependencyFetcher {
   protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
 
@@ -41,10 +41,8 @@ class IvyFetcher extends URLDependencyFetcher {
 
   override protected def resolveDependencies(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
-    exclusions: List[String],
-    taskInfo: TaskInfo,
-    statusUpdates: Publish[IO, KernelStatusUpdate]
+    dependencies: List[String],
+    exclusions: List[String]
   ): IO[List[(String, IO[File])]] = {
 
     val settings = createSettings(repositories, statusUpdates)
@@ -68,7 +66,7 @@ class IvyFetcher extends URLDependencyFetcher {
 
     val updateProgress = (progress: Double) => statusUpdates.publish1(UpdatedTasks(List(taskInfo.copy(progress = (progress * 255).toByte))))
 
-    resolve(ivy, dependencies.flatMap(_.get("scala").toList).flatten, exclusions, updateProgress)
+    resolve(ivy, dependencies, exclusions, updateProgress)
   }
 
 
@@ -79,7 +77,7 @@ class IvyFetcher extends URLDependencyFetcher {
     val cacheResolver = new CacheResolver(settings)
     chain.add(cacheResolver)
 
-    val resolvers = repositories.map {
+    val resolvers = repositories.collect {
       case repo@ivy(base, _, _, changing) =>
         val resolver = new ParallelURLResolver(statusUpdates)
         val normedBase = base.stripSuffix("/") + "/"
@@ -297,5 +295,11 @@ class IvyFetcher extends URLDependencyFetcher {
         }
       }
     }
+  }
+}
+object IvyFetcher {
+
+  object Factory extends DependencyManagerFactory[IO] {
+    override def apply(path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate]): DependencyManager[IO] = new IvyFetcher(path, taskInfo, statusUpdates)
   }
 }

@@ -1,25 +1,30 @@
 package polynote.kernel.lang.python
 
-import java.io.File
-
 import cats.effect.IO
-import cats.syntax.apply._
-import org.apache.spark.api.java.JavaSparkContext
+import cats.implicits._
 import org.apache.spark.sql.SparkSession
+import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
 import py4j.GatewayServer
 
-class PySparkInterpreter(ctx: KernelContext) extends PythonInterpreter(ctx) {
+class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvider) extends PythonInterpreter(ctx, dependencyProvider) {
 
   override def sharedModules: List[String] = "pyspark" :: super.sharedModules
 
-  override def init(): IO[Unit] = super.init() *> withJep {
+  override def setup(): IO[Unit] = super.setup() >> withJep {
     try {
 
       // initialize py4j and pyspark in the way they expect
 
       val spark = SparkSession.builder().getOrCreate()
+
+      // if we are running in local mode we need to set this so the executors can find the venv's python
+      if (spark.sparkContext.master.contains("local")) {
+        jep.eval("""os.environ["PYSPARK_PYTHON"] = os.environ["PYSPARK_DRIVER_PYTHON"]""")
+      } else {
+        jep.eval("""os.environ["PYSPARK_PYTHON"] = "python3" """)
+      }
       jep.eval("from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters, CallbackServerParameters")
       jep.eval("from pyspark.conf import SparkConf")
       jep.eval("from pyspark.context import SparkContext")
@@ -73,10 +78,10 @@ class PySparkInterpreter(ctx: KernelContext) extends PythonInterpreter(ctx) {
 }
 
 object PySparkInterpreter {
-  class Factory extends LanguageInterpreter.Factory[IO] {
-    override def languageName: String = "Python"
-    override def apply(dependencies: List[(String, File)], kernelContext: KernelContext): LanguageInterpreter[IO] =
-      new PySparkInterpreter(kernelContext)
+  class Factory extends PythonInterpreter.Factory {
+    override def depManagerFactory: DependencyManagerFactory[IO] = PySparkVirtualEnvManager.Factory
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): PythonInterpreter =
+      new PySparkInterpreter(kernelContext, dependencies)
   }
 
   def factory(): Factory = new Factory

@@ -3,60 +3,42 @@ package polynote.kernel.dependency
 import java.io._
 import java.net.URI
 import java.nio.file.{Files, Path, Paths}
-import java.util.concurrent.Executors
 
+import cats.effect.concurrent.Ref
 import cats.effect.{ContextShift, IO}
+import cats.instances.either._
+import cats.instances.list._
 import cats.syntax.alternative._
 import cats.syntax.apply._
 import cats.syntax.either._
-import cats.instances.either._
-import cats.instances.list._
-import polynote.config.{DependencyConfigs, RepositoryConfig}
+import cats.syntax.parallel._
+import polynote.config.RepositoryConfig
 import polynote.kernel._
 import polynote.kernel.util.{DownloadableFileProvider, Publish}
-import polynote.messages.{TinyList, TinyMap}
 
 import scala.concurrent.ExecutionContext
 
-trait DependencyFetcher[F[_]] {
-
-  def fetchDependencyList(
-    repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
-    exclusions: List[String],
-    taskInfo: TaskInfo,
-    statusUpdates: Publish[F, KernelStatusUpdate]
-  ): F[List[(String, F[File])]]
-
-}
-
-trait URLDependencyFetcher extends DependencyFetcher[IO] {
+trait ScalaDependencyFetcher extends DependencyManager[IO] {
   protected implicit def executionContext: ExecutionContext
   protected implicit def contextShift: ContextShift[IO]
 
   /**
     * Split the dependencies into actual dependency coordinates vs direct URLs
     */
-  protected def splitDependencies(deps: List[DependencyConfigs]): (List[DependencyConfigs], List[URI]) = {
-    val (dependencies, uriList) = deps.flatMap { dep =>
-      dep.toList.collect {
-        case (k, v) =>
-          val (dependencies, uris) = v.map { s =>
-            val asURI = new URI(s)
+  protected def splitDependencies(deps: List[String]): (List[String], List[URI]) = {
+    val (dependencies, uriList) = deps.map { dep =>
 
-            Either.cond(
-              // Do we support this protocol (if any?)
-              DownloadableFileProvider.isSupported(asURI),
-              asURI,
-              s // an unsupported protocol might be a dependency
-            )
-          }.separate
+      val asURI = new URI(dep)
 
-          (TinyMap(k -> TinyList(dependencies)), uris)
-      }
-    }.unzip
+      Either.cond(
+        // Do we support this protocol (if any?)
+        DownloadableFileProvider.isSupported(asURI),
+        asURI,
+        dep // an unsupported protocol might be a dependency
+      )
+    }.separate
 
-    (dependencies, uriList.flatten)
+    (dependencies, uriList)
   }
 
   /**
@@ -133,24 +115,52 @@ trait URLDependencyFetcher extends DependencyFetcher[IO] {
     */
   protected def resolveDependencies(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
-    exclusions: List[String],
-    taskInfo: TaskInfo,
-    statusUpdates: Publish[IO, KernelStatusUpdate]
+    dependencies: List[String],
+    exclusions: List[String]
   ): IO[List[(String, IO[File])]]
+
+  def getDependencyProvider(
+    repositories: List[RepositoryConfig],
+    dependencies: List[String],
+    exclusions: List[String]
+  ): IO[DependencyProvider] = for {
+    deps <- fetchDependencyList(repositories, dependencies, exclusions)
+    fetched <- downloadDependencies(deps)
+  } yield new ClassLoaderDependencyProvider(fetched)
 
   def fetchDependencyList(
     repositories: List[RepositoryConfig],
-    dependencies: List[DependencyConfigs],
-    exclusions: List[String],
-    taskInfo: TaskInfo,
-    statusUpdates: Publish[IO, KernelStatusUpdate]
+    dependencies: List[String],
+    exclusions: List[String]
   ): IO[List[(String, IO[File])]] = {
     val (deps, urls) = splitDependencies(dependencies)
     val downloadFiles = fetchUrls(urls, statusUpdates)
-    resolveDependencies(repositories, deps, exclusions, taskInfo, statusUpdates).map {
+    resolveDependencies(repositories, deps, exclusions).map {
       resolved => downloadFiles ::: resolved
     }
   }
 
+  def downloadDependencies(deps: List[(String, IO[File])]): IO[List[(String, File)]] = {
+    val completedCounter = Ref.unsafe[IO, Int](0)
+    val numDeps = deps.size
+    deps.map {
+      case (name, ioFile) => for {
+        download     <- ioFile.start
+        file         <- download.join
+        _            <- completedCounter.update(_ + 1)
+        numCompleted <- completedCounter.get
+        statusUpdate  = taskInfo.copy(detail = s"Downloaded $numCompleted / $numDeps", progress = ((numCompleted.toDouble * 255) / numDeps).toByte)
+        _            <- statusUpdates.publish1(UpdatedTasks(statusUpdate :: Nil))
+      } yield (name, file)
+    }.map(_.map(Some(_)).handleErrorWith(downloadFailed)).parSequence.map(_.flatten)
+  }
+
+  // TODO: ignoring download errors for now, until the weirdness of resolving nonexisting artifacts is solved
+  private def downloadFailed(err: Throwable): IO[Option[(String, File)]] = IO {
+    err match {
+      case other =>
+        // don't ignore other errors
+        throw RuntimeError(new Exception(s"Error while downloading dependencies: ${other.getMessage}", other))
+    }
+  }
 }
