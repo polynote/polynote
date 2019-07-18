@@ -1,14 +1,10 @@
 "use strict";
 
-import {UIEventTarget, UIEvent} from "./ui_event";
+import {UIEvent} from "./ui_event";
 import {DataStream, StreamingDataRepr} from "./value_repr";
-import {HandleData} from "./messages";
-import {DataReader} from "./codec";
-import {TabUI} from "./ui";
 import {div, iconButton, span, table, tag} from "./tags";
-import {StructType, ArrayType, BinaryType} from "./data_type";
+import {StructType, ArrayType} from "./data_type";
 import {SocketSession} from "./comms";
-import {PlotEditor} from "./plot_editor";
 
 export class ReprDataRequest extends UIEvent {
     constructor(reprType, handleId, count, onComplete, onFail) {
@@ -38,6 +34,14 @@ export class TableView {
         const dataType = repr.dataType;
         const fields = this.fields = dataType.fields;
         const fieldNames = this.fieldNames = dataType.fields.map(field => field.name);
+
+        if (!SocketSession.current.isOpen) {
+            this.el = div(['table-view', 'disconnected'], [
+                "Not connected to server – must be connected in order to view data."
+            ]);
+            return;
+        }
+
         this.el = div(['table-view'], [
             this.table = table([], {
                 header: fieldNames,

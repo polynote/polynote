@@ -81,6 +81,15 @@ export class PlotEditor extends UIEventTarget {
         this.sourceCell = sourceCell;
         this.fields = repr.dataType.fields;
 
+        this.session = SocketSession.current;
+
+        if (!this.session.isOpen) {
+            this.container = div(['plot-editor-container', 'disconnected'], [
+                "Not connected to server – must be connected in order to plot."
+            ]);
+            return;
+        }
+
         this.plotTypeSelector = new FakeSelect(fakeSelectElem(['plot-type-selector'], [
             button(['selected'], {value: 'bar'}, ['Bar']),
             button([], {value: 'line'}, ['Line']),
@@ -134,6 +143,8 @@ export class PlotEditor extends UIEventTarget {
                 ])
             ])
         ]);
+
+        this.container = div(['plot-editor-container'], [this.el]);
 
         this.saveButton.style.display = 'none';
 
@@ -197,8 +208,6 @@ export class PlotEditor extends UIEventTarget {
            this.addYField(this.draggingEl);
            this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
         });
-
-        this.session = SocketSession.current;
 
         this.onPlotTypeChange();
     }

@@ -38,6 +38,16 @@ export class ToolbarUI extends UIEventTarget {
             this.el.classList.add('editing-code');
         }
     }
+
+    setDisabled(disable) {
+        if (disable) {
+            [...this.el.querySelectorAll('button')].forEach(button => {
+                button.disabled = true;
+            });
+        } else {
+            [...this.el.querySelectorAll('button')].forEach(button => button.disabled = button.alwaysDisabled || false);
+        }
+    }
 }
 
 function toolbarElem(name, buttonGroups) {
@@ -59,11 +69,11 @@ class NotebookToolbarUI extends UIEventTarget {
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
                     .click(() => this.dispatchEvent(new ToolbarEvent("RunAll"))),
-                iconButton(["branch"], "Create branch", "", "Branch").disable(),
+                iconButton(["branch"], "Create branch", "", "Branch").disable().withKey('alwaysDisabled', true),
                 iconButton(["download"], "Download", "", "Download").click(() => this.dispatchEvent(new ToolbarEvent("DownloadNotebook"))),
                 iconButton(["clear"], "Clear notebook output", "", "Clear").click(() => this.dispatchEvent(new ToolbarEvent("ClearOutput")))
             ], [
-                iconButton(["schedule-notebook"], "Schedule notebook", "", "Schedule").disable(),
+                iconButton(["schedule-notebook"], "Schedule notebook", "", "Schedule").disable().withKey('alwaysDisabled', true),
             ]
         ]);
     }
@@ -191,7 +201,7 @@ class TextToolbarUI extends UIEventTarget {
             ]}, {
             classes: ["objects"],
             elems: [
-                iconButton(["image"], "Insert image", "", "Image").disable(),
+                iconButton(["image"], "Insert image", "", "Image").disable().withKey('alwaysDisabled', true),
                 this.equationButton = iconButton(["equation"], "Insert/edit equation", "𝝨", "Equation")
                     .click(() => LaTeXEditor.forSelection().show())
                     .withKey('getState', () => {
@@ -206,7 +216,7 @@ class TextToolbarUI extends UIEventTarget {
                         }
                         return false;
                     }),
-                iconButton(["table"], "Insert data table", "", "Table").disable(),
+                iconButton(["table"], "Insert data table", "", "Table").disable().withKey('alwaysDisabled', true),
             ]}
         ]);
 

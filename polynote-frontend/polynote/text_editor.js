@@ -46,6 +46,10 @@ export class RichTextEditor {
         });
     }
 
+    set disabled(disable) {
+        this.element.contentEditable = !disable;
+    }
+
     focus() {
         this.element.focus();
     }
