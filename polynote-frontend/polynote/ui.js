@@ -2295,7 +2295,7 @@ export class MainUI extends EventTarget {
             const notebookURL = new URL(prompt("Enter the full URL of another Polynote instance."));
 
             if (notebookURL && notebookURL.protocol.startsWith("http")) {
-                const nbFile = decodeURI(notebookURL.pathname);
+                const nbFile = decodeURI(notebookURL.pathname.split("/").pop());
                 notebookURL.search = "download=true";
                 notebookURL.hash = "";
                 this.socket.send(new messages.CreateNotebook(nbFile, Either.left(notebookURL.href)));
