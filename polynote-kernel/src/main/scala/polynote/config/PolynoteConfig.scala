@@ -47,10 +47,12 @@ object PolynoteConfig {
 
   def load(file: File): IO[PolynoteConfig] = {
 
-    val configJsonIO = IO(new FileReader(file)).flatMap {
-      configReader =>
-        IO.fromEither(yaml.parser.parse(configReader)).guarantee(IO(configReader.close()))
-    }
+    val configJsonIO = if (file.exists()) {
+      IO(new FileReader(file)).flatMap {
+        configReader =>
+          IO.fromEither(yaml.parser.parse(configReader)).guarantee(IO(configReader.close()))
+      }
+    } else IO.pure(Json.fromJsonObject(JsonObject.empty))
 
     val defaultJsonIO = IO(new FileReader(file.toPath.resolveSibling(defaultConfig).toFile)).flatMap {
       defaultReader =>
