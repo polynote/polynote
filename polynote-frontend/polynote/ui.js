@@ -795,6 +795,7 @@ export class NotebookConfigUI extends UIEventTarget {
 export class NotebookCellsUI extends UIEventTarget {
     constructor(path) {
         super();
+        this.disabled = false;
         this.configUI = new NotebookConfigUI().setEventParent(this);
         this.path = path;
         this.el = div(['notebook-cells'], [this.configUI.el, this.newCellDivider()]);
@@ -814,6 +815,22 @@ export class NotebookCellsUI extends UIEventTarget {
                 self.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: self.getCellBeforeEl(this).id}));
             }
         });
+    }
+
+    setDisabled(disabled) {
+        if (disabled === this.disabled) {
+            return;
+        }
+        this.disabled = disabled;
+
+        for (let cellId in this.cells) {
+            if (this.cells.hasOwnProperty(cellId)) {
+                const cell = this.cells[cellId];
+                if (cell instanceof Cell) {
+                    cell.setDisabled(disabled);
+                }
+            }
+        }
     }
 
     setStatus(id, status) {
@@ -921,7 +938,7 @@ export class NotebookCellsUI extends UIEventTarget {
             });
             // scroll to previous position, if any
             const scrollPosition = prefs.get('notebookLocations')[this.path];
-            if (scrollPosition || scrollPosition === 0) {
+            if (this.el.parentElement && (scrollPosition || scrollPosition === 0)) {
                 this.el.parentElement.scrollTop = scrollPosition;
             }
         }, 333);
@@ -1467,9 +1484,26 @@ export class NotebookUI extends UIEventTarget {
             }
         });
 
+
+        // when the socket is disconnected, we're going to try reconnecting when the window gets focus.
+        const reconnectOnWindowFocus = evt => {
+            if (socket.isClosed) {
+                socket.reconnect(true);
+            }
+        };
+
+
+
         socket.addEventListener('close', evt => {
             this.kernelUI.setKernelState('disconnected');
-            socket.addEventListener('open', evt => this.socket.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false))));
+            this.cellUI.setDisabled(true);
+            window.addEventListener('focus', reconnectOnWindowFocus);
+        });
+
+        socket.addEventListener('open', evt => {
+            window.removeEventListener('focus', reconnectOnWindowFocus);
+            this.socket.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false)));
+            this.cellUI.setDisabled(false);
         });
 
         socket.addMessageListener(messages.Error, (code, err) => {
@@ -1823,6 +1857,14 @@ export class NotebookListUI extends UIEventTarget {
         });
     }
 
+    setDisabled(disable) {
+        if (disable) {
+            [...this.el.querySelectorAll('.buttons button')].forEach(button => button.disabled = true);
+        } else {
+            [...this.el.querySelectorAll('.buttons button')].forEach(button => button.disabled = false);
+        }
+    }
+
     // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
     init() {
         const prefs = this.getPrefs();
@@ -2032,7 +2074,11 @@ export class MainUI extends EventTarget {
 
         this.browseUI = new NotebookListUI().setEventParent(this);
         this.mainView.left.el.appendChild(this.browseUI.el);
-        this.addEventListener('TriggerItem', evt => this.loadNotebook(evt.detail.item));
+        this.addEventListener('TriggerItem', evt => {
+            if (!this.disabled) {
+                this.loadNotebook(evt.detail.item);
+            }
+        });
         this.browseUI.addEventListener('NewNotebook', () => this.createNotebook());
         this.browseUI.addEventListener('ImportNotebook', evt => this.importNotebook(evt));
         this.browseUI.addEventListener('ToggleNotebookListUI', (evt) => this.mainView.collapse('left', evt.detail && evt.detail.force));
@@ -2052,6 +2098,18 @@ export class MainUI extends EventTarget {
             }
 
             this.toolbarUI.cellToolbar.setInterpreters(Interpreters);
+        });
+
+        socket.addEventListener('close', evt => {
+           this.browseUI.setDisabled(true);
+           this.toolbarUI.setDisabled(true);
+           this.disabled = true;
+        });
+
+        socket.addEventListener('open', evt => {
+           this.browseUI.setDisabled(false);
+           this.toolbarUI.setDisabled(false);
+           this.disabled = false;
         });
 
         window.addEventListener('popstate', evt => {

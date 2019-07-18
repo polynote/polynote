@@ -98,7 +98,9 @@ class RopeSpec extends FlatSpec with Matchers with PropertyChecks {
       (Rope(str1) + Rope(str2)) shouldEqual str1 + str2
       (Rope(str1) + str2) shouldEqual str1 + str2
       (Rope(str1) + str2.toCharArray) shouldEqual str1 + str2
-      (Rope(str1) + str2.charAt(0)) shouldEqual str1 + str2.charAt(0)
+      whenever (str2.nonEmpty) {
+        (Rope(str1) + str2.charAt(0)) shouldEqual str1 + str2.charAt(0)
+      }
     }
   }
 

@@ -10,10 +10,7 @@ function mkSocket() {
         message: this.receive.bind(this),
         open: this.opened.bind(this),
         close: this.close.bind(this),
-        error: (event) => {
-            console.log(event);
-            this.dispatchEvent(new CustomEvent('error'));
-        }
+        error: (event) => this.dispatchEvent(new CustomEvent('error', { detail: { cause: event }}))
     };
 
     this.socket.addEventListener('message', this.listeners.message);
@@ -34,7 +31,6 @@ export class SocketSession extends EventTarget {
 
     constructor() {
         super();
-        this.isOpen = false;
         this.queue = [];
         this.messageListeners = [];
         SocketSession.current = this; // yeah...
@@ -42,11 +38,22 @@ export class SocketSession extends EventTarget {
     }
 
     opened(event) {
-        this.isOpen = true;
         while (this.queue.length) {
             this.send(this.queue.pop());
         }
         this.dispatchEvent(new CustomEvent('open'));
+    }
+
+    get isOpen() {
+        return this.socket && this.socket.readyState === WebSocket.OPEN;
+    }
+
+    get isConnecting() {
+        return this.socket && this.socket.readyState === WebSocket.CONNECTING;
+    }
+
+    get isClosed() {
+        return !this.socket || this.socket.readyState >= WebSocket.CLOSING;
     }
 
     send(msg) {
@@ -56,13 +63,13 @@ export class SocketSession extends EventTarget {
                 if (buf instanceof ArrayBuffer) {
                     this.socket.send(buf);
                 } else {
-                    throw `Encoded message is not a buffer`;
+                    throw new Error(`Encoded message is not a buffer`);
                 }
             } else {
                 this.queue.unshift(msg);
             }
         } else {
-            throw `Expected a message; got ${msg}`;
+            throw new Error(`Expected a message; got ${msg}`);
         }
     }
 
@@ -129,7 +136,6 @@ export class SocketSession extends EventTarget {
         if (this.socket.readyState < WebSocket.CLOSING) {
             this.socket.close();
         }
-        this.isOpen = false;
         for (const l in this.listeners) {
             if (this.listeners.hasOwnProperty(l)) {
                 this.socket.removeEventListener(l, this.listeners[l]);
@@ -139,9 +145,11 @@ export class SocketSession extends EventTarget {
         this.dispatchEvent(new CustomEvent('close'));
     }
 
-    reconnect() {
-        this.close();
-        mkSocket.call(this);
+    reconnect(onlyIfClosed) {
+        if (!this.socket || this.isClosed || (!onlyIfClosed && (this.socket.readyState > WebSocket.CONNECTING))) {
+            this.close();
+            mkSocket.call(this);
+        }
     }
 
 }

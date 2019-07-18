@@ -195,6 +195,10 @@ export class Cell extends UIEventTarget {
         ])
     }
 
+    setDisabled(disabled) {
+
+    }
+
     focus() {
         this.makeActive();
     }
@@ -477,6 +481,19 @@ export class CodeCell extends Cell {
 
         if (this.metadata && this.metadata.executionInfo) {
             this.setExecutionInfo(this.metadata.executionInfo);
+        }
+    }
+
+    setDisabled(disabled) {
+        const isDisabled = this.editor.getConfiguration().readOnly;
+        if (disabled && !isDisabled) {
+            this.editor.updateOptions({readOnly: true});
+            [...this.cellInputTools.querySelectorAll('.run-cell')].forEach(button => button.disabled = true);
+        } else if (!disabled && isDisabled) {
+            this.editor.updateOptions({readOnly: false});
+            if (this.metadata && !this.metadata.disableRun) {
+                [...this.cellInputTools.querySelectorAll('.run-cell')].forEach(button => button.disabled = false);
+            }
         }
     }
 
@@ -1068,6 +1085,10 @@ export class TextCell extends Cell {
             //console.log(edits);
             this.dispatchEvent(new ContentChangeEvent(this.id, edits));
         }
+    }
+
+    setDisabled(disabled) {
+        this.editor.disabled = disabled;
     }
 
     focus() {
