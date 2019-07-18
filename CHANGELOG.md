@@ -2,6 +2,21 @@
 
 *
 
+# 0.1.18 (July 17, 2019)
+
+* Python Dependency support!
+  * You can now specify Python dependencies (there's a little drop-down you can choose from in the Configuration panel). 
+  * When you specify these dependencies, Polynote will create a notebook-specific virtual environment and install those dependencies inside it.
+  * The virtual environment is configured to delegate to the system python environment so packages that already exist won't be installed again. It's persisted as well so it won't be recreated every time you restart polynote. 
+* Support for base `default.yml` to be provided in distributions - no more clobbering people's configs!
+* Fix for broken VIM mode 
+* Improvements to data display:
+  * Add chrome-inspector-style display of structures and arrays
+  * Add Schema tab to inspector UI for table data
+  * Some refactoring/removal of duplicate stuff
+  * Add encoding of array fields to spark table data
+* Create notebooks directory if it doesn't exist
+
 # 0.1.17 (July 16, 2019)
 
 * Move cell controls to top of cell, horizontally
