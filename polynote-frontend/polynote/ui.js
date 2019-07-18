@@ -2292,12 +2292,13 @@ export class MainUI extends EventTarget {
         if (evt.detail && evt.detail.name) { // the evt has all we need
             this.socket.send(new messages.CreateNotebook(evt.detail.name, Either.right(evt.detail.content)));
         } else {
-            const notebookPath = prompt("Enter the full URL of another Polynote instance.");
+            const notebookURL = new URL(prompt("Enter the full URL of another Polynote instance."));
 
-            if (notebookPath && notebookPath.startsWith("http")) {
-                const nbFile = decodeURI(notebookPath.split("/").pop());
-                const targetPath = notebookPath + "?download=true";
-                this.socket.send(new messages.CreateNotebook(nbFile, Either.left(targetPath)));
+            if (notebookURL && notebookURL.protocol.startsWith("http")) {
+                const nbFile = decodeURI(notebookURL.pathname);
+                notebookURL.search = "download=true";
+                notebookURL.hash = "";
+                this.socket.send(new messages.CreateNotebook(nbFile, Either.left(notebookURL.href)));
             }
         }
     }
