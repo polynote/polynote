@@ -23,7 +23,6 @@ module.exports = {
         template: './index.html'
     }),
     new CopyWebpackPlugin([
-      // 'index.html',
       { from: 'style', to: 'style' },
       { from: 'favicon.ico', to: 'favicon.ico' },
     ])
