@@ -20,6 +20,7 @@ import {clientInterpreters} from "./client_interpreter";
 import {DataRepr, DataStream, StreamingDataRepr} from "./value_repr";
 import {Position} from "monaco-editor";
 import {valueInspector} from "./value_inspector";
+import * as Tinycon from "tinycon";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -802,6 +803,7 @@ export class NotebookCellsUI extends UIEventTarget {
         this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.cells = {};
         this.cellCount = 0;
+        this.queuedCells = 0;
         window.addEventListener('resize', this.forceLayout.bind(this));
     }
 
@@ -841,16 +843,19 @@ export class NotebookCellsUI extends UIEventTarget {
             case TaskStatus.Complete:
                 dispatchEvent(new CellExecutionFinished(cell.id));
                 cell.container.classList.remove('running', 'queued', 'error');
+                this.queuedCells -= 1;
                 break;
 
             case TaskStatus.Error:
                 cell.container.classList.remove('queued', 'running');
                 cell.container.classList.add('error');
+                this.queuedCells -= 1;
                 break;
 
             case TaskStatus.Queued:
                 cell.container.classList.remove('running', 'error');
                 cell.container.classList.add('queued');
+                this.queuedCells += 1;
                 break;
 
             case TaskStatus.Running:
@@ -862,6 +867,13 @@ export class NotebookCellsUI extends UIEventTarget {
                 }
 
 
+        }
+        if (this.queuedCells <= 0) {
+            this.queuedCells = 0;
+            Tinycon.setBubble(this.queuedCells);
+            Tinycon.reset();
+        } else {
+            Tinycon.setBubble(this.queuedCells);
         }
     }
 

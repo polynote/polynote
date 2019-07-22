@@ -7,6 +7,7 @@ import { scala, vega } from './languages.js'
 import { theme } from './theme.js'
 import * as monaco from "monaco-editor";
 import {prefs} from "./prefs";
+import * as Tinycon from "tinycon";
 
 const md = require('markdown-it');
 
