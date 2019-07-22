@@ -10,13 +10,13 @@ import polynote.kernel.util.Publish
 class PySparkVirtualEnvManager(path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate])
   extends VirtualEnvManager(path, taskInfo, statusUpdates) {
 
-  override def mkDependencyProvider(dependencies: List[(String, File)], venv: Option[File]): VirtualEnvDependencyProvider =
+  override def mkDependencyProvider(dependencies: List[(String, File)], venv: File): VirtualEnvDependencyProvider =
     new PySparkVirtualEnvDependencyProvider(dependencies, venv)
 }
 
 class PySparkVirtualEnvDependencyProvider(
   override val dependencies: scala.List[(String, File)],
-  venv: Option[File]
+  venv: File
 ) extends VirtualEnvDependencyProvider(dependencies, venv) {
 
   override def beforeInit(path: String): String =

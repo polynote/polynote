@@ -109,6 +109,6 @@ trait KernelSpec {
   }
 }
 
-class MockVenvDepProvider extends VirtualEnvDependencyProvider(Nil, None)
+class MockVenvDepProvider extends VirtualEnvDependencyProvider(Nil, new File("."))
 class MockCLDepProvider extends ClassLoaderDependencyProvider(Nil)
 
