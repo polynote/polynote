@@ -488,6 +488,7 @@ class ScalaSource[G <: Global](
         //   * replace the typed case class definitions with the original, fresh defs
         //   * remove the auto-generated companion object (if there was a user-defined companion object, we replace it)
         //   * replace the auto-generated lazy val accessor with our 'fixed' lazy val def
+        //   * remove synthetically-generated f$default$n methods (they will be generated again when we typecheck a second time).
         // the whole thing is a little ugly because we lose position information when we use copy()
         val cleanedPkg = proxiedPkg match {
           case pkg @ global.PackageDef(_, stats) =>
@@ -504,6 +505,7 @@ class ScalaSource[G <: Global](
                       case global.DefDef(_, n, _, _, _, global.Block(List(global.Assign(_, rhs)), _)) if lazyVals.contains(n.toString) =>
                         val clean = lazyVals(n.toString).copy(rhs = rhs)
                         List(clean)
+                      case global.DefDef(mods, _, _, _, _, _) if mods.hasFlag(ModifierFlags.DEFAULTPARAM) => Nil
                       case other => List(other)
                     }
                     tmpl.copy(body = newProxyTrees ++ cleanedBody).setPos(tmpl.pos)
