@@ -40,6 +40,7 @@ object ReprsOf extends ExpandedScopeReprs {
         val buf = ByteBuffer.allocate(bytes.length + 4)
         buf.putInt(bytes.length)
         buf.put(bytes)
+        buf.rewind()
         buf
     }
 
