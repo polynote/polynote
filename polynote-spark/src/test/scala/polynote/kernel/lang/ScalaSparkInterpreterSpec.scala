@@ -158,18 +158,21 @@ class ScalaSparkInterpreterSpec extends FlatSpec with Matchers with SparkKernelS
     }
   }
 
-  it should "work with functions that have default values" in {
+  it should "work with default values" in {
     val code = Seq(
-      """def foo(a: Int, b: Int = 1) = a + b
+      """case class Foo(a: Int, b: Int, c: Int = 1) { def sum: Int = a + b + c }""".stripMargin,
+      """def foo(a: Int, b: Int = 1) = Foo(a, b).sum
         |foo(1)
       """.stripMargin,
       "val a = foo(2, 3)",
-      "val b = foo(2)"
+      "val b = foo(2)",
+      "val c = Foo(2, 3).sum"
     )
     assertSparkScalaOutput(code) { case (vars, output, displayed) =>
-      vars("Out") shouldEqual 2
-      vars("a") shouldEqual 5
-      vars("b") shouldEqual 3
+      vars("Out") shouldEqual 3
+      vars("a") shouldEqual 6
+      vars("b") shouldEqual 4
+      vars("c") shouldEqual 6
     }
   }
 }
