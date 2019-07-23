@@ -26,7 +26,7 @@ class PySparkVirtualEnvDependencyProvider(
        |import os
        |
        |# set driver python before setting up pyspark
-       |venvPy = os.path.join(os.environ["VIRTUAL_ENV"], "bin", "python")
+       |venvPy = os.path.join(os.environ.get("VIRTUAL_ENV", "$path"), "bin", "python")
        |os.environ["PYSPARK_DRIVER_PYTHON"] = venvPy
      """.stripMargin
 
