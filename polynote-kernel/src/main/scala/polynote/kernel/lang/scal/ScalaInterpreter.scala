@@ -175,7 +175,8 @@ class ScalaInterpreter(
               case (instMirror, symType, runtimeModuleSym) =>
                 kernelContext.runInterruptible {
                   val runtimeType = instMirror.symbol.info
-
+                  val instance = instMirror.instance
+                  val instClass = instance.getClass
                   // collect term definitions and values from the cell's object, and publish them to the symbol table
                   // TODO: We probably also want to publish some output for types, like "Defined class Foo" or "Defined type alias Bar".
                   //       But the class story is still WIP (i.e. we might want to pull them out of cells into the notebook package)
@@ -191,13 +192,13 @@ class ScalaInterpreter(
                       // if the decl is a val, evaluate it and push it to the symbol table
                       val name = accessor.decodedName.toString
                       val tpe = global.exitingTyper(accessor.info.resultType)
-                      val method = runtimeType.decl(scala.reflect.runtime.universe.TermName(name)).asMethod
-                      val owner = method.owner
 
                       // invoke the accessor for its side effect(s), even if it returns Unit
-                      val value = instMirror
-                        .reflectMethod(method)
-                        .apply()
+                      // Uses Java reflection instead of Scala reflection, because the latter can have
+                      // spurious cyclic reference errors when using certain Java inner classes
+                      // (where the inner class is used as a type parameter to a supertype of the outer class)
+                      // Related issue: https://github.com/scala/bug/issues/10312
+                      val value = instClass.getMethod(name).invoke(instance)
 
                       // don't publish if the type is Unit
                       if (accessor.info.finalResultType <:< global.typeOf[Unit])
