@@ -205,7 +205,6 @@ class ScalaSource[G <: Global](
       }
 
       //... and also import all public declarations from previous cells
-      val x = previousSources
       val impliedImports = previousSources.foldLeft(ListMap.empty[String, (global.ModuleSymbol, global.Symbol)]) {
         (accum, next) =>
           // grab this source's compiled module
@@ -437,11 +436,10 @@ class ScalaSource[G <: Global](
 
             // we only want to insert the module proxy if it's needed. We'd rather not if we can help it, because that
             // way we avoid closing over that entire cell.
-            def getSymFromModuleProxy(sym: global.Symbol): Boolean =
-              (
-                sym.isSourceMethod // make sure it's a real method and not synthetic
-                  || sym.isClass   // if it's a class we need the module proxy
-              ) && !sym.isAccessor // if it's just an accessor we don't need the proxy (surprised that isSourceMethod is true for these actually).
+            def getSymFromModuleProxy(sym: global.Symbol): Boolean = (
+              sym.isSourceMethod // make sure it's a real method and not synthetic
+                || sym.isClass   // if it's a class we need the module proxy
+            )
 
             val moduleProxyNeeded = imports.exists {
               case (_, (_, sym)) => getSymFromModuleProxy(sym)
