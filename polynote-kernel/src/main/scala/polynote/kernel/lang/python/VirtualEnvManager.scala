@@ -71,7 +71,7 @@ class VirtualEnvManager(val path: String, val taskInfo: TaskInfo, val statusUpda
   def mkDependencyProvider(dependencies: List[(String, File)], venv: File) = new VirtualEnvDependencyProvider(dependencies, venv)
 }
 
-class VirtualEnvDependencyProvider(val dependencies: List[(String, File)], venv: File) extends DependencyProvider {
+class VirtualEnvDependencyProvider(val dependencies: List[(String, File)], val venv: File) extends DependencyProvider {
 
   final val venvPath: String = venv.getAbsolutePath
 
