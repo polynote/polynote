@@ -181,6 +181,9 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
     p =>
       withJep {
         val code = s"""exec(\"\"\"${p.runBeforeInit}\"\"\")""" // wrap in `exec` so it can have multiple statements.
+        logger.debug("**** START PythonInterpreter PreInit ****")
+        logger.debug(code)
+        logger.debug("**** END   PythonInterpreter PreInit ****")
         jep.eval(code)
       }
   }
@@ -189,6 +192,9 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
     p =>
       withJep {
         val code = s"""exec(\"\"\"${p.runAfterInit}\"\"\")""" // wrap in `exec` so it can have multiple statements.
+        logger.debug("**** START PythonInterpreter PostInit ****")
+        logger.debug(code)
+        logger.debug("**** END   PythonInterpreter PostInit ****")
         jep.eval(code)
       }
   }

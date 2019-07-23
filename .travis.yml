@@ -11,6 +11,9 @@ before_install:
 install:
    - source ./scripts/install-jep.sh
 
+env:
+   - POLYNOTE_DEBUG=true
+
 cache:
    directories:
       - $HOME/.cache/pip
