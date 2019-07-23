@@ -7,9 +7,7 @@ jdk:
 
 before_install:
    - sudo apt-get install python3 python3-pip python3-numpy python3-setuptools realpath
-
-install:
-   - source ./scripts/install-jep.sh
+   - pip3 install jep ipython nbconvert jedi numpy scipy pyspark==2.1.2
 
 env:
    - POLYNOTE_DEBUG=true
