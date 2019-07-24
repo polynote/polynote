@@ -6,11 +6,12 @@ jdk:
    - openjdk8
 
 before_install:
-  - pyenv versions
+  - pyenv install 3.7.4
+  - pyenv global 3.7.4
   - python --version
   - pip --version
   - python3 --version
-  - pip3 install jep ipython nbconvert jedi numpy scipy pyspark==2.1.2
+  - pip install jep ipython nbconvert jedi numpy scipy pyspark==2.1.2
 
 env:
    - POLYNOTE_DEBUG=true
