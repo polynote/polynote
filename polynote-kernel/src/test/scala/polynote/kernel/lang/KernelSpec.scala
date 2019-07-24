@@ -1,7 +1,9 @@
 package polynote.kernel.lang
 
 import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 
 import cats.effect.{ContextShift, IO}
 import cats.instances.either._
@@ -12,7 +14,7 @@ import cats.syntax.either._
 import fs2.Stream
 import fs2.concurrent.Topic
 import polynote.kernel._
-import polynote.kernel.dependency.ClassLoaderDependencyProvider
+import polynote.kernel.dependency.{ClassLoaderDependencyProvider, DependencyManager, DependencyProvider}
 import polynote.kernel.lang.python.{PythonInterpreter, VirtualEnvDependencyProvider, VirtualEnvManager}
 import polynote.kernel.lang.scal.ScalaInterpreter
 import polynote.kernel.util._
@@ -34,7 +36,7 @@ trait KernelSpec {
   }
 
   def assertPythonOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
-    assertOutputWith((kernelContext: KernelContext, _) => PythonInterpreter.factory()(kernelContext, new MockVenvDepProvider), code) {
+    assertOutputWith((kernelContext: KernelContext, updates) => PythonInterpreter.factory()(kernelContext, MockVenvDepProvider(updates)), code) {
       (interp, vars, output, displayed) => interp.withJep(assertion(vars, output, displayed))
     }
   }
@@ -54,7 +56,7 @@ trait KernelSpec {
 
   def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(Map(
     "scala" -> new MockCLDepProvider,
-    "python" -> new MockVenvDepProvider
+    "python" -> MockVenvDepProvider(updates)
   ), updates, Nil)
 
   // TODO: for unit tests we'd ideally want to hook directly to runCode without needing all this!
@@ -109,6 +111,35 @@ trait KernelSpec {
   }
 }
 
-class MockVenvDepProvider extends VirtualEnvDependencyProvider(Nil, None)
+object MockVenvDepProvider {
+  private val venv = Files.createTempDirectory("venv").toFile
+
+  private var provider: DependencyProvider = _
+
+  sys.addShutdownHook(cleanup())
+
+  def cleanup() = {
+    def delete(file: File): Unit = {
+      file.listFiles().foreach {
+        case l if Files.isSymbolicLink(l.toPath) =>
+          Files.delete(l.toPath)
+        case f if f.isDirectory =>
+          delete(f)
+        case p => Files.delete(p.toPath)
+      }
+      Files.delete(file.toPath)
+    }
+    delete(venv)
+  }
+
+  def apply(updates: Publish[IO, KernelStatusUpdate]): DependencyProvider = {
+    if (provider == null) {
+      val venvMgr = VirtualEnvManager.Factory.apply(venv.toString, TaskInfo("Creating VirtualEnv", "", "", TaskStatus.Running, 0.toByte), updates)
+      provider = venvMgr.getDependencyProvider(Nil, Nil, Nil).unsafeRunSync()
+    }
+    provider
+  }
+}
+
 class MockCLDepProvider extends ClassLoaderDependencyProvider(Nil)
 

@@ -136,10 +136,13 @@ class SimpleFileBasedRepo extends FileBasedRepository {
   def cleanup() = {
     def delete(file: File): Unit = {
       file.listFiles().foreach {
+        case l if Files.isSymbolicLink(l.toPath) =>
+          Files.delete(l.toPath)
         case f if f.isDirectory =>
           delete(f)
         case p => Files.delete(p.toPath)
       }
+      Files.delete(file.toPath)
     }
     delete(tmp.toFile)
   }

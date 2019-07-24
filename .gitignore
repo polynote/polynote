@@ -9,3 +9,4 @@ libjep.dylib
 /*.yml
 scripts/dist-config.yml
 *.zip
+tmp/
