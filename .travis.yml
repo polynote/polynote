@@ -5,13 +5,12 @@ scala:
 jdk:
    - openjdk8
 
-dist: bionic
-
 before_install:
-   - python --version
-   - pip --version
-   - python3 --version
-   - pip3 install jep ipython nbconvert jedi numpy scipy pyspark==2.1.2
+  - pyenv versions
+  - python --version
+  - pip --version
+  - python3 --version
+  - pip3 install jep ipython nbconvert jedi numpy scipy pyspark==2.1.2
 
 env:
    - POLYNOTE_DEBUG=true
