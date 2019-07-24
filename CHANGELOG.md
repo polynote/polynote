@@ -2,6 +2,18 @@
 
 *
 
+# 0.1.19 (July 23, 2019)
+
+* Load the default.yml config even if config.yml itself is empty (normal case upon first installation)
+* Add number of queued cells to favicon
+* Disable running / editing cells upon disconnect. Attempt to reconnect when window is focused. 
+* bust browser cache on release (hopefully you won't need to force-reload after upgrading any more!)
+* Fix cyclic reference error
+* Fix issue preventing vega interpreter from working properly if a string-typed variable was defined earlier
+* Create a virtual environment every time. 
+* Lazy vals no longer cause compile errors (they still have some problems though as detailed [here](https://github.com/polynote/polynote/issues/374))
+* Fix compile error preventing definition of functions with default values. 
+
 # 0.1.18 (July 17, 2019)
 
 * Python Dependency support!

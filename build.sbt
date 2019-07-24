@@ -9,7 +9,7 @@ val versions = new {
 }
 
 val commonSettings = Seq(
-  version := "0.1.18-SNAPSHOT",
+  version := "0.1.19-SNAPSHOT",
   scalaVersion := "2.11.11",
   scalacOptions ++= Seq(
     "-Ypartial-unification",
