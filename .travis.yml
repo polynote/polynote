@@ -5,6 +5,8 @@ scala:
 jdk:
    - openjdk8
 
+dist: bionic
+
 before_install:
    - python --version
    - pip --version
