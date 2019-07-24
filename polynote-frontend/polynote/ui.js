@@ -595,6 +595,7 @@ export class NotebookConfigUI extends UIEventTarget {
                 div(['controls'], [
                     button(['save'], {}, ['Save & Restart']).click(evt => {
                         this.lastConfig = this.config;
+                        this.el.classList.remove("open");
                         this.dispatchEvent(new UIEvent('UpdatedConfig', { config: this.config }));
                     }),
                     button(['cancel'], {}, ['Cancel']).click(evt => {
