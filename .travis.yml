@@ -6,8 +6,7 @@ jdk:
    - openjdk8
 
 before_install:
-  - pyenv install 3.7.4
-  - pyenv global 3.7.4
+  - pyenv global 3.7.1
   - python --version
   - pip --version
   - python3 --version
