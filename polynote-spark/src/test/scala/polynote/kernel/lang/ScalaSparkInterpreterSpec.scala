@@ -144,5 +144,36 @@ class ScalaSparkInterpreterSpec extends FlatSpec with Matchers with SparkKernelS
       vars("bop") shouldEqual 5
     }
   }
+
+  it should "work with lazy vals and vars" in {
+    val code = Seq(
+      "var a = 100",
+      "lazy val b = a"
+    )
+    assertSparkScalaOutput(code) { case (vars, output, displayed) =>
+      vars("kernel") shouldEqual polynote.runtime.Runtime
+      vars("spark") shouldBe a[SparkSession]
+      vars("a") shouldEqual 100
+      vars("b") shouldEqual 100
+    }
+  }
+
+  it should "work with default values" in {
+    val code = Seq(
+      """case class Foo(a: Int, b: Int, c: Int = 1) { def sum: Int = a + b + c }""".stripMargin,
+      """def foo(a: Int, b: Int = 1) = Foo(a, b).sum
+        |foo(1)
+      """.stripMargin,
+      "val a = foo(2, 3)",
+      "val b = foo(2)",
+      "val c = Foo(2, 3).sum"
+    )
+    assertSparkScalaOutput(code) { case (vars, output, displayed) =>
+      vars("Out") shouldEqual 3
+      vars("a") shouldEqual 6
+      vars("b") shouldEqual 4
+      vars("c") shouldEqual 6
+    }
+  }
 }
 

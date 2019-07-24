@@ -9,6 +9,7 @@ import polynote.kernel.util.{CellContext, KernelContext, KernelReporter}
 import scala.annotation.tailrec
 import scala.collection.immutable.ListMap
 import scala.reflect.internal.util.{ListOfNil, Position, RangePosition, SourceFile}
+import scala.reflect.internal.ModifierFlags
 import scala.tools.nsc.interactive.Global
 
 /**
@@ -361,17 +362,31 @@ class ScalaSource[G <: Global](
         unit.body = liftedTree
         global.unitOfFile.put(unit.source.file, unit) // make sure to update
 
-        // so there's one more thing we need to consider. Apparently, case classes can't handle being put through the
-        // typer twice (and we can't roll back the changes that the typer does to them...) so, what we'll do here is
-        // copy any case classes we have in the tree before we type it.
-        // later, we'll sub the typed case class for the untyped case class so it can go through the typer again happily.
-        // we have to do the same thing for their companion objects as well.
+        // so there's one more thing we need to consider. It turns out that some output from the typechecker can't be
+        // reversed, such as case classes and lazy vals, which can't handle being put through the typer twice (and we
+        // can't roll back the changes that the typer does to them...) so, what we'll do here is copy 'em before we type
+        // the trees. later, we'll substitute the typed trees for the fresh, untyped ones so they can go through
+        // the typer again without causing problems.
+
+        // first, case classes. (we have to do the same thing for their companion objects as well).
         val caseClasses = classes.collect {
           case (k, cls: global.ClassDef) if cls.mods.isCase => k -> deepCopyTree(cls)
         }
         // we also need to keep track of any user-defined companion objects there might be, so that we can substitute them too.
         val caseClassCompanionObjects = companionObjects.collect {
           case (k, o: global.ModuleDef) if caseClasses.contains(o.name.toString) => k -> deepCopyTree(o)
+        }
+
+        // now, lazy vals
+        val lazyVals = liftedTree match {
+          case global.PackageDef(_, stats) =>
+            stats.collect {
+              case global.ClassDef(_, _, _, impl) =>
+                impl.body.collect {
+                  case v @ global.ValDef(mods, _, _, _) if mods.hasFlag(ModifierFlags.LAZY) =>
+                    v.name.toString -> v
+                }
+            }.flatten.toMap
         }
 
         // type the tree so we can reify implicits and all that nice stuff.
@@ -421,7 +436,10 @@ class ScalaSource[G <: Global](
 
             // we only want to insert the module proxy if it's needed. We'd rather not if we can help it, because that
             // way we avoid closing over that entire cell.
-            def getSymFromModuleProxy(sym: global.Symbol): Boolean = sym.isSourceMethod || sym.isClass
+            def getSymFromModuleProxy(sym: global.Symbol): Boolean = (
+              sym.isSourceMethod // make sure it's a real method and not synthetic
+                || sym.isClass   // if it's a class we need the module proxy
+            )
 
             val moduleProxyNeeded = imports.exists {
               case (_, (_, sym)) => getSymFromModuleProxy(sym)
@@ -469,16 +487,25 @@ class ScalaSource[G <: Global](
         //   * remove the cell imports we added in the wrapping stage and replace them with our proxies.
         //   * replace the typed case class definitions with the original, fresh defs
         //   * remove the auto-generated companion object (if there was a user-defined companion object, we replace it)
+        //   * replace the auto-generated lazy val accessor with our 'fixed' lazy val def
+        //   * remove synthetically-generated f$default$n methods (they will be generated again when we typecheck a second time).
         // the whole thing is a little ugly because we lose position information when we use copy()
         val cleanedPkg = proxiedPkg match {
           case pkg @ global.PackageDef(_, stats) =>
             pkg.copy(stats = stats.flatMap {
-              // clean the cell imports
-              case cls @ global.ClassDef(_, name, _, tmpl) if name.toString == moduleName.toString =>
+              case cls @ global.ClassDef(_, name, _, tmpl) if name.toString.trim == moduleName.toString.trim =>
                 List(cls.copy(impl = tmpl match {
                   case global.Template(_, _, body) =>
                     val cleanedBody = body.flatMap {
+                      // remove cell imports we added during the wrapping stage
                       case global.Import(global.Select(_, global.TermName("INSTANCE")), _) => Nil
+                      // throw away the lazy val def because we will substitute its accessor
+                      case global.ValDef(_, n, _, _) if lazyVals.contains(n.toString.trim) => Nil
+                      // substitute the lazy val accessor with the untyped val def, but make sure to grab the (possible) substituted rhs
+                      case global.DefDef(_, n, _, _, _, global.Block(List(global.Assign(_, rhs)), _)) if lazyVals.contains(n.toString) =>
+                        val clean = lazyVals(n.toString).copy(rhs = rhs)
+                        List(clean)
+                      case global.DefDef(mods, _, _, _, _, _) if mods.hasFlag(ModifierFlags.DEFAULTPARAM) => Nil
                       case other => List(other)
                     }
                     tmpl.copy(body = newProxyTrees ++ cleanedBody).setPos(tmpl.pos)
