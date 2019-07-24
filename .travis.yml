@@ -7,10 +7,14 @@ jdk:
 
 before_install:
   - pyenv global 3.7.1
-  - python --version
-  - pip --version
-  - python3 --version
-  - pip install jep ipython nbconvert jedi numpy scipy pyspark==2.1.2
+  - pip install ipython nbconvert jedi numpy scipy pyspark==2.1.2 jep
+  - jep_site_packages_path=`pip show jep | grep "^Location:" | cut -d ':' -f 2 | cut -d ' ' -f 2`
+  - jep_path=${jep_site_packages_path}/jep
+  - jep_lib_path=`realpath ${jep_site_packages_path}/../../`
+  - export LD_LIBRARY_PATH=${jep_path}:${jep_site_packages_path}:${jep_lib_path}:${LD_LIBRARY_PATH}
+  - echo ${LD_LIBRARY_PATH}
+  - export LD_PRELOAD=${jep_lib_path}/libpython3.so
+  - echo ${LD_PRELOAD}
 
 env:
    - POLYNOTE_DEBUG=true
