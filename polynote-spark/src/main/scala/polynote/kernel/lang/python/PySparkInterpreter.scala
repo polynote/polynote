@@ -4,13 +4,15 @@ import cats.effect.IO
 import cats.implicits._
 import org.apache.spark.sql.SparkSession
 import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
-import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.KernelContext
+import polynote.kernel.{Result, RuntimeError}
 import py4j.GatewayServer
 
 class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvider) extends PythonInterpreter(ctx, dependencyProvider) {
 
   override def sharedModules: List[String] = "pyspark" :: super.sharedModules
+
+  private var gatewayRef: GatewayServer = _
 
   override def setup(): IO[Unit] = super.setup() >> withJep {
     try {
@@ -70,9 +72,45 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
       jep.eval("spark = SparkSession(sc, gateway.entry_point)")
       jep.eval("sqlContext = spark._wrapped")
       jep.eval("from pyspark.sql import DataFrame")
+      gatewayRef = gateway
     } catch {
       case err: Throwable => logger.error(err)("Failed to initialize PySpark")
     }
+  }
+
+  override def getPyErrorInfo(cellName: String, cellContents: String)(code: String): Either[List[Throwable with Result], Unit] = {
+    jep.eval("__py4j_err__ = None")
+    jep.eval("__raise_err__ = None")
+    kernelContext.runInterruptible {
+      jep.eval(
+        s"""
+           |try:
+           |    $code
+           |except Exception as e:
+           |    if sys.exc_info()[0].__name__ == 'Py4JJavaError':
+           |        __py4j_err__ = e
+           |    else:
+           |        __raise_err__ = e
+         """.stripMargin.trim)
+    }
+    val res =
+      Option(jep.getValue("__py4j_err__")).map {
+        _ =>
+          val py4jObjectId = jep.getValue("__py4j_err__.java_exception._target_id", classOf[String])
+          Option(gatewayRef).map(_.getGateway.getObject(py4jObjectId) match {
+            case t: Throwable =>
+              Left(List(RuntimeError(t)))
+            case _ => Right(())
+          }).getOrElse(super.getPyErrorInfo(cellName, cellContents)("raise __py4j_err__"))  // this should probably never happen...
+      }.orElse {
+        Option(jep.getValue("__raise_err__")).map( _ =>
+          super.getPyErrorInfo(cellName, cellContents)("raise __raise_err__")
+        )
+      }.getOrElse(Right(()))
+
+    jep.eval(s"del __py4j_err__")
+    jep.eval(s"del __raise_err__")
+    res
   }
 
 }

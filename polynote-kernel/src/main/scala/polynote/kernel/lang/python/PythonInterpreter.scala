@@ -13,6 +13,7 @@ import jep._
 import jep.python.{PyCallable, PyObject}
 import polynote.config.PolyLogger
 import polynote.kernel.PolyKernel.EnqueueSome
+import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
 import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.util._
@@ -205,34 +206,58 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
     jep.eval("__polynote_globals__ = __pn_expand_globals__(__polynote_globals__)")
   }
 
-  private def evalWithCompilerErrors(cellName: String, cellContents: String)(jepCode: String): Either[List[CompileErrors], Unit] = {
-    jep.eval("__polynote_err__ = []")
+  def getPyErrorInfo(cellName: String, cellContents: String)(code: String): Either[List[Throwable with Result], Unit] = {
+    jep.eval("__syntax_err__ = None")
+    jep.eval("__other_err__ = None")
     kernelContext.runInterruptible {
       jep.eval(
         s"""
-         |try:
-         |    $jepCode
-         |except SyntaxError as err:
-         |    __polynote_err__ = [str(err.lineno), str(err.offset), err.text, err.msg]
+           |try:
+           |    $code
+           |except SyntaxError as err:
+           |    __syntax_err__ = [str(err.lineno), str(err.offset), err.text, err.msg]
+           |except Exception as err:
+           |    def extract():
+           |        import traceback
+           |        typ, err_val, tb = sys.exc_info()
+           |        tb_list = [[frame.name, frame.filename, str(frame.lineno)] for frame in traceback.extract_tb(tb)]
+           |        return [typ, err_val, tb_list]
+           |
+           |    __other_err__ = extract()
          """.stripMargin.trim)
     }
-    val syntaxErrorInfo = jep.getValue("__polynote_err__", classOf[java.util.List[String]])
-    if (syntaxErrorInfo.isEmpty) {
-      jep.eval("del __polynote_err__")
-      Right(())
-    } else {
-      val line :: offset :: text :: msg :: Nil = syntaxErrorInfo.asScala.toList
 
-      val cellLines = cellContents.split("\n")
-      val start = cellLines.take(line.toInt - 1).mkString("\n").length + offset.toInt
-      val end = start + 1
+    val res = Option(jep.getValue("__syntax_err__", classOf[java.util.List[String]])).map {
+      syntaxErrInfo =>
+        val lineno :: offset :: text :: msg :: Nil = syntaxErrInfo.asScala.toList
+        val cellLines = cellContents.split("\n")
+        val start = cellLines.take(lineno.toInt - 1).mkString("\n").length + offset.toInt
+        val end = start + 1
 
-      val pos = Pos(cellName, start, end, start) // point is also the start?
-      val errs = CompileErrors(List(KernelReport(pos, msg, KernelReport.Error)))
-      jep.eval("del __polynote_err__")
-      Left(List(errs))
-    }
+        val pos = Pos(cellName, start, end, start) // point is also the start?
+        val errs = CompileErrors(List(KernelReport(pos, msg, KernelReport.Error)))
+        Left(List(errs))
+    }.orElse {
+      Option(jep.getValue("__other_err__")).map {
+        _ =>
+          // __other_err__ is (the type of the error, the actual error itself, the traceback as a List[List[String]])
+          val message = jep.getValue("getattr(__other_err__[1], 'message', repr(__other_err__[1]))", classOf[String])
+          val cls = jep.getValue("__other_err__[0].__name__", classOf[String])
+          val trace = jep.getValue("__other_err__[2]", classOf[java.util.List[java.util.List[String]]]).asScala.map {
+            stackElList =>
+              val name :: filename :: lineno :: Nil = stackElList.asScala.toList
+              new StackTraceElement("", name, filename, lineno.toInt)
+          }
 
+          val err = RecoveredException(message, cls)
+          err.setStackTrace(trace.toArray)
+          Left(List(RuntimeError(err)))
+      }
+    }.getOrElse(Right(()))
+
+    jep.eval(s"del __syntax_err__")
+    jep.eval(s"del __other_err__")
+    res
   }
 
   override def runCode(
@@ -244,7 +269,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
     val cell = cellContext.id
     val cellName = s"Cell$cell"
 
-    val wrapEval = evalWithCompilerErrors(cellName, code)(_)
+    val wrapEval = getPyErrorInfo(cellName, code)(_)
 
     global.newCompilationUnit("", cellName)
 
@@ -283,13 +308,14 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
           //   see: https://github.com/ipython/ipython/blob/master/IPython/core/interactiveshell.py#L3068
           //   which calls: https://github.com/ipython/ipython/blob/master/IPython/core/interactiveshell.py#L3149
           _ <- wrapEval("__polynote_compiled__ = list(map(lambda node: compile(ast.Module([node]), '<ast>', 'exec'), __polynote_parsed__.body))")
-        } yield {
-          kernelContext.runInterruptible {
-            jep.getValue("list(range(0, len(__polynote_compiled__)))", classOf[java.util.List[java.lang.Long]]).asScala.foreach { idx =>
-              jep.eval(s"exec(__polynote_compiled__[$idx], __polynote_globals__, __polynote_locals__)")
+          _ <- kernelContext.runInterruptible {
+            jep.getValue("list(range(0, len(__polynote_compiled__)))", classOf[java.util.List[java.lang.Long]]).asScala.map { idx =>
+              val res = wrapEval(s"exec(__polynote_compiled__[$idx], __polynote_globals__, __polynote_locals__)")
               jep.eval("__polynote_globals__.update(__polynote_locals__)")
+              res
             }
-          }
+          }.toList.sequence
+        } yield {
           jep.eval("globals().update(__polynote_locals__)")
           val newDecls = jep.getValue("list(__polynote_locals__.keys())", classOf[java.util.List[String]]).asScala.toList
 
