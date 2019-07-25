@@ -206,7 +206,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
     jep.eval("__polynote_globals__ = __pn_expand_globals__(__polynote_globals__)")
   }
 
-  def getPyErrorInfo(cellName: String, cellContents: String)(code: String): Either[List[Throwable with Result], Unit] = {
+  def getPyErrorInfo(cellName: String, cellContents: String)(code: String): Either[Throwable, Unit] = {
     jep.eval("__syntax_err__ = None")
     jep.eval("__other_err__ = None")
     kernelContext.runInterruptible {
@@ -235,8 +235,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
         val end = start + 1
 
         val pos = Pos(cellName, start, end, start) // point is also the start?
-        val errs = CompileErrors(List(KernelReport(pos, msg, KernelReport.Error)))
-        Left(List(errs))
+        Left(CompileErrors(List(KernelReport(pos, msg, KernelReport.Error))))
     }.orElse {
       Option(jep.getValue("__other_err__")).map {
         _ =>
@@ -251,7 +250,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
 
           val err = RecoveredException(message, cls)
           err.setStackTrace(trace.toArray)
-          Left(List(RuntimeError(err)))
+          Left(err)
       }
     }.getOrElse(Right(()))
 
@@ -269,7 +268,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
     val cell = cellContext.id
     val cellName = s"Cell$cell"
 
-    val wrapEval = getPyErrorInfo(cellName, code)(_)
+    val wrapEval = (eval: String) => getPyErrorInfo(cellName, code)(eval).leftMap(t => Some(t))
 
     global.newCompilationUnit("", cellName)
 
@@ -300,7 +299,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
 
         val pyResults = for {
           _ <- wrapEval("__polynote_parsed__ = ast.parse(__polynote_code__, __polynote_cell__, 'exec')")
-          _ <- if (jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Integer]) > 0) Right(List.empty[Result]) else Left(List.empty[CompileErrors])
+          _ <- if (jep.getValue("len(__polynote_parsed__.body)", classOf[java.lang.Integer]) > 0) Right(List.empty[Result]) else Left(None)
           _ <- wrapEval("__polynote_parsed__ = LastExprAssigner().visit(__polynote_parsed__)")
           _ <- wrapEval("__polynote_parsed__ = ast.fix_missing_locations(__polynote_parsed__)")
           // compile and exec each statement in the cell one at a time
@@ -322,8 +321,10 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
           getPyResults(newDecls, cell).filterNot(_._2.value == null).values.toList
         }
         pyResults match {
-          case Left(err) =>
-            err
+          case Left(None) =>
+            List.empty[Result]
+          case Left(Some(err)) =>
+            List(ErrorResult(err))
           case Right(res) =>
             res
         }

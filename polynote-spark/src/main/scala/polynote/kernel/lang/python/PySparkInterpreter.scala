@@ -3,6 +3,7 @@ package polynote.kernel.lang.python
 import cats.effect.IO
 import cats.implicits._
 import org.apache.spark.sql.SparkSession
+import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.util.KernelContext
 import polynote.kernel.{Result, RuntimeError}
@@ -78,7 +79,7 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
     }
   }
 
-  override def getPyErrorInfo(cellName: String, cellContents: String)(code: String): Either[List[Throwable with Result], Unit] = {
+  override def getPyErrorInfo(cellName: String, cellContents: String)(code: String): Either[Throwable, Unit] = {
     jep.eval("__py4j_err__ = None")
     jep.eval("__raise_err__ = None")
     kernelContext.runInterruptible {
@@ -97,9 +98,15 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
       Option(jep.getValue("__py4j_err__")).map {
         _ =>
           val py4jObjectId = jep.getValue("__py4j_err__.java_exception._target_id", classOf[String])
+
+          // get the Python part of the error. We can do the `left.get` bit since we are raising an error so we know it'll be a Left
+          val pyErr = super.getPyErrorInfo(cellName, cellContents)("raise __py4j_err__").left.get
+
           Option(gatewayRef).map(_.getGateway.getObject(py4jObjectId) match {
             case t: Throwable =>
-              Left(List(RuntimeError(t)))
+              val err = new RuntimeException(pyErr.getMessage, t)
+              err.setStackTrace(pyErr.getStackTrace)
+              Left(err)
             case _ => Right(())
           }).getOrElse(super.getPyErrorInfo(cellName, cellContents)("raise __py4j_err__"))  // this should probably never happen...
       }.orElse {
