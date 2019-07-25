@@ -35,6 +35,10 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
   override def init(): IO[Unit] = preInit >> setup() >> postInit
 
   def setup(): IO[Unit] = withJep {
+    // some imports we rely on in various places
+    jep.eval("import os, sys, ast, jedi, shutil")
+    jep.eval("from pathlib import Path")
+
     jep.set("__kernel_ref", polynote.runtime.Runtime)
 
     // Since Scala uses getter methods instead of class fields (i.e. you'd need `kernel.display().html()` instead of
@@ -262,8 +266,6 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
       val run = withJep {
 
         jep.set("__polynote_displayhook__", stdout)
-        jep.eval("import sys\n")
-        jep.eval("import ast\n")
         jep.eval("sys.displayhook = __polynote_displayhook__.output\n")
         jep.eval("sys.stdout = __polynote_displayhook__\n")
         jep.eval("__polynote_locals__ = {}\n")
@@ -462,7 +464,6 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
         (l, c)
       }
       jep.set("__polynote_code__", code)
-      jep.eval("import jedi")
       jep.eval(s"__polynote_cmp__ = jedi.Interpreter(__polynote_code__, [__polynote_globals__, {}], line=$line, column=$col).completions()")
       // If this comes back as a List, Jep will mash all the elements to strings. So gotta use it as a PyObject. Hope that gets fixed!
       // TODO: will need some reusable PyObject wrappings anyway

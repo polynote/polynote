@@ -10,13 +10,13 @@ import polynote.kernel.util.Publish
 class PySparkVirtualEnvManager(path: String, taskInfo: TaskInfo, statusUpdates: Publish[IO, KernelStatusUpdate])
   extends VirtualEnvManager(path, taskInfo, statusUpdates) {
 
-  override def mkDependencyProvider(dependencies: List[(String, File)], venv: File): VirtualEnvDependencyProvider =
+  override def mkDependencyProvider(dependencies: List[(String, File)], venv: Option[File]): VirtualEnvDependencyProvider =
     new PySparkVirtualEnvDependencyProvider(dependencies, venv)
 }
 
 class PySparkVirtualEnvDependencyProvider(
   override val dependencies: scala.List[(String, File)],
-  venv: File
+  venv: Option[File]
 ) extends VirtualEnvDependencyProvider(dependencies, venv) {
 
   override def beforeInit(path: String): String =
@@ -33,9 +33,6 @@ class PySparkVirtualEnvDependencyProvider(
   override def afterInit(path: String): String =
     s"""
       |${super.afterInit(path)}
-      |
-      |from pathlib import Path
-      |import shutil
       |
       |# archive venv and send to Spark cluster
       |dep_dir = Path('$path', 'deps').resolve()
