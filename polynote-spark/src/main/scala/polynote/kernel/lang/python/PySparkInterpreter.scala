@@ -3,10 +3,8 @@ package polynote.kernel.lang.python
 import cats.effect.IO
 import cats.implicits._
 import org.apache.spark.sql.SparkSession
-import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.util.KernelContext
-import polynote.kernel.{Result, RuntimeError}
 import py4j.GatewayServer
 
 class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvider) extends PythonInterpreter(ctx, dependencyProvider) {

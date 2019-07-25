@@ -13,7 +13,6 @@ import jep._
 import jep.python.{PyCallable, PyObject}
 import polynote.config.PolyLogger
 import polynote.kernel.PolyKernel.EnqueueSome
-import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
 import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.util._
@@ -240,15 +239,15 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
       Option(jep.getValue("__other_err__")).map {
         _ =>
           // __other_err__ is (the type of the error, the actual error itself, the traceback as a List[List[String]])
-          val message = jep.getValue("getattr(__other_err__[1], 'message', repr(__other_err__[1]))", classOf[String])
+          val message = jep.getValue("getattr(__other_err__[1], 'message', str(__other_err__[1]))", classOf[String]).split("\n").head
           val cls = jep.getValue("__other_err__[0].__name__", classOf[String])
           val trace = jep.getValue("__other_err__[2]", classOf[java.util.List[java.util.List[String]]]).asScala.map {
             stackElList =>
               val name :: filename :: lineno :: Nil = stackElList.asScala.toList
-              new StackTraceElement("", name, filename, lineno.toInt)
+              new StackTraceElement(filename.stripSuffix(".py"), name, Paths.get(filename).getFileName.toString, lineno.toInt)
           }
 
-          val err = RecoveredException(message, cls)
+          val err = new RuntimeException(s"$cls: $message")
           err.setStackTrace(trace.toArray)
           Left(err)
       }

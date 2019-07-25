@@ -83,7 +83,7 @@ object RuntimeError extends ResultCompanion[RuntimeError](2) {
   )
 
   // extending only to access the protected constructor (which skips building a pointless stack trace)
-  final case class RecoveredException(msg: String, originalType: String) extends RuntimeException(s"$originalType: $msg", null, false, true)
+  final case class RecoveredException(msg: String, originalType: String) extends RuntimeException(s"$originalType: $msg", null, false, false)
 
   val throwableWithCausesCodec: Codec[Throwable] = {
     def collapse(errs: List[Throwable]): Attempt[Throwable] = errs match {
