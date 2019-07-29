@@ -98,11 +98,6 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       Array(repr)
   }
 
-  implicit def map[F[KK, VV] <: Map[KK, VV], K, V](implicit structEncoder: DataEncoder.StructDataEncoder[(K, V)]): ReprsOf[F[K, V]] = instance {
-    map =>
-      Array(StreamingDataRepr.fromHandle(new StructSeqStreamHandle[(K,V), (K,V)](_, map.toSeq, identity, structEncoder)))
-  }
-
 
   private[runtime] case class StructSeqStreamHandle[A, B](handle: Int, data: Seq[A], transform: Seq[A] => Seq[B], enc: DataEncoder.StructDataEncoder[B]) extends StreamingDataRepr.Handle {
     def dataType: DataType = enc.dataType

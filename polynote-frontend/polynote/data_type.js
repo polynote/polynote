@@ -130,6 +130,32 @@ ArrayType.codec = combined(DataType.delegatedCodec).to(ArrayType);
 
 export const DateType = SingletonDataType(12, buffer => {throw "TODO"}, 'date');
 export const TimestampType = SingletonDataType(13, buffer => {throw "TODO"}, 'timestamp');
+export const TypeType = SingletonDataType(14, buffer => buffer.readString(), 'type');
+
+export class MapType extends DataType {
+    static get msgTypeId() { return 15; }
+    static name(inst) { return `[${inst.element.constructor.name(inst.element)}]`}
+    static unapply(inst) {
+        return [inst.element];
+    }
+
+    constructor(element) {
+        super(element);
+        this.element = element;
+        Object.freeze(this);
+    }
+
+    decodeBuffer(buffer) {
+        const len = buffer.readInt32();
+        const result = [];
+        for (let i = 0; i < len; i++) {
+            result[i] = Object.values(this.element.decodeBuffer(buffer));
+        }
+        return new Map(result);
+    }
+}
+
+MapType.codec = combined(StructType.codec).to(MapType);
 
 DataType.codecs = [
     ByteType,     //  0
@@ -146,6 +172,8 @@ DataType.codecs = [
     ArrayType,    // 11
     DateType,     // 12
     TimestampType, // 13
+    TypeType,     // 14
+    MapType,      // 15
 ];
 
 DataType.codec = discriminated(

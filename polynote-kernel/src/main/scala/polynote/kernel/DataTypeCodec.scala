@@ -26,6 +26,8 @@ object DataTypeCodec {
   implicit val arrayDiscriminator: Discriminator[DataType, ArrayType, Byte] = Discriminator(11)
   //implicit val dateDiscriminator: Discriminator[DataType, DateType.type, Byte] = Discriminator(12)
   //implicit val timestampDiscriminator: Discriminator[DataType, TimestampType.type, Byte] = Discriminator(13)
+  implicit val typeDiscriminator: Discriminator[DataType, TypeType.type, Byte] = Discriminator(14)
+  implicit val mapDiscriminator: Discriminator[DataType, MapType, Byte] = Discriminator(15)
 
   implicit val dataTypeDiscriminated: Discriminated[DataType, Byte] = Discriminated(byte)
 

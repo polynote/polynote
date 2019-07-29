@@ -36,6 +36,9 @@ final case class OptionalType(element: DataType) extends DataType {
 }
 
 final case class ArrayType(element: DataType) extends DataType
+final case class MapType(kv: StructType) extends DataType
 
 //case object DateType extends FixedSizeType(4)
 //case object TimestampType extends FixedSizeType(8)
+
+case object TypeType extends DataType

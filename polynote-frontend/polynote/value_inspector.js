@@ -56,9 +56,6 @@ class ValueInspector extends Modal {
                     .when(StringRepr, str => tabs['String'] = div(['plaintext'], [document.createTextNode(str)]))
                     .when(MIMERepr, (mimeType, content) => displayContent(mimeType, content).then(el => tabs[contentTypeName(mimeType)] = el))
                     .when(DataRepr, (dataType, data) => {
-                        if (dataType instanceof StructType) {
-                            tabs['Schema'] = div(['schema-display'], [displayData(schemaToObject(dataType), false, true)]);
-                        }
                         tabs[`Data(${resultValue.typeName})`] = displayData(dataType.decodeBuffer(new DataReader(data)))
                     })
                     .when(StreamingDataRepr, (handle, dataType, knownSize) => {
