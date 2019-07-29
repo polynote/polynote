@@ -29,7 +29,8 @@ export class KeyPress {
     }
 
     matches(keyPressEvent) {
-        return (this.key === keyPressEvent.code) || (this.key === keyPressEvent.key) &&
+        const key = (keyPressEvent.browserEvent && keyPressEvent.browserEvent.key) || keyPressEvent.key || keyPressEvent.code;
+        return this.key === key &&
             this.ctrl === keyPressEvent.ctrlKey &&
             this.shift === keyPressEvent.shiftKey &&
             this.alt === keyPressEvent.altKey &&
@@ -38,8 +39,9 @@ export class KeyPress {
     }
 
     static fromEvent(keyPressEvent) {
+        const key = (keyPressEvent.browserEvent && keyPressEvent.browserEvent.key) || keyPressEvent.key || keyPressEvent.code;
         return new KeyPress(
-            keyPressEvent.code || keyPressEvent.key,
+            key,
             keyPressEvent.ctrlKey,
             keyPressEvent.shiftKey,
             keyPressEvent.altKey,
