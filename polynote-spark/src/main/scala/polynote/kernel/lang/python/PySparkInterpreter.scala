@@ -21,7 +21,7 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
 
       // if we are running in local mode we need to set this so the executors can find the venv's python
       if (spark.sparkContext.master.contains("local")) {
-        jep.eval("""os.environ["PYSPARK_PYTHON"] = os.environ["PYSPARK_DRIVER_PYTHON"]""")
+        jep.eval("""os.environ["PYSPARK_PYTHON"] = os.environ.get("PYSPARK_DRIVER_PYTHON", "python3")""")
       } else {
         jep.eval("""os.environ["PYSPARK_PYTHON"] = "python3" """)
       }
