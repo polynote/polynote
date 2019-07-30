@@ -67,6 +67,20 @@ object ReprsOf extends ExpandedScopeReprs {
 
   val empty: ReprsOf[Any] = instance(_ => Array.empty)
 
+  implicit val sparkSession: ReprsOf[Runtime.type] = {
+    instance {
+      r =>
+        val html =
+          s"""<div class="server-info">
+             | <span id="version-label">Server Version: </span><span id="version">${r.version}</span></br>
+             | <span id="commit-label">Server Commit: </span><span id="commit">${r.commit}</span></br>
+             |</div>
+           """.stripMargin
+        Array(MIMERepr("text/html", html))
+
+    }
+  }
+
 }
 
 

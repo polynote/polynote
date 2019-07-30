@@ -191,7 +191,7 @@ object SparkReprsOf {
     }
   }
 
-  import org.apache.spark.sql.{Dataset, DataFrame}
+  import org.apache.spark.sql.{Dataset, DataFrame, SparkSession}
 
   def instance[T](reprs: T => Array[ValueRepr]): SparkReprsOf[T] = new SparkReprsOf[T] {
     def apply(value: T): Array[ValueRepr] = reprs(value)
@@ -200,6 +200,16 @@ object SparkReprsOf {
   implicit val dataFrame: SparkReprsOf[DataFrame] = {
     instance {
       df => Array(StreamingDataRepr.fromHandle(new DataFrameHandle(_, df)))
+    }
+  }
+
+  implicit val sparkSession: SparkReprsOf[SparkSession] = {
+    instance {
+      sess =>
+        val uiLink = sess.sparkContext.uiWebUrl.map { url =>
+          s"""<span id="spark-ui-label">Spark UI:</span><a href="$url" id="spark-ui" target="_blank">$url</a>"""
+        }.getOrElse("""<span id="spark-ui-error">Spark UI url not found!</span>""")
+        Array(MIMERepr("text/html", uiLink))
     }
   }
 
