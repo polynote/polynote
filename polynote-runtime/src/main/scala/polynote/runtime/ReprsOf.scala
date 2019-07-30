@@ -71,9 +71,9 @@ object ReprsOf extends ExpandedScopeReprs {
     instance {
       r =>
         val html =
-          s"""<div class="server-info">
-             | <span id="version-label">Server Version: </span><span id="version">${r.version}</span></br>
-             | <span id="commit-label">Server Commit: </span><span id="commit">${r.commit}</span></br>
+          s"""<div class="object-display server-info">
+             | <span class="field-name">Server Version</span><span class="string">${r.version}</span></br>
+             | <span class="field-name">Server Commit</span><span class="string">${r.commit}</span></br>
              |</div>
            """.stripMargin
         Array(MIMERepr("text/html", html))

@@ -207,9 +207,35 @@ object SparkReprsOf {
     instance {
       sess =>
         val uiLink = sess.sparkContext.uiWebUrl.map { url =>
-          s"""<span id="spark-ui-label">Spark UI:</span><a href="$url" id="spark-ui" target="_blank">$url</a>"""
-        }.getOrElse("""<span id="spark-ui-error">Spark UI url not found!</span>""")
-        Array(MIMERepr("text/html", uiLink))
+          s"""<span class="field-name">Spark UI</span><a href="$url" class="link" target="_blank">$url</a>"""
+        }.getOrElse("""<span class="field-name error">Spark UI url not found!</span>""")
+
+        // TODO: this is pretty fragile: tight coupling to the display_content implementation.
+        //  We should have a better way to inject data for display instead of doing this.
+        val config = Seq(
+          """
+            |<details class="object-display">
+            |  <summary class="object-summary"><span class="summary-content"><span>SparkConf</span></span></summary>
+            |  <ul class="object-fields">
+          """.stripMargin) ++ sess.conf.getAll.map {
+          case (k, v) =>
+            s"""<li>
+              |<span class="field-name">$k</span><span class="string">$v</span>
+              |</li>
+            """.stripMargin
+        } ++ Seq(
+          """
+            |</ul></details>
+          """.stripMargin)
+
+        val html =
+          s"""
+             |<div class="object-display spark-ui">
+             |  $uiLink
+             |</div>
+             |${config.mkString("\n")}
+           """.stripMargin
+        Array(MIMERepr("text/html", html))
     }
   }
 
