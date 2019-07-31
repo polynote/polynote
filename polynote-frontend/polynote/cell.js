@@ -940,13 +940,10 @@ export class CodeCell extends Cell {
     activateVim() {
         if (prefs.get('VIM')) {
             if (!this.vim) {
-                if (!this.statusLine) {
-                    this.statusLine = div(["vim-status"], []);
-                }
                 this.vim = createVim(this.editor, this.statusLine);
                 this.cellInput.querySelector(".cell-footer").appendChild(this.statusLine);
             }
-            this.statusLine.classList.toggle('hide', false);
+            this.statusLine.classList.remove('hide');
         } else {
             this.deactivateVim();
         }
@@ -961,7 +958,7 @@ export class CodeCell extends Cell {
     }
 
     hideVim() {
-        this.statusLine.innerHTML = '';
+        this.statusLine.classList.add('hide');
     }
 
     get content() {
