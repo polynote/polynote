@@ -282,3 +282,7 @@ if (path.startsWith('/notebook/')) {
 } else {
   mainUI.showWelcome();
 }
+
+Tinycon.setOptions({
+    background: '#308b24'
+});
