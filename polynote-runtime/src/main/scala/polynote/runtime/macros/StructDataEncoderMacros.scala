@@ -1,6 +1,8 @@
 package polynote.runtime.macros
 
-import polynote.runtime.{DataEncoder, DataType, StructField, StructType}
+import java.nio.charset.StandardCharsets
+
+import polynote.runtime.{DataEncoder, DataType, StringType, StructField, StructType}
 
 import scala.reflect.macros.whitebox
 import polynote.runtime.DataEncoder.StructDataEncoder
@@ -23,8 +25,11 @@ class StructDataEncoderMacros(val c: whitebox.Context) extends CaseClassMacros {
         fields.flatMap {
           case (name, typ) =>
             c.inferImplicitValue(appliedType(DataEncoderTC, typ)) match {
-              case EmptyTree => None
-              case tree => Some((name, typ, tree))
+              case EmptyTree =>
+                val stringDE = q"polynote.runtime.DataEncoder.unknownDataEncoder[$typ](${typ.toString})"
+                Some((name, typ, stringDE))
+              case tree =>
+                Some((name, typ, tree))
             }
         } match {
           case Nil => c.abort(c.enclosingPosition, "No fields with available DataEncoders")

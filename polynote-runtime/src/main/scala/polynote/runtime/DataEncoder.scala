@@ -49,6 +49,14 @@ object DataEncoder extends DataEncoderDerivations {
       out.write(str.getBytes(StandardCharsets.UTF_8))
   }
 
+  // NOT implicit!
+  def unknownDataEncoder[T](typeName: String): DataEncoder[T] = instance[T](TypeType) {
+    (out, _) =>
+      val unknownMessage = s"Missing DataRepr for type $typeName"
+      out.writeInt(unknownMessage.length)
+      out.write(unknownMessage.getBytes(StandardCharsets.UTF_8))
+  }
+
   implicit val byteArray: DataEncoder[Array[Byte]] = sizedInstance[Array[Byte]](BinaryType, arr => arr.length + 4) {
     (out, bytes) =>
       out.writeInt(bytes.length)
@@ -82,6 +90,14 @@ object DataEncoder extends DataEncoderDerivations {
     (output, seq) =>
       output.writeInt(seq.size)
       seq.foreach(encodeA.encode(output, _))
+  }
+
+  implicit def map[F[KK, VV] <: Map[KK, VV], K, V](implicit structEncoder: DataEncoder.StructDataEncoder[(K, V)]): DataEncoder[Map[K, V]] = sizedInstance[Map[K, V]](
+    MapType(structEncoder.dataType),
+    map => map.size * structEncoder.dataType.size) {
+    (output, map) =>
+      output.writeInt(map.size)
+      map.foreach(structEncoder.encode(output, _))
   }
 
   private[polynote] class BufferOutput(buf: ByteBuffer) extends DataOutput {

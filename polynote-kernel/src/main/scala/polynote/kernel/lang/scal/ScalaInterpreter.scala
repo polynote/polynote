@@ -351,6 +351,7 @@ class ScalaInterpreter(
             try {
               Some {
                 ParameterHints(
+                  // TODO: TinyString might be too small, saw a couple errors to that effect in some logs
                   TinyString(s"${sym.name.decodedName.toString}$paramsStr"),
                   None,
                   TinyList {

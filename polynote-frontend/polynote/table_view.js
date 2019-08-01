@@ -33,7 +33,8 @@ export class TableView {
         this.path = path;
         const dataType = repr.dataType;
         const fields = this.fields = dataType.fields;
-        const fieldNames = this.fieldNames = dataType.fields.map(field => field.name);
+        const fieldClasses = dataType.fields.map(field => field.name);
+        const fieldNames = dataType.fields.map(field => `${field.name}: ${field.dataType.name()}`);
 
         if (!SocketSession.current.isOpen) {
             this.el = div(['table-view', 'disconnected'], [
@@ -45,7 +46,7 @@ export class TableView {
         this.el = div(['table-view'], [
             this.table = table([], {
                 header: fieldNames,
-                classes: fieldNames,
+                classes: fieldClasses,
                 rows: []
             }),
             this.paginator = div(['paginator'], [

@@ -108,7 +108,21 @@ export function displayData(data, fieldName, expandObjects) {
             elems.appendChild(tag('li', [], {}, displayData(elem, false, expandObjects)));
         }
         return details;
+    } else if (data instanceof Map) {
+        const summarySpan = span(['summary-content'], []);
+        const summary = tag('summary', ['object-summary'], {}, [summarySpan]);
+        if (fieldName) {
+            summary.insertBefore(span(['field-name'], [fieldName]), summary.childNodes[0]);
+        }
+        summarySpan.appendChild(span([], ['…']));
 
+        const fields = tag('ul', ['object-fields'], {}, []);
+        const details = tag('details', ['object-display'], expandObjects ? { open: 'open' } : {}, [summary, fields]);
+
+        for (let [key, val] of data) {
+            fields.appendChild(tag('li', [], {}, [displayData(val, key, expandObjects)]));
+        }
+        return details;
     } else if (typeof data === "object" && !(data instanceof String)) {
         const keys = Object.keys(data);
         const summarySpan = span(['summary-content'], []);
@@ -127,7 +141,7 @@ export function displayData(data, fieldName, expandObjects) {
         const fields = tag('ul', ['object-fields'], {}, []);
         const details = tag('details', ['object-display'], expandObjects ? { open: 'open' } : {}, [summary, fields]);
 
-        for (let key of Object.keys(data)) {
+        for (let key of keys) {
             fields.appendChild(tag('li', [], {}, [displayData(data[key], key, expandObjects)]));
         }
         return details;

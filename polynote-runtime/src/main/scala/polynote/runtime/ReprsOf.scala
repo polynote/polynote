@@ -67,6 +67,20 @@ object ReprsOf extends ExpandedScopeReprs {
 
   val empty: ReprsOf[Any] = instance(_ => Array.empty)
 
+  implicit val sparkSession: ReprsOf[Runtime.type] = {
+    instance {
+      r =>
+        val html =
+          s"""<div class="object-display server-info">
+             | <span class="field-name">Server Version</span><span class="string">${r.version}</span></br>
+             | <span class="field-name">Server Commit</span><span class="string">${r.commit}</span></br>
+             |</div>
+           """.stripMargin
+        Array(MIMERepr("text/html", html))
+
+    }
+  }
+
 }
 
 
@@ -97,6 +111,7 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       }(scala.concurrent.ExecutionContext.global)
       Array(repr)
   }
+
 
   private[runtime] case class StructSeqStreamHandle[A, B](handle: Int, data: Seq[A], transform: Seq[A] => Seq[B], enc: DataEncoder.StructDataEncoder[B]) extends StreamingDataRepr.Handle {
     def dataType: DataType = enc.dataType
