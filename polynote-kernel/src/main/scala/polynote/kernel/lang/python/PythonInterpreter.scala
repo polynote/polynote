@@ -21,6 +21,7 @@ import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
+import scala.util.Try
 
 class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: DependencyProvider) extends LanguageInterpreter[IO] {
   import kernelContext.global
@@ -456,40 +457,47 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
   // want to avoid re-populating globals at every completion request. We'll only do it when the cell we're completing changes.
   private var lastCompletionCell = -1
 
+  private def populateCodeAndGlobals(cellContext: CellContext, code: String, pos: Int): (Int, Int) = {
+    if (cellContext.id != lastCompletionCell) {
+      lastCompletionCell = cellContext.id
+      val globals = cellContext.visibleValues.view.map {
+        rv => Array(rv.name, rv.value)
+      }.toArray
+      jep.set("__polynote_globals__", globals)
+      expandGlobals()
+    }
+
+    val (line, col) = {
+      val iter = code.linesWithSeparators
+      var p = 0
+      var l = 0
+      var c = 0
+      while (p < pos && iter.hasNext) {
+        val line = iter.next()
+        l += 1
+        c = line.length()
+        p = p + c
+        if (p > pos) {
+          c = line.length - (p - pos)
+        } else if (p == pos && iter.hasNext) {
+          l += 1
+          c = 0
+        }
+      }
+      (l, c)
+    }
+    jep.set("__polynote_code__", code)
+
+    (line, col)
+  }
+
   override def completionsAt(
     cellContext: CellContext,
     code: String,
     pos: Int
   ): IO[List[Completion]] = withJep {
-      if (cellContext.id != lastCompletionCell) {
-        lastCompletionCell = cellContext.id
-        val globals = cellContext.visibleValues.view.map {
-          rv => Array(rv.name, rv.value)
-        }.toArray
-        jep.set("__polynote_globals__", globals)
-        expandGlobals()
-      }
+      val (line, col) = populateCodeAndGlobals(cellContext, code, pos)
 
-      val (line, col) = {
-        val iter = code.linesWithSeparators
-        var p = 0
-        var l = 0
-        var c = 0
-        while (p < pos && iter.hasNext) {
-          val line = iter.next()
-          l += 1
-          c = line.length()
-          p = p + c
-          if (p > pos) {
-            c = line.length - (p - pos)
-          } else if (p == pos && iter.hasNext) {
-            l += 1
-            c = 0
-          }
-        }
-        (l, c)
-      }
-      jep.set("__polynote_code__", code)
       jep.eval(s"__polynote_cmp__ = jedi.Interpreter(__polynote_code__, [__polynote_globals__, {}], line=$line, column=$col).completions()")
       // If this comes back as a List, Jep will mash all the elements to strings. So gotta use it as a PyObject. Hope that gets fixed!
       // TODO: will need some reusable PyObject wrappings anyway
@@ -524,7 +532,37 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
     cellContext: CellContext,
     code: String,
     pos: Int
-  ): IO[Option[Signatures]] = IO.pure(None)
+  ): IO[Option[Signatures]] = withJep {
+    try {
+      val (line, col) = populateCodeAndGlobals(cellContext, code, pos)
+      jep.eval(s"__polynote_sig__ = jedi.Interpreter(__polynote_code__, [__polynote_globals__, {}], line=$line, column=$col).call_signatures()[0]")
+      // If this comes back as a List, Jep will mash all the elements to strings. So gotta use it as a PyObject. Hope that gets fixed!
+      // TODO: will need some reusable PyObject wrappings anyway
+      val sig = new PythonObject(jep.getValue("__polynote_sig__", classOf[PyObject]), runner)
+      val index = sig.index[java.lang.Long]
+      jep.eval("__polynote_params__ = list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], __polynote_sig__.params))")
+      val params = jep.getValue("__polynote_params__", classOf[java.util.List[java.util.List[String]]]).asScala.map {
+        tup =>
+          val name = tup.get(0)
+          val typeName = if (tup.size > 1) Option(tup.get(1)) else None
+          ParameterHint(name, typeName.getOrElse(""), None) // TODO: can we parse per-param docstrings out of the main docstring?
+      }
+
+      val docString = Try(sig.docstring(true))
+        .map(_.toString.split("\n\n").head)
+        .toOption.filterNot(_.isEmpty).map(ShortString.truncate)
+
+      val name = s"${sig.name[String]}(${params.mkString(", ")})"
+      val hints = ParameterHints(
+        name,
+        docString,
+        params.toList
+      )
+      Some(Signatures(List(hints), 0, index.byteValue()))
+    } catch {
+      case err: Throwable => None
+    }
+  }
 
 }
 

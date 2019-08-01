@@ -1367,7 +1367,7 @@ export class NotebookUI extends UIEventTarget {
                             signatures: signatures.hints.map(sig => {
                                 const params = sig.parameters.map(param => {
                                     return {
-                                        label: `${param.name}: ${param.typeName}`,
+                                        label: param.typeName ? `${param.name}: ${param.typeName}` : param.name,
                                         documentation: param.docString
                                     };
                                 });
@@ -2437,6 +2437,13 @@ monaco.languages.registerSignatureHelpProvider('scala', {
   provideSignatureHelp: (doc, pos, cancelToken, context) => {
       return doc.cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
   }
+});
+
+monaco.languages.registerSignatureHelpProvider('python', {
+    signatureHelpTriggerCharacters: ['(', ','],
+    provideSignatureHelp: (doc, pos, cancelToken, context) => {
+        return doc.cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
+    }
 });
 
 monaco.languages.registerCompletionItemProvider('sql', {
