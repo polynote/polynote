@@ -538,22 +538,25 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
       jep.eval(s"__polynote_sig__ = jedi.Interpreter(__polynote_code__, [__polynote_globals__, {}], line=$line, column=$col).call_signatures()[0]")
       // If this comes back as a List, Jep will mash all the elements to strings. So gotta use it as a PyObject. Hope that gets fixed!
       // TODO: will need some reusable PyObject wrappings anyway
-      val sig = jep.getValue("__polynote_sig__", classOf[PyObject])
-      val index = sig.getAttr("index", classOf[java.lang.Long])
-      val params = sig.getAttr("params", classOf[Array[PyObject]]).map {
-        paramObj => paramObj.getAttr("name", classOf[String])
+      val sig = new PythonObject(jep.getValue("__polynote_sig__", classOf[PyObject]), runner)
+      val index = sig.index[java.lang.Long]
+      jep.eval("__polynote_params__ = list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], __polynote_sig__.params))")
+      val params = jep.getValue("__polynote_params__", classOf[java.util.List[java.util.List[String]]]).asScala.map {
+        tup =>
+          val name = tup.get(0)
+          val typeName = if (tup.size > 1) Option(tup.get(1)) else None
+          ParameterHint(name, typeName.getOrElse(""), None) // TODO: can we parse per-param docstrings out of the main docstring?
       }
-      val docString = Try(sig.getAttr("docstring", classOf[PyCallable]).call())
-        .map(_.asInstanceOf[String])
+
+      val docString = Try(sig.docstring(true))
+        .map(_.toString.split("\n\n").head)
         .toOption.filterNot(_.isEmpty).map(ShortString.truncate)
 
-      val name = s"${sig.getAttr("name", classOf[String])}(${params.mkString(", ")})"
+      val name = s"${sig.name[String]}(${params.mkString(", ")})"
       val hints = ParameterHints(
         name,
         docString,
-        params.toList.map {
-          name => ParameterHint(name, "", None) // TODO: can individual params have docstrings?
-        }
+        params.toList
       )
       Some(Signatures(List(hints), 0, index.byteValue()))
     } catch {

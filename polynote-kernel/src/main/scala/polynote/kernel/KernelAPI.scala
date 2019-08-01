@@ -221,7 +221,9 @@ final case class Completion(
 final case class ParameterHint(
   name: TinyString,
   typeName: TinyString,
-  docString: Option[ShortString])
+  docString: Option[ShortString]) {
+  override def toString: String = if (typeName.nonEmpty) s"$name: $typeName" else name
+}
 
 final case class ParameterHints(
   name: TinyString,
