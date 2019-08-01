@@ -175,5 +175,49 @@ class ScalaSparkInterpreterSpec extends FlatSpec with Matchers with SparkKernelS
       vars("c") shouldEqual 6
     }
   }
+
+  it should "properly lift imports as needed" in {
+    val code = Seq(
+      """
+        |trait SomeTrait {
+        |  def foo: Int = 1
+        |}
+      """.stripMargin,
+      """
+        |class MyImpl extends SomeTrait {
+        |  override def foo: Int = 2
+        |}
+      """.stripMargin,
+      "new MyImpl().foo"
+    )
+    assertSparkScalaOutput(code) { case (vars, output, displayed) =>
+      vars("Out") shouldEqual 2
+    }
+  }
+
+  // FAILS!!!!
+  it should "work with inner traits if properly imported" ignore {
+    val code = Seq(
+      """
+        |object HideThing {
+        |  trait SomeTrait {
+        |    def foo: Int = 1
+        |  }
+        |}
+      """.stripMargin,
+      """
+        |import HideThing.SomeTrait
+        |def foo(t: SomeTrait) = 1""".stripMargin,
+      """
+        |class MyImpl extends SomeTrait {
+        |  override def foo: Int = 2
+        |}
+      """.stripMargin,
+      "new MyImpl().foo"
+    )
+    assertSparkScalaOutput(code) { case (vars, output, displayed) =>
+      vars("Out") shouldEqual 2
+    }
+  }
 }
 

@@ -97,6 +97,22 @@ class ScalaSource[G <: Global](
     treeDuplicator.transform(t)
   }
 
+  /**
+    * Checks whether the import is from a package (e.g., `import org.apache.spark...`) or whether it's importing a
+    * member of a local object (e.g., `val spark = ???; import spark.implicits._`).
+    *
+    * Note this will only work if the import tree has been typed, otherwise there won't be any symbols to check.
+    */
+  private def isPackageImport(imp: global.Import): Boolean = {
+    imp.collect {
+      // we need the base of this import (`org` or whatever it is) to really know whether it's a package import.
+      case i: global.Ident => i
+    } exists {
+      i =>
+        i.symbol.hasPackageFlag
+    }
+  }
+
   val cellName: String = ScalaSource.nameFor(cellContext)
 
   // the parsed trees, but only successful if there weren't any parse errors
@@ -199,9 +215,11 @@ class ScalaSource[G <: Global](
             atPos(beginning)(global.PrimarySuperCall(ListOfNil)), atPos(beginning)(global.gen.mkSyntheticUnit()))))
 
       // import everything imported by previous cells...
-      val (directImports: List[global.Tree], localImports: List[global.Tree]) = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]]).partition {
+      val (directImports: List[global.Tree], localImports: List[global.Tree]) = previousSources.flatMap(_.directImports.asInstanceOf[List[global.Tree]])
+        .filterNot(imp => trees.exists(_.toString == imp.toString)) // remove any duplicate imports
+        .partition {
         // basically, differentiates `import org.apache.spark....` from `val spark = ???; import spark.implicits._`
-        case global.Import(expr, _) => expr.tpe.prefixChain.last.typeSymbol.hasPackageFlag
+        case imp: global.Import => isPackageImport(imp)
       }
 
       //... and also import all public declarations from previous cells
@@ -297,9 +315,9 @@ class ScalaSource[G <: Global](
       logger.debug(s"*********** END pre-processed cell ${moduleName} ********** ")
 
       Either.catchNonFatal {
-        // first step is lifting up all class definitions and their companion objects (if present) to the package level
-        // this makes things easier because then there are no inner classes around and we can make sure users can't
-        // close over the whole world in their classes.
+        // first step is collecting all liftable class definitions and their companion objects (if present), so we can
+        // lift them up to the package level later (lifting makes things easier because then there are no inner classes
+        // around and we can make sure users can't close over the whole world in their classes)
 
         // so, we'll first collect the names of the classes so we can find companion objects
         val classes: Map[String, global.Tree] = unit.body match {
@@ -329,29 +347,49 @@ class ScalaSource[G <: Global](
             }.flatten.toMap
         }
 
-        // ok, now we know what we're dealing with! Let's lift these guys up to the package level.
-        val liftedTree = unit.body match {
+        // Before typing it's not possible to know whether an import if pointing to a package or some local decl.
+        // Since we can only lift imports of package objects, we need to collect all the local decls.
+        val localDecls = unit.body.collect {
+          case v @ global.ValDef(_, name, _, _) =>
+            name.toString -> v
+        }.toMap
+
+        // Now we lift everything that is liftable up to the package level.
+        val liftedPkg = unit.body match {
           case pkg @ global.PackageDef(_, stats) =>
             pkg.copy(stats = stats.flatMap {
               case cls @ global.ClassDef(_, name, _, tmpl) if name.toString == moduleName.toString =>
                 // remove the unlifted classes and objects
-                val newClass = cls.copy(impl = tmpl match {
+                val (newImpl, importsToLift) = tmpl match {
                   case global.Template(_, _, body) =>
-                    tmpl.copy(body = body.filter {
-                      // all classdefs have been accounted for
-                      case _: global.ClassDef => false
-                      // only remove companion objects
-                      case global.ModuleDef(_, n, _) => !companionObjects.contains(n.toString)
+                    // pull out import for lifting (if possible)
+                    val (newBody, importsToLift) = body.collect {
+                      // all class defs have been lifted, so filter them out
+                      case _: global.ClassDef => (None, None)
+                      // remove all companion objects (user defined ones will be added back, automatically generated ones should be discarded)
+                      case global.ModuleDef(_, n, _) if classes.contains(n.toString) => (None, None)
+                      // collect all package imports to be lifted.
+                      case imp: global.Import =>
+                        val baseIdent = imp.collect {
+                          case i: global.Ident => i.name.toString
+                        }
+                        if (baseIdent.exists(localDecls.contains)) { // not liftable because we're importing a member of a local value
+                          (Option(imp), None)
+                        } else { // liftable
+                          (None, Option(imp))
+                        }
                       // the rest is ok
-                      case _ => true
-                    }).setPos(tmpl.pos)
-                }).setPos(cls.pos)
+                      case other => (Option(other), None)
+                    }.unzip
+                    (tmpl.copy(body = newBody.flatten), importsToLift.flatten)
+                }
+                val newClass = cls.copy(impl = newImpl.setPos(tmpl.pos)).setPos(cls.pos)
 
                 // insert the classes and their companion objects. They go before the cell class definition.
-                val lifted: List[global.Tree] = classes.flatMap {
+                val lifted: List[global.Tree] = (importsToLift ++ classes.flatMap {
                   case (n, c) =>
                     c :: companionObjects.get(n).toList
-                }.map(forcePos(new RangePosition(cls.pos.source, cls.pos.start, cls.pos.start, cls.pos.start), _)).toList
+                }).map(forcePos(new RangePosition(cls.pos.source, cls.pos.start, cls.pos.start, cls.pos.start), _))
 
                 lifted :+ newClass
 
@@ -359,7 +397,7 @@ class ScalaSource[G <: Global](
             }).setPos(pkg.pos)
         }
 
-        unit.body = liftedTree
+        unit.body = liftedPkg
         global.unitOfFile.put(unit.source.file, unit) // make sure to update
 
         // so there's one more thing we need to consider. It turns out that some output from the typechecker can't be
@@ -378,7 +416,7 @@ class ScalaSource[G <: Global](
         }
 
         // now, lazy vals
-        val lazyVals = liftedTree match {
+        val lazyVals = liftedPkg match {
           case global.PackageDef(_, stats) =>
             stats.collect {
               case global.ClassDef(_, _, _, impl) =>
@@ -481,7 +519,14 @@ class ScalaSource[G <: Global](
               super.transform(tree)
           }
         }
-        val proxiedPkg = substituter.transform(typedPkg)
+        // we only substitute in the cell's class for now.
+        val proxiedPkg = typedPkg match {
+          case pkg @ global.PackageDef(_, stats) =>
+            pkg.copy(stats = stats.map {
+              case cls @ global.ClassDef(_, name, _, _) if name.toString.trim == moduleName.toString.trim => substituter.transform(cls)
+              case other => other
+            }).setPos(pkg.pos)
+        }
 
         // ok, now we need to do some cleanup.
         //   * remove the cell imports we added in the wrapping stage and replace them with our proxies.
@@ -511,6 +556,7 @@ class ScalaSource[G <: Global](
                     tmpl.copy(body = newProxyTrees ++ cleanedBody).setPos(tmpl.pos)
                 }).setPos(cls.pos))
 
+              // TODO: maybe we can substitute references inside these lifted things too?
               // replace case classes
               case caseCls @ global.ClassDef(mods, name, _, _) if mods.isCase =>
                 List(caseClasses(name.toString))
