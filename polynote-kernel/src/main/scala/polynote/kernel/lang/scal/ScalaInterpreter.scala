@@ -310,7 +310,7 @@ class ScalaInterpreter(
     code: String,
     pos: Int
   ): IO[List[Completion]] = {
-    IO.fromEither(mkSource(cellContext, code).completionsAt(pos)).map {
+    IO.fromEither(mkSource(cellContext, code.substring(0, pos)).completionsAt(pos)).map {
       case (typ, completions) => completions.map { sym =>
         val name = sym.name.decodedName.toString
         val symType = sym.typeSignatureIn(typ)
@@ -337,7 +337,7 @@ class ScalaInterpreter(
     code: String,
     pos: Int
   ): IO[Option[Signatures]] = {
-    IO.fromEither(mkSource(cellContext, code).signatureAt(pos)).map {
+    IO.fromEither(mkSource(cellContext, code.substring(0, pos)).signatureAt(pos)).map {
       case (typ: global.MethodType, syms, n, d) =>
         val hints = syms.map {
           sym =>
