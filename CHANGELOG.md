@@ -2,6 +2,23 @@
 
 *
 
+# 0.1.20 (August 1, 2019)
+
+* Some minor UI improvements like
+  * Collapse config when save button is pressed
+  * Make it more obvious that output has been hidden
+  * Fix some cases where the vim statusline disappeared
+  * New Repr for Maps, show type in the data table, add Reprs for SparkSession and Runtime. 
+  * Reload the UI upon reconnecting if it detects versions are out of whack. 
+  * Fix cell anchor link regression
+  * Make step execution favicon bubble green :) 
+* Only create venv when python dependencies have been provided
+* Overhaul python stack traces - get the actual error from py4j (e.g., pyspark) exceptions, clean up regular python stack traces. 
+* Improve completions in the middle of a line by truncating it when sending to the presentation compiler
+* Fix a bug preventing classes extending something imported in the same cell from working properly
+* Display python docstrings and types (if possible) in Parameter hints
+* Force spark session shutdown to run on the right thread
+
 # 0.1.19 (July 23, 2019)
 
 * Load the default.yml config even if config.yml itself is empty (normal case upon first installation)
