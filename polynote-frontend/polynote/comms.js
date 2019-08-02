@@ -148,7 +148,7 @@ export class SocketSession extends EventTarget {
     reconnect(onlyIfClosed) {
         if (!this.socket || this.isClosed || (!onlyIfClosed && (this.socket.readyState > WebSocket.CONNECTING))) {
             this.close();
-            document.location.reload();
+            mkSocket.call(this);
         }
     }
 

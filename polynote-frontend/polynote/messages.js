@@ -854,17 +854,19 @@ DeleteCell.codec = combined(shortStr, uint32, uint32, int16).to(DeleteCell);
 export class ServerHandshake extends Message {
     static get msgTypeId() { return 16; }
     static unapply(inst) {
-        return [inst.interpreters];
+        return [inst.interpreters, inst.serverVersion, inst.serverCommit];
     }
 
-    constructor(interpreters) {
-        super(interpreters);
+    constructor(interpreters, serverVersion, serverCommit) {
+        super(interpreters, serverVersion, serverCommit);
         this.interpreters = interpreters;
+        this.serverVersion = serverVersion;
+        this.serverCommit = serverCommit;
         Object.freeze(this);
     }
 }
 
-ServerHandshake.codec = combined(mapCodec(uint8, tinyStr, tinyStr)).to(ServerHandshake);
+ServerHandshake.codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr).to(ServerHandshake);
 
 export class HandleData extends Message {
     static get msgTypeId() { return 17; }
@@ -1023,6 +1025,23 @@ export class SetCellOutput extends NotebookUpdate {
 
 SetCellOutput.codec = combined(shortStr, uint32, uint32, int16, optional(Output.codec)).to(SetCellOutput);
 
+export class NotebookVersion extends Message {
+    static get msgTypeId() { return 23; }
+
+    static unapply(inst) {
+        return [inst.path, inst.globalVersion];
+    }
+
+    constructor(path, globalVersion) {
+        super(path, globalVersion);
+        this.path = path;
+        this.globalVersion = globalVersion;
+        Object.freeze(this);
+    }
+}
+
+NotebookVersion.codec = combined(shortStr, uint32).to(NotebookVersion);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -1047,6 +1066,7 @@ Message.codecs = [
     ReleaseHandle,   // 20
     ClearOutput,     // 21
     SetCellOutput,   // 22
+    NotebookVersion, // 23
 ];
 
 

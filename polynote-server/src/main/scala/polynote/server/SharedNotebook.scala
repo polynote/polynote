@@ -286,7 +286,7 @@ class IOSharedNotebook(
       lastLocalVersion.set(local)
     }
 
-    def lastKnownGlobalVersion: Int = lastGlobalVersion.get()
+    override def currentVersion: IO[Int] = IO.pure(lastGlobalVersion.get())
 
     val messages: Stream[IO, Message] = Stream.emits(Seq(
       outputMessages.subscribe(1024),
@@ -471,4 +471,9 @@ abstract class NotebookRef[F[_]](implicit F: Monad[F]) extends KernelAPI[F] {
     * Clear all outputs
     */
   def clearOutput(): F[Stream[F, CellResult]]
+
+  /**
+    * Get the global version of this notebook at this point in time
+    */
+  def currentVersion: F[Int]
 }

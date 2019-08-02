@@ -1503,9 +1503,14 @@ export class NotebookUI extends UIEventTarget {
             if (socket.isClosed) {
                 socket.reconnect(true);
             }
+            socket.listenOnceFor(messages.NotebookVersion, (path, serverGlobalVersion) => {
+                if (this.globalVersion !== serverGlobalVersion) {
+                    // looks like there's been a change while we were disconnected, so reload.
+                    document.location.reload();
+                }
+            });
+            socket.send(new messages.NotebookVersion(path, this.globalVersion))
         };
-
-
 
         socket.addEventListener('close', evt => {
             this.kernelUI.setKernelState('disconnected');
@@ -2102,7 +2107,7 @@ export class MainUI extends EventTarget {
         socket.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
         socket.send(new messages.ListNotebooks([]));
 
-        socket.listenOnceFor(messages.ServerHandshake, (interpreters) => {
+        socket.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit) => {
             for (let interp of Object.keys(interpreters)) {
                 Interpreters[interp] = interpreters[interp];
             }
@@ -2111,6 +2116,13 @@ export class MainUI extends EventTarget {
             }
 
             this.toolbarUI.cellToolbar.setInterpreters(Interpreters);
+
+            // just got a handshake for a server running on a different commit! We better reload since who knows what could've changed!
+            if (this.currentServerCommit && this.currentServerCommit !== serverCommit) {
+                document.location.reload();
+            }
+            this.currentServerVersion = serverVersion;
+            this.currentServerCommit = serverCommit;
         });
 
         socket.addEventListener('close', evt => {

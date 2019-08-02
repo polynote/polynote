@@ -262,7 +262,9 @@ final case class SetCellOutput(notebook: ShortString, globalVersion: Int, localV
 object SetCellOutput extends MessageCompanion[SetCellOutput](22)
 
 final case class ServerHandshake(
-  interpreters: TinyMap[TinyString, TinyString]
+  interpreters: TinyMap[TinyString, TinyString],
+  serverVersion: TinyString,
+  serverCommit: TinyString
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 
@@ -272,6 +274,8 @@ object CancelTasks extends MessageCompanion[CancelTasks](18)
 final case class ClearOutput(path: ShortString) extends Message
 object ClearOutput extends MessageCompanion[ClearOutput](21)
 
+final case class NotebookVersion(notebook: ShortString, globalVersion: Int) extends Message
+object NotebookVersion extends MessageCompanion[NotebookVersion](23)
 
 /*****************************************
  ** Stuff for stream-ish value handling **

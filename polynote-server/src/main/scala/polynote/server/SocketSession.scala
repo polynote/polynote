@@ -14,6 +14,7 @@ import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
 import WebSocketFrame._
+import polynote.buildinfo.BuildInfo
 import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.kernel._
 import polynote.kernel.util.{OptionEither, ReadySignal, WindowBuffer}
@@ -125,7 +126,10 @@ class SocketSession(
   }(_ => loadingNotebook.release)
 
   private def handshake: ServerHandshake =
-    ServerHandshake(notebookManager.interpreterNames.asInstanceOf[TinyMap[TinyString, TinyString]])
+    ServerHandshake(
+      interpreters = notebookManager.interpreterNames.asInstanceOf[TinyMap[TinyString, TinyString]],
+      serverVersion = BuildInfo.version,
+      serverCommit = BuildInfo.commit)
 
   def respond(message: Message): IO[Stream[IO, Message]] = message match {
     case ListNotebooks(_) =>
@@ -248,6 +252,14 @@ class SocketSession(
         notebookRef <- getNotebook(path)
         _           <- notebookRef.releaseHandle(handleType, handleId)
       } yield Stream.emit(rh)
+
+    case nv @ NotebookVersion(path, _) =>
+      for {
+        notebookRef <- getNotebook(path)
+        version <- notebookRef.currentVersion
+      } yield {
+        Stream.emit(NotebookVersion(path, version))
+      }
 
     case other =>
       IO.pure(Stream.empty)
