@@ -1123,6 +1123,7 @@ export class NotebookUI extends UIEventTarget {
         this.socket = socket;
         this.cellUI = cellUI;
         this.kernelUI = kernelUI;
+        this.mainUI = mainUI;
 
         this.cellResults = {};
 
@@ -1171,6 +1172,9 @@ export class NotebookUI extends UIEventTarget {
             } else if (elTop > viewportScrollBottom) { // need to scroll down
                 evt.detail.cell.container.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
             }
+
+            //update notebook scroll store with new position:
+            mainUI.tabUI.setCurrentScrollLocation(viewport.scrollTop + viewport.clientHeight / 2);
 
             // update the symbol table to reflect what's visible from this cell
             const ids = this.cellUI.getCodeCellIdsBefore(id);
@@ -1710,6 +1714,7 @@ export class NotebookUI extends UIEventTarget {
                 )
             }
         }
+        this.mainUI.dispatchEvent(new UIEvent('CellsLoaded'))
     }
 }
 
@@ -1797,19 +1802,23 @@ export class TabUI extends EventTarget {
         }
     }
 
+    setCurrentScrollLocation(scrollTop) {
+        prefs.update('notebookLocations', locations => {
+            if (!locations) {
+                locations = {};
+            }
+
+            locations[this.currentTab.name] = scrollTop;
+            return locations;
+        });
+    }
+
     activateTab(tab) {
         if (this.currentTab && this.currentTab === tab) {
             return;
         } else if (this.currentTab) {
             // remember previous location
-            prefs.update('notebookLocations', locations => {
-                if (!locations) {
-                    locations = {};
-                }
-
-                locations[this.currentTab.name] = this.currentTab.content.notebook.parentElement.scrollTop;
-                return locations;
-            });
+            this.setCurrentScrollLocation(this.currentTab.content.notebook.parentElement.scrollTop);
 
             for (const area in this.contentAreas) {
                 if (this.contentAreas.hasOwnProperty(area)) {
@@ -2375,8 +2384,7 @@ export class MainUI extends EventTarget {
     }
 
     handleHashChange(evt) {
-        // TODO: we need a better way to tell whether the notebook has been rendered rather than just using setTimeout and hoping the timing will work.
-        setTimeout(() => {
+        this.addEventListener('CellsLoaded', evt => {
             const hash = document.location.hash;
             // the hash can (potentially) have two parts: the selected cell and selected lines.
             // for example: #Cell2,6-12 would mean Cell2 lines 6-12
@@ -2405,8 +2413,7 @@ export class MainUI extends EventTarget {
                 // select cell and scroll to it.
                 selected.cell.focus();
             }
-
-        }, 500);
+        });
     }
 
     static browserDownload(path, filename) {
