@@ -3,9 +3,13 @@ name := "polynote"
 lazy val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
 
 val versions = new {
-  val http4s     = "0.20.0-M6"
-  val fs2        = "1.0.3"
-  val catsEffect = "1.2.0"
+  val http4s     = "0.20.6"
+  val fs2        = "1.0.5"
+  val catsEffect = "1.3.1"
+  val coursier   = "2.0.0-RC2-6"
+  val circe      = "0.11.1"
+  val circeYaml  = "0.10.0"
+  val spark      = "2.1.1"
 }
 
 val commonSettings = Seq(
@@ -69,13 +73,14 @@ val `polynote-kernel` = project.settings(
     "org.typelevel" %% "cats-effect" % versions.catsEffect,
     "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.10.3",
-    "io.circe" %% "circe-yaml" % "0.9.0",
-    "io.circe" %% "circe-generic" % "0.10.0",
-    "io.circe" %% "circe-generic-extras" % "0.10.0",
-    "io.get-coursier" %% "coursier" % "1.1.0-M14-1",
-    "io.get-coursier" %% "coursier-cache" % "1.1.0-M14-1",
-    "io.get-coursier" %% "coursier-cats-interop" % "1.1.0-M14-1",
-    "org.apache.ivy" % "ivy" % "2.4.0" % "provided"
+    "io.circe" %% "circe-yaml" % versions.circeYaml,
+    "io.circe" %% "circe-generic" % versions.circe,
+    "io.circe" %% "circe-generic-extras" % versions.circe,
+    "io.get-coursier" %% "coursier" % versions.coursier,
+    "io.get-coursier" %% "coursier-cache" % versions.coursier,
+    "io.get-coursier" %% "coursier-cats-interop" % versions.coursier,
+    "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
+    "org.apache.ivy" % "ivy" % "2.4.0" % "provided",
   )
 ).dependsOn(`polynote-runtime`)
 
@@ -88,7 +93,7 @@ val `polynote-server` = project.settings(
     "org.http4s" %% "http4s-blaze-server" % versions.http4s,
     "org.http4s" %% "http4s-blaze-client" % versions.http4s,
     "org.scodec" %% "scodec-core" % "1.10.3",
-    "io.circe" %% "circe-parser" % "0.10.0",
+    "io.circe" %% "circe-parser" % versions.circe,
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
@@ -107,10 +112,10 @@ lazy val `polynote-spark-runtime` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.apache.spark" %% "spark-sql" % "2.1.1" % "provided",
-    "org.apache.spark" %% "spark-repl" % "2.1.1" % "provided",
-    "org.apache.spark" %% "spark-sql" % "2.1.1" % "test",
-    "org.apache.spark" %% "spark-repl" % "2.1.1" % "test"
+    "org.apache.spark" %% "spark-sql" % versions.spark % "provided",
+    "org.apache.spark" %% "spark-repl" % versions.spark % "provided",
+    "org.apache.spark" %% "spark-sql" % versions.spark % "test",
+    "org.apache.spark" %% "spark-repl" % versions.spark % "test"
   )
 ) dependsOn `polynote-runtime`
 
@@ -119,10 +124,10 @@ lazy val `polynote-spark` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scodec" %% "scodec-stream" % "1.2.0",
-    "org.apache.spark" %% "spark-sql" % "2.1.1" % "provided",
-    "org.apache.spark" %% "spark-repl" % "2.1.1" % "provided",
-    "org.apache.spark" %% "spark-sql" % "2.1.1" % "test",
-    "org.apache.spark" %% "spark-repl" % "2.1.1" % "test",
+    "org.apache.spark" %% "spark-sql" % versions.spark % "provided",
+    "org.apache.spark" %% "spark-repl" % versions.spark % "provided",
+    "org.apache.spark" %% "spark-sql" % versions.spark % "test",
+    "org.apache.spark" %% "spark-repl" % versions.spark % "test",
   ),
   assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false),
   resourceGenerators in Compile += Def.task {
