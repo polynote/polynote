@@ -672,23 +672,31 @@ export class CodeCell extends Cell {
 
 
             // if there are too many lines, fold some
-            const lines = content.split(/\n/g);
-
+            let lines = content.split(/\n/g);
+            if (lines.slice(-1)[0] === "") {  // lines often end with a newline which we don't want to count
+                lines = lines.slice(0, -1)
+            }
+            const numLines = lines.length;
 
             if (!this.stdOutEl || !this.stdOutEl.parentNode) {
                 this.stdOutEl = this.mimeEl(mimeType, args, []);
-                this.stdOutLines = lines.length;
+                this.stdOutLines = numLines;
                 this.cellOutputDisplay.appendChild(this.stdOutEl);
             } else {
-                this.stdOutLines += lines.length - 1;
+                this.stdOutLines += numLines;
             }
 
-            if (this.stdOutLines > 12) { // TODO: user-configurable number?
+            // TODO: user-configurable number?
+            const linesBefore = 5;
+            const linesAfter = 5;
 
-                const splitAtLine = (textNode, line) => {
+            if (this.stdOutLines > (linesBefore + linesAfter)) {
+
+                // note that `line` is 0-indexed, so passing `line=1` means split the 0th line from the rest.
+                const splitBeforeLine = (textNode, line) => {
                     const lf = /\n/g;
                     const text = textNode.nodeValue;
-                    let counted = 1;
+                    let counted = 0;
                     let splitPos = 0;
                     while (counted < line) {
                         counted++;
@@ -702,7 +710,7 @@ export class CodeCell extends Cell {
                 };
 
                 // fold all but the first 5 and last 5 lines into an expandable thingy
-                const numHiddenLines = this.stdOutLines - 11;
+                const numHiddenLines = this.stdOutLines - (linesBefore + linesAfter) ;
                 if (!this.stdOutDetails || !this.stdOutDetails.parentNode) {
                     this.stdOutDetails = tag('details', [], {}, [
                         tag('summary', [], {}, [span([], '')])
@@ -710,7 +718,7 @@ export class CodeCell extends Cell {
 
                     // collapse into single node
                     this.stdOutEl.normalize();
-                    // split the existing text node into first 5 lines and the rest
+                    // split the existing text node into first `linesBefore` lines and the rest
                     let textNode = this.stdOutEl.childNodes[0];
                     if (!textNode) {
                         textNode = document.createTextNode(content);
@@ -719,15 +727,15 @@ export class CodeCell extends Cell {
                         // add the current content to the text node before folding
                         textNode.nodeValue += content;
                     }
-                    const hidden = splitAtLine(textNode, 6);
-                    const after = splitAtLine(hidden, numHiddenLines);
+                    const hidden = splitBeforeLine(textNode, linesBefore);
+                    const after = splitBeforeLine(hidden, numHiddenLines);
 
                     this.stdOutDetails.appendChild(hidden);
                     this.stdOutEl.insertBefore(this.stdOutDetails, after);
                 } else {
                     const textNode = this.stdOutDetails.nextSibling;
                     textNode.nodeValue += content;
-                    const after = splitAtLine(textNode, lines.length);
+                    const after = splitBeforeLine(textNode, numLines);
                     this.stdOutDetails.appendChild(textNode);
                     this.stdOutEl.appendChild(after);
                 }
