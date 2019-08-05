@@ -18,7 +18,7 @@ import coursier.params.ResolutionParams
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Repository, Resolution, Resolve}
 import polynote.config.{RepositoryConfig, ivy, maven}
 import polynote.kernel._
-import polynote.kernel.util.Publish
+import polynote.kernel.util.{Publish, newDaemonThreadPool}
 import polynote.messages.TinyString
 
 import scala.concurrent.ExecutionContext
@@ -27,7 +27,7 @@ import scala.concurrent.ExecutionContext
 // Fetches only Scala dependencies
 class CoursierFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Publish[IO, KernelStatusUpdate]) extends ScalaDependencyFetcher {
 
-  protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
+  protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(newDaemonThreadPool("coursier"))
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))

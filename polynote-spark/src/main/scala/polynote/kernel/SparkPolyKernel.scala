@@ -136,7 +136,7 @@ class SparkPolyKernel(
   }
 
   override def init(): IO[Unit] = super.init() >> taskManager.runTaskIO("spark", "Spark session", "Starting Spark session...") {
-    taskInfo => IO(session).handleErrorWith(err => IO(logger.error(err)(err.getMessage)) *> IO.raiseError(err)) >> info.flatMap { update =>
+    taskInfo => IO(session).handleErrorWith(err => IO(logger.error(err)(err.getMessage)) >> IO.raiseError(err)) >> info.flatMap { update =>
       update.map(statusUpdates.publish1).getOrElse(IO.unit)
     }
   }
@@ -152,9 +152,9 @@ class SparkPolyKernel(
     sparkKI.map2(superKI)((spk, sup) => spk.combine(sup)).orElse(sparkKI).orElse(superKI).value
   }
 
-  override def cancelTasks(): IO[Unit] = super.cancelTasks() *> IO(DAGSchedulerThief(session).cancelAllJobs())
+  override def cancelTasks(): IO[Unit] = super.cancelTasks() >> IO(DAGSchedulerThief(session).cancelAllJobs())
 
-  override def shutdown(): IO[Unit] = super.shutdown() *> contextShift.evalOn(ctx.executionContext)(IO(session.stop()))
+  override def shutdown(): IO[Unit] = super.shutdown() >> cancelTasks() >> contextShift.evalOn(ctx.executionContext)(IO(session.stop())) >> IO(logger.info("Stopped spark session"))
 }
 
 object SparkPolyKernel {

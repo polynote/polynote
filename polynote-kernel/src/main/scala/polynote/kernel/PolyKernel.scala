@@ -43,7 +43,7 @@ class PolyKernel private[kernel] (
 
   protected val logger: PolyLogger = new PolyLogger
 
-  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutorService(Executors.newCachedThreadPool()))
+  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
 
   private val launchingInterpreter = Semaphore[IO](1).unsafeRunSync()
   private val interpreters = new ConcurrentHashMap[String, LanguageInterpreter[IO]]()

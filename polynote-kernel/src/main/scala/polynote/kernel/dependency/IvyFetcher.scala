@@ -24,14 +24,14 @@ import org.apache.ivy.plugins.resolver.util.ResolvedResource
 import org.apache.ivy.plugins.resolver.{CacheResolver, ChainResolver, IBiblioResolver, URLResolver}
 import org.apache.ivy.util.filter.{Filter => IvyFilter}
 import polynote.config.{PolyLogger, RepositoryConfig, ivy, maven}
-import polynote.kernel.util.Publish
+import polynote.kernel.util.{Publish, newDaemonThreadPool}
 import polynote.kernel.{KernelStatusUpdate, TaskInfo, TaskStatus, UpdatedTasks}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
 class IvyFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdates: Publish[IO, KernelStatusUpdate]) extends ScalaDependencyFetcher {
-  protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
+  protected implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(newDaemonThreadPool("ivy"))
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
 
   private val logger = new PolyLogger
