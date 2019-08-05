@@ -76,7 +76,9 @@ class SparkKernelFactory(implicit
     statusUpdates: Publish[IO, KernelStatusUpdate],
     polynoteConfig: PolynoteConfig
   ): IO[KernelAPI[IO]] = if (polynoteConfig.spark.get("polynote.kernel.remote") contains "true") {
-    new SparkRemoteKernelFactory(new SocketTransport).launchKernel(getNotebook, statusUpdates, polynoteConfig)
+    new SparkRemoteKernelFactory(
+      new SocketTransport(forceServerAddress = polynoteConfig.spark.get("polynote.kernel.forceRemoteAddress"))
+    ).launchKernel(getNotebook, statusUpdates, polynoteConfig)
   } else {
     super.launchKernel(getNotebook, statusUpdates, polynoteConfig)
   }

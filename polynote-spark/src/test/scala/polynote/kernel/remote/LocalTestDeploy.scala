@@ -1,9 +1,10 @@
 package polynote.kernel.remote
 import java.net.InetSocketAddress
+import java.util.concurrent.TimeUnit
 
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.effect.{ContextShift, ExitCode, IO, Timer}
-import cats.syntax.apply._
+import cats.syntax.flatMap._
 import polynote.config.PolynoteConfig
 import polynote.messages.NotebookConfig
 import polynote.server.KernelFactory
@@ -22,6 +23,6 @@ class LocalTestProcess(client: RemoteSparkKernelClient)(implicit contextShift: C
   private val fiber = client.run().flatMap(code => exitCode.set(Some(code))).start.unsafeRunSync()
 
   override def exitStatus: IO[Option[Int]] = exitCode.get.map(_.map(_.code))
-
-  override def kill(): IO[Unit] = client.shutdown() *> fiber.join
+  override def awaitExit(timeout: Long, timeUnit: TimeUnit): IO[Option[Int]] = exitStatus
+  override def kill(): IO[Unit] = client.shutdown() >> fiber.join
 }

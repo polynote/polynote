@@ -143,13 +143,13 @@ class RemoteSparkKernel(
   } yield ()
 
   def shutdown(): IO[Unit] =
-    initialize.tryCancel() *>
-      (IO(logger.info("Shutting down remote kernel")) *>
-        request1[UnitResponse](Shutdown(_)) *>
+    initialize.tryCancel() >>
+      (IO(logger.info("Shutting down remote kernel")) >>
+        request1[UnitResponse](Shutdown(_)) >>
         IO(logger.info("Remote kernel notified of shutdown"))).guarantee(
-          cancelRequests() *>
-          shutdownSignal.complete *>
-          transport.close() *>
+          cancelRequests() >>
+          shutdownSignal.complete >>
+          transport.close() >>
           IO(logger.info("Kernel server stopped")))
 
   def startInterpreterFor(cell: CellID): IO[Stream[IO, Result]] = for {

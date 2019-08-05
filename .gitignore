@@ -10,3 +10,7 @@ libjep.dylib
 scripts/dist-config.yml
 *.zip
 tmp/
+config.yml
+metastore_db
+*.log
+tmp

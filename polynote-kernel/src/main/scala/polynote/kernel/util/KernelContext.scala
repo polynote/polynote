@@ -39,13 +39,7 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
 
   val runtimeTools: ToolBox[ru.type] = runtimeMirror.mkToolBox()
 
-  val executor: ExecutorService = Executors.newCachedThreadPool(new ThreadFactory {
-    def newThread(r: Runnable): Thread = {
-      val thread = new Thread(r)
-      thread.setContextClassLoader(classLoader)
-      thread
-    }
-  })
+  val executor: ExecutorService = newDaemonThreadPool("kernel", Some(classLoader))
 
   val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
 

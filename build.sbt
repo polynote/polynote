@@ -1,6 +1,7 @@
 name := "polynote"
 
 lazy val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
+lazy val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
 
 val versions = new {
   val http4s     = "0.20.6"
@@ -12,6 +13,8 @@ val versions = new {
   val spark      = "2.1.1"
 }
 
+def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
+
 val commonSettings = Seq(
   version := "0.1.20-SNAPSHOT",
   scalaVersion := "2.11.11",
@@ -21,7 +24,7 @@ val commonSettings = Seq(
     "-unchecked"
   ),
   fork in Test := true,
-  javaOptions in Test += s"-Djava.library.path=${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}",
+  javaOptions in Test += s"-Djava.library.path=$nativeLibraryPath",
   libraryDependencies ++= Seq(
     "org.scalatest" %% "scalatest" % "3.0.5" % "test",
     "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
@@ -33,6 +36,7 @@ val commonSettings = Seq(
       val oldStrategy = (assemblyMergeStrategy in assembly).value
       oldStrategy(x)
   },
+  cancelable in Global := true,
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.7"),
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
@@ -140,7 +144,23 @@ lazy val `polynote-spark` = project.settings(
     )
   }.taskValue,
   fork in Test := true,
-  parallelExecution in Test := false
+  parallelExecution in Test := false,
+  mainClass in (runAssembly in Compile) := None,
+  test in assembly := {},
+  javaOptions in runAssembly := Seq(s"-Djava.library.path=$nativeLibraryPath"),
+  runAssembly := {
+    val assemblyJar = assembly.value
+    val mainClassName = (mainClass in runAssembly).value.getOrElse("polynote.server.SparkServer")
+    val log = streams.value.log
+    val deps = (dependencyClasspath in Compile).value.files
+    val scalaDeps = deps.filter(_.getName.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*")).toList
+    println(scalaDeps)
+    val fo = ForkOptions()
+      .withRunJVMOptions((javaOptions in runAssembly).value.toVector)
+      .withWorkingDirectory(baseDirectory.value.getParentFile)
+    val exit = new ForkRun(fo).fork(mainClassName, assemblyJar :: scalaDeps, Nil, log).exitValue()
+    log.info(s"Assembly run exited with $exit")
+  }
 ) dependsOn (`polynote-server` % "compile->compile;test->test", `polynote-spark-runtime`)
 
-val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`)
+lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`)

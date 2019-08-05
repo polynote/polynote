@@ -4,6 +4,7 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.{ServerSocketChannel, SocketChannel}
+import java.util.concurrent.TimeUnit
 
 import cats.data.OptionT
 import cats.effect.{ContextShift, Fiber, IO, Timer}
@@ -121,12 +122,10 @@ class SocketTransportServer(
         Stream.eval(IO(logger.info("Response stream terminated"))).drain
   }.onFinalize(closed.complete)
 
-  override def close(): IO[Unit] = closed.complete *> connection.cancel.flatMap {
-    _ => connectedChannel.get.flatMap {
-      case Left(_) => IO.unit
-      case Right(channel) => channel.close()
-    }
-  }
+  override def close(): IO[Unit] = closed.complete >> connection.cancel >> connectedChannel.get.flatMap {
+    case Left(_) => IO.unit
+    case Right(channel) => channel.close()
+  } >> process.awaitOrKill(30)
 
   override def isConnected: IO[Boolean] = connectedChannel.tryGet.map {
     case Some(Left(_)) | None => false
@@ -147,7 +146,7 @@ class SocketTransportClient(channel: FramedSocket)(implicit contextShift: Contex
 
   override val requests: Stream[IO, RemoteRequest] = requestStream.interruptWhen(shutdownSignal())
 
-  def close(): IO[Unit] = channel.close() *> shutdownSignal.complete
+  def close(): IO[Unit] = shutdownSignal.complete >> channel.close()
 }
 
 /**
@@ -201,7 +200,15 @@ object SocketTransport {
     */
   trait DeployedProcess {
     def exitStatus: IO[Option[Int]]
+    def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): IO[Option[Int]]
     def kill(): IO[Unit]
+    def awaitOrKill(gracePeriodSeconds: Long): IO[Unit] = awaitExit(gracePeriodSeconds, TimeUnit.SECONDS).flatMap {
+      case Some(status) => IO.unit
+      case None => kill() >> awaitExit(gracePeriodSeconds, TimeUnit.SECONDS).flatMap {
+        case Some(status) => IO.unit
+        case None => IO.raiseError(new Exception("Unable to kill deployed process"))
+      }
+    }
   }
 
 
@@ -248,6 +255,14 @@ object SocketTransport {
     } yield if (alive) None else Option(process.exitValue())
 
     override def kill(): IO[Unit] = IO(process.destroy())
+
+    override def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): IO[Option[Int]] = IO {
+      if (process.waitFor(timeout, timeUnit)) {
+        Some(process.exitValue())
+      } else {
+        None
+      }
+    }
   }
 
   /**
