@@ -46,7 +46,7 @@ class IOKernelFactory(implicit
     settings: Settings,
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
-  ): IO[PolyKernel] = IO.pure(PolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader, config))
+  ): IO[PolyKernel] = PolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, outputDir, parentClassLoader, config)
 
   override def launchKernel(getNotebook: () => IO[Notebook], statusUpdates: Publish[IO, KernelStatusUpdate], polynoteConfig: PolynoteConfig): IO[KernelAPI[IO]] = for {
     notebook <- getNotebook()

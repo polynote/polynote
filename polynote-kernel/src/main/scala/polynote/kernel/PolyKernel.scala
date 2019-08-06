@@ -38,14 +38,13 @@ class PolyKernel private[kernel] (
   dependencyProviders: Map[String, DependencyProvider],
   val statusUpdates: Publish[IO, KernelStatusUpdate],
   availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
-  config: PolynoteConfig
+  launchingInterpreter: Semaphore[IO],
+  config: PolynoteConfig)(implicit
+  contextShift: ContextShift[IO]
 ) extends KernelAPI[IO] {
 
   protected val logger: PolyLogger = new PolyLogger
 
-  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
-
-  private val launchingInterpreter = Semaphore[IO](1).unsafeRunSync()
   private val interpreters = new ConcurrentHashMap[String, LanguageInterpreter[IO]]()
 
   private val clock: Clock[IO] = Clock.create
@@ -339,18 +338,22 @@ object PolyKernel {
     baseSettings: Settings = defaultBaseSettings,
     outputDir: AbstractFile = defaultOutputDir,
     parentClassLoader: ClassLoader = defaultParentClassLoader,
-    config: PolynoteConfig
-  ): PolyKernel = {
+    config: PolynoteConfig)(implicit
+    contextShift: ContextShift[IO]
+  ): IO[PolyKernel] = {
 
     val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath, outputDir, parentClassLoader)
 
-    new PolyKernel(
+    for {
+      launchingKernel <- Semaphore[IO](1)
+    } yield new PolyKernel(
       getNotebook,
       kernelContext,
       outputDir,
       dependencies,
       statusUpdates,
       availableInterpreters,
+      launchingKernel,
       config
     )
   }
