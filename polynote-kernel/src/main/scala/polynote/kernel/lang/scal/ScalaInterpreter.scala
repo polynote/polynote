@@ -190,7 +190,7 @@ class ScalaInterpreter(
 
                     case Val(accessor) =>
                       // if the decl is a val, evaluate it and push it to the symbol table
-                      val name = accessor.decodedName.toString
+                      val name = accessor.encodedName.toString
                       val tpe = global.exitingTyper(accessor.info.resultType)
 
                       // invoke the accessor for its side effect(s), even if it returns Unit
