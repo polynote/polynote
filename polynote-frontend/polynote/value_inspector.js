@@ -62,8 +62,12 @@ class ValueInspector extends Modal {
                         const repr = new StreamingDataRepr(handle, dataType, knownSize);
                         if (dataType instanceof StructType) {
                             tabs['Schema'] = div(['schema-display'], [displayData(schemaToObject(dataType), false, true)]);
-                            tabs['Plot data'] = new PlotEditor(repr, notebookPath, resultValue.name, resultValue.sourceCell).setEventParent(this).container;
-                            tabs['View data'] = new TableView(repr, notebookPath).el;
+                            try {
+                                tabs['Plot data'] = new PlotEditor(repr, notebookPath, resultValue.name, resultValue.sourceCell).setEventParent(this).container;
+                                tabs['View data'] = new TableView(repr, notebookPath).el;
+                            } catch(err) {
+                                console.log(err);
+                            }
                         }
                     });
                 return tabs;
