@@ -13,6 +13,7 @@ import cats.syntax.flatMap._
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.thief.DAGSchedulerThief
+import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyProvider
@@ -103,7 +104,7 @@ class SparkPolyKernel(
     }
     conf.setJars(dependencyJars.map(_.toString))
     conf.set("spark.repl.class.outputDir", outputPath.toString)
-    conf.setAppName("Polynote session")
+    conf.setAppName(s"Polynote ${BuildInfo.version} session")
 
     // TODO: experimental
     //    conf.set("spark.driver.userClassPathFirst", "true")
