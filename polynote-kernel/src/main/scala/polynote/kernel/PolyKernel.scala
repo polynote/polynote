@@ -342,7 +342,7 @@ object PolyKernel {
     config: PolynoteConfig
   ): PolyKernel = {
 
-    val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath, outputDir, parentClassLoader)
+    val kernelContext = KernelContext(config, dependencies, statusUpdates, baseSettings, extraClassPath, outputDir, parentClassLoader)
 
     new PolyKernel(
       getNotebook,
