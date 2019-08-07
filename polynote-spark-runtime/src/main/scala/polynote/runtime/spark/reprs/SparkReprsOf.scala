@@ -4,8 +4,7 @@ import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.{types => sparkTypes}
+import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
 import org.apache.spark.storage.StorageLevel
@@ -13,7 +12,15 @@ import polynote.runtime._
 
 trait SparkReprsOf[A] extends ReprsOf[A]
 
-object SparkReprsOf {
+private[reprs] sealed trait LowPrioritySparkReprsOf { self: SparkReprsOf.type =>
+
+  implicit def dataset[T]: SparkReprsOf[Dataset[T]]= instance {
+    ds => dataFrame(ds.toDF())
+  }
+  
+}
+
+object SparkReprsOf extends LowPrioritySparkReprsOf {
   
   private def dataTypeAndEncoder(dataType: sparkTypes.DataType): Option[(DataType, DataOutput => SpecializedGetters => Int => Unit)] = Option(dataType).collect {
     case sparkTypes.ByteType    => ByteType -> (out => row => index => DataEncoder.byte.encode(out, row.getByte(index)))

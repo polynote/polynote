@@ -6,7 +6,9 @@ import {
 } from './codec.js'
 import {Result} from "./result";
 
-export class DataType {}
+export class DataType {
+    name() { return this.constructor.name; }
+}
 DataType.delegatedCodec = {
     // Need to make a delegator here, because DataType.codec doesn't exist yet and forms recursive knots with i.e. StructField.
     // This defers evaluating DataType.codec, tying the knot
@@ -63,6 +65,8 @@ export class StructType extends DataType {
         return [inst.fields];
     }
 
+    name() { return StructType.name(this); }
+
     constructor(fields) {
         super(fields);
         this.fields = fields;
@@ -87,6 +91,8 @@ export class OptionalType extends DataType {
         return [inst.element];
     }
 
+    name() { return OptionalType.name(this); }
+
     constructor(element) {
         super(element);
         this.element = element;
@@ -109,6 +115,8 @@ export class ArrayType extends DataType {
     static unapply(inst) {
         return [inst.element];
     }
+
+    name() { return ArrayType.name(this); }
 
     constructor(element) {
         super(element);
@@ -138,6 +146,8 @@ export class MapType extends DataType {
     static unapply(inst) {
         return [inst.element];
     }
+
+    name() { return MapType.name(this); }
 
     constructor(element) {
         super(element);
