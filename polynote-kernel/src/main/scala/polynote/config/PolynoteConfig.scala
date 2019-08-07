@@ -25,13 +25,23 @@ object Storage {
   implicit val decoder: Decoder[Storage] = deriveDecoder
 }
 
+final case class Behavior(
+  dependencyIsolation: Boolean = true
+)
+
+object Behavior {
+  implicit val encoder: ObjectEncoder[Behavior] = deriveEncoder
+  implicit val decoder: Decoder[Behavior] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   storage: Storage = Storage(),
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,
-  spark: Map[String, String] = Map.empty
+  spark: Map[String, String] = Map.empty,
+  behavior: Behavior = Behavior()
 )
 
 

@@ -338,7 +338,7 @@ object PolyKernel {
     contextShift: ContextShift[IO]
   ): IO[PolyKernel] = {
 
-    val kernelContext = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath, outputDir, parentClassLoader)
+    val kernelContext = KernelContext(config, dependencies, statusUpdates, baseSettings, extraClassPath, outputDir, parentClassLoader)
 
     for {
       launchingKernel <- Semaphore[IO](1)

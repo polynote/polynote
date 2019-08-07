@@ -182,7 +182,7 @@ object SparkPolyKernel {
         .view
         .map(new File(_))
         .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
-    kernelContext         = KernelContext(dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
+    kernelContext         = KernelContext(config, dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
     launchingInterpreter <- Semaphore[IO](1)
     taskManager          <- TaskManager(statusUpdates)
   } yield new SparkPolyKernel(
