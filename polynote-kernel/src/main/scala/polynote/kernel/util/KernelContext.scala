@@ -197,38 +197,15 @@ object KernelContext {
   def defaultOutputDir: AbstractFile = new VirtualDirectory("(memory)", None)
   def defaultParentClassLoader: ClassLoader = getClass.getClassLoader
 
-  def genNotebookClassLoader(
-    dependencies: Map[String, List[(String, File)]],
-    extraClassPath: List[File],
-    outputDir: AbstractFile,
-    parentClassLoader: ClassLoader
-  ): AbstractFileClassLoader = {
-
-    def dependencyClassPath: Seq[URL] = dependencies.toSeq.flatMap(_._2).collect {
-      case (_, file) if (file.getName endsWith ".jar") && file.exists() => file.toURI.toURL
-    }
-
-    /**
-      * The class loader which loads the dependencies
-      */
-    val dependencyClassLoader: URLClassLoader = new LimitedSharingClassLoader(
-      "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j)\\.",
-      dependencyClassPath,
-      parentClassLoader)
-
-    /**
-      * The class loader which loads the JVM-based notebook cell classes
-      */
-    new AbstractFileClassLoader(outputDir, dependencyClassLoader)
-  }
-
   def default(
+    config: PolynoteConfig,
     dependencies: Map[String, DependencyProvider],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     extraClassPath: List[File]
-  ): KernelContext = apply(dependencies, statusUpdates, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader)
+  ): KernelContext = apply(config, dependencies, statusUpdates, defaultBaseSettings, extraClassPath, defaultOutputDir, defaultParentClassLoader)
 
   def apply(
+    config: PolynoteConfig,
     dependencyProviders: Map[String, DependencyProvider],
     statusUpdates: Publish[IO, KernelStatusUpdate],
     baseSettings: Settings,
@@ -277,7 +254,7 @@ object KernelContext {
 
     val notebookClassLoader = dependencyProviders.get("scala")
       .flatMap(_.as[ClassLoaderDependencyProvider].toOption)
-      .map(_.genNotebookClassLoader(extraClassPath, outputDir, parentClassLoader))
+      .map(_.genNotebookClassLoader(config, extraClassPath, outputDir, parentClassLoader))
       .getOrElse(throw new IllegalArgumentException(s"Couldn't find `scala` dependency provider! Available providers: $dependencyProviders"))
 
     KernelContext(global, classPath, notebookClassLoader)

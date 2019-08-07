@@ -13,6 +13,7 @@ import cats.syntax.apply._
 import cats.syntax.either._
 import fs2.Stream
 import fs2.concurrent.Topic
+import polynote.config.PolynoteConfig
 import polynote.kernel._
 import polynote.kernel.dependency.{ClassLoaderDependencyProvider, DependencyManager, DependencyProvider}
 import polynote.kernel.lang.python.{PythonInterpreter, VirtualEnvDependencyProvider, VirtualEnvManager}
@@ -54,10 +55,14 @@ trait KernelSpec {
       (_, vars, output, displayed) => IO(assertion(vars, output, displayed))
     }
 
-  def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(Map(
-    "scala" -> new MockCLDepProvider,
-    "python" -> MockVenvDepProvider(updates)
-  ), updates, Nil)
+  def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = KernelContext.default(
+    PolynoteConfig(),
+    Map(
+      "scala" -> new MockCLDepProvider,
+      "python" -> MockVenvDepProvider(updates)
+    ),
+    updates,
+    Nil)
 
   // TODO: for unit tests we'd ideally want to hook directly to runCode without needing all this!
   def assertOutputWith[K <: LanguageInterpreter[IO]](mkInterp: (KernelContext, Topic[IO, KernelStatusUpdate]) => K, code: Seq[String])(assertion: (K, Map[String, Any], Seq[Result], Seq[(String, String)]) => IO[Unit]): Unit = {

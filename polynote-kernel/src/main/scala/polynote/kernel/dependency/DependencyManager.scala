@@ -3,7 +3,7 @@ package polynote.kernel.dependency
 import java.io.File
 import java.net.{URL, URLClassLoader}
 
-import polynote.config.RepositoryConfig
+import polynote.config.{PolynoteConfig, RepositoryConfig}
 import polynote.kernel.util.{LimitedSharingClassLoader, Publish}
 import polynote.kernel.{KernelStatusUpdate, TaskInfo}
 
@@ -64,6 +64,7 @@ trait DependencyProvider {
 class ClassLoaderDependencyProvider(val dependencies: List[(String, File)]) extends DependencyProvider {
 
   def genNotebookClassLoader(
+    config: PolynoteConfig,
     extraClassPath: List[File],
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
@@ -76,10 +77,14 @@ class ClassLoaderDependencyProvider(val dependencies: List[(String, File)]) exte
     /**
       * The class loader which loads the dependencies
       */
-    val dependencyClassLoader: URLClassLoader = new LimitedSharingClassLoader(
-      "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j)\\.",
-      dependencyClassPath,
-      parentClassLoader)
+    val dependencyClassLoader: URLClassLoader = if (config.behavior.dependencyIsolation) {
+      new LimitedSharingClassLoader(
+        "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j)\\.",
+        dependencyClassPath,
+        parentClassLoader)
+    } else {
+      new scala.reflect.internal.util.ScalaClassLoader.URLClassLoader(dependencyClassPath, parentClassLoader)
+    }
 
     /**
       * The class loader which loads the JVM-based notebook cell classes
