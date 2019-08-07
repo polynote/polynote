@@ -24,15 +24,14 @@ import scala.reflect.runtime
 import scala.tools.reflect.ToolBox
 
 class ScalaInterpreter(
-  val kernelContext: KernelContext
+  val kernelContext: KernelContext,
+  interpreterLock: Semaphore[IO]
 ) extends LanguageInterpreter[IO] {
 
   import kernelContext.{global, runtimeMirror, runtimeTools, importFromRuntime, importToRuntime, formatType}
   private val logger = new PolyLogger
 
-  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
-
-  private val interpreterLock = Semaphore[IO](1).unsafeRunSync()
+  protected implicit val contextShift: ContextShift[IO] = kernelContext.contextShift
 
   protected val shutdownSignal = ReadySignal()
 
@@ -403,8 +402,10 @@ object ScalaInterpreter {
   class Factory() extends LanguageInterpreter.Factory[IO] {
     override def depManagerFactory: DependencyManagerFactory[IO] = CoursierFetcher.Factory
     override def languageName: String = "Scala"
-    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): ScalaInterpreter =
-      new ScalaInterpreter(kernelContext)
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider)(implicit contextShift: ContextShift[IO]): IO[ScalaInterpreter] =
+      for {
+        interpreterLock <- Semaphore[IO](1)
+      } yield new ScalaInterpreter(kernelContext, interpreterLock)
   }
 
   def factory(): LanguageInterpreter.Factory[IO] = new Factory()

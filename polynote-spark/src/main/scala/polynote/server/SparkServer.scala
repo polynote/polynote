@@ -69,7 +69,7 @@ class SparkKernelFactory(implicit
     settings: Settings,
     outputDir: AbstractFile,
     parentClassLoader: ClassLoader
-  ): IO[PolyKernel] = IO.pure(SparkPolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, parentClassLoader, config))
+  ): IO[PolyKernel] = SparkPolyKernel(getNotebook, deps, subKernels, statusUpdates, extraClassPath, settings, parentClassLoader, config)
 
   override def launchKernel(
     getNotebook: () => IO[Notebook],

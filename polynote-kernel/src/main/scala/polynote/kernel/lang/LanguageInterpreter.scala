@@ -3,7 +3,7 @@ package polynote.kernel.lang
 import java.io.File
 import java.util.ServiceLoader
 
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
 import fs2.Stream
 import fs2.concurrent.{Enqueue, Queue}
 import polynote.kernel._
@@ -65,7 +65,7 @@ object LanguageInterpreter {
   trait Factory[F[_]] {
     def depManagerFactory: DependencyManagerFactory[F]
     def languageName: String
-    def apply(kernelContext: KernelContext, dependencies: DependencyProvider): LanguageInterpreter[F]
+    def apply(kernelContext: KernelContext, dependencies: DependencyProvider)(implicit contextShift: ContextShift[F]): F[LanguageInterpreter[F]]
   }
 
   lazy val factories: Map[String, Factory[IO]] = ServiceLoader.load(classOf[LanguageInterpreterService]).iterator.asScala.toSeq

@@ -120,7 +120,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
     _               <- IO(logger.info(s" Version is ${BuildInfo.version}, built at ${new Date(BuildInfo.buildTime)}"))
     _               <- IO(logger.info(s" Running on $url"))
     repository       = createRepository(config)
-    notebookManager  = new IONotebookManager(config, repository, kernelFactory)
+    notebookManager <- IONotebookManager(config, repository, kernelFactory)
 
     exitCode        <- BlazeBuilder[IO]
                         .bindHttp(port, address)

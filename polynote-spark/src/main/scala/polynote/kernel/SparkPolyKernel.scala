@@ -6,8 +6,8 @@ import java.nio.file.{FileSystems, Files, Path, StandardCopyOption}
 import java.util.Collections
 
 import cats.data.OptionT
-import cats.effect.IO
-import cats.effect.concurrent.Deferred
+import cats.effect.{ContextShift, IO}
+import cats.effect.concurrent.{Deferred, Semaphore}
 import cats.syntax.apply._
 import cats.syntax.flatMap._
 import org.apache.spark.SparkEnv
@@ -17,7 +17,7 @@ import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyProvider
 import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.{KernelContext, Publish}
+import polynote.kernel.util.{KernelContext, Publish, TaskManager}
 import polynote.messages._
 
 import scala.reflect.io.{AbstractFile, Directory, PlainDirectory}
@@ -31,9 +31,12 @@ class SparkPolyKernel(
   statusUpdates: Publish[IO, KernelStatusUpdate],
   outputPath: Path,
   subKernels: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
+  launchingInterpreter: Semaphore[IO],
+  taskManager: TaskManager,
   parentClassLoader: ClassLoader,
-  config: PolynoteConfig
-) extends PolyKernel(getNotebook, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencyProviders, statusUpdates, subKernels, config) {
+  config: PolynoteConfig)(implicit
+  contextShift: ContextShift[IO]
+) extends PolyKernel(getNotebook, ctx, new PlainDirectory(new Directory(outputPath.toFile)), dependencyProviders, statusUpdates, subKernels, launchingInterpreter, taskManager, config) {
 
   import kernelContext.global
 
@@ -166,40 +169,34 @@ object SparkPolyKernel {
     extraClassPath: List[File] = Nil,
     baseSettings: Settings = defaultBaseSettings,
     parentClassLoader: ClassLoader = defaultParentClassLoader,
-    config: PolynoteConfig
-  ): SparkPolyKernel = {
+    config: PolynoteConfig)(implicit
+    contextShift: ContextShift[IO]
+  ): IO[SparkPolyKernel] = for {
+    notebook             <- getNotebook()
+    notebookFilename      = new File(notebook.path).getName
+    outputPath            = org.apache.spark.repl.Main.outputDir.toPath
+    _                     = outputPath.toFile.deleteOnExit()
+    outputDir             = new PlainDirectory(new Directory(outputPath.toFile))
+    sparkClasspath        = System.getProperty("java.class.path")
+        .split(File.pathSeparatorChar)
+        .view
+        .map(new File(_))
+        .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
+    kernelContext         = KernelContext(config, dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
+    launchingInterpreter <- Semaphore[IO](1)
+    taskManager          <- TaskManager(statusUpdates)
+  } yield new SparkPolyKernel(
+    getNotebook,
+    kernelContext,
+    dependencies,
+    statusUpdates,
+    outputPath,
+    subKernels,
+    launchingInterpreter,
+    taskManager,
+    parentClassLoader,
+    config
+  )
 
-    val notebookFilename = getNotebook().map {
-      nb => new File(nb.path).getName
-    }.unsafeRunSync()
-
-    val outputPath = org.apache.spark.repl.Main.outputDir.toPath
-    outputPath.toFile.deleteOnExit()
-
-    val outputDir = new PlainDirectory(new Directory(outputPath.toFile))
-
-    val sparkClasspath = System.getProperty("java.class.path")
-      .split(File.pathSeparatorChar)
-      .view
-      .map(new File(_))
-      .filter(file => io.AbstractFile.getURL(file.toURI.toURL) != null)
-
-    val kernelContext = KernelContext(config, dependencies, statusUpdates, baseSettings, extraClassPath ++ sparkClasspath, outputDir, parentClassLoader)
-
-    val kernel = new SparkPolyKernel(
-      getNotebook,
-      kernelContext,
-      dependencies,
-      statusUpdates,
-      outputPath,
-      subKernels,
-      parentClassLoader,
-      config
-    )
-
-    //global.extendCompilerClassPath(kernel.classPath: _*)
-
-    kernel
-  }
 
 }

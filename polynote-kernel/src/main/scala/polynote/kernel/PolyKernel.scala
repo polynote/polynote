@@ -38,24 +38,19 @@ class PolyKernel private[kernel] (
   dependencyProviders: Map[String, DependencyProvider],
   val statusUpdates: Publish[IO, KernelStatusUpdate],
   availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
-  config: PolynoteConfig
+  launchingInterpreter: Semaphore[IO],
+  taskManager: TaskManager,
+  config: PolynoteConfig)(implicit
+  protected val contextShift: ContextShift[IO]
 ) extends KernelAPI[IO] {
 
   protected val logger: PolyLogger = new PolyLogger
 
-  protected implicit val contextShift: ContextShift[IO] = IO.contextShift(kernelContext.executionContext)
-
-  private val launchingInterpreter = Semaphore[IO](1).unsafeRunSync()
   private val interpreters = new ConcurrentHashMap[String, LanguageInterpreter[IO]]()
 
   private val clock: Clock[IO] = Clock.create
 
   private val notebookContext = new NotebookContext
-
-  /**
-    * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
-    */
-  protected lazy val taskManager: TaskManager = TaskManager(statusUpdates).unsafeRunSync()
 
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
@@ -93,7 +88,7 @@ class PolyKernel private[kernel] (
             for {
               factory  <- IO.fromEither(Either.fromOption(availableInterpreters.get(language), new RuntimeException(s"No interpreter for language $language")))
               deps     <- IO.fromEither(Either.fromOption(dependencyProviders.get(language), new RuntimeException(s"No dependency providers for language $language")))
-              interp   <- taskManager.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(kernelContext, deps))
+              interp   <- taskManager.runTaskIO(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(kernelContext, deps))
               _         = interpreters.put(language, interp)
               results  <- runPredef(interp, language)
             } yield (interp, results)
@@ -339,18 +334,24 @@ object PolyKernel {
     baseSettings: Settings = defaultBaseSettings,
     outputDir: AbstractFile = defaultOutputDir,
     parentClassLoader: ClassLoader = defaultParentClassLoader,
-    config: PolynoteConfig
-  ): PolyKernel = {
+    config: PolynoteConfig)(implicit
+    contextShift: ContextShift[IO]
+  ): IO[PolyKernel] = {
 
     val kernelContext = KernelContext(config, dependencies, statusUpdates, baseSettings, extraClassPath, outputDir, parentClassLoader)
 
-    new PolyKernel(
+    for {
+      launchingKernel <- Semaphore[IO](1)
+      taskManager     <- TaskManager(statusUpdates)
+    } yield new PolyKernel(
       getNotebook,
       kernelContext,
       outputDir,
       dependencies,
       statusUpdates,
       availableInterpreters,
+      launchingKernel,
+      taskManager,
       config
     )
   }

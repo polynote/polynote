@@ -570,8 +570,8 @@ object PythonInterpreter {
   class Factory extends LanguageInterpreter.Factory[IO] {
     override def depManagerFactory: DependencyManagerFactory[IO] = VirtualEnvManager.Factory
     override def languageName: String = "Python"
-    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): PythonInterpreter =
-      new PythonInterpreter(kernelContext, dependencies)
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider)(implicit contextShift: ContextShift[IO]): IO[PythonInterpreter] =
+      IO.pure(new PythonInterpreter(kernelContext, dependencies))
   }
 
   def factory(): Factory = new Factory()

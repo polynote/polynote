@@ -79,30 +79,16 @@ trait TransportClient {
 class SocketTransportServer(
   server: ServerSocketChannel,
   config: PolynoteConfig,
-  process: SocketTransport.DeployedProcess)(implicit
+  process: SocketTransport.DeployedProcess,
+  connectedChannel: TryableDeferred[IO, Either[Throwable, FramedSocket]],
+  connectFiber: Fiber[IO, FramedSocket])(implicit
   contextShift: ContextShift[IO],
   timer: Timer[IO]
 ) extends TransportServer {
 
   private val logger = new PolyLogger
 
-  private val connectedChannel: TryableDeferred[IO, Either[Throwable, FramedSocket]] =
-    Deferred.tryable[IO, Either[Throwable, FramedSocket]].unsafeRunSync()
-
   private val closed = ReadySignal()
-
-  Stream.awakeEvery[IO](Duration(1, SECONDS)).evalMap(_ => process.exitStatus)
-    .interruptWhen(connected.attempt)
-    .evalMap {
-      case Some(exitValue) if exitValue != 0 => connectedChannel.complete(Left(new RuntimeException("Remote kernel process died unexpectedly")))
-      case _  => IO.unit
-    }.compile.drain.unsafeRunAsyncAndForget()
-
-  private val connection: Fiber[IO, FramedSocket] = IO(server.accept()).flatMap {
-    channel =>
-      val framed = new FramedSocket(channel)
-      connectedChannel.complete(Right(framed)).as(framed)
-  }.start.unsafeRunSync()
 
   override def sendRequest(req: RemoteRequest): IO[Unit] = for {
     channel <- connectedChannel.get.flatMap(IO.fromEither)
@@ -122,7 +108,7 @@ class SocketTransportServer(
         Stream.eval(IO(logger.info("Response stream terminated"))).drain
   }.onFinalize(closed.complete)
 
-  override def close(): IO[Unit] = closed.complete >> connection.cancel >> connectedChannel.get.flatMap {
+  override def close(): IO[Unit] = closed.complete >> connectFiber.cancel >> connectedChannel.get.flatMap {
     case Left(_) => IO.unit
     case Right(channel) => channel.close()
   } >> process.awaitOrKill(30)
@@ -168,16 +154,37 @@ class SocketTransport(
         forceServerAddress.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress), 0))
   }
 
+  private def startConnection(
+    server: ServerSocketChannel,
+    connected: TryableDeferred[IO, Either[Throwable, FramedSocket]])(implicit
+    contextShift: ContextShift[IO]
+  ): IO[FramedSocket] = {
+    for {
+      channel <- IO(server.accept())
+      framed  <- FramedSocket(channel, keepalive = true)
+      _       <- connected.complete(Right(framed))
+    } yield framed
+  }
+
   def serve(config: PolynoteConfig, notebook: Notebook)(implicit contextShift: ContextShift[IO]): IO[TransportServer] = for {
-    socketServer <- openServerChannel
-    serverAddress = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
-    process      <- deploy.deployKernel(this, config, notebook.config.getOrElse(NotebookConfig.empty), serverAddress)
-  } yield new SocketTransportServer(socketServer, config, process)
+    socketServer     <- openServerChannel
+    serverAddress     = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
+    process          <- deploy.deployKernel(this, config, notebook.config.getOrElse(NotebookConfig.empty), serverAddress)
+    connectedChannel <- Deferred.tryable[IO, Either[Throwable, FramedSocket]]
+    connectFiber     <- startConnection(socketServer, connectedChannel).start
+    _                <- Stream.awakeEvery[IO](Duration(1, SECONDS)).evalMap(_ => process.exitStatus)
+      .interruptWhen(connectedChannel.get.flatMap(IO.fromEither).as(()).attempt)
+      .evalMap {
+        case Some(exitValue) if exitValue != 0 => connectedChannel.complete(Left(new RuntimeException("Remote kernel process died unexpectedly")))
+        case _  => IO.unit
+      }.compile.drain.start
+  } yield new SocketTransportServer(socketServer, config, process, connectedChannel, connectFiber)
 
   def connect(serverAddress: InetSocketAddress)(implicit contextShift: ContextShift[IO]): IO[TransportClient] = for {
     channel <- IO(SocketChannel.open(serverAddress))
     _       <- IO(logger.info(s"Connected to $serverAddress"))
-  } yield new SocketTransportClient(new FramedSocket(channel))
+    framed  <- FramedSocket(channel, keepalive = true)
+  } yield new SocketTransportClient(framed)
 }
 
 object SocketTransport {
@@ -276,19 +283,13 @@ object SocketTransport {
     */
   // TODO: Maybe fs2.io.tcp.Socket methods could be made to work, just seems over-complicated for single-client server?
   // TODO: If this introduces allocation/GC latency, could try to use a shared, reused buffer
-  class FramedSocket(socketChannel: SocketChannel, keepalive: Boolean = true)(implicit contextShift: ContextShift[IO], timer: Timer[IO]) {
-    private val completed = ReadySignal()
+  class FramedSocket(
+    socketChannel: SocketChannel,
+    completed: ReadySignal
+  )(implicit contextShift: ContextShift[IO]) {
     private val incomingLengthBuffer = ByteBuffer.allocate(4)
     private val outgoingLengthBuffer = ByteBuffer.allocate(4)
 
-    // send 0-length frames to keep connection alive
-    if (keepalive) {
-      Stream.awakeEvery[IO](Duration(5, SECONDS)).evalMap(_ => write(BitVector.empty))
-        .interruptWhen(completed())
-        .compile
-        .drain
-        .unsafeRunAsyncAndForget()
-    }
 
     private def read(): Option[ByteBuffer] = incomingLengthBuffer.synchronized {
       incomingLengthBuffer.rewind()
@@ -337,5 +338,21 @@ object SocketTransport {
       Stream.repeatEval(IO(read())).unNone
         .map(BitVector.view)
         .interruptWhen(completed())
+  }
+
+  object FramedSocket {
+    def apply(socketChannel: SocketChannel, keepalive: Boolean = true)(implicit contextShift: ContextShift[IO], timer: Timer[IO]): IO[FramedSocket] = {
+      val completed = ReadySignal()
+      // send 0-length frames to keep connection alive
+      for {
+        framedSocket <- IO.pure(new FramedSocket(socketChannel, completed))
+        doKeepalive  <- if (keepalive) {
+          Stream.awakeEvery[IO](Duration(5, SECONDS)).evalMap(_ => framedSocket.write(BitVector.empty))
+            .interruptWhen(completed())
+            .compile
+            .drain.start
+        } else IO.unit
+      } yield framedSocket
+    }
   }
 }

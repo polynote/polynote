@@ -185,8 +185,8 @@ object SparkSqlInterpreter {
   class Factory extends LanguageInterpreter.Factory[IO] {
     override def depManagerFactory: DependencyManagerFactory[IO] = CoursierFetcher.Factory
     override def languageName: String = "SQL"
-    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): LanguageInterpreter[IO] =
-      new SparkSqlInterpreter(kernelContext)
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider)(implicit contextShift: ContextShift[IO]): IO[SparkSqlInterpreter] =
+      IO.pure(new SparkSqlInterpreter(kernelContext))
   }
 
   def factory(): Factory = new Factory

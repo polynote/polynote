@@ -26,14 +26,14 @@ import scala.collection.JavaConverters._
 
 class SocketSession(
   notebookManager: NotebookManager[IO],
-  oq: Queue[IO, Message])(implicit
+  oq: Queue[IO, Message],
+  loadingNotebook: Semaphore[IO])(implicit
   contextShift: ContextShift[IO],
   timer: Timer[IO]
 ) {
 
   private val name: String = "Anonymous"  // TODO
   private[this] val logger = new PolyLogger
-  private val loadingNotebook = Semaphore[IO](1).unsafeRunSync()
   private val notebooks = new ConcurrentHashMap[String, NotebookRef[IO]]()
 
   private def toFrame(message: Message) = {
@@ -277,9 +277,10 @@ object SocketSession {
     notebookManager: NotebookManager[IO])(implicit
     contextShift: ContextShift[IO],
     timer: Timer[IO]
-  ): IO[SocketSession] = Queue.unbounded[IO, Message].map {
-    oq => new SocketSession(notebookManager, oq)
-  }
+  ): IO[SocketSession] = for {
+    oq              <- Queue.unbounded[IO, Message]
+    loadingNotebook <- Semaphore[IO](1)
+  } yield new SocketSession(notebookManager, oq, loadingNotebook)
 
 }
 

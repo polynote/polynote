@@ -37,13 +37,13 @@ trait KernelSpec {
   }
 
   def assertPythonOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
-    assertOutputWith((kernelContext: KernelContext, updates) => PythonInterpreter.factory()(kernelContext, MockVenvDepProvider(updates)), code) {
+    assertOutputWith((kernelContext: KernelContext, updates) => PythonInterpreter.factory()(kernelContext, MockVenvDepProvider(updates)).unsafeRunSync(), code) {
       (interp, vars, output, displayed) => interp.withJep(assertion(vars, output, displayed))
     }
   }
 
   def assertScalaOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
-    assertOutput((kernelContext: KernelContext, _) => ScalaInterpreter.factory()(kernelContext, new MockCLDepProvider), code)(assertion)
+    assertOutput((kernelContext: KernelContext, _) => ScalaInterpreter.factory()(kernelContext, new MockCLDepProvider).unsafeRunSync(), code)(assertion)
   }
 
   def assertScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
