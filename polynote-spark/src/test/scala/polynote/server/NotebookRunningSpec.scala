@@ -25,7 +25,7 @@ class NotebookRunningSpec extends FreeSpec with Matchers  {
   val nbManager = {
     val config = PolynoteConfig()
     val repository       = new IPythonNotebookRepository(Paths.get(getClass.getClassLoader.getResource(s"fixtures/notebooks/").toURI), config, executionContext = executionContext)
-    new IONotebookManager(config, repository, SparkServer.kernelFactory)
+    IONotebookManager(config, repository, SparkServer.kernelFactory).unsafeRunSync()
   }
 
   "test.ipynb should run properly" in {

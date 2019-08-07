@@ -1,6 +1,6 @@
 package polynote.kernel.lang.python
 
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
 import cats.implicits._
 import org.apache.spark.sql.SparkSession
 import polynote.kernel.dependency.{DependencyManagerFactory, DependencyProvider}
@@ -123,8 +123,8 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
 object PySparkInterpreter {
   class Factory extends PythonInterpreter.Factory {
     override def depManagerFactory: DependencyManagerFactory[IO] = PySparkVirtualEnvManager.Factory
-    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): PythonInterpreter =
-      new PySparkInterpreter(kernelContext, dependencies)
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider)(implicit contextShift: ContextShift[IO]): IO[PythonInterpreter] =
+      IO.pure(new PySparkInterpreter(kernelContext, dependencies))
   }
 
   def factory(): Factory = new Factory

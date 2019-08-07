@@ -4,7 +4,7 @@ import java.io.File
 import java.net.URL
 import java.util.concurrent.{ExecutorService, Executors, ThreadFactory}
 
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
 import cats.syntax.either._
 import polynote.config.{PolyLogger, PolynoteConfig}
 import polynote.messages.truncateTinyString
@@ -43,8 +43,11 @@ final case class KernelContext(global: Global, classPath: List[File], classLoade
 
   val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
 
+  val contextShift: ContextShift[IO] = IO.contextShift(executionContext)
+
   object implicits {
     implicit val executionContext: ExecutionContext = KernelContext.this.executionContext
+    implicit val contextShift: ContextShift[IO] = KernelContext.this.contextShift
   }
 
   def inferType(value: Any): global.Type = {

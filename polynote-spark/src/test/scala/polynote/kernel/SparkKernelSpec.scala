@@ -13,14 +13,21 @@ trait SparkKernelSpec extends KernelSpec {
 
   override def getKernelContext(updates: Topic[IO, KernelStatusUpdate]): KernelContext = {
     // we use SparkKernel to get a KernelContext with a proper classpath and to properly set up the session
-    val sparkKernel = SparkPolyKernel(() => IO.pure(Notebook("foo", ShortList(Nil), None)), Map("scala" -> new MockCLDepProvider), Map("scala" -> interpFactory), updates, config = PolynoteConfig())
+    val sparkKernel = SparkPolyKernel(
+      () => IO.pure(Notebook("foo", ShortList(Nil), None)),
+      Map("scala" -> new MockCLDepProvider),
+      Map("scala" -> interpFactory),
+      updates,
+      config = PolynoteConfig()
+    ).unsafeRunSync()
+
     sparkKernel.init().unsafeRunSync() // make sure to init the spark session
     sparkKernel.kernelContext
   }
 
   def assertSparkScalaOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result], Seq[(String, String)]) => Unit): Unit = {
     assertOutput({ (kernelContext: KernelContext, updates: Topic[IO, KernelStatusUpdate]) =>
-      interpFactory(kernelContext, new MockCLDepProvider)
+      interpFactory(kernelContext, new MockCLDepProvider).unsafeRunSync()
     }, code)(assertion)
   }
 

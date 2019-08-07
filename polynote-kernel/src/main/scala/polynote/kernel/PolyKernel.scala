@@ -39,8 +39,9 @@ class PolyKernel private[kernel] (
   val statusUpdates: Publish[IO, KernelStatusUpdate],
   availableInterpreters: Map[String, LanguageInterpreter.Factory[IO]] = Map.empty,
   launchingInterpreter: Semaphore[IO],
+  taskManager: TaskManager,
   config: PolynoteConfig)(implicit
-  contextShift: ContextShift[IO]
+  protected val contextShift: ContextShift[IO]
 ) extends KernelAPI[IO] {
 
   protected val logger: PolyLogger = new PolyLogger
@@ -50,11 +51,6 @@ class PolyKernel private[kernel] (
   private val clock: Clock[IO] = Clock.create
 
   private val notebookContext = new NotebookContext
-
-  /**
-    * The task queue, which tracks currently running and queued kernel tasks (i.e. cells to run)
-    */
-  protected lazy val taskManager: TaskManager = TaskManager(statusUpdates).unsafeRunSync()
 
   private def runPredef(interp: LanguageInterpreter[IO], language: String): IO[Stream[IO, Result]] =
     interp.init() *> {
@@ -92,7 +88,7 @@ class PolyKernel private[kernel] (
             for {
               factory  <- IO.fromEither(Either.fromOption(availableInterpreters.get(language), new RuntimeException(s"No interpreter for language $language")))
               deps     <- IO.fromEither(Either.fromOption(dependencyProviders.get(language), new RuntimeException(s"No dependency providers for language $language")))
-              interp   <- taskManager.runTask(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(kernelContext, deps))
+              interp   <- taskManager.runTaskIO(s"Interpreter$$$language", s"Starting $language interpreter")(_ => factory.apply(kernelContext, deps))
               _         = interpreters.put(language, interp)
               results  <- runPredef(interp, language)
             } yield (interp, results)
@@ -346,6 +342,7 @@ object PolyKernel {
 
     for {
       launchingKernel <- Semaphore[IO](1)
+      taskManager     <- TaskManager(statusUpdates)
     } yield new PolyKernel(
       getNotebook,
       kernelContext,
@@ -354,6 +351,7 @@ object PolyKernel {
       statusUpdates,
       availableInterpreters,
       launchingKernel,
+      taskManager,
       config
     )
   }

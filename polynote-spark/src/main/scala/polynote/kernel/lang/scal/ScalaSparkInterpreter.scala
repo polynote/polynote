@@ -3,12 +3,13 @@ package polynote.kernel.lang.scal
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
+import cats.effect.concurrent.Semaphore
 import polynote.kernel.dependency.{ClassLoaderDependencyProvider, CoursierFetcher, DependencyManagerFactory, DependencyProvider}
 import polynote.kernel.lang.LanguageInterpreter
 import polynote.kernel.util.{CellContext, KernelContext}
 
-class ScalaSparkInterpreter(ctx: KernelContext) extends ScalaInterpreter(ctx) {
+class ScalaSparkInterpreter(ctx: KernelContext, interpreterLock: Semaphore[IO]) extends ScalaInterpreter(ctx, interpreterLock) {
   import kernelContext.global
 
   // need a unique package, in case of a shared spark session
@@ -41,8 +42,11 @@ object ScalaSparkInterpreter {
   private def nextNotebookId = notebookCounter.getAndIncrement()
 
   class Factory extends ScalaInterpreter.Factory {
-    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider): ScalaInterpreter =
-      new ScalaSparkInterpreter(kernelContext)
+    override def apply(kernelContext: KernelContext, dependencies: DependencyProvider)(implicit contextShift: ContextShift[IO]): IO[ScalaInterpreter] = {
+      for {
+        interpreterLock <- Semaphore[IO](1)
+      } yield new ScalaSparkInterpreter(kernelContext, interpreterLock)
+    }
   }
 
   def factory(): LanguageInterpreter.Factory[IO] = new Factory

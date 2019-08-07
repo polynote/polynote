@@ -33,13 +33,13 @@ abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
 class IONotebookManager(
   config: PolynoteConfig,
   repository: NotebookRepository[IO],
-  kernelFactory: KernelFactory[IO])(implicit
+  kernelFactory: KernelFactory[IO],
+  loadingNotebook: Semaphore[IO])(implicit
   contextShift: ContextShift[IO]
 ) extends NotebookManager[IO] {
 
   private val writers = new ConcurrentHashMap[String, Fiber[IO, Unit]]
   private val notebooks = new ConcurrentHashMap[String, SharedNotebook[IO]]
-  private val loadingNotebook = Semaphore[IO](1).unsafeRunSync()
 
   protected val logger = new PolyLogger
 
@@ -78,4 +78,15 @@ class IONotebookManager(
 
   override def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): IO[String] =
     repository.createNotebook(path, maybeUriOrContent)
+}
+
+object IONotebookManager {
+  def apply(
+    config: PolynoteConfig,
+    repository: NotebookRepository[IO],
+    kernelFactory: KernelFactory[IO])(implicit
+    contextShift: ContextShift[IO]
+  ): IO[IONotebookManager] = for {
+    loadingNotebook <- Semaphore[IO](1)
+  } yield new IONotebookManager(config, repository, kernelFactory, loadingNotebook)
 }
