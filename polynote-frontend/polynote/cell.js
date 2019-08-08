@@ -164,39 +164,7 @@ export class Cell extends UIEventTarget {
 
         // TODO: some way to display the KeyMap to users
         // Map of Monaco KeyCode (an int) -> KeyAction
-        this.keyMap = new Map([
-            [monaco.KeyCode.UpArrow, new KeyAction((pos, range, selection, cell) => {
-                if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    cell.dispatchEvent(new AdvanceCellEvent(cell.id, true));
-                }
-            }).withDesc("Up arrow moves to previous cell")],
-            [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell) => {
-                if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
-                    cell.dispatchEvent(new AdvanceCellEvent(cell.id, false));
-                }
-            }).withDesc("Down arrow moves to next cell")],
-            [monaco.KeyMod.Shift | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
-                cell.dispatchEvent(new AdvanceCellEvent(cell.id));
-            }).withPreventDefault(true).withDesc("Move to next cell. If there is no next cell, create it.")],
-            [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
-                cell.dispatchEvent(new InsertCellEvent(cell.id));
-            }).withPreventDefault(true).withDesc("Insert a cell after this one.")],
-            [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown,
-                new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, false)))
-                    .withDesc("Move to next cell. If there is no next cell, create it.")],
-            [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp,
-                new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, true)))
-                    .withDesc("Move to previous cell. If there is no previous cell, create it.")],
-            [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A, // A for Above (from Zep)
-                new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id, true)))
-                    .withDesc("Insert cell above this cell.")],
-            [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B, // B for Below (from Zep)
-                new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id)))
-                    .withDesc("Insert a cell below this cell.")],
-            [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D, // D for Delete ;-) (from Zep)
-                new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new DeleteCellEvent(cell.id)))
-                    .withDesc("Delete this cell.")],
-        ])
+        this.keyMap = Cell.keyMap;
     }
 
     setDisabled(disabled) {
@@ -268,15 +236,6 @@ export class Cell extends UIEventTarget {
         this.metadata = metadata;
     }
 
-    addNewAction(key, newAction) {
-        const origAction = this.keyMap.get(key);
-        if (origAction) {
-            this.keyMap.set(key, origAction.runAfter(newAction));
-        } else {
-            this.keyMap.set(key, newAction);
-        }
-    }
-
     onKeyDown(evt) {
         let keybinding;
         if (evt instanceof StandardKeyboardEvent) {
@@ -329,6 +288,40 @@ export class Cell extends UIEventTarget {
         return ""
     }
 }
+
+Cell.keyMap = new Map([
+    [monaco.KeyCode.UpArrow, new KeyAction((pos, range, selection, cell) => {
+        if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
+            cell.dispatchEvent(new AdvanceCellEvent(cell.id, true));
+        }
+    })],
+    [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell) => {
+        if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
+            cell.dispatchEvent(new AdvanceCellEvent(cell.id, false));
+        }
+    })],
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
+        cell.dispatchEvent(new AdvanceCellEvent(cell.id));
+    }).withPreventDefault(true).withDesc("Move to next cell. If there is no next cell, create it.")],
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
+        cell.dispatchEvent(new InsertCellEvent(cell.id));
+    }).withPreventDefault(true).withDesc("Insert a cell after this one.")],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown,
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, false)))
+            .withDesc("Move to next cell. If there is no next cell, create it.")],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp,
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, true)))
+            .withDesc("Move to previous cell. If there is no previous cell, create it.")],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A, // A for Above (from Zep)
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id, true)))
+            .withDesc("Insert cell above this cell.")],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B, // B for Below (from Zep)
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id)))
+            .withDesc("Insert a cell below this cell.")],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D, // D for Delete (from Zep)
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new DeleteCellEvent(cell.id)))
+            .withDesc("Delete this cell.")],
+]);
 
 // TODO: it's a bit hacky to export this, should probably put this in some utils module
 export function errorDisplay(error, currentFile, maxDepth, nested) {
@@ -467,20 +460,7 @@ export class CodeCell extends Cell {
 
         this.editor.getModel().cellInstance = this;
 
-        // modification for vim mode
-        this.addNewAction(monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell) => {
-            if (this.vim && !this.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected
-                range.endColumn -= 1
-            }
-        }));
-
-        // run cell on enter
-        this.addNewAction(monaco.KeyMod.Shift | monaco.KeyCode.Enter, new KeyAction(() => {
-            this.dispatchEvent(new RunCellEvent(this.id));
-        }).withIgnoreWhenSuggesting(false).withDesc("Run this cell and move to next cell. If there is no next cell, create it."));
-        this.addNewAction(monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, new KeyAction(() => {
-            this.dispatchEvent(new RunCellEvent(this.id));
-        }).withIgnoreWhenSuggesting(false).withDesc("Run this cell and insert a new cell below it."));
+        this.keyMap = CodeCell.keyMap;
 
         // actually bind keydown
         this.editor.onKeyDown((evt) => this.onKeyDown(evt));
@@ -1040,6 +1020,40 @@ export class CodeCell extends Cell {
         return this.editor.getModel().getValueInRange(this.editor.getSelection())
     }
 }
+
+CodeCell.keyMapOverrides = new Map([
+    [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell) => {
+        if (cell.vim && !cell.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected
+            range.endColumn -= 1
+        }
+    })],
+    // run cell on enter
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new RunCellEvent(cell.id)))
+            .withIgnoreWhenSuggesting(false)
+            .withDesc("Run this cell and move to next cell. If there is no next cell, create it.")],
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+    new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new RunCellEvent(cell.id)))
+        .withIgnoreWhenSuggesting(false)
+        .withDesc("Run this cell and insert a new cell below it.")]
+]);
+CodeCell.keyMap = new Map(Cell.keyMap);
+(function () {
+
+    const addNewAction = (key, newAction) => {
+        const origAction = CodeCell.keyMap.get(key);
+        if (origAction) {
+            CodeCell.keyMap.set(key, origAction.runAfter(newAction));
+        } else {
+            CodeCell.keyMap.set(key, newAction);
+        }
+    };
+
+    for (const [keycode, action] of CodeCell.keyMapOverrides) {
+        addNewAction(keycode, action);
+    }
+})();
+
 
 export class TextCell extends Cell {
     constructor(id, content, path, metadata) {

@@ -1,3 +1,72 @@
+
+import {Cell, CodeCell} from "./cell";
+import {OS, isMacintosh} from 'monaco-editor/esm/vs/base/common/platform.js'
+import {createSimpleKeybinding} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
+import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
+
+// Return an object of hotkeys with the following structure:
+// {
+//     source: {
+//          key combination: description
+//     }
+// }
+export function getHotkeys() {
+    const hotkeys = {};
+
+    const cellHotkeys = {};
+    for (const [keycode, action] of Cell.keyMap) {
+        const desc = action.desc;
+        if (desc) {
+            const simpleKeybinding = createSimpleKeybinding(keycode, OS);
+            const keyCombo = keybindingToString(simpleKeybinding);
+            cellHotkeys[keyCombo] = desc;
+        }
+    }
+    hotkeys['Cells'] = cellHotkeys;
+
+    const codeCellHotkeys = {};
+    for (const [keycode, action] of CodeCell.keyMapOverrides) {
+        const desc = action.desc;
+        if (desc) {
+            const simpleKeybinding = createSimpleKeybinding(keycode, OS);
+            const keyCombo = keybindingToString(simpleKeybinding);
+            codeCellHotkeys[keyCombo] = desc;
+        }
+    }
+    hotkeys['Code Cells'] = codeCellHotkeys;
+
+    return hotkeys;
+}
+
+function keybindingToString(simpleKeybinding) {
+    let keys = [];
+    if (simpleKeybinding.ctrlKey) {
+        keys.push("Ctrl")
+    }
+    if (simpleKeybinding.shiftKey) {
+        keys.push("Shift")
+    }
+    if (simpleKeybinding.altKey) {
+        if (isMacintosh) {
+            keys.push("Option")
+        } else {
+            keys.push("Alt")
+        }
+    }
+    if (simpleKeybinding.metaKey) {
+        if (isMacintosh) {
+            keys.push("Cmd")
+        } else {
+            keys.push("Meta")
+        }
+    }
+    const actualKey = KeyCodeUtils.toString(simpleKeybinding.keyCode);
+    if (actualKey) {
+        keys.push(actualKey)
+    }
+    return keys.join("+")
+}
+
 export class KeyAction {
     /**
      * An action to be taken runAfter a KeyPress
