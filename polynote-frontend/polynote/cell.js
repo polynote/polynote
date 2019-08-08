@@ -236,6 +236,8 @@ export class Cell extends UIEventTarget {
         this.metadata = metadata;
     }
 
+    // FIXME: this uses some private monaco APIs. If this ever ends up breaking after we update monaco it's a signal
+    //        we'll need to rethink this stuff.
     onKeyDown(evt) {
         let keybinding;
         if (evt instanceof StandardKeyboardEvent) {
