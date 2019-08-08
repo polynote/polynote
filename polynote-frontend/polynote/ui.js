@@ -1280,6 +1280,8 @@ export class NotebookUI extends UIEventTarget {
                     nextCell.focus();
                     nextCell.container.parentNode.insertBefore(undoEl, nextCell.container);
                 } else {
+                    const prev = current.prevCell();
+                    if (prev) prev.focus();
                     current.container.parentNode.insertBefore(undoEl, current.container);
                 }
                 this.cellUI.removeCell(current.id);
