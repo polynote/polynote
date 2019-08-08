@@ -13,7 +13,7 @@ import { prefs } from './prefs.js'
 import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
 import {ClientResult, ExecutionInfo} from "./result";
-import {CellMetadata, CellResult} from "./messages";
+import {CellMetadata, CellResult, NotebookCell} from "./messages";
 import {Either} from "./codec";
 import {errorDisplay} from "./cell";
 import {clientInterpreters} from "./client_interpreter";
@@ -421,7 +421,7 @@ export class SplitView {
 }
 
 export class KernelUI extends UIEventTarget {
-    constructor(socket, path) {
+    constructor(socket, path, showInfo=true, showSymbols=true, showTasks=true, showStatus=true) {
         super();
         this.info = new KernelInfoUI();
         this.symbols = new KernelSymbolsUI(path).setEventParent(this);
@@ -432,18 +432,88 @@ export class KernelUI extends UIEventTarget {
             h2([], [
                 this.status = span(['status'], ['●']),
                 'Kernel',
-                span(['buttons'], [
+                showStatus ? span(['buttons'], [
                   iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect(evt)),
                   iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.startKernel(evt)),
                   iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => this.killKernel(evt))
-                ])
+                ]) : undefined
             ]).click(evt => this.collapse()),
             div(['ui-panel-content'], [
-                this.info.el,
-                this.symbols.el,
-                this.tasks.el
+                showInfo ? this.info.el : undefined,
+                showSymbols ? this.symbols.el: undefined,
+                showTasks ? this.tasks.el : undefined
             ])
         ]);
+
+        this.addEventListener('Connect', evt => {
+            if (!socket.isOpen) {
+                socket.reconnect();
+            }
+        });
+
+        this.addEventListener('StartKernel', evt => {
+            socket.send(new messages.StartKernel(path, messages.StartKernel.NoRestart));
+        });
+
+        this.addEventListener('KillKernel', evt => {
+            socket.send(new messages.StartKernel(path, messages.StartKernel.Kill));
+        });
+
+        socket.addMessageListener(messages.KernelStatus, (path, update) => {
+            if (path === this.path) {
+                switch (update.constructor) {
+                    case messages.UpdatedTasks:
+                        update.tasks.forEach(taskInfo => {
+                            this.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
+
+                            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
+                            //       and instead have an EOF message to tell us when a cell is done
+                            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
+                            if (cellMatch && cellMatch[1]) {
+                                this.dispatchEvent(new UIEvent('UpdateCellStatus', {cellId: +(cellMatch[1]), taskInfo: taskInfo}))
+                            }
+                        });
+                        break;
+
+                    case messages.KernelBusyState:
+                        const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
+                        this.setKernelState(state);
+                        break;
+
+                    case messages.KernelInfo:
+                        this.info.updateInfo(update.content);
+                        break;
+
+                    case messages.ExecutionStatus:
+                        this.dispatchEvent(new UIEvent('SetCellHighlight', {cellId: update.cellId, position: update.pos}));
+                        break;
+                }
+            }
+        });
+
+        socket.addEventListener('close', _ => {
+            this.setKernelState('disconnected');
+        });
+
+        socket.addMessageListener(messages.Error, (code, err) => {
+            console.log("Kernel error:", err);
+
+            const {el, messageStr, cellLine} = errorDisplay(err);
+
+            const id = err.id;
+            const message = div(["message"], [
+                para([], `${err.className}: ${err.message}`),
+                para([], el)
+            ]);
+            this.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
+
+            // clean up (assuming that running another cell means users are done with this error)
+            socket.addMessageListener(messages.CellResult, () => {
+                this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100);
+                return false // make sure to remove the listener
+            }, true);
+        });
+
     }
 
     // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
@@ -1403,52 +1473,14 @@ export class NotebookUI extends UIEventTarget {
             this.socket.send(new messages.HandleData(path, req.handleType, req.handleId, req.count, []));
         });
 
-        this.kernelUI.addEventListener('Connect', evt => {
-            if (!this.socket.isOpen) {
-                this.socket.reconnect();
-            }
-        });
-
-        this.kernelUI.addEventListener('StartKernel', evt => {
-           this.socket.send(new messages.StartKernel(path, messages.StartKernel.NoRestart));
-        });
-
-        this.kernelUI.addEventListener('KillKernel', evt => {
-           this.socket.send(new messages.StartKernel(path, messages.StartKernel.Kill));
-        });
-
         socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
-        socket.addMessageListener(messages.KernelStatus, (path, update) => {
-            if (path === this.path) {
-                switch (update.constructor) {
-                    case messages.UpdatedTasks:
-                        update.tasks.forEach(taskInfo => {
-                            this.kernelUI.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
+        this.addEventListener('UpdateCellStatus', evt => {
+            this.cellUI.setStatus(evt.detail.cellId, evt.detail.taskInfo);
+        });
 
-                            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
-                            //       and instead have an EOF message to tell us when a cell is done
-                            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
-                            if (cellMatch && cellMatch[1]) {
-                                this.cellUI.setStatus(+(cellMatch[1]), taskInfo);
-                            }
-                        });
-                        break;
-
-                    case messages.KernelBusyState:
-                        const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
-                        this.kernelUI.setKernelState(state);
-                        break;
-
-                    case messages.KernelInfo:
-                        this.kernelUI.info.updateInfo(update.content);
-                        break;
-
-                    case messages.ExecutionStatus:
-                        this.cellUI.setExecutionHighlight(update.cellId, update.pos);
-                        break;
-                }
-            }
+        this.addEventListener('SetCellHighlight', evt => {
+            this.cellUI.setExecutionHighlight(evt.detail.cellId, evt.detail.position);
         });
 
         socket.addMessageListener(messages.NotebookUpdate, update => {
@@ -1518,7 +1550,6 @@ export class NotebookUI extends UIEventTarget {
         };
 
         socket.addEventListener('close', evt => {
-            this.kernelUI.setKernelState('disconnected');
             this.cellUI.setDisabled(true);
             window.addEventListener('focus', reconnectOnWindowFocus);
         });
@@ -1527,25 +1558,6 @@ export class NotebookUI extends UIEventTarget {
             window.removeEventListener('focus', reconnectOnWindowFocus);
             this.socket.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false)));
             this.cellUI.setDisabled(false);
-        });
-
-        socket.addMessageListener(messages.Error, (code, err) => {
-            console.log("Kernel error:", err);
-
-            const {el, messageStr, cellLine} = errorDisplay(err);
-
-            const id = err.id;
-            const message = div(["message"], [
-                para([], `${err.className}: ${err.message}`),
-                para([], el)
-            ]);
-            this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
-
-            // clean up (assuming that running another cell means users are done with this error)
-            socket.addMessageListener(messages.CellResult, () => {
-                this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Complete, 100);
-                return false // make sure to remove the listener
-            }, true);
         });
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
@@ -2322,7 +2334,11 @@ export class MainUI extends EventTarget {
         if (!this.welcomeUI) {
             this.welcomeUI = new WelcomeUI().setEventParent(this);
         }
-        this.tabUI.addTab('home', span([], 'Home'), { notebook: this.welcomeUI.el, path: '/' }, 'home');
+        const welcomeKernelUI = new KernelUI(this.socket, '/', /*showInfo*/ false, /*showSymbols*/ false, /*showTasks*/ true, /*showStatus*/ false);
+        this.tabUI.addTab('home', span([], 'Home'), {
+            notebook: this.welcomeUI.el,
+            kernel: welcomeKernelUI.el
+        }, 'home');
     }
 
     loadNotebook(path) {
