@@ -21,6 +21,7 @@ import {DataRepr, DataStream, StreamingDataRepr} from "./value_repr";
 import {Position} from "monaco-editor";
 import {valueInspector} from "./value_inspector";
 import * as Tinycon from "tinycon";
+import {getHotkeys} from "./hotkeys";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -2284,6 +2285,9 @@ export class MainUI extends EventTarget {
 
             //... but not if you click inside it:
             menu.addEventListener('mousedown', (evt) => evt.stopPropagation());
+
+            // TODO: make a real display for hotkeys
+            console.log(getHotkeys())
         });
 
         this.toolbarUI.addEventListener('ResetPrefs', () => {

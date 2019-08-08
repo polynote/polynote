@@ -1,5 +1,7 @@
 import {blockquote, div, iconButton, span, tag, button} from "./tags.js";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
+import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
 import * as messages from "./messages.js";
 import { ResultValue } from "./result.js"
 import {RichTextEditor} from "./text_editor.js";
@@ -10,7 +12,7 @@ import {ClientResult, ExecutionInfo} from "./result";
 import {prefs} from "./prefs";
 import {createVim} from "./vim";
 import {CellMetadata, DeleteCell} from "./messages";
-import {KeyPress} from "./keypress";
+import {KeyAction} from "./hotkeys";
 import {clientInterpreters} from "./client_interpreter";
 import {valueInspector} from "./value_inspector";
 import {Interpreters} from "./ui";
@@ -161,38 +163,8 @@ export class Cell extends UIEventTarget {
         this.container.addEventListener('click', evt => this.makeActive());
 
         // TODO: some way to display the KeyMap to users
-        this.keyMap = new Map([
-            [KeyPress.of("ArrowUp").h, (pos, range, selection, cell) => {
-                if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    cell.dispatchEvent(new AdvanceCellEvent(cell.id, true));
-
-                }
-            }],
-            [KeyPress.of("ArrowDown").h, (pos, range, selection, cell) => {
-                if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
-                    cell.dispatchEvent(new AdvanceCellEvent(cell.id, false));
-
-                }
-            }],
-            [KeyPress.of("Enter", {shift: true}).h, () => {
-                this.dispatchEvent(new AdvanceCellEvent(this.id));
-                return true; // prevent default
-            }],
-            [KeyPress.of("Enter", {shift: true, meta: true}).h, () => {
-                this.dispatchEvent(new InsertCellEvent(this.id));
-                return true; // prevent default
-            }],
-            [KeyPress.of("PageDown", {meta: true}).h,
-                () => this.dispatchEvent(new AdvanceCellEvent(this.id, false))],
-            [KeyPress.of("PageUp", {meta: true}).h,
-                () => this.dispatchEvent(new AdvanceCellEvent(this.id, true))],
-            [KeyPress.of("KeyA", {ctrl: true, alt: true}).h, // A for Above (from Zep)
-                () => this.dispatchEvent(new InsertCellEvent(this.id, true))],
-            [KeyPress.of("KeyB", {ctrl: true, alt: true}).h, // B for Below (from Zep)
-                () => this.dispatchEvent(new InsertCellEvent(this.id))],
-            [KeyPress.of("KeyD", {ctrl: true, alt: true}).h, // D for Delete ;-) (from Zep)
-                () => this.dispatchEvent(new DeleteCellEvent(this.id))],
-        ])
+        // Map of Monaco KeyCode (an int) -> KeyAction
+        this.keyMap = Cell.keyMap;
     }
 
     setDisabled(disabled) {
@@ -264,22 +236,38 @@ export class Cell extends UIEventTarget {
         this.metadata = metadata;
     }
 
-    updateKeyHandler(key, handler) {
-        const prevHandler = this.keyMap.get(key);
-        this.keyMap.set(key, handler(prevHandler));
-    }
-
+    // FIXME: this uses some private monaco APIs. If this ever ends up breaking after we update monaco it's a signal
+    //        we'll need to rethink this stuff.
     onKeyDown(evt) {
-        const eventKP = KeyPress.fromEvent(evt);
-        for (const [key, handler] of this.keyMap) {
-            if (key === eventKP.h) {
+        let keybinding;
+        if (evt instanceof StandardKeyboardEvent) {
+            keybinding = evt._asKeybinding;
+        } else {
+            keybinding = new StandardKeyboardEvent(evt)._asKeybinding;
+        }
+        const action = this.keyMap.get(keybinding);
+        if (action) {
+            const runAction = () => {
                 const pos = this.getPosition();
                 const range = this.getRange();
                 const selection = this.getCurrentSelection();
-                return handler(pos, range, selection, this);
+                action.fun(pos, range, selection, this);
+                if (action.preventDefault) {
+                    evt.stopPropagation();
+                    evt.preventDefault();
+                }
+            };
+
+            if (this instanceof CodeCell && action.ignoreWhenSuggesting) {
+                // this is really ugly, is there a better way to tell whether the widget is visible??
+                const suggestionsVisible = this.editor.getContribution('editor.contrib.suggestController')._widget._value.suggestWidgetVisible.get();
+                if (!suggestionsVisible) { // don't do stuff when suggestions are visible
+                    runAction()
+                }
+            } else {
+                runAction()
             }
         }
-        return false
     }
 
     getPosition() {
@@ -302,6 +290,40 @@ export class Cell extends UIEventTarget {
         return ""
     }
 }
+
+Cell.keyMap = new Map([
+    [monaco.KeyCode.UpArrow, new KeyAction((pos, range, selection, cell) => {
+        if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
+            cell.dispatchEvent(new AdvanceCellEvent(cell.id, true));
+        }
+    })],
+    [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell) => {
+        if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
+            cell.dispatchEvent(new AdvanceCellEvent(cell.id, false));
+        }
+    })],
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
+        cell.dispatchEvent(new AdvanceCellEvent(cell.id));
+    }).withPreventDefault(true).withDesc("Move to next cell. If there is no next cell, create it.")],
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
+        cell.dispatchEvent(new InsertCellEvent(cell.id));
+    }).withPreventDefault(true).withDesc("Insert a cell after this one.")],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown,
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, false)))
+            .withDesc("Move to next cell. If there is no next cell, create it.")],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp,
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, true)))
+            .withDesc("Move to previous cell. If there is no previous cell, create it.")],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A, // A for Above (from Zep)
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id, true)))
+            .withDesc("Insert cell above this cell.")],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B, // B for Below (from Zep)
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id)))
+            .withDesc("Insert a cell below this cell.")],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D, // D for Delete (from Zep)
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new DeleteCellEvent(cell.id)))
+            .withDesc("Delete this cell.")],
+]);
 
 // TODO: it's a bit hacky to export this, should probably put this in some utils module
 export function errorDisplay(error, currentFile, maxDepth, nested) {
@@ -440,41 +462,10 @@ export class CodeCell extends Cell {
 
         this.editor.getModel().cellInstance = this;
 
-        // modification for vim mode
-        this.updateKeyHandler(KeyPress.of("ArrowDown").h, (prev) => {
-            return (pos, range, selection, cell) => {
-                if (this.vim && !this.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected
-                    range.endColumn -= 1
-                }
-                prev(pos, range, selection, cell);
-            }
-        });
-
-        // run cell on enter
-        this.updateKeyHandler(KeyPress.of("Enter", {shift: true}).h, (prev) => {
-            return () => {
-                this.dispatchEvent(new RunCellEvent(this.id));
-                return prev();
-            }
-        });
-        this.updateKeyHandler(KeyPress.of("Enter", {shift: true, meta: true}).h, (prev) => {
-            return () => {
-                this.dispatchEvent(new RunCellEvent(this.id));
-                return prev();
-            }
-        });
+        this.keyMap = CodeCell.keyMap;
 
         // actually bind keydown
-        this.editor.onKeyDown((evt) => {
-            // this is really ugly, is there a better way to tell whether the widget is visible??
-            const suggestionsVisible = this.editor.getContribution('editor.contrib.suggestController')._widget._value.suggestWidgetVisible.get();
-            if (!suggestionsVisible) { // don't do stuff when suggestions are visible
-                if (this.onKeyDown(evt)) {
-                    evt.stopPropagation();
-                    evt.preventDefault();
-                }
-            }
-        });
+        this.editor.onKeyDown((evt) => this.onKeyDown(evt));
 
         this.onWindowResize = (evt) => this.editor.layout();
         window.addEventListener('resize', this.onWindowResize);
@@ -1031,6 +1022,40 @@ export class CodeCell extends Cell {
         return this.editor.getModel().getValueInRange(this.editor.getSelection())
     }
 }
+
+CodeCell.keyMapOverrides = new Map([
+    [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell) => {
+        if (cell.vim && !cell.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected
+            range.endColumn -= 1
+        }
+    })],
+    // run cell on enter
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+        new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new RunCellEvent(cell.id)))
+            .withIgnoreWhenSuggesting(false)
+            .withDesc("Run this cell and move to next cell. If there is no next cell, create it.")],
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+    new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new RunCellEvent(cell.id)))
+        .withIgnoreWhenSuggesting(false)
+        .withDesc("Run this cell and insert a new cell below it.")]
+]);
+CodeCell.keyMap = new Map(Cell.keyMap);
+(function () {
+
+    const addNewAction = (key, newAction) => {
+        const origAction = CodeCell.keyMap.get(key);
+        if (origAction) {
+            CodeCell.keyMap.set(key, origAction.runAfter(newAction));
+        } else {
+            CodeCell.keyMap.set(key, newAction);
+        }
+    };
+
+    for (const [keycode, action] of CodeCell.keyMapOverrides) {
+        addNewAction(keycode, action);
+    }
+})();
+
 
 export class TextCell extends Cell {
     constructor(id, content, path, metadata) {
