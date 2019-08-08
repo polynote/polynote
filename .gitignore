@@ -14,3 +14,4 @@ config.yml
 metastore_db
 *.log
 tmp
+npm-debug.log.*

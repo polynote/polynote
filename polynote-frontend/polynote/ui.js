@@ -1029,10 +1029,12 @@ export class NotebookCellsUI extends UIEventTarget {
 
         if (currentCell instanceof TextCell && language !== 'text') {
             // replace text cell with a code cell
+            const textContent = currentCell.container.innerText.trim(); // innerText has just the plain text without any HTML formatting
             const newCell = new CodeCell(currentCell.id, currentCell.content, language, this.path);
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);
+            newCell.editor.getModel().setValue(textContent); // use setValue in order to properly persist the change.
             const clientInterpreter = clientInterpreters[language];
             if (clientInterpreter && clientInterpreter.highlightLanguage && clientInterpreter.highlightLanguage !== language) {
                 monaco.editor.setModelLanguage(newCell.editor.getModel(), clientInterpreter.highlightLanguage)
