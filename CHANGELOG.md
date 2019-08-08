@@ -9,7 +9,7 @@
 * Fix error causing failure to display inspector for certain types of Dataframes
 * Fix error causing compilation failure when users define variable names that look like scala's generated synthetic members
   (e.g., a variable starting with `eq_`)
-* Add version to app nam
+* Add version to app name
 * minor refactoring to remove some `unsafeRun*`s. 
 
 # 0.1.20 (August 1, 2019)
