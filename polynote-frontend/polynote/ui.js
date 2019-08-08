@@ -13,7 +13,6 @@ import { prefs } from './prefs.js'
 import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
 import {ClientResult, ExecutionInfo} from "./result";
-import {CellMetadata, CellResult, NotebookCell} from "./messages";
 import {Either} from "./codec";
 import {errorDisplay} from "./cell";
 import {clientInterpreters} from "./client_interpreter";
