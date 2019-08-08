@@ -464,13 +464,7 @@ export class KernelUI extends UIEventTarget {
                     case messages.UpdatedTasks:
                         update.tasks.forEach(taskInfo => {
                             this.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
-
-                            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
-                            //       and instead have an EOF message to tell us when a cell is done
-                            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
-                            if (cellMatch && cellMatch[1]) {
-                                this.dispatchEvent(new UIEvent('UpdateCellStatus', {cellId: +(cellMatch[1]), taskInfo: taskInfo}))
-                            }
+                            this.dispatchEvent(new UIEvent('UpdatedTask', {taskInfo: taskInfo}));
                         });
                         break;
 
@@ -484,7 +478,7 @@ export class KernelUI extends UIEventTarget {
                         break;
 
                     case messages.ExecutionStatus:
-                        this.dispatchEvent(new UIEvent('SetCellHighlight', {cellId: update.cellId, position: update.pos}));
+                        this.dispatchEvent(new UIEvent('UpdatedExecutionStatus', {update: update}));
                         break;
                 }
             }
@@ -1474,12 +1468,19 @@ export class NotebookUI extends UIEventTarget {
 
         socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
-        this.addEventListener('UpdateCellStatus', evt => {
-            this.cellUI.setStatus(evt.detail.cellId, evt.detail.taskInfo);
+        this.addEventListener('UpdatedTask', evt => {
+            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
+            //       and instead have an EOF message to tell us when a cell is done
+            const taskInfo = evt.detail.taskInfo;
+            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
+            if (cellMatch && cellMatch[1]) {
+                this.cellUI.setStatus(+(cellMatch[1]), taskInfo);
+            }
         });
 
-        this.addEventListener('SetCellHighlight', evt => {
-            this.cellUI.setExecutionHighlight(evt.detail.cellId, evt.detail.position);
+        this.addEventListener('UpdatedExecutionStatus', evt => {
+            const update = evt.detail.update;
+            this.cellUI.setExecutionHighlight(update.cellId, update.pos);
         });
 
         socket.addMessageListener(messages.NotebookUpdate, update => {
