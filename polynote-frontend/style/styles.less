@@ -2690,6 +2690,11 @@ button {
     display: grid;
     grid-template-rows: 24pt 1fr;
 
+    &.full-screen {
+      width: 90%;
+      height: 90%;
+    }
+
     .modal-titlebar {
       font-size: 12pt;
       padding: .5em;
@@ -2717,17 +2722,13 @@ button {
     .modal-content {
       border: 1px solid @ui-border;
       background: @ui-background;
+      display: contents;
     }
   }
 }
 
 .value-inspector {
-  width: 90%;
-  height: 90%;
-
   .modal-content {
-    display: contents;
-
     .disconnected {
       display: flex;
       justify-content: center;

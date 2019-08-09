@@ -50,3 +50,13 @@ export class Modal extends UIEventTarget {
         }
     }
 }
+
+export class FullScreenModal extends Modal {
+    constructor(content, opts={}) {
+        opts.windowClasses = [...(opts.windowClasses || []), 'full-screen'];
+        super(
+            content,
+            opts
+        );
+    }
+}

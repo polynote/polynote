@@ -22,6 +22,7 @@ import {Position} from "monaco-editor";
 import {valueInspector} from "./value_inspector";
 import * as Tinycon from "tinycon";
 import {getHotkeys} from "./hotkeys";
+import {About, about} from "./about";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -2262,6 +2263,11 @@ export class MainUI extends EventTarget {
 
         // TODO: maybe we can break out this menu stuff once we need more menus.
         this.toolbarUI.addEventListener('ViewPrefs', (evt) => {
+            if (!this.about) {
+                this.about = new About(this).setEventParent(this);
+            }
+            this.about.show();
+            /*
             const anchorElem = document.getElementsByClassName(evt.detail.anchor.className)[0];
             const anchorPos = anchorElem.getBoundingClientRect();
 
@@ -2288,6 +2294,7 @@ export class MainUI extends EventTarget {
 
             // TODO: make a real display for hotkeys
             console.log(getHotkeys())
+            */
         });
 
         this.toolbarUI.addEventListener('ResetPrefs', () => {

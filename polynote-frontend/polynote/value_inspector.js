@@ -1,6 +1,6 @@
 "use strict";
 
-import {Modal} from "./modal";
+import {FullScreenModal, Modal} from "./modal";
 import {div, button} from "./tags";
 import {ResultValue} from "./result";
 import {MIMERepr, DataRepr, LazyDataRepr, StreamingDataRepr, StringRepr} from "./value_repr";
@@ -31,7 +31,7 @@ function dataTypeToObjectField(name, dataType) {
     }
 }
 
-class ValueInspector extends Modal {
+class ValueInspector extends FullScreenModal {
 
     constructor() {
         super(
