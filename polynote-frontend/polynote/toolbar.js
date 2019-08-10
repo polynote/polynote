@@ -3,7 +3,7 @@ import {FakeSelect} from "./fake_select";
 import {Cell, CodeCell, TextCell} from "./cell";
 import {LaTeXEditor} from "./latex_editor";
 import {UIEvent, UIEventTarget} from "./ui_event";
-import {prefs} from "./prefs";
+import {preferences, storage} from "./storage";
 
 export class ToolbarEvent extends UIEvent {
     constructor(eventId, details) {
@@ -250,23 +250,23 @@ class SettingsToolbarUI extends UIEventTarget {
         super();
         this.el = toolbarElem("settings", [[
             // TODO: better icon
-            this.vimButton = iconButton(["vim"], "Toggle VIM mode", "Vim", "VIM")
-                .click(() => this.dispatchEvent(new ToolbarEvent("ToggleVIM"))),
+            // this.vimButton = iconButton(["vim"], "Toggle VIM mode", "Vim", "VIM")
+            //     .click(() => this.dispatchEvent(new ToolbarEvent("ToggleVIM"))),
             this.viewButton = iconButton(["view"], "View UI Preferences", "", "View")
                 .click(() => this.dispatchEvent(new ToolbarEvent("ViewPrefs", {elem: this.floatingMenu, anchor: this.viewButton}))),
-            iconButton(["reset"], "Reset UI Preferences", "", "Reset")
-                .click(() => this.dispatchEvent(new ToolbarEvent(("ResetPrefs")))),
+            // iconButton(["reset"], "Reset UI Preferences", "", "Reset")
+            //     .click(() => this.dispatchEvent(new ToolbarEvent(("ResetPrefs")))),
         ]]);
 
         this.floatingMenu = div(['floating-menu'], []);
 
         this.el.appendChild(this.floatingMenu)
 
-        this.colorVim();
+        // this.colorVim();
     }
 
-    colorVim() {
-        const vimSetting = prefs.get('VIM') || false;
-        this.vimButton.classList.toggle('enabled', vimSetting)
-    }
+    // colorVim() {
+    //     const vimSetting = preferences.get('VIM') || false;
+    //     this.vimButton.classList.toggle('enabled', vimSetting)
+    // }
 }

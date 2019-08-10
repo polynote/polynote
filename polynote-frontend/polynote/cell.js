@@ -9,7 +9,7 @@ import {UIEvent, UIEventTarget} from "./ui_event.js"
 import { default as Diff } from './diff.js'
 import {details, dropdown} from "./tags";
 import {ClientResult, ExecutionInfo} from "./result";
-import {prefs} from "./prefs";
+import {preferences} from "./storage";
 import {createVim} from "./vim";
 import {CellMetadata, DeleteCell} from "./messages";
 import {KeyAction} from "./hotkeys";
@@ -937,12 +937,13 @@ export class CodeCell extends Cell {
     }
 
     activateVim() {
-        if (prefs.get('VIM')) {
+        if (preferences.get(vimModeKey).value) {
             if (!this.vim) {
                 this.vim = createVim(this.editor, this.statusLine);
                 this.cellInput.querySelector(".cell-footer").appendChild(this.statusLine);
             }
             this.statusLine.classList.remove('hide');
+            this.container.classList.add('vim-enabled');
         } else {
             this.deactivateVim();
         }
@@ -1056,6 +1057,7 @@ CodeCell.keyMap = new Map(Cell.keyMap);
     }
 })();
 
+const vimModeKey = preferences.register("VIM", "Whether VIM input mode is enabled for CodeCells", false);
 
 export class TextCell extends Cell {
     constructor(id, content, path, metadata) {

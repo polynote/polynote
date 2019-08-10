@@ -9,7 +9,7 @@ import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, d
 import { TaskStatus } from './messages.js';
 import * as messages from './messages.js'
 import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from './result.js'
-import { prefs } from './prefs.js'
+import { storage } from './storage.js'
 import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
 import {ClientResult, ExecutionInfo} from "./result";
@@ -23,6 +23,7 @@ import {valueInspector} from "./value_inspector";
 import * as Tinycon from "tinycon";
 import {getHotkeys} from "./hotkeys";
 import {About, about} from "./about";
+import {preferences} from "./storage";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -340,7 +341,7 @@ export class SplitView {
             const prefId = `${id}.leftSize`;
             left.el.classList.add("left");
             left.el.style.gridArea = 'left';
-            left.el.style.width = prefs.get(prefId) || '300px';
+            left.el.style.width = storage.get(prefId) || '300px';
 
             let leftDragger = div(['drag-handle', 'left'], [
                 div(['inner'], []).attr('draggable', 'true')
@@ -363,7 +364,7 @@ export class SplitView {
             });
 
             leftDragger.addEventListener('dragend', (evt) => {
-                prefs.set(prefId, left.el.style.width);
+                storage.set(prefId, left.el.style.width);
                 window.dispatchEvent(new CustomEvent('resize', {}));
             });
         }
@@ -376,7 +377,7 @@ export class SplitView {
             const prefId = `${id}.rightSize`;
             right.el.classList.add("right");
             right.el.style.gridArea = 'right';
-            right.el.style.width = prefs.get(prefId) || '300px';
+            right.el.style.width = storage.get(prefId) || '300px';
 
             let rightDragger = div(['drag-handle', 'right'], [
                 div(['inner'], []).attr('draggable', 'true')
@@ -400,7 +401,7 @@ export class SplitView {
             });
 
             rightDragger.addEventListener('dragend', evt => {
-                prefs.set(prefId, right.el.style.width);
+                storage.set(prefId, right.el.style.width);
                 window.dispatchEvent(new CustomEvent('resize', {}));
             });
         }
@@ -447,20 +448,20 @@ export class KernelUI extends UIEventTarget {
         ]);
     }
 
-    // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
+    // Check storage to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
     init() {
-        const prefs = this.getPrefs();
+        const prefs = this.getStorage();
         if (prefs && prefs.collapsed) {
             this.collapse(true);
         }
     }
 
-    getPrefs() {
-        return prefs.get("KernelUI")
+    getStorage() {
+        return storage.get("KernelUI")
     }
 
-    setPrefs(obj) {
-        prefs.set("KernelUI", {...this.getPrefs(), ...obj})
+    setStorage(obj) {
+        storage.set("KernelUI", {...this.getStorage(), ...obj})
     }
 
     connect(evt) {
@@ -494,14 +495,14 @@ export class KernelUI extends UIEventTarget {
     }
 
     collapse(force) {
-        const prefs = this.getPrefs();
+        const prefs = this.getStorage();
         if (force) {
             this.dispatchEvent(new UIEvent('ToggleKernelUI', {force: true}))
         } else if (prefs && prefs.collapsed) {
-            this.setPrefs({collapsed: false});
+            this.setStorage({collapsed: false});
             this.dispatchEvent(new UIEvent('ToggleKernelUI'))
         } else {
-            this.setPrefs({collapsed: true});
+            this.setStorage({collapsed: true});
             this.dispatchEvent(new UIEvent('ToggleKernelUI'))
         }
     }
@@ -952,7 +953,7 @@ export class NotebookCellsUI extends UIEventTarget {
                 }
             });
             // scroll to previous position, if any
-            const scrollPosition = prefs.get('notebookLocations')[this.path];
+            const scrollPosition = storage.get('notebookLocations')[this.path];
             if (this.el.parentElement && (scrollPosition || scrollPosition === 0)) {
                 this.el.parentElement.scrollTop = scrollPosition;
             }
@@ -1810,7 +1811,7 @@ export class TabUI extends EventTarget {
     }
 
     setCurrentScrollLocation(scrollTop) {
-        prefs.update('notebookLocations', locations => {
+        storage.update('notebookLocations', locations => {
             if (!locations) {
                 locations = {};
             }
@@ -1894,7 +1895,7 @@ export class NotebookListUI extends UIEventTarget {
         }
     }
 
-    // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
+    // Check storage to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
     init() {
         const prefs = this.getPrefs();
         if (prefs && prefs.collapsed) {
@@ -1903,11 +1904,11 @@ export class NotebookListUI extends UIEventTarget {
     }
 
     getPrefs() {
-        return prefs.get("NotebookListUI")
+        return storage.get("NotebookListUI")
     }
 
     setPrefs(obj) {
-        prefs.set("NotebookListUI", {...this.getPrefs(), ...obj})
+        storage.set("NotebookListUI", {...this.getPrefs(), ...obj})
     }
 
     setItems(items) {
@@ -2070,7 +2071,7 @@ export class WelcomeUI extends UIEventTarget {
         `;
 
         const recent = this.el.querySelector('.recent-notebooks');
-        (prefs.get('recentNotebooks') || []).forEach(nb => {
+        (storage.get('recentNotebooks') || []).forEach(nb => {
            recent.appendChild(
                tag('li', ['notebook-link'], {}, [
                    span([], nb.name).click(
@@ -2261,7 +2262,6 @@ export class MainUI extends EventTarget {
             cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCellId }));
         });
 
-        // TODO: maybe we can break out this menu stuff once we need more menus.
         this.toolbarUI.addEventListener('ViewPrefs', (evt) => {
             if (!this.about) {
                 this.about = new About(this).setEventParent(this);
@@ -2272,7 +2272,7 @@ export class MainUI extends EventTarget {
             const anchorPos = anchorElem.getBoundingClientRect();
 
             const menu = evt.detail.elem;
-            const content = JSON.stringify(prefs.show(), null, 2);
+            const content = JSON.stringify(storage.show(), null, 2);
 
             monaco.editor.colorize(content, "json", {}).then(function(result) {
                 menu.innerHTML = result;
@@ -2297,23 +2297,25 @@ export class MainUI extends EventTarget {
             */
         });
 
+        /*
         this.toolbarUI.addEventListener('ResetPrefs', () => {
-            prefs.clear();
+            storage.clear();
             location.reload(); //TODO: can we avoid reloading?
         });
 
         this.toolbarUI.addEventListener('ToggleVIM', () => {
-            const currentVim = prefs.get('VIM');
+            const currentVim = preferences.get('VIM');
             if (currentVim) {
-                prefs.set('VIM', false);
+                preferences.set('VIM', false, "Whether VIM-mode is enabled.");
                 document.body.classList.remove('vim-enabled');
             } else {
-                prefs.set('VIM', true);
+                preferences.set('VIM', true, "Whether VIM-mode is enabled.");
                 document.body.classList.add('vim-enabled');
             }
 
             this.toolbarUI.settingsToolbar.colorVim();
         });
+         */
 
         this.toolbarUI.addEventListener('DownloadNotebook', () => {
             MainUI.browserDownload(window.location.pathname + "?download=true", this.currentNotebook.path);
@@ -2362,7 +2364,7 @@ export class MainUI extends EventTarget {
 
         const notebookName = path.split(/\//g).pop();
 
-        prefs.update('recentNotebooks', recentNotebooks => {
+        storage.update('recentNotebooks', recentNotebooks => {
             const currentIndex = recentNotebooks.findIndex(nb => nb.path === path);
             if (currentIndex !== -1) {
                 recentNotebooks.splice(currentIndex, 1);

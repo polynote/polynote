@@ -1413,7 +1413,7 @@ body {
   }
 }
 
-.vim-enabled .cell-container.code-cell .cell-input .cell-footer {
+.vim-enabled.cell-container.code-cell .cell-input .cell-footer {
   display: grid;
   height: 1.5em;
 }
@@ -2737,6 +2737,7 @@ button {
     }
 
     .tab-nav-content {
+      overflow: auto;
       padding: 4px;
 
       .plaintext, .htmltext {
@@ -2785,6 +2786,7 @@ button {
 .tab-nav {
   display: grid;
   grid-template-columns: max-content 1fr;
+  overflow: auto;
 
   .tab-nav-items {
     background: @ui-background;
@@ -2876,6 +2878,52 @@ button {
 
     summary {
       text-indent: -1em;
+    }
+  }
+}
+
+.modal-window.about {
+  line-height: 2;
+
+  .tab-nav-content {
+    padding: 2em;
+  }
+
+  .about-display img {
+    float: right;
+  }
+
+  .preferences-storage {
+    button {
+      opacity: inherit;
+      border: 1px solid @ui-background-dark;
+
+      &.clear {
+        margin-top: 1em;
+      }
+
+      &:hover {
+        background: @ui-background;
+      }
+    }
+
+    .storage {
+      background: @ui-background;
+      border-radius: 6px;
+      padding: 1em;
+
+      .json {
+        word-break: break-word;
+      }
+    }
+  }
+
+
+  table {
+    font-family: monospace;
+
+    td {
+      padding: 0.5em 2em;
     }
   }
 }
