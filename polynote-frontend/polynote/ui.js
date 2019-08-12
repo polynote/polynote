@@ -2262,11 +2262,11 @@ export class MainUI extends EventTarget {
             cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCellId }));
         });
 
-        this.toolbarUI.addEventListener('ViewPrefs', (evt) => {
+        this.toolbarUI.addEventListener('ViewAbout', (evt) => {
             if (!this.about) {
                 this.about = new About(this).setEventParent(this);
             }
-            this.about.show();
+            this.about.show(evt.detail.section);
             /*
             const anchorElem = document.getElementsByClassName(evt.detail.anchor.className)[0];
             const anchorPos = anchorElem.getBoundingClientRect();

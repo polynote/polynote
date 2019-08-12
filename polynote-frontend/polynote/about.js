@@ -48,7 +48,7 @@ export class About extends FullScreenModal {
         return el;
     }
 
-    hotKeys() {
+    hotkeys() {
         const hotkeys = getHotkeys();
         const el = div(["hotkeys-display"], [
             div([], [
@@ -156,14 +156,16 @@ export class About extends FullScreenModal {
         return el;
     }
 
-    show() {
+    show(section) {
         const tabs = {
             'About': div([], [this.aboutMain()]),
-            'Hotkeys': div([], [this.hotKeys()]),
+            'Hotkeys': div([], [this.hotkeys()]),
             'Preferences': div([], [this.preferences()]),
             'Running Kernels': div([], [span([], ["Here are some running kernels"])])
         };
-        this.content.replaceChild(new TabNav(tabs).container, this.content.firstChild);
+        const tabnav = new TabNav(tabs);
+        this.content.replaceChild(tabnav.container, this.content.firstChild);
+        if (section) tabnav.showItem(section);
 
         super.show();
     }
