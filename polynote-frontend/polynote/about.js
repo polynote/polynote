@@ -5,6 +5,7 @@ import {getHotkeys} from "./hotkeys";
 import {preferences, storage} from "./storage";
 import {ToolbarEvent} from "./toolbar";
 import { UIEvent } from './ui_event.js'
+import * as messages from "./messages";
 
 export class About extends FullScreenModal {
     constructor(mainUI) {
@@ -156,12 +157,71 @@ export class About extends FullScreenModal {
         return el;
     }
 
+    runningKernels() {
+        let content;
+        const el = div(["running-kernels"], [
+            div([], [
+                h2([], ["Running Kernels"]),
+                content = div([], ['Looks like no kernels are running now!'])
+            ])
+        ]);
+
+        // TODO: mainUI.socket not good.
+        const getKernelStatuses = () => {
+            this.mainUI.socket.listenOnceFor(messages.RunningKernels, (statuses) => {
+                const tableEl = table(['kernels'], {
+                    header: ['path', 'status', 'actions'],
+                    classes: ['path', 'status', 'actions'],
+                    rowHeading: false,
+                    addToTop: false
+                });
+
+                for (const status of statuses) {
+                    const state = (status.update.busy && 'busy') || (!status.update.alive && 'dead') || 'idle';
+                    const statusEl = span([], [
+                        span(['status'], [state]),
+                    ]);
+                    const actionsEl = div([], [
+                        // TODO: really should be a better way to dispatch these events rather than going through mainUI's kernelUI...
+                        iconButton(['start'], 'Start kernel', '', 'Start').click(evt => {
+                            this.mainUI.socket.send(new messages.StartKernel(status.path, messages.StartKernel.NoRestart));
+                            getKernelStatuses();
+                        }),
+                        iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => {
+                            if (confirm("Kill running kernel? State will be lost.")) {
+                                this.mainUI.socket.send(new messages.StartKernel(status.path, messages.StartKernel.Kill));
+                                getKernelStatuses();
+                            }
+                        }),
+                        iconButton(['open'], 'Open notebook', '', 'Open').click(evt => {
+                            this.mainUI.loadNotebook(status.path);
+                            this.hide();
+                        })
+                    ]);
+
+                    const rowEl = tableEl.addRow({
+                        path: status.path,
+                        status: statusEl,
+                        actions: actionsEl
+                    });
+                    rowEl.classList.add('kernel-status', state)
+                }
+
+                if (statuses.length > 0) content.replaceChild(tableEl, content.firstChild);
+            });
+            this.mainUI.socket.send(new messages.RunningKernels([]));
+        };
+        getKernelStatuses();
+
+        return el;
+    }
+
     show(section) {
         const tabs = {
-            'About': div([], [this.aboutMain()]),
-            'Hotkeys': div([], [this.hotkeys()]),
-            'Preferences': div([], [this.preferences()]),
-            'Running Kernels': div([], [span([], ["Here are some running kernels"])])
+            'About': this.aboutMain.bind(this),
+            'Hotkeys': this.hotkeys.bind(this),
+            'Preferences': this.preferences.bind(this),
+            'Running Kernels': this.runningKernels.bind(this),
         };
         const tabnav = new TabNav(tabs);
         this.content.replaceChild(tabnav.container, this.content.firstChild);

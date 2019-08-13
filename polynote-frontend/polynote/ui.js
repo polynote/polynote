@@ -431,7 +431,7 @@ export class KernelUI extends UIEventTarget {
         this.socket = socket;
         this.path = path;
         this.el = div(['kernel-ui', 'ui-panel'], [
-            h2([], [
+            this.statusEl = h2(['kernel-status'], [
                 this.status = span(['status'], ['●']),
                 'Kernel',
                 span(['buttons'], [
@@ -482,9 +482,9 @@ export class KernelUI extends UIEventTarget {
     }
 
     setKernelState(state) {
-        this.el.classList.remove('busy', 'idle', 'dead', 'disconnected');
+        this.statusEl.classList.remove('busy', 'idle', 'dead', 'disconnected');
         if (state === 'busy' || state === 'idle' || state === 'dead' || state === 'disconnected') {
-            this.el.classList.add(state);
+            this.statusEl.classList.add(state);
             this.status.title = state;
             if (state === 'dead') {
                 this.info.clearInfo();

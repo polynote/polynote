@@ -1042,6 +1042,22 @@ export class NotebookVersion extends Message {
 
 NotebookVersion.codec = combined(shortStr, uint32).to(NotebookVersion);
 
+export class RunningKernels extends Message {
+    static get msgTypeId() { return 24; }
+
+    static unapply(inst) {
+        return [inst.kernelStatuses];
+    }
+
+    constructor(kernelStatuses) {
+        super(kernelStatuses);
+        this.kernelStatuses = kernelStatuses;
+        Object.freeze(this);
+    }
+}
+
+RunningKernels.codec = combined(arrayCodec(uint8, KernelStatus.codec)).to(RunningKernels);
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -1067,6 +1083,7 @@ Message.codecs = [
     ClearOutput,     // 21
     SetCellOutput,   // 22
     NotebookVersion, // 23
+    RunningKernels,  // 24
 ];
 
 

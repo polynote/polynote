@@ -1611,53 +1611,6 @@ button.inspect.icon-button {
     }
   }
 
-  h2 .status {
-    color: gray;
-    font-size: 200%;
-    line-height: 0.5;
-    vertical-align: top;
-    margin: 0 .125em;
-  }
-
-  &.idle h2 {
-    .status {
-      color: green;
-    }
-
-    .connect, .start {
-      display: none !important;
-    }
-  }
-
-  &.busy h2 {
-    .status {
-      color: gold;
-    }
-
-    .connect, .start {
-      display: none !important;
-    }
-  }
-
-  &.dead h2 {
-    .status {
-      color: #AA0000;
-    }
-
-    .connect, .kill {
-      display: none !important;
-    }
-
-    .start {
-      display: inline-block !important;
-    }
-  }
-
-  &.disconnected h2 {
-    .kill, .start {
-      display: none !important;
-    }
-  }
 
   .kernel-tasks {
     grid-area: tasks;
@@ -1768,6 +1721,56 @@ button.inspect.icon-button {
           width: 40%;
         }
       }
+    }
+  }
+}
+
+.kernel-status {
+  .status {
+    color: gray;
+    font-size: 200%;
+    line-height: 0.5;
+    vertical-align: top;
+    margin: 0 .125em;
+  }
+
+  &.idle {
+    .status {
+      color: green;
+    }
+
+    .connect, .start {
+      display: none !important;
+    }
+  }
+
+  &.busy {
+    .status {
+      color: gold;
+    }
+
+    .connect, .start {
+      display: none !important;
+    }
+  }
+
+  &.dead {
+    .status {
+      color: #AA0000;
+    }
+
+    .connect, .kill {
+      display: none !important;
+    }
+
+    .start {
+      display: inline-block !important;
+    }
+  }
+
+  &.disconnected {
+    .kill, .start {
+      display: none !important;
     }
   }
 }
@@ -2881,6 +2884,14 @@ button {
     padding: 2em;
   }
 
+  table {
+    font-family: monospace;
+
+    td {
+      padding: 0.5em 2em;
+    }
+  }
+
   .about-display img {
     float: right;
   }
@@ -2910,12 +2921,11 @@ button {
     }
   }
 
-
-  table {
-    font-family: monospace;
-
-    td {
-      padding: 0.5em 2em;
+  .kernels {
+    .kernel-status .status {
+      font-size: inherit;
+      line-height: inherit;
+      vertical-align: inherit;
     }
   }
 }
