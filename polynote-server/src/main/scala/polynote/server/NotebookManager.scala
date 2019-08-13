@@ -12,6 +12,7 @@ import polynote.kernel.util.OptionEither
 import polynote.server.repository.NotebookRepository
 
 import scala.collection.immutable.SortedMap
+import scala.collection.JavaConverters._
 
 /**
   * This is how the sessions interact with notebooks. The sessions don't think about writing changes etc. They'll
@@ -23,6 +24,8 @@ abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
   def getNotebook(path: String): F[SharedNotebook[F]]
 
   def listNotebooks(): F[List[String]]
+
+  def listRunningNotebooks(): F[List[String]]
 
   def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): F[String]
 
@@ -72,6 +75,10 @@ class IONotebookManager(
       case Some(sharedNotebook) => IO.pure(sharedNotebook)
       case None => loadNotebook(path)
     }
+  }
+
+  override def listRunningNotebooks(): IO[List[String]] = notebooks.synchronized {
+    IO.pure(notebooks.keys.asScala.toList)
   }
 
   override def listNotebooks(): IO[List[String]] = repository.listNotebooks()

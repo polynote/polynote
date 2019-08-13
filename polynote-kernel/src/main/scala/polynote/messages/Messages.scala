@@ -277,6 +277,9 @@ object ClearOutput extends MessageCompanion[ClearOutput](21)
 final case class NotebookVersion(notebook: ShortString, globalVersion: Int) extends Message
 object NotebookVersion extends MessageCompanion[NotebookVersion](23)
 
+final case class RunningKernels(statuses: TinyList[KernelStatus]) extends Message
+object RunningKernels extends MessageCompanion[RunningKernels](24)
+
 /*****************************************
  ** Stuff for stream-ish value handling **
  *****************************************/
