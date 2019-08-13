@@ -156,7 +156,7 @@ class SparkPolyKernel(
     sparkKI.map2(superKI)((spk, sup) => spk.combine(sup)).orElse(sparkKI).orElse(superKI).value
   }
 
-  override def cancelTasks(): IO[Unit] = super.cancelTasks() >> IO(DAGSchedulerThief(session).cancelAllJobs())
+  override def cancelTasks(): IO[Unit] = super.cancelTasks() >> IO(DAGSchedulerThief(session).foreach(_.cancelAllJobs()))
 
   override def shutdown(): IO[Unit] = super.shutdown() >> cancelTasks() >> contextShift.evalOn(ctx.executionContext)(IO(session.stop())) >> IO(logger.info("Stopped spark session"))
 }
