@@ -2267,55 +2267,7 @@ export class MainUI extends EventTarget {
                 this.about = new About(this).setEventParent(this);
             }
             this.about.show(evt.detail.section);
-            /*
-            const anchorElem = document.getElementsByClassName(evt.detail.anchor.className)[0];
-            const anchorPos = anchorElem.getBoundingClientRect();
-
-            const menu = evt.detail.elem;
-            const content = JSON.stringify(storage.show(), null, 2);
-
-            monaco.editor.colorize(content, "json", {}).then(function(result) {
-                menu.innerHTML = result;
-            });
-
-            menu.style.display = 'block';
-
-            const bodySize = document.body.getBoundingClientRect();
-
-            menu.style.right = (bodySize.width - anchorPos.left) - anchorPos.width + "px";
-
-            // hide it when you click away...
-            document.addEventListener('mousedown', () => {
-                menu.style.display = 'none';
-            }, {once: true});
-
-            //... but not if you click inside it:
-            menu.addEventListener('mousedown', (evt) => evt.stopPropagation());
-
-            // TODO: make a real display for hotkeys
-            console.log(getHotkeys())
-            */
         });
-
-        /*
-        this.toolbarUI.addEventListener('ResetPrefs', () => {
-            storage.clear();
-            location.reload(); //TODO: can we avoid reloading?
-        });
-
-        this.toolbarUI.addEventListener('ToggleVIM', () => {
-            const currentVim = preferences.get('VIM');
-            if (currentVim) {
-                preferences.set('VIM', false, "Whether VIM-mode is enabled.");
-                document.body.classList.remove('vim-enabled');
-            } else {
-                preferences.set('VIM', true, "Whether VIM-mode is enabled.");
-                document.body.classList.add('vim-enabled');
-            }
-
-            this.toolbarUI.settingsToolbar.colorVim();
-        });
-         */
 
         this.toolbarUI.addEventListener('DownloadNotebook', () => {
             MainUI.browserDownload(window.location.pathname + "?download=true", this.currentNotebook.path);

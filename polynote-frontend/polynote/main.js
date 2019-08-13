@@ -273,10 +273,6 @@ const mainUI = new MainUI(socket);
 document.getElementById('Main').appendChild(mainUI.el);
 const path = unescape(window.location.pathname);
 
-// if (preferences.get('VIM')) {
-//     document.body.classList.add('vim-enabled');
-// }
-
 if (path.startsWith('/notebook/')) {
   mainUI.loadNotebook(path.replace(/^\/notebook\//, ''));
 } else {
