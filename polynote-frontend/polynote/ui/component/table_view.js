@@ -1,10 +1,10 @@
 "use strict";
 
-import {UIEvent} from "./ui_event";
-import {DataStream, StreamingDataRepr} from "./value_repr";
-import {div, iconButton, span, table, tag} from "./tags";
-import {StructType, ArrayType} from "./data_type";
-import {SocketSession} from "./comms";
+import {UIEvent} from "../util/ui_event";
+import {DataStream, StreamingDataRepr} from "../../data/value_repr";
+import {div, iconButton, span, table, tag} from "../util/tags";
+import {StructType, ArrayType} from "../../data/data_type";
+import {SocketSession} from "../../comms";
 
 export class ReprDataRequest extends UIEvent {
     constructor(reprType, handleId, count, onComplete, onFail) {

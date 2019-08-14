@@ -1,7 +1,7 @@
 "use strict";
 
-import {UIEventTarget, UIEvent} from "./ui_event";
-import {div} from "./tags";
+import {UIEventTarget, UIEvent} from "../util/ui_event";
+import {div} from "../util/tags";
 
 export class TabNavSelected extends UIEvent {
     constructor(tabId) {

@@ -1,7 +1,7 @@
 'use strict';
 
 
-import { div, button, iconButton, h4 } from './tags.js'
+import { div, button, iconButton, h4 } from '../util/tags.js'
 import {
     BoolType,
     ByteType,
@@ -12,19 +12,19 @@ import {
     ShortType,
     StringType,
     TimestampType
-} from "./data_type";
+} from "../../data/data_type";
 import {FakeSelect} from "./fake_select";
-import {fakeSelectElem, span, textbox} from "./tags";
-import {SocketSession} from "./comms";
-import {CellMetadata, GroupAgg, ModifyStream, ReleaseHandle} from "./messages";
-import {Pair} from "./codec";
-import {DataStream, StreamingDataRepr} from "./value_repr";
+import {fakeSelectElem, span, textbox} from "../util/tags";
+import {SocketSession} from "../../comms";
+import {CellMetadata, GroupAgg, ModifyStream, ReleaseHandle} from "../../data/messages";
+import {Pair} from "../../data/codec";
+import {DataStream, StreamingDataRepr} from "../../data/value_repr";
 import embed from "vega-embed";
-import {UIEventTarget} from "./ui_event";
+import {UIEventTarget} from "../util/ui_event";
 import {CodeCell} from "./cell";
 import {ToolbarEvent} from "./toolbar";
-import {VegaClientResult} from "./vega_interpreter";
-import {ClientResult} from "./result";
+import {VegaClientResult} from "../../interpreter/vega_interpreter";
+import {ClientResult} from "../../data/result";
 
 
 function isDimension(dataType) {

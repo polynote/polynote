@@ -1,21 +1,21 @@
-import {blockquote, div, iconButton, span, tag, button} from "./tags.js";
+import {blockquote, div, iconButton, span, tag, button} from "../util/tags.js";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
 import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
-import * as messages from "./messages.js";
-import { ResultValue } from "./result.js"
+import * as messages from "../../data/messages.js";
+import { ResultValue } from "../../data/result.js"
 import {RichTextEditor} from "./text_editor.js";
-import {UIEvent, UIEventTarget} from "./ui_event.js"
-import { default as Diff } from './diff.js'
-import {details, dropdown} from "./tags";
-import {ClientResult, ExecutionInfo} from "./result";
-import {preferences} from "./storage";
-import {createVim} from "./vim";
-import {CellMetadata, DeleteCell} from "./messages";
-import {KeyAction} from "./hotkeys";
-import {clientInterpreters} from "./client_interpreter";
+import {UIEvent, UIEventTarget} from "../util/ui_event.js"
+import { default as Diff } from '../../util/diff.js'
+import {details, dropdown} from "../util/tags";
+import {ClientResult, ExecutionInfo} from "../../data/result";
+import {preferences} from "../util/storage";
+import {createVim} from "../util/vim";
+import {CellMetadata, DeleteCell} from "../../data/messages";
+import {KeyAction} from "../util/hotkeys";
+import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {valueInspector} from "./value_inspector";
-import {Interpreters} from "./ui";
+import {Interpreters} from "../ui";
 import {displayContent, parseContentType, prettyDuration} from "./display_content";
 
 const JsDiff = new Diff();

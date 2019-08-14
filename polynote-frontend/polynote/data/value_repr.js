@@ -5,7 +5,7 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32, uint32
 } from './codec.js'
 
-import match from "./match.js"
+import match from "../util/match.js"
 
 import { DataType } from './data_type.js'
 import {GroupAgg, HandleData, ModifyStream, QuantileBin, Select} from "./messages";

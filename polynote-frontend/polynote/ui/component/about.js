@@ -1,11 +1,11 @@
-import {button, div, dropdown, h2, h3, iconButton, span, table, tag, textbox} from "./tags";
+import {button, div, dropdown, h2, h3, iconButton, span, table, tag, textbox} from "../util/tags";
 import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
-import {getHotkeys} from "./hotkeys";
-import {preferences, storage} from "./storage";
+import {getHotkeys} from "../util/hotkeys";
+import {preferences, storage} from "../util/storage";
 import {ToolbarEvent} from "./toolbar";
-import { UIEvent } from './ui_event.js'
-import * as messages from "./messages";
+import { UIEvent } from '../util/ui_event.js'
+import * as messages from "../../data/messages";
 
 export class About extends FullScreenModal {
     constructor(mainUI) {

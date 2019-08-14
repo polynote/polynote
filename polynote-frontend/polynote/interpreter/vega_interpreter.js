@@ -1,10 +1,10 @@
 "use strict";
 
 import * as acorn from "acorn"
-import {Position, KernelReport, CompileErrors, Output, KernelErrorWithCause, RuntimeError} from "./result.js";
-import {DataStream, MIMERepr} from "./value_repr";
+import {Position, KernelReport, CompileErrors, Output, KernelErrorWithCause, RuntimeError} from "../data/result.js";
+import {DataStream, MIMERepr} from "../data/value_repr";
 import embed from "vega-embed";
-import {ClientResult} from "./result";
+import {ClientResult} from "../data/result";
 
 export const VegaInterpreter = {
 

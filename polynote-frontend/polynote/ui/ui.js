@@ -1,28 +1,28 @@
 'use strict';
 
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
-import { LaTeXEditor } from './latex_editor.js'
-import { UIEvent, UIEventTarget } from './ui_event.js'
-import { FakeSelect } from './fake_select.js'
-import { Cell, TextCell, CodeCell, BeforeCellRunEvent, CellExecutionStarted, CellExecutionFinished } from "./cell.js"
-import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, dropdown } from './tags.js'
-import { TaskStatus } from './messages.js';
-import * as messages from './messages.js'
-import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from './result.js'
-import { storage } from './storage.js'
-import { ToolbarUI } from "./toolbar";
-import match from "./match.js";
-import {ClientResult, ExecutionInfo} from "./result";
-import {Either} from "./codec";
-import {errorDisplay} from "./cell";
-import {clientInterpreters} from "./client_interpreter";
-import {DataRepr, DataStream, StreamingDataRepr} from "./value_repr";
+import { LaTeXEditor } from './component/latex_editor.js'
+import { UIEvent, UIEventTarget } from './util/ui_event.js'
+import { FakeSelect } from './component/fake_select.js'
+import { Cell, TextCell, CodeCell, BeforeCellRunEvent, CellExecutionStarted, CellExecutionFinished } from "./component/cell.js"
+import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, dropdown } from './util/tags.js'
+import { TaskStatus } from '../data/messages.js';
+import * as messages from '../data/messages.js'
+import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from '../data/result.js'
+import { storage } from './util/storage.js'
+import { ToolbarUI } from "./component/toolbar";
+import match from "../util/match.js";
+import {ClientResult, ExecutionInfo} from "../data/result";
+import {Either} from "../data/codec";
+import {errorDisplay} from "./component/cell";
+import {clientInterpreters} from "../interpreter/client_interpreter";
+import {DataRepr, DataStream, StreamingDataRepr} from "../data/value_repr";
 import {Position} from "monaco-editor";
-import {valueInspector} from "./value_inspector";
+import {valueInspector} from "./component/value_inspector";
 import * as Tinycon from "tinycon";
-import {getHotkeys} from "./hotkeys";
-import {About, about} from "./about";
-import {preferences} from "./storage";
+import {getHotkeys} from "./util/hotkeys";
+import {About, about} from "./component/about";
+import {preferences} from "./util/storage";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");

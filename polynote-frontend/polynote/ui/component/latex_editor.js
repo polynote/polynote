@@ -1,4 +1,4 @@
-import {div, span, textbox, para} from "./tags.js";
+import {div, span, textbox, para} from "../util/tags.js";
 import { TextCell } from "./cell.js"
 
 export class LaTeXEditor extends EventTarget {

@@ -1,5 +1,5 @@
 
-import {Cell, CodeCell} from "./cell";
+import {Cell, CodeCell} from "../component/cell";
 import {OS, isMacintosh} from 'monaco-editor/esm/vs/base/common/platform.js'
 import {createSimpleKeybinding} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
 import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'

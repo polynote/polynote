@@ -1,4 +1,4 @@
-import {htmlToMarkdown} from "./html_to_md";
+import {htmlToMarkdown} from "../util/html_to_md";
 import {LaTeXEditor} from "./latex_editor";
 
 export class RichTextEditor {

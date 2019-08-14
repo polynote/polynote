@@ -1,7 +1,7 @@
 "use strict";
 
 import * as monaco from "monaco-editor";
-import {div, span, tag} from "./tags";
+import {div, span, tag} from "../util/tags";
 
 export function displayContent(contentType, content, contentTypeArgs) {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);

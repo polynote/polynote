@@ -1,9 +1,9 @@
-import {button, div, fakeSelectElem, h3, iconButton, tag} from "./tags";
+import {button, div, fakeSelectElem, h3, iconButton, tag} from "../util/tags";
 import {FakeSelect} from "./fake_select";
 import {Cell, CodeCell, TextCell} from "./cell";
 import {LaTeXEditor} from "./latex_editor";
-import {UIEvent, UIEventTarget} from "./ui_event";
-import {preferences, storage} from "./storage";
+import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {preferences, storage} from "../util/storage";
 
 export class ToolbarEvent extends UIEvent {
     constructor(eventId, details) {

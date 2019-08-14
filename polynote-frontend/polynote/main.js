@@ -1,12 +1,12 @@
 "use strict";
 //import * as monaco from 'monaco-editor'
 import { SocketSession } from './comms.js'
-import * as messages from './messages.js'
-import { MainUI } from './ui.js'
-import { scala, vega } from './languages.js'
-import { theme } from './theme.js'
+import * as messages from './data/messages.js'
+import { MainUI } from './ui/ui.js'
+import { scala, vega } from './ui/monaco/languages.js'
+import { theme } from './ui/monaco/theme.js'
 import * as monaco from "monaco-editor";
-import {storage} from "./storage";
+import {storage} from "./ui/util/storage";
 import * as Tinycon from "tinycon";
 
 const md = require('markdown-it');

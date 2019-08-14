@@ -1,16 +1,16 @@
 "use strict";
 
 import {FullScreenModal, Modal} from "./modal";
-import {div, button} from "./tags";
-import {ResultValue} from "./result";
-import {MIMERepr, DataRepr, LazyDataRepr, StreamingDataRepr, StringRepr} from "./value_repr";
-import match from "./match";
+import {div, button} from "../util/tags";
+import {ResultValue} from "../../data/result";
+import {MIMERepr, DataRepr, LazyDataRepr, StreamingDataRepr, StringRepr} from "../../data/value_repr";
+import match from "../../util/match";
 import {displayContent, displayData, contentTypeName} from "./display_content"
-import {ArrayType, StructType} from "./data_type";
+import {ArrayType, StructType} from "../../data/data_type";
 import {PlotEditor} from "./plot_editor";
 import {TableView} from "./table_view";
 import {TabNav} from "./tab_nav";
-import {DataReader} from "./codec";
+import {DataReader} from "../../data/codec";
 
 function schemaToObject(structType) {
     const obj = {};

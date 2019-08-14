@@ -1,6 +1,6 @@
 'use strict';
 
-import { Message } from './messages.js'
+import { Message } from './data/messages.js'
 
 
 function mkSocket() {
