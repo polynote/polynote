@@ -15,7 +15,7 @@ import {CellMetadata, DeleteCell} from "../../data/messages";
 import {KeyAction} from "../util/hotkeys";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {valueInspector} from "./value_inspector";
-import {Interpreters} from "../ui";
+import {Interpreters} from "./ui";
 import {displayContent, parseContentType, prettyDuration} from "./display_content";
 
 const JsDiff = new Diff();

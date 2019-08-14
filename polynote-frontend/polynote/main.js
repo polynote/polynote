@@ -2,7 +2,7 @@
 //import * as monaco from 'monaco-editor'
 import { SocketSession } from './comms.js'
 import * as messages from './data/messages.js'
-import { MainUI } from './ui/ui.js'
+import { MainUI } from './ui/component/ui.js'
 import { scala, vega } from './ui/monaco/languages.js'
 import { theme } from './ui/monaco/theme.js'
 import * as monaco from "monaco-editor";
