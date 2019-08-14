@@ -24,9 +24,11 @@ import {getHotkeys} from "./hotkeys";
 import {About, about} from "./about";
 import {preferences} from "./storage";
 
+// what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
 
+// UNUSED
 export class MainToolbar extends EventTarget {
     constructor(el) {
         super();
@@ -35,6 +37,7 @@ export class MainToolbar extends EventTarget {
     }
 }
 
+// BREAKOUT (symbols.js)
 export class KernelSymbolsUI extends UIEventTarget {
     constructor(path) {
         super();
@@ -171,6 +174,8 @@ export class KernelSymbolsUI extends UIEventTarget {
     }
 }
 
+// BREAKOUT (tasks.js)
+// GENERIFY (remove 'kernel' references?)
 export class KernelTasksUI {
     constructor() {
         this.el = div(['kernel-tasks'], [
@@ -254,6 +259,7 @@ export class KernelTasksUI {
     }
 }
 
+// BREAKOUT (kernel_info.js)
 // TODO: should we remember collapsed state across sessions?
 export class KernelInfoUI {
     constructor() {
@@ -329,6 +335,7 @@ export class KernelInfoUI {
     }
 }
 
+// BREAKOUT (split_view.js)
 export class SplitView {
     constructor(id, left, center, right) {
         this.left = left;
@@ -408,6 +415,7 @@ export class SplitView {
         this.el = div(['split-view', id], children);
     }
 
+    // TODO: remove event dispatch on window, replace toggles with add, remove
     collapse(side, force) {
         if (side === 'left') {
             this.el.classList.toggle('left-collapsed', force || undefined) // undefined because we want it to toggle normally if we aren't forcing it.
@@ -421,6 +429,8 @@ export class SplitView {
     }
 }
 
+// BREAKOUT (kernelui.js)
+// REMOVE SOCKET
 export class KernelUI extends UIEventTarget {
     constructor(socket, path, showInfo=true, showSymbols=true, showTasks=true, showStatus=true) {
         super();
@@ -460,6 +470,7 @@ export class KernelUI extends UIEventTarget {
             socket.send(new messages.StartKernel(path, messages.StartKernel.Kill));
         });
 
+        // TODO: shouldn't listen to socket directly
         socket.addMessageListener(messages.KernelStatus, (path, update) => {
             if (path === this.path) {
                 switch (update.constructor) {
@@ -571,6 +582,7 @@ export class KernelUI extends UIEventTarget {
     }
 }
 
+// BREAKOUT (nb_config.js)
 export class NotebookConfigUI extends UIEventTarget {
     constructor() {
         super();
@@ -860,6 +872,7 @@ export class NotebookConfigUI extends UIEventTarget {
 
 }
 
+// BREAKOUT (nb_cells.js)
 export class NotebookCellsUI extends UIEventTarget {
     constructor(path) {
         super();
@@ -871,10 +884,12 @@ export class NotebookCellsUI extends UIEventTarget {
         this.cells = {};
         this.cellCount = 0;
         this.queuedCells = 0;
+        // TODO: remove window listener!
         window.addEventListener('resize', this.forceLayout.bind(this));
     }
 
     newCellDivider() {
+        // TODO clean up self=this just use arrow functions
         const self = this;
         return div(['new-cell-divider'], []).click(function() {
             const nextCell = self.getCellAfterEl(this);
@@ -1093,6 +1108,7 @@ export class NotebookCellsUI extends UIEventTarget {
         if (currentCell.language === language)
             return;
 
+        // TODO: should cell-specific logic be moved into the cell itself?
         if (currentCell instanceof TextCell && language !== 'text') {
             // replace text cell with a code cell
             const textContent = currentCell.container.innerText.trim(); // innerText has just the plain text without any HTML formatting
@@ -1123,6 +1139,7 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 }
 
+// BREAKOUT (utils?)
 class EditBuffer {
 
     constructor() {
@@ -1169,6 +1186,7 @@ class EditBuffer {
     }
 }
 
+// BREAKOUT (utils?)
 function maxId(cells) {
     let max = -1;
     cells.forEach(cell => {
@@ -1179,11 +1197,14 @@ function maxId(cells) {
     return max;
 }
 
+// BREAKOUT (notebook.js)
+// REMOVE SOCKET
 export class NotebookUI extends UIEventTarget {
-    constructor(path, socket, mainUI) {  // TODO: Maybe UI shouldn't talk directly to session? I dunno...
+    // TODO: remove socket, mainUI references
+    constructor(path, socket, mainUI) {
         super();
         let cellUI = new NotebookCellsUI(path).setEventParent(this);
-        cellUI.notebookUI = this;
+        cellUI.notebookUI = this; // TODO: deal with this
         let kernelUI = new KernelUI(socket, path).setEventParent(this);
         //super(null, cellUI, kernelUI);
         //this.el.classList.add('notebook-ui');
@@ -1202,6 +1223,7 @@ export class NotebookUI extends UIEventTarget {
 
         this.addEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, this.path, evt.detail.cellId));
 
+        // TODO: remove listeners on children.
         this.cellUI.addEventListener('UpdatedConfig', evt => {
             const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
             this.editBuffer.push(this.localVersion, update);
@@ -1541,11 +1563,13 @@ export class NotebookUI extends UIEventTarget {
         });
 
 
+        // TODO: this doesn't seem like the best place for this reconnection logic.
         // when the socket is disconnected, we're going to try reconnecting when the window gets focus.
         const reconnectOnWindowFocus = evt => {
             if (socket.isClosed) {
                 socket.reconnect(true);
             }
+            // TODO: replace with `socket.request`
             socket.listenOnceFor(messages.NotebookVersion, (path, serverGlobalVersion) => {
                 if (this.globalVersion !== serverGlobalVersion) {
                     // looks like there's been a change while we were disconnected, so reload.
@@ -1742,6 +1766,8 @@ export class NotebookUI extends UIEventTarget {
     }
 }
 
+// BREAKOUT (tab.js)
+// TODO: Shouldn't it extend UIEventTarget?
 export class TabUI extends EventTarget {
 
     constructor(contentAreas) {
@@ -1873,6 +1899,7 @@ export class TabUI extends EventTarget {
     }
 }
 
+// BREAKOUT (notebooks_list.js)
 export class NotebookListUI extends UIEventTarget {
     constructor() {
         super();
@@ -2069,6 +2096,7 @@ export class NotebookListUI extends UIEventTarget {
     }
 }
 
+// BREAKOUT (welcome.js? home.js?)
 export class WelcomeUI extends UIEventTarget {
     constructor() {
         super();
@@ -2100,7 +2128,10 @@ export class WelcomeUI extends UIEventTarget {
 
 export const Interpreters = {};
 
+// BREAKOUT (main.js?) Or maybe this should be the only thing left in ui.js once everything else is moved out?
+// TODO: should extend UIEventTarget?
 export class MainUI extends EventTarget {
+    // TODO: remove socket reference
     constructor(socket) {
         super();
         let left = { el: div(['grid-shell'], []) };
@@ -2125,12 +2156,13 @@ export class MainUI extends EventTarget {
                 this.loadNotebook(evt.detail.item);
             }
         });
+        // TODO: remove listeners on children.
         this.browseUI.addEventListener('NewNotebook', () => this.createNotebook());
         this.browseUI.addEventListener('ImportNotebook', evt => this.importNotebook(evt));
         this.browseUI.addEventListener('ToggleNotebookListUI', (evt) => this.mainView.collapse('left', evt.detail && evt.detail.force));
         this.browseUI.init();
 
-        this.socket = socket;
+        this.socket = socket; // bad
 
         socket.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
         socket.send(new messages.ListNotebooks([]));
