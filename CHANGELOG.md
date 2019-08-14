@@ -2,6 +2,20 @@
 
 *
 
+# 0.1.22 (August 14, 2019)
+
+* Fix for `Shift+Enter` creating a newline rather than executing the cell
+* Show tasks in Welcome screen
+* Focus previous cell when last cell is deleted
+* Remove formatting when converting text cells to code cells (e.g., if you copy/pasted some code and it has colors and such)
+* New [About modal](https://user-images.githubusercontent.com/5430417/62907942-6dcdf100-bd2a-11e9-9065-acfcaf281c21.gif): 
+    * Replaced barely used View Settings ugliness with fancy new modal with a bunch of info
+    * `About` section has server version info
+    * `Preferences` section has are for setting preferences and viewing/clearing storage (can be accessed directly by clicking the `gear` button.
+        * The vim mode setting has been moved here
+    * `Hotkeys` section has all available hotkeys (can be accessed directly by clicking the `?` button)
+    * `Kernels` section shows all notebooks currently open by the server, with the ability to start/stop their kernel. 
+
 # 0.1.21 (August 7, 2019)
 
 * Fix hidden output off-by-one error
