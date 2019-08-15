@@ -5,7 +5,6 @@ import {KernelUI} from "./kernel_ui";
 import {EditBuffer} from "../util/edit_buffer";
 import * as messages from "../../data/messages";
 import {BeforeCellRunEvent, Cell, CodeCell, TextCell} from "./cell";
-import {maxId} from "../util/functions";
 import {div, span} from "../util/tags";
 import match from "../../util/match";
 import {
@@ -19,6 +18,7 @@ import {
 } from "../../data/result";
 import {DataRepr, DataStream, StreamingDataRepr} from "../../data/value_repr";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
+import {NotebookCell, NotebookConfig} from "../../data/data";
 
 export class NotebookUI extends UIEventTarget {
     // TODO: remove socket, mainUI references
@@ -112,14 +112,14 @@ export class NotebookUI extends UIEventTarget {
 
         this.addEventListener('InsertCellAfter', evt => {
             const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.firstCell().id);
-            const nextId = maxId(this.cellUI.getCells()) + 1;
+            const nextId = this.cellUI.getMaxCellId() + 1;
             let newCell = evt.detail.mkCell;
             if (newCell) {
                 newCell = newCell(nextId);
             } else {
                 newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
             }
-            const notebookCell = new messages.NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata || null);
+            const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata || null);
             const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, current.id);
             this.socket.send(update);
             this.editBuffer.push(this.localVersion, update);
@@ -132,15 +132,15 @@ export class NotebookUI extends UIEventTarget {
 
         this.cellUI.addEventListener('InsertCellBefore', evt => {
             const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.firstCell();
-            const nextId = maxId(this.cellUI.getCells()) + 1;
+            const nextId = this.cellUI.getMaxCellId() + 1;
             const newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
             if (current === this.cellUI.firstCell()) {
-                const update = new messages.InsertCell(path, this.globalVersion, this.localVersion++, new messages.NotebookCell(newCell.id, newCell.language, ''), -1);
+                const update = new messages.InsertCell(path, this.globalVersion, this.localVersion++, new NotebookCell(newCell.id, newCell.language, ''), -1);
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, null);
             } else {
                 const prev = current.prevCell();
-                const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, new messages.NotebookCell(newCell.id, newCell.language, ''), prev.id);
+                const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, new NotebookCell(newCell.id, newCell.language, ''), prev.id);
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, prev);
 
@@ -163,7 +163,7 @@ export class NotebookUI extends UIEventTarget {
                 this.editBuffer.push(this.localVersion, update);
                 const nextCell = current.nextCell();
 
-                const cell = new messages.NotebookCell(current.id, current.language, current.content);
+                const cell = new NotebookCell(current.id, current.language, current.content);
 
                 const undoEl = div(['undo-delete'], [
                     span(['close-button', 'fa'], ['']).click(evt => {
@@ -552,7 +552,7 @@ export class NotebookUI extends UIEventTarget {
             if (config) {
                 this.cellUI.configUI.setConfig(config);
             } else {
-                this.cellUI.configUI.setConfig(messages.NotebookConfig.default);
+                this.cellUI.configUI.setConfig(NotebookConfig.default);
             }
             // TODO: move all of this logic out.
             this.socket.removeMessageListener(messages.NotebookCells, this.onCellsLoaded);

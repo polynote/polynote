@@ -1,7 +1,7 @@
 // BREAKOUT (nb_config.js)
 import {UIEvent, UIEventTarget} from "../util/ui_event";
 import {button, div, dropdown, h2, h3, iconButton, para, span, textbox} from "../util/tags";
-import * as messages from "../../data/messages";
+import {IvyRepository, MavenRepository, NotebookConfig, PipRepository} from "../../data/data";
 
 export class NotebookConfigUI extends UIEventTarget {
     constructor() {
@@ -118,19 +118,19 @@ export class NotebookConfigUI extends UIEventTarget {
         const typeSelect = row.querySelector('.resolver-type');
         const type = typeSelect.options[typeSelect.selectedIndex].value;
         if (type === 'ivy') {
-            return new messages.IvyRepository(
+            return new IvyRepository(
                 row.querySelector('.resolver-url').value,
                 row.querySelector('.resolver-artifact-pattern').value || null,
                 row.querySelector('.resolver-metadata-pattern').value || null,
                 null
             );
         } else if (type === 'maven') {
-            return new messages.MavenRepository(
+            return new MavenRepository(
                 row.querySelector('.resolver-url').value,
                 null
             );
         } else if (type === 'pip') {
-            return new messages.PipRepository(
+            return new PipRepository(
                 row.querySelector('.resolver-url').value
             );
         }
@@ -174,7 +174,7 @@ export class NotebookConfigUI extends UIEventTarget {
 
         const type = value.constructor.msgTypeId;
 
-        if (value instanceof messages.IvyRepository) {
+        if (value instanceof IvyRepository) {
             row.querySelector('.resolver-artifact-pattern').value = value.artifactPattern || '';
             row.querySelector('.resolver-metadata-pattern').value = value.metadataPattern || '';
         }
@@ -282,7 +282,7 @@ export class NotebookConfigUI extends UIEventTarget {
             if (k) sparkConfig[k] = v;
         });
 
-        return new messages.NotebookConfig(
+        return new NotebookConfig(
             deps,
             exclusions,
             repos,

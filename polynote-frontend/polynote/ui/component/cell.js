@@ -1,22 +1,22 @@
-import {blockquote, div, iconButton, span, tag, button} from "../util/tags.js";
+import {blockquote, button, div, iconButton, span, tag} from "../util/tags.js";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
-import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
-import * as messages from "../../data/messages.js";
-import { ResultValue } from "../../data/result.js"
+import {ResultValue} from "../../data/result.js"
 import {RichTextEditor} from "./text_editor.js";
 import {UIEvent, UIEventTarget} from "../util/ui_event.js"
-import { default as Diff } from '../../util/diff.js'
+import {default as Diff} from '../../util/diff.js'
 import {details, dropdown} from "../util/tags";
 import {ClientResult, ExecutionInfo} from "../../data/result";
 import {preferences} from "../util/storage";
 import {createVim} from "../util/vim";
-import {CellMetadata, DeleteCell} from "../../data/messages";
+import {DeleteCell} from "../../data/messages";
 import {KeyAction} from "../util/hotkeys";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {valueInspector} from "./value_inspector";
 import {Interpreters} from "./ui";
 import {displayContent, parseContentType, prettyDuration} from "./display_content";
+import {CellMetadata} from "../../data/data";
+import {Delete, Insert} from "../../data/content_edit";
 
 const JsDiff = new Diff();
 
@@ -529,11 +529,11 @@ export class CodeCell extends Cell {
         monaco.editor.setModelMarkers(this.editor.getModel(), this.id, []);
         const edits = event.changes.flatMap((contentChange) => {
             if (contentChange.rangeLength && contentChange.text.length) {
-                return [new messages.Delete(contentChange.rangeOffset, contentChange.rangeLength), new messages.Insert(contentChange.rangeOffset, contentChange.text)];
+                return [new Delete(contentChange.rangeOffset, contentChange.rangeLength), new Insert(contentChange.rangeOffset, contentChange.text)];
             } else if (contentChange.rangeLength) {
-              return [new messages.Delete(contentChange.rangeOffset, contentChange.rangeLength)];
+              return [new Delete(contentChange.rangeOffset, contentChange.rangeLength)];
             } else if (contentChange.text.length) {
-                return [new messages.Insert(contentChange.rangeOffset, contentChange.text)];
+                return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
         this.dispatchEvent(new ContentChangeEvent(this.id, edits));
@@ -980,13 +980,13 @@ export class CodeCell extends Cell {
                 }
 
                 const pos = model.getPositionAt(edit.pos);
-                if (edit instanceof messages.Delete) {
+                if (edit instanceof Delete) {
                     const endPos = model.getPositionAt(edit.pos + edit.length);
                     monacoEdits.push({
                         range: new monaco.Range(pos.lineNumber, pos.column, endPos.lineNumber, endPos.column),
                         text: null
                     });
-                } else if (edit instanceof messages.Insert) {
+                } else if (edit instanceof Insert) {
                     monacoEdits.push({
                         range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
                         text: edit.content,
@@ -1102,10 +1102,10 @@ export class TextCell extends Cell {
                 const d = diff[i];
                 const text = d.value;
                 if (d.added) {
-                    edits.push(new messages.Insert(pos, text));
+                    edits.push(new Insert(pos, text));
                     pos += text.length;
                 } else if (d.removed) {
-                    edits.push(new messages.Delete(pos, text.length));
+                    edits.push(new Delete(pos, text.length));
                 }
                 i++;
             }

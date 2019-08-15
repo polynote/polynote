@@ -1,16 +1,13 @@
 'use strict';
 
 import {
-    Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, bufferCodec, optional,
-    str, shortStr, tinyStr, uint8, uint16, int32, uint32
-} from './codec.js'
+    DataReader, discriminated, combined, bufferCodec, optional, str, uint8, int32, uint32, Pair
+} from './codec'
 
-import match from "../util/match.js"
+import match from "../util/match"
 
-import { DataType } from './data_type.js'
 import {GroupAgg, HandleData, ModifyStream, QuantileBin, Select} from "./messages";
-import {Pair} from "./codec";
-import {DoubleType, LongType, NumericTypes, StructField, StructType} from "./data_type";
+import { DataType, DoubleType, LongType, NumericTypes, StructField, StructType} from "./data_type";
 
 export class ValueRepr {}
 

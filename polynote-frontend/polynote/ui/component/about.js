@@ -1,30 +1,22 @@
-import {button, div, dropdown, h2, h3, iconButton, span, table, tag, textbox} from "../util/tags";
+import {button, div, dropdown, h2, h3, iconButton, span, table, tag} from "../util/tags";
 import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
 import {preferences, storage} from "../util/storage";
-import {ToolbarEvent} from "./toolbar";
-import { UIEvent } from '../util/ui_event.js'
-import * as messages from "../../data/messages";
+import { UIEvent } from '../util/ui_event.js';
+import {CallbackEvent} from "../util/ui_event";
 
 export class About extends FullScreenModal {
-    constructor(mainUI) {
+    constructor() {
         super(
             div([], []),
             { windowClasses: ['about'] }
         );
-        this.mainUI = mainUI; // unfortunately we need to be able to pull info from the main ui...
 
         this.storageUpdateListeners = [];
     }
 
     aboutMain() {
-        const version = this.mainUI.currentServerVersion;
-        const commit = this.mainUI.currentServerCommit;
-        const info = [
-            ["Server Version", version],
-            ["Server Commit", commit]
-        ];
         const el = div(["about-display"], [
             div([], [
                 tag('img', [], {src: "/style/polynote.svg", alt:"Polynote"}, []),
@@ -32,20 +24,26 @@ export class About extends FullScreenModal {
             ])
         ]);
 
-        const tableEl = table(['server-info'], {
-            header: false,
-            classes: ['key', 'val'],
-            rowHeading: false,
-            addToTop: false
-        });
-        for (const [k, v] of info) {
-            tableEl.addRow({
-                key: k,
-                val: v
-            })
-        }
+        this.dispatchEvent(new CallbackEvent('ServerVersionRequest', (version, commit) => {
+            const info = [
+                ["Server Version", version],
+                ["Server Commit", commit]
+            ];
+            const tableEl = table(['server-info'], {
+                header: false,
+                classes: ['key', 'val'],
+                rowHeading: false,
+                addToTop: false
+            });
+            for (const [k, v] of info) {
+                tableEl.addRow({
+                    key: k,
+                    val: v
+                })
+            }
 
-        el.appendChild(tableEl);
+            el.appendChild(tableEl);
+        }));
         return el;
     }
 
@@ -166,9 +164,8 @@ export class About extends FullScreenModal {
             ])
         ]);
 
-        // TODO: mainUI.socket not good.
         const getKernelStatuses = () => {
-            this.mainUI.socket.listenOnceFor(messages.RunningKernels, (statuses) => {
+            this.dispatchEvent(new CallbackEvent('RunningKernelsRequest', (statuses) => {
                 const tableEl = table(['kernels'], {
                     header: ['path', 'status', 'actions'],
                     classes: ['path', 'status', 'actions'],
@@ -182,19 +179,16 @@ export class About extends FullScreenModal {
                         span(['status'], [state]),
                     ]);
                     const actionsEl = div([], [
-                        // TODO: really should be a better way to dispatch these events rather than going through mainUI's kernelUI...
                         iconButton(['start'], 'Start kernel', '', 'Start').click(evt => {
-                            this.mainUI.socket.send(new messages.StartKernel(status.path, messages.StartKernel.NoRestart));
+                            this.dispatchEvent(new UIEvent('StartKernel', {path: status.path}));
                             getKernelStatuses();
                         }),
                         iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => {
-                            if (confirm("Kill running kernel? State will be lost.")) {
-                                this.mainUI.socket.send(new messages.StartKernel(status.path, messages.StartKernel.Kill));
-                                getKernelStatuses();
-                            }
+                            this.dispatchEvent(new UIEvent('KillKernel', {path: status.path}));
+                            getKernelStatuses();
                         }),
                         iconButton(['open'], 'Open notebook', '', 'Open').click(evt => {
-                            this.mainUI.loadNotebook(status.path);
+                            this.dispatchEvent(new UIEvent('LoadNotebook', {path: status.path}));
                             this.hide();
                         })
                     ]);
@@ -208,8 +202,7 @@ export class About extends FullScreenModal {
                 }
 
                 if (statuses.length > 0) content.replaceChild(tableEl, content.firstChild);
-            });
-            this.mainUI.socket.send(new messages.RunningKernels([]));
+            }));
         };
         getKernelStatuses();
 

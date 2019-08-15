@@ -16,7 +16,7 @@ import {
 import {FakeSelect} from "./fake_select";
 import {fakeSelectElem, span, textbox} from "../util/tags";
 import {SocketSession} from "../../comms";
-import {CellMetadata, GroupAgg, ModifyStream, ReleaseHandle} from "../../data/messages";
+import {GroupAgg, ModifyStream, ReleaseHandle} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {DataStream, StreamingDataRepr} from "../../data/value_repr";
 import embed from "vega-embed";
@@ -25,6 +25,7 @@ import {CodeCell} from "./cell";
 import {ToolbarEvent} from "./toolbar";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {ClientResult} from "../../data/result";
+import {CellMetadata} from "../../data/data";
 
 
 function isDimension(dataType) {

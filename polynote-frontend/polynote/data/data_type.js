@@ -1,10 +1,8 @@
 'use strict';
 
 import {
-    Codec, DataReader, DataWriter, discriminated, combined, arrayCodec,
-    str, shortStr, tinyStr, uint8, uint16, int32
+    discriminated, combined, arrayCodec, str, uint8, int32
 } from './codec.js'
-import {Result} from "./result";
 
 export class DataType {
     name() { return this.constructor.name; }

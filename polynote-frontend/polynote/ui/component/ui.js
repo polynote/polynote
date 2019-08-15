@@ -1,11 +1,11 @@
 'use strict';
 
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
-import {UIEvent} from '../util/ui_event.js'
-import {Cell} from "./cell.js"
-import {div, span} from '../util/tags.js'
-import * as messages from '../../data/messages.js';
-import {storage} from '../util/storage.js'
+import {UIEvent, UIEventTarget} from '../util/ui_event'
+import {Cell} from "./cell"
+import {div, span} from '../util/tags'
+import * as messages from '../../data/messages';
+import {storage} from '../util/storage'
 import {ToolbarUI} from "./toolbar";
 import {Either} from "../../data/codec";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
@@ -24,8 +24,7 @@ document.execCommand("styleWithCSS", false, false);
 
 export const Interpreters = {};
 
-// TODO: should extend UIEventTarget?
-export class MainUI extends EventTarget {
+export class MainUI extends UIEventTarget {
     // TODO: remove socket reference
     constructor(socket) {
         super();
@@ -207,7 +206,7 @@ export class MainUI extends EventTarget {
 
         this.toolbarUI.addEventListener('ViewAbout', (evt) => {
             if (!this.about) {
-                this.about = new About(this).setEventParent(this);
+                this.about = new About().setEventParent(this);
             }
             this.about.show(evt.detail.section);
         });
@@ -220,6 +219,29 @@ export class MainUI extends EventTarget {
             this.socket.send(new messages.ClearOutput(this.currentNotebookPath))
         });
 
+        this.addEventListener('ServerVersionRequest', evt => {
+            evt.detail.callback(this.currentServerVersion, this.currentServerCommit);
+        });
+
+        this.addEventListener('RunningKernelsRequest', evt => {
+            this.socket.request(new messages.RunningKernels([])).then((msg) => {
+                evt.detail.callback(msg.kernelStatuses)
+            })
+        });
+
+        // TODO: consolidate all start kernel requests to this function
+        this.addEventListener('StartKernel', evt => {
+            this.socket.send(new messages.StartKernel(evt.detail.path, messages.StartKernel.NoRestart));
+        });
+
+        // TODO: consolidate all kill kernel requests to this function
+        this.addEventListener('KillKernel', evt => {
+            if (confirm("Kill running kernel? State will be lost.")) {
+                this.socket.send(new messages.StartKernel(evt.detail.path, messages.StartKernel.Kill));
+            }
+        });
+
+        this.addEventListener('LoadNotebook', evt => this.loadNotebook(evt.detail.path));
     }
 
     showWelcome() {

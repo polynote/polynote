@@ -23,6 +23,14 @@ export class UIEvent extends CustomEvent {
     }
 }
 
+export class CallbackEvent extends UIEvent {
+    constructor(id, callback, detail={}) {
+        const det = Object.assign({callback: callback}, detail);
+        super(id, det);
+    }
+}
+
+
 export class UIEventTarget extends EventTarget {
     constructor() {
         super();
@@ -58,6 +66,10 @@ export class UIEventTarget extends EventTarget {
         }
         this.listeners[type].push(listener);
         return listener;
+    }
+
+    request(eventType) {
+        return new Promise()
     }
 
     removeEventListener(type, listener, options) {

@@ -1,32 +1,15 @@
 'use strict';
 
 import {
-    DataReader, DataWriter, Codec, combined, arrayCodec, discriminated, optional, mapCodec, bufferCodec,
-    str, shortStr, tinyStr, uint8, uint16, int16, int32, uint32, bool, either, float64, Pair
-} from './codec.js'
+    arrayCodec, bool, bufferCodec, Codec, combined, discriminated, either, float64, int16, int32, mapCodec, optional,
+    Pair, shortStr, str, tinyStr, uint16, uint32, uint8
+} from './codec'
 
-import { Result, KernelErrorWithCause, PosRange } from './result.js'
+import {KernelErrorWithCause, Output, PosRange, Result} from './result'
 import {StreamingDataRepr} from "./value_repr";
-import {ExecutionInfo, Output} from "./result";
-
-export function isEqual(a, b) {
-    if (a === b)
-        return true;
-
-    if (a instanceof Array || a instanceof Object) {
-        if (a.constructor !== b.constructor)
-            return false;
-
-        for (const i in a) {
-            if (!isEqual(a[i], b[i])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    return false;
-}
+import {isEqual} from "../util/functions";
+import {CellMetadata, NotebookCell, NotebookConfig} from "./data";
+import {ContentEdit, Delete, Insert} from "./content_edit";
 
 export class Message {
     static decode(data) {
@@ -78,135 +61,6 @@ export class LoadNotebook extends Message {
 }
 
 LoadNotebook.codec = combined(shortStr).to(LoadNotebook);
-
-export class CellMetadata {
-    static unapply(inst) {
-        return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.executionInfo];
-    }
-
-    constructor(disableRun, hideSource, hideOutput, executionInfo) {
-        this.disableRun = disableRun || false;
-        this.hideSource = hideSource || false;
-        this.hideOutput = hideOutput || false;
-        this.executionInfo = executionInfo || null;
-        Object.freeze(this);
-    }
-
-    copy(props) {
-        const disableRun = typeof props.disableRun !== 'undefined' ? props.disableRun : this.disableRun;
-        const hideSource = typeof props.hideSource !== 'undefined' ? props.hideSource : this.hideSource;
-        const hideOutput = typeof props.hideOutput !== 'undefined' ? props.hideOutput : this.hideOutput;
-        const executionInfo = typeof props.executionInfo !== 'undefined' ? props.executionInfo : this.executionInfo;
-        return new CellMetadata(disableRun, hideSource, hideOutput, executionInfo);
-    }
-}
-
-CellMetadata.codec = combined(bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
-
-export class NotebookCell {
-    static unapply(inst) {
-        return [inst.id, inst.language, inst.content, inst.results, inst.metadata];
-    }
-
-    constructor(id, language, content, results, metadata) {
-        this.id = id;
-        this.language = language;
-        this.content = content || '';
-        this.results = results || [];
-        this.metadata = metadata || new CellMetadata(false, false, false, null);
-        Object.freeze(this);
-    }
-}
-
-NotebookCell.codec = combined(int16, tinyStr, str, arrayCodec(int16, Result.codec), CellMetadata.codec).to(NotebookCell);
-
-export class RepositoryConfig {}
-
-export class IvyRepository extends RepositoryConfig {
-    static unapply(inst) {
-        return [inst.base, inst.artifactPattern, inst.metadataPattern, inst.changing];
-    }
-
-    static get msgTypeId() { return 0; }
-
-    constructor(base, artifactPattern, metadataPattern, changing) {
-        super();
-        this.base = base;
-        this.artifactPattern = artifactPattern;
-        this.metadataPattern = metadataPattern;
-        this.changing = changing;
-        Object.freeze(this);
-    }
-}
-
-IvyRepository.codec = combined(str, optional(str), optional(str), optional(bool)).to(IvyRepository);
-
-export class MavenRepository extends RepositoryConfig {
-    static unapply(inst) {
-        return [inst.base, inst.changing];
-    }
-
-    static get msgTypeId() { return 1; }
-
-    constructor(base, changing) {
-        super();
-        this.base = base;
-        this.changing = changing;
-    }
-}
-
-MavenRepository.codec = combined(str, optional(bool)).to(MavenRepository);
-
-export class PipRepository extends RepositoryConfig {
-    static unapply(inst) {
-        return [inst.url];
-    }
-
-    static get msgTypeId() { return 2; }
-
-    constructor(url) {
-        super();
-        this.url = url;
-    }
-}
-
-PipRepository.codec = combined(str).to(PipRepository);
-
-RepositoryConfig.codecs = [
-    IvyRepository,   // 0
-    MavenRepository, // 1
-    PipRepository    // 2
-];
-
-RepositoryConfig.codec = discriminated(
-    uint8,
-    (msgTypeId) => RepositoryConfig.codecs[msgTypeId].codec,
-    msg => msg.constructor.msgTypeId);
-
-export class NotebookConfig {
-    static unapply(inst) {
-        return [inst.dependencies, inst.exclusions, inst.repositories, inst.sparkConfig];
-    }
-
-    constructor(dependencies, exclusions, repositories, sparkConfig) {
-        this.dependencies = dependencies;
-        this.exclusions = exclusions;
-        this.repositories = repositories;
-        this.sparkConfig = sparkConfig;
-        Object.freeze(this);
-    }
-
-    static get default() {
-        return new NotebookConfig([], [], [], {});
-    }
-}
-
-NotebookConfig.codec = combined(
-    optional(mapCodec(uint8, tinyStr, arrayCodec(uint8, tinyStr))),
-    optional(arrayCodec(uint8, tinyStr)),
-    optional(arrayCodec(uint8, RepositoryConfig.codec)),
-    optional(mapCodec(uint16, str, str)),
-).to(NotebookConfig);
 
 export class NotebookCells extends Message {
     static get msgTypeId() { return 2; }
@@ -290,143 +144,6 @@ export class NotebookUpdate extends Message {
     }
 
 }
-
-export class ContentEdit {
-
-    // TODO: starting to think overhead of scala.js would have been worth it to avoid duplicating all this logic...
-    static rebase(a, b) {
-        if (a instanceof Insert && b instanceof Insert) {
-            if (a.pos < b.pos || (a.pos === b.pos && (a.content.length < b.content.length || a.content < b.content))) {
-                return [[a], [new Insert(b.pos + a.content.length, b.content)]];
-            } else {
-                return [[new Insert(a.pos + b.content.length, a.content)], [b]];
-            }
-        } else if (a instanceof Insert) {
-            if (a.pos <= b.pos) {
-                return [[a], [new Delete(b.pos + a.content.length, b.length)]];
-            } else if (a.pos < b.pos + b.length) {
-                const beforeLength = a.pos - b.pos;
-                return [[new Insert(b.pos, a.content)], [new Delete(b.pos, beforeLength), new Delete(b.pos + a.content.length, b.length - beforeLength)]];
-            } else {
-                return [[new Insert(a.pos - b.length, a.content)], [b]]
-            }
-        } else if (b instanceof Insert) {
-            if (b.pos <= a.pos) {
-                return [[new Delete(a.pos + b.content.length, a.length)], [b]];
-            } else if (b.pos < a.pos + a.length) {
-                const beforeLength = b.pos - a.pos;
-                return [[new Delete(a.pos, beforeLength), new Delete(a.pos + b.content.length, a.length - beforeLength)], [new Insert(a.pos, b.content)]];
-            } else {
-                return [[a], [new Insert(b.pos - a.length, b.content)]];
-            }
-        } else {
-            if (a.pos + a.length <= b.pos) {
-                return [[a], [new Delete(b.pos - a.length, b.length)]];
-            } else if (b.pos + b.length <= a.pos) {
-                return [[new Delete(a.pos - b.length, a.length)], [b]];
-            } else if (b.pos >= a.pos && b.pos + b.length <= a.pos + a.length) {
-                return [[new Delete(a.pos, a.length - b.length)], []];
-            } else if (a.pos >= b.pos && a.pos + a.length <= b.pos + b.length) {
-                return [[], [new Delete(b.pos, b.length - a.length)]];
-            } else if (b.pos > a.pos) {
-                const overlap = a.pos + a.length - b.pos;
-                return [[new Delete(a.pos, a.length - overlap)], [new Delete(a.pos, b.length - overlap)]];
-            } else {
-                const overlap = b.pos + b.length - b.pos;
-                return [[new Delete(b.pos, a.length - overlap)], [new Delete(b.pos, b.length - overlap)]];
-            }
-        }
-    }
-
-    static rebaseAll(edit, edits) {
-        const rebasedOther = [];
-        let rebasedEdit = [edit];
-        edits.forEach((b) => {
-            let bs = [b];
-            rebasedEdit = rebasedEdit.flatMap((a) => {
-               if (bs.length === 0) return a;
-               if (bs.length === 1) {
-                   const rebased = ContentEdit.rebase(a, bs[0]);
-                   bs = rebased[1];
-                   return rebased[0];
-               } else {
-                   const rebased = ContentEdit.rebaseAll(a, bs);
-                   bs = rebased[1];
-                   return rebased[0];
-               }
-            });
-            rebasedOther.push(...bs);
-        });
-        return [rebasedEdit, rebasedOther];
-    }
-
-    // port of ContentEdits#rebase, since there's no ContentEdits class here
-    static rebaseEdits(edits1, edits2) {
-        const result = [];
-        let otherEdits = edits2;
-        edits1.forEach((edit) => {
-            const rebased = ContentEdit.rebaseAll(edit, otherEdits);
-            result.push(...rebased[0]);
-            otherEdits = rebased[1];
-        });
-        return result;
-    }
-
-    isEmpty() {
-        return false;
-    }
-
-}
-
-export class Insert extends ContentEdit {
-    static get msgTypeId() { return 0; }
-
-    static unapply(inst) {
-        return [inst.pos, inst.content];
-    }
-
-    constructor(pos, content) {
-        super(pos, content);
-        this.pos = pos;
-        this.content = content;
-        Object.freeze(this);
-    }
-
-    isEmpty() {
-        return this.content.length === 0;
-    }
-}
-
-Insert.codec = combined(int32, str).to(Insert);
-
-export class Delete extends ContentEdit {
-    static get msgTypeId() { return 1; }
-
-    static unapply(inst) {
-        return [inst.pos, inst.length];
-    }
-
-    constructor(pos, length) {
-        super(pos, length);
-        this.pos = pos;
-        this.length = length;
-        Object.freeze(this)
-    }
-
-    isEmpty() {
-        return this.length === 0;
-    }
-}
-
-Delete.codec = combined(int32, int32).to(Delete);
-
-ContentEdit.codecs = [Insert, Delete];
-
-ContentEdit.codec = discriminated(
-    uint8,
-    msgTypeId => ContentEdit.codecs[msgTypeId].codec,
-    msg => msg.constructor.msgTypeId
-);
 
 export class UpdateCell extends NotebookUpdate {
     static get msgTypeId() { return 5; }
@@ -1053,6 +770,10 @@ export class RunningKernels extends Message {
         super(kernelStatuses);
         this.kernelStatuses = kernelStatuses;
         Object.freeze(this);
+    }
+
+    isResponse(other) {
+        return other instanceof RunningKernels
     }
 }
 

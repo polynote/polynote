@@ -80,7 +80,7 @@ export class SocketSession extends EventTarget {
                 const msg = Message.decode(event.data);
                 this.dispatchEvent(new PolynoteMessageEvent(msg));
 
-                for (var handler of this.messageListeners) {
+                for (const handler of this.messageListeners) {
                     if (msg instanceof handler[0]) {
                         const result = handler[1].apply(null, handler[0].unapply(msg));
                         if (handler[2] && result === false) {

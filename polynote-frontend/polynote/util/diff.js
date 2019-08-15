@@ -1,3 +1,4 @@
+'use strict';
 /* This file was taken from JsDiff (https://github.com/kpdecker/jsdiff) and is being used under the BSD license.
  *
  *  Software License Agreement (BSD License)

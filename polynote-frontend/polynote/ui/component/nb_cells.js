@@ -156,6 +156,13 @@ export class NotebookCellsUI extends UIEventTarget {
         return result;
     }
 
+    getMaxCellId() {
+        return this.getCells().reduce((acc, cell) => {
+            const id = cell.id;
+            return acc > id ? acc : id
+        }, -1)
+    }
+
     forceLayout(evt) {
         if (this.resizeTimeout) {
             clearTimeout(this.resizeTimeout);
