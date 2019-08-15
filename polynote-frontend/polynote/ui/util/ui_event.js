@@ -1,8 +1,8 @@
 "use strict";
 
 export class UIEvent extends CustomEvent {
-    constructor(id, detail) {
-        super(id, {detail: detail});
+    constructor(type, detail) {
+        super(type, {detail: detail});
         this.propagationStopped = false;
     }
 
@@ -23,6 +23,33 @@ export class UIEvent extends CustomEvent {
     }
 }
 
+// Represents a request adding a listener to an event on a parent instance.
+export class EventRegistration extends UIEvent {
+    constructor(event) {
+        if (! event instanceof CallbackEvent) {
+            throw Error("Must pass in a callback event, otherwise I won't know what to do when I get this event!")
+        }
+        super(EventRegistration.registrationId(event.type), event.detail)
+    }
+
+    static registrationId(id) {
+        return id + "EventRegistration";
+    }
+}
+
+export class Request extends UIEvent {
+    constructor(event) {
+        if (! event instanceof CallbackEvent) {
+            throw Error("Must pass in a callback event, otherwise I won't know what to do when I get this event!")
+        }
+        super(Request.requestId(event.type), event.detail)
+    }
+
+    static requestId(id) {
+        return id + "Request";
+    }
+}
+
 export class CallbackEvent extends UIEvent {
     constructor(id, callback, detail={}) {
         const det = Object.assign({callback: callback}, detail);
@@ -40,6 +67,30 @@ export class UIEventTarget extends EventTarget {
     setEventParent(parent) {
         this.eventParent = parent;
         return this;
+    }
+
+    // Register your callback with someone upstream who knows what to do when they see your registration (fingers crossed!)
+    registerEventListener(type, callback) {
+        const registration = new EventRegistration(new CallbackEvent(type, callback));
+        return this.dispatchEvent(registration);
+    }
+
+    // Listen for registration requests that you know how to handle
+    handleEventListenerRegistration(eventType, listener, options) {
+        const type = EventRegistration.registrationId(eventType);
+        return this.addEventListener(type, listener, options);
+    }
+
+    // Send a request to be responded to by someone upstream
+    request(type, callback) {
+        const request = new Request(new CallbackEvent(type, callback));
+        return this.dispatchEvent(request);
+    }
+
+    // Respond to a request
+    respond(type, response) {
+        const requestType = Request.requestId(type);
+        return this.addEventListener(requestType, response)
     }
 
     dispatchEvent(event) {
@@ -65,10 +116,6 @@ export class UIEventTarget extends EventTarget {
         }
         this.listeners[type].push(listener);
         return listener;
-    }
-
-    request(eventType) {
-        return new Promise()
     }
 
     removeEventListener(type, listener, options) {

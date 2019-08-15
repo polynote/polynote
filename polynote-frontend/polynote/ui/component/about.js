@@ -26,7 +26,7 @@ export class About extends FullScreenModal {
             ])
         ]);
 
-        this.dispatchEvent(new CallbackEvent('ServerVersionRequest', (version, commit) => {
+        this.request('ServerVersion', (version, commit) => {
             const info = [
                 ["Server Version", version],
                 ["Server Commit", commit]
@@ -45,7 +45,7 @@ export class About extends FullScreenModal {
             }
 
             el.appendChild(tableEl);
-        }));
+        });
         return el;
     }
 
@@ -167,7 +167,7 @@ export class About extends FullScreenModal {
         ]);
 
         const getKernelStatuses = () => {
-            this.dispatchEvent(new CallbackEvent('RunningKernelsRequest', (statuses) => {
+            this.request('RunningKernels', (statuses) => {
                 const tableEl = table(['kernels'], {
                     header: ['path', 'status', 'actions'],
                     classes: ['path', 'status', 'actions'],
@@ -204,7 +204,7 @@ export class About extends FullScreenModal {
                 }
 
                 if (statuses.length > 0) content.replaceChild(tableEl, content.firstChild);
-            }));
+            });
         };
         getKernelStatuses();
 

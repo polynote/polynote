@@ -219,11 +219,13 @@ export class MainUI extends UIEventTarget {
             this.socket.send(new messages.ClearOutput(this.currentNotebookPath))
         });
 
-        this.addEventListener('ServerVersionRequest', evt => {
+        // START new listeners TODO: remove this comment once everything's cleaned up
+
+        this.respond('ServerVersion', evt => {
             evt.detail.callback(this.currentServerVersion, this.currentServerCommit);
         });
 
-        this.addEventListener('RunningKernelsRequest', evt => {
+        this.respond('RunningKernels', evt => {
             this.socket.request(new messages.RunningKernels([])).then((msg) => {
                 evt.detail.callback(msg.kernelStatuses)
             })
@@ -250,25 +252,25 @@ export class MainUI extends UIEventTarget {
         });
 
         // socket message handlers
-        this.addEventListener('KernelStatusListener', evt => {
+        this.handleEventListenerRegistration('KernelStatus', evt => {
             this.socket.addMessageListener(messages.KernelStatus, (path, update) => {
                 evt.detail.callback(path, update)
             });
         });
 
-        this.addEventListener('SocketClosedListener', evt => {
+        this.handleEventListenerRegistration('SocketClosed', evt => {
             this.socket.addEventListener('close', _ => {
                 evt.detail.callback()
             });
         });
 
-        this.addEventListener('KernelErrorListener', evt => {
+        this.handleEventListenerRegistration('KernelError', evt => {
             this.socket.addMessageListener(messages.Error, (code, err) => {
                 evt.detail.callback(code, err)
             });
         });
 
-        this.addEventListener('CellResult', evt => {
+        this.handleEventListenerRegistration('CellResult', evt => {
            const listen = evt.detail.once ? this.socket.listenOnceFor : this.socket.addMessageListener;
            listen(messages.CellResult, () => {
                evt.detail.callback();

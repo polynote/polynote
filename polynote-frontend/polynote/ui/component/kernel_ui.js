@@ -37,7 +37,7 @@ export class KernelUI extends UIEventTarget {
     }
 
     init() {
-        this.dispatchEvent(new CallbackEvent('KernelStatusListener', (path, update) => {
+        this.registerEventListener('KernelStatus', (path, update) => {
             if (path === this.path) {
                 switch (update.constructor) {
                     case messages.UpdatedTasks:
@@ -61,11 +61,11 @@ export class KernelUI extends UIEventTarget {
                         break;
                 }
             }
-        }));
+        });
 
-        this.dispatchEvent(new CallbackEvent('SocketClosedListener', () => this.setKernelState('disconnected')));
+        this.registerEventListener('SocketClosedListener', () => this.setKernelState('disconnected'));
 
-        this.dispatchEvent(new CallbackEvent('KernelErrorListener', (code, err) => {
+        this.registerEventListener('KernelErrorListener', (code, err) => {
             console.log("Kernel error:", err);
 
             const {el, messageStr, cellLine} = errorDisplay(err);
@@ -78,8 +78,8 @@ export class KernelUI extends UIEventTarget {
             this.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
 
             // clean up (assuming that running another cell means users are done with this error)
-            this.dispatchEvent(new CallbackEvent('CellResult', () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100), {once: true}))
-        }));
+            this.registerEventListener('CellResult', () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100), {once: true})
+        });
 
         // Check storage to see whether this should be collapsed
         const prefs = this.getStorage();
