@@ -1,3 +1,5 @@
+"use strict";
+
 import {button, div, dropdown, h2, h3, iconButton, span, table, tag} from "../util/tags";
 import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
@@ -83,7 +85,7 @@ export class About extends FullScreenModal {
                 span([], ["The Polynote UI keeps some information in your browser's Local Storage, including some preferences you can configure yourself. "]),
                 tag('br'),
                 button(['clear'], {}, ['Clear All Preferences and Storage'])
-                    .click(evt => {
+                    .click(() => {
                         storage.clear();
                         location.reload();
                     }),
@@ -179,15 +181,15 @@ export class About extends FullScreenModal {
                         span(['status'], [state]),
                     ]);
                     const actionsEl = div([], [
-                        iconButton(['start'], 'Start kernel', '', 'Start').click(evt => {
+                        iconButton(['start'], 'Start kernel', '', 'Start').click(() => {
                             this.dispatchEvent(new UIEvent('StartKernel', {path: status.path}));
                             getKernelStatuses();
                         }),
-                        iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => {
+                        iconButton(['kill'], 'Kill kernel', '', 'Kill').click(() => {
                             this.dispatchEvent(new UIEvent('KillKernel', {path: status.path}));
                             getKernelStatuses();
                         }),
-                        iconButton(['open'], 'Open notebook', '', 'Open').click(evt => {
+                        iconButton(['open'], 'Open notebook', '', 'Open').click(() => {
                             this.dispatchEvent(new UIEvent('LoadNotebook', {path: status.path}));
                             this.hide();
                         })

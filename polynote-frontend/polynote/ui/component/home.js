@@ -1,9 +1,10 @@
-// BREAKOUT (welcome.js? home.js?)
+"use strict";
+
 import {UIEvent, UIEventTarget} from "../util/ui_event";
 import {div, span, tag} from "../util/tags";
 import {storage} from "../util/storage";
 
-export class WelcomeUI extends UIEventTarget {
+export class HomeUI extends UIEventTarget {
     constructor() {
         super();
         this.el = div(['welcome-page'], []);

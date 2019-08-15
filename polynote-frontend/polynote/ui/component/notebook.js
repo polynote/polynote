@@ -26,7 +26,7 @@ export class NotebookUI extends UIEventTarget {
         super();
         let cellUI = new NotebookCellsUI(path).setEventParent(this);
         cellUI.notebookUI = this; // TODO: deal with this
-        let kernelUI = new KernelUI(socket, path).setEventParent(this);
+        let kernelUI = new KernelUI(path).setEventParent(this);
         //super(null, cellUI, kernelUI);
         //this.el.classList.add('notebook-ui');
         this.path = path;

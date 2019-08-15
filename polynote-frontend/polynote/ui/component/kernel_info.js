@@ -1,10 +1,12 @@
+"use strict";
+
 // TODO: should we remember collapsed state across sessions?
 import {div, h3, table} from "../util/tags";
 
 export class KernelInfoUI {
     constructor() {
         this.el = div(['kernel-info'], [
-            this.toggleEl = h3(['toggle'], ['...']).click(evt => this.toggleCollapse()),
+            this.toggleEl = h3(['toggle'], ['...']).click(() => this.toggleCollapse()),
             h3(['title'], ['Info']),
             this.infoEl = table(['info-container'], {
                 header: false,
@@ -20,11 +22,11 @@ export class KernelInfoUI {
 
     toggleCollapse() {
         if (this.toggleEl.classList.contains('collapsed')) {
-            this.toggleEl.classList.remove('collapsed')
+            this.toggleEl.classList.remove('collapsed');
             this.infoEl.style.display = null;
             this.el.querySelector(".title").style.display = null;
         } else {
-            this.toggleEl.classList.add('collapsed')
+            this.toggleEl.classList.add('collapsed');
             this.infoEl.style.display = "none";
             this.el.querySelector(".title").style.display = "none";
         }

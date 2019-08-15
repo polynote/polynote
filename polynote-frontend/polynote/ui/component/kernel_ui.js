@@ -1,5 +1,5 @@
 // REMOVE SOCKET
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {CallbackEvent, UIEvent, UIEventTarget} from "../util/ui_event";
 import {KernelInfoUI} from "./kernel_info";
 import {KernelSymbolsUI} from "./symbol_table";
 import {KernelTasksUI} from "./tasks";
@@ -10,12 +10,12 @@ import {errorDisplay} from "./cell";
 import {storage} from "../util/storage";
 
 export class KernelUI extends UIEventTarget {
-    constructor(socket, path, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
+    // TODO: instead of passing path in, can it be enriched by a parent?
+    constructor(path, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
         super();
         this.info = new KernelInfoUI();
         this.symbols = new KernelSymbolsUI(path).setEventParent(this);
         this.tasks = new KernelTasksUI();
-        this.socket = socket;
         this.path = path;
         this.el = div(['kernel-ui', 'ui-panel'], [
             this.statusEl = h2(['kernel-status'], [
@@ -34,22 +34,10 @@ export class KernelUI extends UIEventTarget {
             ])
         ]);
 
-        this.addEventListener('Connect', evt => {
-            if (!socket.isOpen) {
-                socket.reconnect();
-            }
-        });
+    }
 
-        this.addEventListener('StartKernel', evt => {
-            socket.send(new messages.StartKernel(path, messages.StartKernel.NoRestart));
-        });
-
-        this.addEventListener('KillKernel', evt => {
-            socket.send(new messages.StartKernel(path, messages.StartKernel.Kill));
-        });
-
-        // TODO: shouldn't listen to socket directly
-        socket.addMessageListener(messages.KernelStatus, (path, update) => {
+    init() {
+        this.dispatchEvent(new CallbackEvent('KernelStatusListener', (path, update) => {
             if (path === this.path) {
                 switch (update.constructor) {
                     case messages.UpdatedTasks:
@@ -73,13 +61,11 @@ export class KernelUI extends UIEventTarget {
                         break;
                 }
             }
-        });
+        }));
 
-        socket.addEventListener('close', _ => {
-            this.setKernelState('disconnected');
-        });
+        this.dispatchEvent(new CallbackEvent('SocketClosedListener', () => this.setKernelState('disconnected')));
 
-        socket.addMessageListener(messages.Error, (code, err) => {
+        this.dispatchEvent(new CallbackEvent('KernelErrorListener', (code, err) => {
             console.log("Kernel error:", err);
 
             const {el, messageStr, cellLine} = errorDisplay(err);
@@ -92,16 +78,10 @@ export class KernelUI extends UIEventTarget {
             this.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
 
             // clean up (assuming that running another cell means users are done with this error)
-            socket.addMessageListener(messages.CellResult, () => {
-                this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100);
-                return false // make sure to remove the listener
-            }, true);
-        });
+            this.dispatchEvent(new CallbackEvent('CellResult', () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100), {once: true}))
+        }));
 
-    }
-
-    // Check storage to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
-    init() {
+        // Check storage to see whether this should be collapsed
         const prefs = this.getStorage();
         if (prefs && prefs.collapsed) {
             this.collapse(true);
@@ -123,14 +103,12 @@ export class KernelUI extends UIEventTarget {
 
     startKernel(evt) {
         evt.stopPropagation();
-        this.dispatchEvent(new UIEvent('StartKernel'))
+        this.dispatchEvent(new UIEvent('StartKernel', {path: this.path}))
     }
 
     killKernel(evt) {
         evt.stopPropagation();
-        if (confirm("Kill running kernel? State will be lost.")) {
-            this.dispatchEvent(new UIEvent('KillKernel'))
-        }
+        this.dispatchEvent(new UIEvent('KillKernel', {path: this.path}))
     }
 
     setKernelState(state) {

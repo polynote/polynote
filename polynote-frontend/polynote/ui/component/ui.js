@@ -16,7 +16,7 @@ import {KernelUI} from "./kernel_ui";
 import {NotebookUI} from "./notebook";
 import {TabUI} from "./tab";
 import {NotebookListUI} from "./notebook_list";
-import {WelcomeUI} from "./home";
+import {HomeUI} from "./home";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
@@ -242,11 +242,43 @@ export class MainUI extends UIEventTarget {
         });
 
         this.addEventListener('LoadNotebook', evt => this.loadNotebook(evt.detail.path));
+
+        this.addEventListener('Connect', () => {
+            if (this.socket.isClosed) {
+                this.socket.reconnect();
+            }
+        });
+
+        // socket message handlers
+        this.addEventListener('KernelStatusListener', evt => {
+            this.socket.addMessageListener(messages.KernelStatus, (path, update) => {
+                evt.detail.callback(path, update)
+            });
+        });
+
+        this.addEventListener('SocketClosedListener', evt => {
+            this.socket.addEventListener('close', _ => {
+                evt.detail.callback()
+            });
+        });
+
+        this.addEventListener('KernelErrorListener', evt => {
+            this.socket.addMessageListener(messages.Error, (code, err) => {
+                evt.detail.callback(code, err)
+            });
+        });
+
+        this.addEventListener('CellResult', evt => {
+           const listen = evt.detail.once ? this.socket.listenOnceFor : this.socket.addMessageListener;
+           listen(messages.CellResult, () => {
+               evt.detail.callback();
+           });
+        })
     }
 
     showWelcome() {
         if (!this.welcomeUI) {
-            this.welcomeUI = new WelcomeUI().setEventParent(this);
+            this.welcomeUI = new HomeUI().setEventParent(this);
         }
         const welcomeKernelUI = new KernelUI(this.socket, '/', /*showInfo*/ false, /*showSymbols*/ false, /*showTasks*/ true, /*showStatus*/ false);
         this.tabUI.addTab('home', span([], 'Home'), {
@@ -259,7 +291,7 @@ export class MainUI extends UIEventTarget {
         const notebookTab = this.tabUI.getTab(path);
 
         if (!notebookTab) {
-            const notebookUI = new NotebookUI(path, this.socket, this);
+            const notebookUI = new NotebookUI(path, this.socket, this).setEventParent(this);
             this.socket.send(new messages.LoadNotebook(path));
             const tab = this.tabUI.addTab(path, span(['notebook-tab-title'], [path.split(/\//g).pop()]), {
                 notebook: notebookUI.cellUI.el,

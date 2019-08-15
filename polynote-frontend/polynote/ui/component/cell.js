@@ -1,3 +1,5 @@
+"use strict";
+
 import {blockquote, button, div, iconButton, span, tag} from "../util/tags.js";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'

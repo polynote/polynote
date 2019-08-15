@@ -30,7 +30,6 @@ export class CallbackEvent extends UIEvent {
     }
 }
 
-
 export class UIEventTarget extends EventTarget {
     constructor() {
         super();
