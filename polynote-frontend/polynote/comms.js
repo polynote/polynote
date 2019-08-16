@@ -4,7 +4,8 @@ import { Message } from './messages.js'
 
 
 function mkSocket() {
-    this.socket = new WebSocket('ws://' + document.location.host + '/ws');
+    const schema = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    this.socket = new WebSocket(schema + document.location.host + '/ws');
     this.socket.binaryType = 'arraybuffer';
     this.listeners = {
         message: this.receive.bind(this),

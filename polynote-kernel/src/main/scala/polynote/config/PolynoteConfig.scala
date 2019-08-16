@@ -10,7 +10,7 @@ import io.circe._
 
 final case class Listen(
   port: Int = 8192,
-  host: String = "0.0.0.0"
+  host: String = "127.0.0.1"
 )
 
 object Listen {
@@ -49,7 +49,7 @@ object PolynoteConfig {
   implicit val encoder: ObjectEncoder[PolynoteConfig] = deriveEncoder
   implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder[PolynoteConfig]
 
-  private val defaultConfig = "default.yml" // we expect this to be in the same directory as the user config
+  private val defaultConfig = "default.yml" // we expect this to be in the directory Polynote was launched from.
 
   private val logger = new PolyLogger
 
@@ -64,7 +64,9 @@ object PolynoteConfig {
       }
     } else IO.pure(Json.fromJsonObject(JsonObject.empty))
 
-    val defaultJsonIO = IO(new FileReader(file.toPath.resolveSibling(defaultConfig).toFile)).flatMap {
+    val defaultFile = new File(defaultConfig)
+    logger.debug(s"Loading default config file from: ${defaultFile.getAbsolutePath}")
+    val defaultJsonIO = IO(new FileReader(defaultFile)).flatMap {
       defaultReader =>
         IO.fromEither(yaml.parser.parse(defaultReader)).guarantee(IO(defaultReader.close()))
     }.handleErrorWith(_ => IO.pure(Json.fromJsonObject(JsonObject.empty)))
@@ -72,7 +74,7 @@ object PolynoteConfig {
     val configIO = for {
       configJson <- configJsonIO
       defaultJson <- defaultJsonIO
-      merged = defaultJson.deepMerge(configJson)
+      merged = defaultJson.deepMerge(configJson) // priority goes to configJson
       parsedConfig <- IO.fromEither(merged.as[PolynoteConfig])
     } yield parsedConfig
 
