@@ -2,6 +2,10 @@
 
 *
 
+# 0.1.23 (August 16, 2019)
+
+* Support for being served under HTTPS
+
 # 0.1.22 (August 14, 2019)
 
 * Fix for `Shift+Enter` creating a newline rather than executing the cell
