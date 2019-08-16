@@ -64,7 +64,9 @@ object PolynoteConfig {
       }
     } else IO.pure(Json.fromJsonObject(JsonObject.empty))
 
-    val defaultJsonIO = IO(new FileReader(new File(defaultConfig))).flatMap {
+    val defaultFile = new File(defaultConfig)
+    logger.debug(s"Loading default config file from: ${defaultFile.getAbsolutePath}")
+    val defaultJsonIO = IO(new FileReader(defaultFile)).flatMap {
       defaultReader =>
         IO.fromEither(yaml.parser.parse(defaultReader)).guarantee(IO(defaultReader.close()))
     }.handleErrorWith(_ => IO.pure(Json.fromJsonObject(JsonObject.empty)))
