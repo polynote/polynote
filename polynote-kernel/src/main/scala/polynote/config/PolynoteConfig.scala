@@ -49,7 +49,7 @@ object PolynoteConfig {
   implicit val encoder: ObjectEncoder[PolynoteConfig] = deriveEncoder
   implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder[PolynoteConfig]
 
-  private val defaultConfig = "default.yml" // we expect this to be in the same directory as the user config
+  private val defaultConfig = "default.yml" // we expect this to be in the directory Polynote was launched from.
 
   private val logger = new PolyLogger
 
@@ -64,7 +64,7 @@ object PolynoteConfig {
       }
     } else IO.pure(Json.fromJsonObject(JsonObject.empty))
 
-    val defaultJsonIO = IO(new FileReader(file.toPath.resolveSibling(defaultConfig).toFile)).flatMap {
+    val defaultJsonIO = IO(new FileReader(new File(defaultConfig))).flatMap {
       defaultReader =>
         IO.fromEither(yaml.parser.parse(defaultReader)).guarantee(IO(defaultReader.close()))
     }.handleErrorWith(_ => IO.pure(Json.fromJsonObject(JsonObject.empty)))

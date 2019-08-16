@@ -24,15 +24,16 @@ object SparkServer extends Server {
   override def run(args: List[String]): IO[ExitCode] = getConfigs(args).flatMap {
     case (SparkServerArgs(true, _, _), config) =>
       IO {
+        val otherArgs = args.filterNot(_ == "--printCommand")
         // don't launch with SparkSubmit when remote.
         if (config.spark.get("polynote.kernel.remote") contains "true") {
-          val cmd = PlainServerCommand(config.spark).map {
+          val cmd = PlainServerCommand(config.spark, serverArgs = otherArgs).map {
             str => if (str contains " ") s""""$str"""" else str
           }.mkString(" ")
           // TODO: this should be something other than `SparkSubmit`
           println(s"SparkSubmit: $cmd") // must be println because this stdout is what gets parsed by callers.
         } else {
-          val cmd = SparkSubmitCommand(config.spark).map {
+          val cmd = SparkSubmitCommand(config.spark, serverArgs = otherArgs).map {
             str => if (str contains " ") s""""$str"""" else str
           }.mkString(" ")
           println(s"SparkSubmit: $cmd") // must be println because this stdout is what gets parsed by callers.
