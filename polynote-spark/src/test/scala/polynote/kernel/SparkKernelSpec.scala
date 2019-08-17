@@ -3,6 +3,7 @@ package polynote.kernel
 import cats.effect.IO
 import fs2.concurrent.Topic
 import polynote.config.PolynoteConfig
+import polynote.kernel.dependency.DependencyProvider
 import polynote.kernel.lang.{KernelSpec, MockCLDepProvider, SparkLanguages}
 import polynote.kernel.lang.scal.ScalaSparkInterpreter
 import polynote.kernel.util.{KernelContext, Publish}

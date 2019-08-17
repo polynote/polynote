@@ -1,7 +1,7 @@
 package polynote.kernel
 
 import java.io.File
-import java.net.URLDecoder
+import java.net.{URI, URLDecoder}
 import java.nio.file.{FileSystems, Files, Path, StandardCopyOption}
 import java.util.Collections
 
@@ -41,8 +41,7 @@ class SparkPolyKernel(
 
   import kernelContext.global
 
-  val polynoteRuntimeJar = "polynote-runtime.jar"
-  val polynoteSparkRuntimeJar = "polynote-spark-runtime.jar"
+  val polynoteRuntimeJars = List("polynote-runtime.jar", "polynote-spark-runtime.jar")
 
   private def runtimeJars(tmp: Path) = {
     def file(name: String) = {
@@ -64,24 +63,26 @@ class SparkPolyKernel(
       }
     }
 
-    file(polynoteRuntimeJar) :: file(polynoteSparkRuntimeJar) :: Nil
+    polynoteRuntimeJars.map(file)
   }
 
-  private lazy val dependencyJars = {
+  // visible for testing
+  protected[kernel] lazy val dependencyJars: List[URI] = {
     // dependencies which have characters like "+" in them get mangled... de-mangle them into a temp directory for adding to spark
+    // in addition, we replace `+` with `_` because `+` turns into spaces which is annoying.
     val tmp = Files.createTempDirectory("dependencies")
     tmp.toFile.deleteOnExit()
 
     val jars = for {
       namedFiles <- dependencyProviders.get("scala").map(_.dependencies).toList
       (_, file) <- namedFiles if file.getName endsWith ".jar"
-    } yield file -> tmp.resolve(URLDecoder.decode(file.getName, "utf-8"))
+    } yield file -> tmp.resolve(URLDecoder.decode(file.getName.replace('+', '_'), "utf-8"))
 
-    runtimeJars(tmp) ::: jars.map {
+    runtimeJars(tmp).map(_.toUri) ::: jars.map {
       case (file, path) =>
         val copied = Files.copy(file.toPath, path)
         copied.toFile.deleteOnExit()
-        copied.toUri.toURL
+        copied.toUri
     }
   }
 
@@ -90,7 +91,8 @@ class SparkPolyKernel(
   // initialize the session, and add task listener
   private lazy val sparkListener = new KernelListener(statusUpdates)
 
-  private lazy val session: SparkSession = {
+  // visible for testing
+  protected[kernel] lazy val session: SparkSession = {
     val nbSparkConfig = getNotebook().unsafeRunSync().config.flatMap(_.sparkConfig)
     val conf = org.apache.spark.repl.Main.conf
 
