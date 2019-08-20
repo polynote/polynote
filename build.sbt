@@ -88,6 +88,26 @@ val `polynote-kernel` = project.settings(
   )
 ).dependsOn(`polynote-runtime`)
 
+val `polynote-kernel-zio` = project.settings(
+  commonSettings,
+  scalaVersion := "2.11.11",
+  libraryDependencies ++= Seq(
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
+    "org.typelevel" %% "cats-effect" % versions.catsEffect,
+    "dev.zio" %% "zio-interop-cats" % "1.3.1.0-RC3",
+    "co.fs2" %% "fs2-io" % versions.fs2,
+    "org.scodec" %% "scodec-core" % "1.10.3",
+    "io.circe" %% "circe-yaml" % versions.circeYaml,
+    "io.circe" %% "circe-generic" % versions.circe,
+    "io.circe" %% "circe-generic-extras" % versions.circe,
+    "io.get-coursier" %% "coursier" % versions.coursier,
+    "io.get-coursier" %% "coursier-cache" % versions.coursier,
+    "io.get-coursier" %% "coursier-cats-interop" % versions.coursier,
+    "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1"
+  )
+).dependsOn(`polynote-runtime`, `polynote-kernel`)
+
 val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
@@ -104,6 +124,23 @@ val `polynote-server` = project.settings(
   ),
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
 ) dependsOn `polynote-kernel` % "compile->compile;test->test"
+
+val `polynote-server-zio` = project.settings(
+  commonSettings,
+  libraryDependencies ++= Seq(
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
+    "org.http4s" %% "http4s-core" % versions.http4s,
+    "org.http4s" %% "http4s-dsl" % versions.http4s,
+    "org.http4s" %% "http4s-blaze-server" % versions.http4s,
+    "org.http4s" %% "http4s-blaze-client" % versions.http4s,
+    "org.scodec" %% "scodec-core" % "1.10.3",
+    "io.circe" %% "circe-parser" % versions.circe,
+    "com.vladsch.flexmark" % "flexmark" % "0.34.32",
+    "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
+    "org.slf4j" % "slf4j-simple" % "1.7.25"
+  ),
+  unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
+).dependsOn(`polynote-kernel-zio` % "compile->compile;test->test", `polynote-server`)
 
 def copyRuntimeJar(targetDir: File, targetName: String, file: File) = {
     val targetFile = targetDir / targetName

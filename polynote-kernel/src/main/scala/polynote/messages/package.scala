@@ -152,6 +152,7 @@ package object messages {
 
   // alias for Cell ID type so we can more easily change it (if needed)
   type CellID = Short
+  def CellID(i: Int): CellID = i.toShort
 
   implicit def int2cellId(i: Int): CellID = i.toShort
 

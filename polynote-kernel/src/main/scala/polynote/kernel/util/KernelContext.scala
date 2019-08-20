@@ -24,7 +24,7 @@ import polynote.kernel.lang.scal.CellSourceFile
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 
-final case class KernelContext(global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
+final case class KernelContext private (global: Global, classPath: List[File], classLoader: AbstractFileClassLoader) {
   import global.{Type, Symbol}
 
   private val logger = new PolyLogger
@@ -261,6 +261,10 @@ object KernelContext {
       .getOrElse(throw new IllegalArgumentException(s"Couldn't find `scala` dependency provider! Available providers: $dependencyProviders"))
 
     KernelContext(global, classPath, notebookClassLoader)
+  }
+
+  trait Provider {
+    val kernelContext: KernelContext
   }
 }
 

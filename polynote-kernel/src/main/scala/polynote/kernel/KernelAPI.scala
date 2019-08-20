@@ -259,12 +259,18 @@ final case class UpdatedSymbols(
 
 object UpdatedSymbols extends KernelStatusUpdateCompanion[UpdatedSymbols](0)
 
-sealed trait TaskStatus
+sealed trait TaskStatus {
+  def isDone: Boolean
+}
+
 object TaskStatus {
-  final case object Complete extends TaskStatus
-  final case object Queued extends TaskStatus
-  final case object Running extends TaskStatus
-  final case object Error extends TaskStatus
+  sealed trait DoneStatus extends TaskStatus { final val isDone: Boolean = true }
+  sealed trait NotDoneStatus extends TaskStatus { final val isDone: Boolean = false }
+
+  final case object Complete extends DoneStatus
+  final case object Queued extends NotDoneStatus
+  final case object Running extends NotDoneStatus
+  final case object Error extends DoneStatus
 
   val fromByte: PartialFunction[Byte, TaskStatus] = {
     case 0 => Complete
@@ -284,6 +290,19 @@ object TaskStatus {
     fromByte.lift andThen (Attempt.fromOption(_, Err("Invalid task status byte"))),
     s => Attempt.successful(toByte(s))
   )
+
+  implicit val ordering: Ordering[TaskStatus] = new Ordering[TaskStatus] {
+    // this isn't the most concise comparison routine, but it should give compiler warnings if any statuses are added w/o being handled
+    def compare(x: TaskStatus, y: TaskStatus): Int = (x, y) match {
+      case (Complete, Complete) | (Running, Running) | (Queued, Queued) | (Error, Error) => 0
+      case (Complete, _) => 1
+      case (_, Complete) => -1
+      case (Queued, _)   => -1
+      case (_, Queued)   => 1
+      case (Error, _)    => 1
+      case (_, Error)    => -1
+    }
+  }
 }
 
 final case class TaskInfo(
@@ -295,13 +314,22 @@ final case class TaskInfo(
 
   def running: TaskInfo = copy(status = TaskStatus.Running)
   def completed: TaskInfo = copy(status = TaskStatus.Complete, progress = 255.toByte)
+  def failed: TaskInfo = if (status == TaskStatus.Complete) this else copy(status = TaskStatus.Error, progress = 255.toByte)
+  def progress(fraction: Double): TaskInfo = copy(progress = (fraction * 255).toByte)
+  def progress(fraction: Double, detailOpt: Option[String]): TaskInfo = copy(progress = (fraction * 255).toByte, detail = detailOpt.getOrElse(detail))
+}
+
+object TaskInfo {
+  def apply(id: String): TaskInfo = TaskInfo(id, "", "", TaskStatus.Queued)
 }
 
 final case class UpdatedTasks(
   tasks: TinyList[TaskInfo]
 ) extends KernelStatusUpdate
 
-object UpdatedTasks extends KernelStatusUpdateCompanion[UpdatedTasks](1)
+object UpdatedTasks extends KernelStatusUpdateCompanion[UpdatedTasks](1) {
+  def one(info: TaskInfo): UpdatedTasks = UpdatedTasks(List(info))
+}
 
 final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelStatusUpdate
 object KernelBusyState extends KernelStatusUpdateCompanion[KernelBusyState](2)

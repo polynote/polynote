@@ -2,7 +2,7 @@ package polynote.config
 
 import java.io.{File, FileNotFoundException, FileReader}
 
-import cats.effect.IO
+import cats.effect.{IO, Sync}
 import cats.syntax.either._
 import cats.syntax.functor._
 import io.circe.generic.extras.semiauto._
@@ -55,35 +55,41 @@ object PolynoteConfig {
 
   def parse(content: String): Either[Throwable, PolynoteConfig] = yaml.parser.parse(content).flatMap(_.as[PolynoteConfig])
 
-  def load(file: File): IO[PolynoteConfig] = {
-
+  def load[F[_]](file: File)(implicit F: Sync[F]): F[PolynoteConfig] = {
+    import cats.syntax.flatMap._
+    import cats.syntax.applicativeError._
     val configJsonIO = if (file.exists()) {
-      IO(new FileReader(file)).flatMap {
+      F.bracket(F.delay(new FileReader(file))) {
         configReader =>
-          IO.fromEither(yaml.parser.parse(configReader)).guarantee(IO(configReader.close()))
-      }
-    } else IO.pure(Json.fromJsonObject(JsonObject.empty))
+          F.fromEither(yaml.parser.parse(configReader))
+      }(reader => F.delay(reader.close()))
+    } else F.pure(Json.fromJsonObject(JsonObject.empty))
 
-    val defaultJsonIO = IO(new FileReader(file.toPath.resolveSibling(defaultConfig).toFile)).flatMap {
-      defaultReader =>
-        IO.fromEither(yaml.parser.parse(defaultReader)).guarantee(IO(defaultReader.close()))
-    }.handleErrorWith(_ => IO.pure(Json.fromJsonObject(JsonObject.empty)))
+    val defaultJsonIO =
+      F.bracket(F.delay(new FileReader(file.toPath.resolveSibling(defaultConfig).toFile))) {
+        defaultReader =>
+          F.fromEither(yaml.parser.parse(defaultReader))
+      }(reader => F.delay(reader.close())).handleErrorWith(_ => F.pure(Json.fromJsonObject(JsonObject.empty)))
 
     val configIO = for {
       configJson <- configJsonIO
       defaultJson <- defaultJsonIO
       merged = defaultJson.deepMerge(configJson)
-      parsedConfig <- IO.fromEither(merged.as[PolynoteConfig])
+      parsedConfig <- F.fromEither(merged.as[PolynoteConfig])
     } yield parsedConfig
 
     configIO
       .handleErrorWith {
         case _: MatchError =>
-          IO.pure(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
+          F.pure(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
         case e: FileNotFoundException =>
-          IO(logger.error(e)(s"Configuration file $file not found; using default configuration")).as(PolynoteConfig())
-        case err: Throwable => IO.raiseError(err)
+          F.delay(logger.error(e)(s"Configuration file $file not found; using default configuration")).as(PolynoteConfig())
+        case err: Throwable => F.raiseError(err)
       }
+  }
+
+  trait Provider {
+    val config: PolynoteConfig
   }
 
 }

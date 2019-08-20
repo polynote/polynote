@@ -98,7 +98,7 @@ trait Server extends IOApp with Http4sDsl[IO] with KernelLaunching {
 
   def getConfigs(args: List[String]): IO[(ServerArgs, PolynoteConfig)] = for {
     args            <- parseArgs(args)
-    config          <- PolynoteConfig.load(args.configFile)
+    config          <- PolynoteConfig.load[IO](args.configFile)
   } yield (args, config)
 
   def createDir(dir: String): IO[Unit] = IO {

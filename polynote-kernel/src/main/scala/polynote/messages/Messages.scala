@@ -116,6 +116,10 @@ object NotebookConfig {
       sparkConfig = Option(config.spark)
     )
   }
+
+  trait Provider {
+    val notebookConfig: NotebookConfig
+  }
 }
 
 final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], config: Option[NotebookConfig]) extends Message {
