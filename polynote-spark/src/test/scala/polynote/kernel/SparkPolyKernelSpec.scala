@@ -7,11 +7,9 @@ import java.util.jar.JarOutputStream
 
 import cats.effect.{ContextShift, IO}
 import fs2.concurrent.Topic
-import org.apache.spark.sql.SparkSession
 import org.scalatest.{FlatSpec, Matchers}
 import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.ClassLoaderDependencyProvider
-import polynote.kernel.lang.MockCLDepProvider
 import polynote.messages.{Notebook, ShortList}
 
 import scala.concurrent.ExecutionContext
