@@ -43,13 +43,9 @@ class SparkPolyKernelSpec extends FlatSpec with Matchers {
             config = PolynoteConfig()
           )
       }.unsafeRunSync()
-    val deps = sparkPolyKernel.dependencyJars
-    val sparkJars = sparkPolyKernel.session.sparkContext.jars
-    deps.map(_.toString) shouldEqual sparkJars
-
-    val justDepJars = deps.map(d => new File(d.getPath).getName)
-    val expectedDepJars = "foo.jar" :: "foo_bar.jar" :: "foo bar.jar" :: "foo-bar.jar" :: sparkPolyKernel.polynoteRuntimeJars
-    justDepJars should contain theSameElementsAs expectedDepJars
+    val deps = sparkPolyKernel.dependencyJars.map(d => new File(d.getPath).getName)
+    val expectedDeps = "foo.jar" :: "foo_bar.jar" :: "foo bar.jar" :: "foo-bar.jar" :: sparkPolyKernel.polynoteRuntimeJars
+    deps should contain theSameElementsAs expectedDeps
   }
 
 }
