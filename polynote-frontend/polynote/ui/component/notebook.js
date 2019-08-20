@@ -22,11 +22,11 @@ import {NotebookCell, NotebookConfig} from "../../data/data";
 
 export class NotebookUI extends UIEventTarget {
     // TODO: remove socket, mainUI references
-    constructor(path, socket, mainUI) {
-        super();
-        let cellUI = new NotebookCellsUI(path).setEventParent(this);
+    constructor(eventParent, path, socket, mainUI) {
+        super(eventParent);
+        let cellUI = new NotebookCellsUI(this, path);
         cellUI.notebookUI = this; // TODO: deal with this
-        let kernelUI = new KernelUI(path).setEventParent(this);
+        let kernelUI = new KernelUI(this, path);
         //super(null, cellUI, kernelUI);
         //this.el.classList.add('notebook-ui');
         this.path = path;

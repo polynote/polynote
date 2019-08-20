@@ -58,9 +58,9 @@ export class CallbackEvent extends UIEvent {
 }
 
 export class UIEventTarget extends EventTarget {
-    constructor() {
+    constructor(eventParent) {
         super();
-        this.eventParent = null;
+        this.eventParent = eventParent || null;
         this.listeners = {};
     }
 

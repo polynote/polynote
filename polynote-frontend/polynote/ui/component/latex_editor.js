@@ -1,5 +1,6 @@
 import {div, span, textbox, para} from "../util/tags.js";
 import { TextCell } from "./cell.js"
+import katex from "katex";
 
 export class LaTeXEditor extends EventTarget {
     constructor(outputEl, parentEl, deleteOnCancel, displayMode) {

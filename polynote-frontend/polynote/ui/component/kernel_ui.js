@@ -11,8 +11,8 @@ import {storage} from "../util/storage";
 
 export class KernelUI extends UIEventTarget {
     // TODO: instead of passing path in, can it be enriched by a parent?
-    constructor(path, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
-        super();
+    constructor(eventParent, path, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
+        super(eventParent);
         this.info = new KernelInfoUI();
         this.symbols = new KernelSymbolsUI(path).setEventParent(this);
         this.tasks = new KernelTasksUI();
@@ -34,9 +34,6 @@ export class KernelUI extends UIEventTarget {
             ])
         ]);
 
-    }
-
-    init() {
         this.registerEventListener('KernelStatus', (path, update) => {
             if (path === this.path) {
                 switch (update.constructor) {

@@ -10,29 +10,28 @@ import {clientInterpreters} from "../../interpreter/client_interpreter";
 import * as monaco from "monaco-editor";
 
 export class NotebookCellsUI extends UIEventTarget {
-    constructor(path) {
-        super();
+    constructor(eventParent, path) {
+        super(eventParent);
         this.disabled = false;
         this.configUI = new NotebookConfigUI().setEventParent(this);
         this.path = path;
         this.el = div(['notebook-cells'], [this.configUI.el, this.newCellDivider()]);
+        // TODO: remove when we get to TabUI
         this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.cells = {};
         this.cellCount = 0;
         this.queuedCells = 0;
-        // TODO: remove window listener!
-        window.addEventListener('resize', this.forceLayout.bind(this));
+
+        this.registerEventListener('resize', this.forceLayout.bind(this));
     }
 
     newCellDivider() {
-        // TODO clean up self=this just use arrow functions
-        const self = this;
-        return div(['new-cell-divider'], []).click(function () {
-            const nextCell = self.getCellAfterEl(this);
+        return div(['new-cell-divider'], []).click((evt) => {
+            const nextCell = this.getCellAfterEl(evt.target);
             if (nextCell) {
-                self.dispatchEvent(new UIEvent('InsertCellBefore', {cellId: nextCell.id}));
+                this.dispatchEvent(new UIEvent('InsertCellBefore', {cellId: nextCell.id}));
             } else { // last cell
-                self.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: self.getCellBeforeEl(this).id}));
+                this.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: this.getCellBeforeEl(evt.target).id}));
             }
         });
     }

@@ -116,7 +116,7 @@ export class MainUI extends UIEventTarget {
                 }
 
                 this.currentNotebookPath = tab.name;
-                this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
+                this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI; // TODO: remove cellsUI reference
                 this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
                 const title = 'Polynote';
@@ -276,13 +276,17 @@ export class MainUI extends UIEventTarget {
                evt.detail.callback();
            });
         })
+
+        this.handleEventListenerRegistration('resize', evt => {
+            window.addEventListener('resize', () => evt.detail.callback())
+        })
     }
 
     showWelcome() {
         if (!this.welcomeUI) {
             this.welcomeUI = new HomeUI().setEventParent(this);
         }
-        const welcomeKernelUI = new KernelUI(this.socket, '/', /*showInfo*/ false, /*showSymbols*/ false, /*showTasks*/ true, /*showStatus*/ false);
+        const welcomeKernelUI = new KernelUI(this, '/', /*showInfo*/ false, /*showSymbols*/ false, /*showTasks*/ true, /*showStatus*/ false);
         this.tabUI.addTab('home', span([], 'Home'), {
             notebook: this.welcomeUI.el,
             kernel: welcomeKernelUI.el
@@ -293,7 +297,7 @@ export class MainUI extends UIEventTarget {
         const notebookTab = this.tabUI.getTab(path);
 
         if (!notebookTab) {
-            const notebookUI = new NotebookUI(path, this.socket, this).setEventParent(this);
+            const notebookUI = new NotebookUI(this, path, this.socket, this);
             this.socket.send(new messages.LoadNotebook(path));
             const tab = this.tabUI.addTab(path, span(['notebook-tab-title'], [path.split(/\//g).pop()]), {
                 notebook: notebookUI.cellUI.el,
@@ -311,7 +315,6 @@ export class MainUI extends UIEventTarget {
             notebookUI.kernelUI.addEventListener('ToggleKernelUI', (evt) => {
                 this.mainView.collapse('right', evt.detail && evt.detail.force)
             });
-            notebookUI.kernelUI.init();
 
         } else {
             this.tabUI.activateTab(notebookTab);

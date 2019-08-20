@@ -6,6 +6,13 @@ import {IvyRepository, MavenRepository, NotebookConfig, PipRepository} from "../
 export class NotebookConfigUI extends UIEventTarget {
     constructor() {
         super();
+
+        // TODO: instead of all this DOM checking, should use these variables to track state
+        const deps = {};
+        const exclusions = [];
+        const repos = [];
+        const sparkConfig = {};
+
         this.el = div(['notebook-config'], [
             h2(['config'], ['Configuration & dependencies']).click(evt => this.el.classList.toggle('open')),
             div(['content'], [
@@ -23,7 +30,9 @@ export class NotebookConfigUI extends UIEventTarget {
                                 row.classList.add('notebook-config-row');
                                 row.classList.add(value);
                             }),
-                            textbox(['dependency'], 'Dependency coordinate, URL, pip package'),
+                            textbox(['dependency'], 'Dependency coordinate, URL, pip package').change(evt => {
+                                evt.target.value
+                            }),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
                                 const row = evt.currentTarget.parentNode;
                                 this.addDependency(this.mkDependency(row));
