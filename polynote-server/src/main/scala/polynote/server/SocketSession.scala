@@ -261,6 +261,18 @@ class SocketSession(
         Stream.emit(NotebookVersion(path, version))
       }
 
+    case rk: RunningKernels =>
+      notebookManager.listRunningNotebooks().flatMap(_.map {
+        path =>
+          getNotebook(path).flatMap {
+            nbRef =>
+              nbRef.currentStatus.map(KernelStatus(nbRef.path, _))
+          }
+      }.sequence).map {
+        statuses =>
+          Stream.emit(RunningKernels(statuses))
+      }
+
     case other =>
       IO.pure(Stream.empty)
   }

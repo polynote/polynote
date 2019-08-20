@@ -17,14 +17,15 @@ export class TabNav extends UIEventTarget {
         this.items = items;
         const itemNames = Object.keys(items);
         const firstItemName = itemNames.shift();
-        this.selectedItem = firstItemName;
         this.container = div(['tab-nav'], [
             div(['tab-nav-items'], this.itemLabels = [
                 div(['tab-nav-item', 'active'], [firstItemName]).attr('name', firstItemName).click(evt => this.showItem(firstItemName)),
                 ...itemNames.map(name => div(['tab-nav-item'], [name]).attr('name', name).click(evt => this.showItem(name)))
             ]),
-            this.content = div(['tab-nav-content'], [items[firstItemName]])
-        ])
+            this.content = div(['tab-nav-content'], [])
+        ]);
+
+        this.showItem(firstItemName);
     }
 
     showItem(name) {
@@ -36,7 +37,7 @@ export class TabNav extends UIEventTarget {
             return;
         }
 
-        this.itemLabels.find(label => label.getAttribute('name') === this.selectedItem).classList.remove('active');
+        if (this.selectedItem) this.itemLabels.find(label => label.getAttribute('name') === this.selectedItem).classList.remove('active');
 
         newLabel.classList.add('active');
 
@@ -44,7 +45,12 @@ export class TabNav extends UIEventTarget {
             this.content.removeChild(this.content.childNodes[0]);
         }
 
-        this.content.appendChild(this.items[name]);
+        let tabContent = this.items[name];
+        if (typeof tabContent === "function") {
+            tabContent = tabContent();
+        }
+
+        this.content.appendChild(tabContent);
 
         this.selectedItem = name;
     }

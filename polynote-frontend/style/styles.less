@@ -87,16 +87,8 @@ body {
     display: block;
   }
 
-  .toolbar.settings {
+  .toolbar.about {
     float: right;
-
-    .vim {
-      color: gray;
-
-      &.enabled {
-        color: green;
-      }
-    }
   }
 
   .floating-menu {
@@ -1413,7 +1405,7 @@ body {
   }
 }
 
-.vim-enabled .cell-container.code-cell .cell-input .cell-footer {
+.vim-enabled.cell-container.code-cell .cell-input .cell-footer {
   display: grid;
   height: 1.5em;
 }
@@ -1619,53 +1611,6 @@ button.inspect.icon-button {
     }
   }
 
-  h2 .status {
-    color: gray;
-    font-size: 200%;
-    line-height: 0.5;
-    vertical-align: top;
-    margin: 0 .125em;
-  }
-
-  &.idle h2 {
-    .status {
-      color: green;
-    }
-
-    .connect, .start {
-      display: none !important;
-    }
-  }
-
-  &.busy h2 {
-    .status {
-      color: gold;
-    }
-
-    .connect, .start {
-      display: none !important;
-    }
-  }
-
-  &.dead h2 {
-    .status {
-      color: #AA0000;
-    }
-
-    .connect, .kill {
-      display: none !important;
-    }
-
-    .start {
-      display: inline-block !important;
-    }
-  }
-
-  &.disconnected h2 {
-    .kill, .start {
-      display: none !important;
-    }
-  }
 
   .kernel-tasks {
     grid-area: tasks;
@@ -1776,6 +1721,56 @@ button.inspect.icon-button {
           width: 40%;
         }
       }
+    }
+  }
+}
+
+.kernel-status {
+  .status {
+    color: gray;
+    font-size: 200%;
+    line-height: 0.5;
+    vertical-align: top;
+    margin: 0 .125em;
+  }
+
+  &.idle {
+    .status {
+      color: green;
+    }
+
+    .connect, .start {
+      display: none !important;
+    }
+  }
+
+  &.busy {
+    .status {
+      color: gold;
+    }
+
+    .connect, .start {
+      display: none !important;
+    }
+  }
+
+  &.dead {
+    .status {
+      color: #AA0000;
+    }
+
+    .connect, .kill {
+      display: none !important;
+    }
+
+    .start {
+      display: inline-block !important;
+    }
+  }
+
+  &.disconnected {
+    .kill, .start {
+      display: none !important;
     }
   }
 }
@@ -2690,6 +2685,11 @@ button {
     display: grid;
     grid-template-rows: 24pt 1fr;
 
+    &.full-screen {
+      width: 90%;
+      height: 90%;
+    }
+
     .modal-titlebar {
       font-size: 12pt;
       padding: .5em;
@@ -2717,17 +2717,13 @@ button {
     .modal-content {
       border: 1px solid @ui-border;
       background: @ui-background;
+      display: contents;
     }
   }
 }
 
 .value-inspector {
-  width: 90%;
-  height: 90%;
-
   .modal-content {
-    display: contents;
-
     .disconnected {
       display: flex;
       justify-content: center;
@@ -2736,6 +2732,7 @@ button {
     }
 
     .tab-nav-content {
+      overflow: auto;
       padding: 4px;
 
       .plaintext, .htmltext {
@@ -2784,6 +2781,7 @@ button {
 .tab-nav {
   display: grid;
   grid-template-columns: max-content 1fr;
+  overflow: auto;
 
   .tab-nav-items {
     background: @ui-background;
@@ -2875,6 +2873,59 @@ button {
 
     summary {
       text-indent: -1em;
+    }
+  }
+}
+
+.modal-window.about {
+  line-height: 2;
+
+  .tab-nav-content {
+    padding: 2em;
+  }
+
+  table {
+    font-family: monospace;
+
+    td {
+      padding: 0.5em 2em;
+    }
+  }
+
+  .about-display img {
+    float: right;
+  }
+
+  .preferences-storage {
+    button {
+      opacity: inherit;
+      border: 1px solid @ui-background-dark;
+
+      &.clear {
+        margin-top: 1em;
+      }
+
+      &:hover {
+        background: @ui-background;
+      }
+    }
+
+    .storage {
+      background: @ui-background;
+      border-radius: 6px;
+      padding: 1em;
+
+      .json {
+        word-break: break-word;
+      }
+    }
+  }
+
+  .kernels {
+    .kernel-status .status {
+      font-size: inherit;
+      line-height: inherit;
+      vertical-align: inherit;
     }
   }
 }

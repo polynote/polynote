@@ -10,7 +10,8 @@ object SparkSubmitCommand {
   def apply(
     sparkConfig: Map[String, String],
     mainClass: String = "polynote.server.SparkServer",
-    jarLocation: String = getClass.getProtectionDomain.getCodeSource.getLocation.getPath
+    jarLocation: String = getClass.getProtectionDomain.getCodeSource.getLocation.getPath,
+    serverArgs: List[String] = Nil
   ): Seq[String] = {
 
     val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory")
@@ -28,6 +29,6 @@ object SparkSubmitCommand {
       sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
       (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++
       sparkSubmitArgs ++
-      sparkArgs :+ jarLocation
+      sparkArgs ++ Seq(jarLocation) ++ serverArgs
   }
 }

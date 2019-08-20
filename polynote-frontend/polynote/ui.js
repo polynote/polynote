@@ -9,11 +9,10 @@ import { tag, para, span, button, iconButton, div, table, h2, h3, h4, textbox, d
 import { TaskStatus } from './messages.js';
 import * as messages from './messages.js'
 import { CompileErrors, Output, RuntimeError, ClearResults, ResultValue } from './result.js'
-import { prefs } from './prefs.js'
+import { storage } from './storage.js'
 import { ToolbarUI } from "./toolbar";
 import match from "./match.js";
 import {ClientResult, ExecutionInfo} from "./result";
-import {CellMetadata, CellResult} from "./messages";
 import {Either} from "./codec";
 import {errorDisplay} from "./cell";
 import {clientInterpreters} from "./client_interpreter";
@@ -21,6 +20,9 @@ import {DataRepr, DataStream, StreamingDataRepr} from "./value_repr";
 import {Position} from "monaco-editor";
 import {valueInspector} from "./value_inspector";
 import * as Tinycon from "tinycon";
+import {getHotkeys} from "./hotkeys";
+import {About, about} from "./about";
+import {preferences} from "./storage";
 
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false, false);
@@ -338,7 +340,7 @@ export class SplitView {
             const prefId = `${id}.leftSize`;
             left.el.classList.add("left");
             left.el.style.gridArea = 'left';
-            left.el.style.width = prefs.get(prefId) || '300px';
+            left.el.style.width = storage.get(prefId) || '300px';
 
             let leftDragger = div(['drag-handle', 'left'], [
                 div(['inner'], []).attr('draggable', 'true')
@@ -361,7 +363,7 @@ export class SplitView {
             });
 
             leftDragger.addEventListener('dragend', (evt) => {
-                prefs.set(prefId, left.el.style.width);
+                storage.set(prefId, left.el.style.width);
                 window.dispatchEvent(new CustomEvent('resize', {}));
             });
         }
@@ -374,7 +376,7 @@ export class SplitView {
             const prefId = `${id}.rightSize`;
             right.el.classList.add("right");
             right.el.style.gridArea = 'right';
-            right.el.style.width = prefs.get(prefId) || '300px';
+            right.el.style.width = storage.get(prefId) || '300px';
 
             let rightDragger = div(['drag-handle', 'right'], [
                 div(['inner'], []).attr('draggable', 'true')
@@ -398,7 +400,7 @@ export class SplitView {
             });
 
             rightDragger.addEventListener('dragend', evt => {
-                prefs.set(prefId, right.el.style.width);
+                storage.set(prefId, right.el.style.width);
                 window.dispatchEvent(new CustomEvent('resize', {}));
             });
         }
@@ -420,7 +422,7 @@ export class SplitView {
 }
 
 export class KernelUI extends UIEventTarget {
-    constructor(socket, path) {
+    constructor(socket, path, showInfo=true, showSymbols=true, showTasks=true, showStatus=true) {
         super();
         this.info = new KernelInfoUI();
         this.symbols = new KernelSymbolsUI(path).setEventParent(this);
@@ -428,37 +430,101 @@ export class KernelUI extends UIEventTarget {
         this.socket = socket;
         this.path = path;
         this.el = div(['kernel-ui', 'ui-panel'], [
-            h2([], [
+            this.statusEl = h2(['kernel-status'], [
                 this.status = span(['status'], ['●']),
                 'Kernel',
-                span(['buttons'], [
+                showStatus ? span(['buttons'], [
                   iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect(evt)),
                   iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.startKernel(evt)),
                   iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => this.killKernel(evt))
-                ])
+                ]) : undefined
             ]).click(evt => this.collapse()),
             div(['ui-panel-content'], [
-                this.info.el,
-                this.symbols.el,
-                this.tasks.el
+                showInfo ? this.info.el : undefined,
+                showSymbols ? this.symbols.el: undefined,
+                showTasks ? this.tasks.el : undefined
             ])
         ]);
+
+        this.addEventListener('Connect', evt => {
+            if (!socket.isOpen) {
+                socket.reconnect();
+            }
+        });
+
+        this.addEventListener('StartKernel', evt => {
+            socket.send(new messages.StartKernel(path, messages.StartKernel.NoRestart));
+        });
+
+        this.addEventListener('KillKernel', evt => {
+            socket.send(new messages.StartKernel(path, messages.StartKernel.Kill));
+        });
+
+        socket.addMessageListener(messages.KernelStatus, (path, update) => {
+            if (path === this.path) {
+                switch (update.constructor) {
+                    case messages.UpdatedTasks:
+                        update.tasks.forEach(taskInfo => {
+                            this.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
+                            this.dispatchEvent(new UIEvent('UpdatedTask', {taskInfo: taskInfo}));
+                        });
+                        break;
+
+                    case messages.KernelBusyState:
+                        const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
+                        this.setKernelState(state);
+                        break;
+
+                    case messages.KernelInfo:
+                        this.info.updateInfo(update.content);
+                        break;
+
+                    case messages.ExecutionStatus:
+                        this.dispatchEvent(new UIEvent('UpdatedExecutionStatus', {update: update}));
+                        break;
+                }
+            }
+        });
+
+        socket.addEventListener('close', _ => {
+            this.setKernelState('disconnected');
+        });
+
+        socket.addMessageListener(messages.Error, (code, err) => {
+            console.log("Kernel error:", err);
+
+            const {el, messageStr, cellLine} = errorDisplay(err);
+
+            const id = err.id;
+            const message = div(["message"], [
+                para([], `${err.className}: ${err.message}`),
+                para([], el)
+            ]);
+            this.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
+
+            // clean up (assuming that running another cell means users are done with this error)
+            socket.addMessageListener(messages.CellResult, () => {
+                this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100);
+                return false // make sure to remove the listener
+            }, true);
+        });
+
     }
 
-    // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
+    // Check storage to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
     init() {
-        const prefs = this.getPrefs();
+        const prefs = this.getStorage();
         if (prefs && prefs.collapsed) {
             this.collapse(true);
         }
     }
 
-    getPrefs() {
-        return prefs.get("KernelUI")
+    getStorage() {
+        return storage.get("KernelUI")
     }
 
-    setPrefs(obj) {
-        prefs.set("KernelUI", {...this.getPrefs(), ...obj})
+    setStorage(obj) {
+        storage.set("KernelUI", {...this.getStorage(), ...obj})
     }
 
     connect(evt) {
@@ -479,9 +545,9 @@ export class KernelUI extends UIEventTarget {
     }
 
     setKernelState(state) {
-        this.el.classList.remove('busy', 'idle', 'dead', 'disconnected');
+        this.statusEl.classList.remove('busy', 'idle', 'dead', 'disconnected');
         if (state === 'busy' || state === 'idle' || state === 'dead' || state === 'disconnected') {
-            this.el.classList.add(state);
+            this.statusEl.classList.add(state);
             this.status.title = state;
             if (state === 'dead') {
                 this.info.clearInfo();
@@ -492,14 +558,14 @@ export class KernelUI extends UIEventTarget {
     }
 
     collapse(force) {
-        const prefs = this.getPrefs();
+        const prefs = this.getStorage();
         if (force) {
             this.dispatchEvent(new UIEvent('ToggleKernelUI', {force: true}))
         } else if (prefs && prefs.collapsed) {
-            this.setPrefs({collapsed: false});
+            this.setStorage({collapsed: false});
             this.dispatchEvent(new UIEvent('ToggleKernelUI'))
         } else {
-            this.setPrefs({collapsed: true});
+            this.setStorage({collapsed: true});
             this.dispatchEvent(new UIEvent('ToggleKernelUI'))
         }
     }
@@ -950,7 +1016,7 @@ export class NotebookCellsUI extends UIEventTarget {
                 }
             });
             // scroll to previous position, if any
-            const scrollPosition = prefs.get('notebookLocations')[this.path];
+            const scrollPosition = storage.get('notebookLocations')[this.path];
             if (this.el.parentElement && (scrollPosition || scrollPosition === 0)) {
                 this.el.parentElement.scrollTop = scrollPosition;
             }
@@ -1029,10 +1095,12 @@ export class NotebookCellsUI extends UIEventTarget {
 
         if (currentCell instanceof TextCell && language !== 'text') {
             // replace text cell with a code cell
+            const textContent = currentCell.container.innerText.trim(); // innerText has just the plain text without any HTML formatting
             const newCell = new CodeCell(currentCell.id, currentCell.content, language, this.path);
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);
+            newCell.editor.getModel().setValue(textContent); // use setValue in order to properly persist the change.
             const clientInterpreter = clientInterpreters[language];
             if (clientInterpreter && clientInterpreter.highlightLanguage && clientInterpreter.highlightLanguage !== language) {
                 monaco.editor.setModelLanguage(newCell.editor.getModel(), clientInterpreter.highlightLanguage)
@@ -1279,6 +1347,8 @@ export class NotebookUI extends UIEventTarget {
                     nextCell.focus();
                     nextCell.container.parentNode.insertBefore(undoEl, nextCell.container);
                 } else {
+                    const prev = current.prevCell();
+                    if (prev) prev.focus();
                     current.container.parentNode.insertBefore(undoEl, current.container);
                 }
                 this.cellUI.removeCell(current.id);
@@ -1402,52 +1472,21 @@ export class NotebookUI extends UIEventTarget {
             this.socket.send(new messages.HandleData(path, req.handleType, req.handleId, req.count, []));
         });
 
-        this.kernelUI.addEventListener('Connect', evt => {
-            if (!this.socket.isOpen) {
-                this.socket.reconnect();
-            }
-        });
-
-        this.kernelUI.addEventListener('StartKernel', evt => {
-           this.socket.send(new messages.StartKernel(path, messages.StartKernel.NoRestart));
-        });
-
-        this.kernelUI.addEventListener('KillKernel', evt => {
-           this.socket.send(new messages.StartKernel(path, messages.StartKernel.Kill));
-        });
-
         socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
-        socket.addMessageListener(messages.KernelStatus, (path, update) => {
-            if (path === this.path) {
-                switch (update.constructor) {
-                    case messages.UpdatedTasks:
-                        update.tasks.forEach(taskInfo => {
-                            this.kernelUI.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
-
-                            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
-                            //       and instead have an EOF message to tell us when a cell is done
-                            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
-                            if (cellMatch && cellMatch[1]) {
-                                this.cellUI.setStatus(+(cellMatch[1]), taskInfo);
-                            }
-                        });
-                        break;
-
-                    case messages.KernelBusyState:
-                        const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
-                        this.kernelUI.setKernelState(state);
-                        break;
-
-                    case messages.KernelInfo:
-                        this.kernelUI.info.updateInfo(update.content);
-                        break;
-
-                    case messages.ExecutionStatus:
-                        this.cellUI.setExecutionHighlight(update.cellId, update.pos);
-                        break;
-                }
+        this.addEventListener('UpdatedTask', evt => {
+            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
+            //       and instead have an EOF message to tell us when a cell is done
+            const taskInfo = evt.detail.taskInfo;
+            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
+            if (cellMatch && cellMatch[1]) {
+                this.cellUI.setStatus(+(cellMatch[1]), taskInfo);
             }
+        });
+
+        this.addEventListener('UpdatedExecutionStatus', evt => {
+            const update = evt.detail.update;
+            this.cellUI.setExecutionHighlight(update.cellId, update.pos);
         });
 
         socket.addMessageListener(messages.NotebookUpdate, update => {
@@ -1517,7 +1556,6 @@ export class NotebookUI extends UIEventTarget {
         };
 
         socket.addEventListener('close', evt => {
-            this.kernelUI.setKernelState('disconnected');
             this.cellUI.setDisabled(true);
             window.addEventListener('focus', reconnectOnWindowFocus);
         });
@@ -1526,25 +1564,6 @@ export class NotebookUI extends UIEventTarget {
             window.removeEventListener('focus', reconnectOnWindowFocus);
             this.socket.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false)));
             this.cellUI.setDisabled(false);
-        });
-
-        socket.addMessageListener(messages.Error, (code, err) => {
-            console.log("Kernel error:", err);
-
-            const {el, messageStr, cellLine} = errorDisplay(err);
-
-            const id = err.id;
-            const message = div(["message"], [
-                para([], `${err.className}: ${err.message}`),
-                para([], el)
-            ]);
-            this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
-
-            // clean up (assuming that running another cell means users are done with this error)
-            socket.addMessageListener(messages.CellResult, () => {
-                this.kernelUI.tasks.updateTask(id, id, message, TaskStatus.Complete, 100);
-                return false // make sure to remove the listener
-            }, true);
         });
 
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
@@ -1808,7 +1827,7 @@ export class TabUI extends EventTarget {
     }
 
     setCurrentScrollLocation(scrollTop) {
-        prefs.update('notebookLocations', locations => {
+        storage.update('notebookLocations', locations => {
             if (!locations) {
                 locations = {};
             }
@@ -1892,7 +1911,7 @@ export class NotebookListUI extends UIEventTarget {
         }
     }
 
-    // Check prefs to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
+    // Check storage to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
     init() {
         const prefs = this.getPrefs();
         if (prefs && prefs.collapsed) {
@@ -1901,11 +1920,11 @@ export class NotebookListUI extends UIEventTarget {
     }
 
     getPrefs() {
-        return prefs.get("NotebookListUI")
+        return storage.get("NotebookListUI")
     }
 
     setPrefs(obj) {
-        prefs.set("NotebookListUI", {...this.getPrefs(), ...obj})
+        storage.set("NotebookListUI", {...this.getPrefs(), ...obj})
     }
 
     setItems(items) {
@@ -2068,7 +2087,7 @@ export class WelcomeUI extends UIEventTarget {
         `;
 
         const recent = this.el.querySelector('.recent-notebooks');
-        (prefs.get('recentNotebooks') || []).forEach(nb => {
+        (storage.get('recentNotebooks') || []).forEach(nb => {
            recent.appendChild(
                tag('li', ['notebook-link'], {}, [
                    span([], nb.name).click(
@@ -2259,49 +2278,11 @@ export class MainUI extends EventTarget {
             cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCellId }));
         });
 
-        // TODO: maybe we can break out this menu stuff once we need more menus.
-        this.toolbarUI.addEventListener('ViewPrefs', (evt) => {
-            const anchorElem = document.getElementsByClassName(evt.detail.anchor.className)[0];
-            const anchorPos = anchorElem.getBoundingClientRect();
-
-            const menu = evt.detail.elem;
-            const content = JSON.stringify(prefs.show(), null, 2);
-
-            monaco.editor.colorize(content, "json", {}).then(function(result) {
-                menu.innerHTML = result;
-            });
-
-            menu.style.display = 'block';
-
-            const bodySize = document.body.getBoundingClientRect();
-
-            menu.style.right = (bodySize.width - anchorPos.left) - anchorPos.width + "px";
-
-            // hide it when you click away...
-            document.addEventListener('mousedown', () => {
-                menu.style.display = 'none';
-            }, {once: true});
-
-            //... but not if you click inside it:
-            menu.addEventListener('mousedown', (evt) => evt.stopPropagation());
-        });
-
-        this.toolbarUI.addEventListener('ResetPrefs', () => {
-            prefs.clear();
-            location.reload(); //TODO: can we avoid reloading?
-        });
-
-        this.toolbarUI.addEventListener('ToggleVIM', () => {
-            const currentVim = prefs.get('VIM');
-            if (currentVim) {
-                prefs.set('VIM', false);
-                document.body.classList.remove('vim-enabled');
-            } else {
-                prefs.set('VIM', true);
-                document.body.classList.add('vim-enabled');
+        this.toolbarUI.addEventListener('ViewAbout', (evt) => {
+            if (!this.about) {
+                this.about = new About(this).setEventParent(this);
             }
-
-            this.toolbarUI.settingsToolbar.colorVim();
+            this.about.show(evt.detail.section);
         });
 
         this.toolbarUI.addEventListener('DownloadNotebook', () => {
@@ -2318,7 +2299,11 @@ export class MainUI extends EventTarget {
         if (!this.welcomeUI) {
             this.welcomeUI = new WelcomeUI().setEventParent(this);
         }
-        this.tabUI.addTab('home', span([], 'Home'), { notebook: this.welcomeUI.el, path: '/' }, 'home');
+        const welcomeKernelUI = new KernelUI(this.socket, '/', /*showInfo*/ false, /*showSymbols*/ false, /*showTasks*/ true, /*showStatus*/ false);
+        this.tabUI.addTab('home', span([], 'Home'), {
+            notebook: this.welcomeUI.el,
+            kernel: welcomeKernelUI.el
+        }, 'home');
     }
 
     loadNotebook(path) {
@@ -2351,7 +2336,7 @@ export class MainUI extends EventTarget {
 
         const notebookName = path.split(/\//g).pop();
 
-        prefs.update('recentNotebooks', recentNotebooks => {
+        storage.update('recentNotebooks', recentNotebooks => {
             const currentIndex = recentNotebooks.findIndex(nb => nb.path === path);
             if (currentIndex !== -1) {
                 recentNotebooks.splice(currentIndex, 1);

@@ -6,7 +6,8 @@ object PlainServerCommand {
 
   def apply(
     sparkConfig: Map[String, String],
-    mainClass: String = "polynote.server.SparkServer"
+    mainClass: String = "polynote.server.SparkServer",
+    serverArgs: List[String] = Nil
   ): Seq[String] = {
 
     val allDriverOptions =
@@ -18,6 +19,6 @@ object PlainServerCommand {
 
     val cp = sys.props.get("java.class.path").toList.flatMap(Seq("-cp", _))
 
-    Seq(javaCommand) ++ allDriverOptions ++ cp :+ mainClass
+    Seq(javaCommand) ++ allDriverOptions ++ cp ++ Seq(mainClass) ++ serverArgs
   }
 }

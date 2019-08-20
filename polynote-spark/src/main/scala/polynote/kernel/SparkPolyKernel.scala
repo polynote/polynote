@@ -13,6 +13,7 @@ import cats.syntax.flatMap._
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.thief.DAGSchedulerThief
+import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
 import polynote.kernel.PolyKernel._
 import polynote.kernel.dependency.DependencyProvider
@@ -106,7 +107,7 @@ class SparkPolyKernel(
     }
     conf.setJars(dependencyJars.map(_.toString))
     conf.set("spark.repl.class.outputDir", outputPath.toString)
-    conf.setAppName("Polynote session")
+    conf.setAppName(s"Polynote ${BuildInfo.version} session")
 
     // TODO: experimental
     //    conf.set("spark.driver.userClassPathFirst", "true")
@@ -155,7 +156,7 @@ class SparkPolyKernel(
     sparkKI.map2(superKI)((spk, sup) => spk.combine(sup)).orElse(sparkKI).orElse(superKI).value
   }
 
-  override def cancelTasks(): IO[Unit] = super.cancelTasks() >> IO(DAGSchedulerThief(session).cancelAllJobs())
+  override def cancelTasks(): IO[Unit] = super.cancelTasks() >> IO(DAGSchedulerThief(session).foreach(_.cancelAllJobs()))
 
   override def shutdown(): IO[Unit] = super.shutdown() >> cancelTasks() >> contextShift.evalOn(ctx.executionContext)(IO(session.stop())) >> IO(logger.info("Stopped spark session"))
 }
