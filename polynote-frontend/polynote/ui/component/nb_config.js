@@ -7,12 +7,6 @@ export class NotebookConfigUI extends UIEventTarget {
     constructor() {
         super();
 
-        // TODO: instead of all this DOM checking, should use these variables to track state
-        const deps = {};
-        const exclusions = [];
-        const repos = [];
-        const sparkConfig = {};
-
         this.el = div(['notebook-config'], [
             h2(['config'], ['Configuration & dependencies']).click(evt => this.el.classList.toggle('open')),
             div(['content'], [
