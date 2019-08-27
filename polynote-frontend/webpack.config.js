@@ -4,7 +4,8 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const path = require('path');
 
 module.exports = {
-  entry: './polynote/main.js',
+  entry: './polynote/main.ts',
+  devtool: 'source-map',
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'app.[contenthash].js'
@@ -13,7 +14,14 @@ module.exports = {
     rules: [{
       test: /\.css$/,
       use: ['style-loader', 'css-loader']
+    }, {
+      test: /\.ts$/,
+      use: ['ts-loader'],
+      exclude: /node_modules/
     }]
+  },
+  resolve: {
+    extensions: [".ts", ".js"]
   },
   plugins: [
     new MonacoWebpackPlugin({

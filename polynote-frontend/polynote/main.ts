@@ -1,13 +1,11 @@
 "use strict";
-//import * as monaco from 'monaco-editor'
-import { SocketSession } from './comms.js'
-import * as messages from './data/messages.js'
-import { MainUI } from './ui/component/ui.js'
-import { scala, vega } from './ui/monaco/languages.js'
-import { theme } from './ui/monaco/theme.js'
+import { SocketSession } from './comms'
+import { MainUI } from './ui/component/ui'
+import { scala, vega } from './ui/monaco/languages'
+import { theme } from './ui/monaco/theme'
 import * as monaco from "monaco-editor";
-import {storage} from "./ui/util/storage";
 import * as Tinycon from "tinycon";
+import * as katex from 'katex';
 
 const md = require('markdown-it');
 
@@ -46,7 +44,7 @@ const md = require('markdown-it');
             SOFTWARE.
       */
 
-      function isValidDelim(state, pos) {
+      function isValidDelim(state: any, pos: any) {
           var prevChar, nextChar,
               max = state.posMax,
               can_open = true,
@@ -71,7 +69,7 @@ const md = require('markdown-it');
           };
       }
 
-      function math_inline(state, silent) {
+      function math_inline(state: any, silent: any) {
           var start, match, token, res, pos, esc_count;
 
           if (state.src[state.pos] !== "$") { return false; }
@@ -132,7 +130,7 @@ const md = require('markdown-it');
           return true;
       }
 
-      function math_block(state, start, end, silent){
+      function math_block(state: any, start: any, end: any, silent: any){
           var firstLine, lastLine, next, lastPos, found = false, token,
               pos = state.bMarks[start] + state.tShift[start],
               max = state.eMarks[start];
@@ -184,7 +182,7 @@ const md = require('markdown-it');
           return true;
       }
 
-      function escapeHtml(unsafe) {
+      function escapeHtml(unsafe: any) {
           return unsafe
               .replace(/&/g, "&amp;")
               .replace(/</g, "&lt;")
@@ -193,21 +191,21 @@ const md = require('markdown-it');
               .replace(/'/g, "&#039;");
       }
 
-      return function math_plugin(md, options) {
+      return function math_plugin(md: any, options: any) {
           // Default options
 
           options = options || {};
 
           // set KaTeX as the renderer for markdown-it-simplemath
-          var katexInline = function(latex){
+          var katexInline = function(latex: any){
               options.displayMode = false;
               try{
                   // modified - go through a fake element so the result can have DOM modifications (emit contenteditable=false and data-tex-source)
                   // this is probably a bit slower, but hopefully there aren't thousands of equations on the page!
                   const fakeEl = document.createElement('div');
                   katex.render(latex, fakeEl, options);
-                  fakeEl.childNodes[0].setAttribute('contenteditable', 'false');
-                  fakeEl.childNodes[0].setAttribute('data-tex-source', latex);
+                  fakeEl.children[0].setAttribute('contenteditable', 'false');
+                  fakeEl.children[0].setAttribute('data-tex-source', latex);
                   return fakeEl.innerHTML;
               }
               catch(error){
@@ -216,11 +214,11 @@ const md = require('markdown-it');
               }
           };
 
-          var inlineRenderer = function(tokens, idx){
+          var inlineRenderer = function(tokens: any, idx: any){
               return katexInline(tokens[idx].content);
           };
 
-          var katexBlock = function(latex){
+          var katexBlock = function(latex: any){
               options.displayMode = true;
               try{
                   // modified - add contenteditable=false
@@ -232,7 +230,7 @@ const md = require('markdown-it');
               }
           };
 
-          var blockRenderer = function(tokens, idx){
+          var blockRenderer = function(tokens: any, idx: any){
               return  katexBlock(tokens[idx].content) + '\n';
           };
 
@@ -252,15 +250,20 @@ const MarkdownIt = md({
 
 MarkdownIt.use(mdk);
 
+declare global {
+    interface Window {
+        MarkdownIt: any;
+    }
+}
 window.MarkdownIt = MarkdownIt;
 
 // set up custom highlighters
 monaco.languages.register({ id: 'scala' });
-monaco.languages.setMonarchTokensProvider('scala', scala.tokenizer);
+monaco.languages.setMonarchTokensProvider('scala', scala.definition);
 monaco.languages.setLanguageConfiguration('scala', scala.config);
 
 monaco.languages.register({id: 'vega'});
-monaco.languages.setMonarchTokensProvider('vega', vega.tokenizer);
+monaco.languages.setMonarchTokensProvider('vega', vega.definition);
 monaco.languages.setLanguageConfiguration('vega', vega.config);
 
 // use our theme

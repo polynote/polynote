@@ -1,4 +1,7 @@
-export const theme = {
+import {editor} from "monaco-editor";
+import IStandaloneThemeData = editor.IStandaloneThemeData;
+
+export const theme: IStandaloneThemeData = {
   base: 'vs',
   inherit: true,
   rules: [

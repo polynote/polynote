@@ -1,6 +1,13 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
+import {languages} from "monaco-editor/esm/vs/editor/editor.api";
+import IMonarchLanguage = languages.IMonarchLanguage;
+import LanguageConfiguration = languages.LanguageConfiguration;
 
-export const scala = {
+interface LanguageDefinition {
+  config: LanguageConfiguration, definition: IMonarchLanguage
+}
+
+export const scala: LanguageDefinition = {
   config: {
     surroundingPairs: [
       {open:"{",close:"}"},
@@ -25,10 +32,11 @@ export const scala = {
       lineComment: "//"
     }
   },
-  tokenizer: {
+  definition: {
     // Set defaultToken to invalid to see what you do not tokenize yet
     // defaultToken: 'invalid',
 
+    // @ts-ignore  no idea why TS doesn't like `keywords` in particular...
     keywords: [
       // From https://www.scala-lang.org/files/archive/spec/2.11/01-lexical-syntax.html
       'abstract', 'case', 'catch', 'class', 'def',
@@ -38,7 +46,7 @@ export const scala = {
       'null', 'object', 'override', 'package', 'private',
       'protected', 'return', 'sealed', 'super', 'this',
       'throw', 'trait', 'try', 'true', 'type',
-      'val', 'var', 'while', 'with', 'yield',
+      'val', 'var', 'while', 'with', 'yield'
     ],
 
     typeKeywords: [
@@ -57,9 +65,9 @@ export const scala = {
     ],
 
     brackets: [
-      ['(',')','delimiter.parenthesis'],
-      ['{','}','delimiter.curly'],
-      ['[',']','delimiter.square']
+      { open: '(', close: ')', token: 'delimiter.parenthesis'},
+      { open: '{', close: '}', token: 'delimiter.curly'},
+      { open: '[', close: ']', token: 'delimiter.square'}
     ],
 
     // we include these common regular expressions
@@ -117,7 +125,7 @@ export const scala = {
       comment: [
         [/[^\/*]+/, 'comment' ],
         [/\/\*/,    'comment', '@push' ],    // nested comment
-        ["\\*/",    'comment', '@pop'  ],
+        [/\*\//,    'comment', '@pop'  ],
         [/[\/*]/,   'comment' ]
       ],
 
@@ -144,7 +152,7 @@ export const scala = {
 
 
 // This could be improved quite a bit... recognize context like object key/value, etc
-export const vega = {
+export const vega: LanguageDefinition = {
   config: {
     surroundingPairs: [
       {open:"{",close:"}"},
@@ -169,19 +177,20 @@ export const vega = {
       lineComment: "//"
     }
   },
-  tokenizer: {
+  definition: {
+    // @ts-ignore  no idea why TS doesn't like `keywords` in particular...
     keywords: [
-        'autosize', 'axis', 'layer', 'mark', 'x', 'y', 'y2', 'field', 'encoding', 'color', 'type', 'title', 'opacity',
-        'style', 'orient', 'size', 'width', 'height', '$schema', 'data', 'name', 'values'
+      'autosize', 'axis', 'layer', 'mark', 'x', 'y', 'y2', 'field', 'encoding', 'color', 'type', 'title', 'opacity',
+      'style', 'orient', 'size', 'width', 'height', '$schema', 'data', 'name', 'values'
     ],
     operators: [
       '_', ':', '=', '=>', '+', '-', '/', '*', '%', '?', '>', '<', '<=', '>=', '&', '&&', '|', '||', '==', '==='
     ],
 
     brackets: [
-      ['(',')','delimiter.parenthesis'],
-      ['{','}','delimiter.curly'],
-      ['[',']','delimiter.square']
+      { open: '(', close: ')', token: 'delimiter.parenthesis'},
+      { open: '{', close: '}', token: 'delimiter.curly'},
+      { open: '[', close: ']', token: 'delimiter.square'}
     ],
 
     symbols:  /[=><!~?:&|+\-*\/\^%]+/,
@@ -228,7 +237,7 @@ export const vega = {
       comment: [
         [/[^\/*]+/, 'comment' ],
         [/\/\*/,    'comment', '@push' ],    // nested comment
-        ["\\*/",    'comment', '@pop'  ],
+        [/\*\//,    'comment', '@pop'  ],
         [/[\/*]/,   'comment' ]
       ],
 
