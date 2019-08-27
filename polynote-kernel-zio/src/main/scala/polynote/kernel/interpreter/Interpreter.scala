@@ -1,6 +1,6 @@
-package polynote.kernel.interpreter
+package polynote.kernel
+package interpreter
 
-import polynote.kernel.{Completion, CurrentRuntime, CurrentTask, ScalaCompiler, Signatures}
 import zio.blocking.Blocking
 import zio.{Task, TaskR}
 
@@ -14,7 +14,7 @@ trait Interpreter {
     *              initially have empty values. Its `prev` will point to the [[State]] returned by the closes prior
     *              executed cell, or to [[State.Root]] if there is no such cell.
     */
-  def run(code: String, state: State): TaskR[Blocking with PublishResults with CurrentTask with CurrentRuntime, State]
+  def run(code: String, state: State): TaskR[CellEnv, State]
 
   /**
     * Ask for completions (if applicable) at the given position in the given code string.
@@ -43,7 +43,7 @@ trait Interpreter {
     * @param state A [[State]] which is the current state of the notebook execution.
     * @return An initial state for this interpreter
     */
-  def init(state: State): TaskR[Blocking with PublishResults with CurrentTask with CurrentRuntime, State]
+  def init(state: State): TaskR[CellEnv, State]
 }
 
 object Interpreter {

@@ -1,7 +1,7 @@
 package polynote.kernel.interpreter.scal
 
 import polynote.kernel.{Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
-import polynote.messages.TinyString
+import polynote.messages.{ShortString, TinyList, TinyString}
 
 import scala.annotation.tailrec
 import scala.reflect.internal.util.Position
@@ -26,7 +26,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
             val name = sym.name.decodedName.toString
             val typ  = sym.typeSignatureIn(qual.tpe)
             val tParams = sym.typeParams.map(_.name.decodedName.toString)
-            val vParams = sym.paramss.map(_.map(_.name.decodedName.toString: TinyString))
+            val vParams = TinyList(sym.paramss.map(_.map{p => (p.name.decodedName.toString: TinyString, compiler.unsafeFormatType(p.infoIn(typ)): ShortString)}: TinyList[(TinyString, ShortString)]))
             Completion(name, tParams, vParams, compiler.unsafeFormatType(typ), completionType(sym))
         }
     }

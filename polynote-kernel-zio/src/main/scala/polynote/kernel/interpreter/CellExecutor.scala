@@ -11,7 +11,7 @@ import zio.internal.{ExecutionMetrics, Executor}
   * A ZIO [[Executor]] which captures standard output from the given task into the given publisher, and sets the context
   * ClassLoader of the task to the given [[ClassLoader]].
   */
-class CellExecutor(publishSync: Result => Unit, publishAsync: Result => Unit, classLoader: ClassLoader, blockingExecutor: Executor) extends Executor {
+class CellExecutor(publishSync: Result => Unit, classLoader: ClassLoader, blockingExecutor: Executor) extends Executor {
   def yieldOpCount: Int = blockingExecutor.yieldOpCount
   def metrics: Option[ExecutionMetrics] = blockingExecutor.metrics
   def submit(runnable: Runnable): Boolean = {
@@ -45,6 +45,6 @@ class CellExecutor(publishSync: Result => Unit, publishAsync: Result => Unit, cl
   */
 class BlockingService(publishSync: Result => Unit, publishAsync: Result => Unit, classLoader: ClassLoader, parentExec: Executor) extends Blocking {
   val blocking: Blocking.Service[Any] = new Blocking.Service[Any] {
-    val blockingExecutor: UIO[Executor] = ZIO.succeed(new CellExecutor(publishSync, publishAsync, classLoader, parentExec))
+    val blockingExecutor: UIO[Executor] = ZIO.succeed(new CellExecutor(publishSync, classLoader, parentExec))
   }
 }

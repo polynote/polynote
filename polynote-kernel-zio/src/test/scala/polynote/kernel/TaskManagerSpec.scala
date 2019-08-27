@@ -3,6 +3,7 @@ package polynote.kernel
 import java.time.Instant
 import java.util.concurrent.ConcurrentLinkedQueue
 
+import cats.effect.concurrent.Ref
 import fs2.Pipe
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.TaskStatus.{Complete, Queued, Running}
@@ -15,13 +16,15 @@ import scala.collection.JavaConverters._
 
 class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
   private val debug = true
-
+  private val mkEnv: (Any, Ref[Task, TaskInfo]) => CurrentTask = (_, ref) => new CurrentTask {
+    val currentTask: Ref[Task, TaskInfo] = ref
+  }
 
   "queues tasks" - {
 
     "runs queued tasks sequentially" in {
       val mockPublish = new MockPublish[KernelStatusUpdate]
-      val taskManager = TaskManager(mockPublish).runIO()
+      val taskManager = TaskManager[Any](mkEnv, mockPublish).runIO()
       @volatile var state = 0
       val task1 = zio.blocking.effectBlocking {
         if (debug) println(s"${Instant.now()} running 1")
@@ -83,7 +86,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
 
     "interrupts running tasks and cancels queued tasks before they run" in {
       val mockPublish = new MockPublish[KernelStatusUpdate]
-      val taskManager = TaskManager(mockPublish).runIO()
+      val taskManager = TaskManager[Any](mkEnv, mockPublish).runIO()
 
       @volatile var state = 0
       val task1 = zio.blocking.effectBlocking {

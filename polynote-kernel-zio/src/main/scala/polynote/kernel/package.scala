@@ -1,55 +1,32 @@
 package polynote
 
-import cats.effect.concurrent.Ref
 import fs2.Stream
 import polynote.config.PolynoteConfig
-import polynote.kernel.util.{KernelContext, Publish}
-import polynote.messages.{CellID, Notebook}
-import polynote.runtime.KernelRuntime
+import polynote.kernel.interpreter.Interpreter
 import zio.{Task, TaskR, ZIO}
 import zio.blocking.Blocking
+import zio.clock.Clock
+import zio.system.System
 
 package object kernel {
 
-  trait Broadcasts {
-    val statusUpdates: Publish[Task, KernelStatusUpdate]
-  }
+  type BaseEnv = Blocking with Clock with System
+  trait BaseEnvT extends Blocking with Clock with System
 
-  trait CurrentTask {
-    val currentTask: Ref[Task, TaskInfo]
-  }
+  type KernelConfigEnv = BaseEnv with ScalaCompiler.Provider with Interpreter.Factories with CurrentNotebook with PolynoteConfig.Provider
+  trait KernelConfigEnvT extends BaseEnvT with ScalaCompiler.Provider with Interpreter.Factories with CurrentNotebook with PolynoteConfig.Provider
 
-  object CurrentTask {
-    def apply(taskInfoRef: Ref[Task, TaskInfo]): CurrentTask = new CurrentTask {
-      val currentTask: Ref[Task, TaskInfo] = taskInfoRef
-    }
-  }
+  type KernelFactoryEnv = BaseEnv with TaskManager.Provider[KernelEnv] with ScalaCompiler.Provider with Interpreter.Factories with CurrentNotebook with PolynoteConfig.Provider
+  trait KernelFactoryEnvT extends BaseEnvT with TaskManager.Provider[KernelEnv] with ScalaCompiler.Provider with Interpreter.Factories with CurrentNotebook with PolynoteConfig.Provider
 
-  trait CurrentCell {
-    val currentCellId: CellID
-  }
+  type KernelEnv = BaseEnv with PublishStatus with PublishResults
+  trait KernelEnvT extends BaseEnvT with PublishStatus with PublishResults
 
-  trait CurrentRuntime {
-    val currentRuntime: KernelRuntime
-  }
+  type KernelTaskEnv = KernelEnv with CurrentTask
+  trait KernelTaskEnvT extends KernelEnvT with CurrentTask
 
-  object CurrentRuntime {
-    object NoRuntime extends KernelRuntime(
-      new KernelRuntime.Display {
-        def content(contentType: String, content: String): Unit = ()
-      },
-      (_, _) => (),
-      _ => ()
-    )
-
-    object NoCurrentRuntime extends CurrentRuntime {
-      val currentRuntime: KernelRuntime = NoRuntime
-    }
-  }
-
-  trait CurrentNotebook {
-    val currentNotebook: Ref[Task, Notebook]
-  }
+  type CellEnv = KernelEnv with CurrentTask with CurrentRuntime
+  trait CellEnvT extends KernelEnvT with CurrentTask with CurrentRuntime
 
   implicit class StreamOps[A](val stream: Stream[Task, A]) {
 
@@ -63,6 +40,31 @@ package object kernel {
       case notEnd         => Stream.emit(Some(notEnd))
     }.unNoneTerminate
 
+  }
+
+  // some tuple syntax that ZIO doesn't natively have
+  // PR for including this in ZIO: https://github.com/zio/zio/pull/1444
+  final implicit class ZIOTuple4[E, RA, A, RB, B, RC, C, RD, D](
+    val zios4: (ZIO[RA, E, A], ZIO[RB, E, B], ZIO[RC, E, C], ZIO[RD, E, D])
+  ) extends AnyVal {
+    def map4[F](f: (A, B, C, D) => F): ZIO[RA with RB with RC with RD, E, F] =
+      for {
+        a <- zios4._1
+        b <- zios4._2
+        c <- zios4._3
+        d <- zios4._4
+      } yield f(a, b, c, d)
+  }
+
+  final implicit class ZIOTuple3[E, RA, A, RB, B, RC, C](
+    val zios3: (ZIO[RA, E, A], ZIO[RB, E, B], ZIO[RC, E, C])
+  ) extends AnyVal {
+    def map3[F](f: (A, B, C) => F): ZIO[RA with RB with RC, E, F] =
+      for {
+        a <- zios3._1
+        b <- zios3._2
+        c <- zios3._3
+      } yield f(a, b, c)
   }
 
   def withContextClassLoaderIO[A](cl: ClassLoader)(thunk: => A): TaskR[Blocking, A] =

@@ -23,7 +23,7 @@ class ScalaCompiler private (
   private val packageName = TermName(notebookPackage)
   private val reporter = global.reporter.asInstanceOf[KernelReporter]
 
-  private[scal] val compilerThread: Executor = new Executor {
+  private val compilerThread: Executor = new Executor {
     def yieldOpCount: Int = Int.MaxValue
     def metrics: Option[ExecutionMetrics] = None
     def submit(runnable: Runnable): Boolean = {
@@ -56,7 +56,7 @@ class ScalaCompiler private (
       }
   }
 
-  def unsafeFormatType(typ: Type): String = formatTypeInternal(typ)
+  private[kernel] def unsafeFormatType(typ: Type): String = formatTypeInternal(typ)
 
   def formatType(typ: Type): TaskR[Blocking, String] =
     zio.blocking.effectBlocking(formatTypeInternal(typ)).lock(compilerThread)
@@ -197,7 +197,7 @@ class ScalaCompiler private (
 
     // Note – you mustn't typecheck and then compile the same instance; those trees are done for. Instead, make a copy
     // of this CellCode and typecheck that if you need info about the typed trees without compiling all the way
-    private[scal] lazy val typed = {
+    private[kernel] lazy val typed = {
       val run = new Run()
       compilationUnit.body = wrapped
       unitOfFile.put(sourceFile.file, compilationUnit)

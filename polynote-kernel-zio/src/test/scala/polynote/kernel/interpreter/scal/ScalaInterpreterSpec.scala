@@ -37,12 +37,12 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
 
 
   "run scala code" in {
-    val env = MockEnv(TaskInfo("Cell0")).runIO()
+    val env = MockEnv(0).runIO()
 
     val result = interpreter.run(
       "val foo = 22",
       State.id(0)
-    ).provide(env).runIO()
+    ).provide(env.toCellEnv(classLoader)).runIO()
 
     result match {
       case ScalaCellState(0, State.Root, ValueMap(valueMap), _, _) =>
@@ -51,12 +51,12 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
   }
 
   "capture standard output" in {
-    val env = MockEnv(TaskInfo("Cell0")).runIO()
+    val env = MockEnv(0).runIO()
 
     val result = interpreter.run(
       """println("hello")""",
       State.id(0)
-    ).provide(env).runIO()
+    ).provide(env.toCellEnv(classLoader)).runIO()
 
     env.results.toList.runIO() shouldEqual List(Output("text/plain; rel=stdout", "hello\n"))
   }
@@ -202,6 +202,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
           )
           val outStr = output.foldLeft("") {
             case (accum, Output("text/plain; rel=stdout", next)) => accum + next
+            case other => fail(s"Unexpected output $other")
           }
           outStr shouldEqual
             """println: 1 + 2 = 3
@@ -252,10 +253,10 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
 
   type ITask[A] = TaskR[Clock with Console with System with Random with Blocking, A]
   private def interp(code: String): StateT[ITask, State, InterpResult] = StateT[ITask, State, InterpResult] {
-    state => MockEnv(TaskInfo(s"Cell${state.id}")).flatMap {
+    state => MockEnv(state.id).flatMap {
       env => interpreter.run(code, state).map {
         newState => State.id(newState.id + 1, newState) -> InterpResult(newState, env)
-      }.provide(env)
+      }.provide(env.toCellEnv(classLoader))
     }
   }
 

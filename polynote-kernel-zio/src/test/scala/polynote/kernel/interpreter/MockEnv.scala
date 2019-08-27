@@ -1,10 +1,11 @@
-package polynote.kernel.interpreter
+package polynote.kernel
+package interpreter
 
 import cats.effect.concurrent.Ref
 import fs2.concurrent.SignallingRef
-import polynote.kernel.{CurrentRuntime, CurrentTask, KernelStatusUpdate, Output, Result, TaskInfo, UpdatedTasks}
+import polynote.messages.CellID
 import polynote.runtime.KernelRuntime
-import polynote.testing.{MockPublish, RuntimeDelegate}
+import polynote.testing.MockPublish
 import zio.{Runtime, Task, TaskR, ZIO}
 import zio.blocking.Blocking
 import zio.clock.Clock
@@ -13,37 +14,28 @@ import zio.random.Random
 import zio.system.System
 import zio.interop.catz._
 
-class MockEnv(
-  runtime: Runtime[Clock with Console with System with Random with Blocking],
-  taskInfoRef: SignallingRef[Task, TaskInfo]
-) extends RuntimeDelegate(runtime)
-  with PublishResults
-  with CurrentTask
-  with CurrentRuntime {
-
-  val results: MockPublish[Result] = new MockPublish[Result]
-  val updates: MockPublish[KernelStatusUpdate] = new MockPublish[KernelStatusUpdate]
+case class MockEnv(
+  baseEnv: BaseEnv,
+  cellID: CellID,
+  currentTask: SignallingRef[Task, TaskInfo],
+  results: MockPublish[Result],
+  updates: MockPublish[KernelStatusUpdate],
+  runtime: Runtime[Any]
+) extends CellEnvT {
+  val clock: Clock.Service[Any] = baseEnv.clock
+  val blocking: Blocking.Service[Any] = baseEnv.blocking
+  val system: System.Service[Any] = baseEnv.system
   val publishResult: Result => Task[Unit] = results.publish1
-  val currentTask: Ref[Task, TaskInfo] = taskInfoRef
-  val currentRuntime: KernelRuntime = new KernelRuntime(
-    new KernelRuntime.Display {
-      def content(contentType: String, content: String): Unit = runtime.unsafeRunSync(publishResult(Output(contentType, content)))
-    },
-    (frac, detail) => runtime.unsafeRunSync {
-      for {
-        _ <- currentTask.update(task => (if (detail != null && detail != "") task.copy(detail = detail) else task).progress(frac))
-        task <- currentTask.get
-        _ <- updates.publish1(UpdatedTasks(task :: Nil))
-      } yield ()
-    },
-    statusOpt => ()
-  )
+  val publishStatus: KernelStatusUpdate => Task[Unit] = updates.publish1
+  val currentRuntime: KernelRuntime = runtime.unsafeRun(CurrentRuntime.from(cellID, publishResult, publishStatus, currentTask)).currentRuntime
+
+  def toCellEnv(classLoader: ClassLoader): CellEnvironment = runtime.unsafeRun(CellEnvironment.from(this).mkExecutor(classLoader))
 }
 
 object MockEnv {
-  def apply(initialTask: TaskInfo): TaskR[Clock with Console with System with Random with Blocking, MockEnv] = ZIO.runtime[Clock with Console with System with Random with Blocking].flatMap {
-    runtime => SignallingRef[Task, TaskInfo](initialTask).map {
-      ref => new MockEnv(runtime, ref)
-    }
-  }
+  def apply(cellID: Int): TaskR[BaseEnv, MockEnv] = for {
+    env <- ZIO.access[BaseEnv](identity)
+    runtime <- ZIO.runtime[Any]
+    currentTask <- SignallingRef[Task, TaskInfo](TaskInfo(s"Cell$cellID"))
+  } yield new MockEnv(env, CellID(cellID), currentTask, new MockPublish, new MockPublish, runtime)
 }

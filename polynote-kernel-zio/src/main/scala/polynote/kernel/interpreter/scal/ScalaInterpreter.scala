@@ -21,19 +21,15 @@ class ScalaInterpreter private (
   // Interpreter interface methods //
   ///////////////////////////////////
 
-  override def run(code: String, state: State): TaskR[Blocking with PublishResults with CurrentTask with CurrentRuntime, State] = for {
-    publishSync      <- ZIO.accessM[PublishResults](_.unsafePublishResultSync)
-    publishAsync     <- ZIO.accessM[PublishResults](_.unsafePublishResultAsync)
-    blockingExecutor <- ZIO.accessM[Blocking](_.blocking.blockingExecutor)
+  override def run(code: String, state: State): TaskR[CellEnv, State] = for {
     collectedState   <- injectState(collectState(state))
     valDefs           = collectedState.values.mapValues(_._1).values.toList
     cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", code, collectedState.prevCells, valDefs, collectedState.imports)
       .flatMap(_.transformCode(transformCode).pruneInputs())
     remainingValues   = cellCode.inputs.map(_.name.decodedName.toString)
     values            = remainingValues.map(collectedState.values).map(_._2)
-    runBlocking       = new BlockingService(publishSync, publishAsync, scalaCompiler.classLoader, blockingExecutor)
-    cls              <- scalaCompiler.compileCell(cellCode).provide(runBlocking)
-    resultInstance   <- runClass(cls, cellCode, values, state).provide(runBlocking)
+    cls              <- scalaCompiler.compileCell(cellCode)
+    resultInstance   <- runClass(cls, cellCode, values, state)
     resultValues     <- getResultValues(state.id, cellCode, resultInstance)
   } yield ScalaCellState(state.id, state.prev, resultValues, cellCode, resultInstance)
 
@@ -50,6 +46,8 @@ class ScalaInterpreter private (
     cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", code, collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
       .map(_.transformCode(transformCode))
   } yield completer.paramHints(cellCode, pos)
+
+  override def init(state: State): TaskR[CellEnv, State] = ZIO.succeed(State.Root)
 
   ///////////////////////////////////////
   // Overrideable scala-specific stuff //

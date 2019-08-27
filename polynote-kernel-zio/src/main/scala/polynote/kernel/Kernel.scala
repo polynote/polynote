@@ -4,18 +4,14 @@ import java.util.concurrent.TimeUnit
 
 import cats.data.OptionT
 import cats.effect.concurrent.Ref
-import fs2.Stream
-import polynote.kernel.interpreter.{Interpreter, InterpreterEnv, PublishResults, State}
-import polynote.kernel.util.Publish
+import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.messages.{CellID, Notebook}
-import polynote.runtime.KernelRuntime
-import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.{Task, TaskR, ZIO}
 import zio.interop.catz._
 
 class Kernel private (
-  taskManager: TaskManager,
+  taskManager: TaskManager[KernelEnv],
   scalaCompiler: ScalaCompiler,
   notebookRef: Ref[Task, Notebook],
   interpreterState: Ref[Task, State],
@@ -27,52 +23,31 @@ class Kernel private (
     * Enqueues a cell to be run with its appropriate interpreter. Evaluating the outer task causes the cell to be
     * queued, and evaluating the inner task blocks until it is finished evaluating.
     */
-  def queueCell(id: CellID): TaskR[Blocking with Clock with Broadcasts with PublishResults, Task[Unit]] = {
-    val run = for {
+  def queueCell(id: CellID): TaskR[KernelEnv, TaskR[KernelEnv, Unit]] = taskManager.queue(s"Cell$id", s"Cell $id") {
+    for {
       notebook      <- notebookRef.get
       cell          <- ZIO(notebook.cell(id))
-      interpreter   <- getOrLaunch(cell.language, CellID(0))
+      captureOut     = new Deque[Result]()                                                                              // capture outputs into a list for updating the notebook
+      cellEnv       <- CellEnvironment.fromKernel(id).map(_.tapResults(captureOut.add))
+      interpreter   <- getOrLaunch(cell.language, CellID(0)).provide(cellEnv)
       state         <- interpreterState.get
-      publishResult <- ZIO.access[PublishResults](_.publishResult)
-
-      // find the latest executed state that correlates to a notebook cell
-      prevCells      = notebook.cells.takeWhile(_.id != cell.id)
+      prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                        // find the latest executed state that correlates to a notebook cell
       prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(State.Root)
-
-      // time the execution and notify clients of timing
-      clock         <- ZIO.access[Clock](_.clock)
+      clock         <- ZIO.access[Clock](_.clock)                                                                       // time the execution and notify clients of timing
       start         <- clock.currentTime(TimeUnit.MILLISECONDS)
-
-      // capture outputs into a list for updating the notebook
-      _             <- publishResult(ExecutionInfo(start, None))
-      captureOut     = new Deque[Result]()
-      captureAndPublish = (r: Result) => publishResult(r) *> captureOut.add(r)
-
-      // run the cell while capturing outputs
-      initialState   = State.id(id, prevState)
-      resultState   <- InterpreterEnv.withPublish(captureAndPublish) {
-        interpreter.run(cell.content.toString, initialState).catchAll {
-          err => captureAndPublish(ErrorResult(err)).const(initialState)
+      _             <- cellEnv.publishResult(ExecutionInfo(start, None))
+      initialState   = State.id(id, prevState)                                                                          // run the cell while capturing outputs
+      resultState   <- interpreter.run(cell.content.toString, initialState)
+        .provideSomeM(cellEnv.mkExecutor(scalaCompiler.classLoader))                                                    // provides custom blocking to interpreter run
+        .catchAll {
+          err => cellEnv.publishResult(ErrorResult(err)).const(initialState)
         }
-      }
-
-      // finish timing
-      end           <- clock.currentTime(TimeUnit.MILLISECONDS)
-      _             <- publishResult(ExecutionInfo(start, Some(end)))
-
-      // update the state
+      end           <- clock.currentTime(TimeUnit.MILLISECONDS)                                                         // finish timing and notify clients of elapsed time
+      _             <- cellEnv.publishResult(ExecutionInfo(start, Some(end)))
       _             <- interpreterState.update(_.insertOrReplace(resultState))
-
-      // update the notebook with the accumulated results
-      resultList    <- captureOut.toList
+      resultList    <- captureOut.toList                                                                                // update the notebook with the accumulated results
       _             <- notebookRef.update(_.setResults(id, resultList))
     } yield ()
-
-    ZIO.access[Blocking with Broadcasts with PublishResults with Clock](identity).flatMap {
-      outerEnv => taskManager.queue(s"Cell$id", s"Cell $id") {
-        withInterpreterEnv(id, outerEnv, outerEnv.publishResult)(run)
-      }
-    }
   }
 
   def completionsAt(id: CellID, pos: Int): Task[List[Completion]] = {
@@ -89,6 +64,8 @@ class Kernel private (
       } yield signatures
   }.value.catchAll(_ => ZIO.succeed(None))
 
+  def shutdown(): Task[Unit] = taskManager.cancelAll()
+
   /**
     * Get the cell with the given ID along with its interpreter and state. If its interpreter hasn't been started,
     * the overall result is None.
@@ -102,7 +79,7 @@ class Kernel private (
     interpreter <- OptionT(interpreters.get(cell.language))
   } yield (cell, interpreter, State.id(id, prevState))
 
-  private def getOrLaunch(language: String, at: CellID): TaskR[Blocking with Broadcasts with PublishResults with CurrentTask with CurrentRuntime, Interpreter] =
+  private def getOrLaunch(language: String, at: CellID): TaskR[CellEnv, Interpreter] =
     interpreters.getOrCreate(language) {
       for {
         factory      <- ZIO.fromOption(interpreterFactories.get(language)).mapError(_ => new IllegalArgumentException(s"No interpreter for $language"))
@@ -115,21 +92,6 @@ class Kernel private (
       } yield interpreter
     }
 
-  /**
-    * Provide the interpreter environment to the given cell
-    */
-  private def withInterpreterEnv[A](
-    cellID: CellID,
-    outerEnv: Blocking with Clock with Broadcasts,
-    publishResult: Result => Task[Unit])(
-    task: TaskR[Blocking with Broadcasts with Clock with PublishResults with CurrentTask with CurrentRuntime with CurrentCell, A]
-  ): TaskR[CurrentTask, A] = ZIO.runtime.flatMap {
-    runtime =>
-      task.provideSome[CurrentTask] {
-        innerEnv => new InterpreterEnv(outerEnv, cellID, publishResult, innerEnv.currentTask, runtime)
-      }
-  }
-
   private def interpreterFactoryEnv(): Task[ScalaCompiler.Provider] = ZIO.succeed {
     new ScalaCompiler.Provider {
       val scalaCompiler: ScalaCompiler = Kernel.this.scalaCompiler
@@ -138,12 +100,10 @@ class Kernel private (
 
 }
 
-object Kernel {
+object Kernel extends Factory {
 
-  def apply(
-    interpreterFactories: Map[String, Interpreter.Factory]
-  ): TaskR[TaskManager.Provider with ScalaCompiler.Provider with Interpreter.Factories with CurrentNotebook, Kernel] = for {
-    taskManager <- ZIO.access[TaskManager.Provider](_.taskManager)
+  def apply(): TaskR[KernelFactoryEnv, Kernel] = for {
+    taskManager <- ZIO.access[TaskManager.Provider[KernelEnv]](_.taskManager)
     compiler    <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
     interpreterFactories <- ZIO.access[Interpreter.Factories](_.interpreterFactories)
     notebookRef <- ZIO.access[CurrentNotebook](_.currentNotebook)
@@ -151,4 +111,8 @@ object Kernel {
     interpreters <- RefMap.empty[String, Interpreter]
   } yield new Kernel(taskManager, compiler, notebookRef, interpState, interpreterFactories, interpreters)
 
+}
+
+trait Factory {
+  def apply(): TaskR[KernelFactoryEnv, Kernel]
 }

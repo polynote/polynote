@@ -4,18 +4,15 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 import cats.effect.concurrent.Ref
-import fs2.Stream
 import fs2.concurrent.SignallingRef
 import polynote.kernel.util.Publish
 import zio.blocking.Blocking
 import zio.clock.Clock
-import zio.internal.Executor
-import zio.{Fiber, Promise, Semaphore, Task, TaskR, UIO, ZIO, ZSchedule}
+import zio.{Fiber, Semaphore, Task, TaskR, UIO, ZIO, ZSchedule}
 import zio.interop.catz._
 
-import scala.concurrent.ExecutionContext
-
-class TaskManager private (
+class TaskManager[R] private (
+  enrichR: (R, Ref[Task, TaskInfo]) => R with CurrentTask,
   queueing: Semaphore,
   running: Semaphore,
   statusUpdates: Publish[Task, KernelStatusUpdate]
@@ -40,15 +37,14 @@ class TaskManager private (
     * Note that status updates are sent somewhat lazily, and for a series of rapid updates to the task status only the
     * last update might get sent.
     */
-  def queue[R >: CurrentTask, A](id: String, label: String = "", detail: String = "")(task: TaskR[R, A]): Task[Task[A]] = queueing.withPermit {
+  def queue[A](id: String, label: String = "", detail: String = "")(task: TaskR[R with CurrentTask, A]): TaskR[R, TaskR[R, A]] = queueing.withPermit {
     for {
       statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, TaskStatus.Queued))
       updater       <- statusRef.discrete
         .terminateAfter(_.status.isDone)
         .through(updates.publish)
         .compile.drain.fork
-      taskEnv        = CurrentTask(statusRef)
-      taskBody       = task.provide(taskEnv)
+      taskBody       = task.provideSome[R](r => enrichR(r, statusRef))
       runTask        = running.withPermit(
         statusRef.update(_.running) *>
           ZIO.absolve(
@@ -61,46 +57,18 @@ class TaskManager private (
   }
 
   /**
-    * Queue a task, which can access a reference to the TaskInfo and modify it to broadcast updates, and which evaluates
-    * to a [[Stream]]. When the given task finishes, errors, or is interrupted, a completion message of the appropriate
-    * status will be broadcast.
-    *
-    * Evaluating the returned outer [[Task]] results in queueing of the given task, which will eventually cause the
-    * given task to be evaluated and the stream to be started. Evaluating the inner [[Task]] results in blocking
-    * (asynchronously) until the stream is created. Evaluating the stream itself is the responsibility of the caller –
-    * the stream will have appropriate handlers attached, but will block the task queue until it completes! Be careful
-    * to ensure that the stream is in fact evaluated; if it is never evaluated, the task queue will block indefinitely.
-    */
-/*  def queueS[R >: CurrentTask, A](id: String, label: String = "", detail: String = "")(task: TaskR[R, Stream[Task, A]]): Task[Task[Stream[Task, A]]] =
-    for {
-      statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, TaskStatus.Queued))
-      updater       <- statusRef.discrete
-        .terminateAfter(_.status.isDone)
-        .through(updates.publish)
-        .compile.drain.uninterruptible.fork
-      taskEnv        = CurrentTask(statusRef)
-      taskBody       = task.provide(taskEnv)
-      runTask        = lock.acquire *>
-        taskBody.map(stream => stream.onFinalize(statusRef.update(_.completed).uninterruptible.ensuring(lock.release)))
-          .onError(_ => statusRef.update(_.failed).orDie.ensuring(lock.release))
-      taskFiber     <- runTask.fork
-      result         = tasks.add(taskFiber).const(taskFiber).bracket(tasks.remove)(_.join)
-    } yield result*/
-
-  /**
     * Register the given task. The task will be independent of the task queue, but will have access to a [[TaskInfo]]
     * reference; it can update this reference to broadcast task updates. The first update will be broadcast when the
     * task is evaluated, and a completion update will be broadcast when it completes or fails.
     */
-  def run[R >: CurrentTask, A](id: String, label: String = "", detail: String = "")(task: TaskR[R, A]): Task[A] =
+  def run[A](id: String, label: String = "", detail: String = "")(task: TaskR[R with CurrentTask, A]): TaskR[R, A] =
     for {
       statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, TaskStatus.Running))
-      taskEnv        = CurrentTask(statusRef)
       updater       <- statusRef.discrete
         .terminateAfter(_.status.isDone)
         .through(updates.publish)
         .compile.drain.fork
-      taskFiber     <- (task.interruptChildren.provide(taskEnv) <* statusRef.update(_.completed) <* updater.join).onError(_ => statusRef.update(_.failed).orDie).fork
+      taskFiber     <- (task.interruptChildren.provideSome[R](enrichR(_, statusRef)) <* statusRef.update(_.completed) <* updater.join).onError(_ => statusRef.update(_.failed).orDie).fork
       _             <- tasks.add(taskFiber).uninterruptible
       result        <- taskFiber.join.onInterrupt(taskFiber.interrupt).ensuring(tasks.remove(taskFiber))
     } yield result
@@ -140,12 +108,17 @@ class TaskManager private (
 }
 
 object TaskManager {
-  def apply(statusUpdates: Publish[Task, KernelStatusUpdate]): Task[TaskManager] = for {
+  def apply[R](
+    enrichR: (R, Ref[Task, TaskInfo]) => R with CurrentTask,
+    statusUpdates: Publish[Task, KernelStatusUpdate]
+  ): Task[TaskManager[R]] = for {
     queueing <- Semaphore.make(1)
     running  <- Semaphore.make(1)
-  } yield new TaskManager(queueing, running, statusUpdates)
+  } yield new TaskManager(enrichR, queueing, running, statusUpdates)
 
-  trait Provider {
-    val taskManager: TaskManager
+  trait Provider[R] {
+    val taskManager: TaskManager[R]
   }
+
+  def queue[A, R]()
 }

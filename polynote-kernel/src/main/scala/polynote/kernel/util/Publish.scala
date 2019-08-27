@@ -1,5 +1,8 @@
 package polynote.kernel.util
 
+import cats.FlatMap
+import cats.effect.Concurrent
+import cats.syntax.flatMap._
 import fs2.Pipe
 import fs2.concurrent.{Enqueue, Topic}
 
@@ -18,6 +21,18 @@ trait Publish[F[_], -T] {
     override def publish: Pipe[F, U, Unit] = {
       stream => Publish.this.publish(stream.map(fn))
     }
+  }
+
+  def some[U](implicit ev: Option[U] <:< T): Publish[F, U] = contramap[U](u => ev(Option(u)))
+
+  def tap[T1 <: T](into: T1 => F[Unit])(implicit F: FlatMap[F]): Publish[F, T1] = new Publish[F, T1] {
+    def publish1(t: T1): F[Unit] = Publish.this.publish1(t).flatMap(_ => into(t))
+    def publish: Pipe[F, T1, Unit] = stream => stream.evalTap(into).through(Publish.this.publish)
+  }
+
+  def tap[T1 <: T](into: Publish[F, T1])(implicit F: Concurrent[F]): Publish[F, T1] = new Publish[F, T1] {
+    def publish1(t: T1): F[Unit] = Publish.this.publish1(t).flatMap(_ => into.publish1(t))
+    def publish: Pipe[F, T1, Unit] = stream => stream.broadcastThrough(Publish.this.publish, into.publish)
   }
 
 }
