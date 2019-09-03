@@ -1,13 +1,24 @@
 'use strict';
 
+// Add `getBigInt64` to DataView
+import {Both, Either, ExtractorConstructor, Ior, Left, Right} from "./types";
+
+declare global {
+    interface DataView {
+        getBigInt64(byteOffset: number, littleEndian?: boolean): number;
+        setBigInt64(byteOffset: number, value: number, littleEndian?: boolean): void;
+    }
+}
+
 export class DataReader {
-    constructor(buf) {
+    buffer: DataView;
+    offset: number;
+
+    constructor(buf: ArrayBuffer | DataView) {
         if (buf instanceof ArrayBuffer) {
             this.buffer = new DataView(buf);
-        } else if (buf instanceof DataView) {
-            this.buffer = buf;
         } else {
-            throw new TypeError('DataReader requires an ArrayBuffer or a DataView');
+            this.buffer = buf;
         }
         this.offset = 0;
     }
@@ -82,7 +93,7 @@ export class DataReader {
         return this.readStringBytes(len);
     }
 
-    readStringBytes(len) {
+    readStringBytes(len: number) {
         const end = this.offset + len;
         const str = stringDecoder.decode(this.buffer.buffer.slice(this.offset, end));
         this.offset = end;
@@ -99,14 +110,18 @@ export class DataReader {
 }
 
 export class DataWriter {
-    constructor(chunkSize) {
+    chunkSize: number;
+    buffer: ArrayBuffer;
+    dataView: DataView;
+    offset: number;
+    constructor(chunkSize?: number) {
         this.chunkSize = chunkSize || 1024;
         this.buffer = new ArrayBuffer(this.chunkSize);
         this.dataView = new DataView(this.buffer);
         this.offset = 0;
     }
 
-    ensureBufSize(newSize) {
+    ensureBufSize(newSize: number) {
         if (this.buffer.byteLength < newSize) {
             const newBuf = new ArrayBuffer(this.buffer.byteLength + this.chunkSize * Math.ceil((newSize - this.buffer.byteLength) / this.chunkSize));
             new Uint8Array(newBuf).set(new Uint8Array(this.buffer));
@@ -115,80 +130,80 @@ export class DataWriter {
         }
     }
 
-    writeUint8(value) {
+    writeUint8(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 1);
         this.dataView.setUint8(this.offset++, value);
     }
 
-    writeInt8(value) {
+    writeInt8(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 1);
         this.dataView.setInt8(this.offset++, value);
     }
 
-    writeUint16(value) {
+    writeUint16(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 2);
         this.dataView.setUint16(this.offset, value);
         this.offset += 2;
     }
 
-    writeInt16(value) {
+    writeInt16(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 2);
         this.dataView.setInt16(this.offset, value);
         this.offset += 2;
     }
 
-    writeUint32(value) {
+    writeUint32(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 4);
         this.dataView.setUint32(this.offset, value);
         this.offset += 4;
     }
 
-    writeInt32(value) {
+    writeInt32(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 4);
         this.dataView.setInt32(this.offset, value);
         this.offset += 4;
     }
 
-    writeInt64(value) {
+    writeInt64(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 8);
         this.dataView.setBigInt64(this.offset, value);
         this.offset += 8;
     }
 
-    writeFloat32(value) {
+    writeFloat32(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 4);
         this.dataView.setFloat32(this.offset, value);
         this.offset += 4;
     }
 
-    writeFloat64(value) {
+    writeFloat64(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 8);
         this.dataView.setFloat32(this.offset, value);
         this.offset += 8;
     }
 
-    writeString(value) {
+    writeString(value: string) {
         const bytes = stringEncoder.encode(value);
         this.ensureBufSize(this.buffer.byteLength + bytes.length + 4);
         this.writeUint32(bytes.length);
         this.writeStrBytes(bytes, 0xFFFFFFFF);
     }
 
-    writeShortString(value) {
+    writeShortString(value: string) {
         const bytes = stringEncoder.encode(value);
         this.ensureBufSize(this.buffer.byteLength + bytes.length + 2);
         this.writeUint16(bytes.length);
         this.writeStrBytes(bytes, 0xFFFF);
     }
 
-    writeTinyString(value) {
+    writeTinyString(value: string) {
         const bytes = stringEncoder.encode(value);
         this.ensureBufSize(this.buffer.byteLength + bytes.length + 2);
         this.writeUint8(bytes.length);
         this.writeStrBytes(bytes, 0xFF);
     }
 
-    writeStrBytes(bytes, maxLen) {
+    writeStrBytes(bytes: ArrayLike<number>, maxLen: number) {
         if (bytes.length > maxLen) {
             throw `String byte length exceeds ${maxLen}`;
         }
@@ -196,14 +211,13 @@ export class DataWriter {
         this.offset += bytes.length;
     }
 
-    writeBuffer(value) {
-        if (value instanceof ArrayBuffer) {
-            const len = value.byteLength;
-            this.ensureBufSize(this.buffer.byteLength + len + 4);
-            this.writeUint32(value.byteLength);
-            this.offset += 4;
-            new Uint8Array(this.buffer, this.offset, len).set(value);
-        }
+    // TODO: is there a better supertype for this?
+    writeBuffer(value: ArrayLike<number> & { readonly byteLength: number }) {
+        const len = value.byteLength;
+        this.ensureBufSize(this.buffer.byteLength + len + 4);
+        this.writeUint32(value.byteLength);
+        this.offset += 4;
+        new Uint8Array(this.buffer, this.offset, len).set(value);
     }
 
     finish() {
@@ -211,120 +225,124 @@ export class DataWriter {
     }
 }
 
-const stringEncoder = new TextEncoder('utf-8');
+const stringEncoder = new TextEncoder();
 const stringDecoder = new TextDecoder('utf-8');
 
-export class Codec {
-    static map(codec, to, from) {
+export abstract class Codec<T> {
+    static map<A, B>(codec: Codec<A>, to: (a: A) => B, from: (b: B) => A) {
         return Object.freeze({
-            encode: (value, writer) => codec.encode(from(value), writer),
-            decode: (reader) => to(codec.decode(reader))
+            encode: (value: B, writer: DataWriter) => codec.encode(from(value), writer),
+            decode: (reader: DataReader) => to(codec.decode(reader))
         });
     }
 
-    static encode(codec, obj) {
+    static encode<U>(codec: Codec<U>, obj: U) {
         const writer = new DataWriter();
         codec.encode(obj, writer);
         return writer.finish();
     }
 
-    static decode(codec, buf) {
+    static decode<U>(codec: Codec<U>, buf: ArrayBuffer | DataView) {
         const reader = new DataReader(buf);
         return codec.decode(reader);
     }
+
+    abstract encode(obj: T, writer: DataWriter): void;
+    abstract decode(reader: DataReader): T;
 }
 
-// TODO: make all of these actual Codecs and put an API there
-export const str = Object.freeze({
+export const str: Codec<string> = Object.freeze({
     encode: (str, writer) => writer.writeString(str),
     decode: (reader) => reader.readString()
 });
 
-export const shortStr = Object.freeze({
+export const shortStr: Codec<string> = Object.freeze({
     encode: (str, writer) => writer.writeShortString(str),
     decode: (reader) => reader.readShortString()
 });
 
-export const tinyStr = Object.freeze({
+export const tinyStr: Codec<string> = Object.freeze({
     encode: (str, writer) => writer.writeTinyString(str),
     decode: (reader) => reader.readTinyString()
 });
 
-export const uint8 = Object.freeze({
+export const uint8: Codec<number> = Object.freeze({
     encode: (value, writer) => writer.writeUint8(value),
     decode: (reader) => reader.readUint8()
 });
 
-export const int8 = Object.freeze({
+export const int8: Codec<number> = Object.freeze({
     encode: (value, writer) => writer.writeInt8(value),
     decode: (reader) => reader.readInt8()
 });
 
-export const uint16 = Object.freeze({
+export const uint16: Codec<number>  = Object.freeze({
     encode: (value, writer) => writer.writeUint16(value),
     decode: (reader) => reader.readUint16()
 });
 
-export const int16 = Object.freeze({
+export const int16: Codec<number>  = Object.freeze({
     encode: (value, writer) => writer.writeInt16(value),
     decode: (reader) => reader.readInt16()
 });
 
-export const uint32 = Object.freeze({
+export const uint32: Codec<number>  = Object.freeze({
     encode: (value, writer) => writer.writeUint32(value),
     decode: (reader) => reader.readUint32()
 });
 
-export const int32 = Object.freeze({
+export const int32: Codec<number>  = Object.freeze({
     encode: (value, writer) => writer.writeInt32(value),
     decode: (reader) => reader.readInt32()
 });
 
-export const int64 = Object.freeze({
+export const int64: Codec<number>  = Object.freeze({
     encode: (value, writer) => writer.writeInt64(value),
     decode: (reader) => reader.readInt64()
 });
 
-export const float32 = Object.freeze({
+export const float32: Codec<number>  = Object.freeze({
     encode: (value, writer) => writer.writeFloat32(value),
     decode: (reader) => reader.readFloat32()
 });
 
-export const float64 = Object.freeze({
+export const float64: Codec<number>  = Object.freeze({
     encode: (value, writer) => writer.writeFloat64(value),
     decode: (reader) => reader.readFloat64()
 });
 
-export const bool = Object.freeze({
+export const bool: Codec<boolean> = Object.freeze({
     encode: (value, writer) => value ? writer.writeUint8(255) : writer.writeUint8(0),
     decode: (reader) => !!reader.readUint8()
 });
 
-export const nullCodec = Object.freeze({
+export const nullCodec: Codec<null> = Object.freeze({
     encode: (value, writer) => undefined,
     decode: (reader) => null
 });
 
-export const bufferCodec = Object.freeze({
-    encode: (value, writer) => writer.writeBuffer(value),
+export const bufferCodec: Codec<ArrayBuffer> = Object.freeze({
+    // TODO: hope `length` is correct here!
+    encode: (value, writer) => writer.writeBuffer({...value, length: value.byteLength}),
     decode: (reader) => reader.readBuffer()
 });
 
 class CombinedCodec {
-    constructor(...codecs) {
+    codecs: Codec<any>[];
+    constructor(...codecs: Codec<any>[]) {
         this.codecs = codecs;
     }
 
-    to(constr) {
+    to<T>(constr: ExtractorConstructor<T>): Codec<T> {
         const codecs = this.codecs;
-        const encode = (value, writer) => {
+        const encode = (value: T, writer: DataWriter) => {
             const values = constr.unapply(value);
-            for (var i = 0; i < codecs.length; i++) {
+            for (let i = 0; i < codecs.length; i++) {
                 codecs[i].encode(values[i], writer);
             }
         };
 
-        const decode = (reader) => {
+        const decode = (reader: DataReader) => {
             const values = this.codecs.map((codec) => codec.decode(reader));
             return new constr(...values);
         };
@@ -336,22 +354,22 @@ class CombinedCodec {
     }
 }
 
-export function combined(...codecs) {
+export function combined(...codecs: Codec<any>[]) {
     return new CombinedCodec(...codecs);
 }
 
-export function arrayCodec(lengthCodec, elementCodec) {
-    const encode = (value, writer) => {
+export function arrayCodec<T>(lengthCodec: Codec<number>, elementCodec: Codec<T>): Codec<T[]> {
+    const encode = (value: T[], writer: DataWriter) => {
         lengthCodec.encode(value.length, writer);
-        for (var i = 0; i < value.length; i++) {
+        for (let i = 0; i < value.length; i++) {
             elementCodec.encode(value[i], writer);
         }
     };
 
-    const decode = (reader) => {
+    const decode = (reader: DataReader): T[] => {
         const length = lengthCodec.decode(reader);
         const arr = new Array(length);
-        for (var i = 0; i < length; i++) {
+        for (let i = 0; i < length; i++) {
             arr[i] = elementCodec.decode(reader);
         }
         return arr;
@@ -363,58 +381,22 @@ export function arrayCodec(lengthCodec, elementCodec) {
     });
 }
 
-export class Ior {
-    constructor(left, right) {
-        this.left = left;
-        this.right = right;
-    }
-
-    fold(leftFnOrObj, rightFn, bothFn) {
-        const [l, r, b] = (leftFnOrObj.left && leftFnOrObj.right && leftFnOrObj.both)
-                            ? [leftFnOrObj.left, leftFnOrObj.right, leftFnOrObj.both] : [leftFnOrObj, rightFn, bothFn];
-
-        if (this.left !== undefined && this.right !== undefined) {
-            return b(this.left, this.right);
-        } else if (this.left !== undefined) {
-            return l(this.left);
-        } else if (this.right !== undefined) {
-            return r(this.right);
-        } else {
-            throw "Ior defines neither left nor right";
-        }
-    }
-
-    static left(left) {
-        return new Ior(left, undefined);
-    }
-
-    static right(right) {
-        return new Ior(undefined, right);
-    }
-
-    static both(left, right) {
-        return new Ior(left, right);
-    }
-}
-
-export function ior(leftCodec, rightCodec) {
-    const encode = (value, writer) => {
-        if (value.left !== undefined && value.right !== undefined) {
+export function ior<L, R>(leftCodec: Codec<L>, rightCodec: Codec<R>) {
+    const encode = (value: Left<L> | Right<R> | Both<L, R>, writer: DataWriter) => {
+        if (Ior.isBoth(value)) {
             writer.writeInt8(2);
             leftCodec.encode(value.left, writer);
             rightCodec.encode(value.right, writer);
-        } else if (value.left !== undefined) {
+        } else if (Ior.isLeft(value)) {
             writer.writeInt8(0);
             leftCodec.encode(value.left, writer);
-        } else if (value.right !== undefined) {
+        } else {
             writer.writeInt8(1);
             rightCodec.encode(value.right, writer);
-        } else {
-            throw "Neither left nor right of ior is defined"
         }
     };
 
-    const decode = (reader) => {
+    const decode = (reader: DataReader) => {
         const discriminator = reader.readUint8();
         switch (discriminator) {
             case 0:
@@ -433,27 +415,24 @@ export function ior(leftCodec, rightCodec) {
     return Object.freeze({encode, decode})
 }
 
-export class Pair {
-    static unapply(inst) {
+export class Pair<A, B> {
+    static codec = <A, B>(firstCodec: Codec<A>, secondCodec: Codec<B>) => combined(firstCodec, secondCodec).to<Pair<A,B>>(Pair);
+    static unapply<A, B>(inst: Pair<A, B>): [A, B] {
         return [inst.first, inst.second];
     }
 
-    constructor(first, second) {
-        this.first = first;
-        this.second = second;
+    constructor(public first: A, public second: B) {
         Object.freeze(this);
     }
 }
 
-Pair.codec = (firstCodec, secondCodec) => combined(firstCodec, secondCodec).to(Pair);
-
-export function mapCodec(lengthCodec, keyCodec, valueCodec) {
+export function mapCodec<K extends string, V>(lengthCodec: Codec<number>, keyCodec: Codec<K>, valueCodec: Codec<V>) {
 
     const underlying = arrayCodec(lengthCodec, Pair.codec(keyCodec, valueCodec));
 
-    const encode = (value, writer) => {
+    const encode = (value: Record<K, V>, writer: DataWriter) => {
         const pairs = [];
-        for (var k in value) {
+        for (let k in value) {
             if (value.hasOwnProperty(k)) {
                 pairs.push(new Pair(k, value[k]));
             }
@@ -461,10 +440,10 @@ export function mapCodec(lengthCodec, keyCodec, valueCodec) {
         return underlying.encode(pairs, writer);
     };
 
-    const decode = (reader) => {
+    const decode = (reader: DataReader) => {
         const pairs = underlying.decode(reader);
-        const obj = {};
-        for (var pair of pairs) {
+        const obj = {} as Record<K, V>;
+        for (let pair of pairs) {
             obj[pair.first] = pair.second;
         }
         return obj;
@@ -476,8 +455,8 @@ export function mapCodec(lengthCodec, keyCodec, valueCodec) {
     });
 }
 
-export function optional(elementCodec) {
-    const encode = (value, writer) => {
+export function optional<T>(elementCodec: Codec<T>) {
+    const encode = (value: T, writer: DataWriter) => {
         if (value === null || value === undefined) {
             writer.writeUint8(0x00);
         } else {
@@ -486,7 +465,7 @@ export function optional(elementCodec) {
         }
     };
 
-    const decode = (reader) => {
+    const decode = (reader: DataReader) => {
         const isPresent = reader.readUint8();
         if (isPresent !== 0) {
             return elementCodec.decode(reader);
@@ -501,43 +480,18 @@ export function optional(elementCodec) {
     });
 }
 
-export class Either {
-    constructor(left, right) {
-        if (left && right) {
-            throw "Can't assign both left and right to an either!"
-        }
-        if (!left && !right) {
-            throw "Must assign value to either left or right!"
-        }
-        this.left = left;
-        this.right = right;
-    }
-
-    static left(left) {
-        return new Either(left, undefined);
-    }
-
-    static right(right) {
-        return new Either(undefined, right);
-    }
-}
-
-export function either(leftCodec, rightCodec) {
-    const encode = (value, writer) => {
-        if (value.left && value.right) {
-            throw "Can't assign both left and right to an either!"
-        } else if (value.left) {
+export function either<L, R>(leftCodec: Codec<L>, rightCodec: Codec<R>) {
+    const encode = (value: Left<L> | Right<R>, writer: DataWriter) => {
+        if (Either.isLeft(value)) {
             writer.writeUint8(0x00); // false indicates Left
             leftCodec.encode(value.left, writer);
-        } else if (value.right) {
+        } else {
             writer.writeUint8(0xFF); // true indicates Right
             rightCodec.encode(value.right, writer);
-        } else {
-            throw "Neither left or right of either is defined!"
         }
     };
 
-    const decode = (reader) => {
+    const decode = (reader: DataReader) => {
         const isRight = reader.readUint8();
         if (isRight !== 0) {
             return Either.right(leftCodec.decode(reader));
@@ -552,14 +506,14 @@ export function either(leftCodec, rightCodec) {
     });
 }
 
-export function discriminated(discriminatorCodec, selectCodec, selectDiscriminator) {
-    const encode = (value, writer) => {
+export function discriminated<T>(discriminatorCodec: Codec<number>, selectCodec: (n: number) => Codec<T>, selectDiscriminator: (t: T) => number) {
+    const encode = (value: T, writer: DataWriter) => {
         const discriminator = selectDiscriminator(value);
         discriminatorCodec.encode(discriminator, writer);
         selectCodec(discriminator).encode(value, writer);
     };
 
-    const decode = (reader) => {
+    const decode = (reader: DataReader) => {
         const discriminator = discriminatorCodec.decode(reader);
         return selectCodec(discriminator).decode(reader);
     };

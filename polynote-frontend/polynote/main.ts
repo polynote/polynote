@@ -273,7 +273,8 @@ monaco.editor.defineTheme('polynote', theme);
 const socket = new SocketSession();
 
 const mainUI = new MainUI(socket);
-document.getElementById('Main').appendChild(mainUI.el);
+const mainEl = document.getElementById('Main');
+mainEl && mainEl.appendChild(mainUI.el);
 const path = unescape(window.location.pathname);
 
 if (path.startsWith('/notebook/')) {

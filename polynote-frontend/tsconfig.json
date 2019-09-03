@@ -4,9 +4,11 @@
     "module": "es6",
     "target": "es6",
     "allowJs": true,
-    "noImplicitAny": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true, // never infer `any`, see: https://www.typescriptlang.org/docs/handbook/migrating-from-javascript.html#no-implicit-any
+    "noImplicitReturns": true, // Report an error when not all code paths in function return a value.
+    "noFallthroughCasesInSwitch": true, // Report errors for fallthrough cases in switch statement. (if we use fallthroughs we can turn this off)
+    "strictNullChecks": true, // when true, `null` and `undefined` are only assignable to `any`, or their respective types. If something might be `null` or `undefined`, a union type must be used, e.g., `number | null`. See: https://www.typescriptlang.org/docs/handbook/migrating-from-javascript.html#strict-null--undefined-checks
+    "noImplicitThis": true, // when true, use of `this` outside classes does not get assigned to `any` - rather, it must have an explicit (or inferred) type. See: https://www.typescriptlang.org/docs/handbook/migrating-from-javascript.html#no-implicit-any-for-this
     "sourceMap": true, // show typescript in devtools. might be slow according to https://webpack.js.org/configuration/devtool/
     "moduleResolution": "node"
   }

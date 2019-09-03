@@ -60,9 +60,9 @@ export class KernelUI extends UIEventTarget {
             }
         });
 
-        this.registerEventListener('SocketClosedListener', () => this.setKernelState('disconnected'));
+        this.registerEventListener('SocketClosed', () => this.setKernelState('disconnected'));
 
-        this.registerEventListener('KernelErrorListener', (code, err) => {
+        this.registerEventListener('KernelError', (code, err) => {
             console.log("Kernel error:", err);
 
             const {el, messageStr, cellLine} = errorDisplay(err);

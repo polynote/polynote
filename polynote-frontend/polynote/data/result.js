@@ -3,7 +3,7 @@
 import {
     Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, optional,
     str, shortStr, tinyStr, uint8, uint16, int32, ior
-} from './codec.js'
+} from './codec'
 
 import { ValueRepr, StringRepr, MIMERepr } from './value_repr.js'
 import {int16, int64} from "./codec";

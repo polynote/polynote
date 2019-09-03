@@ -2,7 +2,7 @@
 
 import {
     discriminated, combined, arrayCodec, str, uint8, int32
-} from './codec.js'
+} from './codec'
 
 export class DataType {
     name() { return this.constructor.name; }

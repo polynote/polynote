@@ -7,7 +7,6 @@ import {div, span} from '../util/tags'
 import * as messages from '../../data/messages';
 import {storage} from '../util/storage'
 import {ToolbarUI} from "./toolbar";
-import {Either} from "../../data/codec";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {Position} from "monaco-editor";
 import {About} from "./about";
@@ -17,6 +16,7 @@ import {NotebookUI} from "./notebook";
 import {TabUI} from "./tab";
 import {NotebookListUI} from "./notebook_list";
 import {HomeUI} from "./home";
+import {Either} from "../../data/types";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
