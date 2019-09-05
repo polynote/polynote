@@ -16,15 +16,12 @@ import scala.collection.JavaConverters._
 
 class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
   private val debug = true
-  private val mkEnv: (Any, Ref[Task, TaskInfo]) => CurrentTask = (_, ref) => new CurrentTask {
-    val currentTask: Ref[Task, TaskInfo] = ref
-  }
 
   "queues tasks" - {
 
     "runs queued tasks sequentially" in {
       val mockPublish = new MockPublish[KernelStatusUpdate]
-      val taskManager = TaskManager[Any](mkEnv, mockPublish).runIO()
+      val taskManager = TaskManager(mockPublish).runIO()
       @volatile var state = 0
       val task1 = zio.blocking.effectBlocking {
         if (debug) println(s"${Instant.now()} running 1")
@@ -49,9 +46,9 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
         if (debug) println(s"${Instant.now()} completed 3")
       }.provide(runtime.Environment)
 
-      val await1 = taskManager.queue("1")(task1).runIO()
-      val await2 = taskManager.queue("2")(task2).runIO()
-      val await3 = taskManager.queue("3")(task3).runIO()
+      val await1 = taskManager.queue_("1")(task1).runIO()
+      val await2 = taskManager.queue_("2")(task2).runIO()
+      val await3 = taskManager.queue_("3")(task3).runIO()
 
       // shouldn't matter in which order they're awaited
       await1.runIO()
@@ -86,7 +83,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
 
     "interrupts running tasks and cancels queued tasks before they run" in {
       val mockPublish = new MockPublish[KernelStatusUpdate]
-      val taskManager = TaskManager[Any](mkEnv, mockPublish).runIO()
+      val taskManager = TaskManager(mockPublish).runIO()
 
       @volatile var state = 0
       val task1 = zio.blocking.effectBlocking {
@@ -101,8 +98,8 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
         state = 2
       }
 
-      val await1 = taskManager.queue("1")(task1).runIO()
-      val await2 = taskManager.queue("2")(task2).runIO()
+      val await1 = taskManager.queue_("1")(task1).runIO()
+      val await2 = taskManager.queue_("2")(task2).runIO()
 
       Thread.sleep(200)
 

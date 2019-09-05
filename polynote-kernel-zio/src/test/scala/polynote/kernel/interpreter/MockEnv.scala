@@ -3,6 +3,8 @@ package interpreter
 
 import cats.effect.concurrent.Ref
 import fs2.concurrent.SignallingRef
+import polynote.config.PolynoteConfig
+import polynote.kernel.environment.{InterpreterEnvironment, CurrentNotebook, CurrentRuntime}
 import polynote.messages.CellID
 import polynote.runtime.KernelRuntime
 import polynote.testing.MockPublish
@@ -18,18 +20,16 @@ case class MockEnv(
   baseEnv: BaseEnv,
   cellID: CellID,
   currentTask: SignallingRef[Task, TaskInfo],
-  results: MockPublish[Result],
-  updates: MockPublish[KernelStatusUpdate],
+  publishResult: MockPublish[Result],
+  publishStatus: MockPublish[KernelStatusUpdate],
   runtime: Runtime[Any]
-) extends CellEnvT {
+) extends BaseEnvT with InterpreterEnvT {
   val clock: Clock.Service[Any] = baseEnv.clock
   val blocking: Blocking.Service[Any] = baseEnv.blocking
   val system: System.Service[Any] = baseEnv.system
-  val publishResult: Result => Task[Unit] = results.publish1
-  val publishStatus: KernelStatusUpdate => Task[Unit] = updates.publish1
   val currentRuntime: KernelRuntime = runtime.unsafeRun(CurrentRuntime.from(cellID, publishResult, publishStatus, currentTask)).currentRuntime
 
-  def toCellEnv(classLoader: ClassLoader): CellEnvironment = runtime.unsafeRun(CellEnvironment.from(this).mkExecutor(classLoader))
+  def toCellEnv(classLoader: ClassLoader): InterpreterEnvironment = runtime.unsafeRun(InterpreterEnvironment.from(this).mkExecutor(ZIO.succeed(classLoader)))
 }
 
 object MockEnv {

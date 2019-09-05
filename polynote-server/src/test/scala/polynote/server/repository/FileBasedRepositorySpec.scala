@@ -2,7 +2,7 @@ package polynote.server.repository
 import java.io.File
 import java.nio.file.{FileAlreadyExistsException, Files, Path, Paths}
 
-import cats.effect.{ContextShift, IO}
+import cats.effect.{ConcurrentEffect, ContextShift, IO}
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.config.PolynoteConfig
 import polynote.kernel.util.OptionEither
@@ -11,6 +11,7 @@ import polynote.messages.Notebook
 import scala.concurrent.ExecutionContext
 
 class FileBasedRepositorySpec extends FreeSpec with Matchers {
+  implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
 
   "A FileBasedRepo" - {
     "when creating a notebook" - {
@@ -127,7 +128,7 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers {
 
 }
 
-class SimpleFileBasedRepo extends FileBasedRepository {
+class SimpleFileBasedRepo(implicit contextShift: ContextShift[IO], concurrentEffect: ConcurrentEffect[IO]) extends FileBasedRepository[IO] {
   val tmp: Path = Files.createTempDirectory(getClass.getSimpleName)
   val config: PolynoteConfig = PolynoteConfig()
 
@@ -152,8 +153,6 @@ class SimpleFileBasedRepo extends FileBasedRepository {
   override def chunkSize: Int = 8192
 
   override def executionContext: ExecutionContext = ExecutionContext.global
-
-  implicit val contextShift: ContextShift[IO] = IO.contextShift(executionContext)
 
   override def defaultExtension: String = "test"
 

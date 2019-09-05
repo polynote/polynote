@@ -62,7 +62,7 @@ trait LanguageInterpreter[F[_]] {
 
 object LanguageInterpreter {
 
-  trait Factory[F[_]] {
+  trait Factory[F[+_]] {
     def depManagerFactory: DependencyManagerFactory[F]
     def languageName: String
     def apply(kernelContext: KernelContext, dependencies: DependencyProvider)(implicit contextShift: ContextShift[F]): F[LanguageInterpreter[F]]

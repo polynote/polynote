@@ -29,6 +29,7 @@ trait State {
 
   // TODO: make this protected, public API should prevent you from removing Root from the chain
   def withPrev(prev: State): State
+  def updateValues(fn: ResultValue => ResultValue): State
 
   def collect[A](pf: PartialFunction[State, A]): List[A] = {
     val buf = new ListBuffer[A]
@@ -91,10 +92,10 @@ trait State {
     */
   def insertOrReplace(state: State): State = if (state.id == id) {
     state.withPrev(prev)
-  } else if (state.prev.id == prev.id) {
-    withPrev(state.withPrev(prev))
   } else if (this eq Root) {
     state.withPrev(this)
+  } else if (state.prev.id == prev.id) {
+    withPrev(state.withPrev(prev))
   } else withPrev(prev.insertOrReplace(state))
 
   def at(id: CellID): Option[State] = {
@@ -113,14 +114,16 @@ trait State {
 object State {
 
   case object Root extends State {
-    val id: CellID = Short.MinValue
-    val prev: State = this
-    val values: List[ResultValue] = Nil
-    def withPrev(prev: State): Root.type = this
+    override val id: CellID = Short.MinValue
+    override val prev: State = this
+    override val values: List[ResultValue] = Nil
+    override def withPrev(prev: State): Root.type = this
+    override def updateValues(fn: ResultValue => ResultValue): State = this
   }
 
   final case class Id(id: CellID, prev: State, values: List[ResultValue]) extends State {
-    def withPrev(prev: State): State = copy(prev = prev)
+    override def withPrev(prev: State): State = copy(prev = prev)
+    override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
   }
 
   def id(id: Int, prev: State = Root, values: List[ResultValue] = Nil): State = Id(id.toShort, prev, values)

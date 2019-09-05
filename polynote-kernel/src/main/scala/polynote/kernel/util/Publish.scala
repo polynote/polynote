@@ -1,6 +1,6 @@
 package polynote.kernel.util
 
-import cats.FlatMap
+import cats.{FlatMap, Monad}
 import cats.effect.Concurrent
 import cats.syntax.flatMap._
 import fs2.Pipe
@@ -10,7 +10,7 @@ import fs2.concurrent.{Enqueue, Topic}
   * Captures only the ability to Publish, as in [[Topic]], but without the ability to subscribe. This means it can
   * be contravariant.
   */
-trait Publish[F[_], -T] {
+trait Publish[F[+_], -T] {
 
   def publish1(t: T): F[Unit]
 
@@ -21,6 +21,11 @@ trait Publish[F[_], -T] {
     override def publish: Pipe[F, U, Unit] = {
       stream => Publish.this.publish(stream.map(fn))
     }
+  }
+
+  def contraFlatMap[U](fn: U => F[T])(implicit F: Monad[F]): Publish[F, U] = new Publish[F, U] {
+    override def publish1(t: U): F[Unit] = fn(t).flatMap(u => Publish.this.publish1(u))
+    override def publish: Pipe[F, U, Unit] = stream => stream.evalMap(publish1)
   }
 
   def some[U](implicit ev: Option[U] <:< T): Publish[F, U] = contramap[U](u => ev(Option(u)))
@@ -40,18 +45,21 @@ trait Publish[F[_], -T] {
 object Publish {
 
   // Allow a Topic to be treated as a Publish
-  final case class PublishTopic[F[_], -T, T1 >: T](topic: Topic[F, T1]) extends Publish[F, T] {
+  final case class PublishTopic[F[+_], -T, T1 >: T](topic: Topic[F, T1]) extends Publish[F, T] {
     override def publish1(t: T): F[Unit] = topic.publish1(t)
     override def publish: Pipe[F, T, Unit] = topic.publish
   }
 
-  implicit def topicToPublish[F[_], T](topic: Topic[F, T]): Publish[F, T] = PublishTopic(topic)
+  implicit def topicToPublish[F[+_], T](topic: Topic[F, T]): Publish[F, T] = PublishTopic(topic)
 
-  final case class PublishEnqueue[F[_], -T, T1 >: T](queue: Enqueue[F, T1]) extends Publish[F, T] {
+  def apply[F[+_], T](topic: Topic[F, T]): Publish[F, T] = topic
+
+  final case class PublishEnqueue[F[+_], -T, T1 >: T](queue: Enqueue[F, T1]) extends Publish[F, T] {
     override def publish1(t: T): F[Unit] = queue.enqueue1(t)
     override def publish: Pipe[F, T, Unit] = queue.enqueue
   }
 
-  implicit def enqueueToPublish[F[_], T, T1 <: T](enqueue: Enqueue[F, T]): Publish[F, T1] = PublishEnqueue(enqueue)
+  implicit def enqueueToPublish[F[+_], T, T1 <: T](enqueue: Enqueue[F, T]): Publish[F, T1] = PublishEnqueue(enqueue)
 
+  def apply[F[+_], T](enqueue: Enqueue[F, T]): Publish[F, T] = enqueue
 }

@@ -331,7 +331,12 @@ object UpdatedTasks extends KernelStatusUpdateCompanion[UpdatedTasks](1) {
   def one(info: TaskInfo): UpdatedTasks = UpdatedTasks(List(info))
 }
 
-final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelStatusUpdate
+final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelStatusUpdate {
+  def setBusy: KernelBusyState = copy(busy = true)
+  def setIdle: KernelBusyState = copy(busy = false)
+  def setAlive: KernelBusyState = copy(alive = true)
+  def setDead: KernelBusyState = copy(alive = false)
+}
 object KernelBusyState extends KernelStatusUpdateCompanion[KernelBusyState](2)
 
 //                                           key          html

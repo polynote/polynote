@@ -58,7 +58,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
       State.id(0)
     ).provide(env.toCellEnv(classLoader)).runIO()
 
-    env.results.toList.runIO() shouldEqual List(Output("text/plain; rel=stdout", "hello\n"))
+    env.publishResult.toList.runIO() shouldEqual List(Output("text/plain; rel=stdout", "hello\n"))
   }
 
   "bring values from previous cells" in {
@@ -245,7 +245,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
     val terminalResults = interpResults.foldLeft((Map.empty[String, Any], List.empty[Result])) {
       case ((vars, results), next) =>
         val nextVars = vars ++ next.state.values.map(v => v.name -> v.value).toMap
-        val nextOutputs = results ++ next.env.results.toList.runIO()
+        val nextOutputs = results ++ next.env.publishResult.toList.runIO()
         (nextVars, nextOutputs)
     }
     assertion.tupled(terminalResults)

@@ -88,6 +88,15 @@ val `polynote-kernel` = project.settings(
   )
 ).dependsOn(`polynote-runtime`)
 
+val `polynote-env` = project.settings(
+  commonSettings,
+  scalacOptions += "-language:experimental.macros",
+  libraryDependencies ++= Seq(
+    "dev.zio" %% "zio-interop-cats" % "1.3.1.0-RC3" % "provided",
+    "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
+  )
+)
+
 val `polynote-kernel-zio` = project.settings(
   commonSettings,
   scalaVersion := "2.11.11",
@@ -106,7 +115,7 @@ val `polynote-kernel-zio` = project.settings(
     "io.get-coursier" %% "coursier-cats-interop" % versions.coursier,
     "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1"
   )
-).dependsOn(`polynote-runtime`, `polynote-kernel`)
+).dependsOn(`polynote-runtime`, `polynote-kernel`, `polynote-env`)
 
 val `polynote-server` = project.settings(
   commonSettings,

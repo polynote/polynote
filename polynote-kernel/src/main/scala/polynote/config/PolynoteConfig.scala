@@ -91,8 +91,4 @@ object PolynoteConfig {
       }
   }
 
-  trait Provider {
-    val config: PolynoteConfig
-  }
-
 }

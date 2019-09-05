@@ -23,7 +23,7 @@ import scala.reflect.io.AbstractFile
   * (in fact, we have a [[CoursierFetcher]]), while an example of the latter would be a classloader that provides the
   * classes in said jars to our code (e.g., [[ClassLoaderDependencyProvider]]).
   */
-trait DependencyManager[F[_]] {
+trait DependencyManager[F[+_]] {
   // taskInfo to describe fetching the dependencies
   val taskInfo: TaskInfo
 
@@ -37,7 +37,7 @@ trait DependencyManager[F[_]] {
   ): F[DependencyProvider]
 }
 
-trait DependencyManagerFactory[F[_]] {
+trait DependencyManagerFactory[F[+_]] {
   def apply(
     path: String,
     taskInfo: TaskInfo,

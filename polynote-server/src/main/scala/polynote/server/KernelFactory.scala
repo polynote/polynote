@@ -16,7 +16,7 @@ import polynote.messages.{Notebook, NotebookConfig, TinyList, TinyMap, TinyStrin
 import scala.reflect.io.AbstractFile
 import scala.tools.nsc.Settings
 
-trait KernelFactory[F[_]] {
+trait KernelFactory[F[+_]] {
 
   def launchKernel(
     getNotebook: () => F[Notebook],

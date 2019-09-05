@@ -12,7 +12,7 @@ export class DataType {
 DataType.delegatedCodec = {
     // Need to make a delegator here, because DataType.codec doesn't exist yet and forms recursive knots with i.e. StructField.
     // This defers evaluating DataType.codec, tying the knot
-    encode: (value, writer) => DataType.codec.encode(value.dataType, writer),
+    encode: (value, writer) => DataType.codec.encode(value, writer),
     decode: (reader) => DataType.codec.decode(reader)
 };
 
