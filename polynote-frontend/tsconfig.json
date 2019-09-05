@@ -3,6 +3,10 @@
     "outDir": "./dist/",
     "module": "es6",
     "target": "es6",
+    "lib": [
+      "es2019", // needed for array.flatMap. Hopefully this is ok?
+      "dom" // needed this after adding a "lib" section...
+    ],
     "allowJs": true,
     "noImplicitAny": true, // never infer `any`, see: https://www.typescriptlang.org/docs/handbook/migrating-from-javascript.html#no-implicit-any
     "noImplicitReturns": true, // Report an error when not all code paths in function return a value.

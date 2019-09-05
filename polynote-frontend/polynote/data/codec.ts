@@ -1,8 +1,8 @@
 'use strict';
 
-// Add `getBigInt64` to DataView
 import {Both, Either, ExtractorConstructor, Ior, Left, Right} from "./types";
 
+// Add `getBigInt64` to DataView
 declare global {
     interface DataView {
         getBigInt64(byteOffset: number, littleEndian?: boolean): number;
@@ -522,4 +522,16 @@ export function discriminated<T>(discriminatorCodec: Codec<number>, selectCodec:
         encode: encode,
         decode: decode
     });
+}
+
+abstract class HasCodec {
+    static codec: Codec<CodecContainer>;
+
+    constructor(...args: any[]) {};
+}
+
+export abstract class CodecContainer extends HasCodec {
+    static codecs: typeof HasCodec[];
+    static codec: Codec<any>;
+    unapply: (inst: any) => any[];
 }

@@ -1,29 +1,33 @@
 "use strict";
 
-export default function match(obj) {
+export default function match<T>(obj: T) {
     return new Matcher(obj);
 }
 
 export class MatchError {
-    constructor(obj) {
-        this.obj = obj;
+    constructor(readonly obj: any) {
         Object.freeze(this);
     }
 }
 
-export class Matcher {
-    constructor(obj) {
-        this.obj = obj;
-    }
+export interface Extractable<T> {
+  new (...args: any[]): T;
+  unapply(t: T): any[]
+}
 
-    when(type, fn) {
+export class Matcher<T> {
+    private result: any | null;
+    constructor(readonly obj: T) {}
+
+    // TODO: is there any magic way to get types for `args`? We *know* the types - they're the result of the `type`'s unapply!
+    when<U extends T, Return>(type: Extractable<U>, fn: (...args: ConstructorParameters<Extractable<U>>) => any) {
         if (this.result === undefined && this.obj instanceof type) {
             this.result = fn(...type.unapply(this.obj)) || null;
         }
         return this;
     }
 
-    otherwise(value) {
+    otherwise<U>(value: U) {
         if (this.result !== undefined) {
             return this.result;
         } else {

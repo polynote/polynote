@@ -235,7 +235,7 @@ export class PlotEditor extends UIEventTarget {
         return this.fields.filter(field => isDimension(field.dataType)).map(
             field => div(['dimension'], [
                 field.name,
-                ` (${field.dataType.constructor.name(field.dataType)})`]
+                ` (${field.dataType.constructor.typeName(field.dataType)})`]
             ).withKey('field', field).attr('draggable', true)
         )
     }
@@ -244,7 +244,7 @@ export class PlotEditor extends UIEventTarget {
         return this.fields.filter(field => field.dataType.isNumeric).map(
             field => div(['numeric'], [
                 field.name,
-                ` (${field.dataType.constructor.name(field.dataType)})`]
+                ` (${field.dataType.constructor.typeName(field.dataType)})`]
             ).withKey('field', field).attr('draggable', true)
         )
     }

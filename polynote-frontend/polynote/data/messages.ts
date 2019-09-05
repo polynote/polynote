@@ -1,8 +1,8 @@
 'use strict';
 
 import {
-    arrayCodec, bool, bufferCodec, Codec, combined, discriminated, either, float64, int16, int32, mapCodec, optional,
-    Pair, shortStr, str, tinyStr, uint16, uint32, uint8
+    arrayCodec, bool, bufferCodec, Codec, CodecContainer, combined, discriminated, either, float64, int16, int32,
+    mapCodec, optional, Pair, shortStr, str, tinyStr, uint16, uint32, uint8
 } from './codec'
 
 import {KernelErrorWithCause, Output, PosRange, Result} from './result'
@@ -11,15 +11,7 @@ import {isEqual} from "../util/functions";
 import {CellMetadata, NotebookCell, NotebookConfig} from "./data";
 import {ContentEdit} from "./content_edit";
 import {Left, Right} from "./types";
-
-abstract class HasCodec {
-    static codec: Codec<CodecContainer>;
-    constructor(...args: any[]) {};
-}
-
-abstract class CodecContainer extends HasCodec {
-    static codecs: typeof HasCodec[];
-}
+import {DataType} from "./data_type";
 
 export abstract class Message extends CodecContainer {
     static codec: Codec<Message>;
@@ -35,10 +27,6 @@ export abstract class Message extends CodecContainer {
     }
 
     static unapply(inst: Message): any[] {return []}
-
-    encode() {
-        return Message.encode(this);
-    }
 
     isResponse(other: Message): boolean {
         return false;
@@ -507,7 +495,7 @@ export class HandleData extends Message {
     }
 
     constructor(readonly path: string, readonly handleType: number, readonly handle: number, readonly count: number,
-                readonly data: number) {
+                readonly data: ArrayBuffer[]) {
         super();
         Object.freeze(this);
     }
@@ -569,13 +557,13 @@ TableOp.codecs = [
 
 TableOp.codec = discriminated(uint8, msgTypeId => TableOp.codecs[msgTypeId].codec, msg => (msg.constructor as typeof Message).msgTypeId);
 
-export class ModifyStream extends Message {
+export class ModifyStream<T extends DataType> extends Message {
     static codec = combined(shortStr, int32, arrayCodec(uint8, TableOp.codec), optional(StreamingDataRepr.codec)).to(ModifyStream);
     static get msgTypeId() { return 19; }
-    static unapply(inst: ModifyStream): ConstructorParameters<typeof ModifyStream> {
+    static unapply<T extends DataType>(inst: ModifyStream<T>): ConstructorParameters<typeof ModifyStream> {
         return [inst.path, inst.fromHandle, inst.ops, inst.newRepr];
     }
-    constructor(readonly path: string, readonly fromHandle: number, readonly ops: TableOp[], readonly newRepr?: StreamingDataRepr) {
+    constructor(readonly path: string, readonly fromHandle: number, readonly ops: TableOp[], readonly newRepr?: StreamingDataRepr<T>) {
         super();
         Object.freeze(this);
     }

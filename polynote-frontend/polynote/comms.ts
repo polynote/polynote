@@ -2,15 +2,15 @@
 
 import { Message } from './data/messages'
 
-export class PolynoteMessageEvent extends CustomEvent<any> {
-    constructor(readonly message: Message) {
+export class PolynoteMessageEvent<T extends Message> extends CustomEvent<any> {
+    constructor(readonly message: T) {
         super('message');
         Object.freeze(this);
     }
 }
 
 type ListenerCallback = (...args: any[]) => void
-type MessageListener = [typeof Message, ListenerCallback, boolean?];
+export type MessageListener = [typeof Message, ListenerCallback, boolean?];
 
 export class SocketSession extends EventTarget {
     static current: SocketSession; // gross!
@@ -63,7 +63,7 @@ export class SocketSession extends EventTarget {
 
     send(msg: Message) {
         if (this.isOpen) {
-            const buf = msg.encode();
+            const buf = Message.encode(msg);
             this.socket.send(buf);
         } else {
             this.queue.unshift(msg);
@@ -90,7 +90,7 @@ export class SocketSession extends EventTarget {
         }
     }
 
-    addMessageListener(msgType: typeof Message, fn: (...args: any[]) => void, removeWhenFalse: boolean) {
+    addMessageListener(msgType: typeof Message, fn: (...args: any[]) => void, removeWhenFalse: boolean = false) {
         const handler: MessageListener = [msgType, fn, removeWhenFalse];
         this.messageListeners.push(handler);
         return handler;
@@ -110,9 +110,9 @@ export class SocketSession extends EventTarget {
     /**
      * Send a request and listen for the response. The message must properly implement the isResponse method.
      */
-    request(msg: Message) {
-        return new Promise((resolve, reject) => {
-            this.addEventListener('message', (evt: PolynoteMessageEvent) => {
+    request<T extends Message>(msg: T) {
+        return new Promise<T>((resolve, reject) => {
+            this.addEventListener('message', (evt: PolynoteMessageEvent<T>) => {
                if (msg.isResponse(evt.message)) {
                    resolve(evt.message);
                    return true; // so it gets removed.

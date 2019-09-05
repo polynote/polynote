@@ -3,7 +3,7 @@
 import {blockquote, button, div, iconButton, span, tag} from "../util/tags.js";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
-import {ResultValue} from "../../data/result.js"
+import {ResultValue} from "../../data/result"
 import {RichTextEditor} from "./text_editor.js";
 import {UIEvent, UIEventTarget} from "../util/ui_event.js"
 import {default as Diff} from '../../util/diff.js'

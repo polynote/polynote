@@ -27,7 +27,7 @@ function dataTypeToObjectField(name, dataType) {
     } else if (dataType instanceof ArrayType) {
         return [`${name}[]`, dataTypeToObjectField('element', dataType.element)[1]];
     } else {
-        return [name, dataType.constructor.name(dataType)];
+        return [name, dataType.constructor.typeName(dataType)];
     }
 }
 

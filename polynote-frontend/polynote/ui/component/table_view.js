@@ -34,7 +34,7 @@ export class TableView {
         const dataType = repr.dataType;
         const fields = this.fields = dataType.fields;
         const fieldClasses = dataType.fields.map(field => field.name);
-        const fieldNames = dataType.fields.map(field => `${field.name}: ${field.dataType.name()}`);
+        const fieldNames = dataType.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
 
         if (!SocketSession.current.isOpen) {
             this.el = div(['table-view', 'disconnected'], [
