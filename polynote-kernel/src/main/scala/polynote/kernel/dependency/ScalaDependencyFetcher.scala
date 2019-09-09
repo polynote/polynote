@@ -28,7 +28,9 @@ trait ScalaDependencyFetcher extends DependencyManager[IO] {
   protected def splitDependencies(deps: List[String]): (List[String], List[URI]) = {
     val (dependencies, uriList) = deps.map { dep =>
 
-      val asURI = new URI(dep)
+      val asURI = if (dep.startsWith("/")) {
+        new URI(s"file://$dep")
+      } else new URI(dep)
 
       Either.cond(
         // Do we support this protocol (if any?)
