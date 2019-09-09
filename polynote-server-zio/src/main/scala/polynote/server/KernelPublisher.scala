@@ -14,7 +14,7 @@ import polynote.env.ops._
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, PublishMessage, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
 import polynote.messages.{CellID, CellResult, KernelStatus, Message, Notebook, NotebookUpdate, ShortString}
-import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, GlobalEnv, Kernel, KernelBusyState, KernelEnv, KernelEnvT, KernelFactoryEnv, KernelStatusUpdate, Result, ScalaCompiler, Signatures, TaskManager}
+import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, GlobalEnv, Kernel, KernelBusyState, KernelStatusUpdate, Result, ScalaCompiler, Signatures, TaskManager}
 import polynote.server.SharedNotebook.{GlobalVersion, SubscriberId}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Promise, Semaphore, Task, TaskR, UIO, ZIO}
@@ -32,9 +32,9 @@ class KernelPublisher private (
   updater: Fiber[Throwable, Unit],
   kernelRef: Ref[Task, Option[Kernel]],
   kernelStarting: Semaphore,
-  kernelFactory: Kernel.Factory,
+  kernelFactory: Kernel.Factory.Service,
   closed: Promise[Throwable, Unit]
-) extends KernelEnvT {
+) {
 
   private val localNotebookEnv = CurrentNotebook.of(currentNotebook)
 
@@ -116,7 +116,7 @@ class KernelPublisher private (
   def close(): Task[Unit] = closed.succeed(()).const(())
 
   private def createKernel(): TaskR[BaseEnv with GlobalEnv, Kernel] = kernelFactory()
-    .provideSomeM(Env.enrich[BaseEnv with GlobalEnv](this: KernelEnv))
+    .provideSomeM(Env.enrichM[BaseEnv with GlobalEnv](cellEnv(-1)))
 }
 
 object KernelPublisher {
@@ -142,7 +142,8 @@ object KernelPublisher {
     case (subscriberId, update) => ZIO(versions.add(update.globalVersion, update))
   }
 
-  def apply(kernelFactory: Kernel.Factory, notebook: Notebook): TaskR[BaseEnv with GlobalEnv, KernelPublisher] = for {
+  def apply(notebook: Notebook): TaskR[BaseEnv with GlobalEnv, KernelPublisher] = for {
+    kernelFactory    <- Kernel.Factory.access
     versionedRef     <- SignallingRef[Task, (GlobalVersion, Notebook)]((0, notebook))
     closed           <- Promise.make[Throwable, Unit]
     currentNotebook   = new UnversionedRef(versionedRef)

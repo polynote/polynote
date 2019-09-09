@@ -209,4 +209,26 @@ lazy val `polynote-spark` = project.settings(
   }
 ) dependsOn (`polynote-server` % "compile->compile;test->test", `polynote-spark-runtime`)
 
+lazy val `polynote-spark-zio` = project.settings(
+  commonSettings,
+  libraryDependencies ++= Seq(
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
+    "org.scodec" %% "scodec-stream" % "1.2.0",
+    "org.apache.spark" %% "spark-sql" % versions.spark % "provided",
+    "org.apache.spark" %% "spark-repl" % versions.spark % "provided",
+    "org.apache.spark" %% "spark-sql" % versions.spark % "test",
+    "org.apache.spark" %% "spark-repl" % versions.spark % "test",
+  ),
+  assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false),
+  resourceGenerators in Compile += Def.task {
+    Seq(
+      copyRuntimeJar((resourceManaged in Compile).value, "polynote-runtime.jar", (packageBin in (`polynote-runtime`, Compile)).value),
+      copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value),
+      // sneak these scala dependency jars into the assembly so we have them if we need them (but they won't conflict with environment-provided jars)
+      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get),
+      copyRuntimeJar((resourceManaged in Compile).value, "scala-reflect.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-reflect")).get)
+    )
+  }.taskValue
+) dependsOn (`polynote-server-zio` % "compile->compile;test->test", `polynote-spark`, `polynote-spark-runtime`)
+
 lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`)

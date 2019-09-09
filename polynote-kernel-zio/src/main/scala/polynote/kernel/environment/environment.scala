@@ -8,7 +8,7 @@ import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
 import polynote.kernel.interpreter.CellExecutor
 import polynote.kernel.util.Publish
-import polynote.kernel.{CellEnv, ExecutionStatus, InterpreterEnv, InterpreterEnvT, KernelEnv, KernelStatusUpdate, Output, Result, TaskInfo}
+import polynote.kernel.{CellEnv, ExecutionStatus, InterpreterEnv, InterpreterEnvT, KernelStatusUpdate, Output, Result, TaskInfo}
 import polynote.messages.{CellID, Message, Notebook, NotebookConfig}
 import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
@@ -114,7 +114,7 @@ object CurrentRuntime {
   def from(cellID: CellID): TaskR[PublishResult with PublishStatus with CurrentTask, CurrentRuntime] =
     ((PublishResult.access, PublishStatus.access, CurrentTask.access)).map3(CurrentRuntime.from(cellID, _, _, _)).flatten
 
-  def access: TaskR[CurrentRuntime, KernelRuntime] = ZIO.access[CurrentRuntime](_.currentRuntime)
+  def access: ZIO[CurrentRuntime, Nothing, KernelRuntime] = ZIO.access[CurrentRuntime](_.currentRuntime)
 }
 
 trait CurrentNotebook {
@@ -127,9 +127,15 @@ object CurrentNotebook {
   }
 
   def access: TaskR[CurrentNotebook, Ref[Task, Notebook]] = ZIO.access[CurrentNotebook](_.currentNotebook)
+
   def get: TaskR[CurrentNotebook, Notebook] = ZIO.accessM[CurrentNotebook](_.currentNotebook.get)
+
   def update(fn: Notebook => Notebook): TaskR[CurrentNotebook, Notebook] = ZIO.accessM[CurrentNotebook] {
     cn => cn.currentNotebook.modify(notebook => fn(notebook) match { case nb => (nb, nb) })
+  }
+
+  def setResults(cellID: CellID, results: List[Result]): TaskR[CurrentNotebook, Unit] = access.flatMap {
+    ref => ref.update(_.setResults(cellID, results))
   }
 
   def config: TaskR[CurrentNotebook, NotebookConfig] = get.map(_.config.getOrElse(NotebookConfig.empty))

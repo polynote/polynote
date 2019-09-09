@@ -48,10 +48,16 @@ class ZIOSocketSession(
     input     <- Queue.unbounded[Task, WebSocketFrame]
     output    <- Queue.unbounded[Task, WebSocketFrame]
     processor <- process(input, output)
-    fiber     <- processor.interruptWhen(closed.await.either).compile.drain.fork
+    fiber     <- processor.interruptWhen(closed.await.either).compile.drain
+      .catchAll { err =>
+        val e = err
+        println(e.getClass)
+        ZIO.unit
+      }  // when the fiber is interrupted, we don't need the error
+      .fork
     keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).interruptWhen(closed.await.either).through(output.enqueue).compile.drain.fork
     response  <- WebSocketBuilder[Task].build(
-      output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]).interruptWhen(closed.await.either.absorb),
+      output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]).interruptWhen(closed.await.const[Either[Throwable, Unit]](Right(()))),
       input.enqueue,
       onClose = closed.succeed(()).const(()))
   } yield response

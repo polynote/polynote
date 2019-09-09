@@ -7,7 +7,7 @@ import cats.instances.list._
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.{Output, Result, ScalaCompiler, TaskInfo}
 import polynote.testing.{ValueMap, ZIOSpec}
-import zio.TaskR
+import zio.{TaskR, ZIO}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
@@ -27,7 +27,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
   settings.outputDirs.setSingleOutput(outDir)
 
   private val classLoader = new AbstractFileClassLoader(outDir, getClass.getClassLoader)
-  private val compiler = ScalaCompiler(settings, "$notebook", classLoader).runIO()
+  private val compiler = ScalaCompiler(settings, ZIO.succeed(classLoader)).runIO()
   import compiler.{cellCode, CellCode}
 
   private val interpreter = ScalaInterpreter().provide(new ScalaCompiler.Provider {

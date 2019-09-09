@@ -315,6 +315,7 @@ final case class TaskInfo(
   def running: TaskInfo = copy(status = TaskStatus.Running)
   def completed: TaskInfo = copy(status = TaskStatus.Complete, progress = 255.toByte)
   def failed: TaskInfo = if (status == TaskStatus.Complete) this else copy(status = TaskStatus.Error, progress = 255.toByte)
+  def done(status: TaskStatus.DoneStatus): TaskInfo = if (this.status.isDone) this else copy(status = status, progress = 255.toByte)
   def progress(fraction: Double): TaskInfo = copy(progress = (fraction * 255).toByte)
   def progress(fraction: Double, detailOpt: Option[String]): TaskInfo = copy(progress = (fraction * 255).toByte, detail = detailOpt.getOrElse(detail))
 }

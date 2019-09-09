@@ -9,8 +9,8 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeServerBuilder
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
-import polynote.kernel.interpreter, interpreter.Interpreter
-import polynote.kernel.{BaseEnv, GlobalEnv}
+import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, interpreter}
+import interpreter.Interpreter
 import zio.blocking.Blocking
 import zio.{App, Runtime, Task, TaskR, ZIO}
 import zio.interop.catz._
@@ -26,6 +26,8 @@ trait ZIOServer extends App with Http4sDsl[Task] {
   // TODO: obviously, clean this up
   private val indexFile = "/index.html"
 
+  protected val kernelFactory: Kernel.Factory.Service
+
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
     args     <- ZIO.fromEither(ZIOServer.parseArgs(args)).orDie
     config   <- PolynoteConfig.load[Task](args.configFile).orDie
@@ -34,7 +36,7 @@ trait ZIOServer extends App with Http4sDsl[Task] {
     host      = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url       = s"http://$host:$port"
     interps  <- interpreter.Loader.load.orDie
-    globalEnv = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps))
+    globalEnv = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps, kernelFactory))
     manager  <- ZIONotebookManager().provide(globalEnv).orDie
     socketEnv = Env.enrichWith[BaseEnv with GlobalEnv, ZIONotebookManager](globalEnv, manager)
     app      <- httpApp(args.watchUI).provide(socketEnv).orDie
@@ -84,7 +86,9 @@ trait ZIOServer extends App with Http4sDsl[Task] {
 
 }
 
-object ZIOServerApp extends ZIOServer
+object ZIOServerApp extends ZIOServer {
+  protected val kernelFactory: Kernel.Factory.Service = LocalKernel
+}
 
 object ZIOServer {
   case class Args(

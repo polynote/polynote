@@ -16,28 +16,19 @@ package object kernel {
   type BaseEnv = Blocking with Clock with System
   trait BaseEnvT extends Blocking with Clock with System
 
-  type GlobalEnv = Config with Interpreter.Factories
-  trait GlobalEnvT extends Config with Interpreter.Factories
-  def GlobalEnv(config: PolynoteConfig, factories: Map[String, Interpreter.Factory]): GlobalEnv = new GlobalEnvT {
+  type GlobalEnv = Config with Interpreter.Factories with Kernel.Factory
+  trait GlobalEnvT extends Config with Interpreter.Factories with Kernel.Factory
+  def GlobalEnv(config: PolynoteConfig, interpFactories: Map[String, Interpreter.Factory], kernelFactoryService: Kernel.Factory.Service): GlobalEnv = new GlobalEnvT {
     val polynoteConfig: PolynoteConfig = config
-    val interpreterFactories: Map[String, Interpreter.Factory] = factories
+    val interpreterFactories: Map[String, Interpreter.Factory] = interpFactories
+    val kernelFactory: Kernel.Factory.Service = kernelFactoryService
   }
 
   type TaskG[+A] = TaskR[BaseEnv with GlobalEnv, A]
 
-  type KernelFactoryEnv = CurrentNotebook with TaskManager
-  def KernelFactoryEnv(notebook: Ref[Task, Notebook], tm: TaskManager.Service): KernelFactoryEnv = new CurrentNotebook with TaskManager {
-    override val currentNotebook: Ref[Task, Notebook] = notebook
-    override val taskManager: TaskManager.Service = tm
-  }
-
-  // KernelEnv is provided to the kernel factory by its host
-  type KernelEnv = CurrentNotebook with TaskManager with PublishStatus
-  trait KernelEnvT extends CurrentNotebook with TaskManager with PublishStatus
-
   // CellEnv is provided to the kernel by its host when a cell is being run
   type CellEnv = CurrentNotebook with TaskManager with PublishStatus with PublishResult
-  trait CellEnvT extends KernelEnvT with PublishResult
+  trait CellEnvT extends CurrentNotebook with TaskManager with PublishStatus with PublishResult
 
   // InterpreterEnv is provided to the interpreter by the Kernel when running cells
   type InterpreterEnv = Blocking with PublishResult with PublishStatus with CurrentTask with CurrentRuntime
@@ -108,6 +99,7 @@ package object kernel {
   def withContextClassLoader[A](cl: ClassLoader)(thunk: => A): A = {
     val thread = Thread.currentThread()
     val prevCL = thread.getContextClassLoader
+    thread.setContextClassLoader(cl)
     try thunk finally {
       thread.setContextClassLoader(prevCL)
     }

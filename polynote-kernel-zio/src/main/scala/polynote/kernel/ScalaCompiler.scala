@@ -152,7 +152,9 @@ class ScalaCompiler private (
     sourceFile: SourceFile = NoSourceFile
   ) {
     // this copy of the code will be mutated by compile
-    lazy val compiledCode: List[Tree] = copyAndReset(code)
+    lazy val compiledCode: List[Tree] = code.map {
+      stat => stat.duplicate.setPos(stat.pos)
+    }
 
     // The name of the class (and its companion object, in case one is needed)
     lazy val assignedTypeName: TypeName = freshTypeName(name)(global.currentFreshNameCreator)
@@ -192,7 +194,7 @@ class ScalaCompiler private (
       def notUnit(tpe: Type) = tpe != null && !(tpe <:< weakTypeOf[Unit]) && !(tpe <:< weakTypeOf[BoxedUnit])
 
       exitingTyper(compiledCode).collect {
-        case vd@ValDef(_, name, tpt, _) if (prev contains name) && notUnit(tpt.tpe) =>
+        case vd@ValDef(_, name, tpt, _) if (prev contains name) && notUnit(vd.symbol.originalInfo) =>
           val tpe = vd.symbol.originalInfo
           val preTyper = prev(name)
           val typeTree = TypeTree(tpe)
@@ -343,22 +345,21 @@ class ScalaCompiler private (
 
 object ScalaCompiler {
 
-  /**
-    * For testing
-    */
-  def apply(settings: Settings, notebookPackage: String, classLoader: AbstractFileClassLoader): Task[ScalaCompiler] =
-    ZIO {
-      val global = new Global(settings, KernelReporter(settings))
-      new ScalaCompiler(global, notebookPackage, ZIO.succeed(classLoader))
+  def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader]): Task[ScalaCompiler] =
+    classLoader.memoize.flatMap {
+      classLoader => ZIO {
+        val global = new Global(settings, KernelReporter(settings))
+        new ScalaCompiler(global, "$notebook", classLoader)
+      }
     }
 
-  def apply(dependencyClasspath: List[File]): TaskR[Config with System, ScalaCompiler] = for {
-    sparkClasspathOpt <- env("SPARK_DIST_CLASSPATH")
-    isSpark            = sparkClasspathOpt.nonEmpty
-    sparkClasspath     = sparkClasspathOpt.map(_.split(File.pathSeparatorChar).toList.map(new File(_))).getOrElse(Nil)
-    settings           = defaultSettings(new Settings(), dependencyClasspath ::: sparkClasspath)
+  def apply(
+    dependencyClasspath: List[File],
+    modifySettings: Settings => Settings
+  ): TaskR[Config with System, ScalaCompiler] = for {
+    settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencyClasspath)))
     global            <- ZIO(new Global(settings, KernelReporter(settings)))
-    notebookPackage    = if (isSpark) global.globalFreshNameCreator.newName("$notebook") else "$notebook"
+    notebookPackage    = "$notebook"
     classLoader       <- makeClassLoader(settings).memoize
   } yield new ScalaCompiler(global, notebookPackage, classLoader)
 
@@ -382,16 +383,13 @@ object ScalaCompiler {
     }
   }
 
-  def provider(dependencyClasspath: List[File]): TaskR[Config with System, ScalaCompiler.Provider] =
-    apply(dependencyClasspath).map {
-      compiler => new Provider {
-        val scalaCompiler: ScalaCompiler = compiler
-      }
-    }
+  def provider(
+    dependencyClasspath: List[File],
+    modifySettings: Settings => Settings
+  ): TaskR[Config with System, ScalaCompiler.Provider] = apply(dependencyClasspath, modifySettings).map(Provider.of)
 
-  trait Provider {
-    val scalaCompiler: ScalaCompiler
-  }
+  def provider(dependencyClasspath: List[File]): TaskR[Config with System, ScalaCompiler.Provider] =
+    provider(dependencyClasspath, identity[Settings])
 
   def defaultSettings(initial: Settings, classPath: List[File] = Nil): Settings = {
     val requiredPaths = List(
@@ -422,4 +420,15 @@ object ScalaCompiler {
     settings.outputDirs.setSingleOutput(new VirtualDirectory("(memory)", None))
     settings
   }
+
+  trait Provider {
+    val scalaCompiler: ScalaCompiler
+  }
+
+  object Provider {
+    def of(compiler: ScalaCompiler): Provider = new Provider {
+      override val scalaCompiler: ScalaCompiler = compiler
+    }
+  }
+
 }

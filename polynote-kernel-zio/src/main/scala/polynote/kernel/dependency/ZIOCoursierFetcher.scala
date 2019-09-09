@@ -56,7 +56,7 @@ object ZIOCoursierFetcher {
   val artifactTypes = coursier.core.Resolution.defaultTypes - Type.testJar
   private val cache = FileCache[ArtifactTask]()
 
-  def fetch(language: String): TaskR[CurrentNotebook with TaskManager, List[File]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
+  def fetch(language: String): TaskR[CurrentNotebook with TaskManager, List[(String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
       config       <- CurrentNotebook.config
       dependencies  = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
@@ -66,7 +66,7 @@ object ZIOCoursierFetcher {
       resolution   <- resolution(dependencies, exclusions, repositories)
       _            <- CurrentTask.update(_.copy(detail = "Downloading dependencies...", progress = 0))
       result       <- download(resolution).provideSomeM(Env.enrichM[TaskManager](parentTask))
-    } yield result.map(_._2)
+    } yield result
   }
 
   private def repositories(repositories: List[RepositoryConfig]): Either[Throwable, List[Repository]] = repositories.collect {

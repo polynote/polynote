@@ -1,8 +1,9 @@
 package polynote.kernel
 
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 
+import scala.collection.JavaConverters._
 import cats.effect.concurrent.Ref
 import cats.syntax.traverse._
 import cats.instances.list._
@@ -12,7 +13,7 @@ import polynote.kernel.environment.{CurrentTask, Env}
 import polynote.kernel.util.Publish
 import zio.blocking.Blocking
 import zio.clock.Clock
-import zio.{Fiber, Semaphore, Task, TaskR, UIO, ZIO, ZSchedule}
+import zio.{Fiber, Promise, Semaphore, Task, TaskR, UIO, ZIO, ZSchedule}
 import zio.interop.catz._
 
 trait TaskManager {
@@ -37,7 +38,7 @@ object TaskManager {
       * Note that status updates are sent somewhat lazily, and for a series of rapid updates to the task status only the
       * last update might get sent.
       */
-    def queue[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "")(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[A]]
+    def queue[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus = TaskStatus.Error)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[A]]
 
     /**
       * This overload is more useful if the return type needs to be inferred
@@ -46,17 +47,11 @@ object TaskManager {
       queue[R with CurrentTask, A, R](id, label, detail)(task)
 
     /**
-      * Convenience for [[queue]] when the result type is Unit.
-      */
-    def queueEffect[R <: CurrentTask, R1 >: R](id: String, label: String = "", detail: String = "")(task: TaskR[R, Unit])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[Unit]] =
-      queue[R, Unit, R1](id, label, detail)(task)
-
-    /**
       * Register the given task. The task will be independent of the task queue, but will have access to a [[TaskInfo]]
       * reference; it can update this reference to broadcast task updates. The first update will be broadcast when the
       * task is evaluated, and a completion update will be broadcast when it completes or fails.
       */
-    def run[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "")(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, A]
+    def run[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus = TaskStatus.Error)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, A]
 
     /**
       * Register an external task for status broadcasting and cancellation, by providing a function which will receive a
@@ -69,8 +64,11 @@ object TaskManager {
       * The external task must report itself as being finished by updating the [[TaskInfo]] to a completed or failed
       * state. All updates to the task reference will be broadcast. If [[cancelAll]] is run on this task manager, the
       * given task will be interrupted (if it has not yet reported completion) using the return cancellation task.
+      *
+      * Returns the [[Fiber]] which updates the task status. Interrupting this fiber results in the cancellation task
+      * returned from cancelCallback being evaluated.
       */
-    def register(id: String, label: String = "", detail: String = "")(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => UIO[Unit]): TaskR[Blocking with Clock, Unit]
+    def register(id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus = TaskStatus.Error)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => UIO[Unit]): TaskR[Blocking with Clock, Fiber[Throwable, Unit]]
 
     /**
       * Cancel all tasks. If a task has not yet begun running, it will simply be cancelled. If a task is already running,
@@ -90,46 +88,50 @@ object TaskManager {
     statusUpdates: Publish[Task, KernelStatusUpdate]
   ) extends Service {
 
-    private val tasks = new Deque[(Ref[Task, TaskInfo], Fiber[Throwable, Any])]()
+    private val taskCounter = new AtomicLong(0)
+    private val tasks = new ConcurrentHashMap[String, (Ref[Task, TaskInfo], Fiber[Throwable, Any], Long)]
     private val updates = statusUpdates.contramap(UpdatedTasks.one)
 
     private def lbl(id: String, label: String) = if (label.isEmpty) id else label
 
-    override def queue[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "")(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[A]] = queueing.withPermit {
+    override def queue[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[A]] = queueing.withPermit {
       for {
         statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, TaskStatus.Queued))
+        remove         = ZIO.effectTotal(tasks.remove(id))
+        fail           = statusRef.update(_.copy(status = errorWith, progress = 255.toByte)).ensuring(remove).uninterruptible.orDie
+        complete       = statusRef.update(_.completed).ensuring(remove).uninterruptible.orDie
         updater       <- statusRef.discrete
           .terminateAfter(_.status.isDone)
           .through(updates.publish)
-          .compile.drain.fork
-        taskBody       = task.provideSome[R1](enrich(_, CurrentTask.of(statusRef)))
-        runTask        = running.withPermit(
-          statusRef.update(_.running) *>
-            ZIO.absolve(
-              taskBody.either
-                .tap(_.fold(_ => statusRef.update(_.failed), _ => statusRef.update(_.completed)))) <* updater.join
-        )
-        taskFiber     <- runTask.interruptChildren.fork
-        taskPair       = (statusRef, taskFiber)
-        _             <- tasks.add(taskPair).uninterruptible
-      } yield taskFiber.join.onInterrupt(taskFiber.interrupt).ensuring(tasks.remove(taskPair))
+          .compile.drain.uninterruptible.fork
+        taskBody       = ZIO.absolve {
+          task.provideSome[R1](enrich(_, CurrentTask.of(statusRef)))
+            .either
+            .tap(_.fold(_ => fail, _ => complete)) <* updater.join
+        }
+        runTask        = running.withPermit(statusRef.update(_.running) *> taskBody).onTermination(_ => fail)
+        taskFiber     <- runTask.fork
+        descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
+        _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
+      } yield taskFiber.join.ensuring(remove)
     }
 
-    override def run[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "")(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, A] =
+    override def run[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, A] =
       for {
         statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, TaskStatus.Running))
+        remove         = ZIO.effectTotal(tasks.remove(id))
         updater       <- statusRef.discrete
           .terminateAfter(_.status.isDone)
           .through(updates.publish)
-          .compile.drain.fork
+          .compile.drain.uninterruptible.ensuring(remove).fork
         taskBody       = task.provideSome[R1](enrich(_, CurrentTask.of(statusRef)))
-        taskFiber     <- (taskBody <* statusRef.update(_.completed) <* updater.join).onError(_ => statusRef.update(_.failed).orDie).fork
-        taskPair       = (statusRef, taskFiber)
-        _             <- tasks.add(taskPair).uninterruptible
-        result        <- taskFiber.join.onInterrupt(taskFiber.interrupt).ensuring(tasks.remove(taskPair))
+        taskFiber     <- (taskBody <* statusRef.update(_.completed) <* updater.join).onError(_ => statusRef.update(_.done(errorWith)).orDie).fork
+        descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
+        _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
+        result        <- taskFiber.join.onInterrupt(taskFiber.interrupt)
       } yield result
 
-    override def register(id: String, label: String = "", detail: String = "")(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => UIO[Unit]): TaskR[Blocking with Clock, Unit] =
+    override def register(id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => UIO[Unit]): TaskR[Blocking with Clock, Fiber[Throwable, Unit]] =
       for {
         statusRef   <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, TaskStatus.Running))
         updateTasks  = new LinkedBlockingQueue[TaskInfo => TaskInfo]()
@@ -137,21 +139,26 @@ object TaskManager {
         updater     <- statusRef.discrete
           .terminateAfter(_.status.isDone)
           .through(updates.publish)
-          .onFinalize(ZIO(completed.set(true)).orDie)
-          .compile.drain.uninterruptible.fork
+          .compile.drain
+          .uninterruptible
+          .ensuring(ZIO.effectTotal(completed.set(true)))
+          .fork
         onUpdate     = (fn: TaskInfo => TaskInfo) => updateTasks.put(fn)
         cancel       = cancelCallback(onUpdate)
-        process     <- zio.blocking.blocking(statusRef.update(updateTasks.take()))
+        process     <- zio.blocking.effectBlocking(updateTasks.take()).flatMap(statusRef.update)
           .repeat(ZSchedule.doUntil(_ => completed.get()))
-          .onInterrupt(cancel.ensuring(statusRef.update(_.failed).orDie))
+          .ensuring(ZIO.effectTotal(tasks.remove(id)))
+          .onInterrupt(statusRef.update(_.done(errorWith)).orDie.ensuring(cancel))
           .fork
-        taskPair     = (statusRef, process)
-        _           <- tasks.add(taskPair).const(taskPair).bracket(tasks.remove)(_._2.join)
-      } yield ()
+        descriptor   = (statusRef, process, taskCounter.getAndIncrement())
+        _           <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
+      } yield process
 
-    override def cancelAll(): UIO[Unit] = tasks.reverseDrainM(_._2.interrupt.unit)
+    override def cancelAll(): UIO[Unit] = tasks.values().asScala.toList.map {
+      case (status, fiber, _) => fiber.interrupt
+    }.sequence.unit
 
-    override def list: UIO[List[TaskInfo]] = tasks.toList.flatMap(_.map(_._1.get.orDie).sequence)
+    override def list: UIO[List[TaskInfo]] = tasks.values().asScala.toList.sortBy(_._3).map(_._1.get.orDie).sequence
   }
 
   def apply(
@@ -161,15 +168,22 @@ object TaskManager {
     running  <- Semaphore.make(1)
   } yield new Impl(queueing, running, statusUpdates)
 
+  def access: TaskR[TaskManager, TaskManager.Service] = ZIO.access[TaskManager](_.taskManager)
 
-  def queue[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "")(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[A]] =
+  def queue[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus = TaskStatus.Error)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[A]] =
     ZIO.access[TaskManager](_.taskManager).flatMap {
-      taskManager => taskManager.queue[R, A, R1](id, label, detail)(task)
+      taskManager => taskManager.queue[R, A, R1](id, label, detail, errorWith)(task)
     }
 
-  def run[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "")(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, A] =
+  def run[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus = TaskStatus.Error)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, A] =
     ZIO.access[TaskManager](_.taskManager).flatMap {
-      taskManager => taskManager.run[R, A, R1](id, label, detail)(task)
+      taskManager => taskManager.run[R, A, R1](id, label, detail, errorWith)(task)
     }
+
+  def runR[R <: TaskManager](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus = TaskStatus.Error): Runner[R] = Runner[R](id, label, detail, errorWith)
+
+  case class Runner[R <: TaskManager](id: String, label: String, detail: String, errorWith: TaskStatus.DoneStatus) {
+    def apply[A](task: TaskR[R with CurrentTask, A])(implicit enrich: Enrich[R, CurrentTask]): TaskR[R with TaskManager, A] = run[R with CurrentTask, A, R](id, label, detail)(task)
+  }
 
 }

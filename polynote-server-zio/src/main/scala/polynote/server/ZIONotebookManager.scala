@@ -43,7 +43,7 @@ object ZIONotebookManager {
       def open(path: String): TaskR[BaseEnv with GlobalEnv, KernelPublisher] = openNotebooks.getOrCreate(path) {
         for {
           notebook  <- repository.loadNotebook(path)
-          publisher <- KernelPublisher(LocalKernel, notebook)
+          publisher <- KernelPublisher(notebook)
           writer    <- publisher.notebooks
             .evalMap(notebook => repository.saveNotebook(notebook.path, notebook))
             .compile.drain.fork
@@ -61,9 +61,7 @@ object ZIONotebookManager {
         case None => ZIO.succeed(KernelBusyState(busy = false, alive = false))
         case Some(publisher) => publisher.kernelStatus()
       }
-
     }
-
   }
 
   def apply()(implicit ev: ConcurrentEffect[TaskR[BaseEnv, ?]]): TaskR[BaseEnv with GlobalEnv, ZIONotebookManager] = for {

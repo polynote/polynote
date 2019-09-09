@@ -2,10 +2,11 @@ package polynote.kernel
 package interpreter
 
 import java.util.ServiceLoader
-import scala.collection.JavaConverters._
 
-import polynote.kernel.environment.{Config, CurrentNotebook}
-import zio.blocking.{Blocking, blocking}
+import scala.collection.JavaConverters._
+import polynote.messages.CellID
+import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, InterpreterEnvironment}
+import zio.blocking.{Blocking, effectBlocking}
 import zio.{Task, TaskR, ZIO}
 
 trait Interpreter {
@@ -19,6 +20,10 @@ trait Interpreter {
     *              executed cell, or to [[State.Root]] if there is no such cell.
     */
   def run(code: String, state: State): TaskR[InterpreterEnv, State]
+
+  def runId(id: Int, code: String): ZIO[Blocking with CellEnv with CurrentTask, Throwable, State] = {
+    run(code, State.id(id)).provideSomeM(InterpreterEnvironment.fromKernel(CellID(id)))
+  }
 
   /**
     * Ask for completions (if applicable) at the given position in the given code string.
@@ -85,7 +90,7 @@ trait Loader {
 }
 
 object Loader {
-  def load: TaskR[Blocking, Map[String, Interpreter.Factory]] = blocking(ZIO(ServiceLoader.load(classOf[Loader]).iterator.asScala.toList)).map {
+  def load: TaskR[Blocking, Map[String, Interpreter.Factory]] = effectBlocking(ServiceLoader.load(classOf[Loader]).iterator.asScala.toList).map {
     loaders => loaders.sortBy(_.priority).map(_.factories).foldLeft(Map.empty[String, Interpreter.Factory])(_ ++ _)
   }
 }
