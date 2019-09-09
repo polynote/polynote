@@ -1,7 +1,7 @@
 "use strict";
 
-import {UIEvent, UIEventTarget} from "../util/ui_event.js"
-import { div, button, iconButton } from "../util/tags.js"
+import {UIEvent, UIEventTarget} from "../util/ui_event"
+import { div, button, iconButton } from "../util/tags"
 
 export class Modal extends UIEventTarget {
     constructor(content, opts) {

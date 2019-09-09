@@ -1,4 +1,3 @@
-"use strict";
 import { SocketSession } from './comms'
 import { MainUI } from './ui/component/ui'
 import { scala, vega } from './ui/monaco/languages'

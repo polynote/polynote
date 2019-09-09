@@ -271,11 +271,10 @@ export class MainUI extends UIEventTarget {
         });
 
         this.handleEventListenerRegistration('CellResult', evt => {
-           const listen = evt.detail.once ? this.socket.listenOnceFor : this.socket.addMessageListener;
-           listen(messages.CellResult, () => {
+           this.socket.addMessageListener(messages.CellResult, () => {
                evt.detail.callback();
-           });
-        })
+           }, evt.detail.once);
+        });
 
         this.handleEventListenerRegistration('resize', evt => {
             window.addEventListener('resize', () => evt.detail.callback())

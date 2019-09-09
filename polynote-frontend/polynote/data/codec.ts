@@ -526,12 +526,14 @@ export function discriminated<T>(discriminatorCodec: Codec<number>, selectCodec:
 
 abstract class HasCodec {
     static codec: Codec<CodecContainer>;
-
-    constructor(...args: any[]) {};
+    static unapply: (inst: any) => any[];
+    protected constructor(...args: any[]) {};
 }
 
 export abstract class CodecContainer extends HasCodec {
     static codecs: typeof HasCodec[];
-    static codec: Codec<any>;
-    unapply: (inst: any) => any[];
+    static codec: Codec<HasCodec>;
+    constructor(...args: any[]) {
+        super(...args);
+    }
 }

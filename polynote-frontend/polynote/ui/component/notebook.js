@@ -2,7 +2,7 @@
 import {UIEvent, UIEventTarget} from "../util/ui_event";
 import {NotebookCellsUI} from "./nb_cells";
 import {KernelUI} from "./kernel_ui";
-import {EditBuffer} from "../util/edit_buffer";
+import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
 import {BeforeCellRunEvent, Cell, CodeCell, TextCell} from "./cell";
 import {div, span} from "../util/tags";

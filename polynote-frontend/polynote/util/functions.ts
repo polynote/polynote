@@ -1,6 +1,6 @@
 'use strict';
 
-export function isEqual(a, b) {
+export function isEqual(a: any, b: any) {
     if (a === b)
         return true;
 

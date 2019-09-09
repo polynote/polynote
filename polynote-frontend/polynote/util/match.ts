@@ -1,5 +1,3 @@
-"use strict";
-
 export default function match<T>(obj: T) {
     return new Matcher(obj);
 }

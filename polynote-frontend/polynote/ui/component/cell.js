@@ -1,12 +1,12 @@
 "use strict";
 
-import {blockquote, button, div, iconButton, span, tag} from "../util/tags.js";
+import {blockquote, button, div, iconButton, span, tag} from "../util/tags";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
-import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
+import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent'
 import {ResultValue} from "../../data/result"
-import {RichTextEditor} from "./text_editor.js";
-import {UIEvent, UIEventTarget} from "../util/ui_event.js"
-import {default as Diff} from '../../util/diff.js'
+import {RichTextEditor} from "./text_editor";
+import {UIEvent, UIEventTarget} from "../util/ui_event"
+import {default as Diff} from '../../util/diff'
 import {details, dropdown} from "../util/tags";
 import {ClientResult, ExecutionInfo} from "../../data/result";
 import {preferences} from "../util/storage";
@@ -1059,7 +1059,7 @@ CodeCell.keyMap = new Map(Cell.keyMap);
     }
 })();
 
-const vimModeKey = preferences.register("VIM", "Whether VIM input mode is enabled for CodeCells", false);
+const vimModeKey = preferences.register("VIM", false, "Whether VIM input mode is enabled for CodeCells");
 
 export class TextCell extends Cell {
     constructor(id, content, path, metadata) {

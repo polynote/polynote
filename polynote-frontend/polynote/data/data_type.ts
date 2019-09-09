@@ -1,7 +1,14 @@
-'use strict';
-
 import {
-    discriminated, combined, arrayCodec, str, uint8, int32, Codec, DataReader, DataWriter, CodecContainer
+    arrayCodec,
+    Codec,
+    CodecContainer,
+    combined,
+    DataReader,
+    DataWriter,
+    discriminated,
+    int32,
+    str,
+    uint8
 } from './codec'
 
 export abstract class DataType extends CodecContainer {
@@ -34,7 +41,9 @@ function SingletonDataType<T>(msgTypeId: number, readBuf: (reader: DataReader) =
         static typeName = () => { return name };
         static codec: Codec<SDT>;
 
-        decodeBuffer = readBuf;
+        decodeBuffer(reader: DataReader) {
+            return readBuf(reader);
+        }
         static isNumeric = isNumeric;
     }
     const sdt = new SDT();
@@ -44,9 +53,8 @@ function SingletonDataType<T>(msgTypeId: number, readBuf: (reader: DataReader) =
         decode: (reader: DataReader): SDT => sdt,
     };
 
-    Object.assign(sdt, SDT);  // NOTE: this only assigns properties on SDT - so static methods *won't go through*.
-
-    return sdt as SDT & typeof SDT;
+    // NOTE: this only assigns properties on SDT - so static methods *won't go through*.
+    return Object.assign(sdt, SDT);
 }
 
 export const ByteType = SingletonDataType(0, reader => reader.readUint8(), 'byte');

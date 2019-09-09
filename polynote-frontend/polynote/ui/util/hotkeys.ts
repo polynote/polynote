@@ -1,30 +1,47 @@
 
 import {Cell, CodeCell} from "../component/cell";
+import {IPosition, IRange, ISelection, KeyCode} from "monaco-editor";
+
+// The following Monaco imports don't have proper types as they're directly using implementation code in a bit of a
+// hacky way. So these @ts-ignore comments serve to further underscore the hackiness of the hotkey solution :(
+// @ts-ignore
 import {OS, isMacintosh} from 'monaco-editor/esm/vs/base/common/platform.js'
+// @ts-ignore
 import {createSimpleKeybinding} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
+// @ts-ignore
 import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
 
-// Return an object of hotkeys with the following structure:
-// {
-//     source: {
-//          key combination: description
-//     }
-// }
-export function getHotkeys() {
-    const hotkeys = {};
+interface Hotkeys {
+    [keycode: string]: KeyAction
+}
 
-    const cellHotkeys = {};
+interface AllHotkeys {
+    [source: string]: Hotkeys
+}
+
+interface Keybinding {
+    readonly ctrlKey: boolean;
+    readonly shiftKey: boolean;
+    readonly altKey: boolean;
+    readonly metaKey: boolean;
+    readonly keyCode: KeyCode;
+}
+
+export function getHotkeys() {
+    const hotkeys: AllHotkeys = {};
+
+    const cellHotkeys: Hotkeys = {};
     for (const [keycode, action] of Cell.keyMap) {
         const desc = action.desc;
         if (desc) {
-            const simpleKeybinding = createSimpleKeybinding(keycode, OS);
+            const simpleKeybinding: Keybinding = createSimpleKeybinding(keycode, OS);
             const keyCombo = keybindingToString(simpleKeybinding);
             cellHotkeys[keyCombo] = desc;
         }
     }
     hotkeys['Cells'] = cellHotkeys;
 
-    const codeCellHotkeys = {};
+    const codeCellHotkeys: Hotkeys = {};
     for (const [keycode, action] of CodeCell.keyMapOverrides) {
         const desc = action.desc;
         if (desc) {
@@ -38,7 +55,7 @@ export function getHotkeys() {
     return hotkeys;
 }
 
-function keybindingToString(simpleKeybinding) {
+function keybindingToString(simpleKeybinding: Keybinding): string {
     let keys = [];
     if (simpleKeybinding.ctrlKey) {
         keys.push("Ctrl")
@@ -71,37 +88,35 @@ export class KeyAction {
     /**
      * An action to be taken runAfter a KeyPress
      *
-     * @param fun                   A function of type (Position, Range, Selection, Cell) -> Boolean. The return type indicates whether to stop propa
+     * @param fun                   The actual action.
      * @param desc                  A human-readable description for this action (like "Run All Cells")
      * @param preventDefault        Whether to call preventDefault on the event
      * @param ignoreWhenSuggesting  Whether to ignore this action if the suggestion widget is currently open
      */
-    constructor(fun, desc, preventDefault = false, ignoreWhenSuggesting = true) {
-        this.fun = fun;
-        this.desc = desc;
-        this.preventDefault = preventDefault;
-        this.ignoreWhenSuggesting = ignoreWhenSuggesting;
-    }
+    constructor(readonly fun: (pos: IPosition, range: IRange, selection: ISelection, cell: Cell) => void,
+                public desc: string,
+                public preventDefault: boolean = false,
+                public ignoreWhenSuggesting: boolean = true) {}
 
-    withPreventDefault(pd) {
+    withPreventDefault(pd: boolean) {
         this.preventDefault = pd;
         return this;
     }
 
-    withIgnoreWhenSuggesting(i) {
-        this.ignoreWhenSuggesting = i;
+    withIgnoreWhenSuggesting(ignore: boolean) {
+        this.ignoreWhenSuggesting = ignore;
         return this;
     }
 
-    withDesc(desc) {
+    withDesc(desc: string) {
         this.desc = desc;
         return this;
     }
 
     // Create a new KeyAction that executes `otherAction` and then this action.
     // The new action takes the most restrictive configuration of `preventDefault` and `ignoreWhenSuggesting`
-    runAfter(firstAction) {
-        const fun = (position, range, selection, cell) => {
+    runAfter(firstAction: KeyAction) {
+        const fun = (position: IPosition, range: IRange, selection: ISelection, cell: Cell) => {
             firstAction.fun(position, range, selection, cell); // position, range, selection, cell might be mutated by this function!
             this.fun(position, range, selection, cell);
         };

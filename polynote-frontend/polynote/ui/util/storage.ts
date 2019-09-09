@@ -1,15 +1,15 @@
 'use strict';
 
-export class Storage {
-    constructor(defaults) {
-        this.defaults = defaults || {
-            recentNotebooks: [],
-            notebookLocations: {}
-        };
-        this.listeners = {}; // String -> [functions[oldVal, newVal]]
-    }
+type StorageListener = (oldValue: string | null, newValue: string | null) => void
 
-    set(name, value) {
+export class Storage {
+    constructor(readonly defaults: {[key: string]: any} = {
+                    recentNotebooks: [],
+                    notebookLocations: {}
+                },
+                public listeners: {[key: string]: StorageListener[]} = {}) {}
+
+    set(name: string, value: any) {
         const oldValue = this.get(name);
         const newValue = JSON.stringify(value);
         window.localStorage.setItem(name, newValue);
@@ -19,7 +19,7 @@ export class Storage {
         }
     }
 
-    get(name) {
+    get(name: string): any {
         const fromStorage = window.localStorage.getItem(name);
         if (fromStorage) {
             try {
@@ -32,7 +32,7 @@ export class Storage {
         return this.defaults[name];
     }
 
-    update(name, updateFn) {
+    update(name: string, updateFn: (oldValue: any) => string) {
         this.set(name, updateFn(this.get(name)))
     }
 
@@ -52,11 +52,11 @@ export class Storage {
         return Object.assign({}, ...Array.from(onlyMyStuff, ([k, v]) => ({[k]: v}) ))
     }
 
-    addStorageListener(name, fn) {
+    addStorageListener(name: string, fn: StorageListener) {
         this.listeners[name] = [...(this.listeners[name] || []), fn]
     }
 
-    clearStorageListener(name, fn) {
+    clearStorageListener(name: string, fn: StorageListener) {
         this.listeners[name] = this.listeners[name].filter(x => x !== fn);
     }
 }
@@ -65,16 +65,17 @@ export const storage = new Storage();
 
 // Preferences are backed by Storage, but they can only store Preference values
 export class Preferences {
+    private readonly preferencesKey = "preferences";
+    private preferences: Record<string, Preference> = {};
+
     constructor() {
-        this.preferencesKey = "preferences";
         this.preferences = {};
-        const rawPrefs = storage.get(this.preferencesKey) || {};
+        const rawPrefs: Record<string, Preference> = storage.get(this.preferencesKey) || {};
         for (const [key, json] of Object.entries(rawPrefs)) {
             if (json && json.value !== undefined && json.description !== undefined) {
                 this.preferences[key] = new Preference(json.value, json.description);
             } else {
-                // TODO: should this be an error?
-                console.warn(`Unable to decode preference ${key} with value ${json}`)
+                throw new Error(`Unable to decode preference ${key} with value ${JSON.stringify(json)}`)
             }
         }
 
@@ -94,7 +95,7 @@ export class Preferences {
     }
 
     // register a preference (only if it doesn't already exist)
-    register(name, description, initialValue) {
+    register(name: string, initialValue: any, description?: string) {
         if (!this.get(name)) {
             this.preferences[name] = new Preference(initialValue, description || "An unknown description!");
             this.sync();
@@ -102,7 +103,7 @@ export class Preferences {
         return name;
     }
 
-    set(name, newValue, description) {
+    set(name: string, newValue: any, description?: string) {
         const pref = this.get(name);
         if (pref) {
             pref.value = newValue;
@@ -114,7 +115,7 @@ export class Preferences {
         }
     }
 
-    get(name) {
+    get(name: string) {
         return this.preferences[name];
     }
 
@@ -123,7 +124,7 @@ export class Preferences {
         this.sync();
     }
 
-    update(name, updateFn) {
+    update(name: string, updateFn: (oldValue: Preference) => any) {
         this.set(name, updateFn(this.get(name)))
     }
 
@@ -135,10 +136,7 @@ export class Preferences {
 
 // Preferences are just values with a description which is used for display purposes
 export class Preference {
-    constructor(value, description) {
-        this.value = value;
-        this.description = description
-    }
+    constructor(public value: any, public description: string) {}
 }
 
 export const preferences = new Preferences();

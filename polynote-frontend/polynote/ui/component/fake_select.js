@@ -1,5 +1,5 @@
-import { UIEvent, UIEventTarget } from '../util/ui_event.js'
-import { button } from '../util/tags.js'
+import { UIEvent, UIEventTarget } from '../util/ui_event'
+import { button } from '../util/tags'
 
 export class SelectionChangedEvent extends UIEvent {
     constructor(changedFromEl, changedToEl, changedFromIndex, changedToIndex) {

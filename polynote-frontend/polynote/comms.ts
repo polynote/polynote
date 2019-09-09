@@ -90,7 +90,7 @@ export class SocketSession extends EventTarget {
         }
     }
 
-    addMessageListener(msgType: typeof Message, fn: (...args: any[]) => void, removeWhenFalse: boolean = false) {
+    addMessageListener(msgType: typeof Message, fn: ListenerCallback, removeWhenFalse: boolean = false) {
         const handler: MessageListener = [msgType, fn, removeWhenFalse];
         this.messageListeners.push(handler);
         return handler;

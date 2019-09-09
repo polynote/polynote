@@ -127,7 +127,7 @@ export class NotebookUpdate extends Message {
         }
 
         if (a instanceof InsertCell && b instanceof InsertCell && a.after === b.after) {
-            return new InsertCell(a.path, a.globalVersion, a.localVersion, b.cell.id, a.after);
+            return new InsertCell(a.path, a.globalVersion, a.localVersion, b.cell, a.after);
         } else if (a instanceof UpdateCell && b instanceof UpdateCell && a.id === b.id) {
             return new UpdateCell(a.path, a.globalVersion, a.localVersion, a.id, ContentEdit.rebaseEdits(a.edits, b.edits), a.metadata || b.metadata);
         } else {

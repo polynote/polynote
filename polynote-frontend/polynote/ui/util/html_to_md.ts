@@ -9,12 +9,12 @@
 // This is working for now, but later maybe bite the bullet and bring in turndown instead
 export const htmlToMarkdown = (function () {
 
-    const listMarkers = Object.freeze({
+    const listMarkers: {[key: string]: (index: number, indent?: string) => string} = Object.freeze({
         'ul': () => '* ',
-        'ol': (index, indent) => (index + 1) + '. '
+        'ol': (index: number, indent?: string) => (index + 1) + '. '
     });
 
-    const elTypes = Object.freeze({
+    const elTypes: {[key: string]: string} = Object.freeze({
         'p': 'block',
         'h1': 'block',
         'h2': 'block',
@@ -27,20 +27,20 @@ export const htmlToMarkdown = (function () {
         'ul': 'list',
     });
 
-    return function (outerEl) {
-        var currentListIndent = '';
+    return function (outerEl: Node) {
+        let currentListIndent = '';
 
 
-        function convertInline(node) {
+        function convertInline(node: Element) {
             let accum = "";
 
             function accumChildren() {
-                for (var child of node.childNodes) {
-                    accum += convertInline(child);
+                for (let child of node.childNodes) {
+                    accum += convertInline(child as Element);
                 }
             }
 
-            if (node.nodeType === 1) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
                 switch (node.nodeName.toLowerCase()) {
                     case 'b':
                     case 'strong':
@@ -66,11 +66,12 @@ export const htmlToMarkdown = (function () {
                     case 'a':
                         accum += `[`;
                         accumChildren();
-                        accum += '](' + node.href + ')';
+                        accum += '](' + (node as HTMLAnchorElement).href + ')';
                         break;
 
                     case 'img':
-                        accum += '![' + node.getAttribute('alt') + '](' + node.src + ')';
+                        const img = node as HTMLImageElement;
+                        accum += '![' + img.getAttribute('alt') + '](' + img.src + ')';
                         break;
 
                     case 'code':
@@ -78,17 +79,18 @@ export const htmlToMarkdown = (function () {
                         break;
 
                     case 'span':
-                        if (node.hasAttribute('data-tex-source') && (node.classList.contains('katex-display') || node.classList.contains('katex-block'))) {
-                            accum += '$$' + node.getAttribute('data-tex-source') + '$$\n';
+                        const span = node as HTMLSpanElement;
+                        if (span.hasAttribute('data-tex-source') && (span.classList.contains('katex-display') || span.classList.contains('katex-block'))) {
+                            accum += '$$' + span.getAttribute('data-tex-source') + '$$\n';
                         }
-                        else if (node.hasAttribute('data-tex-source')) {
+                        else if (span.hasAttribute('data-tex-source')) {
                             // inline TeX source
-                            accum += '$' + node.getAttribute('data-tex-source') + '$';
+                            accum += '$' + span.getAttribute('data-tex-source') + '$';
                         } else {
                             // in case some styles were set with CSS
-                            const style = window.getComputedStyle(node);
+                            const style = window.getComputedStyle(span);
                             const stack = [];
-                            if (parseInt(style.fontWeight) >= 700) {
+                            if (parseInt(style.fontWeight || "") >= 700) {
                                 stack.push('**');
                             }
                             if (style.fontStyle === 'italic') {
@@ -102,19 +104,19 @@ export const htmlToMarkdown = (function () {
                     default:
                         accum += node.outerHTML;
                 }
-            } else if (node.nodeType === 3) {
+            } else if (node.nodeType === Node.TEXT_NODE && node.nodeValue) {
                 accum = node.nodeValue;
             }
 
             return accum;
         }
 
-        function convertList(items, marker) {
+        function convertList(items: HTMLCollection, marker: (idx: number, indent: string) => string) {
             const indent = currentListIndent;
             const indentRest = '  ' + indent;
             currentListIndent = '   ' + indent;
 
-            function listItem(str, index) {
+            function listItem(str: string, index: number) {
                 const markerStr = marker(index, indent);
                 const markerPadding = ''.padEnd(markerStr.length, ' ');
                 const indentLine = '\n' + markerPadding;
@@ -136,15 +138,15 @@ export const htmlToMarkdown = (function () {
             return accum.join('\n');
         }
 
-        function setex(str, marker) {
+        function setex(str: string, marker?: string) {
             return [str, ''.padEnd(str.length, marker)].join('\n');
         }
 
-        function atx(str, level) {
+        function atx(str: string, level: number) {
             return [''.padEnd(level, '#'), ' ', str].join('');
         }
 
-        function convertBlock(node) {
+        function convertBlock(node: Element) {
             let inside = '';
             if (node.hasAttribute('data-tex-source') && (node.classList.contains('katex-display') || node.classList.contains('katex-block'))) {
                inside = '$$' + node.getAttribute('data-tex-source') + '$$';
@@ -171,15 +173,15 @@ export const htmlToMarkdown = (function () {
             }
         }
 
-        function convertChildren(node) {
+        function convertChildren(node: Element) {
             return [...node.childNodes].map(convert).join('');
         }
 
-        function stripBreaks(str) {
+        function stripBreaks(str: string) {
             return str.replace(/^[\r\n]+/, '').replace(/[\r\n]+$/,'');
         }
 
-        function convert(node) {
+        function convert(node: Element): string {
             const nodeName = node.nodeName && node.nodeName.toLowerCase();
             if (nodeName && elTypes[nodeName] === 'block') {
                 return stripBreaks(convertBlock(node)) + '\n\n';

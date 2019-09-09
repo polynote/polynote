@@ -1,5 +1,5 @@
-import {div, span, textbox, para} from "../util/tags.js";
-import { TextCell } from "./cell.js"
+import {div, span, textbox, para} from "../util/tags";
+import { TextCell } from "./cell"
 import katex from "katex";
 
 export class LaTeXEditor extends EventTarget {

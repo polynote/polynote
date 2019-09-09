@@ -5,7 +5,7 @@ import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
 import {preferences, storage} from "../util/storage";
-import { UIEvent } from '../util/ui_event.js';
+import { UIEvent } from '../util/ui_event';
 import {CallbackEvent} from "../util/ui_event";
 
 export class About extends FullScreenModal {

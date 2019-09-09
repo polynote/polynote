@@ -1,7 +1,7 @@
 'use strict';
 
 
-import { div, button, iconButton, h4 } from '../util/tags.js'
+import { div, button, iconButton, h4 } from '../util/tags'
 import {
     BoolType,
     ByteType,
