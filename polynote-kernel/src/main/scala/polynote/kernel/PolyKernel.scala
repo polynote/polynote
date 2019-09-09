@@ -26,6 +26,7 @@ import polynote.runtime.{LazyDataRepr, StreamingDataRepr, TableOp, UpdatingDataR
 import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
+import scala.collection.JavaConverters._
 import scala.concurrent.duration.MILLISECONDS
 import scala.collection.immutable.SortedMap
 import scala.reflect.io.{AbstractFile, VirtualDirectory}
@@ -258,7 +259,9 @@ class PolyKernel private[kernel] (
     }
   }
 
-  def shutdown(): IO[Unit] = taskManager.shutdown()
+  def shutdown(): IO[Unit] = {
+      interpreters.values.asScala.toList.map(_.shutdown()).sequence >> taskManager.shutdown()
+  }
 
   def info: IO[Option[KernelInfo]] = IO.pure(
     // TODO: This should really be in the ServerHandshake as it isn't a Kernel-level thing...

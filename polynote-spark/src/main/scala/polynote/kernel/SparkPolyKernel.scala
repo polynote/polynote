@@ -160,7 +160,7 @@ class SparkPolyKernel(
 
   override def cancelTasks(): IO[Unit] = super.cancelTasks() >> IO(DAGSchedulerThief(session).foreach(_.cancelAllJobs()))
 
-  override def shutdown(): IO[Unit] = super.shutdown() >> cancelTasks() >> contextShift.evalOn(ctx.executionContext)(IO(session.stop())) >> IO(logger.info("Stopped spark session"))
+  override def shutdown(): IO[Unit] = cancelTasks() >> contextShift.evalOn(ctx.executionContext)(IO(session.stop())) >> super.shutdown() >> IO(logger.info("Stopped spark session"))
 }
 
 object SparkPolyKernel {
