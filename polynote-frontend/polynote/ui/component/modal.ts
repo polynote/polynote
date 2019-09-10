@@ -1,10 +1,22 @@
 "use strict";
 
 import {UIEvent, UIEventTarget} from "../util/ui_event"
-import { div, button, iconButton } from "../util/tags"
+import {div, button, iconButton, TagElement} from "../util/tags"
+
+interface ModalOptions {
+    title?: string | string[],
+    windowClasses?: string[]
+}
 
 export class Modal extends UIEventTarget {
-    constructor(content, opts) {
+    private container: TagElement;
+    private background: TagElement;
+    private window: TagElement;
+    private titleBar: TagElement;
+    private titleContent: TagElement;
+    readonly content: TagElement;
+
+    constructor(content: TagElement, opts: ModalOptions) {
         super();
         if (!content) {
             content = div([], []);
@@ -35,7 +47,7 @@ export class Modal extends UIEventTarget {
         ]);
     }
 
-    setTitle(title) {
+    setTitle(title: string) {
         this.titleContent.innerHTML = "";
         this.titleContent.appendChild(div([], title));
     }
@@ -52,7 +64,7 @@ export class Modal extends UIEventTarget {
 }
 
 export class FullScreenModal extends Modal {
-    constructor(content, opts={}) {
+    constructor(content: TagElement, opts: ModalOptions = {}) {
         opts.windowClasses = [...(opts.windowClasses || []), 'full-screen'];
         super(
             content,

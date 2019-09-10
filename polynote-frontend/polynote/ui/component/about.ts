@@ -1,14 +1,15 @@
 "use strict";
 
-import {button, div, dropdown, h2, h3, iconButton, span, table, tag} from "../util/tags";
+import {button, div, dropdown, h2, h3, iconButton, span, table, tag, TagElement} from "../util/tags";
 import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
 import {preferences, storage} from "../util/storage";
 import { UIEvent } from '../util/ui_event';
-import {CallbackEvent} from "../util/ui_event";
+import * as monaco from "monaco-editor";
 
 export class About extends FullScreenModal {
+    readonly storageUpdateListeners: string[];
     constructor() {
         super(
             div([], []),
@@ -32,7 +33,6 @@ export class About extends FullScreenModal {
                 ["Server Commit", commit]
             ];
             const tableEl = table(['server-info'], {
-                header: false,
                 classes: ['key', 'val'],
                 rowHeading: false,
                 addToTop: false
@@ -60,7 +60,6 @@ export class About extends FullScreenModal {
         for (const [context, kvs] of Object.entries(hotkeys)) {
             el.appendChild(h3([], [context]));
             const tableEl = table([], {
-                header: false,
                 classes: ['key', 'val'],
                 rowHeading: false,
                 addToTop: false
@@ -99,7 +98,6 @@ export class About extends FullScreenModal {
         ]);
 
         const prefsTable = table([], {
-            header: false,
             classes: ['key', 'val', 'desc'],
             rowHeading: false,
             addToTop: false
@@ -111,6 +109,9 @@ export class About extends FullScreenModal {
             if (typeof value === "boolean") {
                 valueEl = dropdown([], {true: "true", false: "false"}).change(evt => {
                     const self = evt.currentTarget;
+                    if (! self || ! (self instanceof HTMLSelectElement)) {
+                        throw new Error(`Unexpected Event target for event ${JSON.stringify(evt)}! Expected \`currentTarget\` to be an HTMLSelectElement but instead got ${JSON.stringify(self)}`)
+                    }
                     const value = self.options[self.selectedIndex].value === "true";
                     preferences.set(k, value)
                 });
@@ -125,7 +126,6 @@ export class About extends FullScreenModal {
         preferencesEl.appendChild(prefsTable);
 
         const storageTable = table([], {
-            header: false,
             classes: ['key', 'val'],
             rowHeading: false,
             addToTop: false
@@ -134,7 +134,7 @@ export class About extends FullScreenModal {
         for (const [k, v] of Object.entries(storage.show())) {
             const valueEl = div(['json'], []);
 
-            const setValueEl = (value) => {
+            const setValueEl = (value: any) => {
                 monaco.editor.colorize(value, "json", {}).then(function(result) {
                     valueEl.innerHTML = result;
                 });
@@ -158,11 +158,11 @@ export class About extends FullScreenModal {
     }
 
     runningKernels() {
-        let content;
+        let content: TagElement = div([], ['Looks like no kernels are running now!']);
         const el = div(["running-kernels"], [
             div([], [
                 h2([], ["Running Kernels"]),
-                content = div([], ['Looks like no kernels are running now!'])
+                content
             ])
         ]);
 
@@ -203,7 +203,7 @@ export class About extends FullScreenModal {
                     rowEl.classList.add('kernel-status', state)
                 }
 
-                if (statuses.length > 0) content.replaceChild(tableEl, content.firstChild);
+                if (statuses.length > 0) content.replaceChild(tableEl, content.firstChild!);
             });
         };
         getKernelStatuses();
@@ -211,7 +211,7 @@ export class About extends FullScreenModal {
         return el;
     }
 
-    show(section) {
+    show(section?: string) {
         const tabs = {
             'About': this.aboutMain.bind(this),
             'Hotkeys': this.hotkeys.bind(this),
@@ -219,7 +219,7 @@ export class About extends FullScreenModal {
             'Running Kernels': this.runningKernels.bind(this),
         };
         const tabnav = new TabNav(tabs);
-        this.content.replaceChild(tabnav.container, this.content.firstChild);
+        this.content.replaceChild(tabnav.container, this.content.firstChild!);
         if (section) tabnav.showItem(section);
 
         super.show();

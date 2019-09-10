@@ -17,7 +17,7 @@ function appendContent(el: Node, content: Content) {
     }
 }
 
-interface TagElement extends Omit<HTMLElement, "click"> { // since we are overwriting `click` with our own impl, we need to omit it from HTMLElement.
+export interface TagElement extends Omit<HTMLElement, "click"> { // since we are overwriting `click` with our own impl, we need to omit it from HTMLElement.
     attr(a: string, b: string): TagElement
     attrs(obj: Record<string, string | boolean>): TagElement
     withId(id: string): TagElement

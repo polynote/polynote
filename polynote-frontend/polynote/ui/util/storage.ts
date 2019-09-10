@@ -56,8 +56,12 @@ export class Storage {
         this.listeners[name] = [...(this.listeners[name] || []), fn]
     }
 
-    clearStorageListener(name: string, fn: StorageListener) {
-        this.listeners[name] = this.listeners[name].filter(x => x !== fn);
+    clearStorageListener(name: string, fn?: StorageListener) {
+        if (fn) {
+            this.listeners[name] = this.listeners[name].filter(x => x !== fn);
+        } else {
+            this.listeners[name] = []
+        }
     }
 }
 

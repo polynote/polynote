@@ -1,9 +1,8 @@
-"use strict";
-
-export class UIEvent extends CustomEvent {
-    constructor(type, detail) {
+export class UIEvent<T> extends CustomEvent<T> {
+    public propagationStopped = false;
+    public originalTarget: UIEventTarget;
+    constructor(type: string, detail: T) {
         super(type, {detail: detail});
-        this.propagationStopped = false;
     }
 
     stopPropagation() {
@@ -18,98 +17,101 @@ export class UIEvent extends CustomEvent {
         return c;
     }
 
-    forward(el) {
+    forward(el: EventTarget) {
         el.dispatchEvent(this.copy())
     }
 }
 
 // Represents a request adding a listener to an event on a parent instance.
-export class EventRegistration extends UIEvent {
-    constructor(event) {
-        if (! event instanceof CallbackEvent) {
-            throw Error("Must pass in a callback event, otherwise I won't know what to do when I get this event!")
-        }
+export class EventRegistration<T> extends UIEvent<T> {
+    constructor(event: CallbackEvent<T>) {
         super(EventRegistration.registrationId(event.type), event.detail)
     }
 
-    static registrationId(id) {
+    static registrationId(id: string) {
         return id + "EventRegistration";
     }
 }
 
-export class Request extends UIEvent {
-    constructor(event) {
-        if (! event instanceof CallbackEvent) {
-            throw Error("Must pass in a callback event, otherwise I won't know what to do when I get this event!")
-        }
+export class Request<T> extends UIEvent<T> {
+    constructor(event: CallbackEvent<T>) {
         super(Request.requestId(event.type), event.detail)
     }
 
-    static requestId(id) {
+    static requestId(id: string) {
         return id + "Request";
     }
 }
 
-export class CallbackEvent extends UIEvent {
-    constructor(id, callback, detail={}) {
-        const det = Object.assign({callback: callback}, detail);
+interface HasCallback {
+    callback: (...args: any[]) => void
+}
+
+export class CallbackEvent<T> extends UIEvent<T & HasCallback> {
+    constructor(id: string, callback: (...args: any[]) => void, detail?: T) {
+        const det = Object.assign({callback: callback}, detail || {}) as T & HasCallback;
         super(id, det);
     }
 }
 
 export class UIEventTarget extends EventTarget {
-    constructor(eventParent) {
+    private readonly listeners: Record<string, EventListenerOrEventListenerObject[]>;
+    constructor(private eventParent?: UIEventTarget) {
         super();
-        this.eventParent = eventParent || null;
         this.listeners = {};
     }
 
-    setEventParent(parent) {
+    setEventParent(parent: UIEventTarget) {
         this.eventParent = parent;
         return this;
     }
 
     // Register your callback with someone upstream who knows what to do when they see your registration (fingers crossed!)
-    registerEventListener(type, callback) {
+    registerEventListener(type: string, callback: (...args: any[]) => void) {
         const registration = new EventRegistration(new CallbackEvent(type, callback));
         return this.dispatchEvent(registration);
     }
 
     // Listen for registration requests that you know how to handle
-    handleEventListenerRegistration(eventType, listener, options) {
+    handleEventListenerRegistration(eventType: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
         const type = EventRegistration.registrationId(eventType);
         return this.addEventListener(type, listener, options);
     }
 
     // Send a request to be responded to by someone upstream
-    request(type, callback) {
+    request(type: string, callback: (...args: any[]) => void) {
         const request = new Request(new CallbackEvent(type, callback));
         return this.dispatchEvent(request);
     }
 
     // Respond to a request
-    respond(type, response) {
+    respond(type: string, response: (...args: any[]) => void) {
         const requestType = Request.requestId(type);
         return this.addEventListener(requestType, response)
     }
 
-    dispatchEvent(event) {
-        event.originalTarget = event.originalTarget || this;
-        super.dispatchEvent(event);
-        if(this.eventParent && !event.propagationStopped) {
-            if (!this.eventParent.dispatchEvent) {
-                console.log('Event parent is not an event target!', this.eventParent);
-                return;
-            }
-            this.eventParent.dispatchEvent(event.copy());
+    dispatchEvent(event: Event) {
+        if (event instanceof UIEvent) {
+            event.originalTarget = event.originalTarget || this;
         }
+        const res = super.dispatchEvent(event);
+        if (event instanceof UIEvent) {
+            if(this.eventParent && !event.propagationStopped) {
+                if (!this.eventParent.dispatchEvent) {
+                    console.log('Event parent is not an event target!', this.eventParent);
+                    return res;
+                }
+                this.eventParent.dispatchEvent(event.copy());
+            }
+        }
+        return res;
     }
 
-    addEventChild(child) {
+    addEventChild(child: UIEventTarget) {
         return child.setEventParent(this);
     }
 
-    addEventListener(type, listener, options) {
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
         super.addEventListener(type, listener, options);
         if (!this.listeners[type]) {
             this.listeners[type] = [];
@@ -118,11 +120,11 @@ export class UIEventTarget extends EventTarget {
         return listener;
     }
 
-    removeEventListener(type, listener, options) {
+    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
         super.removeEventListener(type, listener, options);
         const listenersOfType = this.listeners[type];
         if (listenersOfType) {
-            const listenerIndex = this.listeners.indexOf(listener);
+            const listenerIndex = listenersOfType.indexOf(listener);
             if (listenerIndex !== -1) {
                 listenersOfType.splice(listenerIndex, 1);
             }
@@ -130,7 +132,7 @@ export class UIEventTarget extends EventTarget {
         return listener;
     }
 
-    addEventChildren(children) {
+    addEventChildren(children: UIEventTarget[]) {
         for (const child of children) {
             this.addEventChild(child);
         }
