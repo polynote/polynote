@@ -31,10 +31,43 @@ trait State {
   def withPrev(prev: State): State
   def updateValues(fn: ResultValue => ResultValue): State
 
+  /**
+    * Perform the side effect for each state, moving back through states in reverse chronological order
+    */
+  def foreachPrev(fn: State => Unit): Unit = {
+    var state = this
+    while (!(state eq Root)) {
+      fn(state)
+      state = state.prev
+    }
+  }
+
+  /**
+    * @return a list of states in reverse chronological order
+    */
+  def toList: List[State] = collect { case s => s }
+
+  /**
+    * @return a list of states in reverse chronological order, until (but not including) the predicate holds
+    */
+  def takeWhile(fn: State => Boolean): List[State] = {
+    var state = this
+    val result = new ListBuffer[State]
+    while (!(state eq Root) && !fn(state)) {
+      result += state
+      state = state.prev
+    }
+    result.toList
+  }
+
+  /**
+    * Evaluate the given partial function in all states where it's defined, travelling in reverse chronological order
+    * and collecting results into a List.
+    */
   def collect[A](pf: PartialFunction[State, A]): List[A] = {
     val buf = new ListBuffer[A]
     var state = this
-    while (state != Root) {
+    while (!(state eq Root)) {
       if (pf.isDefinedAt(state)) {
         buf += pf(state)
       }

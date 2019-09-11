@@ -6,7 +6,7 @@ import cats.syntax.traverse._
 import cats.instances.list._
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.{Output, Result, ScalaCompiler, TaskInfo}
-import polynote.testing.{ValueMap, ZIOSpec}
+import polynote.testing.{InterpreterSpec, ValueMap, ZIOSpec}
 import zio.{TaskR, ZIO}
 import zio.blocking.Blocking
 import zio.clock.Clock
@@ -20,17 +20,9 @@ import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.reflect.io.VirtualDirectory
 import scala.tools.nsc.Settings
 
-class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
+class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
-  private val settings = ScalaCompiler.defaultSettings(new Settings())
-  private val outDir = new VirtualDirectory("(memory)", None)
-  settings.outputDirs.setSingleOutput(outDir)
-
-  private val classLoader = new AbstractFileClassLoader(outDir, getClass.getClassLoader)
-  private val compiler = ScalaCompiler(settings, ZIO.succeed(classLoader)).runIO()
-  import compiler.{cellCode, CellCode}
-
-  private val interpreter = ScalaInterpreter().provide(new ScalaCompiler.Provider {
+  val interpreter: ScalaInterpreter = ScalaInterpreter().provide(new ScalaCompiler.Provider {
     val scalaCompiler: ScalaCompiler = compiler
   }).runIO()
   import interpreter.ScalaCellState
@@ -127,7 +119,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
   "cases from previous scala interpreter" - {
     "be able to display html using the kernel runtime reference" in {
       val code = """kernel.display.html("hi")"""
-      assertScalaOutput(code) {
+      assertOutput(code) {
         (vars, output) =>
           vars.toSeq shouldBe empty
           output should contain only Output("text/html", "hi")
@@ -146,7 +138,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
           |val m = Map(x -> y, y -> 100, "hey!" -> l2)
           |val m2 = Map("hm" -> m, "humm" -> m)
       """.stripMargin
-      assertScalaOutput(code) {
+      assertOutput(code) {
         (vars, output) =>
           vars.toSeq.filterNot(_._1 == "z") should contain theSameElementsAs Seq(
             "x" -> 1,
@@ -170,7 +162,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
           |val y = 2
           |x + y
       """.stripMargin
-      assertScalaOutput(code) {
+      assertOutput(code) {
         (vars, output) =>
           vars.toSeq should contain theSameElementsAs Seq(
             "x" -> 1,
@@ -192,7 +184,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
           |val answer = x + y
           |answer
       """.stripMargin
-      assertScalaOutput(code) {
+      assertOutput(code) {
         (vars, output) =>
           vars.toSeq should contain theSameElementsAs Seq(
             "x" -> 1,
@@ -216,7 +208,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
         """
           |println("Do you like muffins?")
       """.stripMargin
-      assertScalaOutput(code) {
+      assertOutput(code) {
         (vars, output) =>
           vars shouldBe empty
           output should contain only Output("text/plain; rel=stdout", "Do you like muffins?\n")
@@ -229,7 +221,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
           |val (foo, bar) = 1 -> "one"
       """.stripMargin
 
-      assertScalaOutput(code) {
+      assertOutput(code) {
         (vars, output) =>
           vars.toSeq should contain theSameElementsAs List("foo" -> 1, "bar" -> "one")
       }
@@ -237,29 +229,6 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with ZIOSpec {
 
   }
 
-  private def assertScalaOutput(code: String)(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit =
-    assertScalaOutput(List(code))(assertion)
 
-  private def assertScalaOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit= {
-    val (finalState, interpResults) = code.toList.map(interp).sequence.run(State.id(1)).runIO()
-    val terminalResults = interpResults.foldLeft((Map.empty[String, Any], List.empty[Result])) {
-      case ((vars, results), next) =>
-        val nextVars = vars ++ next.state.values.map(v => v.name -> v.value).toMap
-        val nextOutputs = results ++ next.env.publishResult.toList.runIO()
-        (nextVars, nextOutputs)
-    }
-    assertion.tupled(terminalResults)
-  }
-
-  type ITask[A] = TaskR[Clock with Console with System with Random with Blocking, A]
-  private def interp(code: String): StateT[ITask, State, InterpResult] = StateT[ITask, State, InterpResult] {
-    state => MockEnv(state.id).flatMap {
-      env => interpreter.run(code, state).map {
-        newState => State.id(newState.id + 1, newState) -> InterpResult(newState, env)
-      }.provide(env.toCellEnv(classLoader))
-    }
-  }
-
-  private case class InterpResult(state: State, env: MockEnv)
 
 }

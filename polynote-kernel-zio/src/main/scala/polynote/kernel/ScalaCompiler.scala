@@ -1,6 +1,7 @@
 package polynote.kernel
 
 import java.io.File
+
 import cats.syntax.traverse._
 import cats.instances.list._
 import polynote.kernel.environment.Config
@@ -14,6 +15,7 @@ import zio.interop.catz._
 import scala.collection.mutable
 import scala.reflect.internal.util.{AbstractFileClassLoader, NoSourceFile, Position, SourceFile}
 import scala.reflect.io.VirtualDirectory
+import scala.reflect.runtime.universe
 import scala.runtime.BoxedUnit
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
@@ -61,6 +63,15 @@ class ScalaCompiler private (
   }
 
   private[kernel] def unsafeFormatType(typ: Type): String = formatTypeInternal(typ)
+
+  private val runtimeMirror = ZIO.accessM[ClassLoader](cl => ZIO(scala.reflect.runtime.universe.runtimeMirror(cl)))
+    .memoize.flatten
+    .provideSomeM(classLoader)
+
+  def reflect(value: Any): ZIO[Any, Throwable, universe.InstanceMirror] = runtimeMirror.flatMap {
+    mirror => ZIO(mirror.reflect(value))
+  }
+
 
   def formatType(typ: Type): TaskR[Blocking, String] =
     zio.blocking.effectBlocking(formatTypeInternal(typ)).lock(compilerThread)

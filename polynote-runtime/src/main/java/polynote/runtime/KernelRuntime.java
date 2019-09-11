@@ -3,12 +3,12 @@ package polynote.runtime;
 import java.io.Serializable;
 
 public class KernelRuntime implements Serializable {
-    public static interface Display {
-        default void html(String content) {
-            content("text/html", content);
-        }
-
+    public interface Display {
         void content(String contentType, String content);
+
+        default void html(String content) { content("text/html", content); }
+        default void write(String str) { content("text/plain; rel=stdout", str); }
+        default void text(String str) { content("text/plain", str); }
     }
 
     public final Display display;

@@ -21,6 +21,7 @@ import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
+import scala.reflect.{ClassTag, classTag}
 import scala.util.Try
 
 class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: DependencyProvider) extends LanguageInterpreter[IO] {
@@ -139,6 +140,16 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
       val result = getPyResult("___anon___").map(_._1.asInstanceOf[Map[Any, Any]]).getOrElse(Map.empty)
       jep.eval("del ___anon___")
       result
+    }
+
+    override def asScalaMapOf[K: ClassTag, V: ClassTag](obj: PythonObject): Map[K, V] = run {
+      val K = classTag[K].runtimeClass.asInstanceOf[Class[K]]
+      val V = classTag[V].runtimeClass.asInstanceOf[Class[V]]
+      val map = jep.getValue("__polynote_to_java_map__", classOf[PyCallable])
+      val result = map.callAs(classOf[java.util.HashMap[PyObject, PyObject]], obj.unwrap)
+      result.asScala.collect {
+        case (k: PyObject, v: PyObject) => (k.as(K), v.as(V))
+      }.toMap
     }
   }
 
