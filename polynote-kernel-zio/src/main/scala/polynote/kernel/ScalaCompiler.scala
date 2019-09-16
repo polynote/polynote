@@ -72,6 +72,10 @@ class ScalaCompiler private (
     .memoize.flatten
     .provideSomeM(classLoader)
 
+  private val importer: global.Importer { val from: scala.reflect.runtime.universe.type } = global.mkImporter(scala.reflect.runtime.universe)
+
+  def importType[T : scala.reflect.runtime.universe.TypeTag]: Type = importer.importType(scala.reflect.runtime.universe.typeOf[T])
+
   def reflect(value: Any): ZIO[Any, Throwable, universe.InstanceMirror] = runtimeMirror.flatMap {
     mirror => ZIO(mirror.reflect(value))
   }

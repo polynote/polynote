@@ -36,8 +36,6 @@ class KernelPublisher private (
   closed: Promise[Throwable, Unit]
 ) {
 
-  private val localNotebookEnv = CurrentNotebook.of(currentNotebook)
-
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
   private case class LocalCellEnv(notebookPath: ShortString, cellID: CellID) extends CellEnvT {
@@ -90,13 +88,17 @@ class KernelPublisher private (
   } yield result
 
   def completionsAt(cellID: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv, List[Completion]] = for {
+    notebook    <- versionedNotebook.get
+    env          = LocalCellEnv(notebook._2.path, cellID)
     kernel      <- kernel
-    completions <- kernel.completionsAt(cellID, pos).provide(localNotebookEnv)
+    completions <- kernel.completionsAt(cellID, pos).provideSomeM(Env.enrich[BaseEnv with GlobalEnv](env: CellEnv))
   } yield completions
 
   def parametersAt(cellID: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv, Option[Signatures]] = for {
+    notebook    <- versionedNotebook.get
+    env          = LocalCellEnv(notebook._2.path, cellID)
     kernel      <- kernel
-    signatures  <- kernel.parametersAt(cellID, pos).provide(localNotebookEnv)
+    signatures  <- kernel.parametersAt(cellID, pos).provideSomeM(Env.enrich[BaseEnv with GlobalEnv](env: CellEnv))
   } yield signatures
 
   def kernelStatus(): Task[KernelBusyState] = for {

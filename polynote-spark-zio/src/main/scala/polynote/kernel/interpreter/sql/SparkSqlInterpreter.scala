@@ -42,7 +42,7 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
 
           val result = spark.sql(code)
 
-          State.id(state.id, state.prev, List(new ResultValue("Out", "DataFrame", SparkReprsOf.dataFrame(result).toList, state.id, result, typeOf[DataFrame], None)))
+          State.id(state.id, state.prev, List(new ResultValue("Out", "DataFrame", SparkReprsOf.dataFrame(result).toList, state.id, result, compiler.importType[DataFrame], None)))
         }
     }
   }
@@ -92,9 +92,10 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
         val ident = Option(ctx.table).map(_.getText).getOrElse("")
         db match {
           case None =>
-            availableSymbols.range(ident, ident.dropRight(1) + Char.MaxValue).toList.map {
+            val syms = availableSymbols.range(ident, ident.dropRight(1) + Char.MaxValue).toList.map {
               sym => Completion(sym, Nil, Nil, ShortString(""), CompletionType.Term)
             }
+            syms
 
           case Some(dbName) =>
             val dbTables = tables.getOrElse(dbName, new mutable.TreeSet[String]())

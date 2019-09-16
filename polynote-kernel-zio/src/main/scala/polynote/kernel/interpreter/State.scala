@@ -108,8 +108,11 @@ trait State {
     * Find the furthest state in the chain where the predicate still holds
     */
   def rewindWhile(predicate: State => Boolean): State = {
+    if (!predicate(this)) {
+      return this
+    }
     var s = this
-    while(s != Root && predicate(s)) {
+    while(s != Root && predicate(s.prev)) {
       s = s.prev
     }
     s

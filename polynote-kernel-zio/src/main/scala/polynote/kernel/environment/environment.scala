@@ -9,7 +9,7 @@ import polynote.env.ops.Enrich
 import polynote.kernel.interpreter.CellExecutor
 import polynote.kernel.util.Publish
 import polynote.kernel.{CellEnv, ExecutionStatus, InterpreterEnv, InterpreterEnvT, KernelStatusUpdate, Output, Result, TaskInfo}
-import polynote.messages.{CellID, Message, Notebook, NotebookConfig}
+import polynote.messages.{CellID, Message, Notebook, NotebookCell, NotebookConfig}
 import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
 import zio.internal.Executor
@@ -130,6 +130,10 @@ object CurrentNotebook {
 
   def get: TaskR[CurrentNotebook, Notebook] = ZIO.accessM[CurrentNotebook](_.currentNotebook.get)
 
+  def getCell(id: CellID): TaskR[CurrentNotebook, NotebookCell] = get.flatMap {
+    notebook => ZIO.fromOption(notebook.getCell(id)).mapError(_ => new NoSuchElementException(s"No such cell $id in notebook ${notebook.path}"))
+  }
+
   def update(fn: Notebook => Notebook): TaskR[CurrentNotebook, Notebook] = ZIO.accessM[CurrentNotebook] {
     cn => cn.currentNotebook.modify(notebook => fn(notebook) match { case nb => (nb, nb) })
   }
@@ -183,6 +187,12 @@ object InterpreterEnvironment {
     env            <- ZIO.access[Blocking with CellEnv with CurrentTask](identity)
     currentRuntime <- CurrentRuntime.from(cellID)
   } yield InterpreterEnvironment(env.blocking, env.publishResult, env.publishStatus, env.currentTask, currentRuntime.currentRuntime)
+
+  def noTask(cellID: CellID): TaskR[Blocking with CellEnv, InterpreterEnvironment] = for {
+    env            <- ZIO.access[Blocking with CellEnv](identity)
+    taskRef        <- Ref[Task].of(TaskInfo("None"))
+    currentRuntime <- CurrentRuntime.from(cellID, env.publishResult, env.publishStatus, taskRef)
+  } yield InterpreterEnvironment(env.blocking, env.publishResult, env.publishStatus, taskRef, currentRuntime.currentRuntime)
 }
 
 /**

@@ -8,13 +8,14 @@ import cats.effect.concurrent.Ref
 import cats.syntax.traverse._
 import cats.instances.list._
 import fs2.concurrent.SignallingRef
+import polynote.kernel.Kernel.InterpreterNotStarted
 import polynote.kernel.dependency.ZIOCoursierFetcher
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask, Env, InterpreterEnvironment, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.State.Root
 import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.kernel.interpreter.scal.ScalaInterpreter
 import polynote.kernel.util.RefMap
-import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, Streaming, Updating, truncateTinyString}
+import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
 import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr}
 import scodec.bits.ByteVector
 import zio.{Task, TaskR, ZIO}
@@ -46,7 +47,7 @@ class LocalKernel private[kernel] (
         interpreter   <- getOrLaunch(cell.language, CellID(0)).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](interpEnv: InterpreterEnv))
         state         <- interpreterState.get
         prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                    // find the latest executed state that correlates to a notebook cell
-        prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(state.rewindWhile(s => !(s.prev eq Root)))
+        prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(state.rewindWhile(_.id >= -1))
         _             <- PublishResult(ClearResults())
         clock         <- ZIO.access[Clock](_.clock)                                                                   // time the execution and notify clients of timing
         start         <- clock.currentTime(TimeUnit.MILLISECONDS)
@@ -82,19 +83,19 @@ class LocalKernel private[kernel] (
     }
   }
 
-  override def completionsAt(id: CellID, pos: Int): TaskR[CurrentNotebook, List[Completion]] = {
+  override def completionsAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, List[Completion]] = {
     for {
-      (cell, interp, state) <- cellInterpreter(id)
-      completions           <- interp.completionsAt(cell.content.toString, pos, state).mapError(_ => ())
+      (cell, interp, state) <- cellInterpreter(id, forceStart = true)
+      completions           <- interp.completionsAt(cell.content.toString, pos, state)
     } yield completions
-    }.option.map(_.getOrElse(Nil))
+  }.catchAll(_ => ZIO.succeed(Nil))
 
-  override def parametersAt(id: CellID, pos: Int): TaskR[CurrentNotebook, Option[Signatures]] = {
+  override def parametersAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, Option[Signatures]] = {
     for {
-      (cell, interp, state) <- cellInterpreter(id)
-        signatures            <- interp.parametersAt(cell.content.toString, pos, state).mapError(_ => ())
+      (cell, interp, state) <- cellInterpreter(id, forceStart = true)
+      signatures            <- interp.parametersAt(cell.content.toString, pos, state).mapError(_ => ())
     } yield signatures
-    }.catchAll(_ => ZIO.succeed(None))
+  }.catchAll(_ => ZIO.succeed(None))
 
   override def init(): TaskR[BaseEnv with GlobalEnv with CellEnv, Unit] = TaskManager.run("Predef", "Predef") {
     for {
@@ -153,16 +154,25 @@ class LocalKernel private[kernel] (
 
   /**
     * Get the cell with the given ID along with its interpreter and state. If its interpreter hasn't been started,
-    * the overall result is None.
+    * the overall result is None unless forceStart is true, in which case the interpreter will be started.
     */
-  private def cellInterpreter(id: CellID) = for {
-    notebook    <- CurrentNotebook.get.orDie
-    cell        <- ZIO.fromOption(notebook.getCell(id))
-    state       <- interpreterState.get.orDie
-    prevCells    = notebook.cells.takeWhile(_.id != cell.id)
-    prevState    = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(State.Root)
-    interpreter <- interpreters.get(cell.language).orDie.get
-  } yield (cell, interpreter, State.id(id, prevState))
+  private def cellInterpreter(id: CellID, forceStart: Boolean = false): ZIO[BaseEnv with GlobalEnv with CellEnv, Unit, (NotebookCell, Interpreter, State)] = {
+    for {
+      notebook    <- CurrentNotebook.get.orDie
+      cell        <- CurrentNotebook.getCell(id)
+      state       <- interpreterState.get.orDie
+      prevCells    = notebook.cells.takeWhile(_.id != cell.id)
+      prevState    = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(State.Root)
+      interpreter <-
+        if (forceStart)
+          getOrLaunch(cell.language, id).provideSomeM(Env.enrichM[BaseEnv with GlobalEnv with CellEnv](
+            InterpreterEnvironment.noTask(id).widen[InterpreterEnv]))
+        else
+          interpreters.get(cell.language).orDie.get.mapError(_ => InterpreterNotStarted)
+    } yield (cell, interpreter, State.id(id, prevState))
+  }.map {
+    result => Option(result)
+  }.catchAll(_ => ZIO.succeed(None)).get  // TODO: need a real OptionT
 
   private def getOrLaunch(language: String, at: CellID): TaskR[BaseEnv with GlobalEnv with InterpreterEnv with CurrentNotebook with TaskManager with Interpreter.Factories with Config, Interpreter] =
     interpreters.getOrCreate(language) {

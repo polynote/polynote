@@ -93,6 +93,13 @@ package object kernel {
     }
   }
 
+  /**
+    * Some additional syntax for ZIO
+    */
+  final implicit class ZIOSyntax[R, E, A](val self: ZIO[R, E, A]) extends AnyVal {
+    def widen[A1 >: A]: ZIO[R, E, A1] = self
+  }
+
   def withContextClassLoaderIO[A](cl: ClassLoader)(thunk: => A): TaskR[Blocking, A] =
     zio.blocking.effectBlocking(withContextClassLoader(cl)(thunk))
 

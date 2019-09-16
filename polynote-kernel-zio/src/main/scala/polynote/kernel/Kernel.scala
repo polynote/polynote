@@ -15,12 +15,12 @@ trait Kernel {
   /**
     * Provide completions for the given position in the given cell
     */
-  def completionsAt(id: CellID, pos: Int): TaskR[CurrentNotebook, List[Completion]]
+  def completionsAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, List[Completion]]
 
   /**
     * Provide parameter hints for the given position in the given cell
     */
-  def parametersAt(id: CellID, pos: Int): TaskR[CurrentNotebook, Option[Signatures]]
+  def parametersAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, Option[Signatures]]
 
   /**
     * Perform any initialization for the kernel
@@ -81,4 +81,6 @@ object Kernel {
 
     def access: TaskR[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.kernelFactory)
   }
+
+  case object InterpreterNotStarted extends Throwable
 }
