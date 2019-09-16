@@ -9,6 +9,9 @@ import py4j.GatewayServer
 
 class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvider) extends PythonInterpreter(ctx, dependencyProvider) {
 
+  // pyspark must be a shared module because it assumes it's being run in the same thread, annoyingly. Seems like the
+  // only way to get jep modules to run in the Python mainthread is to add them as shared modules.
+  // note: adding `py4j` here causes everything to crash when the kernel is restarted (error from jep's native code), woo!
   override def sharedModules: List[String] = "pyspark" :: super.sharedModules
 
   private var gatewayRef: GatewayServer = _
@@ -30,7 +33,7 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
       jep.eval("from pyspark.conf import SparkConf")
       jep.eval("from pyspark.context import SparkContext")
       jep.eval("from pyspark.sql import SparkSession, SQLContext")
-      val gateway = new GatewayServer(
+      gatewayRef = new GatewayServer(
         spark,
         0,
         0,
@@ -38,14 +41,14 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
         GatewayServer.DEFAULT_READ_TIMEOUT,
         null)
 
-      gateway.start(true)
+      gatewayRef.start(true)
 
-      while (gateway.getListeningPort == -1) {
+      while (gatewayRef.getListeningPort == -1) {
         Thread.sleep(20)
       }
 
-      val javaPort = gateway.getListeningPort
-      gateway.getCallbackClient.getPort
+      val javaPort = gatewayRef.getListeningPort
+      gatewayRef.getCallbackClient.getPort
 
       jep.eval(
         s"""gateway = JavaGateway(
@@ -56,7 +59,7 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
 
       val pythonPort = jep.getValue("gateway.get_callback_server().get_listening_port()", classOf[java.lang.Number]).intValue()
 
-      gateway.resetCallbackClient(py4j.GatewayServer.defaultAddress(), pythonPort)
+      gatewayRef.resetCallbackClient(py4j.GatewayServer.defaultAddress(), pythonPort)
 
       jep.eval("java_import(gateway.jvm, \"org.apache.spark.SparkEnv\")")
       jep.eval("java_import(gateway.jvm, \"org.apache.spark.SparkConf\")")
@@ -71,7 +74,6 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
       jep.eval("spark = SparkSession(sc, gateway.entry_point)")
       jep.eval("sqlContext = spark._wrapped")
       jep.eval("from pyspark.sql import DataFrame")
-      gatewayRef = gateway
     } catch {
       case err: Throwable => logger.error(err)("Failed to initialize PySpark")
     }
@@ -117,6 +119,20 @@ class PySparkInterpreter(ctx: KernelContext, dependencyProvider: DependencyProvi
     jep.eval(s"del __raise_err__")
     res
   }
+
+  // this is currently quite hacky and is only necessary for 'local mode' - with remote kernels we don't need this at all.
+  override def shutdown(): IO[Unit] = withJep {
+    // First, we remove the link between pyspark's sc and the real sc, so the call to stop() doesn't reach back into the real sc
+    jep.eval("sc._jsc = None")
+    // Next, we call the pyspark sc stop so cleans up some of its annoying state (since `pyspark` is a global module, its state is kept across kernel restarts)
+    jep.eval("sc.stop()")
+    // Finally, we need to clean _more_ state since unfortunately calling stop() doesn't clean everything
+    jep.eval("SparkContext._gateway = None")
+    jep.eval("SparkContext._jvm = None")
+    jep.eval("SparkContext._next_accum_id = 0")
+    jep.eval("SparkContext._active_spark_context = None")
+    jep.eval("SparkContext._python_includes = None")
+  } >> super.shutdown()
 
 }
 

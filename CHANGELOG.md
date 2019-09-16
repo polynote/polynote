@@ -2,6 +2,12 @@
 
 *
 
+# 0.1.24 (September 9, 2019)
+
+* Fix bug preventing jar dependencies with `+` in their name from working
+* Fix broken restart of PySpark kernels. 
+* minor UI fixes
+
 # 0.1.23 (August 16, 2019)
 
 * Support for being served under HTTPS

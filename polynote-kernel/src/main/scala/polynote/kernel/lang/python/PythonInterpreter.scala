@@ -31,8 +31,9 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
 
   val predefCode: Option[String] = None
 
-  override def shutdown(): IO[Unit] = shutdownSignal.complete.flatMap(_ => withJep(jep.close()))
-
+  override def shutdown(): IO[Unit] = shutdownSignal.complete
+    .flatMap(_ => withJep(jep.close()))
+    .start.as(()) // this is probably a bad thing. Since jep.close seems to hang, we just punt for now and let that thread do whatever it's trying to do on its own time.
 
   override def init(): IO[Unit] = preInit >> setup() >> postInit
 
@@ -175,6 +176,7 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
       def call(): Jep = {
         // TODO: this is how to use jep installed inside a venv. it would only work for remote kernels though.
         //       if we ever decide to move towards remote kernels being the only option then we can use this approach
+        //       **** we'd need to load the jep library though ****
 //        venvProvider.right.toOption.flatMap(_.venvPath).foreach {
 //          path =>
 //            MainInterpreter.setInitParams(new PyConfig().setPythonHome(path))
