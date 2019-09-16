@@ -32,7 +32,7 @@ export class Storage {
         return this.defaults[name];
     }
 
-    update(name: string, updateFn: (oldValue: any) => string) {
+    update<T>(name: string, updateFn: (oldValue: T) => any) {
         this.set(name, updateFn(this.get(name)))
     }
 

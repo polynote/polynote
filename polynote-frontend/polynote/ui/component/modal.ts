@@ -9,14 +9,14 @@ interface ModalOptions {
 }
 
 export class Modal extends UIEventTarget {
-    private container: TagElement;
-    private background: TagElement;
-    private window: TagElement;
-    private titleBar: TagElement;
-    private titleContent: TagElement;
-    readonly content: TagElement;
+    private container: TagElement<"div">;
+    private background: TagElement<"div">;
+    private window: TagElement<"div">;
+    private titleBar: TagElement<"div">;
+    private titleContent: TagElement<"div">;
+    readonly content: TagElement<"div">;
 
-    constructor(content: TagElement, opts: ModalOptions) {
+    constructor(content: TagElement<"div">, opts: ModalOptions) {
         super();
         if (!content) {
             content = div([], []);
@@ -64,7 +64,7 @@ export class Modal extends UIEventTarget {
 }
 
 export class FullScreenModal extends Modal {
-    constructor(content: TagElement, opts: ModalOptions = {}) {
+    constructor(content: TagElement<"div">, opts: ModalOptions = {}) {
         opts.windowClasses = [...(opts.windowClasses || []), 'full-screen'];
         super(
             content,

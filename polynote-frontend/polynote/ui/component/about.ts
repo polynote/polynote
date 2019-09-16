@@ -67,7 +67,7 @@ export class About extends FullScreenModal {
             for (const [k, v] of Object.entries(kvs)) {
                 tableEl.addRow({
                     key: k,
-                    val: v
+                    val: JSON.stringify(v)
                 })
             }
             el.appendChild(tableEl);
@@ -115,7 +115,7 @@ export class About extends FullScreenModal {
                     const value = self.options[self.selectedIndex].value === "true";
                     preferences.set(k, value)
                 });
-                valueEl.value = value;
+                valueEl.value = value.toString();
             }
             prefsTable.addRow({
                 key: k,
@@ -158,7 +158,7 @@ export class About extends FullScreenModal {
     }
 
     runningKernels() {
-        let content: TagElement = div([], ['Looks like no kernels are running now!']);
+        let content = div([], ['Looks like no kernels are running now!']);
         const el = div(["running-kernels"], [
             div([], [
                 h2([], ["Running Kernels"]),

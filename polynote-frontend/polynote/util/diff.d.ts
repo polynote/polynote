@@ -7,7 +7,7 @@ export interface DiffOptions {
 }
 
 interface Diff {
-    diff(a: string, b: string, options?: (...args: any[]) => void | DiffOptions): string
+    diff(a: string, b: string, options?: (...args: any[]) => void | DiffOptions): {count: number, added: boolean, removed: boolean, value: string}[]
 }
 
-export default function Diff(): Diff
+export const Diff: Diff;

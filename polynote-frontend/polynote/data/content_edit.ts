@@ -4,6 +4,7 @@ export abstract class ContentEdit extends CodecContainer {
     static codec: Codec<ContentEdit>;
     static codecs: typeof ContentEdit[];
     static msgTypeId: number;
+    pos: number;
 
     static rebase(a: ContentEdit, b: ContentEdit): ContentEdit[][] // for some reason TS can't figure out that ContentEdit === Insert | Delete so we need to help it.
     static rebase(a: Insert | Delete, b: Insert | Delete): ContentEdit[][] {

@@ -1,16 +1,16 @@
 "use strict";
 
 import * as monaco from "monaco-editor";
-import {div, span, tag} from "../util/tags";
+import {div, span, tag, TagElement} from "../util/tags";
 
-export function displayContent(contentType, content, contentTypeArgs) {
+export function displayContent(contentType: string, content: string, contentTypeArgs: Record<string, string>): Promise<TagElement<any>> {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);
 
     let result;
     if (mimeType === "text/plain") {
         if (args.lang) {
             result = monaco.editor.colorize(content, args.lang, {}).then(html => {
-                const node = span(['plaintext', 'colorized'], []).attr('data-lang', args.lang);
+                const node = (span(['plaintext', 'colorized'], []) as TagElement<"span", HTMLSpanElement & {"data-lang": string}>).attr('data-lang', args.lang);
                 node.innerHTML = html;
                 return node
             });
@@ -38,7 +38,7 @@ export function displayContent(contentType, content, contentTypeArgs) {
     return result;
 }
 
-export function contentTypeName(contentType) {
+export function contentTypeName(contentType: string) {
     const [mime, args] = parseContentType(contentType);
 
     switch (mime) {
@@ -51,10 +51,10 @@ export function contentTypeName(contentType) {
     }
 }
 
-export function parseContentType(contentType) {
+export function parseContentType(contentType: string): [string, Record<string, string>] {
     const contentTypeParts = contentType.split(';').map(str => str.replace(/(^\s+|\s+$)/g, ""));
-    const mimeType = contentTypeParts.shift();
-    const args = {};
+    const mimeType = contentTypeParts.shift()!;
+    const args: Record<string, string> = {};
     contentTypeParts.forEach(part => {
         const [k, v] = part.split('=');
         args[k] = v;
@@ -63,7 +63,7 @@ export function parseContentType(contentType) {
     return [mimeType, args];
 }
 
-export function truncate(string, len) {
+export function truncate(string: any, len?: number) {
     len = len || 32;
     if (typeof string !== "string" && !(string instanceof String)) {
         string = string.toString();
@@ -74,17 +74,17 @@ export function truncate(string, len) {
     return string;
 }
 
-export function displayData(data, fieldName, expandObjects) {
+export function displayData(data: any, fieldName?: string, expandObjects: boolean = false) {
 
-    function shortDisplay(data) {
+    function shortDisplay(data: any) {
         if (data instanceof Array) {
             return span(['short-array'], ['Array(', data.length.toString(), ')']);
-        } else if (typeof data === "object" && !(data instanceof String)) {
-            return span(['short-object'], ['{…}']);
         } else if (typeof data === "number") {
             return span(['number'], [truncate(data.toString())]);
         } else if (typeof data === "boolean") {
             return span(['boolean'], [data.toString()]);
+        } else if (typeof data === "object" && !(data instanceof String)) {
+            return span(['short-object'], ['{…}']);
         } else {
             return span(['string'], [data.toString()]);
         }
@@ -105,7 +105,7 @@ export function displayData(data, fieldName, expandObjects) {
                 break;
             }
             count++;
-            elems.appendChild(tag('li', [], {}, displayData(elem, false, expandObjects)));
+            elems.appendChild(tag('li', [], {}, displayData(elem, undefined, expandObjects)));
         }
         return details;
     } else if (data instanceof Map) {
@@ -131,7 +131,7 @@ export function displayData(data, fieldName, expandObjects) {
             summary.insertBefore(span(['field-name'], [fieldName]), summary.childNodes[0]);
         }
         for (let key of keys) {
-            if (summarySpan.textContent > 64) {
+            if (summarySpan.textContent && summarySpan.textContent.length > 64) {
                 summarySpan.addClass('truncated');
                 break;
             }
@@ -159,8 +159,8 @@ export function displayData(data, fieldName, expandObjects) {
     }
 }
 
-export function prettyDuration(milliseconds) {
-    function quotRem(dividend, divisor) {
+export function prettyDuration(milliseconds: number) {
+    function quotRem(dividend: number, divisor: number) {
         const quotient = Math.floor(dividend / divisor);
         const remainder = dividend % divisor;
         return [quotient, remainder];

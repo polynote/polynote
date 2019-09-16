@@ -11,12 +11,8 @@ import {createSimpleKeybinding} from 'monaco-editor/esm/vs/base/common/keyCodes.
 // @ts-ignore
 import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
 
-interface Hotkeys {
+export interface Hotkeys {
     [keycode: string]: KeyAction
-}
-
-interface AllHotkeys {
-    [source: string]: Hotkeys
 }
 
 interface Keybinding {
@@ -28,9 +24,9 @@ interface Keybinding {
 }
 
 export function getHotkeys() {
-    const hotkeys: AllHotkeys = {};
+    const hotkeys: Record<string, Record<string, string>> = {};
 
-    const cellHotkeys: Hotkeys = {};
+    const cellHotkeys: Record<string, string> = {};
     for (const [keycode, action] of Cell.keyMap) {
         const desc = action.desc;
         if (desc) {
@@ -41,7 +37,7 @@ export function getHotkeys() {
     }
     hotkeys['Cells'] = cellHotkeys;
 
-    const codeCellHotkeys: Hotkeys = {};
+    const codeCellHotkeys: Record<string, string> = {};
     for (const [keycode, action] of CodeCell.keyMapOverrides) {
         const desc = action.desc;
         if (desc) {
@@ -93,8 +89,8 @@ export class KeyAction {
      * @param preventDefault        Whether to call preventDefault on the event
      * @param ignoreWhenSuggesting  Whether to ignore this action if the suggestion widget is currently open
      */
-    constructor(readonly fun: (pos: IPosition, range: IRange, selection: ISelection, cell: Cell) => void,
-                public desc: string,
+    constructor(readonly fun: (pos: IPosition, range: IRange, selection: string, cell: Cell) => void,
+                public desc: string = "",
                 public preventDefault: boolean = false,
                 public ignoreWhenSuggesting: boolean = true) {}
 
@@ -116,7 +112,7 @@ export class KeyAction {
     // Create a new KeyAction that executes `otherAction` and then this action.
     // The new action takes the most restrictive configuration of `preventDefault` and `ignoreWhenSuggesting`
     runAfter(firstAction: KeyAction) {
-        const fun = (position: IPosition, range: IRange, selection: ISelection, cell: Cell) => {
+        const fun = (position: IPosition, range: IRange, selection: string, cell: Cell) => {
             firstAction.fun(position, range, selection, cell); // position, range, selection, cell might be mutated by this function!
             this.fun(position, range, selection, cell);
         };

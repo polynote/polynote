@@ -1,23 +1,39 @@
 // TODO: Shouldn't it extend UIEventTarget?
-import {div, span} from "../util/tags";
-import {UIEvent} from "../util/ui_event";
+import {div, span, TagElement} from "../util/tags";
+import {UIEvent, UIEventTarget} from "../util/ui_event";
 import {storage} from "../util/storage";
 
-export class TabUI extends EventTarget {
+interface Tab {
+    name: string,
+    title: TagElement<"span">,
+    content: TagElement<any>,
+    type: string
+}
 
-    constructor(contentAreas) {
+type TabEl = TagElement<"div"> & { tab: Tab }
+function isTabEl(tabEl: any): tabEl is TabEl {
+    return (tabEl as TabEl).tab !== undefined;
+}
+
+export type TabActivated = UIEvent<{tab: Tab}>
+export type TabRemoved = UIEvent<{name: string}>
+export type NoActiveTab = UIEvent<undefined>
+
+export class TabUI extends UIEventTarget {
+    readonly el: TagElement<"div">;
+    private tabContainer: TagElement<"div">;
+    private readonly tabs: Record<string, Tab> = {};
+    private readonly tabEls: Record<string, TabEl> = {};
+    private currentTab: Tab;
+
+    constructor(private contentAreas: Record<string, TagElement<any>>) {
         super();
         this.el = div(['tabbed-pane'], [
             this.tabContainer = div(['tab-container'], [])
         ]);
-
-        this.contentAreas = contentAreas;
-
-        this.tabs = {};
-        this.tabEls = {};
     }
 
-    addTab(name, title, content, type) {
+    addTab(name: string, title: TagElement<"span">, content: TagElement<any>, type: string) {
         const tab = {
             name: name,
             title: title,
@@ -26,11 +42,12 @@ export class TabUI extends EventTarget {
         };
 
         this.tabs[name] = tab;
-        const tabEl = div(['tab'], [
-            title,
-            span(['close-button', 'fa'], ['']).click(evt => this.removeTab(tab))
-        ]).attr('title', name);
-        tabEl.tab = tab;
+        const tabEl = Object.assign(
+            div(['tab'], [
+                title,
+                span(['close-button', 'fa'], ['']).click(evt => this.removeTab(tab))
+            ]).attr('title', name),
+            { tab: tab });
 
         this.tabEls[name] = tabEl;
 
@@ -50,13 +67,13 @@ export class TabUI extends EventTarget {
         return tab;
     }
 
-    removeTab(tab) {
+    removeTab(tab: Tab) {
         const tabEl = this.tabEls[tab.name];
 
         if (this.currentTab === tab) {
             if (tabEl) {
                 const nextTab = tabEl.previousSibling || tabEl.nextSibling;
-                if (nextTab && nextTab.tab) {
+                if (nextTab && isTabEl(nextTab) && nextTab.tab) {
                     this.activateTab(nextTab.tab);
                 } else {
                     setTimeout(() => this.dispatchEvent(new UIEvent('NoActiveTab')), 0);
@@ -78,7 +95,7 @@ export class TabUI extends EventTarget {
         // }
     }
 
-    activateTabName(name) {
+    activateTabName(name: string) {
         if (this.tabs[name]) {
             this.activateTab(this.tabs[name]);
             return true;
@@ -87,8 +104,8 @@ export class TabUI extends EventTarget {
         }
     }
 
-    setCurrentScrollLocation(scrollTop) {
-        storage.update('notebookLocations', locations => {
+    setCurrentScrollLocation(scrollTop: number) {
+        storage.update('notebookLocations', (locations: Record<string, number>) => {
             if (!locations) {
                 locations = {};
             }
@@ -98,7 +115,7 @@ export class TabUI extends EventTarget {
         });
     }
 
-    activateTab(tab) {
+    activateTab(tab: Tab) {
         if (this.currentTab && this.currentTab === tab) {
             return;
         } else if (this.currentTab) {
@@ -129,7 +146,7 @@ export class TabUI extends EventTarget {
         this.dispatchEvent(new UIEvent('TabActivated', {tab: tab}));
     }
 
-    getTab(name) {
+    getTab(name: string) {
         return this.tabs[name];
     }
 }

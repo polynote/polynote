@@ -1,25 +1,39 @@
 // BREAKOUT (nb_cells.js)
 import {UIEvent, UIEventTarget} from "../util/ui_event";
 import {NotebookConfigUI} from "./nb_config";
-import {div} from "../util/tags";
-import {Cell, CellExecutionFinished, CodeCell, TextCell} from "./cell";
-import {TaskStatus} from "../../data/messages";
+import {div, TagElement} from "../util/tags";
+import {Cell, CellContainer, CellExecutionFinished, CodeCell, TextCell} from "./cell";
+import {TaskInfo, TaskStatus} from "../../data/messages";
 import * as Tinycon from "tinycon";
 import {storage} from "../util/storage";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import * as monaco from "monaco-editor";
+import {PosRange} from "../../data/result";
+import {type} from "vega-lite/build/src/compile/legend/properties";
+import {NotebookUI} from "./notebook";
+
+type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
 export class NotebookCellsUI extends UIEventTarget {
-    constructor(eventParent, path) {
-        super(eventParent);
+    private disabled: boolean;
+    private configUI: NotebookConfigUI;
+    readonly el: NotebookCellsEl;
+    private readonly cells: Record<number, Cell>;
+    private queuedCells: number;
+    resizeTimeout: number;
+    readonly notebookUI: NotebookUI;
+
+    constructor(parent: NotebookUI, readonly path: string) {
+        super(parent);
+        this.notebookUI = parent; // TODO: get rid of this
         this.disabled = false;
         this.configUI = new NotebookConfigUI().setEventParent(this);
-        this.path = path;
-        this.el = div(['notebook-cells'], [this.configUI.el, this.newCellDivider()]);
-        // TODO: remove when we get to TabUI
-        this.el.cellsUI = this;  // TODO: this is hacky and bad (using for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
+        this.el = Object.assign(
+            div(['notebook-cells'], [this.configUI.el, this.newCellDivider()]),
+            // TODO: remove when we get to TabUI
+            { cellsUI: this });  // TODO: this is hacky and bad (used for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
+        this.el.cellsUI = this;
         this.cells = {};
-        this.cellCount = 0;
         this.queuedCells = 0;
 
         this.registerEventListener('resize', this.forceLayout.bind(this));
@@ -27,16 +41,21 @@ export class NotebookCellsUI extends UIEventTarget {
 
     newCellDivider() {
         return div(['new-cell-divider'], []).click((evt) => {
-            const nextCell = this.getCellAfterEl(evt.target);
+            const nextCell = this.getCellAfterEl(evt.target as HTMLElement);
             if (nextCell) {
                 this.dispatchEvent(new UIEvent('InsertCellBefore', {cellId: nextCell.id}));
-            } else { // last cell
-                this.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: this.getCellBeforeEl(evt.target).id}));
+            } else {
+                const prevCell = this.getCellBeforeEl((evt.target as HTMLElement));
+                if (prevCell) { // last cell
+                    this.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: prevCell.id}));
+                } else { // no cells
+                    this.dispatchEvent(new UIEvent('InsertBelow'));
+                }
             }
         });
     }
 
-    setDisabled(disabled) {
+    setDisabled(disabled: boolean) {
         if (disabled === this.disabled) {
             return;
         }
@@ -45,14 +64,12 @@ export class NotebookCellsUI extends UIEventTarget {
         for (let cellId in this.cells) {
             if (this.cells.hasOwnProperty(cellId)) {
                 const cell = this.cells[cellId];
-                if (cell instanceof Cell) {
-                    cell.setDisabled(disabled);
-                }
+                cell.setDisabled(disabled);
             }
         }
     }
 
-    setStatus(id, status) {
+    setStatus(id: number, status: TaskInfo) {
         const cell = this.getCell(id);
         if (!cell) return;
 
@@ -79,7 +96,7 @@ export class NotebookCellsUI extends UIEventTarget {
                 cell.container.classList.remove('queued', 'error');
                 cell.container.classList.add('running');
                 const progressBar = cell.container.querySelector('.progress-bar');
-                if (progressBar && status.progress) {
+                if (progressBar instanceof HTMLElement && status.progress) {
                     progressBar.style.width = (status.progress * 100 / 255).toFixed(0) + "%";
                 }
 
@@ -94,7 +111,7 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    setExecutionHighlight(id, pos) {
+    setExecutionHighlight(id: number, pos: PosRange) {
         const cell = this.getCell(id);
         if (cell instanceof CodeCell) {
             cell.setHighlight(pos, "currently-executing");
@@ -105,52 +122,52 @@ export class NotebookCellsUI extends UIEventTarget {
         return this.getCells()[0];
     }
 
-    getCell(cellId) {
+    getCell(cellId: number) {
         return this.cells[cellId];
     }
 
-    getCellBeforeEl(el) {
-        let before = this.el.firstElementChild;
+    getCellBeforeEl(el: HTMLElement) {
+        let before = this.el.firstElementChild as CellContainer;
         let cell = undefined;
         while (before !== el) {
             if (before && before.cell) {
                 cell = before.cell;
             }
-            before = before.nextElementSibling;
+            before = before.nextElementSibling as CellContainer;
         }
         return cell
     }
 
-    getCellAfterEl(el) {
-        let after = this.el.lastElementChild;
+    getCellAfterEl(el: HTMLElement) {
+        let after = this.el.lastElementChild as CellContainer;
         let cell = undefined;
         while (after !== el) {
             if (after && after.cell) {
                 cell = after.cell;
             }
-            after = after.previousElementSibling;
+            after = after.previousElementSibling as CellContainer;
         }
         return cell
     }
 
     getCells() {
         return Array.from(this.el.children)
-            .map(container => container.cell)
-            .filter(cell => cell);
+            .filter(container => "cell" in container)
+            .map((container: CellContainer) => container.cell)
     }
 
     getCodeCellIds() {
         return this.getCells().filter(cell => cell instanceof CodeCell).map(cell => cell.id);
     }
 
-    getCodeCellIdsBefore(id) {
+    getCodeCellIdsBefore(id: number) {
         const result = [];
-        let child = this.el.firstElementChild;
+        let child = this.el.firstElementChild as CellContainer;
         while (child && (!child.cell || child.cell.id !== id)) {
             if (child.cell) {
                 result.push(child.cell.id);
             }
-            child = child.nextElementSibling;
+            child = child.nextElementSibling as CellContainer;
         }
         return result;
     }
@@ -162,11 +179,11 @@ export class NotebookCellsUI extends UIEventTarget {
         }, -1)
     }
 
-    forceLayout(evt) {
+    forceLayout(evt: Event) {
         if (this.resizeTimeout) {
-            clearTimeout(this.resizeTimeout);
+            window.clearTimeout(this.resizeTimeout);
         }
-        this.resizeTimeout = setTimeout(() => {
+        this.resizeTimeout = window.setTimeout(() => {
             this.getCells().forEach((cell) => {
                 if (cell instanceof CodeCell) {
                     cell.editor.layout();
@@ -180,24 +197,23 @@ export class NotebookCellsUI extends UIEventTarget {
         }, 333);
     }
 
-    addCell(cell) {
-        this.cellCount++;
+    addCell(cell: Cell) {
         this.el.appendChild(cell.container);
         this.el.appendChild(this.newCellDivider());
         this.setupCell(cell);
     }
 
-    insertCell(cell, after) {
-        let prevCell = after;
+    insertCell(cell: Cell, after: Cell | HTMLElement | number | null) {
+        let prevCell: HTMLElement;
         if (after && after instanceof Cell) {
             prevCell = after.container;
-        } else if ((after || after === 0) && this.getCell(after)) {
+        } else if ((after || after === 0) && typeof after === "number" && this.getCell(after)) {
             prevCell = this.getCell(after).container;
         } else if (!after) {
             prevCell = this.configUI.el;
+        } else {
+            prevCell = after as HTMLElement;
         }
-
-        this.cellCount++;
 
         const prevCellDivider = prevCell.nextElementSibling;
 
@@ -208,7 +224,7 @@ export class NotebookCellsUI extends UIEventTarget {
         this.setupCell(cell);
     }
 
-    removeCell(cellId) {
+    removeCell(cellId: number) {
         const cell = this.getCell(cellId);
         if (cell) {
             const divider = cell.container.nextElementSibling;
@@ -224,9 +240,9 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    setupCell(cell) {
+    setupCell(cell: Cell) {
         this.cells[cell.id] = cell;
-        if (cell.editor && cell.editor.layout) {
+        if (cell instanceof CodeCell && cell.editor && cell.editor.layout) {
             cell.editor.layout();
         }
         cell.setEventParent(this);
@@ -240,7 +256,7 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    setCellLanguage(cell, language) {
+    setCellLanguage(cell: Cell, language: string) {
         const currentCell = this.getCell(cell.id);
         if (cell !== currentCell) {
             throw {message: "Cell with that ID is not the same cell as the target cell"};
@@ -254,20 +270,20 @@ export class NotebookCellsUI extends UIEventTarget {
         if (currentCell instanceof TextCell && language !== 'text') {
             // replace text cell with a code cell
             const textContent = currentCell.container.innerText.trim(); // innerText has just the plain text without any HTML formatting
-            const newCell = new CodeCell(currentCell.id, currentCell.content, language, this.path);
+            const newCell = new CodeCell(currentCell.id, currentCell.content, language, this.path, currentCell.metadata);
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);
-            newCell.editor.getModel().setValue(textContent); // use setValue in order to properly persist the change.
+            newCell.editor.getModel()!.setValue(textContent); // use setValue in order to properly persist the change.
             const clientInterpreter = clientInterpreters[language];
             if (clientInterpreter && clientInterpreter.highlightLanguage && clientInterpreter.highlightLanguage !== language) {
-                monaco.editor.setModelLanguage(newCell.editor.getModel(), clientInterpreter.highlightLanguage)
+                monaco.editor.setModelLanguage(newCell.editor.getModel()!, clientInterpreter.highlightLanguage)
             }
 
             newCell.focus();
         } else if (currentCell instanceof CodeCell && language === 'text') {
             // replace code cell with a text cell
-            const newCell = new TextCell(currentCell.id, currentCell.content, this.path);
+            const newCell = new TextCell(currentCell.id, currentCell.content, this.path, currentCell.metadata);
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);
@@ -275,7 +291,7 @@ export class NotebookCellsUI extends UIEventTarget {
         } else {
             // already a code cell, change the language
             const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
-            monaco.editor.setModelLanguage(currentCell.editor.getModel(), highlightLanguage);
+            monaco.editor.setModelLanguage((currentCell as CodeCell).editor.getModel()!, highlightLanguage);
             currentCell.setLanguage(language);
         }
     }

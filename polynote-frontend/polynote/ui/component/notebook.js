@@ -25,7 +25,6 @@ export class NotebookUI extends UIEventTarget {
     constructor(eventParent, path, socket, mainUI) {
         super(eventParent);
         let cellUI = new NotebookCellsUI(this, path);
-        cellUI.notebookUI = this; // TODO: deal with this
         let kernelUI = new KernelUI(this, path);
         //super(null, cellUI, kernelUI);
         //this.el.classList.add('notebook-ui');
@@ -119,7 +118,7 @@ export class NotebookUI extends UIEventTarget {
             } else {
                 newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
             }
-            const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata || null);
+            const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata);
             const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, current.id);
             this.socket.send(update);
             this.editBuffer.push(this.localVersion, update);
@@ -130,17 +129,20 @@ export class NotebookUI extends UIEventTarget {
             newCell.focus();
         });
 
+        // TODO: shares a lot of logic with InsertCellAfter
+        // TODO: BUG! what if there are no cells!
         this.cellUI.addEventListener('InsertCellBefore', evt => {
             const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.firstCell();
             const nextId = this.cellUI.getMaxCellId() + 1;
             const newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
+            const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata);
             if (current === this.cellUI.firstCell()) {
-                const update = new messages.InsertCell(path, this.globalVersion, this.localVersion++, new NotebookCell(newCell.id, newCell.language, ''), -1);
+                const update = new messages.InsertCell(path, this.globalVersion, this.localVersion++, notebookCell, -1);
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, null);
             } else {
                 const prev = current.prevCell();
-                const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, new NotebookCell(newCell.id, newCell.language, ''), prev.id);
+                const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, prev.id);
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, prev);
 
@@ -229,7 +231,7 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.cellUI.addEventListener('CompletionRequest', (evt) => {
-            const id = evt.detail.id;
+            const id = evt.detail.cellId;
             const pos = evt.detail.pos;
             const resolve = evt.detail.resolve;
             const reject = evt.detail.reject;
@@ -269,7 +271,7 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.cellUI.addEventListener('ParamHintRequest', (evt) => {
-            const id = evt.detail.id;
+            const id = evt.detail.cellId;
             const pos = evt.detail.pos;
             const resolve = evt.detail.resolve;
             const reject = evt.detail.reject;

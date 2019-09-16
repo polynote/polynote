@@ -35,9 +35,8 @@
  *
  */
 
-export default function Diff() {}
 
-Diff.prototype = {
+export const Diff =  {
     diff(oldString, newString, options = {}) {
         let callback = options.callback;
         if (typeof options === 'function') {

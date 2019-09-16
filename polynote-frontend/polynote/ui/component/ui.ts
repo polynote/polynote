@@ -2,8 +2,8 @@
 
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import {UIEvent, UIEventTarget} from '../util/ui_event'
-import {Cell} from "./cell"
-import {div, span} from '../util/tags'
+import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
+import {div, span, TagElement} from '../util/tags'
 import * as messages from '../../data/messages';
 import {storage} from '../util/storage'
 import {ToolbarUI} from "./toolbar";
@@ -17,16 +17,33 @@ import {TabUI} from "./tab";
 import {NotebookListUI} from "./notebook_list";
 import {HomeUI} from "./home";
 import {Either} from "../../data/types";
+import {SocketSession} from "../../comms";
+import {NotebookCellsUI} from "./nb_cells";
+import {ImportNotebook} from "../util/ui_events";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
-document.execCommand("styleWithCSS", false, false);
+document.execCommand("styleWithCSS", false);
 
-export const Interpreters = {};
+export const Interpreters: Record<string, string> = {};
 
 export class MainUI extends UIEventTarget {
+    private mainView: SplitView;
+    private toolbarUI: ToolbarUI;
+    readonly el: TagElement<"div">;
+    private readonly notebookContent: TagElement<"div">;
+    private tabUI: TabUI;
+    private browseUI: NotebookListUI;
+    private disabled: boolean;
+    private currentServerCommit?: number;
+    private currentServerVersion: number;
+    private currentNotebookPath: string;
+    private currentNotebook: NotebookCellsUI;
+    private about?: About;
+    private welcomeUI?: HomeUI;
+
     // TODO: remove socket reference
-    constructor(socket) {
+    constructor(public socket: SocketSession) {
         super();
         let left = { el: div(['grid-shell'], []) };
         let center = { el: div(['tab-view'], []) };
@@ -55,8 +72,6 @@ export class MainUI extends UIEventTarget {
         this.browseUI.addEventListener('ImportNotebook', evt => this.importNotebook(evt));
         this.browseUI.addEventListener('ToggleNotebookListUI', (evt) => this.mainView.collapse('left', evt.detail && evt.detail.force));
         this.browseUI.init();
-
-        this.socket = socket; // bad
 
         socket.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
         socket.send(new messages.ListNotebooks([]));
@@ -126,9 +141,10 @@ export class MainUI extends UIEventTarget {
         });
 
         window.addEventListener('hashchange', evt => {
-            this.handleHashChange(evt)
+            this.handleHashChange()
         });
 
+        // TODO: we probably shouldn't be adding listeners on our children like this
         this.tabUI.addEventListener('NoActiveTab', () => {
             this.showWelcome();
         });
@@ -156,19 +172,19 @@ export class MainUI extends UIEventTarget {
         });
 
         this.toolbarUI.addEventListener('Undo', () => {
-           const notebookUI = this.currentNotebook.cellsUI.notebookUI;
+           const notebookUI = this.currentNotebook.notebookUI;
            if (notebookUI instanceof NotebookUI) {
                notebookUI // TODO: implement undoing after deciding on behavior
            }
         });
 
 
+        // TODO: Can we get rid of Cell.currentFocus and instead put the cell ID in the event itself?
+        // TODO: Do we need InsertAbove / InsertBelow if we already have InsertCellAfter / InsertCellBefore?
+        // TODO: shares a lot of logic with InsertBelow
         this.toolbarUI.addEventListener('InsertAbove', () => {
             const cellsUI = this.currentNotebook;
-            let activeCell = Cell.currentFocus;
-            if (!activeCell) {
-                activeCell = cellsUI.firstCell();
-            }
+            let activeCell = Cell.currentFocus || cellsUI.firstCell();
             const activeCellId = activeCell.id;
             if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== activeCell) {
                 console.log("Active cell is not part of current notebook?");
@@ -180,10 +196,7 @@ export class MainUI extends UIEventTarget {
 
         this.toolbarUI.addEventListener('InsertBelow', () => {
             const cellsUI = this.currentNotebook;
-            let activeCell = Cell.currentFocus;
-            if (!activeCell) {
-                activeCell = cellsUI.firstCell();
-            }
+            let activeCell = Cell.currentFocus || cellsUI.firstCell();
             const activeCellId = activeCell.id;
             if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== activeCell) {
                 console.log("Active cell is not part of current notebook?");
@@ -195,13 +208,17 @@ export class MainUI extends UIEventTarget {
 
         this.toolbarUI.addEventListener('DeleteCell', () => {
             const cellsUI = this.currentNotebook;
-            const activeCellId = Cell.currentFocus.id;
-            if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== Cell.currentFocus) {
-                console.log("Active cell is not part of current notebook?");
-                return;
+            const activeCell = Cell.currentFocus;
+            if (activeCell) {
+                const activeCellId = activeCell.id;
+                if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== Cell.currentFocus) {
+                    console.log("Active cell is not part of current notebook?");
+                    return;
+                }
+                cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCellId }));
+            } else {
+                console.log("No active cell!");
             }
-
-            cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCellId }));
         });
 
         this.toolbarUI.addEventListener('ViewAbout', (evt) => {
@@ -247,7 +264,7 @@ export class MainUI extends UIEventTarget {
 
         this.addEventListener('Connect', () => {
             if (this.socket.isClosed) {
-                this.socket.reconnect();
+                this.socket.reconnect(true);
             }
         });
 
@@ -292,22 +309,22 @@ export class MainUI extends UIEventTarget {
         }, 'home');
     }
 
-    loadNotebook(path) {
+    loadNotebook(path: string) {
         const notebookTab = this.tabUI.getTab(path);
 
         if (!notebookTab) {
             const notebookUI = new NotebookUI(this, path, this.socket, this);
             this.socket.send(new messages.LoadNotebook(path));
-            const tab = this.tabUI.addTab(path, span(['notebook-tab-title'], [path.split(/\//g).pop()]), {
+            const tab = this.tabUI.addTab(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), {
                 notebook: notebookUI.cellUI.el,
                 kernel: notebookUI.kernelUI.el
             }, 'notebook');
             this.tabUI.activateTab(tab);
 
-            this.toolbarUI.cellToolbar.cellTypeSelector.addEventListener('change', evt => {
+            this.toolbarUI.cellToolbar.cellTypeSelector.addEventListener('change', (evt: any) => { // event types are so annoying. this is probably fine... TODO: a proper type eventually.
                 // hacky way to tell whether this is the current notebook ...
                 if (this.currentNotebook.notebookUI === notebookUI) {
-                    notebookUI.onCellLanguageSelected(evt.newValue, path);
+                    notebookUI.onCellLanguageSelected(evt.target.value, path);
                 }
             });
 
@@ -319,9 +336,9 @@ export class MainUI extends UIEventTarget {
             this.tabUI.activateTab(notebookTab);
         }
 
-        const notebookName = path.split(/\//g).pop();
+        const notebookName = path.split(/\//g).pop()!;
 
-        storage.update('recentNotebooks', recentNotebooks => {
+        storage.update<{name: string, path: string}[]>('recentNotebooks', recentNotebooks => {
             const currentIndex = recentNotebooks.findIndex(nb => nb.path === path);
             if (currentIndex !== -1) {
                 recentNotebooks.splice(currentIndex, 1);
@@ -344,7 +361,7 @@ export class MainUI extends UIEventTarget {
         }
     }
 
-    importNotebook(evt) {
+    importNotebook(evt: ImportNotebook) {
         const handler = this.socket.addMessageListener(messages.CreateNotebook, (actualPath) => {
             this.socket.removeMessageListener(handler);
             this.browseUI.addItem(actualPath);
@@ -354,10 +371,11 @@ export class MainUI extends UIEventTarget {
         if (evt.detail && evt.detail.name) { // the evt has all we need
             this.socket.send(new messages.CreateNotebook(evt.detail.name, Either.right(evt.detail.content)));
         } else {
-            const notebookURL = new URL(prompt("Enter the full URL of another Polynote instance."));
+            const userInput = prompt("Enter the full URL of another Polynote instance.");
+            const notebookURL = userInput && new URL(userInput);
 
             if (notebookURL && notebookURL.protocol.startsWith("http")) {
-                const nbFile = decodeURI(notebookURL.pathname.split("/").pop());
+                const nbFile = decodeURI(notebookURL.pathname.split("/").pop()!);
                 notebookURL.search = "download=true";
                 notebookURL.hash = "";
                 this.socket.send(new messages.CreateNotebook(nbFile, Either.left(notebookURL.href)));
@@ -365,14 +383,14 @@ export class MainUI extends UIEventTarget {
         }
     }
 
-    handleHashChange(evt) {
+    handleHashChange() {
         this.addEventListener('CellsLoaded', evt => {
             const hash = document.location.hash;
             // the hash can (potentially) have two parts: the selected cell and selected lines.
             // for example: #Cell2,6-12 would mean Cell2 lines 6-12
             const [hashId, lines] = hash.slice(1).split(",");
 
-            const selected = document.getElementById(hashId);
+            const selected = document.getElementById(hashId) as CellContainer;
             if (selected && selected.cell && selected.cell !== Cell.currentFocus) {
 
                 // highlight lines
@@ -387,10 +405,12 @@ export class MainUI extends UIEventTarget {
                         endPos = Position.lift({lineNumber: startLine + 1, column: 0});
                     }
 
-                    selected.cell.setHighlight({
-                        startPos: startPos,
-                        endPos: endPos
-                    }, "link-highlight")
+                    if (selected.cell instanceof CodeCell) {
+                        selected.cell.setHighlight({
+                            startPos: startPos,
+                            endPos: endPos
+                        }, "link-highlight")
+                    }
                 }
                 // select cell and scroll to it.
                 selected.cell.focus();
@@ -398,7 +418,7 @@ export class MainUI extends UIEventTarget {
         });
     }
 
-    static browserDownload(path, filename) {
+    static browserDownload(path: string, filename: string) {
         const link = document.createElement('a');
         link.setAttribute("href", path);
         link.setAttribute("download", filename);
@@ -410,34 +430,34 @@ export class MainUI extends UIEventTarget {
 monaco.languages.registerCompletionItemProvider('scala', {
   triggerCharacters: ['.'],
   provideCompletionItems: (doc, pos, context, cancelToken) => {
-      return doc.cellInstance.requestCompletion(doc.getOffsetAt(pos));
+      return (doc as CodeCellModel).cellInstance.requestCompletion(doc.getOffsetAt(pos));
   }
 });
 
 monaco.languages.registerCompletionItemProvider('python', {
   triggerCharacters: ['.'],
   provideCompletionItems: (doc, pos, cancelToken, context) => {
-      return doc.cellInstance.requestCompletion(doc.getOffsetAt(pos));
+      return (doc as CodeCellModel).cellInstance.requestCompletion(doc.getOffsetAt(pos));
   }
 });
 
 monaco.languages.registerSignatureHelpProvider('scala', {
   signatureHelpTriggerCharacters: ['(', ','],
   provideSignatureHelp: (doc, pos, cancelToken, context) => {
-      return doc.cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
+      return (doc as CodeCellModel).cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
   }
 });
 
 monaco.languages.registerSignatureHelpProvider('python', {
     signatureHelpTriggerCharacters: ['(', ','],
     provideSignatureHelp: (doc, pos, cancelToken, context) => {
-        return doc.cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
+        return (doc as CodeCellModel).cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
     }
 });
 
 monaco.languages.registerCompletionItemProvider('sql', {
     triggerCharacters: ['.'],
     provideCompletionItems: (doc, pos, context, cancelToken) => {
-        return doc.cellInstance.requestCompletion(doc.getOffsetAt(pos));
+        return (doc as CodeCellModel).cellInstance.requestCompletion(doc.getOffsetAt(pos));
     }
 });

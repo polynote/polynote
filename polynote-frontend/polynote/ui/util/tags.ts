@@ -1,7 +1,7 @@
 'use strict';
 
 type ContentElement = (Node | string)
-type Content = ContentElement | ContentElement[]
+export type Content = ContentElement | ContentElement[]
 
 function appendContent(el: Node, content: Content) {
     if (!(content instanceof Array)) {
@@ -17,36 +17,39 @@ function appendContent(el: Node, content: Content) {
     }
 }
 
-export interface TagElement extends Omit<HTMLElement, "click"> { // since we are overwriting `click` with our own impl, we need to omit it from HTMLElement.
-    attr(a: string, b: string): TagElement
-    attrs(obj: Record<string, string | boolean>): TagElement
-    withId(id: string): TagElement
-    click(handler: EventListenerOrEventListenerObject): TagElement
-    change(handler: EventListenerOrEventListenerObject): TagElement
-    listener(name: string, handler: EventListenerOrEventListenerObject): TagElement
-    withKey(key: string, value: string): TagElement
-    disable(): TagElement
-    addClass(cls: string): TagElement
+type AllowedElAttrs<T extends HTMLElement> = Partial<Record<keyof T, string | boolean>>
 
-    // allow arbitrary properties (needed for `attr`/`attrs`)
-    [k: string]: any
-}
+export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> = HTMLElementTagNameMap[K] & {
+    attr(a: keyof T, b: string | boolean): TagElement<K, T>
+    attrs(obj: AllowedElAttrs<HTMLElementTagNameMap[K]>): TagElement<K, T>
+    withId(id: string): TagElement<K, T>
+    click(handler: EventListenerOrEventListenerObject): TagElement<K, T>
+    change(handler: EventListenerOrEventListenerObject): TagElement<K, T>
+    listener(name: string, handler: EventListenerOrEventListenerObject): TagElement<K, T>
+    withKey(key: string, value: string | boolean): TagElement<K, T>
+    disable(): TagElement<K, T>
+    addClass(cls: string): TagElement<K, T>
+};
 
-export function tag(name: string, classes: string[] = [], attributes: Record<string, string | boolean> = {}, content: Content = []) {
-    const el: TagElement = Object.assign(document.createElement(name), {
-        attr(a: string, v: string) {
-            el.setAttribute(a, v);
-            return el;
+export function tag<T extends keyof HTMLElementTagNameMap>(
+    name: T,
+    classes: string[] = [],
+    attributes?: AllowedElAttrs<HTMLElementTagNameMap[T]>,
+    content: Content = []): TagElement<T> {
+
+    const el: TagElement<T> = Object.assign(document.createElement(name), {
+        attr(a: keyof HTMLElementTagNameMap[T], v: string | boolean) {
+            if (typeof v === "boolean") {
+                return el.withKey(a.toString(), v);
+            } else {
+                el.setAttribute(a.toString(), v);
+                return el;
+            }
         },
-        attrs(obj: Record<string, string | boolean>) {
-            for (const attr in obj) {
-                if (obj.hasOwnProperty(attr)) {
-                    const val = obj[attr];
-                    if (typeof val === "boolean") {
-                        el[attr] = val;
-                    } else {
-                        el.setAttribute(attr, val);
-                    }
+        attrs(obj: AllowedElAttrs<HTMLElementTagNameMap[T]>) {
+            for (const a in obj) {
+                if (obj.hasOwnProperty(a)) {
+                    el.attr(a, obj[a]!);
                 }
             }
             return el;
@@ -65,13 +68,11 @@ export function tag(name: string, classes: string[] = [], attributes: Record<str
             el.addEventListener(name, handler);
             return el
         },
-        withKey(key: string, value: string) {
-            el[key] = value;
-            return el
+        withKey(key: string, value: string | boolean) {
+            return Object.assign(el, {[key]: value})
         },
         disable () {
-            el.disabled = true;
-            return el
+            return el.withKey('disabled', true)
         },
         addClass(cls: string) {
             el.classList.add(cls);
@@ -80,26 +81,26 @@ export function tag(name: string, classes: string[] = [], attributes: Record<str
     });
 
     el.classList.add(...classes);
-    el.attrs(attributes);
+    if (attributes) el.attrs(attributes);
     appendContent(el, content);
 
     return el;
 }
 
 export function blockquote(classes: string[], content: Content) {
-    return tag('blockquote', classes, {}, content);
+    return tag('blockquote', classes, undefined, content);
 }
 
 export function para(classes: string[], content: Content) {
-    return tag('p', classes, {}, content);
+    return tag('p', classes, undefined, content);
 }
 
 export function span(classes: string[], content: Content) {
-    return tag('span', classes, {}, content);
+    return tag('span', classes, undefined, content);
 }
 
 export function div(classes: string[], content: Content) {
-    return tag('div', classes, {}, content);
+    return tag('div', classes, undefined, content);
 }
 
 export function button(classes: string[], attributes: Record<string, string>, content: Content) {
@@ -125,8 +126,13 @@ export function textbox(classes: string[], placeholder: string, value: string) {
     return input;
 }
 
-export function dropdown(classes: string[], options: Record<string, string>) {
-    let opts: TagElement[] = [];
+export interface DropdownElement extends TagElement<"select"> {
+    setSelectedValue(value: string): void
+    getSelectedValue(): string
+}
+
+export function dropdown(classes: string[], options: Record<string, string>): DropdownElement {
+    let opts: TagElement<"option">[] = [];
 
     for (const value in options) {
         if (options.hasOwnProperty(value)) {
@@ -135,22 +141,25 @@ export function dropdown(classes: string[], options: Record<string, string>) {
     }
 
     const select = tag('select', classes, {}, opts);
-    select.setSelectedValue = (value: string) => {
-        const index = opts.findIndex(opt => opt.value === value);
-        if (index !== -1) {
-            select.selectedIndex = index;
+    return Object.assign(select, {
+        setSelectedValue(value: string) {
+            const index = opts.findIndex(opt => opt.value === value);
+            if (index !== -1) {
+                select.selectedIndex = index;
+            }
+        },
+        getSelectedValue() {
+            return select.options[select.selectedIndex].value;
         }
-    };
-    select.getSelectedValue = () => select.options[select.selectedIndex].value;
-    return select;
+    });
 }
 
 // create element that goes into a FakeSelect (but not the FakeSelect itself)
-export function fakeSelectElem(classes: string[], buttons: TagElement[]) {
+export function fakeSelectElem(classes: string[], buttons: TagElement<"button">[]) {
     classes.push("dropdown");
     return div(classes, [
         div(['marker', 'fas'], [""]),
-    ].concat(buttons))
+    ].concat(buttons));
 }
 
 export function checkbox(classes: string[], label: string, value: boolean = false) {
@@ -185,63 +194,70 @@ export function h4(classes: string[], content: Content) {
 interface TableContentSpec {
     header?: string[],
     classes: string[],
-    rows?: (TagElement[] | Record<string, string>)[],
+    rows?: (TagElement<any>[] | Record<string, string>)[],
     rowHeading?: boolean,
     addToTop?: boolean
+}
+
+export interface TableRowElement extends TagElement<"tr"> {
+    row: TableRow
+    propCells: Record<string, TagElement<any>>
+    updateValues(props: Record<string, Content>): void
+}
+
+export interface TableElement extends TagElement<"table"> {
+    addRow(row: TableRow, whichBody?: TagElement<"tbody">): TableRowElement
+    findRows(props: Record<string, string>, tbody?: TagElement<"tbody">): TableRowElement
+    findRowsBy(fn: (row: TableRow) => boolean, tbody?: TagElement<"tbody">): TableRowElement
+    addBody(rows?: TableRow[]): TagElement<"tbody">
 }
 
 /**
  * Creates a table element with an addRow function which appends a row.
  */
-type TableRow = Content[] | Record<string, Content>
-export function table(classes: string[], contentSpec: TableContentSpec) {
+type TableRow = Record<string, Content>
+export function table(classes: string[], contentSpec: TableContentSpec): TableElement {
     const colClass = (col: number) => contentSpec.classes ? contentSpec.classes[col] : '';
     const heading = contentSpec.header ? [tag('thead', [], {}, [
             tag('tr', [], {}, contentSpec.header.map((c, i) => tag('th', [colClass(i)], {}, [c])))
         ])] : [];
 
-    function mkTR(row: TableRow) {
-        // we need to repeat `row instanceof Array` here so TS an properly infer the type of row in the expression.
+    function mkTR(row: Content[] | TableRow): TableRowElement {
         const contentArrays: Content[] =
             row instanceof Array ? row : contentSpec.classes.map(cls => row[cls]).map(content => content instanceof Array ? content : [content]);
 
-
-        const propCells: (TagElement[] | Record<string, TagElement>) = row instanceof Array ? [] : {};
+        const propCells: Record<string, TagElement<any>> = {};
         const cells = contentArrays.map((c, i) => {
             const cell = i === 0 && contentSpec.rowHeading ? tag('th', [colClass(i)], {scope: 'row'}, c) : tag('td', [colClass(i)], {}, c);
-            if (propCells instanceof Array) {
-                propCells[i] = cell;
-            } else {
-                propCells[contentSpec.classes[i]] = cell;
-            }
+            propCells[contentSpec.classes[i]] = cell;
             return cell;
         });
 
-        const tr = tag('tr', [], {}, cells);
-
-        tr.row = row;
-        tr.propCells = propCells;
-        tr.row.__el = tr;
-
-        tr.updateValues = (props: Record<string, Content>) => {
-            for (const prop in props) {
-                if (props.hasOwnProperty(prop)) {
-                    const value = props[prop];
-                    tr.row[prop] = value;
-                    const cell = tr.propCells[prop];
-                    cell.innerHTML = "";
-                    appendContent(cell, value);
+        const tr = tag('tr', [], {}, cells) as TableRowElement;
+        return Object.assign(tr, {
+            row: {
+                ...row,
+                __el: tr
+            },
+            propCells: propCells,
+            updateValues(props: Record<string, Content>) {
+                for (const prop in props) {
+                    if (props.hasOwnProperty(prop)) {
+                        const value = props[prop];
+                        tr.row[prop] = value;
+                        const cell = tr.propCells[prop];
+                        cell.innerHTML = "";
+                        appendContent(cell, value);
+                    }
+                }
+                const nextSibling = tr.nextSibling;
+                const parentNode = tr.parentNode;
+                if (parentNode) {
+                    parentNode.removeChild(tr);
+                    parentNode.insertBefore(tr, nextSibling);   // re-trigger the highlight animation
                 }
             }
-            const nextSibling = tr.nextSibling;
-            const parentNode = tr.parentNode;
-            if (parentNode) {
-                parentNode.removeChild(tr);
-                parentNode.insertBefore(tr, nextSibling);   // re-trigger the highlight animation
-            }
-        };
-
-        return tr;
+        });
     }
 
     const body = tag(
@@ -251,54 +267,53 @@ export function table(classes: string[], contentSpec: TableContentSpec) {
 
     const table = tag('table', classes, {}, [
         ...heading, body
-    ]);
+    ]) as TableElement;
 
-    table.addRow = (row: TableRow, whichBody: HTMLTableSectionElement) => {
-        const tbody = whichBody === undefined ? body : whichBody;
-        const rowEl = mkTR(row);
-        if (contentSpec.addToTop)
-            tbody.insertBefore(rowEl, tbody.firstChild);
-        else
-            tbody.appendChild(rowEl);
-        return rowEl;
-    };
+    return Object.assign(table, {
+        addRow(row: TableRow, whichBody?: TagElement<"tbody">) {
+            const tbody = whichBody === undefined ? body : whichBody;
+            const rowEl = mkTR(row);
+            if (contentSpec.addToTop)
+                tbody.insertBefore(rowEl, tbody.firstChild);
+            else
+                tbody.appendChild(rowEl);
+            return rowEl;
+        },
+        findRows(props: Record<string, string>, tbody?: TagElement<"tbody">) {
+            return table.findRowsBy((row: TableRow) => {
+                for (const prop in props) {
+                    if (props.hasOwnProperty(prop)) {
+                        if (row[prop] !== props[prop])
+                            return false;
+                    }
+                }
+                return true;
+            }, tbody);
+        },
+        findRowsBy(fn: (row: TableRow) => boolean, tbody?: TagElement<"tbody">) {
+            const [searchEl, selector] = tbody ? [tbody, 'tr'] : [table, 'tbody tr'];
+            const matches: TagElement<"tr">[] = [];
+            [...searchEl.querySelectorAll(selector)].forEach((tr: TableRowElement) => {
+                if (fn(tr.row)) {
+                    matches.push(tr);
+                }
+            });
+            return matches;
+        },
+        addBody(rows?: TableRow[]) {
+            const newBody = tag(
+                'tbody', [], {},
+                contentSpec.rows ? contentSpec.rows.map(mkTR) : []
+            );
 
-    table.findRows = (props: Record<string, string>, tbody?: TagElement) => table.findRowsBy((row: TableRow) => {
-        for (const prop in props) {
-            if (props.hasOwnProperty(prop)) {
-                if ((row as any/* ¯\_(ツ)_/¯ */)[prop] !== props[prop])
-                    return false;
+            table.appendChild(newBody);
+
+            if (rows) {
+                rows.forEach(row => table.addRow(row, newBody));
             }
+            return newBody;
         }
-        return true;
-    }, tbody);
-
-    table.findRowsBy = (fn: (row: TableRow) => boolean, tbody?: TagElement) => {
-        const [searchEl, selector] = tbody ? [tbody, 'tr'] : [table, 'tbody tr'];
-        const matches: TagElement[] = [];
-        [...searchEl.querySelectorAll(selector)].forEach((tr: TagElement) => {
-            if (fn(tr.row)) {
-                matches.push(tr);
-            }
-        });
-        return matches;
-    };
-
-    table.addBody = (rows?: TableRow[]) => {
-        const newBody = tag(
-            'tbody', [], {},
-            contentSpec.rows ? contentSpec.rows.map(mkTR) : []
-        );
-
-        table.appendChild(newBody);
-
-        if (rows) {
-            rows.forEach(row => table.addRow(row, newBody));
-        }
-        return newBody;
-    };
-
-    return table;
+    });
 }
 
 export function details(classes: string[], summary: Content, content: Content) {
