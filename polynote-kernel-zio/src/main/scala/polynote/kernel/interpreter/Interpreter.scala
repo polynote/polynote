@@ -70,7 +70,7 @@ object Interpreter {
     */
   trait Factory {
     def languageName: String
-    def apply(): TaskR[ScalaCompiler.Provider with CurrentNotebook with TaskManager, Interpreter]
+    def apply(): TaskR[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter]
   }
 
   trait Factories {
@@ -91,6 +91,7 @@ trait Loader {
 
 object Loader {
   def load: TaskR[Blocking, Map[String, Interpreter.Factory]] = effectBlocking(ServiceLoader.load(classOf[Loader]).iterator.asScala.toList).map {
-    loaders => loaders.sortBy(_.priority).map(_.factories).foldLeft(Map.empty[String, Interpreter.Factory])(_ ++ _)
+    loaders =>
+      loaders.sortBy(_.priority).map(_.factories).foldLeft(Map.empty[String, Interpreter.Factory])(_ ++ _)
   }
 }

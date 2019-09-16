@@ -96,6 +96,7 @@ object TaskManager {
 
     override def queue[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[A]] = queueing.withPermit {
       for {
+        _             <- ZIO(System.err.println(s"Queueing $id"))
         statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, TaskStatus.Queued))
         remove         = ZIO.effectTotal(tasks.remove(id))
         fail           = statusRef.update(_.copy(status = errorWith, progress = 255.toByte)).ensuring(remove).uninterruptible.orDie

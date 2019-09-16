@@ -126,6 +126,10 @@ class PythonInterpreter(val kernelContext: KernelContext, dependencyProvider: De
       withJep(task).unsafeRunSync()
     }
 
+    def hasAttribute(obj: PythonObject, name: String): Boolean = run {
+      jep.getValue("hasattr", classOf[PyCallable]).callAs(classOf[java.lang.Boolean], obj.unwrap, name).booleanValue()
+    }
+
     override def asScalaList(obj: PythonObject): List[Any] = run {
       jep.set("___anon___", obj.unwrap)
       jep.eval("___anon___ = list(___anon___)")

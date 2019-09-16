@@ -6,6 +6,7 @@ import cats.syntax.traverse._
 import cats.instances.list._
 import polynote.kernel.environment.Config
 import polynote.kernel.util.{KernelReporter, LimitedSharingClassLoader, pathOf}
+import polynote.runtime.python.TypedPythonObject
 import zio.blocking.Blocking
 import zio.system.{System, env}
 import zio.internal.{ExecutionMetrics, Executor}
@@ -46,7 +47,10 @@ class ScalaCompiler private (
       }.mkString(", ")
       val resultType = formatTypeInternal(result)
       s"($paramStr) => $resultType"
+    case ConstantType(Constant(v)) => v.toString
     case NoType => "<Unknown>"
+    case typ if typ.typeSymbol == symbolOf[TypedPythonObject[_]] =>
+      typ.typeArgs.headOption.fold("PythonObject")(name => formatTypeInternal(name) + " (Python)")
     case _ =>
       val typName = typ.typeSymbolDirect.rawname
       val typNameStr = typName.decoded
@@ -168,7 +172,7 @@ class ScalaCompiler private (
     }
 
     // The name of the class (and its companion object, in case one is needed)
-    lazy val assignedTypeName: TypeName = freshTypeName(name)(global.currentFreshNameCreator)
+    lazy val assignedTypeName: TypeName = freshTypeName(s"$name$$")(global.currentFreshNameCreator)
     lazy val assignedTermName: TermName = assignedTypeName.toTermName
 
     // Separate the implicit inputs, since they must be in their own parameter list
@@ -183,12 +187,12 @@ class ScalaCompiler private (
       cell => ValDef(Modifiers(), TermName(s"_input${cell.assignedTypeName.decodedName.toString}"), tq"${cell.assignedTypeName}".setType(cell.cellClassType).setSymbol(cell.cellClassSymbol), EmptyTree)
     }
 
-    // create imports for all types defined by previous cells
-    lazy val priorCellTypeImports: List[Import] = priorCells.zip(priorCellInputs).map {
+    // create imports for all types and methods defined by previous cells
+    lazy val priorCellImports: List[Import] = priorCells.zip(priorCellInputs).map {
       case (cell, ValDef(_, term, _, _)) =>
         Import(
           Ident(term),
-          cell.definedTypes.zipWithIndex.map {
+          cell.definedTypesAndMethods.zipWithIndex.map {
             case (name, index) => ImportSelector(name, index, name, index)
           }
         )
@@ -202,7 +206,15 @@ class ScalaCompiler private (
     lazy val typedOutputs: List[ValDef] = {
       val prev = outputs.map(v => v.name -> v).toMap
 
-      def notUnit(tpe: Type) = tpe != null && !(tpe <:< weakTypeOf[Unit]) && !(tpe <:< weakTypeOf[BoxedUnit])
+      def notUnit(tpe: Type) = {
+        val notNullType = tpe != null
+//        val notUnitType = !(tpe <:< typeOf[Unit])
+//        val notBoxedUnitType = !(tpe <:< typeOf[BoxedUnit])
+        // for some reason the type comparisons sometimes return false positives! WHAT?
+        val notUnitType = tpe.typeSymbol.name.decoded != "Unit"
+        val notBoxedUnitType = tpe.typeSymbol.name.decoded != "BoxedUnit"
+        notNullType && notUnitType && notBoxedUnitType
+      }
 
       exitingTyper(compiledCode).collect {
         case vd@ValDef(_, name, tpt, _) if (prev contains name) && notUnit(vd.symbol.originalInfo) =>
@@ -214,17 +226,23 @@ class ScalaCompiler private (
       }
     }
 
+    lazy val typedMethods: List[MethodSymbol] = compiledCode.collect {
+      case method: DefDef if method.mods.isPublic && method.symbol != NoSymbol && method.symbol != null && method.symbol.isMethod =>
+        method.symbol.asMethod
+    }
+
     // what things does this code import?
     lazy val imports: List[Import] = code.collect {
       case i: Import => i.duplicate
     }
 
-    // what types (classes, traits, objects, type aliases) does this code define?
-    lazy val definedTypes: List[Name] = code.collect {
+    // what types (classes, traits, objects, type aliases) and methods does this code define?
+    lazy val definedTypesAndMethods: List[Name] = code.collect {
       case ModuleDef(mods, name, _) if mods.isPublic => name
       case ClassDef(mods, name, _, _) if mods.isPublic && mods.isCase => name.toTermName
       case ClassDef(mods, name, _, _) if mods.isPublic => name
       case TypeDef(mods, name, _, _) if mods.isPublic => name
+      case DefDef(mods, name, _, _, _, _) if mods.isPublic => name
     }
 
     private lazy val wrappedClass: ClassDef = {
@@ -233,7 +251,7 @@ class ScalaCompiler private (
       val implicitParamList = copyAndReset(implicitInputs)
       q"""
         class $assignedTypeName(..$priorCellParamList)(..$nonImplicitParamList)(..$implicitParamList) extends scala.Serializable {
-          ..${priorCellTypeImports}
+          ..${priorCellImports}
           ..${copyAndReset(inheritedImports.externalImports)}
           ..${copyAndReset(inheritedImports.localImports)}
           ..$compiledCode

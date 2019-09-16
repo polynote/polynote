@@ -318,6 +318,7 @@ final case class TaskInfo(
   def done(status: TaskStatus.DoneStatus): TaskInfo = if (this.status.isDone) this else copy(status = status, progress = 255.toByte)
   def progress(fraction: Double): TaskInfo = copy(progress = (fraction * 255).toByte)
   def progress(fraction: Double, detailOpt: Option[String]): TaskInfo = copy(progress = (fraction * 255).toByte, detail = detailOpt.getOrElse(detail))
+  def progressFraction: Double = progress.toDouble / 255
 }
 
 object TaskInfo {

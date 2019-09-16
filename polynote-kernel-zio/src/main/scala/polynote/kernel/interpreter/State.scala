@@ -48,14 +48,28 @@ trait State {
   def toList: List[State] = collect { case s => s }
 
   /**
-    * @return a list of states in reverse chronological order, until (but not including) the predicate holds
+    * @return a list of states in reverse chronological order, until (but not including) the predicate fails to hold
     */
   def takeWhile(fn: State => Boolean): List[State] = {
     var state = this
     val result = new ListBuffer[State]
-    while (!(state eq Root) && !fn(state)) {
+    while (!(state eq Root) && fn(state)) {
       result += state
       state = state.prev
+    }
+    result.toList
+  }
+
+  /**
+    * @return a list of states in reverse chronological order, until the predicate is satisfied, *including* the state
+    *         which satisfied the predicate (if any)
+    */
+  def takeUntil(fn: State => Boolean): List[State] = {
+    var state = this
+    val result = ListBuffer(state)
+    while (!(state eq Root) && !fn(state)) {
+      state = state.prev
+      result += state
     }
     result.toList
   }

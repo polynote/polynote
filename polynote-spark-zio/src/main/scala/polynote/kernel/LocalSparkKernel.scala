@@ -1,6 +1,7 @@
 package polynote.kernel
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.concurrent.Ref
 import fs2.concurrent.SignallingRef
@@ -29,8 +30,9 @@ class LocalSparkKernel private[kernel] (
   compilerProvider: ScalaCompiler.Provider,
   interpreterState: Ref[Task, State],
   interpreters: RefMap[String, Interpreter],
-  busyState: SignallingRef[Task, KernelBusyState]
-) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState) {
+  busyState: SignallingRef[Task, KernelBusyState],
+  predefStateId: AtomicInteger
+) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState, predefStateId) {
   override def init(): TaskR[BaseEnv with GlobalEnv with CellEnv, Unit] = super.init()
 }
 
@@ -58,10 +60,11 @@ object LocalSparkKernel extends Kernel.Factory.Service {
     compiler              <- ScalaCompiler(settings, ZIO.succeed(classLoader)).map(ScalaCompiler.Provider.of)
     busyState             <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters          <- RefMap.empty[String, Interpreter]
-    scalaInterpreter      <- interpreters.getOrCreate("scala")(ScalaInterpreter().provide(compiler))
-    initialState          <- TaskManager.runR[BaseEnv with GlobalEnv with CellEnv]("SparkPredef", "Spark predef")(scalaInterpreter.runId(-1, sparkPredef))
+    scalaInterpreter      <- interpreters.getOrCreate("scala")(ScalaInterpreter.fromFactory().provide(compiler).flatten)
+    predefStateId          = new AtomicInteger(-1)
+    initialState          <- TaskManager.runR[BaseEnv with GlobalEnv with CellEnv]("SparkPredef", "Spark predef")(scalaInterpreter.runId(predefStateId.getAndDecrement(), sparkPredef))
     interpState           <- Ref[Task].of[State](initialState)
-  } yield new LocalKernel(compiler, interpState, interpreters, busyState)
+  } yield new LocalKernel(compiler, interpState, interpreters, busyState, predefStateId)
 
   private def startSparkSession(deps: List[(String, File)], settings: Settings): TaskR[BaseEnv with GlobalEnv with CellEnv, (SparkSession, AbstractFileClassLoader)] = {
     def mkSpark(

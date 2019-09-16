@@ -12,7 +12,7 @@ import zio.{Task, TaskR, ZIO}
 import ScalaInterpreter.{addPositionUpdates, captureLastExpression}
 import polynote.kernel.environment.CurrentRuntime
 
-class ScalaInterpreter private (
+class ScalaInterpreter private[scal] (
   val scalaCompiler: ScalaCompiler
 ) extends Interpreter {
   import scalaCompiler.{CellCode, global, Imports}
@@ -163,7 +163,11 @@ class ScalaInterpreter private (
         typedOuts.zip(typeNames).collect {
           case (v, typeName) if !(v.tpt.tpe =:= typeOf[Unit]) && !(v.tpt.tpe =:= typeOf[scala.runtime.BoxedUnit]) =>
             val value = cls.getDeclaredMethod(v.name.encodedName.toString).invoke(result)
-            ResultValue(v.name.decodedName.toString, typeName, Nil, id, value, v.tpt.tpe, Some((v.pos.start, v.pos.end)))
+            val name = v.name.decoded match {
+              case "$Out" => "Out"
+              case name => name
+            }
+            ResultValue(name, typeName, Nil, id, value, v.tpt.tpe, Some((v.pos.start, v.pos.end)))
         }
       }
     }
@@ -187,6 +191,13 @@ object ScalaInterpreter {
     compiler => new ScalaInterpreter(compiler)
   }
 
+  def fromFactory(): TaskR[ScalaCompiler.Provider, TaskR[Interpreter.Factories, ScalaInterpreter]] = ZIO.access[ScalaCompiler.Provider](identity).map {
+    compiler => Interpreter.factory("scala")
+      .collect(new IllegalStateException("Expected ScalaInterpreter.Factory")) {
+        case fac: ScalaInterpreter.Factory => fac().provide(compiler)
+      }.flatten
+  }
+
   // capture the last statement in a value Out, if it's a free expression
   def captureLastExpression(global: Global)(trees: List[global.Tree]): List[global.Tree] = {
     import global._
@@ -194,7 +205,7 @@ object ScalaInterpreter {
       case Nil => Nil
       case l :: r => l match {
         case v: ValDef => (v :: r).reverse
-        case expr if expr.isTerm => (atPos(expr.pos)(ValDef(Modifiers(), TermName("Out"), TypeTree(NoType), expr)) :: r).reverse
+        case expr if expr.isTerm => (atPos(expr.pos)(ValDef(Modifiers(), TermName("$Out"), TypeTree(NoType), expr)) :: r).reverse
         case v => (v :: r).reverse
       }
     }
@@ -227,12 +238,16 @@ object ScalaInterpreter {
     } :+ q"kernel.clearExecutionStatus()"
   }
 
+  trait Factory extends Interpreter.Factory {
+    val languageName = "Scala"
+    def apply(): TaskR[ScalaCompiler.Provider, ScalaInterpreter]
+  }
+
   /**
     * The Scala interpreter factory is a little bit special, in that it doesn't do any dependency fetching. This is
     * because the JVM dependencies must already be fetched when the kernel is booted.
     */
-  object Factory extends Interpreter.Factory {
-    val languageName = "Scala"
-    override def apply(): TaskR[ScalaCompiler.Provider, Interpreter] = ScalaInterpreter()
+  object Factory extends Factory {
+    override def apply(): TaskR[ScalaCompiler.Provider, ScalaInterpreter] = ScalaInterpreter()
   }
 }

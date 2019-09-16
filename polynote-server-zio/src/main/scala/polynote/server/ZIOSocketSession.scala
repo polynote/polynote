@@ -11,7 +11,7 @@ import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame.Binary
 import polynote.buildinfo.BuildInfo
 import polynote.kernel.util.{Publish, RefMap}
-import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, StreamOps, TaskG, UpdatedTasks}
+import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, StreamOps, StreamingHandles, TaskG, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
 import polynote.messages._
@@ -25,6 +25,8 @@ class ZIOSocketSession(
   subscribed: RefMap[String, KernelSubscriber],
   closed: Promise[Throwable, Unit]
 )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
+
+  private val streamingHandles = StreamingHandles.make()
 
   private def subscriber(path: String): Task[KernelSubscriber] = //subscribed.get(path).orDie.get.mapError(_ => new NoSuchElementException(s"Notebook $path is not currently open"))
     subscribed.get(path).flatMap {
@@ -145,9 +147,26 @@ class ZIOSocketSession(
     case StartKernel(path, StartKernel.ColdRestart) => subscribe(path).flatMap(_.publisher.restartKernel(true))
     case StartKernel(path, StartKernel.Kill)        => subscribe(path).flatMap(_.publisher.killKernel())
 
-    case HandleData(path, handleType, handle, count, _) => ??? // TODO
-    case ms @ ModifyStream(path, fromHandle, ops, _) => ??? // TODO
-    case rh @ ReleaseHandle(path, handleType, handleId) => ??? // TODO
+    case req@HandleData(path, handleType, handle, count, _) => for {
+      subscriber <- subscribe(path)
+      kernel     <- subscriber.publisher.kernel
+      data       <- kernel.getHandleData(handleType, handle, count).provide(streamingHandles)
+      _          <- PublishMessage(req.copy(data = data))
+    } yield ()
+
+    case req @ ModifyStream(path, fromHandle, ops, _) => for {
+      subscriber <- subscribe(path)
+      kernel     <- subscriber.publisher.kernel
+      newRepr    <- kernel.modifyStream(fromHandle, ops).provide(streamingHandles)
+      _          <- PublishMessage(req.copy(newRepr = newRepr))
+    } yield ()
+
+    case req @ ReleaseHandle(path, handleType, handleId) => for {
+      subscriber <- subscribe(path)
+      kernel     <- subscriber.publisher.kernel
+      newRepr    <- kernel.releaseHandle(handleType, handleId).provide(streamingHandles)
+      _          <- PublishMessage(req)
+    } yield ()
 
     case CancelTasks(path) => subscribe(path).flatMap(_.publisher.cancelAll())
 

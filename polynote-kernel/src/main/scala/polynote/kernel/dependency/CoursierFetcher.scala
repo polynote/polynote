@@ -31,7 +31,6 @@ class CoursierFetcher(val path: String, val taskInfo: TaskInfo, val statusUpdate
   protected implicit val contextShift: ContextShift[IO] =  IO.contextShift(executionContext)
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
-  val artifactTypes = coursier.core.Resolution.defaultTypes - Type.testJar
   private val cache = FileCache[IO]()
 
 

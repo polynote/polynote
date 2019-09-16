@@ -50,6 +50,7 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
     }
   }
 
+  def hasAttribute(name: String): Boolean = runner.hasAttribute(this, name)
   def asScalaList: List[Any] = runner.asScalaList(this)
   def asScalaMap: Map[Any, Any] = runner.asScalaMap(this)
   def asScalaMapOf[K : ClassTag, V : ClassTag]: Map[K, V] = runner.asScalaMapOf[K, V](this)
@@ -70,7 +71,10 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
   def applyDynamicNamed(method: String)(args: (String, Any)*): PythonObject =
       callKwArgs(selectDynamic[PyCallable](method), args)
 
-  def as[T : ClassTag]: T = obj.as(classTag[T].runtimeClass.asInstanceOf[Class[T]])
+  def as[T >: Null : ClassTag]: T = if (obj != null)
+    obj.as(classTag[T].runtimeClass.asInstanceOf[Class[T]])
+  else
+    null
 
   override def toString: String = runner.run {
     try {
@@ -95,9 +99,9 @@ object PythonObject {
         case err: Throwable => None
       }
 
-      val htmlRepr = attemptRepr("text/html", obj._repr_html_().as[String])
-      val textRepr = attemptRepr("text/plain", obj.__repr__().as[String])
-      val latexRepr = attemptRepr("application/latex", obj._repr_latex_().as[String])
+      val htmlRepr = if (obj.hasAttribute("_repr_html_")) attemptRepr("text/html", obj._repr_html_().as[String]) else None
+      val textRepr = if (obj.hasAttribute("__repr__")) attemptRepr("text/plain", obj.__repr__().as[String]) else None
+      val latexRepr = if (obj.hasAttribute("_repr_latex_")) attemptRepr("application/latex", obj._repr_latex_().as[String]) else None
 
       List(htmlRepr, textRepr, latexRepr).flatten.toArray
     }
@@ -143,6 +147,7 @@ object PythonObject {
 
   trait Runner {
     def run[T](task: => T): T
+    def hasAttribute(obj: PythonObject, name: String): Boolean
     def asScalaList(obj: PythonObject): List[Any]
     def asScalaMap(obj: PythonObject): Map[Any, Any]
     def asScalaMapOf[K : ClassTag, V : ClassTag](obj: PythonObject): Map[K, V]

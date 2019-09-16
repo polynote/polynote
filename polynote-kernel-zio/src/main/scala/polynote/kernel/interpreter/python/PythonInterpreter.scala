@@ -1,33 +1,41 @@
 package polynote.kernel.interpreter
 package python
-import java.nio.file.Paths
+import java.nio.file.{Files, Path, Paths}
 import java.util
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import java.util.concurrent.{Executors, LinkedBlockingQueue, ThreadFactory}
 
+import cats.syntax.traverse._
+import cats.instances.list._
 import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig, NamingConventionClassEnquirer, SubInterpreter}
-import polynote.kernel.environment.{CurrentNotebook, CurrentRuntime}
-import polynote.kernel.{CompileErrors, Completion, InterpreterEnv, KernelReport, Pos, ResultValue, ScalaCompiler, Signatures, TaskManager}
-import polynote.messages.CellID
+import polynote.config
+import polynote.config.{PolynoteConfig, pip}
+import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
+import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures, TaskManager}
+import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.{Runtime, Task, TaskR, ZIO}
+import zio.interop.catz._
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext
 import scala.reflect.{ClassTag, classTag}
+import scala.util.Try
 
-class PythonInterpreter private (
+class PythonInterpreter private[python] (
   compiler: ScalaCompiler,
   jepInstance: Jep,
   jepExecutor: Executor,
   jepThread: AtomicReference[Thread],
   jepBlockingService: Blocking,
   runtime: Runtime[Any],
-  pyApi: PythonInterpreter.PythonAPI
+  pyApi: PythonInterpreter.PythonAPI,
+  venvPath: Option[Path],
+  py4jError: String => Option[Throwable]
 ) extends Interpreter {
   import pyApi._
 
@@ -37,6 +45,11 @@ class PythonInterpreter private (
     } else {
       runtime.unsafeRun(effectBlocking(task).lock(jepExecutor).provide(jepBlockingService))
     }
+
+    def hasAttribute(obj: PythonObject, name: String): Boolean = run {
+      hasAttr(obj.unwrap, name)
+    }
+
     def asScalaList(obj: PythonObject): List[PythonObject] = run {
       val pyObj = obj.unwrap
       val getItem = pyObj.getAttr("__getitem__", classOf[PyCallable])
@@ -74,23 +87,100 @@ class PythonInterpreter private (
     resState  <- run(compiled, globals, locals, state)
   } yield resState
 
-  def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = ???
+  def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = populateGlobals(state).flatMap {
+    globals => jep {
+      jep =>
+        val jedi = new polynote.runtime.python.PythonFunction(jep.getValue("jedi.Interpreter", classOf[PyCallable]), runner)
+        val lines = code.substring(0, pos).split('\n')
+        val lineNo = lines.length
+        val col = lines.last.length
+        val pyCompletions = jedi(code, Array(globals), line = lineNo, column = col).completions().as[Array[PyObject]].map(new PythonObject(_, runner))
+        pyCompletions.map {
+          completion =>
+            val name = completion.name[String]
+            val typ = completion.`type`[String]
+            val params = typ match {
+              case "function" => List(TinyList(completion.params[Array[PyObject]].map {
+                  paramObj =>
+                    TinyString(paramObj.getAttr("name", classOf[String])) -> ShortString("")
+                }.toList))
+              case _ => Nil
+            }
+            val completionType = typ match {
+              case "module" => CompletionType.Module
+              case "function" => CompletionType.Method
+              case "instance" => CompletionType.Term
+              case "class" => CompletionType.ClassType
+              case "keyword" => CompletionType.Keyword
+              case "statement" => CompletionType.Term
+              case _ => CompletionType.Unknown
+            }
+            Completion(name, Nil, params, ShortString(""), completionType)
+        }.toList
 
-  def parametersAt(code: String, pos: Int, state: State): Task[Option[Signatures]] = ???
+    }
+  }
+
+  def parametersAt(code: String, pos: Int, state: State): Task[Option[Signatures]] = populateGlobals(state).flatMap {
+    globals => jep {
+      jep =>
+        try {
+          val lines = code.substring(0, pos).split('\n')
+          val line = lines.length
+          val col = lines.last.length
+          jep.eval(s"__polynote_sig__ = jedi.Interpreter(__polynote_code__, [__polynote_globals__, {}], line=$line, column=$col).call_signatures()[0]")
+          // If this comes back as a List, Jep will mash all the elements to strings. So gotta use it as a PyObject. Hope that gets fixed!
+          // TODO: will need some reusable PyObject wrappings anyway
+          val sig = new PythonObject(jep.getValue("__polynote_sig__", classOf[PyObject]), runner)
+          val index = sig.index[java.lang.Long]
+          jep.eval("__polynote_params__ = list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], __polynote_sig__.params))")
+          val params = jep.getValue("__polynote_params__", classOf[java.util.List[java.util.List[String]]]).asScala.map {
+            tup =>
+              val name = tup.get(0)
+              val typeName = if (tup.size > 1) Option(tup.get(1)) else None
+              ParameterHint(name, typeName.getOrElse(""), None) // TODO: can we parse per-param docstrings out of the main docstring?
+          }
+
+          val docString = Try(sig.docstring(true))
+            .map(_.toString.split("\n\n").head)
+            .toOption.filterNot(_.isEmpty).map(ShortString.truncate)
+
+          val name = s"${sig.name[String]}(${params.mkString(", ")})"
+          val hints = ParameterHints(
+            name,
+            docString,
+            params.toList
+          )
+          Some(Signatures(List(hints), 0, index.byteValue()))
+        } catch {
+          case err: Throwable => None
+        }
+    }
+  }
 
   def init(state: State): TaskR[InterpreterEnv, State] = for {
-    _ <- exec(setup)
-  } yield state
+    _       <- exec(setup)
+    globals <- getValue("globals().copy()")
+    _       <- eval[String]("str(globals())").flatMap(str => ZIO(System.err.println(str)))
+    scope   <- populateGlobals(state)
+    _       <- jep { _ =>
+      val update = globals.getAttr("update", classOf[PyCallable])
+      update.call(scope)
+    }
+  } yield PythonState(state.id, state.prev, Nil, globals)
 
   def shutdown(): Task[Unit] = jep(_.close())
 
-  protected def jep[T](fn: Jep => T): Task[T] = effectBlocking(fn(jepInstance)).lock(jepExecutor).provide(jepBlockingService)
-  protected def exec(code: String): Task[Unit] = jep(_.exec(code))
-  protected def eval[T : ClassTag](code: String): Task[T] = jep(_.getValue(code, classTag[T].runtimeClass.asInstanceOf[Class[T]]))
-  protected def setValue(name: String, value: AnyRef): Task[Unit] = jep(_.set(name, value))
+  protected[python] def jep[T](fn: Jep => T): Task[T] = effectBlocking(fn(jepInstance)).lock(jepExecutor).provide(jepBlockingService)
+  protected[python] def exec(code: String): Task[Unit] = jep(_.exec(code))
+  protected[python] def eval[T : ClassTag](code: String): Task[T] = jep(_.getValue(code, classTag[T].runtimeClass.asInstanceOf[Class[T]]))
+  protected[python] def setValue(name: String, value: AnyRef): Task[Unit] = jep(_.set(name, value))
+  protected[python] def getValue(name: String): Task[PyObject] = jep(_.getValue(name, classOf[PyObject]))
+
 
   protected def setup: String =
-    """import os, sys, ast, jedi, shutil
+    """
+      |import os, sys, ast, jedi, shutil
       |from pathlib import Path
       |from java.lang import RuntimeException, StackTraceElement
       |from java.util import ArrayList, HashMap
@@ -137,11 +227,16 @@ class PythonInterpreter private (
       |    except Exception as err:
       |        import traceback
       |        typ, err_val, tb = sys.exc_info()
+      |
       |        trace = ArrayList()
       |        for frame in traceback.extract_tb(tb):
       |            trace.add(StackTraceElement(frame.filename.split("/")[-1], frame.name, frame.filename, frame.lineno))
-      |        return { 'stackTrace': trace, 'message': getattr(err_val, 'message', str(err_val)), 'class': typ.__name__  }
+      |        result = { 'stack_trace': trace, 'message': getattr(err_val, 'message', str(err_val)), 'class': typ.__name__  }
       |
+      |        if typ.__name__ == 'Py4JJavaError':
+      |            result['py4j_error'] = err.java_exception._target_id
+      |
+      |        return result
       |
       |""".stripMargin
 
@@ -156,7 +251,7 @@ class PythonInterpreter private (
 
   protected def populateGlobals(state: State): Task[PyObject] = jep {
     jep =>
-      val prevStates = state.takeWhile(!_.isInstanceOf[PythonState]).reverse
+      val prevStates = state.takeUntil(_.isInstanceOf[PythonState]).reverse
       val (globalsDict, rest) = prevStates match {
         case PythonState(_, _, _, globalsDict) :: rest => (globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject]), rest)
         case others => (jep.getValue("{}", classOf[PyObject]), others)
@@ -164,9 +259,10 @@ class PythonInterpreter private (
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
 
-      prevStates.map(_.values).map {
+      rest.map(_.values).map {
         values => values.map(v => v.name -> v.value).toMap
       }.foldLeft(Map.empty[String, Any])(_ ++ _).foreach {
+        case (name, value: PythonObject) => addGlobal.call(name, value.unwrap)
         case (name, value) => addGlobal.call(name, value.asInstanceOf[AnyRef])
       }
 
@@ -201,7 +297,7 @@ class PythonInterpreter private (
           val result = run.callAs(classOf[PyObject], compiled, globals, locals, kernelRuntime)
           val get = result.getAttr("get", classOf[PyCallable])
 
-          get.callAs(classOf[PyObject], "stackTrace") match {
+          get.callAs(classOf[util.ArrayList[Object]], "stack_trace") match {
             case null =>
               val globals = get.callAs(classOf[PyObject], "globals")
               val locals = get.callAs(classOf[PyObject], "locals")
@@ -230,7 +326,9 @@ class PythonInterpreter private (
                         val typ = runtime.unsafeRun(compiler.reflect(jValue)).symbol.info
                         (typ, jValue)
                       case other =>
-                        val typ = appliedType(typeOf[TypedPythonObject[String]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
+                        // should we use the qualified type? It's confusing that both Spark and Pandas have a "DataFrame".
+                        // But in every other case it's just noise.
+                        val typ = appliedType(typeOf[TypedPythonObject[Nothing]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
                         (typ, new TypedPythonObject[String](pyValue, runner))
                     }
                     Some(new ResultValue(key, compiler.unsafeFormatType(typ.asInstanceOf[Type]), Nil, state.id, value, typ.asInstanceOf[Type], None))
@@ -240,10 +338,11 @@ class PythonInterpreter private (
               PythonState(state.id, state.prev, resultValues.toList, globals)
 
             case trace =>
+              val cause = Option(get.callAs(classOf[String], "py4j_error")).flatMap(py4jError)
               val message = get.callAs(classOf[String], "message")
               val typ = get.callAs(classOf[String], "class")
-              val els = trace.as(classOf[java.util.ArrayList[StackTraceElement]]).asScala.toArray
-              val err = new RuntimeException(s"$typ: $message")
+              val els = trace.asScala.map(_.asInstanceOf[StackTraceElement]).toArray
+              val err = cause.fold(new RuntimeException(s"$typ: $message"))(new RuntimeException(s"$typ: $message", _))
               err.setStackTrace(els)
               throw err
           }
@@ -258,20 +357,33 @@ class PythonInterpreter private (
 
 object PythonInterpreter {
 
-  private class PythonAPI(jep: Jep) {
+  private[python] class PythonAPI(jep: Jep) {
     private val typeFn: PyCallable = jep.getValue("type", classOf[PyCallable])
     private val lenFn: PyCallable = jep.getValue("len", classOf[PyCallable])
     private val listFn: PyCallable = jep.getValue("list", classOf[PyCallable])
     private val dictToItemsListFn: PyCallable = jep.getValue("lambda x: list(x.items())", classOf[PyCallable])
+    private val hasAttrFn: PyCallable = jep.getValue("hasattr", classOf[PyCallable])
+
+    jep.exec(
+      """def __polynote_qualified_type__(o):
+        |    if hasattr(o, "__class__"):
+        |        if hasattr(o.__class__, "__module__"):
+        |            return o.__class__.__module__ + "." + o.__class__.__name__
+        |    return type(o).__name__
+        |""".stripMargin)
+
+    private val qualifiedTypeFn: PyCallable = jep.getValue("__polynote_qualified_type__", classOf[PyCallable])
 
     def typeName(obj: PyObject): String = typeFn.callAs(classOf[PyObject], obj).getAttr("__name__", classOf[String])
+    def qualifiedTypeName(obj: PyObject): String = qualifiedTypeFn.callAs(classOf[String], obj)
     def len(obj: PyObject): Int = lenFn.callAs(classOf[java.lang.Number], obj).intValue()
     def list(obj: PyObject): PyObject = listFn.callAs(classOf[PyObject], obj)
     def dictToItemsList(obj: PyObject): PyObject = dictToItemsListFn.callAs(classOf[PyObject], obj)
+    def hasAttr(obj: PyObject, name: String): Boolean = hasAttrFn.callAs(classOf[java.lang.Boolean], obj, name).booleanValue()
   }
 
 
-  private def jepExecutor(jepThread: AtomicReference[Thread]): Executor = Executor.fromExecutionContext(Int.MaxValue) {
+  private[python] def jepExecutor(jepThread: AtomicReference[Thread]): Executor = Executor.fromExecutionContext(Int.MaxValue) {
     ExecutionContext.fromExecutorService {
       Executors.newSingleThreadExecutor {
         new ThreadFactory {
@@ -290,36 +402,116 @@ object PythonInterpreter {
   }
 
   // TODO: pull this from configuration?
-  private def sharedModules: List[String] = List("numpy", "google")
+  private[python] def sharedModules: List[String] = List("numpy", "google")
 
-  private def mkJep: TaskR[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
+  private[python] def mkJep(venv: Option[Path], sharedModules: List[String]): TaskR[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
     classLoader => ZIO {
       val conf = new JepConfig()
         .addSharedModules(sharedModules: _*)
         .setInteractive(false)
         .setClassLoader(classLoader)
         .setClassEnquirer(new NamingConventionClassEnquirer(true).addTopLevelPackageName("polynote"))
-      new SubInterpreter(conf)
+      val interp = new SubInterpreter(conf)
+      venv.foreach(path => interp.exec(s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"})"""))
+      //venv.foreach(path => interp.exec(s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"})"""))
+      interp
     }
   }
 
-  private def mkJepBlocking(jepExecutor: Executor) = new Blocking {
+  private[python] def mkJepBlocking(jepExecutor: Executor) = new Blocking {
     val blocking: Blocking.Service[Any] = new Blocking.Service[Any] {
       def blockingExecutor: ZIO[Any, Nothing, Executor] = ZIO.succeed(jepExecutor)
     }
   }
 
-  // TODO: need to reimplement venv stuff
-  def apply(): TaskR[ScalaCompiler.Provider, PythonInterpreter] = {
+  def apply(
+    venv: Option[Path],
+    sharedModules: List[String] = PythonInterpreter.sharedModules,
+    py4jError: String => Option[Throwable] = _ => None
+  ): TaskR[ScalaCompiler.Provider, PythonInterpreter] = {
     val jepThread = new AtomicReference[Thread](null)
     for {
       compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
       executor <- ZIO.effectTotal(jepExecutor(jepThread))
-      jep      <- mkJep.lock(executor)
+      jep      <- mkJep(venv, sharedModules).lock(executor)
       blocking  = mkJepBlocking(executor)
       api      <- effectBlocking(new PythonAPI(jep)).lock(executor).provide(blocking)
       runtime  <- ZIO.runtime[Any]
-    } yield new PythonInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api)
+    } yield new PythonInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api, venv, py4jError)
+  }
+
+  object Factory extends Interpreter.Factory {
+    def languageName: String = "Python"
+    def apply(): TaskR[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = for {
+      venv   <- VirtualEnvFetcher.fetch()
+      interp <- PythonInterpreter(venv)
+    } yield interp
+  }
+
+}
+
+object VirtualEnvFetcher {
+
+  import scala.sys.process._
+
+  private def sanitize(path: String) = path.replace(' ', '_')
+
+  def fetch(): ZIO[TaskManager with Blocking with CurrentNotebook with CurrentTask with Config, Throwable, Option[Path]] = for {
+    config   <- Config.access
+    notebook <- CurrentNotebook.get
+    dirOpt   <- buildVirtualEnv(config, notebook)
+  } yield dirOpt
+
+  private def buildVirtualEnv(config: PolynoteConfig, notebook: Notebook) = {
+    val notebookConfig = notebook.config.getOrElse(NotebookConfig.empty)
+    val dependencies = notebookConfig.dependencies.toList.flatMap(_.getOrElse("python", Nil))
+    if (dependencies.nonEmpty) {
+      for {
+        dir <- effectBlocking(Paths.get(sanitize(config.storage.cache), sanitize(notebook.path), "venv").toAbsolutePath)
+        _   <- CurrentTask.update(_.progress(0.0, Some("Creating virtual environment")))
+        _   <- initVenv(dir)
+        _   <- CurrentTask.update(_.progress(0.2, Some("Installing dependencies")))
+        _   <- installDependencies(dir, notebookConfig.repositories.toList.flatten, dependencies, notebookConfig.exclusions.toList.flatten)
+      } yield Some(dir)
+    } else ZIO.succeed(None)
+  }
+
+  private def initVenv(path: Path) = effectBlocking(path.toFile.exists()).flatMap {
+    case true  => ZIO.unit
+    case false => effectBlocking {
+      Seq("virtualenv", "--system-site-packages", "--python=python3", path.toString).!
+    }.unit
+  }
+
+  private def installDependencies(
+    venv: Path,
+    repositories: List[config.RepositoryConfig],
+    dependencies: List[String],
+    exclusions: List[String]
+  ): TaskR[TaskManager with Blocking with CurrentTask, Unit] = {
+
+    val options: List[String] = repositories.collect {
+      case pip(url) => Seq("--extra-index-url", url)
+    }.flatten
+
+    def pip(action: String, dep: String, extraOptions: List[String] = Nil): TaskR[Blocking, Unit] = {
+      val baseCmd = List(s"$venv/bin/pip", action)
+      val cmd = baseCmd ::: options ::: extraOptions ::: dep :: Nil
+      effectBlocking(cmd.!)
+    }
+
+
+    CurrentTask.access.flatMap {
+      task =>
+        val total = dependencies.size
+        val depProgress = 0.5 / dependencies.size
+        dependencies.map {
+          dep =>
+            task.update(task => task.copy(label = dep).progress(task.progressFraction + depProgress)) *>
+            pip("install", dep) *>
+            pip("download", dep, List("--dest", s"$venv/deps/"))
+        }.sequence.unit
+    }
   }
 
 }

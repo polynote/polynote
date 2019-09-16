@@ -1,8 +1,9 @@
 package polynote.kernel.interpreter.python
 
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.kernel.{CompileErrors, KernelReport, Output, Pos, Result, ScalaCompiler}
+import polynote.kernel.{CompileErrors, Completion, CompletionType, KernelReport, Output, Pos, Result, ScalaCompiler}
 import polynote.kernel.interpreter.{MockEnv, State}
+import polynote.messages.TinyList
 import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
 import polynote.testing.{InterpreterSpec, ZIOSpec}
@@ -11,7 +12,7 @@ import zio.interop.catz._
 
 class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
-  val interpreter: PythonInterpreter = PythonInterpreter().provide(ScalaCompiler.Provider.of(compiler)).runIO()
+  val interpreter: PythonInterpreter = PythonInterpreter(None).provide(ScalaCompiler.Provider.of(compiler)).runIO()
   interpreter.init(State.Root).provideSomeM(MockEnv(-1)).runIO()
 
   "PythonInterpreter" - {
@@ -238,6 +239,11 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           vars("Out") shouldEqual 1.0
           output shouldBe empty
       }
+    }
+
+    "completions" in {
+      val completions = interpreter.completionsAt("dela", 4, State.id(1)).runIO()
+      completions shouldEqual List(Completion("delattr", Nil, TinyList(List(TinyList(List(("o", ""), ("name", ""))))), "", CompletionType.Method))
     }
   }
 

@@ -1,13 +1,20 @@
 package polynote.kernel.dependency
 
-import java.io.File
+import java.io.{File, FileOutputStream}
+import java.net.URI
+import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.{ConcurrentHashMap, ExecutorService}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import cats.{Applicative, Traverse}
 import cats.data.{Validated, ValidatedNel}
 import cats.effect.concurrent.Ref
+import cats.effect.LiftIO
+import cats.syntax.alternative._
+import cats.syntax.apply._
+import cats.syntax.either._
 import cats.syntax.traverse._
+import cats.instances.either._
 import cats.instances.list._
 import coursier.cache.{ArtifactError, Cache, CacheLogger, FileCache}
 import coursier.core.Repository.Fetch
@@ -20,11 +27,14 @@ import coursier.util.{EitherT, Sync}
 import polynote.config.{RepositoryConfig, ivy, maven}
 import polynote.kernel.{TaskInfo, TaskManager, UpdatedTasks}
 import polynote.kernel.environment.{CurrentNotebook, CurrentTask, Env}
+import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
 import polynote.messages.NotebookConfig
-import zio.{Task, TaskR, ZIO}
+import zio.blocking.{Blocking, effectBlocking, blocking}
+import zio.{Task, TaskR, ZIO, ZManaged}
 import zio.interop.catz._
 
 import scala.concurrent.ExecutionContext
+import scala.tools.nsc.interpreter.InputStream
 
 object ZIOCoursierFetcher {
   type ArtifactTask[A] = TaskR[CurrentTask, A]
@@ -53,20 +63,23 @@ object ZIOCoursierFetcher {
   }
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
-  val artifactTypes = coursier.core.Resolution.defaultTypes - Type.testJar
   private val cache = FileCache[ArtifactTask]()
 
-  def fetch(language: String): TaskR[CurrentNotebook with TaskManager, List[(String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
+  def fetch(language: String): TaskR[CurrentNotebook with TaskManager with Blocking, List[(String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
       config       <- CurrentNotebook.config
       dependencies  = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
+      (deps, uris)  = splitDependencies(dependencies)
       repoConfigs   = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions    = config.exclusions.map(_.toList).getOrElse(Nil)
       repositories <- ZIO.fromEither(repositories(repoConfigs))
       resolution   <- resolution(dependencies, exclusions, repositories)
       _            <- CurrentTask.update(_.copy(detail = "Downloading dependencies...", progress = 0))
-      result       <- download(resolution).provideSomeM(Env.enrichM[TaskManager](parentTask))
-    } yield result
+      downloadEnv  <- Env.enrichM[TaskManager with CurrentTask with Blocking](parentTask)
+      downloadDeps <- download(resolution).provide(downloadEnv).fork
+      downloadUris <- downloadUris(uris).provide(downloadEnv).fork
+      downloaded   <- downloadDeps.join.map2(downloadUris.join)(_ ++ _)
+    } yield downloaded
   }
 
   private def repositories(repositories: List[RepositoryConfig]): Either[Throwable, List[Repository]] = repositories.collect {
@@ -177,6 +190,73 @@ object ZIOCoursierFetcher {
             }
           }
       }
+  }
+
+  private def downloadUris(uris: List[URI]): TaskR[TaskManager with CurrentTask with ParentTask with Blocking, List[(String, File)]] = {
+    ZIO.collectAllPar {
+      uris.map {
+        uri => for {
+          task     <- ZIO.access[ParentTask](identity)
+          _        <- task.newSubtask()
+          download <- TaskManager.runR[Blocking with CurrentTask with TaskManager](uri.toString, uri.toString){
+            fetchUrl(uri, cacheLocation(uri).toFile).ensuring(task.completedSubtask().orDie)
+          }
+        } yield uri.toString -> download
+      }
+    }
+  }
+
+  protected def fetchUrl(uri: URI, localFile: File, chunkSize: Int = 8192): TaskR[Blocking with CurrentTask, File] = {
+    def downloadToFile(file: DownloadableFile, cacheFile: File) = for {
+      blockingEnv <- ZIO.access[Blocking](identity)
+      task        <- CurrentTask.access
+      ec          <- blockingEnv.blocking.blockingExecutor.map(_.asEC)
+      size        <- blocking(LiftIO[Task].liftIO(file.size))
+      _           <- ZManaged.fromAutoCloseable(effectBlocking(new FileOutputStream(cacheFile))).use {
+        os =>
+          val fs2IS = fs2.io.readInputStream[Task](effectBlocking(file.openStream.unsafeRunSync()).provide(blockingEnv), chunkSize, ec)
+          val fs2OS = fs2.io.writeOutputStream[Task](ZIO.succeed(os), ec)
+          fs2IS.chunks
+            .mapAccumulate(0)((n, c) => (n + c.size, c))
+            .evalMap {
+              case (i, chunk) => task.update(_.progress(i.toDouble / size)).const(chunk)
+            }
+            .flatMap(fs2.Stream.chunk)
+            .through(fs2OS)
+            .compile.drain.onError {
+              cause => effectBlocking(cacheFile.delete()).ignore
+            }
+      }
+    } yield ()
+
+    for {
+      file        <- ZIO.fromOption(DownloadableFileProvider.getFile(uri)).mapError(_ => new Exception(s"Unable to find provider for uri $uri"))
+      inputAsFile  = Paths.get(uri.getPath).toFile
+      exists      <- effectBlocking(inputAsFile.exists())
+      download    <- if (exists) ZIO.succeed(inputAsFile) else downloadToFile(file, localFile).const(localFile)
+    } yield download
+
+  }
+
+  private def splitDependencies(deps: List[String]): (List[String], List[URI]) = {
+    val (dependencies, uriList) = deps.map { dep =>
+
+      val asURI = new URI(dep)
+
+      Either.cond(
+        // Do we support this protocol (if any?)
+        DownloadableFileProvider.isSupported(asURI),
+        asURI,
+        dep // an unsupported protocol might be a dependency
+      )
+    }.separate
+
+    (dependencies, uriList)
+  }
+
+  protected def cacheLocation(uri: URI): Path = {
+    val pathParts = Seq(uri.getScheme, uri.getAuthority, uri.getPath).flatMap(Option(_)) // URI methods sometimes return `null`, great.
+    coursier.cache.CacheDefaults.location.toPath.resolve(Paths.get(pathParts.head, pathParts.tail: _*))
   }
 
   // coursier doesn't have instances for ZIO built in

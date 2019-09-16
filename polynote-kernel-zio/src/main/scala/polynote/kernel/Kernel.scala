@@ -1,7 +1,8 @@
 package polynote.kernel
 
 import polynote.kernel.environment.CurrentNotebook
-import polynote.messages.CellID
+import polynote.messages.{ByteVector32, CellID, HandleType}
+import polynote.runtime.{StreamingDataRepr, TableOp}
 import zio.{Task, TaskR, ZIO}
 
 trait Kernel {
@@ -40,6 +41,28 @@ trait Kernel {
     * Provide all values that currently are known by the kernel
     */
   def values(): Task[List[ResultValue]]
+
+  /**
+    * @return An array of up to `count` [[scodec.bits.ByteVector]] elements, in which each element represents one encoded
+    *         element from the given handle of the given type
+    */
+  def getHandleData(handleType: HandleType, handle: Int, count: Int): TaskR[StreamingHandles, Array[ByteVector32]]
+
+  /**
+    * Create a new [[StreamingDataRepr]] handle by performing [[TableOp]] operations on the given streaming handle. The
+    * given handle itself must be unaffected.
+    *
+    * @return If the operations make no changes, returns the given handle. If the operations are valid for the stream,
+    *         and it supports the modification, returns a new handle for the modified stream. If the stream doesn't support
+    *         modification, returns None. If the modifications are invalid or unsupported by the the stream, it may either
+    *         raise an error or return None.
+    */
+  def modifyStream(handleId: Int, ops: List[TableOp]): TaskR[StreamingHandles, Option[StreamingDataRepr]]
+
+  /**
+    * Release a handle. No further data will be available using [[getHandleData()]].
+    */
+  def releaseHandle(handleType: HandleType, handleId: Int): TaskR[StreamingHandles, Unit]
 }
 
 object Kernel {
