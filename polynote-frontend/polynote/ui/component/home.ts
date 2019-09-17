@@ -1,10 +1,11 @@
 "use strict";
 
 import {UIEvent, UIEventTarget} from "../util/ui_event";
-import {div, span, tag} from "../util/tags";
+import {div, span, tag, TagElement} from "../util/tags";
 import {storage} from "../util/storage";
 
 export class HomeUI extends UIEventTarget {
+    readonly el: TagElement<"div">;
     constructor() {
         super();
         this.el = div(['welcome-page'], []);
@@ -22,8 +23,8 @@ export class HomeUI extends UIEventTarget {
         `;
 
         const recent = this.el.querySelector('.recent-notebooks');
-        (storage.get('recentNotebooks') || []).forEach(nb => {
-            recent.appendChild(
+        (storage.get('recentNotebooks') || []).forEach((nb: {name: string, path: string}) => {
+            recent!.appendChild(
                 tag('li', ['notebook-link'], {}, [
                     span([], nb.name).click(
                         evt => this.dispatchEvent(new UIEvent('TriggerItem', {item: nb.path})))

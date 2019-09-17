@@ -3,15 +3,22 @@ import {CallbackEvent, UIEvent, UIEventTarget} from "../util/ui_event";
 import {KernelInfoUI} from "./kernel_info";
 import {KernelSymbolsUI} from "./symbol_table";
 import {KernelTasksUI} from "./tasks";
-import {div, h2, iconButton, para, span} from "../util/tags";
+import {div, h2, iconButton, para, span, TagElement} from "../util/tags";
 import * as messages from "../../data/messages";
-import {TaskStatus} from "../../data/messages";
+import {TaskInfo, TaskStatus} from "../../data/messages";
 import {errorDisplay} from "./cell";
 import {storage} from "../util/storage";
 
 export class KernelUI extends UIEventTarget {
+    private info: KernelInfoUI;
+    private tasks: KernelTasksUI;
+    private symbols: KernelSymbolsUI;
+    readonly el: TagElement<"div">;
+    private statusEl: TagElement<"h2">;
+    private status: TagElement<"span">;
+
     // TODO: instead of passing path in, can it be enriched by a parent?
-    constructor(eventParent, path, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
+    constructor(eventParent: UIEventTarget, readonly path: string, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
         super(eventParent);
         this.info = new KernelInfoUI();
         this.symbols = new KernelSymbolsUI(path).setEventParent(this);
@@ -38,7 +45,7 @@ export class KernelUI extends UIEventTarget {
             if (path === this.path) {
                 switch (update.constructor) {
                     case messages.UpdatedTasks:
-                        update.tasks.forEach(taskInfo => {
+                        update.tasks.forEach((taskInfo: TaskInfo) => {
                             this.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
                             this.dispatchEvent(new UIEvent('UpdatedTask', {taskInfo: taskInfo}));
                         });
@@ -65,7 +72,7 @@ export class KernelUI extends UIEventTarget {
         this.registerEventListener('KernelError', (code, err) => {
             console.log("Kernel error:", err);
 
-            const {el, messageStr, cellLine} = errorDisplay(err);
+            const {el, messageStr, cellLine} = errorDisplay(err, this.path);
 
             const id = err.id;
             const message = div(["message"], [
@@ -89,26 +96,26 @@ export class KernelUI extends UIEventTarget {
         return storage.get("KernelUI")
     }
 
-    setStorage(obj) {
+    setStorage(obj: any) {
         storage.set("KernelUI", {...this.getStorage(), ...obj})
     }
 
-    connect(evt) {
+    connect(evt: Event) {
         evt.stopPropagation();
         this.dispatchEvent(new UIEvent('Connect'))
     }
 
-    startKernel(evt) {
+    startKernel(evt: Event) {
         evt.stopPropagation();
         this.dispatchEvent(new UIEvent('StartKernel', {path: this.path}))
     }
 
-    killKernel(evt) {
+    killKernel(evt: Event) {
         evt.stopPropagation();
         this.dispatchEvent(new UIEvent('KillKernel', {path: this.path}))
     }
 
-    setKernelState(state) {
+    setKernelState(state: 'busy' | 'idle' | 'dead' | 'disconnected') {
         this.statusEl.classList.remove('busy', 'idle', 'dead', 'disconnected');
         if (state === 'busy' || state === 'idle' || state === 'dead' || state === 'disconnected') {
             this.statusEl.classList.add(state);
@@ -121,7 +128,7 @@ export class KernelUI extends UIEventTarget {
         }
     }
 
-    collapse(force) {
+    collapse(force = false) {
         const prefs = this.getStorage();
         if (force) {
             this.dispatchEvent(new UIEvent('ToggleKernelUI', {force: true}))

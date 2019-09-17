@@ -1,14 +1,23 @@
 // GENERIFY (remove 'kernel' references?)
-import {div, h3, h4} from "../util/tags";
+import {Content, div, h3, h4, TagElement} from "../util/tags";
 import {TaskStatus} from "../../data/messages";
 
+type KernelTask = TagElement<"div"> & {
+    labelText: string,
+    detailText: Content,
+    status: number
+}
+
 export class KernelTasksUI {
+    readonly el: TagElement<"div">;
+    private taskContainer: TagElement<"div">;
+    private tasks: Record<string, KernelTask> = {};
+
     constructor() {
         this.el = div(['kernel-tasks'], [
             h3([], ['Tasks']),
             this.taskContainer = div(['task-container'], [])
         ]);
-        this.tasks = {};
     }
 
     clear() {
@@ -18,22 +27,23 @@ export class KernelTasksUI {
         this.tasks = {};
     }
 
-    addTask(id, label, detail, status, progress) {
-        const taskEl = div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
+    addTask(id: string, label: string, detail: Content, status: number, progress: number) {
+        const taskEl: KernelTask = Object.assign(div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
             h4([], [label]),
-            div(['detail'], [detail]),
+            div(['detail'], detail),
             div(['progress'], [div(['progress-bar'], [])])
-        ]);
+        ]), {
+            labelText: label,
+            detailText: detail,
+            status: status,
+        });
 
-        taskEl.labelText = label;
-        taskEl.detailText = detail;
-        taskEl.status = status;
 
         KernelTasksUI.setProgress(taskEl, progress);
 
-        let before = this.taskContainer.firstChild;
+        let before = this.taskContainer.firstChild as KernelTask;
         while (before && before.status <= status) {
-            before = before.nextSibling;
+            before = before.nextSibling as KernelTask;
         }
 
         this.taskContainer.insertBefore(taskEl, before);
@@ -41,17 +51,17 @@ export class KernelTasksUI {
         this.tasks[id] = taskEl;
     }
 
-    static setProgress(el, progress) {
-        const progressBar = el.querySelector('.progress-bar');
+    static setProgress(el: KernelTask, progress: number) {
+        const progressBar = el.querySelector('.progress-bar') as HTMLElement;
         progressBar.style.width = (progress * 100 / 255).toFixed(0) + "%";
     }
 
-    taskStatus(id) {
+    taskStatus(id: string) {
         const task = this.tasks[id];
         return task && task.status;
     }
 
-    updateTask(id, label, detail, status, progress) {
+    updateTask(id: string, label: string, detail: Content, status: number, progress: number) {
         if (!this.tasks[id]) {
             if (status > TaskStatus.Complete) {
                 this.addTask(id, label, detail, status, progress);
@@ -59,13 +69,13 @@ export class KernelTasksUI {
         } else {
             const task = this.tasks[id];
             if (task.labelText !== label) {
-                const heading = task.querySelector('h4');
+                const heading = task.querySelector('h4') as HTMLElement;
                 heading.innerHTML = '';
                 heading.appendChild(document.createTextNode(label));
                 task.labelText = label;
             }
             if (task.detailText !== detail && typeof (detail) === "string") {
-                const detailEl = task.querySelector('.detail');
+                const detailEl = task.querySelector('.detail') as HTMLElement;
                 detailEl.innerHTML = '';
                 detailEl.appendChild(document.createTextNode(detail));
                 task.detailText = detail;

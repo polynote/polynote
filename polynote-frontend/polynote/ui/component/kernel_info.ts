@@ -1,15 +1,19 @@
 "use strict";
 
 // TODO: should we remember collapsed state across sessions?
-import {div, h3, table} from "../util/tags";
+import {div, h3, table, TableElement, TagElement} from "../util/tags";
 
 export class KernelInfoUI {
+    readonly el: TagElement<"div">;
+    private toggleEl: TagElement<"h3">;
+    private infoEl: TableElement;
+    private info: Map<string, string>;
+
     constructor() {
         this.el = div(['kernel-info'], [
             this.toggleEl = h3(['toggle'], ['...']).click(() => this.toggleCollapse()),
             h3(['title'], ['Info']),
             this.infoEl = table(['info-container'], {
-                header: false,
                 classes: ['key', 'val'],
                 rowHeading: false,
                 addToTop: false
@@ -24,17 +28,17 @@ export class KernelInfoUI {
         if (this.toggleEl.classList.contains('collapsed')) {
             this.toggleEl.classList.remove('collapsed');
             this.infoEl.style.display = null;
-            this.el.querySelector(".title").style.display = null;
+            (this.el.querySelector(".title") as HTMLElement).style.display = null;
         } else {
             this.toggleEl.classList.add('collapsed');
             this.infoEl.style.display = "none";
-            this.el.querySelector(".title").style.display = "none";
+            (this.el.querySelector(".title") as HTMLElement).style.display = "none";
         }
     }
 
-    updateInfo(content) {
+    updateInfo(content: Record<string, string>) {
         for (const [key, val] of Object.entries(content)) {
-            if (val.size === 0) { // empty val is a proxy for removing key
+            if (val.length === 0) { // empty val is a proxy for removing key
                 this.removeInfo(key);
             } else {
                 this.addInfo(key, val);
@@ -42,12 +46,12 @@ export class KernelInfoUI {
         }
     }
 
-    addInfo(key, value) {
+    addInfo(key: string, value: string) {
         this.info.set(key, value);
         this.toggleVisibility()
     }
 
-    removeInfo(key) {
+    removeInfo(key: string) {
         this.info.delete(key);
         this.toggleVisibility()
     }
@@ -71,7 +75,7 @@ export class KernelInfoUI {
             const el = div([], []);
             el.innerHTML = v;
             if (this.infoEl.findRowsBy(row => row.key === k).length === 0) {
-                this.infoEl.addRow({key: k, val: el.firstChild});
+                this.infoEl.addRow({key: k, val: el.firstChild as HTMLElement});
             }
         }
     }

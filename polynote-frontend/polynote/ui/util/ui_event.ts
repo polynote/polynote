@@ -83,8 +83,8 @@ export class UIEventTarget extends EventTarget {
     }
 
     // Register your callback with someone upstream who knows what to do when they see your registration (fingers crossed!)
-    registerEventListener<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(type: K, callback: (...args: any[]) => void) {
-        const registration = new EventRegistration(new CallbackEvent(type, callback));
+    registerEventListener<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(type: K, callback: (...args: any[]) => void, options?: AddEventListenerOptions) {
+        const registration = new EventRegistration(new CallbackEvent(type, callback, options));
         return this.dispatchEvent(registration);
     }
 

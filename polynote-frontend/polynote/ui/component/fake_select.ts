@@ -1,8 +1,8 @@
 import { UIEvent, UIEventTarget } from '../util/ui_event'
-import { button } from '../util/tags'
+import {button, Content, TagElement} from '../util/tags'
 
-export class SelectionChangedEvent extends UIEvent {
-    constructor(changedFromEl, changedToEl, changedFromIndex, changedToIndex) {
+export class SelectionChangedEvent extends UIEvent<{ changedFromEl: HTMLButtonElement, changedToEl: HTMLButtonElement, changedFromIndex: number, changedToIndex: number }> {
+    constructor(readonly changedFromEl: HTMLButtonElement, readonly changedToEl: HTMLButtonElement, readonly changedFromIndex: number, readonly changedToIndex: number) {
         super('change', { changedFromEl: changedFromEl, changedToEl: changedToEl, changedFromIndex: changedFromIndex, changedToIndex: changedToIndex });
     }
 
@@ -13,10 +13,16 @@ export class SelectionChangedEvent extends UIEvent {
 }
 
 export class FakeSelect extends UIEventTarget {
-    constructor(element) {
+    private options: TagElement<"button">[];
+    private selectedElement: TagElement<"button">;
+    private moved: boolean;
+    private value: string;
+    private opener: TagElement<"button"> | null;
+    private selectedElementCopy: TagElement<"button"> | null;
+
+    constructor(readonly element: TagElement<"div">) {
         super();
-        this.element = element;
-        this.command = element.getAttribute('command');
+        // this.command = element.getAttribute('command');
 
         this.addEventListener('mousedown', evt => evt.preventDefault());
 
@@ -46,7 +52,7 @@ export class FakeSelect extends UIEventTarget {
     }
 
     updateOptions() {
-        this.options = [...this.element.getElementsByTagName("button")];
+        this.options = [...this.element.getElementsByTagName("button")] as TagElement<"button">[];
         for (const option of this.options) {
             if (option.classList.contains('selected')) {
                 this.selectedElement = option;
@@ -64,7 +70,7 @@ export class FakeSelect extends UIEventTarget {
         }
     }
 
-    addOption(text, value) {
+    addOption(text: Content, value: string) {
         if (typeof(text) === "string")
             text = document.createTextNode(text);
         const b = button([], {type: 'button', value: value}, text);
@@ -73,22 +79,22 @@ export class FakeSelect extends UIEventTarget {
         this.setupOption(b);
     }
 
-    removeOption(option) {
+    removeOption(option: TagElement<"button">) {
         const index = this.options.indexOf(option);
 
         if (index < 0) return;
 
         this.options.splice(index, 1);
-        option.parentNode.removeChild(option);
+        option.parentNode!.removeChild(option);
     }
 
-    setupOption(option) {
+    setupOption(option: TagElement<"button">) {
         option.addEventListener('mousedown', (evt) => {
             evt.preventDefault();
             evt.cancelBubble = true;
 
             if (!this.isOpen) {
-                this.opener = evt.target;
+                this.opener = evt.target as TagElement<"button">;
                 this.moved = false;
                 this.expand();
             } else {
@@ -108,7 +114,7 @@ export class FakeSelect extends UIEventTarget {
 
             if (evt.target !== this.selectedElementCopy || this.moved) {
                 if (evt.target !== this.selectedElementCopy)
-                    this.setSelectedElement(evt.target);
+                    this.setSelectedElement(evt.target as TagElement<"button">);
                 this.collapse();
             }
         });
@@ -118,7 +124,7 @@ export class FakeSelect extends UIEventTarget {
         this.element.querySelectorAll('.first-visible').forEach(el => el.classList.remove('first-visible'));
         this.element.querySelectorAll('.last-visible').forEach(el => el.classList.remove('last-visible'));
         let prevVisible = false;
-        let lastVisible = false;
+        let lastVisible: TagElement<"button"> | undefined;
         this.options.forEach(opt => {
            if (!opt.disabled) {
                if (!prevVisible) {
@@ -129,13 +135,13 @@ export class FakeSelect extends UIEventTarget {
            }
         });
 
-        if (lastVisible) {
-            lastVisible.classList.add('last-visible');
+        if (typeof lastVisible !== undefined) {
+            lastVisible!.classList.add('last-visible');
         }
     }
 
-    hideOption(valueOrIndex) {
-        if (typeof(valueOrIndex) === "string") {
+    hideOption(valueOrIndex: string | number) {
+        if (typeof valueOrIndex === "string") {
             const idx = this.options.findIndex(opt => opt.value === valueOrIndex);
             if (idx >= 0) {
                 this.hideOption(idx);
@@ -157,7 +163,7 @@ export class FakeSelect extends UIEventTarget {
         }
     }
 
-    showOption(valueOrIndex) {
+    showOption(valueOrIndex: string | number) {
         if (typeof(valueOrIndex) === "string") {
             const idx = this.options.findIndex(opt => opt.value === valueOrIndex);
             if (idx >= 0) {
@@ -184,7 +190,7 @@ export class FakeSelect extends UIEventTarget {
         this.setSelectedElement(this.options[idx]);
     }
 
-    setSelectedElement(el, noEvent) {
+    setSelectedElement(el: TagElement<"button">, noEvent: boolean = false): void {
         const prevIndex = this.selectedIndex;
         const prevEl = this.selectedElement;
 
@@ -213,7 +219,7 @@ export class FakeSelect extends UIEventTarget {
     expand() {
         if (this.selectedElement) {
             const selectedEl = this.selectedElement;
-            this.selectedElementCopy = selectedEl.cloneNode(true);
+            this.selectedElementCopy = selectedEl.cloneNode(true) as TagElement<"button">;
             this.setupOption(this.selectedElementCopy);
             this.element.insertBefore(this.selectedElementCopy, this.options[0]);
         }
@@ -222,7 +228,7 @@ export class FakeSelect extends UIEventTarget {
 
     collapse() {
         if (this.selectedElementCopy) {
-            this.selectedElementCopy.parentNode.removeChild(this.selectedElementCopy);  // TODO: remove event listeners first?
+            this.selectedElementCopy.parentNode!.removeChild(this.selectedElementCopy);  // TODO: remove event listeners first?
             this.selectedElementCopy = null;
         }
 
@@ -239,7 +245,7 @@ export class FakeSelect extends UIEventTarget {
         return this.element.classList.contains('open');
     }
 
-    setState(state) {
+    setState(state: string) {
         if (state === '') {
             this.setSelectedElement(this.options[0], true);
         } else {

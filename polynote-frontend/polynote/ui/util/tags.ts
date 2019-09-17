@@ -1,6 +1,6 @@
 'use strict';
 
-type ContentElement = (Node | string)
+type ContentElement = (Node | string | undefined)
 export type Content = ContentElement | ContentElement[]
 
 function appendContent(el: Node, content: Content) {
@@ -207,8 +207,8 @@ export interface TableRowElement extends TagElement<"tr"> {
 
 export interface TableElement extends TagElement<"table"> {
     addRow(row: TableRow, whichBody?: TagElement<"tbody">): TableRowElement
-    findRows(props: Record<string, string>, tbody?: TagElement<"tbody">): TableRowElement
-    findRowsBy(fn: (row: TableRow) => boolean, tbody?: TagElement<"tbody">): TableRowElement
+    findRows(props: Record<string, string>, tbody?: TagElement<"tbody">): TableRowElement[]
+    findRowsBy(fn: (row: TableRow) => boolean, tbody?: TagElement<"tbody">): TableRowElement[]
     addBody(rows?: TableRow[]): TagElement<"tbody">
 }
 

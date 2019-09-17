@@ -360,7 +360,7 @@ export function errorDisplay(error: KernelErrorWithCause, currentFile: string, m
                     cellLine = traceEl.line;
                 traceItems.push(tag('li', [], {}, [span(['error-link'], [`(Line ${traceEl.line})`])]))
             } else {
-                if (traceEl.className === 'sun.reflect.NativeMethodAccessorImpl') {
+                if (traceEl.className === 'sun.reflect.NativeMethodAccessorImpl') { // TODO: seems hacky, maybe this logic fits better on the backend?
                     reachedIrrelevant = true;
                 }
                 const classes = reachedIrrelevant ? ['irrelevant'] : [];
