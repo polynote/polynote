@@ -1113,14 +1113,13 @@ export class TextCell extends Cell {
 
         this.editor.element.addEventListener('keydown', (evt: KeyboardEvent) => this.onKeyDown(evt));
 
-        this.editor.element.addEventListener('input', (evt: KeyboardEvent) => this.onInput(evt));
+        this.editor.element.addEventListener('input', (evt: KeyboardEvent) => this.onInput());
     }
 
-    // evt can be null, if being invoked from elsewhere
     // TODO: This can be improved to allow receiving & reconciling edits from the server, to allow multi-user editing.
     //       Same goes for the code cell.
     //       Otherwise, we should at least lock the cell so multiple users don't screw it up badly.
-    onInput(evt: KeyboardEvent) {
+    onInput() {
         const newContent = this.editor.markdownContent;
         const diff = Diff.diff(this.lastContent, newContent);
         const edits = [];

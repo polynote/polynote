@@ -118,7 +118,7 @@ export function iconButton(classes: string[], title: string, icon: string, alt: 
     ]);
 }
 
-export function textbox(classes: string[], placeholder: string, value: string) {
+export function textbox(classes: string[], placeholder: string, value: string = "") {
     const input = tag('input', classes, {type: 'text', placeholder: placeholder}, []);
     if (value) {
         input.value = value;

@@ -38,6 +38,8 @@ export abstract class RepositoryConfig extends CodecContainer {
     static codec: Codec<RepositoryConfig>;
     static codecs: typeof RepositoryConfig[];
     static msgTypeId: number;
+
+    abstract get value(): string
 }
 
 export class IvyRepository extends RepositoryConfig {
@@ -48,6 +50,10 @@ export class IvyRepository extends RepositoryConfig {
 
     static get msgTypeId() {
         return 0;
+    }
+
+    get value() {
+        return this.base;
     }
 
     constructor(readonly base: string, readonly artifactPattern?: string, readonly metadataPattern?: string, readonly changing?: boolean) {
@@ -65,6 +71,10 @@ export class MavenRepository extends RepositoryConfig {
         return 1;
     }
 
+    get value() {
+        return this.base;
+    }
+
     constructor(readonly base: string, readonly changing?: boolean) {
         super();
     }
@@ -78,6 +88,10 @@ export class PipRepository extends RepositoryConfig {
 
     static get msgTypeId() {
         return 2;
+    }
+
+    get value() {
+        return this.url;
     }
 
     constructor(readonly url: string) {

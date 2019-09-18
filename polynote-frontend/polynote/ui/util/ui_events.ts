@@ -8,6 +8,7 @@ import {
     SelectCellEvent, SetCellLanguageEvent
 } from "../component/cell";
 import {ExecutionStatus, TaskInfo} from "../../data/messages";
+import {NotebookConfig} from "../../data/data";
 
 type TriggerItem = UIEvent<{item: string}>
 export type ImportNotebook = UIEvent<{name: string, content: string}>
@@ -24,6 +25,8 @@ type ToggleKernelUI = UIEvent<{force?: boolean}>
 
 type UpdatedTask = UIEvent<{taskInfo: TaskInfo}>
 type UpdatedExecutionStatus = UIEvent<{update: ExecutionStatus}>
+
+type UpdatedConfig = UIEvent<{config: NotebookConfig}>
 
 export interface UIEventNameMap extends WindowEventMap {
     "TriggerItem": TriggerItem;
@@ -70,4 +73,5 @@ export interface UIEventNameMap extends WindowEventMap {
     "SetCellLanguage": SetCellLanguageEvent;
     "UpdatedTask": UpdatedTask;
     "UpdatedExecutionStatus": UpdatedExecutionStatus;
+    "UpdatedConfig": UpdatedConfig;
 }

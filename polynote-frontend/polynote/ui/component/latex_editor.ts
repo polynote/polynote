@@ -1,18 +1,24 @@
-import {div, span, textbox, para} from "../util/tags";
-import { TextCell } from "./cell"
-import katex from "katex";
+import {div, span, textbox, para, TagElement} from "../util/tags";
+import {CellContainer, TextCell} from "./cell"
+import * as katex from "katex";
+import {UIEventTarget} from "../util/ui_event";
 
-export class LaTeXEditor extends EventTarget {
-    constructor(outputEl, parentEl, deleteOnCancel, displayMode) {
+export class LaTeXEditor extends UIEventTarget {
+    private readonly editorParent: HTMLElement;
+    readonly el: TagElement<"div">;
+    private pointer: TagElement<"span">;
+    private fakeEl: TagElement<"div">;
+    private input: TagElement<"input">;
+    private inputHandler: (evt: Event) => void;
+    private keyHandler: (evt: Event) => void;
+    private valid: boolean;
+
+    constructor(readonly outputEl: HTMLElement, readonly parentEl: HTMLElement, readonly deleteOnCancel: boolean, readonly displayMode: boolean = false) {
         super();
-        this.outputEl = outputEl;
-        this.parentEl = parentEl;
-        this.deleteOnCancel = deleteOnCancel;
-        this.displayMode = displayMode || false;
 
         let editorParent = outputEl;
-        while (!editorParent.cell && editorParent !== parentEl) {
-            editorParent = editorParent.parentNode;
+        while (!(editorParent as CellContainer).cell && editorParent !== parentEl) {
+            editorParent = editorParent.parentNode as HTMLElement;
         }
         this.editorParent = editorParent;
 
@@ -27,15 +33,15 @@ export class LaTeXEditor extends EventTarget {
 
 
 
-        this.inputHandler = evt => this.onInput(evt);
-        this.keyHandler = evt => this.onKeyDown(evt);
+        this.inputHandler = evt => this.onInput();
+        this.keyHandler = (evt: KeyboardEvent) => this.onKeyDown(evt);
 
         this.input.addEventListener('input', this.inputHandler);
         this.input.addEventListener('keydown', this.keyHandler);
         this.valid = false;
 
         if (outputEl.hasAttribute('data-tex-source')) {
-            this.input.value = outputEl.getAttribute('data-tex-source');
+            this.input.value = outputEl.getAttribute('data-tex-source')!;
             this.onInput();
         }
     }
@@ -49,7 +55,7 @@ export class LaTeXEditor extends EventTarget {
         while (el && el !== this.parentEl) {
             targetX += (el.offsetLeft || 0) + ((el.offsetWidth - el.clientWidth));
             targetY += (el.offsetTop || 0);
-            el = el.offsetParent;
+            el = el.offsetParent as HTMLElement;
         }
         const containerWidth = this.parentEl.offsetWidth;
         const width = Math.min(400, containerWidth - 64);
@@ -74,7 +80,7 @@ export class LaTeXEditor extends EventTarget {
         return this;
     }
 
-    onInput(evt) {
+    onInput() {
         const texSource = this.input.value;
         try {
             this.valid = false;
@@ -92,7 +98,7 @@ export class LaTeXEditor extends EventTarget {
         }
     }
 
-    onKeyDown(evt) {
+    onKeyDown(evt: KeyboardEvent) {
         this.onInput();
         if (!this.valid) {
             return;
@@ -105,9 +111,10 @@ export class LaTeXEditor extends EventTarget {
             // TODO: This seems to insert a bunch of junk around the equation; it's contained a span with a bunch of
             //       crap inline styles that do nothing. That span doesn't make it into the notebook file, but it's
             //       still annoying and bad. Can it be fixed?
-            if (this.fakeEl.childNodes[0]) {
-                this.fakeEl.childNodes[0].setAttribute('data-tex-source', this.input.value);
-                this.fakeEl.childNodes[0].setAttribute('contenteditable', 'false');
+            const firstChild = this.fakeEl.childNodes[0];
+            if (firstChild instanceof HTMLElement) {
+                firstChild.setAttribute('data-tex-source', this.input.value);
+                firstChild.setAttribute('contenteditable', 'false');
             }
             this.outputEl.innerHTML = this.fakeEl.innerHTML;
             if (this.outputEl.hasAttribute('data-tex-source')) {
@@ -116,20 +123,23 @@ export class LaTeXEditor extends EventTarget {
 
             // move caret to end of inserted equation
             const space = this.displayMode ? para([], [document.createElement('br')]) : span([], [" "]);
-            this.outputEl.parentNode.insertBefore(space, this.outputEl.nextSibling);
+            this.outputEl.parentNode!.insertBefore(space, this.outputEl.nextSibling);
 
-            document.getSelection().setBaseAndExtent(space, 0, space, space.textContent.length);
-            document.getSelection().collapseToEnd();
+            const selection = document.getSelection();
+            if (selection) {
+                selection.setBaseAndExtent(space, 0, space, space.textContent!.length);
+                selection.collapseToEnd();
+            }
 
-            const cell = this.editorParent && this.editorParent.cell;
+            const cell = this.editorParent && (this.editorParent as CellContainer).cell;
 
             if (cell && cell instanceof TextCell) {
-                this.editorParent.cell.onInput(null);
+                cell.onInput();
             }
 
             this.dispose();
         } else if (evt.key === 'Escape' || evt.key === 'Cancel') {
-            if (this.deleteOnCancel) {
+            if (parent && this.deleteOnCancel) {
                 parent.removeChild(this.outputEl);
                 parent.dispatchEvent(new CustomEvent('input'));
             }
@@ -146,13 +156,13 @@ export class LaTeXEditor extends EventTarget {
     }
 
     static forSelection() {
-        const selection = document.getSelection();
+        const selection = document.getSelection()!;
 
         // TODO: this should be a function
-        let notebookParent = selection.baseNode;
+        let notebookParent = selection.anchorNode as HTMLElement;
         let currentKatexEl = null;
         while (notebookParent && (notebookParent.nodeType !== 1 || !(notebookParent.classList.contains('notebook-cells')))) {
-            notebookParent = notebookParent.parentNode;
+            notebookParent = notebookParent.parentNode as HTMLElement;
             if (notebookParent.hasAttribute && notebookParent.hasAttribute('data-tex-source'))
                 currentKatexEl = notebookParent;
         }
@@ -164,15 +174,15 @@ export class LaTeXEditor extends EventTarget {
 
         let el = currentKatexEl;
         let deleteOnCancel = false;
-        let displayMode = (el && (el.classList.contains('katex-block') || el.classList.contains('katex-display')));
+        let displayMode = (!!el && (el.classList.contains('katex-block') || el.classList.contains('katex-display')));
 
         if (!el) {
-            if (selection.focusNode.tagName && selection.focusNode.tagName.toLowerCase() === "p" && selection.focusNode.textContent === "") {
+            if (selection.focusNode instanceof HTMLElement && selection.focusNode.tagName && selection.focusNode.tagName.toLowerCase() === "p" && selection.focusNode.textContent === "") {
                 displayMode = true;
-                el = selection.focusNode;
+                el = selection.focusNode as HTMLElement;
             } else {
                 document.execCommand('insertHTML', false, `<span>&nbsp;</span>`);
-                el = document.getSelection().baseNode.parentNode;
+                el = document.getSelection()!.anchorNode!.parentNode as HTMLElement;
             }
 
             deleteOnCancel = true;

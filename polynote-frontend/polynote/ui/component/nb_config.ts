@@ -1,14 +1,40 @@
-// BREAKOUT (nb_config.js)
+"use strict"
+
 import {UIEvent, UIEventTarget} from "../util/ui_event";
-import {button, div, dropdown, h2, h3, iconButton, para, span, textbox} from "../util/tags";
-import {IvyRepository, MavenRepository, NotebookConfig, PipRepository} from "../../data/data";
+import {
+    button,
+    div,
+    dropdown,
+    DropdownElement,
+    h2,
+    h3,
+    iconButton,
+    para,
+    span,
+    TagElement,
+    textbox
+} from "../util/tags";
+import {IvyRepository, MavenRepository, NotebookConfig, PipRepository, RepositoryConfig} from "../../data/data";
 
 export class NotebookConfigUI extends UIEventTarget {
+    readonly el: TagElement<"div">;
+    private readonly dependencyContainer: TagElement<"div">;
+    private readonly dependencyRowTemplate: TagElement<"div">;
+    private readonly resolverRowTemplate: TagElement<"div">;
+    private readonly resolverContainer: TagElement<"div">;
+    private readonly exclusionRowTemplate: TagElement<"div">;
+    private readonly exclusionContainer: TagElement<"div">;
+    private readonly sparkConfigRowTemplate: TagElement<"div">;
+    private readonly sparkConfigContainer: TagElement<"div">;
+    private lastConfig: NotebookConfig;
+
     constructor() {
         super();
 
+        const currentConfig = NotebookConfig.default;
+
         this.el = div(['notebook-config'], [
-            h2(['config'], ['Configuration & dependencies']).click(evt => this.el.classList.toggle('open')),
+            h2(['config'], ['Configuration & dependencies']).click(() => this.el.classList.toggle('open')),
             div(['content'], [
                 div(['notebook-dependencies', 'notebook-config-section'], [
                     h3([], ['Dependencies']),
@@ -17,20 +43,20 @@ export class NotebookConfigUI extends UIEventTarget {
                     this.dependencyContainer = div(['dependency-list'], [
                         this.dependencyRowTemplate = div(['dependency-row', 'notebook-config-row'], [
                             dropdown(['dependency-type'], {scala: 'scala/jvm', python: 'pip'}).change(evt => {
-                                const self = evt.currentTarget;
-                                const row = self.parentNode;
+                                const self = evt.currentTarget as DropdownElement;
+                                const row = self.parentNode as HTMLElement;
                                 const value = self.options[self.selectedIndex].value;
                                 row.className = 'dependency-row';
                                 row.classList.add('notebook-config-row');
                                 row.classList.add(value);
                             }),
                             textbox(['dependency'], 'Dependency coordinate, URL, pip package').change(evt => {
-                                evt.target.value
+                                (evt.target as TagElement<"input">).value // TODO: change should update internal data here
                             }),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
-                                const row = evt.currentTarget.parentNode;
+                                const row = (evt.currentTarget as HTMLElement).parentNode as HTMLElement;
                                 this.addDependency(this.mkDependency(row));
-                                this.dependencyRowTemplate.querySelector('.dependency').value = '';
+                                (this.dependencyRowTemplate.querySelector('.dependency') as TagElement<"input">).value = '';
                             }),
                             iconButton(['remove'], 'Remove', '', 'Remove')
                         ])
@@ -42,8 +68,8 @@ export class NotebookConfigUI extends UIEventTarget {
                     this.resolverContainer = div(['resolver-list'], [
                         this.resolverRowTemplate = div(['resolver-row', 'notebook-config-row', 'ivy'], [
                             dropdown(['resolver-type'], {ivy: 'Ivy', maven: 'Maven', pip: 'Pip'}).change(evt => {
-                                const self = evt.currentTarget;
-                                const row = self.parentNode;
+                                const self = evt.currentTarget as DropdownElement;
+                                const row = self.parentNode as HTMLElement;
                                 const value = self.options[self.selectedIndex].value;
                                 row.className = 'resolver-row';
                                 row.classList.add('notebook-config-row');
@@ -53,7 +79,7 @@ export class NotebookConfigUI extends UIEventTarget {
                             textbox(['resolver-artifact-pattern', 'ivy'], 'Artifact pattern (blank for default)'),
                             textbox(['resolver-metadata-pattern', 'ivy'], 'Metadata pattern (blank for default)'),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
-                                const row = evt.currentTarget.parentNode;
+                                const row = (evt.currentTarget as HTMLElement).parentNode as HTMLElement;
                                 this.addResolver(this.mkResolver(row));
                             }),
                             iconButton(['remove'], 'Remove', '', 'Remove')
@@ -67,8 +93,9 @@ export class NotebookConfigUI extends UIEventTarget {
                         this.exclusionRowTemplate = div(['exclusion-row', 'notebook-config-row'], [
                             textbox(['exclusion'], 'Exclusion organization:name'),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
-                                this.addExclusion(evt.currentTarget.parentNode.querySelector('.exclusion').value);
-                                this.exclusionRowTemplate.querySelector('.exclusion').value = '';
+                                const row = (evt.currentTarget as HTMLElement).parentNode as HTMLElement;
+                                this.addExclusion((row.querySelector('.exclusion') as TagElement<"input">).value);
+                                (this.exclusionRowTemplate.querySelector('.exclusion') as TagElement<"input">).value = '';
                             }),
                             iconButton(['remove'], 'Remove', '', 'Remove')
                         ])
@@ -82,12 +109,13 @@ export class NotebookConfigUI extends UIEventTarget {
                             textbox(['spark-config-key'], 'key'),
                             textbox(['spark-config-val'], 'value'),
                             iconButton(['add'], 'Add', '', 'Add').click(evt => {
+                                const row = (evt.currentTarget as HTMLElement).parentNode as HTMLElement;
                                 this.addSparkConfig([
-                                    evt.currentTarget.parentNode.querySelector('.spark-config-key').value.trim(),
-                                    evt.currentTarget.parentNode.querySelector('.spark-config-val').value.trim()
+                                    (row.querySelector('.spark-config-key') as TagElement<"input">).value.trim(),
+                                    (row.querySelector('.spark-config-val') as TagElement<"input">).value.trim()
                                 ]);
-                                this.sparkConfigRowTemplate.querySelector('.spark-config-key').value = '';
-                                this.sparkConfigRowTemplate.querySelector('.spark-config-val').value = '';
+                                (this.sparkConfigRowTemplate.querySelector('.spark-config-key') as TagElement<"input">).value = '';
+                                (this.sparkConfigRowTemplate.querySelector('.spark-config-val') as TagElement<"input">).value = '';
                             }),
                             iconButton(['remove'], 'Remove', '', 'Remove')
                         ])
@@ -110,96 +138,96 @@ export class NotebookConfigUI extends UIEventTarget {
         ]);
     }
 
-    mkDependency(row) {
-        const typeSelect = row.querySelector('.dependency-type');
+    mkDependency(row: HTMLElement): [string, string] {
+        const typeSelect = row.querySelector('.dependency-type') as DropdownElement;
         const type = typeSelect.options[typeSelect.selectedIndex].value;
-        const dep = row.querySelector('.dependency').value;
+        const dep = (row.querySelector('.dependency') as TagElement<"input">).value;
         return [type, dep];
     }
 
-    mkResolver(row) {
-        const typeSelect = row.querySelector('.resolver-type');
+    mkResolver(row: HTMLElement) {
+        const typeSelect = row.querySelector('.resolver-type') as DropdownElement;
         const type = typeSelect.options[typeSelect.selectedIndex].value;
         if (type === 'ivy') {
             return new IvyRepository(
-                row.querySelector('.resolver-url').value,
-                row.querySelector('.resolver-artifact-pattern').value || null,
-                row.querySelector('.resolver-metadata-pattern').value || null,
-                null
+                (row.querySelector('.resolver-url') as TagElement<"input">).value,
+                (row.querySelector('.resolver-artifact-pattern') as TagElement<"input">).value,
+                (row.querySelector('.resolver-metadata-pattern') as TagElement<"input">).value
             );
         } else if (type === 'maven') {
             return new MavenRepository(
-                row.querySelector('.resolver-url').value,
-                null
+                (row.querySelector('.resolver-url') as TagElement<"input">).value
             );
         } else if (type === 'pip') {
             return new PipRepository(
-                row.querySelector('.resolver-url').value
+                (row.querySelector('.resolver-url') as TagElement<"input">).value
             );
+        } else {
+            throw new Error(`Unknown resolver type ${type}`)
         }
     }
 
-    addDependency(dep) {
+    addDependency(dep: [string, string]) {
         const [type, value] = dep;
-        const row = this.dependencyRowTemplate.cloneNode(true);
-        row.querySelector('.dependency').value = value;
+        const row = this.dependencyRowTemplate.cloneNode(true) as TagElement<"div">;
+        (row.querySelector('.dependency') as TagElement<"input">).value = value;
 
-        const typeSelect = row.querySelector('.dependency-type');
+        const typeSelect = row.querySelector('.dependency-type') as DropdownElement;
         let idx = -1;
-        [...typeSelect].forEach((option, i) => {
+        [...typeSelect].forEach((option: HTMLOptionElement, i) => {
             if (option.value === type) {
                 idx = i
             }
         });
 
-        row.querySelector('.dependency-type').selectedIndex = idx;
+        (row.querySelector('.dependency-type') as DropdownElement).selectedIndex = idx;
 
-        row.querySelector('.remove').addEventListener('click', evt => {
+        row.querySelector('.remove')!.addEventListener('click', evt => {
             row.innerHTML = '';
-            row.parentNode.removeChild(row);
+            row.parentNode!.removeChild(row);
         });
         this.dependencyContainer.insertBefore(row, this.dependencyRowTemplate);
     }
 
-    addExclusion(value) {
-        const row = this.exclusionRowTemplate.cloneNode(true);
-        row.querySelector('.exclusion').value = value;
-        row.querySelector('.remove').addEventListener('click', evt => {
+    addExclusion(value: string) {
+        const row = this.exclusionRowTemplate.cloneNode(true) as TagElement<"div">;
+        (row.querySelector('.exclusion') as TagElement<"input">).value = value;
+        row.querySelector('.remove')!.addEventListener('click', evt => {
             row.innerHTML = '';
-            row.parentNode.removeChild(row);
+            row.parentNode!.removeChild(row);
         });
         this.exclusionContainer.insertBefore(row, this.exclusionRowTemplate);
     }
 
-    addResolver(value) {
-        const row = this.resolverRowTemplate.cloneNode(true);
-        row.querySelector('.resolver-url').value = value.base;
+    addResolver(value: RepositoryConfig) {
+        const row = this.resolverRowTemplate.cloneNode(true) as TagElement<"div">;
+        (row.querySelector('.resolver-url') as TagElement<"input">).value = value.value;
 
-        const type = value.constructor.msgTypeId;
+        const type = (value.constructor as typeof RepositoryConfig).msgTypeId;
 
         if (value instanceof IvyRepository) {
-            row.querySelector('.resolver-artifact-pattern').value = value.artifactPattern || '';
-            row.querySelector('.resolver-metadata-pattern').value = value.metadataPattern || '';
+            (row.querySelector('.resolver-artifact-pattern') as TagElement<"input">).value = value.artifactPattern || '';
+            (row.querySelector('.resolver-metadata-pattern') as TagElement<"input">).value = value.metadataPattern || '';
         }
 
-        const typeSelect = row.querySelector('.resolver-type');
+        const typeSelect = row.querySelector('.resolver-type') as DropdownElement;
         typeSelect.selectedIndex = type;
 
-        row.querySelector('.remove').addEventListener('click', evt => {
+        row.querySelector('.remove')!.addEventListener('click', evt => {
             row.innerHTML = '';
-            row.parentNode.removeChild(row);
+            row.parentNode!.removeChild(row);
         });
 
         this.resolverContainer.insertBefore(row, this.resolverRowTemplate);
     }
 
-    addSparkConfig(value) {
-        const row = this.sparkConfigRowTemplate.cloneNode(true);
-        row.querySelector('.spark-config-key').value = value[0] || '';
-        row.querySelector('.spark-config-val').value = value[1] || '';
-        row.querySelector('.remove').addEventListener('click', evt => {
+    addSparkConfig(value: [string, string]) {
+        const row = this.sparkConfigRowTemplate.cloneNode(true) as TagElement<"div">;
+        (row.querySelector('.spark-config-key') as TagElement<"input">).value = value[0] || '';
+        (row.querySelector('.spark-config-val') as TagElement<"input">).value = value[1] || '';
+        row.querySelector('.remove')!.addEventListener('click', evt => {
             row.innerHTML = '';
-            row.parentNode.removeChild(row);
+            row.parentNode!.removeChild(row);
         });
         this.sparkConfigContainer.insertBefore(row, this.sparkConfigRowTemplate);
     }
@@ -221,7 +249,7 @@ export class NotebookConfigUI extends UIEventTarget {
         }
     }
 
-    setConfig(config) {
+    setConfig(config: NotebookConfig) {
         this.lastConfig = config;
         this.clearConfig();
 
@@ -253,8 +281,8 @@ export class NotebookConfigUI extends UIEventTarget {
     }
 
     get config() {
-        const deps = {};
-        const depInputs = this.dependencyContainer.querySelectorAll('.dependency-row');
+        const deps: Record<string, string[]> = {};
+        const depInputs = this.dependencyContainer.querySelectorAll('.dependency-row') as NodeListOf<HTMLElement>;
         depInputs.forEach(row => {
             const [type, dep] = this.mkDependency(row);
             if (type && dep) {
@@ -262,26 +290,26 @@ export class NotebookConfigUI extends UIEventTarget {
             }
         });
 
-        const exclusions = [];
-        const exclusionInputs = this.exclusionContainer.querySelectorAll('.exclusion-row input');
+        const exclusions: string[] = [];
+        const exclusionInputs = this.exclusionContainer.querySelectorAll('.exclusion-row input') as NodeListOf<TagElement<"input">>;
         exclusionInputs.forEach(input => {
             if (input.value) exclusions.push(input.value);
         });
 
-        const repos = [];
-        const repoRows = this.resolverContainer.querySelectorAll('.resolver-row');
+        const repos: RepositoryConfig[] = [];
+        const repoRows = this.resolverContainer.querySelectorAll('.resolver-row') as NodeListOf<HTMLElement>;
         repoRows.forEach(row => {
             const repository = this.mkResolver(row);
-            if (repository.base) {
+            if (repository.value) {
                 repos.push(repository);
             }
         });
 
-        const sparkConfig = {};
+        const sparkConfig: Record<string, string> = {};
         const sparkConfigRows = this.sparkConfigContainer.querySelectorAll('.spark-config-row');
         sparkConfigRows.forEach(row => {
-            const k = row.querySelector('.spark-config-key').value.trim();
-            const v = row.querySelector('.spark-config-val').value.trim();
+            const k = (row.querySelector('.spark-config-key') as TagElement<"input">).value.trim();
+            const v = (row.querySelector('.spark-config-val') as TagElement<"input">).value.trim();
             if (k) sparkConfig[k] = v;
         });
 
