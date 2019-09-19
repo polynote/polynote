@@ -39,24 +39,20 @@ export abstract class RepositoryConfig extends CodecContainer {
     static codecs: typeof RepositoryConfig[];
     static msgTypeId: number;
 
-    abstract get value(): string
+    abstract url: string
 }
 
 export class IvyRepository extends RepositoryConfig {
     static codec = combined(str, optional(str), optional(str), optional(bool)).to(IvyRepository);
     static unapply(inst: IvyRepository): ConstructorParameters<typeof IvyRepository>{
-        return [inst.base, inst.artifactPattern, inst.metadataPattern, inst.changing];
+        return [inst.url, inst.artifactPattern, inst.metadataPattern, inst.changing];
     }
 
     static get msgTypeId() {
         return 0;
     }
 
-    get value() {
-        return this.base;
-    }
-
-    constructor(readonly base: string, readonly artifactPattern?: string, readonly metadataPattern?: string, readonly changing?: boolean) {
+    constructor(readonly url: string, readonly artifactPattern?: string, readonly metadataPattern?: string, readonly changing?: boolean) {
         super();
     }
 }
@@ -64,18 +60,14 @@ export class IvyRepository extends RepositoryConfig {
 export class MavenRepository extends RepositoryConfig {
     static codec = combined(str, optional(bool)).to(MavenRepository);
     static unapply(inst: MavenRepository): ConstructorParameters<typeof MavenRepository> {
-        return [inst.base, inst.changing];
+        return [inst.url, inst.changing];
     }
 
     static get msgTypeId() {
         return 1;
     }
 
-    get value() {
-        return this.base;
-    }
-
-    constructor(readonly base: string, readonly changing?: boolean) {
+    constructor(readonly url: string, readonly changing?: boolean) {
         super();
     }
 }
@@ -88,10 +80,6 @@ export class PipRepository extends RepositoryConfig {
 
     static get msgTypeId() {
         return 2;
-    }
-
-    get value() {
-        return this.url;
     }
 
     constructor(readonly url: string) {

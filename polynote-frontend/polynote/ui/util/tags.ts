@@ -131,7 +131,7 @@ export interface DropdownElement extends TagElement<"select"> {
     getSelectedValue(): string
 }
 
-export function dropdown(classes: string[], options: Record<string, string>): DropdownElement {
+export function dropdown(classes: string[], options: Record<string, string>, value?: string): DropdownElement {
     let opts: TagElement<"option">[] = [];
 
     for (const value in options) {
@@ -141,7 +141,7 @@ export function dropdown(classes: string[], options: Record<string, string>): Dr
     }
 
     const select = tag('select', classes, {}, opts);
-    return Object.assign(select, {
+    const dropdown =  Object.assign(select, {
         setSelectedValue(value: string) {
             const index = opts.findIndex(opt => opt.value === value);
             if (index !== -1) {
@@ -152,6 +152,10 @@ export function dropdown(classes: string[], options: Record<string, string>): Dr
             return select.options[select.selectedIndex].value;
         }
     });
+
+    if (value) dropdown.setSelectedValue(value);
+    return dropdown;
+
 }
 
 // create element that goes into a FakeSelect (but not the FakeSelect itself)
