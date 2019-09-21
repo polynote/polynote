@@ -1,12 +1,17 @@
 "use strict";
 
 import { VegaInterpreter } from "./vega_interpreter";
-import {ClientResult} from "../data/result";
+import {Result} from "../data/result";
 
-interface ClientInterpreter {
+export interface CellContext {
+    id: number,
+    availableValues: Record<string, any>
+}
+
+export interface ClientInterpreter {
     languageTitle: string;
     highlightLanguage: string;
-    interpret(code: string, cellContext: Record<string, any>): ClientResult[]
+    interpret(code: string, cellContext: CellContext): Result[]
 }
 
 export const clientInterpreters: Record<string, ClientInterpreter> = {

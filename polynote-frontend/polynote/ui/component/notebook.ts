@@ -4,7 +4,7 @@ import {NotebookCellsUI} from "./nb_cells";
 import {KernelUI} from "./kernel_ui";
 import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
-import {BeforeCellRunEvent, Cell, CodeCell, TextCell} from "./cell";
+import {BeforeCellRunEvent, Cell, CellExecutionFinished, CodeCell, TextCell} from "./cell";
 import {div, span} from "../util/tags";
 import match from "../../util/match";
 import {
@@ -12,27 +12,38 @@ import {
     ClientResult,
     CompileErrors,
     ExecutionInfo,
-    Output,
+    Output, Result,
     ResultValue,
     RuntimeError
 } from "../../data/result";
 import {DataRepr, DataStream, StreamingDataRepr} from "../../data/value_repr";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
-import {NotebookCell, NotebookConfig} from "../../data/data";
+import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
+import {SocketSession} from "../../comms";
+import {MainUI} from "./ui";
+import {CompletionCandidate, Signatures} from "../../data/messages";
+import {languages, Range} from "monaco-editor";
+import CompletionItem = languages.CompletionItem;
+import {ContentEdit} from "../../data/content_edit";
+import {StructType} from "../../data/data_type";
 
 export class NotebookUI extends UIEventTarget {
+    readonly cellUI: NotebookCellsUI;
+    readonly kernelUI: KernelUI;
+    private cellResults: Record<number, Record<string, ResultValue>>;
+    private globalVersion: number;
+    private localVersion: number;
+    private editBuffer: EditBuffer;
+
     // TODO: remove socket, mainUI references
-    constructor(eventParent, path, socket, mainUI) {
+    constructor(eventParent: UIEventTarget, readonly path: string, readonly socket: SocketSession, readonly mainUI: MainUI) {
         super(eventParent);
         let cellUI = new NotebookCellsUI(this, path);
         let kernelUI = new KernelUI(this, path);
         //super(null, cellUI, kernelUI);
         //this.el.classList.add('notebook-ui');
-        this.path = path;
-        this.socket = socket;
         this.cellUI = cellUI;
         this.kernelUI = kernelUI;
-        this.mainUI = mainUI;
 
         this.cellResults = {};
 
@@ -93,13 +104,13 @@ export class NotebookUI extends UIEventTarget {
 
         this.cellUI.addEventListener('AdvanceCell', evt => {
             if (Cell.currentFocus) {
-                if (evt.backward) {
-                    const prev = Cell.currentFocus.prevCell();
+                if (evt.detail.backward) {
+                    const prev = Cell.currentFocus.prevCell!();
                     if (prev) {
                         prev.focus();
                     }
                 } else {
-                    const next = Cell.currentFocus.nextCell();
+                    const next = Cell.currentFocus.nextCell!();
                     if (next) {
                         next.focus();
                     } else {
@@ -112,9 +123,9 @@ export class NotebookUI extends UIEventTarget {
         this.addEventListener('InsertCellAfter', evt => {
             const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.firstCell().id);
             const nextId = this.cellUI.getMaxCellId() + 1;
-            let newCell = evt.detail.mkCell;
-            if (newCell) {
-                newCell = newCell(nextId);
+            let newCell: Cell;
+            if (evt.detail.mkCell) {
+                newCell = evt.detail.mkCell(nextId);
             } else {
                 newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
             }
@@ -141,7 +152,7 @@ export class NotebookUI extends UIEventTarget {
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, null);
             } else {
-                const prev = current.prevCell();
+                const prev = current.prevCell!()!; // TODO: this could be undefined, fix later.
                 const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, prev.id);
                 this.socket.send(update);
                 this.cellUI.insertCell(newCell, prev);
@@ -163,38 +174,39 @@ export class NotebookUI extends UIEventTarget {
                 const update = new messages.DeleteCell(path, this.globalVersion, ++this.localVersion, current.id);
                 this.socket.send(update);
                 this.editBuffer.push(this.localVersion, update);
-                const nextCell = current.nextCell();
+                const nextCell = current.nextCell!();
 
                 const cell = new NotebookCell(current.id, current.language, current.content);
 
                 const undoEl = div(['undo-delete'], [
                     span(['close-button', 'fa'], ['']).click(evt => {
-                        undoEl.parentNode.removeChild(undoEl);
+                        undoEl.parentNode!.removeChild(undoEl);
                     }),
                     span(['undo-message'], [
                         'Cell deleted. ',
                         span(['undo-link'], ['Undo']).click(evt => {
-                            let prevCell = prevCells.pop();
-                            while (prevCells.length && !this.cellUI.getCell(prevCell)) {
-                                prevCell = prevCells.pop();
+                            let prevCell = prevCells.pop()!;
+                            while (prevCells.length && !this.cellUI.getCell(prevCell!)) {
+                                prevCell = prevCells.pop()!;
                             }
 
-                            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, cell, this.cellUI.getCell(prevCell) ? prevCell : null);
+                            // TODO: check if passing -1 actually works (Polykernel.updateNotebook might need to handle that case?) ! We might need to change InsertCell to take an optional `after` instead?
+                            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, cell, this.cellUI.getCell(prevCell) ? prevCell : -1);
                             this.socket.send(update);
                             const newCell = cell.language === 'text' ? new TextCell(cell.id, cell.content, this.path) : new CodeCell(cell.id, cell.content, cell.language, this.path);
                             this.cellUI.insertCell(newCell, prevCell);
-                            undoEl.parentNode.removeChild(undoEl);
+                            undoEl.parentNode!.removeChild(undoEl);
                         })
                     ])
                 ]);
 
                 if (nextCell) {
                     nextCell.focus();
-                    nextCell.container.parentNode.insertBefore(undoEl, nextCell.container);
+                    nextCell.container.parentNode!.insertBefore(undoEl, nextCell.container);
                 } else {
-                    const prev = current.prevCell();
+                    const prev = current.prevCell!();
                     if (prev) prev.focus();
-                    current.container.parentNode.insertBefore(undoEl, current.container);
+                    current.container.parentNode!.insertBefore(undoEl, current.container);
                 }
                 this.cellUI.removeCell(current.id);
             }
@@ -205,7 +217,7 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.cellUI.addEventListener('RunCurrentCell', () => {
-            this.runCells(Cell.currentFocus.id);
+            this.runCells(Cell.currentFocus!.id);
         });
 
         this.cellUI.addEventListener('RunAll', () => {
@@ -215,7 +227,7 @@ export class NotebookUI extends UIEventTarget {
 
         this.cellUI.addEventListener('RunToCursor', () => {
             const allCellIds = this.cellUI.getCodeCellIds();
-            const activeCellIdx = allCellIds.indexOf(Cell.currentFocus.id);
+            const activeCellIdx = allCellIds.indexOf(Cell.currentFocus!.id);
             if (activeCellIdx < 0) {
                 console.log("Active cell is not part of current notebook?")
             } else {
@@ -225,7 +237,7 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.cellUI.addEventListener('ContentChange', (evt) => {
-            const update = new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits, evt.detail.metadata || null);
+            const update = new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits, evt.detail.metadata);
             this.socket.send(update);
             this.editBuffer.push(this.localVersion, update);
         });
@@ -236,9 +248,9 @@ export class NotebookUI extends UIEventTarget {
             const resolve = evt.detail.resolve;
             const reject = evt.detail.reject;
 
-            const receiveCompletions = (notebook, cell, receivedPos, completions) => {
+            const receiveCompletions = (notebook: string, cell: number, receivedPos: number, completions: CompletionCandidate[]) => {
                 if (notebook === path && cell === id && pos === receivedPos) {
-                    this.socket.removeMessageListener(messages.CompletionsAt, receiveCompletions);
+                    this.socket.removeMessageListener([messages.CompletionsAt, receiveCompletions]);
                     const completionResults = completions.map(candidate => {
                         const isMethod = candidate.params.length > 0 || candidate.typeParams.length > 0;
 
@@ -253,13 +265,19 @@ export class NotebookUI extends UIEventTarget {
                         const insertText =
                             candidate.name + (typeParams.length ? '[$1]' : '') + (params.length ? '($2)' : '');
 
+                        // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
+                        const model = (this.cellUI.getCell(cell) as CodeCell).editor.getModel()!;
+                        const offsetAsPosition = model.getPositionAt(pos);
+                        const range = Range.fromPositions(offsetAsPosition);
+
                         return {
                             kind: isMethod ? 1 : 9,
                             label: label,
                             insertText: insertText,
                             insertTextRules: 4,
-                            detail: candidate.type
-                        }
+                            detail: candidate.type,
+                            range: range
+                        };
                     });
                     //console.log(completionResults);
                     resolve({suggestions: completionResults});
@@ -276,10 +294,10 @@ export class NotebookUI extends UIEventTarget {
             const resolve = evt.detail.resolve;
             const reject = evt.detail.reject;
 
-            const receiveHints = (notebook, cell, receivedPos, signatures) => {
+            const receiveHints = (notebook: string, cell: number, receivedPos: number, signatures?: Signatures) => {
                 if (notebook === path && cell === id && pos === receivedPos) {
-                    this.socket.removeMessageListener(messages.ParametersAt, receiveHints);
-                    if (signatures != null) {
+                    this.socket.removeMessageListener([messages.ParametersAt, receiveHints]);
+                    if (signatures) {
                         resolve({
                             activeParameter: signatures.activeParameter,
                             activeSignature: signatures.activeSignature,
@@ -298,12 +316,12 @@ export class NotebookUI extends UIEventTarget {
                                 }
                             })
                         });
-                    } else resolve(null);
+                    } else resolve(undefined);
                 }
             };
 
             this.socket.addMessageListener(messages.ParametersAt, receiveHints);
-            this.socket.send(new messages.ParametersAt(path, id, pos, null))
+            this.socket.send(new messages.ParametersAt(path, id, pos))
         });
 
         this.cellUI.addEventListener("ReprDataRequest", evt => {
@@ -331,10 +349,10 @@ export class NotebookUI extends UIEventTarget {
 
         this.addEventListener('UpdatedExecutionStatus', evt => {
             const update = evt.detail.update;
-            this.cellUI.setExecutionHighlight(update.cellId, update.pos);
+            if (update.pos) this.cellUI.setExecutionHighlight(update.cellId, update.pos);
         });
 
-        socket.addMessageListener(messages.NotebookUpdate, update => {
+        socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
             if (update.path === this.path) {
                 if (update.globalVersion >= this.globalVersion) {
                     this.globalVersion = update.globalVersion;
@@ -348,34 +366,35 @@ export class NotebookUI extends UIEventTarget {
                     this.localVersion++;
 
                     match(update)
-                        .when(messages.UpdateCell, (p, g, l, id, edits, metadata) => {
+                        .when(messages.UpdateCell, (p: string, g: number, l: number, id: number, edits: ContentEdit[], metadata?: CellMetadata) => {
                             const cell = this.cellUI.getCell(id);
                             if (cell) {
                                 cell.applyEdits(edits);
-                                this.editBuffer.push(this.localVersion, messages);
+                                this.editBuffer.push(this.localVersion, update);
                                 if (metadata) {
                                     cell.setMetadata(metadata);
                                 }
                             }
                         })
-                        .when(messages.InsertCell, (p, g, l, cell, after) => {
+                        .when(messages.InsertCell, (p: string, g: number, l: number, cell: NotebookCell, after: number) => {
                             const prev = this.cellUI.getCell(after);
                             const newCell = (prev && prev.language && prev.language !== "text")
                                 ? new CodeCell(cell.id, cell.content, cell.language, this.path)
                                 : new TextCell(cell.id, cell.content, this.path);
                             this.cellUI.insertCell(newCell, after)
                         })
-                        .when(messages.DeleteCell, (p, g, l, id) => this.cellUI.removeCell(id))
-                        .when(messages.UpdateConfig, (p, g, l, config) => this.cellUI.configUI.setConfig(config))
-                        .when(messages.SetCellLanguage, (p, g, l, id, language) => this.cellUI.setCellLanguage(this.cellUI.getCell(id), language))
-                        .when(messages.SetCellOutput, (p, g, l, id, output) => {
+                        .when(messages.DeleteCell, (p: string, g: number, l: number, id: number) => this.cellUI.removeCell(id))
+                        .when(messages.UpdateConfig, (p: string, g: number, l: number, config: NotebookConfig) => this.cellUI.configUI.setConfig(config))
+                        .when(messages.SetCellLanguage, (p: string, g: number, l: number, id, language: string) => this.cellUI.setCellLanguage(this.cellUI.getCell(id), language))
+                        .when(messages.SetCellOutput, (p: string, g: number, l: number, id, output?: Output) => {
                             const cell = this.cellUI.getCell(id);
-                            cell.clearResult();
-                            if (output) {
-                                cell.addOutput(output.contentType, output.content);
+                            if (cell instanceof CodeCell) {
+                                cell.clearResult();
+                                if (output) {
+                                    cell.addOutput(output.contentType, output.content);
+                                }
                             }
-                        })
-                        .otherwise();
+                        });
 
 
                     // discard edits before the local version from server – it will handle rebasing at least until that point
@@ -388,7 +407,7 @@ export class NotebookUI extends UIEventTarget {
 
         // TODO: this doesn't seem like the best place for this reconnection logic.
         // when the socket is disconnected, we're going to try reconnecting when the window gets focus.
-        const reconnectOnWindowFocus = evt => {
+        const reconnectOnWindowFocus = () => {
             if (socket.isClosed) {
                 socket.reconnect(true);
             }
@@ -421,7 +440,7 @@ export class NotebookUI extends UIEventTarget {
         });
     }
 
-    handleResult(result, cell) {
+    handleResult(result: Result, cell: Cell) {
         if (cell instanceof CodeCell) {
             if (result instanceof CompileErrors) {
                 cell.setErrors(result.reports);
@@ -451,8 +470,8 @@ export class NotebookUI extends UIEventTarget {
         }
     }
 
-    getCellContext(ids) {
-        const cellContext = {};
+    getCellContext(ids: number[]) {
+        const cellContext: Record<string, any> = {};
         for (let id of ids) {
             const results = this.cellResults[id];
             if (!results) {
@@ -461,16 +480,14 @@ export class NotebookUI extends UIEventTarget {
 
             for (let key of Object.keys(results)) {
                 const result = results[key];
-                let bestValue = result.valueText;
-                if (result.reprs instanceof Array) {
-                    const dataRepr = result.reprs.find(repr => repr instanceof DataRepr);
-                    if (dataRepr) {
-                        bestValue = dataRepr.decode();
-                    } else {
-                        const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
-                        if (streamingRepr) {
-                            bestValue = new DataStream(this.path, streamingRepr, this.socket);
-                        }
+                let bestValue: any = result.valueText;
+                const dataRepr = result.reprs.find(repr => repr instanceof DataRepr);
+                if (dataRepr) {
+                    bestValue = (dataRepr as DataRepr).decode();
+                } else {
+                    const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
+                    if (streamingRepr) {
+                        bestValue = new DataStream(this.path, streamingRepr as StreamingDataRepr<StructType>, this.socket);
                     }
                 }
                 cellContext[key] = bestValue;
@@ -479,19 +496,19 @@ export class NotebookUI extends UIEventTarget {
         return cellContext;
     }
 
-    runCells(cellIds) {
+    runCells(cellIds: number[] | number) {
         if (!(cellIds instanceof Array)) {
             cellIds = [cellIds];
         }
-        const serverRunCells = [];
-        let prevCell;
+        const serverRunCells: number[] = [];
+        let prevCell: number;
         cellIds.forEach(id => {
             const cell = this.cellUI.getCell(id);
             if (cell) {
                 cell.dispatchEvent(new BeforeCellRunEvent(id));
                 if (!clientInterpreters[cell.language]) {
                     serverRunCells.push(id);
-                } else if (cell.language !== 'text') {
+                } else if (cell.language !== 'text' && cell instanceof CodeCell) {
                     const code = cell.content;
                     const cellsBefore = this.cellUI.getCodeCellIdsBefore(id);
                     const runCell = () => {
@@ -500,20 +517,18 @@ export class NotebookUI extends UIEventTarget {
                             code,
                             {id, availableValues: this.getCellContext(cellsBefore)}
                         );
-                        if (results instanceof Array) {
-                            results.forEach(result => {
-                                this.handleResult(result, cell);
-                                if (result instanceof ClientResult) {
-                                    // notify the server of the MIME representation
-                                    result.toOutput().then(output => this.socket.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
-                                }
-                            });
-                        }
+                        results.forEach(result => {
+                            this.handleResult(result, cell);
+                            if (result instanceof ClientResult) {
+                                // notify the server of the MIME representation
+                                result.toOutput().then(output => this.socket.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
+                            }
+                        });
                     };
                     if (prevCell) {
                         const predecessor = prevCell;
                         // when the preceeding cell finishes executing, execute this one
-                        const listener = (evt) => {
+                        const listener = (evt: CellExecutionFinished) => {
                             if (evt.cellId === predecessor) {
                                 removeEventListener('CellExecutionFinished', listener);
                                 runCell();
@@ -532,12 +547,12 @@ export class NotebookUI extends UIEventTarget {
         this.socket.send(new messages.RunCell(this.path, serverRunCells));
     }
 
-    onCellLanguageSelected(setLanguage, path, id) {
+    onCellLanguageSelected(setLanguage: string, path: string, id?: number) {
         if (path !== this.path) {
             return;
         }
 
-        id = id || Cell.currentFocus.id;
+        id = id || Cell.currentFocus!.id;
         if (id) {
             const cell = this.cellUI.getCell(id);
             if (cell.language !== setLanguage) {
@@ -548,7 +563,7 @@ export class NotebookUI extends UIEventTarget {
 
     }
 
-    onCellsLoaded(path, cells, config) {
+    onCellsLoaded(path: string, cells: NotebookCell[], config?: NotebookConfig) {
         console.log(`Loaded ${path}`);
         if (path === this.path) {
             if (config) {
@@ -557,9 +572,9 @@ export class NotebookUI extends UIEventTarget {
                 this.cellUI.configUI.setConfig(NotebookConfig.default);
             }
             // TODO: move all of this logic out.
-            this.socket.removeMessageListener(messages.NotebookCells, this.onCellsLoaded);
+            this.socket.removeMessageListener([messages.NotebookCells, this.onCellsLoaded]);
             for (const cellInfo of cells) {
-                let cell = null;
+                let cell: Cell;
                 switch (cellInfo.language) {
                     case 'text':
                     case 'markdown':
@@ -573,13 +588,13 @@ export class NotebookUI extends UIEventTarget {
                 cellInfo.results.forEach(
                     result => {
                         if (result instanceof CompileErrors) {
-                            cell.setErrors(result.reports)
+                            (cell as CodeCell).setErrors(result.reports)
                         } else if (result instanceof RuntimeError) {
-                            cell.setRuntimeError(result.error)
+                            (cell as CodeCell).setRuntimeError(result.error)
                         } else if (result instanceof Output) {
-                            cell.addOutput(result.contentType, result.content)
+                            (cell as CodeCell).addOutput(result.contentType, result.content)
                         } else if (result instanceof ResultValue) {
-                            cell.addResult(result);
+                            (cell as CodeCell).addResult(result);
                         }
                     }
                 )

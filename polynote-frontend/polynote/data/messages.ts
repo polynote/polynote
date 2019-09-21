@@ -109,6 +109,9 @@ export class CellResult extends Message {
 
 
 export class NotebookUpdate extends Message {
+    readonly path: string;
+    readonly globalVersion: number;
+    readonly localVersion: number;
 
     // any way to give this a better type? :(
     static unapply(inst: NotebookUpdate): any[] { return [inst]; }
@@ -338,7 +341,6 @@ export class KernelInfo extends KernelStatusUpdate {
 
     constructor(readonly content: Record<string, string>) {
         super();
-        this.content = content;
         Object.freeze(this);
     }
 }
@@ -353,8 +355,6 @@ export class ExecutionStatus extends KernelStatusUpdate {
 
     constructor(readonly cellId: number, readonly pos?: PosRange) {
         super();
-        this.cellId = cellId;
-        this.pos = pos;
         Object.freeze(this);
     }
 }

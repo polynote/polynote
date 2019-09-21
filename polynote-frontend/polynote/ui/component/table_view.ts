@@ -1,19 +1,25 @@
 "use strict";
 
 import {UIEvent} from "../util/ui_event";
-import {DataStream, StreamingDataRepr} from "../../data/value_repr";
-import {div, iconButton, span, table, tag} from "../util/tags";
-import {StructType, ArrayType} from "../../data/data_type";
+import {DataStream, LazyDataRepr, StreamingDataRepr, UpdatingDataRepr} from "../../data/value_repr";
+import {div, iconButton, span, table, TableElement, tag, TagElement} from "../util/tags";
+import {StructType, ArrayType, StructField, DataType} from "../../data/data_type";
 import {SocketSession} from "../../comms";
 
-export class ReprDataRequest extends UIEvent {
-    constructor(reprType, handleId, count, onComplete, onFail) {
+export class ReprDataRequest extends UIEvent<{
+    handleType: number,
+    handleId: number,
+    count: number,
+    onComplete: (data: ArrayBuffer[]) => void,
+    onFail: () => void}>
+{
+    constructor(reprType: typeof LazyDataRepr | typeof StreamingDataRepr | typeof UpdatingDataRepr, handleId: number, count: number, onComplete: (data: ArrayBuffer[]) => void, onFail: () => void) {
         super("ReprDataRequest", {handleType: reprType.handleTypeId, handleId, count, onComplete, onFail});
     }
 }
 
 
-function renderData(dataType, data) {
+function renderData(dataType: DataType, data: any) {
     // TODO: nicer display
     let value = '';
     if (dataType instanceof ArrayType || dataType instanceof StructType) {
@@ -25,14 +31,19 @@ function renderData(dataType, data) {
 }
 
 export class TableView {
+    private fields: StructField[];
+    private el: TagElement<"div">;
+    private table: TableElement;
+    private paginator: TagElement<"div">;
+    private prevButton: TagElement<"button">;
+    private nextButton: TagElement<"button">;
+    private stream: DataStream;
+    private rows: Record<string, any>[]; // TODO: anything better than `any` here?
+    private currentPos: number;
 
-    constructor(repr, path) {
-        if (!(repr instanceof StreamingDataRepr) || !(repr.dataType instanceof StructType))
-            throw "TableView can only be created for streaming struct data";
-        this.repr = repr;
-        this.path = path;
+    constructor(readonly repr: StreamingDataRepr<StructType>, readonly path: string) {
         const dataType = repr.dataType;
-        const fields = this.fields = dataType.fields;
+        this.fields = dataType.fields;
         const fieldClasses = dataType.fields.map(field => field.name);
         const fieldNames = dataType.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
 
@@ -55,9 +66,9 @@ export class TableView {
             ])
         ]);
 
-        this.table.tBodies.item(0).appendChild(
+        this.table.tBodies.item(0)!.appendChild(
             tag('tr', ['initial-msg'], {}, [
-                tag('td', [],  {'colspan': fields.length + ''},[
+                tag('td', [],  {'colSpan': this.fields.length + ''},[
                     'Click "next page" (', span(['fas', 'icon'], ''), ') to load data.', tag('br'),
                     'This will force evaluation of lazy data.'
                 ])])
@@ -68,16 +79,17 @@ export class TableView {
         this.currentPos = 0;
     }
 
-    addBatch(batch) {
+    // TODO: replace any with real type
+    addBatch(batch: any) {
         const start = this.rows.length;
         this.rows.push(...batch);
         const end = this.rows.length;
         this.displayItems(start, end);
     }
 
-    displayItems(start, end) {
+    displayItems(start: number, end: number) {
         start = Math.max(start, 0);
-        this.table.tBodies.item(0).innerHTML = '';
+        this.table.tBodies.item(0)!.innerHTML = '';
         for (let i = start; i < end && i < this.rows.length; i++) {
             const row = this.fields.map(field => renderData(field.dataType, this.rows[i][field.name]));
             this.table.addRow(row);
@@ -89,20 +101,20 @@ export class TableView {
         if (this.currentPos + 20 < this.rows.length) {
             this.displayItems(this.currentPos + 20, this.currentPos + 40);
         } else if (!this.stream.terminated) {
-            this.stream.requestNext().then(batch => this.addBatch(batch)).then(_ => this.prevButton.enabled = true);
+            this.stream.requestNext().then(batch => this.addBatch(batch)).then(_ => this.prevButton.disabled = false);
         } else {
-            this.nextButton.enabled = false;
+            this.nextButton.disabled = true;
         }
     }
 
     pagePrev() {
         if (this.currentPos > 0) {
             this.displayItems(this.currentPos - 20, this.currentPos);
-            this.nextButton.enabled = true;
+            this.nextButton.disabled = false;
         }
 
         if (this.currentPos === 0) {
-            this.prevButton.enabled = false;
+            this.prevButton.disabled = true;
         }
     }
 

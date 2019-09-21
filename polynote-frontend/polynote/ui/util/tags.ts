@@ -210,7 +210,7 @@ export interface TableRowElement extends TagElement<"tr"> {
 }
 
 export interface TableElement extends TagElement<"table"> {
-    addRow(row: TableRow, whichBody?: TagElement<"tbody">): TableRowElement
+    addRow(row: Content[] | TableRow, whichBody?: TagElement<"tbody">): TableRowElement
     findRows(props: Record<string, string>, tbody?: TagElement<"tbody">): TableRowElement[]
     findRowsBy(fn: (row: TableRow) => boolean, tbody?: TagElement<"tbody">): TableRowElement[]
     addBody(rows?: TableRow[]): TagElement<"tbody">
@@ -274,7 +274,7 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
     ]) as TableElement;
 
     return Object.assign(table, {
-        addRow(row: TableRow, whichBody?: TagElement<"tbody">) {
+        addRow(row: Content[] | TableRow, whichBody?: TagElement<"tbody">) {
             const tbody = whichBody === undefined ? body : whichBody;
             const rowEl = mkTR(row);
             if (contentSpec.addToTop)

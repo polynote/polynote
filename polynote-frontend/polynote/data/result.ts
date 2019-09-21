@@ -44,8 +44,7 @@ export class Position {
     }
 
     constructor(readonly source: string, readonly start: number, readonly end: number, readonly point: number) {
-        Object.freeze(this);
-    }
+        Object.freeze(this);}
 }
 
 export class KernelReport {
@@ -55,9 +54,6 @@ export class KernelReport {
     }
 
     constructor(readonly position: Position, readonly message: string, readonly severity: number) {
-        this.position = position;
-        this.message = message;
-        this.severity = severity;
         Object.freeze(this);
     }
 
@@ -74,7 +70,7 @@ export class CompileErrors extends Result {
         return [inst.reports];
     }
 
-    constructor(readonly reports: KernelReport) {
+    constructor(readonly reports: KernelReport[]) {
         super();
         Object.freeze(this);
     }
@@ -259,7 +255,7 @@ export class ClientResult extends Result {
         throw new Error(`Class ${this.constructor.name} does not implement display()`);
     }
 
-    toOutput() {
+    toOutput(): Promise<Output> {
         throw new Error(`Class ${this.constructor.name} does not implement toOutput()`);
     }
 }

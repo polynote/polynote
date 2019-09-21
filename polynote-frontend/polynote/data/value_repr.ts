@@ -147,7 +147,7 @@ export class DataStream extends EventTarget {
     readonly dataType: StructType; // can we make this assumption?
     private batchSize = 50;
     private receivedCount = 0;
-    private terminated = false;
+    terminated = false;
     private stopAfter = Infinity;
     private listener?: EventListener;
     private runListener?: EventListener;

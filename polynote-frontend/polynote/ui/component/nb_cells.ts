@@ -16,7 +16,7 @@ type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
 export class NotebookCellsUI extends UIEventTarget {
     private disabled: boolean;
-    private configUI: NotebookConfigUI;
+    readonly configUI: NotebookConfigUI;
     readonly el: NotebookCellsEl;
     private readonly cells: Record<number, Cell>;
     private queuedCells: number;

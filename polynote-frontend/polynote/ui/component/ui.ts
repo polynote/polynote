@@ -29,10 +29,10 @@ export const Interpreters: Record<string, string> = {};
 
 export class MainUI extends UIEventTarget {
     private mainView: SplitView;
-    private toolbarUI: ToolbarUI;
+    readonly toolbarUI: ToolbarUI;
     readonly el: TagElement<"div">;
-    private readonly notebookContent: TagElement<"div">;
-    private tabUI: TabUI;
+    readonly notebookContent: TagElement<"div">;
+    readonly tabUI: TabUI;
     private browseUI: NotebookListUI;
     private disabled: boolean;
     private currentServerCommit?: number;

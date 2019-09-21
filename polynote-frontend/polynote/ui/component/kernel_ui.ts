@@ -11,8 +11,8 @@ import {storage} from "../util/storage";
 
 export class KernelUI extends UIEventTarget {
     private info: KernelInfoUI;
-    private tasks: KernelTasksUI;
-    private symbols: KernelSymbolsUI;
+    readonly tasks: KernelTasksUI;
+    readonly symbols: KernelSymbolsUI;
     readonly el: TagElement<"div">;
     private statusEl: TagElement<"h2">;
     private status: TagElement<"span">;

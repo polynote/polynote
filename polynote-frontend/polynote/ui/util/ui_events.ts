@@ -9,6 +9,7 @@ import {
 } from "../component/cell";
 import {ExecutionStatus, TaskInfo} from "../../data/messages";
 import {NotebookConfig} from "../../data/data";
+import {ReprDataRequest} from "../component/table_view";
 
 type TriggerItem = UIEvent<{item: string}>
 export type ImportNotebook = UIEvent<{name: string, content: string}>
@@ -74,4 +75,5 @@ export interface UIEventNameMap extends WindowEventMap {
     "UpdatedTask": UpdatedTask;
     "UpdatedExecutionStatus": UpdatedExecutionStatus;
     "UpdatedConfig": UpdatedConfig;
+    "ReprDataRequest": ReprDataRequest;
 }

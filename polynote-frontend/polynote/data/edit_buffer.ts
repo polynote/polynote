@@ -1,8 +1,8 @@
-import {Message} from "./messages";
+import {NotebookUpdate} from "./messages";
 
 interface Version {
     version: number,
-    edits: Message[]
+    edits: NotebookUpdate[]
 }
 
 export class EditBuffer {
@@ -14,7 +14,10 @@ export class EditBuffer {
      * @param version The version corresponding to the edits
      * @param edits   The edits
      */
-    push(version: number, edits: Message[]) {
+    push(version: number, edits: NotebookUpdate[] | NotebookUpdate) {
+        if (! (edits instanceof Array)) {
+            edits = [edits]
+        }
         this.versions.push({version, edits});
     }
 
@@ -35,7 +38,7 @@ export class EditBuffer {
      * @param to   The end version, inclusive
      * @returns {Array}
      */
-    range(from: number, to: number): Message[] {
+    range(from: number, to: number): NotebookUpdate[] {
         let i = 0;
         while (i < this.versions.length && this.versions[i].version <= from) {
             i++;

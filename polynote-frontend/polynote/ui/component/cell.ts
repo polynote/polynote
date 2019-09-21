@@ -4,7 +4,7 @@ import {blockquote, button, Content, div, DropdownElement, iconButton, span, tag
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 // @ts-ignore (ignore use of non-public monaco api)
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent'
-import {CompileErrors, KernelErrorWithCause, KernelReport, PosRange, ResultValue} from "../../data/result"
+import {CompileErrors, KernelErrorWithCause, KernelReport, Output, PosRange, ResultValue} from "../../data/result"
 import {RichTextEditor} from "./text_editor";
 import {UIEvent, UIEventTarget} from "../util/ui_event"
 import {Diff} from '../../util/diff'
@@ -72,12 +72,12 @@ export class AdvanceCellEvent extends CellEvent<{ backward: boolean }> {
     get backward() { return this.detail.backward; }
 }
 
-export class InsertCellEvent extends CellEvent {
-    constructor(cellId: number, before: boolean = false) {
+export class InsertCellEvent extends CellEvent<{ mkCell?: (cellId: number) => Cell, results?: Output[], afterInsert?: (cell: Cell) => void }> {
+    constructor(cellId: number, before: boolean = false, mkCell?: (cellId: number) => Cell, results?: Output[], afterInsert?: (cell: Cell) => void) {
         if (before) {
-            super('InsertCellBefore', cellId);
+            super('InsertCellBefore', cellId, {mkCell, results, afterInsert});
         } else {
-            super('InsertCellAfter', cellId);
+            super('InsertCellAfter', cellId, {mkCell, results, afterInsert});
         }
     }
 }
@@ -144,8 +144,8 @@ export abstract class Cell extends UIEventTarget {
     protected keyMap: Map<KeyCode, KeyAction>;
 
     // the following are added when the cell is inserted into the DOM.
-    nextCell?: () => Cell | undefined;
-    prevCell?: () => Cell | undefined;
+    nextCell?: () => (Cell | undefined);
+    prevCell?: () => (Cell | undefined);
 
     constructor(readonly id: number, public language: string, readonly path: string, public metadata?: CellMetadata) {
         super();
@@ -306,6 +306,7 @@ export abstract class Cell extends UIEventTarget {
 
     abstract getCurrentSelection(): string
 
+    // TODO: replace this global with something else - perhaps event driven?
     static currentFocus: Cell | null = null;
 
     static keyMap = new Map([
