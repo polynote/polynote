@@ -1,7 +1,10 @@
 package polynote.messages
 
 import polynote.data.Rope
+import scodec.Codec
 import scodec.codecs.{Discriminated, Discriminator, byte}
+import scodec.codecs.implicits._
+import shapeless.cachedImplicit
 
 import scala.collection.mutable.ListBuffer
 
@@ -44,6 +47,7 @@ object Delete {
 
 object ContentEdit {
   implicit val discriminated: Discriminated[ContentEdit, Byte] = Discriminated(byte)
+  implicit val codec: Codec[ContentEdit] = cachedImplicit
 
   // rebase a onto b and b onto a
   def rebase(a: ContentEdit, b: ContentEdit): (List[ContentEdit], List[ContentEdit]) = (a, b) match {

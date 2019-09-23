@@ -1,4 +1,5 @@
 package polynote.kernel.util
+
 import java.io.InputStream
 import java.net.URI
 

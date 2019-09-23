@@ -44,10 +44,15 @@ package object messages {
   implicit val shortStringDecoder: Decoder[ShortString] = Decoder.decodeString.map(_.asInstanceOf[ShortString])
 
   type ShortList[A] = List[A] @@ ShortTag
-  def ShortList[A](list: List[A]): ShortList[A] = if (list.size > Short.MaxValue)
-    throw new RuntimeException("List length exceeds Short.MaxValue")
-  else
-    list.asInstanceOf[ShortList[A]]
+  object ShortList {
+    def apply[A](list: List[A]): ShortList[A] =
+      if (list.size > Short.MaxValue)
+        throw new RuntimeException("List length exceeds Short.MaxValue")
+      else
+        list.asInstanceOf[ShortList[A]]
+
+    def of[A](elems: A*): ShortList[A] = apply(elems.toList)
+  }
 
   implicit def shortListCodec[A](implicit ca: Lazy[Codec[A]]): Codec[ShortList[A]] =
     listOfN(uint16, ca.value).xmap(la => ShortList(la), sla => sla)
@@ -88,7 +93,7 @@ package object messages {
       throw new RuntimeException("List length exceeds 255")
     else
       list.asInstanceOf[TinyList[A]]
-
+    def of[A](as: A*): TinyList[A] = apply(as.toList)
     def unapply[A](list: TinyList[A]): Option[List[A]] = Option(list)
   }
 

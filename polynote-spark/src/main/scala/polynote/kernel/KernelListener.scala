@@ -1,105 +1,193 @@
 package polynote.kernel
-
 import java.util.concurrent.ConcurrentHashMap
-import java.util.function.BiFunction
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.function.{IntBinaryOperator, ToIntFunction}
 
-import cats.effect.IO
-import fs2.concurrent.Topic
-import org.apache.spark.Success
-import org.apache.spark.scheduler._
-import polynote.kernel.util.Publish
+import scala.collection.JavaConverters._
+import org.apache.spark.scheduler.{JobFailed, JobSucceeded, SparkListener, SparkListenerJobEnd, SparkListenerJobStart, SparkListenerStageCompleted, SparkListenerStageSubmitted, SparkListenerTaskEnd, SparkListenerTaskStart, StageInfo}
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.thief.DAGSchedulerThief
+import zio.blocking.Blocking
+import zio.clock.Clock
+import zio.{Runtime, UIO, ZIO}
 
-class KernelListener(statusUpdates: Publish[IO, KernelStatusUpdate]) extends SparkListener {
+class KernelListener(taskManager: TaskManager.Service, session: SparkSession, runtime: Runtime[Blocking with Clock]) extends SparkListener {
 
-  private val jobStageIds = new ConcurrentHashMap[Int, Set[Int]]
-  private val stageInfos = new ConcurrentHashMap[Int, StageInfo]()
-  private val stageTasksCompleted = new ConcurrentHashMap[Int, Int]()
+  private val jobUpdaters = new ConcurrentHashMap[Int, (TaskInfo => TaskInfo) => Unit]()
+  private val stageUpdaters = new ConcurrentHashMap[Int, (TaskInfo => TaskInfo) => Unit]()
+  private val jobStages   = new ConcurrentHashMap[Int, ConcurrentHashMap[Int, StageInfo]]()
+  private val stageJobIds = new ConcurrentHashMap[Int, Integer]()
+  private val allStages = new ConcurrentHashMap[Int, StageInfo]()
+  private val jobTasksCompleted = new ConcurrentHashMap[Int, AtomicInteger]()
+  private val stageTasksCompleted = new ConcurrentHashMap[Int, AtomicInteger]()
 
-  private def stageTaskId(stageInfo: StageInfo) = s"Stage ${stageInfo.stageId}"
-
-
-  /**
-    * When a job is started, it jots down all of the stages that belong to that job.
-    * The for each stage, it stores the stage info under that job ID, and publishes a queued status for the stage.
-    */
-  override def onJobStart(jobStart: SparkListenerJobStart): Unit = jobStart match {
-    case SparkListenerJobStart(jobId, time, jobStages, properties) =>
-      cleanupStages(jobId)
-
-      jobStageIds.put(jobId, jobStages.map(_.stageId).toSet)
-
-      // TODO: This can be a HUGE amount of queued stages for some tasks... maybe there's a good way to give some idea
-      //       of how many stages you're going to wait for without displaying them all at job start
-//      jobStages.foreach {
-//        stageInfo =>
-//          stageInfos.put(stageInfo.stageId, stageInfo)
-//          statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), s"Stage ${stageInfo.stageId}", stageInfo.name, TaskStatus.Queued) :: Nil)).unsafeRunAsyncAndForget()
-//      }
+  private val countTasks = new ToIntFunction[StageInfo] {
+    def applyAsInt(value: StageInfo): Int = value.numTasks
   }
 
-  /**
-    * @see [[cleanupStages()]]
-    */
-  override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = cleanupStages(jobEnd.jobId)
+  private val sum = new IntBinaryOperator {
+    def applyAsInt(left: Int, right: Int): Int = left + right
+  }
 
-  /**
-    * When a job finishes, it checks whether there are any stages still tracked under the job ID. If so, it
-    * cleans them up and publishes a Complete status for each of them.
-    */
-  private def cleanupStages(jobId: Int): Unit = {
-    if (jobStageIds.contains(jobId)) {
-      jobStageIds.getOrDefault(jobId, Set.empty).foreach {
-        stageId =>
-          Option(stageInfos.remove(stageId)).foreach {
-            stageInfo =>
-              statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), "", "", TaskStatus.Complete, 255.toByte) :: Nil)).unsafeRunAsyncAndForget()
-          }
+  private def jobProgress(jobId: Int): Double = jobStages.get(jobId) match {
+    case null => 0.0
+    case stages =>
+      val totalInOutstandingStages = stages.reduceValuesToInt(Long.MaxValue, countTasks, 0, sum)
+      val completedInOutstandingStages = stages.keys.asScala.collect {
+        case stageId if stageTasksCompleted.containsKey(stageId) => Option(stageTasksCompleted.get(stageId)).map(_.get).getOrElse(0)
+      }.sum
+
+      val numCompleted = Option(jobTasksCompleted.get(jobId)).map(_.get).getOrElse(0)
+      numCompleted.toDouble / (numCompleted + totalInOutstandingStages - completedInOutstandingStages)
+  }
+
+  private def stageProgress(stageId: Int): Double = allStages.get(stageId) match {
+    case null => 0.0
+    case stageInfo =>
+      val numCompleted = Option(stageTasksCompleted.get(stageId)).map(_.get).getOrElse(0)
+      numCompleted.toDouble / stageInfo.numTasks
+  }
+
+  private def updateJobProgress(jobId: Int): Unit =
+    Option(jobUpdaters.get(jobId)).foreach(_(_.progress(jobProgress(jobId))))
+
+  private def updateStageProgress(stageId: Int): Unit = {
+    Option(stageUpdaters.get(stageId)).foreach(_(_.progress(stageProgress(stageId))))
+    Option(stageJobIds.get(stageId)).foreach {
+      jobId => updateJobProgress(jobId)
+    }
+  }
+
+  private def cancelJob(jobId: Int): UIO[Unit] = ZIO.effectTotal {
+    DAGSchedulerThief(session).foreach {
+      scheduler => try {
+        scheduler.cancelJob(jobId)
+      } catch {
+        case err: Throwable => // TODO: log? We have to catch it, probably don't want to die here...
       }
     }
   }
 
-  /**
-    * When a stage starts, it publishes a Running status for that stage.
-    */
-  override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = stageSubmitted match {
-    case SparkListenerStageSubmitted(stageInfo, _) =>
-      stageInfos.put(stageInfo.stageId, stageInfo)
-      statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), s"Stage ${stageInfo.stageId}", stageInfo.name, TaskStatus.Running) :: Nil)).unsafeRunAsyncAndForget()
-  }
-
-  /**
-    * When a stage finishes, it publishes a Complete status for the stage.
-    */
-  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = stageCompleted match {
-    case SparkListenerStageCompleted(stageInfo) =>
-      stageInfos.remove(stageInfo.stageId)
-      statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), "", "", TaskStatus.Complete, 255.toByte) :: Nil)).unsafeRunAsyncAndForget()
-  }
-
-  /**
-    * Nothing to be done when a task starts (we're not publishing status messages for individual tasks)
-    */
-  override def onTaskStart(taskStart: SparkListenerTaskStart): Unit = ()
-
-  /**
-    * When a task completes, it increments the number of completed tasks for the stage, and recomputes the progress.
-    * Then it publishes a new Running status with the new progress.
-    */
-  override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = taskEnd.reason match {
-    case Success =>
-      stageTasksCompleted.putIfAbsent(taskEnd.stageId, 0)
-      stageTasksCompleted.computeIfPresent(taskEnd.stageId, new BiFunction[Int, Int, Int] {
-        override def apply(t: Int, u: Int): Int = u + 1
-      })
-
-      for {
-        stageInfo <- Option(stageInfos.get(taskEnd.stageId))
-        completed <- Option(stageTasksCompleted.getOrDefault(taskEnd.stageId, 0)).filter(_ != 0)
-      } yield {
-        val progress = math.round(completed.toDouble / stageInfo.numTasks * 255).toByte
-        statusUpdates.publish1(UpdatedTasks(TaskInfo(stageTaskId(stageInfo), s"Stage ${stageInfo.stageId}", stageInfo.name, TaskStatus.Running, progress) :: Nil)).unsafeRunAsyncAndForget()
+  private def cancelStage(stageId: Int): UIO[Unit] = ZIO.effectTotal {
+    DAGSchedulerThief(session).foreach {
+      scheduler => try {
+        scheduler.cancelStage(stageId)
+      } catch {
+        case err: Throwable =>
       }
-    case _ =>
+    }
+  }
+
+  private def sparkJobTaskId(jobId: Int) = s"SparkJob$jobId"
+  private def sparkStageTaskId(stageId: Int) = s"SparkStage$stageId"
+
+  override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
+    import jobStart.jobId
+    val label = s"Job $jobId"
+    val stageInfos = jobStart.stageInfos
+    val stageMap = new ConcurrentHashMap[Int, StageInfo]()
+    var totalTasks = 0
+    stageInfos.foreach {
+      si =>
+        stageMap.put(si.stageId, si)
+        stageJobIds.put(si.stageId, jobId)
+        totalTasks += si.numTasks
+    }
+
+    jobStages.put(jobId, stageMap)
+    jobTasksCompleted.put(jobId, new AtomicInteger(0))
+
+    runtime.unsafeRun {
+      taskManager.register(sparkJobTaskId(jobId), label, "", TaskStatus.Complete) {
+        updater =>
+          jobUpdaters.put(jobId, updater)
+          cancelJob(jobId)
+      }
+    }
+  }
+
+  override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
+    import jobEnd.jobId
+    val stages = jobStages.remove(jobId)
+
+    stages.asScala.values.foreach {
+      stageInfo =>
+        stageJobIds.remove(stageInfo.stageId)
+        allStages.remove(stageInfo.stageId)
+        stageTasksCompleted.remove(stageInfo.stageId)
+        Option(stageUpdaters.get(stageInfo.stageId)).foreach(_(_.completed))
+        ()
+    }
+
+    jobTasksCompleted.remove(jobId)
+
+    Option(jobUpdaters.remove(jobId)).foreach {
+      updater => jobEnd.jobResult match {
+        case JobSucceeded => updater(_.completed)
+        case _            => updater(_.failed)
+      }
+    }
+  }
+
+  override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
+    import stageSubmitted.stageInfo, stageInfo.stageId
+
+    stageTasksCompleted.put(stageId, new AtomicInteger(0))
+
+    if (!allStages.containsKey(stageId)) {
+      allStages.put(stageId, stageInfo)
+    }
+
+    runtime.unsafeRun {
+      taskManager.register(sparkStageTaskId(stageId), s"Stage $stageId", stageInfo.name, TaskStatus.Complete) {
+        updater =>
+          stageUpdaters.put(stageId, updater)
+          cancelStage(stageId)
+      }
+    }
+
+    Option(stageJobIds.get(stageId)).foreach {
+      jobId =>
+        jobStages.get(jobId) match {
+          case null =>
+            val map = new ConcurrentHashMap[Int, StageInfo]()
+            map.put(stageId, stageInfo)
+            jobStages.put(jobId, map)
+
+          case knownStages if knownStages.containsKey(stageId) =>
+            knownStages.size()
+          case knownStages =>
+            knownStages.put(stageId, stageInfo)
+            knownStages.size()
+        }
+    }
+    updateStageProgress(stageId)
+  }
+
+  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
+    import stageCompleted.stageInfo, stageInfo.stageId
+
+    Option(stageUpdaters.remove(stageId)).foreach(_(_.completed))
+    Option(stageJobIds.remove(stageId)).foreach {
+      jobId =>
+        Option(jobStages.get(jobId)).foreach(_.remove(stageId))
+        updateJobProgress(jobId)
+    }
+
+    allStages.remove(stageId)
+  }
+
+  override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
+    import taskEnd.stageId
+    if (taskEnd.reason == org.apache.spark.Success) {
+      stageTasksCompleted.get(stageId) match {
+        case null =>
+          stageTasksCompleted.putIfAbsent(stageId, new AtomicInteger(0))
+          stageTasksCompleted.get(stageId).incrementAndGet()
+        case ai => ai.incrementAndGet()
+      }
+      updateStageProgress(stageId)
+    }
   }
 
 }

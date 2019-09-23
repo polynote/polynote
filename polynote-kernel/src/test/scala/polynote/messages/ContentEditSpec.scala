@@ -1,13 +1,10 @@
 package polynote.messages
 
-import org.scalacheck.{Arbitrary, Gen, Shrink}
-import org.scalatest.exceptions.TestFailedException
+import org.scalacheck.{Arbitrary, Shrink}
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.data.Rope
-import polynote.test.Generators
-
-import scala.collection.immutable.Queue
+import polynote.testing.Generators
 
 class ContentEditSpec extends FreeSpec with Matchers with GeneratorDrivenPropertyChecks {
 

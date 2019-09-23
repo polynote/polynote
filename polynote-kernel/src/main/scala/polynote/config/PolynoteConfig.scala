@@ -7,6 +7,7 @@ import cats.syntax.either._
 import cats.syntax.functor._
 import io.circe.generic.extras.semiauto._
 import io.circe._
+import polynote.config.KernelIsolation.SparkOnly
 
 final case class Listen(
   port: Int = 8192,
@@ -25,8 +26,29 @@ object Storage {
   implicit val decoder: Decoder[Storage] = deriveDecoder
 }
 
+sealed trait KernelIsolation
+object KernelIsolation {
+  case object Never extends KernelIsolation
+  case object Always extends KernelIsolation
+  case object SparkOnly extends KernelIsolation
+
+  implicit val encoder: Encoder[KernelIsolation] = Encoder.instance {
+    case Never     => Json.fromString("never")
+    case Always    => Json.fromString("always")
+    case SparkOnly => Json.fromString("spark")
+  }
+
+  implicit val decoder: Decoder[KernelIsolation] = Decoder.decodeString.emap {
+    case "never"  => Right(Never)
+    case "always" => Right(Always)
+    case "spark"  => Right(SparkOnly)
+    case other    => Left(s"Invalid value for kernel_isolation: $other (expected one of: never, always, spark)")
+  }
+}
+
 final case class Behavior(
-  dependencyIsolation: Boolean = true
+  dependencyIsolation: Boolean = true,
+  kernelIsolation: KernelIsolation = SparkOnly
 )
 
 object Behavior {

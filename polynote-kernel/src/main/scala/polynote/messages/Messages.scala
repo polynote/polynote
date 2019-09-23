@@ -13,6 +13,7 @@ import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig}
 import polynote.data.Rope
 import polynote.kernel.util.OptionEither
 import polynote.runtime.{StreamingDataRepr, TableOp}
+import shapeless.cachedImplicit
 
 sealed trait Message
 
@@ -214,6 +215,7 @@ sealed trait NotebookUpdate extends Message {
     case SetCellLanguage(_, _, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
     case SetCellOutput(_, _, _, id, output) => notebook.setResults(id, output.toList)
   }
+
 }
 
 object NotebookUpdate {
@@ -221,13 +223,19 @@ object NotebookUpdate {
     case msg: NotebookUpdate => Some(msg)
     case _ => None
   }
+
+  implicit val discriminated: Discriminated[NotebookUpdate, Byte] = Discriminated(byte)
+}
+
+abstract class NotebookUpdateCompanion[T <: NotebookUpdate](msgTypeId: Byte) extends MessageCompanion[T](msgTypeId) {
+  implicit final val updateDiscriminator: Discriminator[NotebookUpdate, T, Byte] = Discriminator(msgTypeId)
 }
 
 final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, edits: ContentEdits, metadata: Option[CellMetadata]) extends Message with NotebookUpdate
-object UpdateCell extends MessageCompanion[UpdateCell](5)
+object UpdateCell extends NotebookUpdateCompanion[UpdateCell](5)
 
 final case class InsertCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cell: NotebookCell, after: CellID) extends Message with NotebookUpdate
-object InsertCell extends MessageCompanion[InsertCell](6)
+object InsertCell extends NotebookUpdateCompanion[InsertCell](6)
 
 final case class CompletionsAt(notebook: ShortString, id: CellID, pos: Int, completions: ShortList[Completion]) extends Message
 object CompletionsAt extends MessageCompanion[CompletionsAt](7)
@@ -239,10 +247,10 @@ final case class KernelStatus(notebook: ShortString, update: KernelStatusUpdate)
 object KernelStatus extends MessageCompanion[KernelStatus](9)
 
 final case class UpdateConfig(notebook: ShortString, globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate
-object UpdateConfig extends MessageCompanion[UpdateConfig](10)
+object UpdateConfig extends NotebookUpdateCompanion[UpdateConfig](10)
 
 final case class SetCellLanguage(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, language: TinyString) extends Message with NotebookUpdate
-object SetCellLanguage extends MessageCompanion[SetCellLanguage](11)
+object SetCellLanguage extends NotebookUpdateCompanion[SetCellLanguage](11)
 
 final case class StartKernel(notebook: ShortString, level: Byte) extends Message
 object StartKernel extends MessageCompanion[StartKernel](12) {
@@ -260,10 +268,10 @@ final case class CreateNotebook(path: ShortString, externalURI: OptionEither[Sho
 object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
 final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate
-object DeleteCell extends MessageCompanion[DeleteCell](15)
+object DeleteCell extends NotebookUpdateCompanion[DeleteCell](15)
 
 final case class SetCellOutput(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, output: Option[Output]) extends Message with NotebookUpdate
-object SetCellOutput extends MessageCompanion[SetCellOutput](22)
+object SetCellOutput extends NotebookUpdateCompanion[SetCellOutput](22)
 
 final case class ServerHandshake(
   interpreters: TinyMap[TinyString, TinyString],

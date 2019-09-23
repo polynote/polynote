@@ -107,7 +107,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
     def attachListener(session: SparkSession): TaskR[BaseEnv with TaskManager, Unit] = for {
       taskManager <- TaskManager.access
       zioRuntime  <- ZIO.runtime[Blocking with Clock]
-      _           <- ZIO(session.sparkContext.addSparkListener(new ZIOKernelListener(taskManager, session, zioRuntime)))
+      _           <- ZIO(session.sparkContext.addSparkListener(new KernelListener(taskManager, session, zioRuntime)))
     } yield ()
 
     TaskManager.run("Spark", "Spark", "Starting Spark session") {

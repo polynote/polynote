@@ -26,6 +26,7 @@ trait NotebookRepository[F[_]] {
 
   def listNotebooks(): F[List[String]]
 
+  // TODO: imports shouldn't happen on the server anymore... second arg should be Option[Notebook]
   def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): F[String]
 }
 

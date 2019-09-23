@@ -1,4 +1,5 @@
 package polynote.data
+
 import org.scalacheck.Gen
 import org.scalatest._
 import org.scalatest.prop.PropertyChecks

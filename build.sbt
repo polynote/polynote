@@ -1,7 +1,5 @@
 name := "polynote"
 
-import sbtassembly.AssemblyPlugin.defaultUniversalScript
-
 lazy val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
 lazy val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
 lazy val dist: TaskKey[File] = taskKey[File]("Building distribution...")
@@ -85,7 +83,7 @@ val `polynote-env` = project.settings(
   )
 )
 
-val `polynote-kernel-zio` = project.settings(
+val `polynote-kernel` = project.settings(
   commonSettings,
   scalaVersion := "2.11.11",
   libraryDependencies ++= Seq(
@@ -109,7 +107,7 @@ val `polynote-kernel-zio` = project.settings(
   )
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
-val `polynote-server-zio` = project.settings(
+val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
@@ -124,7 +122,7 @@ val `polynote-server-zio` = project.settings(
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
-).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel-zio` % "compile->compile;test->test")
+).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "compile->compile;test->test")
 
 lazy val `polynote-spark-runtime` = project.settings(
   commonSettings,
@@ -137,7 +135,7 @@ lazy val `polynote-spark-runtime` = project.settings(
   )
 ) dependsOn `polynote-runtime`
 
-lazy val `polynote-spark-zio` = project.settings(
+lazy val `polynote-spark` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
@@ -148,7 +146,7 @@ lazy val `polynote-spark-zio` = project.settings(
     "org.apache.spark" %% "spark-repl" % versions.spark % "test",
   ),
   dependencyJars := {
-    (dependencyClasspath in (`polynote-kernel-zio`, Compile)).value.collect {
+    (dependencyClasspath in (`polynote-kernel`, Compile)).value.collect {
       case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") =>
         jar.data -> s"polynote/deps/${jar.data.name}"
     }
@@ -168,21 +166,21 @@ lazy val `polynote-spark-zio` = project.settings(
       includeScala = false,
       prependShellScript = Some(Seq(
         s"""#!/usr/bin/env sh""",
-        s"""exec java -cp $jars $$JAVA_OPTS polynote.server.ZIOSparkServer "$$@"""",
+        s"""exec java -cp $jars $$JAVA_OPTS polynote.Main "$$@"""",
         s"""exit"""
       )))
   }
 ) dependsOn (
-  `polynote-server-zio` % "compile->compile;test->test",
+  `polynote-server` % "compile->compile;test->test",
   `polynote-spark-runtime` % "provided",
   `polynote-spark-runtime` % "test",
   `polynote-runtime` % "provided",
   `polynote-runtime` % "test")
 
-lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel-zio`, `polynote-server-zio`, `polynote-spark-zio`).settings(
+lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`).settings(
   dist := {
-    val jars = (polynoteJars in `polynote-spark-zio`).value ++ (dependencyJars in `polynote-spark-zio`).value
-    val mainJar = (assembly in `polynote-spark-zio`).value
+    val jars = (polynoteJars in `polynote-spark`).value ++ (dependencyJars in `polynote-spark`).value
+    val mainJar = (assembly in `polynote-spark`).value
     val outFile = crossTarget.value / "polynote-dist.zip"
     IO.zip(
       jars :+ ((file(".") / "config-template.yml") -> "polynote/config-template.yml"),
