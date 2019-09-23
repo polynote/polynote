@@ -1,9 +1,11 @@
-package polynote.kernel
+package polynote.kernel.util
 
-import java.io.{OutputStream, PrintStream}
+import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
+
+import polynote.kernel.{Output, Result}
 
 class ResultOutputStream(publishSync: Result => Unit, bufSize: Int = 1024) extends OutputStream {
   private val buf: ByteBuffer = ByteBuffer.allocate(bufSize)

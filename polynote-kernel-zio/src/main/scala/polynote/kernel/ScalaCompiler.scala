@@ -49,7 +49,7 @@ class ScalaCompiler private (
       s"($paramStr) => $resultType"
     case ConstantType(Constant(v)) => v.toString
     case NoType => "<Unknown>"
-    case typ if typ.typeSymbol == symbolOf[TypedPythonObject[_]] =>
+    case typ if typ.typeSymbol.name == "TypedPythonObject" =>
       typ.typeArgs.headOption.fold("PythonObject")(name => formatTypeInternal(name) + " (Python)")
     case _ =>
       val typName = typ.typeSymbolDirect.rawname
@@ -109,8 +109,14 @@ class ScalaCompiler private (
     compileUnit <- ZIO(new global.RichCompilationUnit(sourceFile))
     parsed      <- if (strictParse) ZIO(reporter.attempt(newUnitParser(compileUnit).parseStats())).absolve else ZIO(newUnitParser(compileUnit).parseStats())
   } yield {
+    val definedTerms = parsed.collect {
+      case tree: DefTree if tree.name.isTermName => tree.name.decoded
+    }.toSet
+
+    val allowedInputs = inputs.filterNot(definedTerms contains _.name.decoded)
+
     CellCode(
-      name, parsed, priorCells, inputs, inheritedImports, compileUnit, sourceFile
+      name, parsed, priorCells, allowedInputs, inheritedImports, compileUnit, sourceFile
     )
   }
 
@@ -243,12 +249,12 @@ class ScalaCompiler private (
     // what types (classes, traits, objects, type aliases) and methods does this code define?
     lazy val definedTypesAndMethods: List[Name] = code.collect {
       case ModuleDef(mods, name, _) if mods.isPublic => name
-      case ClassDef(mods, name, _, _) if mods.isPublic && mods.isCase => name.toTermName
-      case ClassDef(mods, name, _, _) if mods.isPublic => name
-      case TypeDef(mods, name, _, _) if mods.isPublic => name
+      case ClassDef(mods, name, _, _) if mods.isPublic => name.toTermName
+      case TypeDef(mods, name, _, _) if mods.isPublic => name.toTermName
       case DefDef(mods, name, _, _, _, _) if mods.isPublic => name
-    }
+    }.distinct
 
+    // The code all wrapped up in a class definition, with constructor arguments for the given prior cells and inputs
     private lazy val wrappedClass: ClassDef = {
       val priorCellParamList = copyAndReset(priorCellInputs)
       val nonImplicitParamList = copyAndReset(nonImplicitInputs)
@@ -258,7 +264,7 @@ class ScalaCompiler private (
           ..${priorCellImports}
           ..${copyAndReset(inheritedImports.externalImports)}
           ..${copyAndReset(inheritedImports.localImports)}
-          ..$compiledCode
+          ..${compiledCode}
         }
       """
     }
@@ -302,6 +308,7 @@ class ScalaCompiler private (
       }.lock(compilerThread).absolve
     }.flatten
 
+    // compute which inputs (values from previous cells) are actually referenced in the code
     private def usedInputs = {
       val classSymbol = cellClassSymbol
       val inputNames = inputs.map(_.name).toSet
@@ -311,25 +318,53 @@ class ScalaCompiler private (
       }
     }
 
+    // compute which prior cells are actually used – due to referencing a type or method from that cell
     private def usedPriorCells: List[CellCode] = {
-      val inputCellSymbols = cellClassSymbol.primaryConstructor.paramss.head.map(_.name).toSet
+      val inputCellSymbols = cellClassSymbol.primaryConstructor.paramss.head.toSet
+      val inputCellSymbolNames = inputCellSymbols.map(_.name)
       val used = new mutable.HashSet[Name]()
+
+      // first pull out all of the trees that correspond to the input code after typechecking. This includes all
+      // synthetic stuff that was generated for the user's code, but not any of our wrapper junk.
+      val classBody = compilationUnit.body.collect {
+        case ClassDef(_, `assignedTypeName`, _, Template(_, _, stats)) => stats.filter {
+          case ValDef(mods, _, _, _) if mods.isParamAccessor => false
+          case DefDef(mods, name, _, _, _, _) if mods.isParamAccessor || name.decoded == "<init>" => false
+          case tree => !tree.pos.isTransparent
+        }
+      }.flatten
+
+      // Now go through each of those trees and look for references to previous cells. Ideally this could be just
+      // symbol matching, but the symbols don't always seem to match when they ought to, so it matches on the
+      // previous cell's accessor name.
       val traverser = new Traverser {
-        override def traverse(tree: Tree): Unit = {
-          if (tree.symbol != null && inputCellSymbols.contains(tree.symbol.name)) {
-            tree match {
-              case defTree: DefTree => // defining the thing, not using it
-              case other if !other.pos.isTransparent =>
-                used.add(tree.symbol.name)
-              case other =>
-            }
-            super.traverse(tree)
-          } else {
-            super.traverse(tree)
+        override def traverseParents(parents: List[global.Tree]): Unit = {
+          // class parents have been replaced with TypeTrees which won't get traversed; traverse the original if it has one
+          parents.foreach {
+            case parent@TypeTree() =>
+              traverse(parent)
+              parent.original match {
+                case null =>
+                case original if !(original eq parent) => traverse(original)
+              }
+            case parent =>
+              traverse(parent)
           }
         }
+
+        override def traverse(tree: Tree): Unit = {
+          // TODO: this doesn't cover type trees which reference a type imported from a cell
+          if (tree.symbol != null) {
+            if (inputCellSymbolNames.contains(tree.symbol.name)) {
+              used.add(tree.symbol.name)
+            }
+          }
+          super.traverse(tree)
+        }
       }
-      traverser.traverse(compilationUnit.body)
+
+      classBody.foreach(traverser.traverse)
+
       val results = priorCells.zip(priorCellInputs).filter {
         case (cell, term) => used contains term.name
       }.map(_._1)
@@ -378,11 +413,11 @@ class ScalaCompiler private (
 
 object ScalaCompiler {
 
-  def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader]): Task[ScalaCompiler] =
+  def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader], notebookPackage: String = "$notebook"): Task[ScalaCompiler] =
     classLoader.memoize.flatMap {
       classLoader => ZIO {
         val global = new Global(settings, KernelReporter(settings))
-        new ScalaCompiler(global, "$notebook", classLoader)
+        new ScalaCompiler(global, notebookPackage, classLoader)
       }
     }
 

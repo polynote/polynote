@@ -111,7 +111,7 @@ class RemoteSparkKernel(
   private def consumeResponses(responses: Stream[IO, RemoteResponse]) = responses.evalMap {
     case Announce(remoteAddress) =>
       IO.pure {
-        Stream.eval(getNotebook().flatMap(notebook => request1[UnitResponse](InitialNotebook(_, notebook)).as(()))) ++
+        Stream.eval(getNotebook().flatMap(notebook => request1[UnitResponse](InitialNotebook(_, notebook, config)).as(()))) ++
           Stream.eval(remoteAddr.complete(remoteAddress).attempt.as(()))
       }
     case KernelStatusResponse(update) =>

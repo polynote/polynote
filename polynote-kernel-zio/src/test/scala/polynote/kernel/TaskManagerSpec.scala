@@ -28,7 +28,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
         Thread.sleep(10)
         state = 1
         if (debug) println(s"${Instant.now()} completed 1")
-      }.provide(runtime.Environment)
+      }
 
       val task2 = zio.blocking.effectBlocking {
         if (debug) println(s"${Instant.now()} running 2")
@@ -36,7 +36,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
         Thread.sleep(10)
         state = 2
         if (debug) println(s"${Instant.now()} completed 2")
-      }.provide(runtime.Environment)
+      }
 
       val task3 = zio.blocking.effectBlocking {
         if (debug) println(s"${Instant.now()} running 3")
@@ -44,7 +44,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
         Thread.sleep(10)
         state = 3
         if (debug) println(s"${Instant.now()} completed 3")
-      }.provide(runtime.Environment)
+      }
 
       val await1 = taskManager.queue_("1")(task1).runIO()
       val await2 = taskManager.queue_("2")(task2).runIO()
@@ -91,7 +91,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
         Thread.sleep(100000)
         state = 1
         if (debug) println(s"${Instant.now()} completed 1")
-      }.provide(runtime.Environment)
+      }
 
       val task2 = ZIO {
         if (debug) println(s"${Instant.now()} running 2")
@@ -103,7 +103,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
 
       Thread.sleep(200)
 
-      runtime.unsafeRunAsync_(taskManager.cancelAll())
+      unsafeRunAsync_(taskManager.cancelAll())
 
       an [InterruptedException] should be thrownBy {
         await1.runIO()

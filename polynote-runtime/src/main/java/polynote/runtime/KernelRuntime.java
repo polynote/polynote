@@ -3,7 +3,7 @@ package polynote.runtime;
 import java.io.Serializable;
 
 public class KernelRuntime implements Serializable {
-    public interface Display {
+    public interface Display extends Serializable {
         void content(String contentType, String content);
 
         default void html(String content) { content("text/html", content); }
@@ -11,9 +11,9 @@ public class KernelRuntime implements Serializable {
         default void text(String str) { content("text/plain", str); }
     }
 
-    public final Display display;
-    private final scala.Function2<Double, String, scala.Unit> progressSetter;
-    private final scala.Function1<scala.Option<scala.Tuple2<Integer, Integer>>, scala.Unit> executionStatusSetter;
+    transient public final Display display;
+    transient private final scala.Function2<Double, String, scala.Unit> progressSetter;
+    transient private final scala.Function1<scala.Option<scala.Tuple2<Integer, Integer>>, scala.Unit> executionStatusSetter;
 
     public KernelRuntime(
             Display display,

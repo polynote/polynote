@@ -1,7 +1,12 @@
 name := "polynote"
 
+import sbtassembly.AssemblyPlugin.defaultUniversalScript
+
 lazy val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
 lazy val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
+lazy val dist: TaskKey[File] = taskKey[File]("Building distribution...")
+lazy val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
+lazy val polynoteJars: TaskKey[Seq[(File, String)]] = taskKey("Polynote JARs")
 
 val versions = new {
   val http4s     = "0.20.6"
@@ -31,7 +36,8 @@ val commonSettings = Seq(
   ),
   assemblyMergeStrategy in assembly := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
-    case PathList("coursier", "shaded", xs @ _*) => MergeStrategy.first // coursier shades some of the same classes. assembly somehow can't dedupe even though they seem identical to me. 
+    case PathList("coursier", "shaded", xs @ _*) => MergeStrategy.first // coursier shades some of the same classes. assembly somehow can't dedupe even though they seem identical to me.
+    case PathList(_, "BuildInfo$.class") => MergeStrategy.discard
     case x =>
       val oldStrategy = (assemblyMergeStrategy in assembly).value
       oldStrategy(x)
@@ -40,7 +46,8 @@ val commonSettings = Seq(
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.7"),
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
-  }
+  },
+  test in assembly := {}
 )
 
 lazy val `polynote-runtime` = project.settings(
@@ -84,7 +91,7 @@ val `polynote-kernel` = project.settings(
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
     "io.get-coursier" %% "coursier-cats-interop" % versions.coursier,
     "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
-    "org.apache.ivy" % "ivy" % "2.4.0" % "provided",
+    "org.apache.ivy" % "ivy" % "2.4.0" % "provided"
   )
 ).dependsOn(`polynote-runtime`)
 
@@ -107,15 +114,19 @@ val `polynote-kernel-zio` = project.settings(
     "dev.zio" %% "zio-interop-cats" % "1.3.1.0-RC3",
     "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.10.3",
+    "org.scodec" %% "scodec-stream" % "1.2.0",
+    "com.lihaoyi" %% "fansi" % "0.2.6",
     "io.circe" %% "circe-yaml" % versions.circeYaml,
     "io.circe" %% "circe-generic" % versions.circe,
     "io.circe" %% "circe-generic-extras" % versions.circe,
     "io.get-coursier" %% "coursier" % versions.coursier,
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
     "io.get-coursier" %% "coursier-cats-interop" % versions.coursier,
-    "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1"
+    "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
+    "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
+    "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   )
-).dependsOn(`polynote-runtime`, `polynote-kernel`, `polynote-env`)
+).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
 val `polynote-server` = project.settings(
   commonSettings,
@@ -149,7 +160,7 @@ val `polynote-server-zio` = project.settings(
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
-).dependsOn(`polynote-kernel-zio` % "compile->compile;test->test", `polynote-server`)
+).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel-zio` % "compile->compile;test->test")
 
 def copyRuntimeJar(targetDir: File, targetName: String, file: File) = {
     val targetFile = targetDir / targetName
@@ -185,7 +196,7 @@ lazy val `polynote-spark` = project.settings(
       copyRuntimeJar((resourceManaged in Compile).value, "polynote-runtime.jar", (packageBin in (`polynote-runtime`, Compile)).value),
       copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value),
       // sneak these scala dependency jars into the assembly so we have them if we need them (but they won't conflict with environment-provided jars)
-      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get), 
+      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get),
       copyRuntimeJar((resourceManaged in Compile).value, "scala-reflect.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-reflect")).get)
     )
   }.taskValue,
@@ -219,16 +230,47 @@ lazy val `polynote-spark-zio` = project.settings(
     "org.apache.spark" %% "spark-sql" % versions.spark % "test",
     "org.apache.spark" %% "spark-repl" % versions.spark % "test",
   ),
-  assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false),
-  resourceGenerators in Compile += Def.task {
-    Seq(
-      copyRuntimeJar((resourceManaged in Compile).value, "polynote-runtime.jar", (packageBin in (`polynote-runtime`, Compile)).value),
-      copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value),
-      // sneak these scala dependency jars into the assembly so we have them if we need them (but they won't conflict with environment-provided jars)
-      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get),
-      copyRuntimeJar((resourceManaged in Compile).value, "scala-reflect.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-reflect")).get)
-    )
-  }.taskValue
-) dependsOn (`polynote-server-zio` % "compile->compile;test->test", `polynote-spark`, `polynote-spark-runtime`)
+  dependencyJars := {
+    (dependencyClasspath in (`polynote-kernel-zio`, Compile)).value.collect {
+      case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") =>
+        jar.data -> s"polynote/deps/${jar.data.name}"
+    }
+  },
+  polynoteJars := {
+    val sparkAssembly    = (assemblyOutputPath in assembly).value
+    val runtimeAssembly  = (assembly in `polynote-runtime`).value
+    val sparkRuntime     = (assembly in `polynote-spark-runtime`).value
+    List(
+      sparkAssembly   -> "polynote/polynote-server.jar",
+      runtimeAssembly -> "polynote/polynote-runtime.jar",
+      sparkRuntime    -> "polynote/polynote-spark-runtime.jar")
+  },
+  assemblyOption in assembly := {
+    val jars = (polynoteJars.value ++ dependencyJars.value).map(_._2.stripPrefix("polynote/")).mkString(":")
+    (assemblyOption in assembly).value.copy(
+      includeScala = false,
+      prependShellScript = Some(Seq(
+        s"""#!/usr/bin/env sh""",
+        s"""exec java -cp $jars $$JAVA_OPTS polynote.server.ZIOSparkServer "$$@"""",
+        s"""exit"""
+      )))
+  }
+) dependsOn (
+  `polynote-server-zio` % "compile->compile;test->test",
+  `polynote-spark-runtime` % "provided",
+  `polynote-spark-runtime` % "test",
+  `polynote-runtime` % "provided",
+  `polynote-runtime` % "test")
 
-lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`)
+lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel-zio`, `polynote-server-zio`, `polynote-spark-zio`).settings(
+  dist := {
+    val jars = (polynoteJars in `polynote-spark-zio`).value ++ (dependencyJars in `polynote-spark-zio`).value
+    val mainJar = (assembly in `polynote-spark-zio`).value
+    val outFile = crossTarget.value / "polynote-dist.zip"
+    IO.zip(
+      jars :+ ((file(".") / "config-template.yml") -> "polynote/config-template.yml"),
+      outFile)
+    outFile
+  },
+  commonSettings
+)

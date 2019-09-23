@@ -70,7 +70,7 @@ class RemoteSparkKernelSpec extends FreeSpec with Matchers {
           case Announce(_) => true
         }
         .request {
-          case InitialNotebook(_, `initialNotebook`) => true
+          case InitialNotebook(_, `initialNotebook`, _) => true
         }
         .response {
           case UnitResponse(_) => true

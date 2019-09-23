@@ -2,10 +2,11 @@ package polynote.kernel.interpreter.python
 
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.{CompileErrors, Completion, CompletionType, KernelReport, Output, Pos, Result, ScalaCompiler}
-import polynote.kernel.interpreter.{MockEnv, State}
+import polynote.kernel.interpreter.State
 import polynote.messages.TinyList
 import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
+import polynote.testing.kernel.MockEnv
 import polynote.testing.{InterpreterSpec, ZIOSpec}
 import zio.ZIO
 import zio.interop.catz._
@@ -47,7 +48,9 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
                 s.as[String] shouldEqual "foo"
                 m.asScalaMapOf[String, String] shouldEqual Map("sup?" -> "nm")
                 b.as[java.lang.Boolean] shouldEqual false
+              case other => fail(s"Python=>Scala list has unexpected result $other")
             }
+            case other => fail(s"Expected PythonObject, found $other")
           }
 
           vars("l2") match {
@@ -60,7 +63,9 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
                     s.as[String] shouldEqual "foo"
                     m.asScalaMapOf[String, String] shouldEqual Map("sup?" -> "nm")
                     b.as[java.lang.Boolean] shouldEqual false
+                  case other => fail(s"Python=>Scala list has unexpected result $other")
                 }
+              case other => fail(s"Python=>Scala list has unexpected result $other")
             }
           }
 
@@ -323,7 +328,4 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
     }
   }
 
-  private def stdOut(results: Seq[Result]): String = results.foldLeft("") {
-    case (accum, Output("text/plain; rel=stdout", next)) => accum + next
-  }
 }

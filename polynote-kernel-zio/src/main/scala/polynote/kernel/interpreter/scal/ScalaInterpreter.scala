@@ -119,7 +119,7 @@ class ScalaInterpreter private[scal] (
   }.foldRight(CollectedState()) {
     case ((nextInputs, cellCode), CollectedState(inputs, imports, priorCells)) =>
       val nextImports = cellCode.map(_.splitImports()).getOrElse(Imports(Nil, Nil))
-      CollectedState(nextInputs ++ inputs, nextImports ++ imports, cellCode.map(_ :: priorCells).getOrElse(priorCells))
+      CollectedState(inputs ++ nextInputs, nextImports ++ imports, cellCode.map(_ :: priorCells).getOrElse(priorCells))
   }
 
   private def collectPrevInstances(code: CellCode, state: State): List[AnyRef] = {
@@ -161,7 +161,7 @@ class ScalaInterpreter private[scal] (
     scalaCompiler.formatTypes(typedOuts.map(_.tpt.tpe)).flatMap {
       typeNames => zio.blocking.effectBlocking {
         typedOuts.zip(typeNames).collect {
-          case (v, typeName) if !(v.tpt.tpe =:= typeOf[Unit]) && !(v.tpt.tpe =:= typeOf[scala.runtime.BoxedUnit]) =>
+          case (v, typeName) if !(v.tpt.tpe.typeSymbol.name.decoded == "Unit") && !(v.tpt.tpe.typeSymbol.name.decoded == "BoxedUnit") =>
             val value = cls.getDeclaredMethod(v.name.encodedName.toString).invoke(result)
             val name = v.name.decoded match {
               case "$Out" => "Out"

@@ -1,11 +1,15 @@
-package polynote.kernel.remote
-import polynote.kernel._
-import scodec.{Attempt, Codec, Err}
-import scodec.codecs.{Discriminated, Discriminator, byte}
-import scodec.codecs.implicits._
+package polynote.kernel
+package remote
+
+import java.nio.charset.StandardCharsets
+
+import polynote.config.PolynoteConfig
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import shapeless.{LabelledGeneric, cachedImplicit}
+import scodec.codecs.{Discriminated, Discriminator, byte}
+import scodec.codecs.implicits._
+import scodec.{Attempt, Codec, Err}
+import shapeless.cachedImplicit
 
 /*
  * The protocol for communication with remote kernels. Essentially just an ADT version of KernelAPI, with some limitations
@@ -18,7 +22,8 @@ abstract class RemoteRequestCompanion[T](msgTypeId: Byte) {
   implicit val discriminator: Discriminator[RemoteRequest, T, Byte] = Discriminator(msgTypeId)
 }
 
-final case class InitialNotebook(reqId: Int, notebook: Notebook) extends RemoteRequest
+final case class InitialNotebook(reqId: Int, notebook: Notebook, config: PolynoteConfig) extends RemoteRequest
+
 object InitialNotebook extends RemoteRequestCompanion[InitialNotebook](-1) {
   private implicit val notebookCodec: Codec[Notebook] = Message.codec.exmap(
     _ match {
@@ -27,6 +32,13 @@ object InitialNotebook extends RemoteRequestCompanion[InitialNotebook](-1) {
     },
     msg => Attempt.successful(msg)
   )
+
+  // we'll just use JSON to encode the polynote config
+  private implicit val configCodec: Codec[PolynoteConfig] = scodec.codecs.string32(StandardCharsets.UTF_8).exmap(
+    str => PolynoteConfig.parse(str).fold(err => Attempt.failure(Err(err.getMessage)), Attempt.successful),
+    config => Attempt.successful(PolynoteConfig.encoder(config).noSpaces)
+  )
+
   implicit val codec: Codec[InitialNotebook] = cachedImplicit
 }
 
@@ -143,6 +155,7 @@ object ModifyStreamResponse extends RemoteResponseCompanion[ModifyStreamResponse
   import ValueReprCodec.streamingDataReprCodec
   implicit val codec: Codec[ModifyStreamResponse] = cachedImplicit
 }
+
 
 final case class Announce(remoteAddress: String) extends RemoteResponse
 object Announce extends RemoteResponseCompanion[Announce](-1)

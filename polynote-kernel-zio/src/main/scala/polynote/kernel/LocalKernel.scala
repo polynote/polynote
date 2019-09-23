@@ -28,22 +28,20 @@ class LocalKernel private[kernel] (
   compilerProvider: ScalaCompiler.Provider,
   interpreterState: Ref[Task, State],
   interpreters: RefMap[String, Interpreter],
-  busyState: SignallingRef[Task, KernelBusyState],
-  predefStateId: AtomicInteger
+  busyState: SignallingRef[Task, KernelBusyState]
 ) extends Kernel {
 
   import compilerProvider.scalaCompiler
 
   override def queueCell(id: CellID): TaskR[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] =
     TaskManager.queue(s"Cell$id", s"Cell $id", errorWith = TaskStatus.Complete) {
-      val captureOut   = new Deque[Result]()
-      val saveResults  = captureOut.toList >>= (CurrentNotebook.setResults(id, _))
+
       val run = for {
         _             <- busyState.update(_.setBusy)
         notebookRef   <- CurrentNotebook.access
         notebook      <- notebookRef.get
         cell          <- ZIO(notebook.cell(id))
-        interpEnv     <- InterpreterEnvironment.fromKernel(id).map(_.tapResults(captureOut.add))
+        interpEnv     <- InterpreterEnvironment.fromKernel(id)
         interpreter   <- getOrLaunch(cell.language, CellID(0)).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](interpEnv: InterpreterEnv))
         state         <- interpreterState.get
         prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                    // find the latest executed state that correlates to a notebook cell
@@ -60,13 +58,11 @@ class LocalKernel private[kernel] (
         _             <- PublishResult(ExecutionInfo(start, Some(end))).provide(interpEnv)
         _             <- updateState(resultState) //interpreterState.update(_.insertOrReplace(resultState))
         _             <- resultState.values.map(PublishResult.apply).sequence.unit                                    // publish the result values
-        _             <- saveResults
         _             <- busyState.update(_.setIdle)
       } yield ()
 
       run.supervised.onInterrupt {
         PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
-        saveResults.ignore *>
         busyState.update(_.setIdle).orDie
       }.catchAll {
         err =>
@@ -108,7 +104,7 @@ class LocalKernel private[kernel] (
   }
 
 
-  override def getHandleData(handleType: HandleType, handleId: Int, count: Int): TaskR[StreamingHandles, Array[ByteVector32]] =
+  override def getHandleData(handleType: HandleType, handleId: Int, count: Int): TaskR[BaseEnv with StreamingHandles, Array[ByteVector32]] =
     handleType match {
       case Lazy =>
         for {
@@ -124,10 +120,10 @@ class LocalKernel private[kernel] (
       case Streaming => StreamingHandles.getStreamData(handleId, count)
     }
 
-  override def modifyStream(handleId: Int, ops: List[TableOp]): TaskR[StreamingHandles, Option[StreamingDataRepr]] =
+  override def modifyStream(handleId: Int, ops: List[TableOp]): TaskR[BaseEnv with StreamingHandles, Option[StreamingDataRepr]] =
     StreamingHandles.modifyStream(handleId, ops)
 
-  override def releaseHandle(handleType: HandleType, handleId: Int): TaskR[StreamingHandles, Unit] = handleType match {
+  override def releaseHandle(handleType: HandleType, handleId: Int): TaskR[BaseEnv with StreamingHandles, Unit] = handleType match {
     case Lazy => ZIO(LazyDataRepr.releaseHandle(handleId))
     case Updating => ZIO(UpdatingDataRepr.releaseHandle(handleId))
     case Streaming => StreamingHandles.releaseStreamHandle(handleId)
@@ -182,7 +178,8 @@ class LocalKernel private[kernel] (
             interpreter  <- factory().provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with Config with CurrentTask](compilerProvider))
             currentState <- interpreterState.get
             insertStateAt = currentState.rewindWhile(s => s.id != at && !(s eq Root))
-            newState     <- interpreter.init(State.id(predefStateId.getAndDecrement(), insertStateAt))
+            lastPredef    = currentState.lastPredef
+            newState     <- interpreter.init(State.predef(insertStateAt, lastPredef))
             _            <- interpreterState.update(_.insert(insertStateAt.id, newState))
           } yield interpreter
         }
@@ -217,7 +214,7 @@ class LocalKernel private[kernel] (
   }
 }
 
-object LocalKernel extends Kernel.Factory.Service {
+class LocalKernelFactory extends Kernel.Factory.Service {
 
   def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps    <- ZIOCoursierFetcher.fetch("scala")
@@ -225,8 +222,9 @@ object LocalKernel extends Kernel.Factory.Service {
     busyState    <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters <- RefMap.empty[String, Interpreter]
     _            <- interpreters.getOrCreate("scala")(ScalaInterpreter.fromFactory().provide(compiler).flatten)
-    predefStateId = new AtomicInteger(-1)
-    interpState  <- Ref[Task].of[State](State.id(predefStateId.getAndDecrement()))
-  } yield new LocalKernel(compiler, interpState, interpreters, busyState, predefStateId)
+    interpState  <- Ref[Task].of[State](State.predef(State.Root, State.Root))
+  } yield new LocalKernel(compiler, interpState, interpreters, busyState)
 
 }
+
+object LocalKernel extends LocalKernelFactory

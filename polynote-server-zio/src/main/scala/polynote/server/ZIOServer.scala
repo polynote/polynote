@@ -11,15 +11,19 @@ import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, interpreter}
 import interpreter.Interpreter
+import polynote.kernel.logging.Logging
 import zio.blocking.Blocking
-import zio.{App, Runtime, Task, TaskR, ZIO}
+import zio.clock.Clock
+import zio.console.Console
+import zio.{Runtime, Task, TaskR, ZIO, system}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
+import zio.random.Random
+import zio.system
 
 import scala.annotation.tailrec
 
-trait ZIOServer extends App with Http4sDsl[Task] {
-  implicit val runtime: Runtime[Environment] = this
+trait ZIOServer extends polynote.app.App with Http4sDsl[Task] {
 
   private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
 

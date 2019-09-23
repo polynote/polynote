@@ -18,7 +18,7 @@ class MockPublish[A]() extends Publish[Task, A] {
       published.add(a)
     }.unit
   }
-  def publish: Pipe[Task, A, Unit] = _.evalMap(publish1)
+  override def publish: Pipe[Task, A, Unit] = _.evalMap(publish1)
   def reset(): Unit = {
     published.clear()
     publishCount = 0

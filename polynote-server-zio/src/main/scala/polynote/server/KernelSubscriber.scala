@@ -7,7 +7,7 @@ import fs2.Stream
 import polynote.kernel.environment.PublishMessage
 import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate}
-import polynote.server.SharedNotebook.{GlobalVersion, SubscriberId}
+import KernelPublisher.{GlobalVersion, SubscriberId}
 import zio.{Fiber, Promise, Task, TaskR, ZIO}
 import zio.interop.catz._
 
@@ -35,7 +35,7 @@ object KernelSubscriber {
     globalVersion: GlobalVersion
   ): TaskR[PublishMessage, KernelSubscriber] = {
     def foreignUpdates(local: AtomicInteger, global: AtomicInteger) =
-      publisher.broadcastUpdates.subscribe(128).unNoneTerminate.filter(_._1 != id).map(_._2).map {
+      publisher.broadcastUpdates.subscribe(128).unNone.filter(_._1 != id).map(_._2).map {
         update =>
           val knownGlobalVersion = global.get()
           if (update.globalVersion < knownGlobalVersion) {

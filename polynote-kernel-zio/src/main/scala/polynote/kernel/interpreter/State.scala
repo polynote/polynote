@@ -112,11 +112,27 @@ trait State {
       return this
     }
     var s = this
-    while(s != Root && predicate(s.prev)) {
+    while (s != Root && predicate(s.prev)) {
       s = s.prev
     }
     s
   }
+
+  /**
+    * Find the first state in the chain where the predicate holds
+    */
+  def rewindUntil(predicate: State => Boolean): State = {
+    if (predicate(this)) {
+      return this
+    }
+    var s = this
+    while (s != Root && !predicate(s.prev)) {
+      s = s.prev
+    }
+    s
+  }
+
+  def lastPredef: State = rewindUntil(_.id < 0)
 
   /**
     * Insert the given state after the given state, such that the state with the given ID becomes the given state's
@@ -176,6 +192,9 @@ object State {
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
   }
 
+  val root: State = Root
   def id(id: Int, prev: State = Root, values: List[ResultValue] = Nil): State = Id(id.toShort, prev, values)
+
+  def predef(prev: State, prevPredef: State): State = id(prevPredef.id + 1, prev)
 
 }

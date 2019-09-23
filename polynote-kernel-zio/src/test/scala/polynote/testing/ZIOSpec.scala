@@ -1,6 +1,7 @@
 package polynote.testing
 
 import polynote.kernel.ResultValue
+import polynote.kernel.logging.Logging
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
@@ -9,18 +10,18 @@ import zio.random.Random
 import zio.system.System
 import zio.{Runtime, ZIO}
 
-trait ZIOSpec {
-  val runtime: Runtime[Clock with Console with System with Random with Blocking] = new Runtime[Clock with Console with System with Random with Blocking] {
-    // TODO: mock the pieces of this
-    val Environment: Clock with Console with System with Random with Blocking =
-      new Clock.Live with Console.Live with System.Live with Random.Live with Blocking.Live
+trait ZIOSpec extends Runtime[Clock with Console with System with Random with Blocking with Logging] {
+  type Environment = Clock with Console with System with Random with Blocking with Logging
+  // TODO: mock the pieces of this
+  val Environment: Environment =
+    new Clock.Live with Console.Live with System.Live with Random.Live with Blocking.Live with Logging.Live
 
-    // TODO: should test platform behave differently? Isolate per suite?
-    val Platform: Platform = PlatformLive.Default
-  }
+  // TODO: should test platform behave differently? Isolate per suite?
+  val Platform: Platform = PlatformLive.Default
 
-  implicit class IORunOps[A](val self: ZIO[Clock with Console with System with Random with Blocking, Throwable, A]) {
-    def runIO(): A = runtime.unsafeRunSync(self).getOrElse {
+
+  implicit class IORunOps[A](val self: ZIO[Clock with Console with System with Random with Blocking with Logging, Throwable, A]) {
+    def runIO(): A = unsafeRunSync(self).getOrElse {
       c => c.failures match {
         case first :: rest => throw first
         case Nil =>
@@ -33,5 +34,6 @@ trait ZIOSpec {
 }
 
 object ValueMap {
-  def unapply(values: List[ResultValue]): Option[Map[String, Any]] = Some(values.map(v => v.name -> v.value).toMap)
+  def unapply(values: List[ResultValue]): Option[Map[String, Any]] = Some(apply(values))
+  def apply(values: List[ResultValue]): Map[String, Any] = values.map(v => v.name -> v.value).toMap
 }

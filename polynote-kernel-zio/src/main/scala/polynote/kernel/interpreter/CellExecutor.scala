@@ -3,7 +3,8 @@ package polynote.kernel.interpreter
 import java.io.PrintStream
 
 import polynote.kernel.environment.{CurrentRuntime, CurrentTask, PublishResult, PublishStatus}
-import polynote.kernel.{ExecutionStatus, Output, Result, ResultOutputStream, ScalaCompiler, withContextClassLoader}
+import polynote.kernel.util.ResultOutputStream
+import polynote.kernel.{ExecutionStatus, Output, Result, ScalaCompiler, withContextClassLoader}
 import polynote.messages.CellID
 import polynote.runtime.KernelRuntime
 import zio.{Runtime, TaskR, UIO, ZIO}

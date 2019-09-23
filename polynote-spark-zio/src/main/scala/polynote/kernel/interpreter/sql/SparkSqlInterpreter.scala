@@ -7,7 +7,6 @@ import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import polynote.kernel.environment.CurrentNotebook
 import polynote.kernel.{BaseEnv, Completion, CompletionType, GlobalEnv, InterpreterEnv, ResultValue, ScalaCompiler, Signatures, TaskManager}
 import polynote.kernel.interpreter.{Interpreter, State}
-import polynote.kernel.lang.sql.Parser
 import polynote.messages.{ShortString, TinyList}
 import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.{Task, TaskR, ZIO}

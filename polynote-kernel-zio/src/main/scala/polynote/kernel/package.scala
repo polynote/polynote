@@ -5,6 +5,7 @@ import fs2.Stream
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
+import polynote.kernel.logging.Logging
 import polynote.messages.Notebook
 import zio.{Task, TaskR, ZIO}
 import zio.blocking.Blocking
@@ -13,8 +14,13 @@ import zio.system.System
 
 package object kernel {
 
-  type BaseEnv = Blocking with Clock with System
-  trait BaseEnvT extends Blocking with Clock with System
+  type BaseEnv = Blocking with Clock with System with Logging
+  trait BaseEnvT extends Blocking with Clock with System with Logging
+
+  // some type aliases jut to avoid env clutter
+  type TaskB[+A] = TaskR[BaseEnv, A]
+  type TaskC[+A] = TaskR[BaseEnv with GlobalEnv with CellEnv, A]
+  type TaskG[+A] = TaskR[BaseEnv with GlobalEnv, A]
 
   type GlobalEnv = Config with Interpreter.Factories with Kernel.Factory
   trait GlobalEnvT extends Config with Interpreter.Factories with Kernel.Factory
@@ -24,7 +30,6 @@ package object kernel {
     val kernelFactory: Kernel.Factory.Service = kernelFactoryService
   }
 
-  type TaskG[+A] = TaskR[BaseEnv with GlobalEnv, A]
 
   // CellEnv is provided to the kernel by its host when a cell is being run
   type CellEnv = CurrentNotebook with TaskManager with PublishStatus with PublishResult

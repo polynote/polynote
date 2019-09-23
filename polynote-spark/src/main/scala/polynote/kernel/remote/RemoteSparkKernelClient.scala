@@ -47,7 +47,7 @@ class RemoteSparkKernelClient(
     messageOpt  <- head.compile.last
     message     <- IO.fromEither(Either.fromOption(messageOpt, new NoSuchElementException("Notebook not received from server")))
     notebookReq <- message match {
-      case nb @ InitialNotebook(_, _) => IO.pure(nb)
+      case nb @ InitialNotebook(_, _, _) => IO.pure(nb)
       case other => IO.raiseError(new IllegalStateException(s"Initial message was ${other.getClass.getSimpleName} rather than InitialNotebook"))
     }
   } yield notebookReq
@@ -70,7 +70,7 @@ class RemoteSparkKernelClient(
     kernel: KernelAPI[IO],
     notebookRef: Ref[IO, Notebook]
   ): Pipe[IO, RemoteRequest, RemoteResponse] = _.map {
-    case InitialNotebook(reqId, notebook) => Stream.eval(notebookRef.set(notebook).as(UnitResponse(reqId)))
+    case InitialNotebook(reqId, notebook, _) => Stream.eval(notebookRef.set(notebook).as(UnitResponse(reqId)))
     case Shutdown(reqId) =>
       Stream.eval(shutdown(reqId, kernel)).drain
 

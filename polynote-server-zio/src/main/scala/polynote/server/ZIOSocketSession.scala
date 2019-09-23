@@ -1,5 +1,7 @@
 package polynote.server
 
+import java.util.concurrent.atomic.AtomicInteger
+
 import cats.{Applicative, MonadError}
 import cats.effect.{Concurrent, Timer}
 import cats.syntax.traverse._
@@ -10,10 +12,12 @@ import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame.Binary
 import polynote.buildinfo.BuildInfo
+import polynote.kernel
 import polynote.kernel.util.{Publish, RefMap}
 import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, StreamOps, StreamingHandles, TaskG, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
+import polynote.kernel.logging.Logging
 import polynote.messages._
 import zio.{Promise, Task, TaskR, ZIO}
 
@@ -23,10 +27,9 @@ import scala.concurrent.duration.{Duration, SECONDS}
 class ZIOSocketSession(
   notebookManager: ZIONotebookManager.Service,
   subscribed: RefMap[String, KernelSubscriber],
-  closed: Promise[Throwable, Unit]
+  closed: Promise[Throwable, Unit],
+  streamingHandles: StreamingHandles with BaseEnv
 )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
-
-  private val streamingHandles = StreamingHandles.make()
 
   private def subscriber(path: String): Task[KernelSubscriber] = //subscribed.get(path).orDie.get.mapError(_ => new NoSuchElementException(s"Notebook $path is not currently open"))
     subscribed.get(path).flatMap {
@@ -53,7 +56,6 @@ class ZIOSocketSession(
     fiber     <- processor.interruptWhen(closed.await.either).compile.drain
       .catchAll { err =>
         val e = err
-        println(e.getClass)
         ZIO.unit
       }  // when the fiber is interrupted, we don't need the error
       .fork
@@ -73,7 +75,10 @@ class ZIOSocketSession(
         case WebSocketFrame.Close(_) => Stream.eval(output.enqueue1(WebSocketFrame.Close())).drain
         case WebSocketFrame.Binary(data, true) => Stream.eval(Message.decode[Task](data))
         case _ => Stream.empty
-      }.evalMap(message => handler(message).provide(env))
+      }.evalMap {
+        message =>
+          handler.applyOrElse(message, unhandled).provide(env).catchAll(Logging.error("Kernel error", _))
+      }
   }
 
   private def handshake: TaskG[ServerHandshake] =
@@ -83,6 +88,8 @@ class ZIOSocketSession(
         serverVersion = BuildInfo.version,
         serverCommit = BuildInfo.commit)
     }
+
+  private def unhandled(msg: Message): TaskR[BaseEnv, Unit] = Logging.warn(s"Unhandled message type ${msg.getClass.getName}")
 
   private val handler: PartialFunction[Message, TaskR[BaseEnv with GlobalEnv with PublishMessage, Unit]] = {
     case ListNotebooks(_) =>
@@ -206,9 +213,13 @@ class ZIOSocketSession(
 }
 
 object ZIOSocketSession {
-  def apply()(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]): TaskR[ZIONotebookManager, ZIOSocketSession] = for {
-    notebookManager <- ZIONotebookManager.access
-    subscribed      <- RefMap.empty[String, KernelSubscriber]
-    closed          <- Promise.make[Throwable, Unit]
-  } yield new ZIOSocketSession(notebookManager, subscribed, closed)
+  def apply()(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]): TaskR[BaseEnv with ZIONotebookManager, ZIOSocketSession] = for {
+    notebookManager  <- ZIONotebookManager.access
+    subscribed       <- RefMap.empty[String, KernelSubscriber]
+    closed           <- Promise.make[Throwable, Unit]
+    sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
+    streamingHandles <- Env.enrichM[BaseEnv](StreamingHandles.make(sessionId))
+  } yield new ZIOSocketSession(notebookManager, subscribed, closed, streamingHandles)
+
+  private val sessionId = new AtomicInteger(0)
 }

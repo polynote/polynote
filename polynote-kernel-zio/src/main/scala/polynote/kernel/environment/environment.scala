@@ -1,34 +1,40 @@
 package polynote.kernel.environment
 
-import java.lang.reflect.{InvocationHandler, Method, Proxy}
-
 import cats.effect.concurrent.Ref
-import fs2.concurrent.Topic
+import fs2.Stream
 import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
 import polynote.kernel.interpreter.CellExecutor
 import polynote.kernel.util.Publish
 import polynote.kernel.{CellEnv, ExecutionStatus, InterpreterEnv, InterpreterEnvT, KernelStatusUpdate, Output, Result, TaskInfo}
-import polynote.messages.{CellID, Message, Notebook, NotebookCell, NotebookConfig}
+import polynote.messages.{CellID, Message, Notebook, NotebookCell, NotebookConfig, NotebookUpdate}
 import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
 import zio.internal.Executor
 import zio.interop.catz._
 import zio.{Task, TaskR, UIO, ZIO}
 
-import scala.reflect.{ClassTag, classTag}
-
 //////////////////////////////////////////////////////////////////////
 // Environment modules to mix for various layers of the application //
 //////////////////////////////////////////////////////////////////////
+
+/**
+  * The capability to access the current configuration as a [[PolynoteConfig]]
+  */
 trait Config {
   val polynoteConfig: PolynoteConfig
 }
 
 object Config {
   def access: TaskR[Config, PolynoteConfig] = ZIO.access[Config](_.polynoteConfig)
+  def of(config: PolynoteConfig): Config = new Config {
+    val polynoteConfig: PolynoteConfig = config
+  }
 }
 
+/**
+  * The capability to publish status updates
+  */
 trait PublishStatus {
   val publishStatus: Publish[Task, KernelStatusUpdate]
 }
@@ -39,6 +45,9 @@ object PublishStatus {
     ZIO.accessM[PublishStatus](_.publishStatus.publish1(statusUpdate))
 }
 
+/**
+  * The capability to publish results
+  */
 trait PublishResult {
   val publishResult: Publish[Task, Result]
 }
@@ -47,8 +56,16 @@ object PublishResult {
   def access: TaskR[PublishResult, Publish[Task, Result]] = ZIO.access[PublishResult](_.publishResult)
   def apply(result: Result): TaskR[PublishResult, Unit] =
     ZIO.accessM[PublishResult](_.publishResult.publish1(result))
+
+  def apply(results: List[Result]): TaskR[PublishResult, Unit] =
+    access.flatMap {
+      pr => Stream.emits(results).through(pr.publish).compile.drain
+    }
 }
 
+/**
+  * The capability to publish general messages
+  */
 trait PublishMessage {
   val publishMessage: Publish[Task, Message]
 }
@@ -63,6 +80,9 @@ object PublishMessage {
   }
 }
 
+/**
+  * The capability to access and update the current task as a [[TaskInfo]]
+  */
 trait CurrentTask {
   val currentTask: Ref[Task, TaskInfo]
 }
@@ -76,6 +96,9 @@ object CurrentTask {
   }
 }
 
+/**
+  * The capability to access the current [[KernelRuntime]]
+  */
 trait CurrentRuntime {
   val currentRuntime: KernelRuntime
 }
@@ -117,6 +140,10 @@ object CurrentRuntime {
   def access: ZIO[CurrentRuntime, Nothing, KernelRuntime] = ZIO.access[CurrentRuntime](_.currentRuntime)
 }
 
+/**
+  * The capability to access and modify the current [[Notebook]]
+  */
+// TODO: should separate out a read-only capability for interpreters (they have no business modifying the notebook)
 trait CurrentNotebook {
   val currentNotebook: Ref[Task, Notebook]
 }
@@ -144,6 +171,18 @@ object CurrentNotebook {
 
   def config: TaskR[CurrentNotebook, NotebookConfig] = get.map(_.config.getOrElse(NotebookConfig.empty))
 }
+
+/**
+  * The capability to access a stream of changes to the notebook's content
+  */
+trait NotebookUpdates {
+  def notebookUpdates: Stream[Task, NotebookUpdate]
+}
+
+object NotebookUpdates {
+  def access: TaskR[NotebookUpdates, Stream[Task, NotebookUpdate]] = ZIO.access[NotebookUpdates](_.notebookUpdates)
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 // Some concrete environment classes to make it easier to instantiate composed env modules //

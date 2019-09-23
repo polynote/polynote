@@ -7,12 +7,13 @@ import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, LocalKernel}
 import polynote.kernel.util.{OptionEither, RefMap}
 import polynote.messages.{Notebook, NotebookUpdate}
-import polynote.server.SharedNotebook.SubscriberId
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
 import zio.blocking.Blocking
 import zio.{TaskR, ZIO}
 import zio.interop.catz._
+
+import KernelPublisher.SubscriberId
 
 trait ZIONotebookManager {
   val notebookManager: ZIONotebookManager.Service
