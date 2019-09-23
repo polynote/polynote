@@ -2,12 +2,16 @@ package polynote.config
 
 import java.io.{File, FileNotFoundException, FileReader}
 
-import cats.effect.{IO, Sync}
 import cats.syntax.either._
-import cats.syntax.functor._
 import io.circe.generic.extras.semiauto._
 import io.circe._
 import polynote.config.KernelIsolation.SparkOnly
+import polynote.kernel.TaskB
+import polynote.kernel.logging.Logging
+import zio.ZIO
+import zio.blocking.effectBlocking
+
+import scala.collection.parallel.Task
 
 final case class Listen(
   port: Int = 8192,
@@ -73,43 +77,39 @@ object PolynoteConfig {
 
   private val defaultConfig = "default.yml" // we expect this to be in the directory Polynote was launched from.
 
-  private val logger = new PolyLogger
-
   def parse(content: String): Either[Throwable, PolynoteConfig] = yaml.parser.parse(content).flatMap(_.as[PolynoteConfig])
 
-  def load[F[_]](file: File)(implicit F: Sync[F]): F[PolynoteConfig] = {
-    import cats.syntax.flatMap._
-    import cats.syntax.applicativeError._
-    val configJsonIO = if (file.exists()) {
-      F.bracket(F.delay(new FileReader(file))) {
-        configReader =>
-          F.fromEither(yaml.parser.parse(configReader))
-      }(reader => F.delay(reader.close()))
-    } else F.pure(Json.fromJsonObject(JsonObject.empty))
+  private def parseFile(file: File): TaskB[Json] =
+    effectBlocking(file.exists()).flatMap {
+      case true => effectBlocking(new FileReader(file)).bracketAuto {
+        reader => ZIO.fromEither(yaml.parser.parse(reader))
+      }
+      case false => ZIO.succeed(Json.fromJsonObject(JsonObject.empty))
+    }
 
-    val defaultFile = new File(defaultConfig)
-    logger.debug(s"Loading default config file from: ${defaultFile.getAbsolutePath}")
+  def load(file: File): TaskB[PolynoteConfig] = {
 
-    val defaultJsonIO =
-      F.bracket(F.delay(new FileReader(defaultFile))) {
-        defaultReader =>
-          F.fromEither(yaml.parser.parse(defaultReader))
-      }(reader => F.delay(reader.close())).handleErrorWith(_ => F.pure(Json.fromJsonObject(JsonObject.empty)))
+    val parsed  = parseFile(file)
+    val default = parseFile(new File(defaultConfig)).catchAll {
+      err =>
+        Logging.error(s"Unable to parse default config file $defaultConfig", err)
+          .const(Json.fromJsonObject(JsonObject.empty))
+    }
 
     val configIO = for {
-      configJson <- configJsonIO
-      defaultJson <- defaultJsonIO
+      configJson  <- parsed
+      defaultJson <- default
       merged = defaultJson.deepMerge(configJson) // priority goes to configJson
-      parsedConfig <- F.fromEither(merged.as[PolynoteConfig])
+      parsedConfig <- ZIO.fromEither(merged.as[PolynoteConfig])
     } yield parsedConfig
 
     configIO
-      .handleErrorWith {
+      .catchAll {
         case _: MatchError =>
-          F.pure(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
+          ZIO.succeed(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
         case e: FileNotFoundException =>
-          F.delay(logger.error(e)(s"Configuration file $file not found; using default configuration")).as(PolynoteConfig())
-        case err: Throwable => F.raiseError(err)
+          Logging.error(s"Configuration file $file not found; using default configuration", e).const(PolynoteConfig())
+        case err: Throwable => ZIO.fail(err)
       }
   }
 
