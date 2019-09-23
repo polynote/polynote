@@ -32,7 +32,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
     args     <- ZIO.fromEither(Server.parseArgs(args)).orDie
-    config   <- PolynoteConfig.load[Task](args.configFile).orDie
+    config   <- PolynoteConfig.load(args.configFile).orDie
     port      = config.listen.port
     address   = config.listen.host
     host      = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
