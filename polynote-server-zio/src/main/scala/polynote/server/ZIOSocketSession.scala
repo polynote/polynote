@@ -77,7 +77,7 @@ class ZIOSocketSession(
         case _ => Stream.empty
       }.evalMap {
         message =>
-          handler.applyOrElse(message, unhandled).provide(env).catchAll(Logging.error("Kernel error", _))
+          handler.applyOrElse(message, unhandled).catchAll(Logging.error("Kernel error", _)).provide(env)
       }
   }
 

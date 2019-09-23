@@ -75,25 +75,6 @@ lazy val `polynote-runtime` = project.settings(
     buildInfoPackage := "polynote.buildinfo"
   )
 
-val `polynote-kernel` = project.settings(
-  commonSettings,
-  scalaVersion := "2.11.11",
-  libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
-    "org.typelevel" %% "cats-effect" % versions.catsEffect,
-    "co.fs2" %% "fs2-io" % versions.fs2,
-    "org.scodec" %% "scodec-core" % "1.10.3",
-    "io.circe" %% "circe-yaml" % versions.circeYaml,
-    "io.circe" %% "circe-generic" % versions.circe,
-    "io.circe" %% "circe-generic-extras" % versions.circe,
-    "io.get-coursier" %% "coursier" % versions.coursier,
-    "io.get-coursier" %% "coursier-cache" % versions.coursier,
-    "io.get-coursier" %% "coursier-cats-interop" % versions.coursier,
-    "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
-    "org.apache.ivy" % "ivy" % "2.4.0" % "provided"
-  )
-).dependsOn(`polynote-runtime`)
 
 val `polynote-env` = project.settings(
   commonSettings,
@@ -128,23 +109,6 @@ val `polynote-kernel-zio` = project.settings(
   )
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
-val `polynote-server` = project.settings(
-  commonSettings,
-  libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.http4s" %% "http4s-core" % versions.http4s,
-    "org.http4s" %% "http4s-dsl" % versions.http4s,
-    "org.http4s" %% "http4s-blaze-server" % versions.http4s,
-    "org.http4s" %% "http4s-blaze-client" % versions.http4s,
-    "org.scodec" %% "scodec-core" % "1.10.3",
-    "io.circe" %% "circe-parser" % versions.circe,
-    "com.vladsch.flexmark" % "flexmark" % "0.34.32",
-    "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
-    "org.slf4j" % "slf4j-simple" % "1.7.25"
-  ),
-  unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
-) dependsOn `polynote-kernel` % "compile->compile;test->test"
-
 val `polynote-server-zio` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
@@ -162,13 +126,6 @@ val `polynote-server-zio` = project.settings(
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel-zio` % "compile->compile;test->test")
 
-def copyRuntimeJar(targetDir: File, targetName: String, file: File) = {
-    val targetFile = targetDir / targetName
-    targetDir.mkdirs()
-    java.nio.file.Files.copy(file.toPath, targetFile.toPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-    targetFile
-}
-
 lazy val `polynote-spark-runtime` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
@@ -179,46 +136,6 @@ lazy val `polynote-spark-runtime` = project.settings(
     "org.apache.spark" %% "spark-repl" % versions.spark % "test"
   )
 ) dependsOn `polynote-runtime`
-
-lazy val `polynote-spark` = project.settings(
-  commonSettings,
-  libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.scodec" %% "scodec-stream" % "1.2.0",
-    "org.apache.spark" %% "spark-sql" % versions.spark % "provided",
-    "org.apache.spark" %% "spark-repl" % versions.spark % "provided",
-    "org.apache.spark" %% "spark-sql" % versions.spark % "test",
-    "org.apache.spark" %% "spark-repl" % versions.spark % "test",
-  ),
-  assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false),
-  resourceGenerators in Compile += Def.task {
-    Seq(
-      copyRuntimeJar((resourceManaged in Compile).value, "polynote-runtime.jar", (packageBin in (`polynote-runtime`, Compile)).value),
-      copyRuntimeJar((resourceManaged in Compile).value, "polynote-spark-runtime.jar", (packageBin in (`polynote-spark-runtime`, Compile)).value),
-      // sneak these scala dependency jars into the assembly so we have them if we need them (but they won't conflict with environment-provided jars)
-      copyRuntimeJar((resourceManaged in Compile).value, "scala-library.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-library")).get),
-      copyRuntimeJar((resourceManaged in Compile).value, "scala-reflect.jar", (dependencyClasspath in Compile).value.files.find(_.getName.contains("scala-reflect")).get)
-    )
-  }.taskValue,
-  fork in Test := true,
-  parallelExecution in Test := false,
-  mainClass in (runAssembly in Compile) := None,
-  test in assembly := {},
-  javaOptions in runAssembly := Seq(s"-Djava.library.path=$nativeLibraryPath"),
-  runAssembly := {
-    val assemblyJar = assembly.value
-    val mainClassName = (mainClass in runAssembly).value.getOrElse("polynote.server.SparkServer")
-    val log = streams.value.log
-    val deps = (dependencyClasspath in Compile).value.files
-    val scalaDeps = deps.filter(_.getName.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*")).toList
-    println(scalaDeps)
-    val fo = ForkOptions()
-      .withRunJVMOptions((javaOptions in runAssembly).value.toVector)
-      .withWorkingDirectory(baseDirectory.value.getParentFile)
-    val exit = new ForkRun(fo).fork(mainClassName, assemblyJar :: scalaDeps, Nil, log).exitValue()
-    log.info(s"Assembly run exited with $exit")
-  }
-) dependsOn (`polynote-server` % "compile->compile;test->test", `polynote-spark-runtime`)
 
 lazy val `polynote-spark-zio` = project.settings(
   commonSettings,
