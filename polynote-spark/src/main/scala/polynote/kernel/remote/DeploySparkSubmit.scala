@@ -5,7 +5,6 @@ import java.net.InetSocketAddress
 import polynote.kernel.{Kernel, remote}
 import polynote.kernel.environment.{Config, CurrentNotebook}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployCommand
-import polynote.server.SparkServer
 import zio.TaskR
 
 object DeploySparkSubmit extends DeployCommand {

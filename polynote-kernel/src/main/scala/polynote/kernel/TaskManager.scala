@@ -114,7 +114,7 @@ object TaskManager {
         taskFiber     <- runTask.fork
         descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
         _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
-      } yield taskFiber.join.ensuring(remove)
+      } yield taskFiber.join.interruptChildren.ensuring(remove)
     }
 
     override def run[R <: CurrentTask, A, R1 >: R](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, A] =
@@ -155,7 +155,7 @@ object TaskManager {
         _           <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
       } yield process
 
-    override def cancelAll(): UIO[Unit] = tasks.values().asScala.toList.map {
+    override def cancelAll(): UIO[Unit] = tasks.values().asScala.toList.reverse.map {
       case (status, fiber, _) => fiber.interrupt
     }.sequence.unit
 

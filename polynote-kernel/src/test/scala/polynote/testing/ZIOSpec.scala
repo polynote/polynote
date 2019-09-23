@@ -22,13 +22,7 @@ trait ZIOSpec extends Runtime[Clock with Console with System with Random with Bl
 
   implicit class IORunOps[A](val self: ZIO[Clock with Console with System with Random with Blocking with Logging, Throwable, A]) {
     def runIO(): A = unsafeRunSync(self).getOrElse {
-      c => c.failures match {
-        case first :: rest => throw first
-        case Nil =>
-          if (c.interrupted) throw new InterruptedException
-          println(c)
-          throw new RuntimeException(s"Failure or cause $c")
-      }
+      c => throw c.squash
     }
   }
 }

@@ -3,7 +3,7 @@ package remote
 
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
-import java.nio.channels.{ServerSocketChannel, SocketChannel}
+import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, ServerSocketChannel, SocketChannel}
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
@@ -16,10 +16,11 @@ import polynote.kernel.remote.SocketTransport.FramedSocket
 import polynote.messages.{Notebook, NotebookConfig}
 import scodec.bits.BitVector
 import scodec.stream.decode
+import zio.Cause._
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Task, TaskR, ZIO}
+import zio.{Promise, Task, TaskR, ZIO}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
 
@@ -312,8 +313,10 @@ object SocketTransport {
       }
     }
 
-    def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).onError {
-      err => Logging.error("Connection error", err.squash)
+    def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).catchSome {
+      case err: AsynchronousCloseException => Logging.info("Remote peer closed connection") *> ZIO.succeed(None)
+    }.onError {
+      err => Logging.error(s"Connection error ${err.getClass.getName}", err)
     }
 
     def write(msg: BitVector): TaskB[Unit] = effectBlocking {
@@ -348,10 +351,17 @@ object SocketTransport {
       // send 0-length frames to keep connection alive
       for {
         framedSocket <- ZIO.succeed(new FramedSocket(socketChannel))
+        closed       <- Promise.make[Throwable, Unit]
         doKeepalive  <- if (keepalive) {
-          Stream.awakeEvery[Task](Duration(5, SECONDS)).evalMap(_ => framedSocket.write(BitVector.empty))
+          Stream.awakeEvery[Task](Duration(5, SECONDS)).evalMap { _ =>
+              framedSocket.write(BitVector.empty).catchSome {
+                case err: ClosedChannelException => closed.succeed(())
+              }
+            }
+            .interruptWhen(closed.await.either)
             .compile
-            .drain.fork
+            .drain
+            .fork
         } else ZIO.unit
       } yield framedSocket
     }

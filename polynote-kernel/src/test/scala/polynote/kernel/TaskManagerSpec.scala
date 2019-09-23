@@ -25,7 +25,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
       @volatile var state = 0
       val task1 = zio.blocking.effectBlocking {
         if (debug) println(s"${Instant.now()} running 1")
-        Thread.sleep(10)
+        Thread.sleep(50)
         state = 1
         if (debug) println(s"${Instant.now()} completed 1")
       }
@@ -33,7 +33,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
       val task2 = zio.blocking.effectBlocking {
         if (debug) println(s"${Instant.now()} running 2")
         state shouldEqual 1
-        Thread.sleep(10)
+        Thread.sleep(50)
         state = 2
         if (debug) println(s"${Instant.now()} completed 2")
       }
@@ -41,14 +41,18 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
       val task3 = zio.blocking.effectBlocking {
         if (debug) println(s"${Instant.now()} running 3")
         state shouldEqual 2
-        Thread.sleep(10)
+        Thread.sleep(50)
         state = 3
         if (debug) println(s"${Instant.now()} completed 3")
       }
 
-      val await1 = taskManager.queue_("1")(task1).runIO()
-      val await2 = taskManager.queue_("2")(task2).runIO()
-      val await3 = taskManager.queue_("3")(task3).runIO()
+      val (await1, await2, await3) = {
+        for {
+          await1 <- taskManager.queue_("1")(task1)
+          await2 <- taskManager.queue_("2")(task2)
+          await3 <- taskManager.queue_("3")(task3)
+        } yield (await1, await2, await3)
+      }.runIO()
 
       // shouldn't matter in which order they're awaited
       await1.runIO()

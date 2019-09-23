@@ -36,9 +36,9 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           vars("x") shouldEqual 1
           vars("y") shouldEqual "foo"
           vars("A") shouldBe a[PythonFunction]
-          vars("A").toString shouldEqual "<class 'A'>"
+          vars("A").toString shouldEqual "<class '__main__.A'>"
           vars("z") shouldBe a[PythonObject]
-          vars("z").toString should startWith("<A object")
+          vars("z").toString should startWith("<__main__.A object")
           vars("d") shouldBe a[PythonObject]
           vars("d").toString shouldEqual "2019-02-03 00:00:00"
           vars("l") match {

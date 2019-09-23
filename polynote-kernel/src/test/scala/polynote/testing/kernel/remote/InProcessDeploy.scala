@@ -16,7 +16,7 @@ class InProcessDeploy(kernelFactory: Kernel.Factory.Service) extends SocketTrans
       Some(serverAddress.getPort),
       Some(kernelFactory))).interruptChildren
 
-    connectClient.interruptChildren.fork.map(new InProcessDeploy.Process(_))
+    connectClient.fork.map(new InProcessDeploy.Process(_))
   }
 
 }

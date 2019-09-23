@@ -16,6 +16,7 @@ object Logging {
   trait Service {
     def error(msg: String)(implicit location: Location): UIO[Unit]
     def error(msg: String, err: Throwable)(implicit location: Location): UIO[Unit]
+    def error(msg: String, err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit]
     def warn(msg: String)(implicit location: Location): UIO[Unit]
     def info(msg: String)(implicit location: Location): UIO[Unit]
   }
@@ -63,6 +64,28 @@ object Logging {
         }
       }.ignore
 
+      override def error(msg: String, err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
+        out.synchronized {
+          out.print(Red)
+          out.print(errorPrefix)
+          out.println(msg)
+          out.print(colonIndent)
+          val squashed = err.squash
+          out.println(squashed)
+          squashed.getStackTrace.foreach {
+            el =>
+              out.print(indent)
+              out.println(el)
+          }
+          err.prettyPrint.lines.foreach {
+            line =>
+              out.print(indent)
+              out.print(line)
+          }
+          out.print(Reset)
+        }
+      }.ignore
+
       override def warn(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
         out.synchronized {
           val lines = msg.lines
@@ -100,6 +123,7 @@ object Logging {
 
   def error(msg: String)(implicit location: Location): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.error(msg))
   def error(msg: String, err: Throwable)(implicit location: Location): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.error(msg, err))
+  def error(msg: String, cause: zio.Cause[Throwable])(implicit location: Location): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.error(msg, cause))
   def warn(msg: String)(implicit location: Location): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.warn(msg))
   def info(msg: String)(implicit location: Location): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.info(msg))
   def access: ZIO[Logging, Nothing, Service] = ZIO.access[Logging](_.logging)

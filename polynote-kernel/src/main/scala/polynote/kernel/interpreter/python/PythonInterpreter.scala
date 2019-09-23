@@ -161,7 +161,6 @@ class PythonInterpreter private[python] (
   def init(state: State): TaskR[InterpreterEnv, State] = for {
     _       <- exec(setup)
     globals <- getValue("globals().copy()")
-    _       <- eval[String]("str(globals())").flatMap(str => ZIO(System.err.println(str)))
     scope   <- populateGlobals(state)
     _       <- jep { _ =>
       val update = globals.getAttr("update", classOf[PyCallable])
