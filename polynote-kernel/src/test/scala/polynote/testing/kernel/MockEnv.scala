@@ -1,10 +1,11 @@
 package polynote.testing.kernel
 
 import cats.effect.concurrent.Ref
-import fs2.concurrent.SignallingRef
+import fs2.Stream
+import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
-import polynote.kernel.environment.{CurrentRuntime, InterpreterEnvironment}
+import polynote.kernel.environment.{CurrentRuntime, InterpreterEnvironment, NotebookUpdates}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, BaseEnvT, CellEnvT, GlobalEnvT, InterpreterEnvT, KernelStatusUpdate, Result, StreamingHandles, TaskInfo, TaskManager}
@@ -47,23 +48,26 @@ case class MockKernelEnv(
   publishStatus: MockPublish[KernelStatusUpdate],
   interpreterFactories: Map[String, Interpreter.Factory],
   taskManager: TaskManager.Service,
+  updateTopic: Topic[Task, Option[NotebookUpdate]],
   currentNotebook: SignallingRef[Task, Notebook],
   streamingHandles: StreamingHandles.Service,
   sessionID: Int = 0
-) extends BaseEnvT with GlobalEnvT with CellEnvT with StreamingHandles {
+) extends BaseEnvT with GlobalEnvT with CellEnvT with StreamingHandles with NotebookUpdates {
   val clock: Clock.Service[Any] = baseEnv.clock
   val blocking: Blocking.Service[Any] = baseEnv.blocking
   val system: zio.system.System.Service[Any] = baseEnv.system
   val logging: Logging.Service = new Logging.Service.Default(System.err, blocking)
   val polynoteConfig: PolynoteConfig = PolynoteConfig()
+  val notebookUpdates: Stream[Task, NotebookUpdate] = updateTopic.subscribe(128).unNone
 }
 
 object MockKernelEnv {
   def apply(kernelFactory: Factory.Service): TaskR[BaseEnv, MockKernelEnv] = for {
     baseEnv         <- ZIO.access[BaseEnv](identity)
     currentNotebook <- SignallingRef[Task, Notebook](Notebook("empty", ShortList(Nil), None))
+    updateTopic     <- Topic[Task, Option[NotebookUpdate]](None)
     publishUpdates   = new MockPublish[KernelStatusUpdate]
     taskManager     <- TaskManager(publishUpdates)
     handles         <- StreamingHandles.make(0)
-  } yield new MockKernelEnv(baseEnv, kernelFactory, new MockPublish, publishUpdates, Map.empty, taskManager, currentNotebook, handles.streamingHandles, handles.sessionID)
+  } yield new MockKernelEnv(baseEnv, kernelFactory, new MockPublish, publishUpdates, Map.empty, taskManager, updateTopic, currentNotebook, handles.streamingHandles, handles.sessionID)
 }

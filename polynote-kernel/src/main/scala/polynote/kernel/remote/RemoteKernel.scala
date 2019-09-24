@@ -34,6 +34,7 @@ import scala.concurrent.TimeoutException
 
 class RemoteKernel[ServerAddress](
   transport: TransportServer[ServerAddress],
+  updates: Stream[Task, NotebookUpdate],
   closed: Promise[Throwable, Unit]
 ) extends Kernel {
 
@@ -81,6 +82,9 @@ class RemoteKernel[ServerAddress](
   }
 
   def init(): TaskR[BaseEnv with GlobalEnv with CellEnv, Unit] = for {
+    update   <- updates.evalMap(update => transport.sendRequest(UpdateNotebookRequest(nextReq, update)))
+        .interruptWhen(closed.await.either)
+        .compile.drain.fork
     process  <- processRequests.compile.drain.fork
     notebook <- CurrentNotebook.get
     config   <- Config.access
@@ -159,12 +163,13 @@ class RemoteKernel[ServerAddress](
 }
 
 object RemoteKernel extends Kernel.Factory.Service {
-  def apply[ServerAddress](transport: Transport[ServerAddress]): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
-    server <- transport.serve()
-    closed <- Promise.make[Throwable, Unit]
-  } yield new RemoteKernel(server, closed)
+  def apply[ServerAddress](transport: Transport[ServerAddress]): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = for {
+    server  <- transport.serve()
+    updates <- NotebookUpdates.access
+    closed  <- Promise.make[Throwable, Unit]
+  } yield new RemoteKernel(server, updates, closed)
 
-  override def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = apply(
+  override def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = apply(
     new SocketTransport(
       new SocketTransport.DeploySubprocess(
         new SocketTransport.DeploySubprocess.DeployJava[LocalKernelFactory]),
