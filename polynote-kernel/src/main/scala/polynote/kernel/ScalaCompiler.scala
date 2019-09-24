@@ -442,7 +442,7 @@ object ScalaCompiler {
 
       if (config.behavior.dependencyIsolation) {
         new LimitedSharingClassLoader(
-          "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j)\\.",
+          "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j)\\.",
           dependencyClassPath,
           getClass.getClassLoader)
       } else {
@@ -459,18 +459,18 @@ object ScalaCompiler {
   def provider(dependencyClasspath: List[File]): TaskR[Config with System, ScalaCompiler.Provider] =
     provider(dependencyClasspath, identity[Settings])
 
-  def defaultSettings(initial: Settings, classPath: List[File] = Nil): Settings = {
-    val requiredPaths = List(
-      pathOf(classOf[List[_]]),
-      pathOf(polynote.runtime.Runtime.getClass),
-      pathOf(classOf[scala.reflect.runtime.JavaUniverse]),
-      pathOf(classOf[scala.tools.nsc.Global]),
-      pathOf(classOf[jep.python.PyObject])
-    ).distinct.map {
-      case url if url.getProtocol == "file" => new File(url.getPath)
-      case url => throw new IllegalStateException(s"Required path $url must be a local file, not ${url.getProtocol}")
-    }
+  val requiredPaths = List(
+    pathOf(classOf[List[_]]),
+    pathOf(polynote.runtime.Runtime.getClass),
+    pathOf(classOf[scala.reflect.runtime.JavaUniverse]),
+    pathOf(classOf[scala.tools.nsc.Global]),
+    pathOf(classOf[jep.python.PyObject])
+  ).distinct.map {
+    case url if url.getProtocol == "file" => new File(url.getPath)
+    case url => throw new IllegalStateException(s"Required path $url must be a local file, not ${url.getProtocol}")
+  }
 
+  def defaultSettings(initial: Settings, classPath: List[File] = Nil): Settings = {
     val cp = classPath ++ requiredPaths
 
     val settings = initial.copy()

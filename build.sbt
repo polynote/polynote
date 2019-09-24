@@ -166,6 +166,7 @@ lazy val `polynote-spark` = project.settings(
       includeScala = false,
       prependShellScript = Some(Seq(
         s"""#!/usr/bin/env sh""",
+        s"""echo exec java -cp $jars $$JAVA_OPTS polynote.Main "$$@"""",
         s"""exec java -cp $jars $$JAVA_OPTS polynote.Main "$$@"""",
         s"""exit"""
       )))

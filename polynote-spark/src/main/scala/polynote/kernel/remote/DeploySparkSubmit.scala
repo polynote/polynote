@@ -2,9 +2,12 @@ package polynote.kernel.remote
 
 import java.net.InetSocketAddress
 
-import polynote.kernel.{Kernel, remote}
+import polynote.kernel.{Kernel, LocalSparkKernelFactory, ScalaCompiler, remote}
 import polynote.kernel.environment.{Config, CurrentNotebook}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployCommand
+import polynote.kernel.util.pathOf
+import polynote.runtime.KernelRuntime
+import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.TaskR
 
 object DeploySparkSubmit extends DeployCommand {
@@ -29,13 +32,16 @@ object DeploySparkSubmit extends DeployCommand {
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
 
     val allDriverOptions =
-      sparkConfig.get("spark.driver.extraJavaOptions").toList ++ List("-Dlog4j.configuration=log4j.properties") mkString " "
+    (sparkConfig.get("spark.driver.extraJavaOptions").toList ++
+        List("-Dlog4j.configuration=log4j.properties", s"-Djava.library.path=${sys.env.get("java.library.path")}")).mkString(" ")
+
+    val additionalJars = pathOf(classOf[SparkReprsOf[_]]) :: pathOf(classOf[KernelRuntime]) :: Nil
 
     Seq("spark-submit", "--class", mainClass) ++
       Seq("--driver-java-options", allDriverOptions) ++
       sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
       (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++
-      sparkSubmitArgs ++
+      sparkSubmitArgs ++ Seq("--jars", additionalJars.mkString(",")) ++
       sparkArgs ++ Seq(jarLocation) ++ serverArgs
   }
 
@@ -46,7 +52,7 @@ object DeploySparkSubmit extends DeployCommand {
     serverArgs =
       "--address" :: serverAddress.getAddress.getHostAddress ::
       "--port" :: serverAddress.getPort.toString ::
-      "--kernelFactory" :: classOf[RemoteKernelClient].getName ::
+      "--kernelFactory" :: classOf[LocalSparkKernelFactory].getName ::
       Nil
   )
 }

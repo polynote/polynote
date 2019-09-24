@@ -41,7 +41,8 @@ class LocalSparkKernel private[kernel] (
 class LocalSparkKernelFactory extends Kernel.Factory.Service {
   import LocalSparkKernel.kernelCounter
 
-  private def sparkClasspath = env("SPARK_DIST_CLASSPATH").orDie.get.flatMap {
+  // all the JARs in Spark's classpath. I don't think this is actually needed.
+  private def sparkDistClasspath = env("SPARK_DIST_CLASSPATH").orDie.get.flatMap {
     cp => cp.split(File.pathSeparator).toList.map {
       filename =>
         val file = new File(filename)
@@ -58,17 +59,30 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
         }
     }.sequence.map(_.flatten)
   }
-  
+
+  private def sparkClasspath = env("SPARK_HOME").orDie.get.flatMap {
+    sparkHome =>
+      effectBlocking {
+        val homeFile = new File(sparkHome)
+        if (homeFile.exists()) {
+          val jarsPath = homeFile.toPath.resolve("jars")
+          Files.newDirectoryStream(jarsPath, "*.jar").iterator().asScala.toList.map(_.toFile)
+        } else Nil
+      }.orDie
+  }
+
   private def systemClasspath =
     property("java.class.path").orDie.get
       .map(_.split(File.pathSeparator).toList.map(new File(_)))
 
   def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps             <- CoursierFetcher.fetch("scala")
-    sparkRuntimeJar        = pathOf(classOf[SparkReprsOf[_]])
+    sparkRuntimeJar        = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
     sparkClasspath        <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
-    settings               = ScalaCompiler.defaultSettings(new Settings(), scalaDeps.map(_._2) ::: sparkClasspath)
-    sessionAndClassLoader <- startSparkSession(scalaDeps, settings)
+    _                     <- Logging.info(s"Using spark classpath: ${sparkClasspath.mkString(":")}")
+    settings               = ScalaCompiler.defaultSettings(new Settings(), sparkRuntimeJar :: scalaDeps.map(_._2) ::: sparkClasspath)
+    sparkJars              = (sparkRuntimeJar :: ScalaCompiler.requiredPaths).map(f => f.toString -> f) ::: scalaDeps
+    sessionAndClassLoader <- startSparkSession(sparkJars, settings)
     (session, classLoader) = sessionAndClassLoader
     notebookPackage        = s"$$notebook$$${kernelCounter.getAndIncrement()}"
     compiler              <- ScalaCompiler(settings, ZIO.succeed(classLoader), notebookPackage).map(ScalaCompiler.Provider.of)

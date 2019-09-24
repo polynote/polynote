@@ -66,7 +66,7 @@ class LocalKernel private[kernel] (
         busyState.update(_.setIdle).orDie
       }.catchAll {
         err =>
-          PublishResult(ErrorResult(err))
+          PublishResult(ErrorResult(err)) *> busyState.update(_.setIdle)
       }
     }
 
@@ -97,7 +97,7 @@ class LocalKernel private[kernel] (
     for {
       publishStatus <- PublishStatus.access
       busyUpdater   <- busyState.discrete.terminateAfter(!_.alive).through(publishStatus.publish).compile.drain.fork
-      initialState  <- initScala()
+      initialState  <- initScala().onError(err => (PublishResult(ErrorResult(err.squash)) *> busyState.update(_.setIdle)).orDie)
       _             <- initialState.values.map(PublishResult.apply).sequence
       _             <- busyState.update(_.setIdle)
     } yield ()
@@ -221,7 +221,7 @@ class LocalKernelFactory extends Kernel.Factory.Service {
     compiler     <- ScalaCompiler.provider(scalaDeps.map(_._2))
     busyState    <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters <- RefMap.empty[String, Interpreter]
-    _            <- interpreters.getOrCreate("scala")(ScalaInterpreter.fromFactory().provide(compiler).flatten)
+    _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provide(compiler))
     interpState  <- Ref[Task].of[State](State.predef(State.Root, State.Root))
   } yield new LocalKernel(compiler, interpState, interpreters, busyState)
 

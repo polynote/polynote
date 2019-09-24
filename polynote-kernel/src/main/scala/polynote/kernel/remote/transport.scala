@@ -229,8 +229,9 @@ object SocketTransport {
           str => if (str contains " ") s""""$str"""" else str
         }.mkString(" ")
 
+        val processBuilder = new ProcessBuilder(command: _*).inheritIO()
         for {
-          process <- effectBlocking(new ProcessBuilder(command: _*).inheritIO().start())
+          process <- effectBlocking(processBuilder.start())
         } yield new DeploySubprocess.Subprocess(process)
     }
   }
@@ -246,7 +247,7 @@ object SocketTransport {
     class DeployJava[KernelFactory <: Kernel.Factory.Service : ClassTag] extends DeployCommand {
       override def apply(serverAddress: InetSocketAddress): TaskR[Config with CurrentNotebook, Seq[String]] = ZIO {
         val java = Paths.get(System.getProperty("java.home"), "bin", "java").toString
-        val javaArgs = sys.process.javaVmArguments
+        val javaArgs = sys.process.javaVmArguments.filterNot(_ startsWith "-agentlib")
         val classPath = System.getProperty("java.class.path")
         java :: "-cp" :: classPath :: javaArgs :::
           classOf[RemoteKernelClient].getName ::
