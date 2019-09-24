@@ -5,7 +5,6 @@ import java.io.{File, FileNotFoundException, FileReader}
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
 import io.circe._
-import polynote.config.KernelIsolation.SparkOnly
 import polynote.kernel.TaskB
 import polynote.kernel.logging.Logging
 import zio.ZIO
@@ -52,7 +51,7 @@ object KernelIsolation {
 
 final case class Behavior(
   dependencyIsolation: Boolean = true,
-  kernelIsolation: KernelIsolation = SparkOnly
+  kernelIsolation: KernelIsolation = KernelIsolation.Never
 )
 
 object Behavior {

@@ -134,7 +134,7 @@ class LocalKernel private[kernel] (
     initialState  <- interpreterState.get
     predefEnv     <- InterpreterEnvironment.fromKernel(initialState.id)
     predefState   <- scalaInterp.init(initialState).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](predefEnv: InterpreterEnv))
-    _             <- interpreterState.set(initialState)
+    _             <- interpreterState.set(predefState)
   } yield predefState
 
   override def shutdown(): Task[Unit] = for {

@@ -6,6 +6,7 @@ import polynote.kernel.environment.{Config, CurrentNotebook}
 import polynote.kernel.remote.{RemoteKernel, RemoteSparkKernel}
 import polynote.messages.NotebookConfig
 import polynote.server.Server
+
 abstract class Main
 object Main {
   def main(args: Array[String]): Unit = args.headOption match {
@@ -20,7 +21,7 @@ object Main {
     val kernelFactory = Kernel.Factory.choose {
       for {
         notebook <- CurrentNotebook.get
-          config   <- Config.access
+        config   <- Config.access
       } yield {
         val isSpark = notebook.config.getOrElse(NotebookConfig.empty).sparkConfig match {
           case None                     => false

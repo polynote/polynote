@@ -95,7 +95,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
             }.tap {
               case (session, _) =>
                 // if the session was already started by a different notebook, then it doesn't have our dependencies
-                val existingJars = session.conf.get("spark.jars").split(',')
+                val existingJars = session.conf.get("spark.jars").split(',').map(_.trim).filter(_.nonEmpty)
                 existingJars.diff(jars).toList.map {
                   jar => effectBlocking(session.sparkContext.addJar(jar)).catchAll(Logging.error(s"Unable to add dependency $jar to spark", _))
                 }.sequence
