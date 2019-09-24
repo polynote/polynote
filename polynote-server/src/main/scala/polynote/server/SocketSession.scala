@@ -8,6 +8,7 @@ import cats.syntax.traverse._
 import cats.instances.list._
 import fs2.{Pipe, Stream}
 import fs2.concurrent.Queue
+import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame.Binary
@@ -31,14 +32,6 @@ class SocketSession(
   streamingHandles: StreamingHandles with BaseEnv
 )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
 
-  private def subscriber(path: String): Task[KernelSubscriber] = //subscribed.get(path).orDie.get.mapError(_ => new NoSuchElementException(s"Notebook $path is not currently open"))
-    subscribed.get(path).flatMap {
-      case None =>
-        ZIO.fail(new NoSuchElementException(s"Notebook $path is not currently open"))
-      case Some(ref) =>
-        ZIO.succeed(ref)
-    }
-
   private def subscribe(path: String): TaskR[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribed.getOrCreate(path) {
     notebookManager.open(path).flatMap {
       kernelPublisher => kernelPublisher.subscribe()
@@ -49,21 +42,16 @@ class SocketSession(
     Message.encode[Task](message).map(bits => Binary(bits.toByteVector))
   }
 
-  lazy val toResponse = for {
+  lazy val toResponse: TaskG[Response[Task]] = for {
     input     <- Queue.unbounded[Task, WebSocketFrame]
     output    <- Queue.unbounded[Task, WebSocketFrame]
     processor <- process(input, output)
-    fiber     <- processor.interruptWhen(closed.await.either).compile.drain
-      .catchAll { err =>
-        val e = err
-        ZIO.unit
-      }  // when the fiber is interrupted, we don't need the error
-      .fork
-    keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).interruptWhen(closed.await.either).through(output.enqueue).compile.drain.fork
+    fiber     <- processor.interruptWhen(closed.await.either).compile.drain.fork
+    keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.fork
     response  <- WebSocketBuilder[Task].build(
-      output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]).interruptWhen(closed.await.const[Either[Throwable, Unit]](Right(()))),
+      output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]),
       input.enqueue,
-      onClose = closed.succeed(()).const(()))
+      onClose = keepalive.interrupt *> fiber.interrupt.unit)
   } yield response
 
   private def process(
@@ -78,6 +66,9 @@ class SocketSession(
       }.evalMap {
         message =>
           handler.applyOrElse(message, unhandled).catchAll(Logging.error("Kernel error", _)).provide(env)
+      }.handleErrorWith {
+        err =>
+          Stream.eval(ZIO.fail(err))
       }
   }
 

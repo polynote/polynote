@@ -9,7 +9,7 @@ import cats.syntax.traverse._
 import cats.instances.list._
 import fs2.concurrent.SignallingRef
 import polynote.kernel.Kernel.InterpreterNotStarted
-import polynote.kernel.dependency.ZIOCoursierFetcher
+import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask, Env, InterpreterEnvironment, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.State.Root
 import polynote.kernel.interpreter.{Interpreter, State}
@@ -217,7 +217,7 @@ class LocalKernel private[kernel] (
 class LocalKernelFactory extends Kernel.Factory.Service {
 
   def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
-    scalaDeps    <- ZIOCoursierFetcher.fetch("scala")
+    scalaDeps    <- CoursierFetcher.fetch("scala")
     compiler     <- ScalaCompiler.provider(scalaDeps.map(_._2))
     busyState    <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters <- RefMap.empty[String, Interpreter]

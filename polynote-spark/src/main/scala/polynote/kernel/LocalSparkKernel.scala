@@ -1,5 +1,6 @@
 package polynote.kernel
 import java.io.File
+import java.nio.file.{Files, FileSystems}
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.concurrent.Ref
@@ -9,7 +10,7 @@ import fs2.concurrent.SignallingRef
 import org.apache.spark.sql.SparkSession
 import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
-import polynote.kernel.dependency.ZIOCoursierFetcher
+import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, InterpreterEnvironment}
 import polynote.kernel.interpreter.scal.ScalaInterpreter
 import polynote.kernel.interpreter.{Interpreter, State}
@@ -23,6 +24,7 @@ import zio.{Task, TaskR, ZIO}
 import zio.interop.catz._
 import zio.system.{env, property}
 
+import scala.collection.JavaConverters._
 import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.reflect.io.PlainDirectory
 import scala.tools.nsc.Settings
@@ -38,12 +40,33 @@ class LocalSparkKernel private[kernel] (
 
 class LocalSparkKernelFactory extends Kernel.Factory.Service {
   import LocalSparkKernel.kernelCounter
+
+  private def sparkClasspath = env("SPARK_DIST_CLASSPATH").orDie.get.flatMap {
+    cp => cp.split(File.pathSeparator).toList.map {
+      filename =>
+        val file = new File(filename)
+        file.getName match {
+          case "*" | "*.jar" =>
+            effectBlocking {
+              if (file.getParentFile.exists())
+                Files.newDirectoryStream(file.getParentFile.toPath, file.getName).iterator().asScala.toList.map(_.toFile)
+              else
+                Nil
+            }.orDie
+          case _ =>
+            effectBlocking(if (file.exists()) List(file) else Nil).orDie
+        }
+    }.sequence.map(_.flatten)
+  }
   
+  private def systemClasspath =
+    property("java.class.path").orDie.get
+      .map(_.split(File.pathSeparator).toList.map(new File(_)))
+
   def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
-    scalaDeps             <- ZIOCoursierFetcher.fetch("scala")
+    scalaDeps             <- CoursierFetcher.fetch("scala")
     sparkRuntimeJar        = pathOf(classOf[SparkReprsOf[_]])
-    sparkClasspathOpt     <- (env("SPARK_DIST_CLASSPATH").orDie.get orElse property("java.class.path").orDie.get).option
-    sparkClasspath         = sparkClasspathOpt.map(_.split(File.pathSeparatorChar).toList.map(new File(_))).getOrElse(Nil)
+    sparkClasspath        <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
     settings               = ScalaCompiler.defaultSettings(new Settings(), scalaDeps.map(_._2) ::: sparkClasspath)
     sessionAndClassLoader <- startSparkSession(scalaDeps, settings)
     (session, classLoader) = sessionAndClassLoader

@@ -2,24 +2,18 @@ package polynote.server
 
 import java.io.File
 
-import cats.data.Kleisli
-import cats.~>
+
 import org.http4s.{HttpApp, HttpRoutes, Request, Response, StaticFile}
+import org.http4s.blaze.pipeline.Command.EOF
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeServerBuilder
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, interpreter}
-import interpreter.Interpreter
-import polynote.kernel.logging.Logging
-import zio.blocking.Blocking
-import zio.clock.Clock
-import zio.console.Console
-import zio.{Runtime, Task, TaskR, ZIO, system}
+import zio.{Cause, Runtime, Task, TaskR, ZIO, system}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
 import zio.random.Random
-import zio.system
 
 import scala.annotation.tailrec
 
@@ -27,8 +21,12 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
   private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
 
-  // TODO: obviously, clean this up
   private val indexFile = "/index.html"
+
+  override def reportFailure(cause: Cause[_]): Unit = cause.failures.distinct match {
+    case List(EOF) => ()  // unable to otherwise silence this error that happens whenever websocket is closed by client
+    case other     => super.reportFailure(cause)
+  }
 
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
     args     <- ZIO.fromEither(Server.parseArgs(args)).orDie
@@ -88,7 +86,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
 }
 
-object Server extends Server(LocalKernel) {
+object Server {
   case class Args(
     configFile: File = new File("config.yml"),
     watchUI: Boolean = false

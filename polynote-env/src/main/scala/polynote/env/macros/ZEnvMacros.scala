@@ -66,7 +66,6 @@ class ZEnvMacros(val c: whitebox.Context) extends RefinementMacros {
 
   def fail[A : WeakTypeTag, B : WeakTypeTag](err: Failure): Nothing = {
     val str = failureString(err, weakTypeOf[A], weakTypeOf[B])
-    println(str)
     c.abort(c.enclosingPosition, str)
   }
 }

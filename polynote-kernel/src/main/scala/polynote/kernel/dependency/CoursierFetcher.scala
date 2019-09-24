@@ -36,7 +36,7 @@ import zio.interop.catz._
 import scala.concurrent.ExecutionContext
 import scala.tools.nsc.interpreter.InputStream
 
-object ZIOCoursierFetcher {
+object CoursierFetcher {
   type ArtifactTask[A] = TaskR[CurrentTask, A]
   type OuterTask[A] = TaskR[TaskManager, A]
   //type ArtifactTask[A] = TaskR[CurrentTask, A]
@@ -73,7 +73,7 @@ object ZIOCoursierFetcher {
       repoConfigs   = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions    = config.exclusions.map(_.toList).getOrElse(Nil)
       repositories <- ZIO.fromEither(repositories(repoConfigs))
-      resolution   <- resolution(dependencies, exclusions, repositories)
+      resolution   <- resolution(deps, exclusions, repositories)
       _            <- CurrentTask.update(_.copy(detail = "Downloading dependencies...", progress = 0))
       downloadEnv  <- Env.enrichM[TaskManager with CurrentTask with Blocking](parentTask)
       downloadDeps <- download(resolution).provide(downloadEnv).fork

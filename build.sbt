@@ -143,7 +143,7 @@ lazy val `polynote-spark` = project.settings(
     "org.apache.spark" %% "spark-sql" % versions.spark % "provided",
     "org.apache.spark" %% "spark-repl" % versions.spark % "provided",
     "org.apache.spark" %% "spark-sql" % versions.spark % "test",
-    "org.apache.spark" %% "spark-repl" % versions.spark % "test",
+    "org.apache.spark" %% "spark-repl" % versions.spark % "test"
   ),
   dependencyJars := {
     (dependencyClasspath in (`polynote-kernel`, Compile)).value.collect {
