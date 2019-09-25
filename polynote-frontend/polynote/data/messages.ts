@@ -557,13 +557,13 @@ TableOp.codecs = [
 
 TableOp.codec = discriminated(uint8, msgTypeId => TableOp.codecs[msgTypeId].codec, msg => (msg.constructor as typeof Message).msgTypeId);
 
-export class ModifyStream<T extends DataType> extends Message {
+export class ModifyStream extends Message {
     static codec = combined(shortStr, int32, arrayCodec(uint8, TableOp.codec), optional(StreamingDataRepr.codec)).to(ModifyStream);
     static get msgTypeId() { return 19; }
-    static unapply<T extends DataType>(inst: ModifyStream<T>): ConstructorParameters<typeof ModifyStream> {
+    static unapply(inst: ModifyStream): ConstructorParameters<typeof ModifyStream> {
         return [inst.path, inst.fromHandle, inst.ops, inst.newRepr];
     }
-    constructor(readonly path: string, readonly fromHandle: number, readonly ops: TableOp[], readonly newRepr?: StreamingDataRepr<T>) {
+    constructor(readonly path: string, readonly fromHandle: number, readonly ops: TableOp[], readonly newRepr?: StreamingDataRepr) {
         super();
         Object.freeze(this);
     }

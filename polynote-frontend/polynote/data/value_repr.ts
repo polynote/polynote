@@ -92,16 +92,16 @@ export class UpdatingDataRepr extends ValueRepr {
     }
 }
 
-export class StreamingDataRepr<T extends DataType> extends ValueRepr {
+export class StreamingDataRepr extends ValueRepr {
     static codec = combined(int32, DataType.codec, optional(uint32)).to(StreamingDataRepr);
     static get handleTypeId() { return 2; }
     static get msgTypeId() { return 5; }
 
-    static unapply<T extends DataType>(inst: StreamingDataRepr<T>): ConstructorParameters<typeof StreamingDataRepr> {
+    static unapply(inst: StreamingDataRepr): ConstructorParameters<typeof StreamingDataRepr> {
         return [inst.handle, inst.dataType, inst.knownSize];
     }
 
-    constructor(readonly handle: number, readonly dataType: T, readonly knownSize?: number) {
+    constructor(readonly handle: number, readonly dataType: StructType, readonly knownSize?: number) {
         super();
         Object.freeze(this);
     }
@@ -144,7 +144,7 @@ export const QuartilesType = new StructType([
  */
 export class DataStream extends EventTarget {
     readonly mods: TableOp[];
-    readonly dataType: StructType; // can we make this assumption?
+    readonly dataType: StructType;
     private batchSize = 50;
     private receivedCount = 0;
     terminated = false;
@@ -156,7 +156,7 @@ export class DataStream extends EventTarget {
     private onError?: (reason?: any) => void;
     private nextPromise?: {resolve: <T>(value?: T | PromiseLike<T>) => void, reject: (reason?: any) => void}; // holds a Promise's `resolve` and `reject` inputs.
     private setupPromise?: Promise<Message | void>;
-    constructor(readonly path: string, private repr: StreamingDataRepr<StructType>, readonly socket: SocketSession, mods?: TableOp[]) {
+    constructor(readonly path: string, private repr: StreamingDataRepr, readonly socket: SocketSession, mods?: TableOp[]) {
         super();
         this.path = path;
         this.repr = repr;
@@ -314,7 +314,7 @@ export class DataStream extends EventTarget {
 
         if (!this.setupPromise) {
             if (this.mods && this.mods.length > 0) {
-                this.setupPromise = this.socket.request(new ModifyStream<StructType>(this.path, this.repr.handle, this.mods)).then(mod => {
+                this.setupPromise = this.socket.request(new ModifyStream(this.path, this.repr.handle, this.mods)).then(mod => {
                     if (mod.newRepr) this.repr = mod.newRepr
                 });
             } else {

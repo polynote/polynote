@@ -13,10 +13,10 @@ export class SelectionChangedEvent extends UIEvent<{ changedFromEl: HTMLButtonEl
 }
 
 export class FakeSelect extends UIEventTarget {
-    private options: TagElement<"button">[];
+    options: TagElement<"button">[];
+    value: string;
     private selectedElement: TagElement<"button">;
     private moved: boolean;
-    private value: string;
     private opener: TagElement<"button"> | null;
     private selectedElementCopy: TagElement<"button"> | null;
 

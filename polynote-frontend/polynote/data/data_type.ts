@@ -21,6 +21,7 @@ export abstract class DataType extends CodecContainer {
         decode: (reader: DataReader): DataType => DataType.codec.decode(reader)
     };
     static msgTypeId: number;
+    isNumeric = false;
 
     // NOTE: renamed from `name()` -> `typeName()` since typescript complains about overriding `Function.name`
     typeName(): string{

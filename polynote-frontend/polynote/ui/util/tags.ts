@@ -26,7 +26,7 @@ export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElem
     click(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     change(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     listener(name: string, handler: EventListenerOrEventListenerObject): TagElement<K, T>
-    withKey(key: string, value: string | boolean): TagElement<K, T>
+    withKey(key: string, value: any): TagElement<K, T>
     disable(): TagElement<K, T>
     addClass(cls: string): TagElement<K, T>
 };
@@ -68,7 +68,7 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
             el.addEventListener(name, handler);
             return el
         },
-        withKey(key: string, value: string | boolean) {
+        withKey(key: string, value: any) {
             return Object.assign(el, {[key]: value})
         },
         disable () {

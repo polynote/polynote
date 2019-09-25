@@ -41,7 +41,7 @@ export class TableView {
     private rows: Record<string, any>[]; // TODO: anything better than `any` here?
     private currentPos: number;
 
-    constructor(readonly repr: StreamingDataRepr<StructType>, readonly path: string) {
+    constructor(readonly repr: StreamingDataRepr, readonly path: string) {
         const dataType = repr.dataType;
         this.fields = dataType.fields;
         const fieldClasses = dataType.fields.map(field => field.name);

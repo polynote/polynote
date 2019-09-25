@@ -1,34 +1,34 @@
 'use strict';
 
 
-import { div, button, iconButton, h4 } from '../util/tags'
+import {div, button, iconButton, h4, TagElement} from '../util/tags'
 import {
     BoolType,
-    ByteType,
+    ByteType, DataType,
     DateType, DoubleType,
     FloatType,
     IntType,
     LongType,
     ShortType,
-    StringType,
+    StringType, StructField,
     TimestampType
 } from "../../data/data_type";
 import {FakeSelect} from "./fake_select";
 import {fakeSelectElem, span, textbox} from "../util/tags";
 import {SocketSession} from "../../comms";
-import {GroupAgg, ModifyStream, ReleaseHandle} from "../../data/messages";
+import {GroupAgg, ModifyStream, ReleaseHandle, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {DataStream, StreamingDataRepr} from "../../data/value_repr";
-import embed from "vega-embed";
+import embed, {Result as VegaResult} from "vega-embed";
 import {UIEventTarget} from "../util/ui_event";
-import {CodeCell} from "./cell";
+import {Cell, CodeCell} from "./cell";
 import {ToolbarEvent} from "./toolbar";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
-import {ClientResult} from "../../data/result";
+import {ClientResult, Output} from "../../data/result";
 import {CellMetadata} from "../../data/data";
 
 
-function isDimension(dataType) {
+function isDimension(dataType: DataType) {
     return (
         dataType === ByteType ||
         dataType === BoolType ||
@@ -41,7 +41,13 @@ function isDimension(dataType) {
     )
 }
 
-function measures(field) {
+type MeasureEl = TagElement<"div"> & {field: StructField, selector: FakeSelect};
+type MeasureConfig = {
+    field: StructField,
+    agg?: string
+}
+
+function measures(field: StructField): MeasureEl[] {
     const dataType = field.dataType;
     if (
         dataType === ByteType ||
@@ -57,32 +63,60 @@ function measures(field) {
             button([], {value: 'quartiles'}, ['Quartiles'])
         ]));
 
-        return div(['measure', 'selected-measure'], [
+        return [div(['measure', 'selected-measure'], [
             div(['choose-measure'], [
                 selector.element
             ]),
             span(['measure-name'], field.name)
-        ]).attr('draggable', true).withKey('field', field).withKey('selector', selector);
-    } else return false;
+        ]).attr('draggable', true).withKey('field', field).withKey('selector', selector) as MeasureEl];
+    } else return [];
 }
 
-function dimensionType(dataType) {
+function dimensionType(dataType: DataType) {
     if (dataType === StringType || dataType === BoolType) return 'nominal';
     if (dataType === DoubleType) return 'quantitative';
     return 'ordinal';
 }
 
-export class PlotEditor extends UIEventTarget {
+type SpecFun = ((this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig | MeasureConfig[]) => {}) & {
+    rawFields?: boolean,
+    allowedAggregates?: string[],
+    allAggregates?: boolean,
+    singleMeasure?: boolean
+};
 
-    constructor(repr, path, name, sourceCell) {
+export class PlotEditor extends UIEventTarget {
+    private fields: StructField[];
+    private session: SocketSession;
+    private container: TagElement<"div">;
+    private plotTypeSelector: FakeSelect;
+    private specType: SpecFun;
+    readonly el: TagElement<"div">;
+    private controls: TagElement<"div">;
+    private plotWidthInput: TagElement<"input">;
+    private plotHeightInput: TagElement<"input">;
+    readonly plotOutput: TagElement<"div">;
+    private saveButton: TagElement<"button">;
+    private runButton: TagElement<"button">;
+    private plotArea: TagElement<"div">;
+    private plotTitle: TagElement<"input">;
+    private xAxisDrop: TagElement<"div">;
+    readonly xTitle: TagElement<"input">;
+    private yAxisDrop: TagElement<"div">;
+    readonly yTitle: TagElement<"input">;
+    private draggingEl: MeasureEl | null;
+    private rawFields: boolean;
+    private measureSelectors: MeasureEl[];
+    private xDimension: StructField;
+    private yMeasures: MeasureConfig[];
+    private spec: any;
+    private plot: VegaResult;
+
+    constructor(readonly repr: StreamingDataRepr, readonly path: string, readonly name: string, readonly sourceCell: number) {
         super();
-        this.repr = repr;
-        this.path = path;
-        this.name = name;
-        this.sourceCell = sourceCell;
         this.fields = repr.dataType.fields;
 
-        this.session = SocketSession.current;
+        this.session = SocketSession.current; // TODO: ew! remove!!!
 
         if (!this.session.isOpen) {
             this.container = div(['plot-editor-container', 'disconnected'], [
@@ -106,9 +140,9 @@ export class PlotEditor extends UIEventTarget {
                 this.plotTypeSelector.element,
                 h4(['plot-size-title'], ['Size']),
                 div(['plot-size'], [
-                    this.plotWidthInput = textbox(['plot-width'], 'Width', 960).attr("maxlength", "4").change(evt => this.plotOutput.style.width = parseInt(evt.target.value, 10) + 'px'),
+                    this.plotWidthInput = textbox(['plot-width'], 'Width', "960").attr("maxLength", "4").change(evt => this.plotOutput.style.width = parseInt((evt.target as TagElement<"input">).value, 10) + 'px'),
                     span([],'⨉'),
-                    this.plotHeightInput = textbox(['plot-height'], 'Height', 480).change(evt => this.plotOutput.style.height = parseInt(evt.target.value, 10) + 'px')
+                    this.plotHeightInput = textbox(['plot-height'], 'Height', "480").change(evt => this.plotOutput.style.height = parseInt((evt.target as TagElement<"input">).value, 10) + 'px')
                 ]),
                 h4(['dimension-title'], ['Dimensions', iconButton(['add', 'add-measure'], 'Add dimension', '', 'Add').click(_ => this.showAddDimension())]),
                 div(['dimension-list'], this.listDimensions()),
@@ -152,10 +186,10 @@ export class PlotEditor extends UIEventTarget {
         this.plotOutput.style.width = '960px';
         this.plotOutput.style.height = '480px';
 
-        this.plotTypeSelector.addEventListener('change', evt => this.onPlotTypeChange(evt));
+        this.plotTypeSelector.addEventListener('change', evt => this.onPlotTypeChange());
 
         this.el.addEventListener('dragstart', evt => {
-           this.draggingEl = evt.target;
+           this.draggingEl = evt.target as MeasureEl;
         });
 
         this.addEventListener('dragend', evt => {
@@ -165,7 +199,7 @@ export class PlotEditor extends UIEventTarget {
         });
 
         this.xAxisDrop.addEventListener('dragenter', evt => {
-           if (this.draggingEl.classList.contains(this.correctXType)) {
+           if (this.draggingEl && this.draggingEl.classList.contains(this.correctXType)) {
                this.xAxisDrop.classList.add('drop-ok');
            } else {
                this.xAxisDrop.classList.add('drop-disallowed');
@@ -173,7 +207,7 @@ export class PlotEditor extends UIEventTarget {
         });
 
         this.xAxisDrop.addEventListener('dragover', evt => {
-            if (this.draggingEl.classList.contains(this.correctXType)) {
+            if (this.draggingEl && this.draggingEl.classList.contains(this.correctXType)) {
                 evt.preventDefault();
             }
         });
@@ -183,12 +217,12 @@ export class PlotEditor extends UIEventTarget {
         });
 
         this.xAxisDrop.addEventListener('drop', evt => {
-            this.setXField(this.draggingEl.field);
+            if (this.draggingEl) this.setXField(this.draggingEl.field);
             this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
         });
 
         this.yAxisDrop.addEventListener('dragenter', evt => {
-            if (this.draggingEl.classList.contains(this.correctYType)) {
+            if (this.draggingEl && this.draggingEl.classList.contains(this.correctYType)) {
                 this.yAxisDrop.classList.add('drop-ok');
             } else {
                 this.yAxisDrop.classList.add('drop-disallowed');
@@ -196,7 +230,7 @@ export class PlotEditor extends UIEventTarget {
         });
 
         this.yAxisDrop.addEventListener('dragover', evt => {
-            if (this.draggingEl.classList.contains(this.correctYType)) {
+            if (this.draggingEl && this.draggingEl.classList.contains(this.correctYType)) {
                 evt.preventDefault();
             }
         });
@@ -206,7 +240,7 @@ export class PlotEditor extends UIEventTarget {
         });
 
         this.yAxisDrop.addEventListener('drop', evt => {
-           this.addYField(this.draggingEl);
+           if (this.draggingEl) this.addYField(this.draggingEl);
            this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
         });
 
@@ -235,7 +269,7 @@ export class PlotEditor extends UIEventTarget {
         return this.fields.filter(field => isDimension(field.dataType)).map(
             field => div(['dimension'], [
                 field.name,
-                ` (${field.dataType.constructor.typeName(field.dataType)})`]
+                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`]
             ).withKey('field', field).attr('draggable', true)
         )
     }
@@ -244,18 +278,18 @@ export class PlotEditor extends UIEventTarget {
         return this.fields.filter(field => field.dataType.isNumeric).map(
             field => div(['numeric'], [
                 field.name,
-                ` (${field.dataType.constructor.typeName(field.dataType)})`]
+                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`]
             ).withKey('field', field).attr('draggable', true)
         )
     }
 
     listMeasures() {
-        this.measureSelectors = this.fields.map(field => measures(field)).filter(_ => _);
+        this.measureSelectors = this.fields.flatMap(field => measures(field));
         return this.measureSelectors;
     }
 
-    onPlotTypeChange(evt) {
-        function showDefaultMeasures(selector) {
+    onPlotTypeChange() {
+        function showDefaultMeasures(selector: FakeSelect) {
             selector.showAllOptions();
             selector.hideOption('quartiles');
         }
@@ -277,7 +311,7 @@ export class PlotEditor extends UIEventTarget {
                     delete el.style.display;
                     const sel = el.selector;
                     sel.options.forEach((opt, idx) => {
-                        if (specType.allowedAggregates.indexOf(opt.value) < 0) {
+                        if (specType.allowedAggregates!.indexOf(opt.value) < 0) {
                             sel.hideOption(idx);
                         } else {
                             sel.showOption(idx);
@@ -298,7 +332,7 @@ export class PlotEditor extends UIEventTarget {
 
     getTableOps() {
         // TODO - for multiple mods, use diff from last mod
-        const ops = [];
+        const ops: TableOp[] = [];
         if (this.rawFields) {
             return ops;
         }
@@ -307,7 +341,7 @@ export class PlotEditor extends UIEventTarget {
             ops.push(
                 new GroupAgg(
                     [this.xDimension.name],
-                    this.yMeasures.map(meas => new Pair(meas.field.name, meas.agg))
+                    this.yMeasures.map(meas => new Pair(meas.field.name, meas.agg!)) // if this.rawFields is false, meas.agg is definitely defined.
                 )
             );
         }
@@ -315,15 +349,15 @@ export class PlotEditor extends UIEventTarget {
         return ops;
     }
 
-    setXField(field) {
+    setXField(field: StructField) {
         this.xDimension = field;
         this.xAxisDrop.classList.add('nonempty');
-        const label = this.xAxisDrop.querySelector('.label');
-        [...label.querySelectorAll('.numeric, .dimension')].forEach(node => node.parentNode.removeChild(node));
+        const label = this.xAxisDrop.querySelector('.label')!;
+        [...label.querySelectorAll('.numeric, .dimension')].forEach(node => node.parentNode!.removeChild(node));
         label.appendChild(span([this.correctXType], [field.name]));
     }
 
-    addYField(from) {
+    addYField(from: MeasureEl) {
         if (!this.yMeasures) {
             this.yMeasures = [];
         }
@@ -351,7 +385,7 @@ export class PlotEditor extends UIEventTarget {
                     iconButton(['remove'], 'Remove', '', 'X').click(_ => {
                         const idx = this.yMeasures.indexOf(measureConfig);
                         this.yMeasures.splice(idx, 1);
-                        label.parentNode.removeChild(label);
+                        label.parentNode!.removeChild(label);
                         if (!this.yMeasures.length) {
                             this.yAxisDrop.classList.remove('nonempty');
                         }
@@ -360,23 +394,23 @@ export class PlotEditor extends UIEventTarget {
             );
 
             this.yAxisDrop.classList.add('nonempty');
-            const target = this.yAxisDrop.querySelector('.label');
+            const target = this.yAxisDrop.querySelector('.label')!;
             target.insertBefore(label, target.querySelector('input'));
         }
     }
 
-    getSpec(plotType) {
+    getSpec(plotType: string) {
         if(specialSpecs[plotType]) {
             const specFn = specialSpecs[plotType];
             let measures = this.yMeasures;
             if (specFn.allowedAggregates) {
-                measures = measures.filter(measure => specFn.allowedAggregates.indexOf(measure.agg) >= 0);
+                measures = measures.filter(measure => specFn.allowedAggregates!.indexOf(measure.agg!) >= 0);
             }
             if (!measures.length) {
                 throw `No usable measures for ${plotType}`;
             }
             if (specFn.singleMeasure) {
-                measures = measures[0]
+                measures = [measures[0]]
             }
             return specFn.call(this, plotType, this.xDimension, measures);
         } else {
@@ -408,7 +442,7 @@ export class PlotEditor extends UIEventTarget {
         this.spec = spec;
 
         embed(
-            this.plotOutput.querySelector('.plot-embed'),
+            this.plotOutput.querySelector('.plot-embed') as HTMLElement,
             spec
         ).then(plot => {
             stream
@@ -417,8 +451,8 @@ export class PlotEditor extends UIEventTarget {
                 .then(_ => {
                     plot.view.resize().runAsync();
                     this.saveButton.style.display = '';
-                    this.plotOutput.style.width = this.plotOutput.querySelector('.plot-embed').offsetWidth + "px";
-                    this.plotOutput.style.height = this.plotOutput.querySelector('.plot-embed').offsetHeight + "px";
+                    this.plotOutput.style.width = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetWidth + "px";
+                    this.plotOutput.style.height = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetHeight + "px";
                     this.runButton.disabled = false;
                     this.plot = plot;
                     //this.session.send(new ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, repr.handle));
@@ -435,7 +469,7 @@ export class PlotEditor extends UIEventTarget {
         ops.forEach(op => {
             if (op instanceof GroupAgg) {
                 const aggSpecs = op.aggregations.map(pair => {
-                    const obj = {};
+                    const obj: Record<string, string> = {};
                     obj[pair.first] = pair.second;
                     return obj;
                 });
@@ -443,13 +477,13 @@ export class PlotEditor extends UIEventTarget {
             } // others TODO
         });
         content = content.replace('"$DATA_STREAM$"', streamSpec);
-        const mkCell = cellId => new CodeCell(cellId, `(${content})`, 'vega', this.path, new CellMetadata(false, true, false, null));
+        const mkCell = (cellId: number) => new CodeCell(cellId, `(${content})`, 'vega', this.path, new CellMetadata(false, true, false));
         VegaClientResult.plotToOutput(this.plot).then(output => {
             const event = new ToolbarEvent('InsertCellAfter', {
                 mkCell,
                 cellId: this.sourceCell,
                 results: [output],
-                afterInsert: cell => cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed'), output))
+                afterInsert: (cell: { addResult: (arg0: PlotEditorResult) => void; }) => cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
             });
             this.dispatchEvent(event);
         });
@@ -457,8 +491,8 @@ export class PlotEditor extends UIEventTarget {
 
 }
 
-function normalSpec(plotType, xField, yMeas) {
-    const spec = {
+function normalSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig[] | MeasureConfig) {
+    const spec: any = {
         $schema: 'https://vega.github.io/schema/vega-lite/v3.json',
         data: {name: this.name},
         mark: plotType,
@@ -505,13 +539,13 @@ function normalSpec(plotType, xField, yMeas) {
     return spec;
 }
 
-const specialSpecs = {
+const specialSpecs: Record<string, SpecFun> = {
     boxplot: boxplotSpec,
     line: lineSpec,
     xy: xySpec
 };
 
-function xySpec(plotType, xField, yMeas) {
+function xySpec(this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig | MeasureConfig[]) {
     return normalSpec.call(this, 'point', xField, yMeas);
 }
 
@@ -522,11 +556,11 @@ xySpec.noAggregates = true;
 // we kind of have to roll our own boxplot layering, because we are pre-aggregating the data (see https://github.com/vega/vega-lite/issues/4343)
 // The way to construct it was taken from https://vega.github.io/vega-lite/docs/boxplot.html
 // it's essentially what an actual box plot expands to.
-function boxplotSpec(plotType, xField, yMeas) {
+function boxplotSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig) {
     // TODO: can we allow multiple series of boxes? Does `fold` support a struct like this?
     const yName = `quartiles(${yMeas.field.name})`;
     const yTitle = this.yTitle.value || yName;
-    const x = { field: xField.name, type: dimensionType(xField.dataType) };
+    const x: any = { field: xField.name, type: dimensionType(xField.dataType) };
     if (this.xTitle.value) {
         x.axis = { title: this.xTitle.value }
     }
@@ -619,16 +653,16 @@ function boxplotSpec(plotType, xField, yMeas) {
 boxplotSpec.allowedAggregates = ['quartiles'];
 boxplotSpec.singleMeasure = true;
 
-function lineSpec(plotType, xField, yMeas) {
+function lineSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig | MeasureConfig[]) {
     if (yMeas instanceof Array && yMeas.length === 1) {
         yMeas = yMeas[0];
     }
 
     let yField = "";
-    let transform = [];
-    let encodeColor = false;
+    let transform: any[] = [];
+    let encodeColor: any = false;
     let confidenceBands = false;
-    let layer = [];
+    let layer: any[] = [];
 
     if (yMeas instanceof Array) {
         transform = [{
@@ -752,13 +786,11 @@ function lineSpec(plotType, xField, yMeas) {
 lineSpec.allAggregates = true;
 
 class PlotEditorResult extends ClientResult {
-    constructor(plotEl, output) {
+    constructor(readonly plotEl: TagElement<"div">, readonly output: Output) {
         super();
-        this.plotEl = plotEl;
-        this.output = output;
     }
 
-    display(targetEl, cell) {
+    display(targetEl: HTMLElement, cell: Cell) {
         targetEl.appendChild(this.plotEl);
     }
 

@@ -487,7 +487,7 @@ export class NotebookUI extends UIEventTarget {
                 } else {
                     const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
                     if (streamingRepr) {
-                        bestValue = new DataStream(this.path, streamingRepr as StreamingDataRepr<StructType>, this.socket);
+                        bestValue = new DataStream(this.path, streamingRepr as StreamingDataRepr, this.socket);
                     }
                 }
                 cellContext[key] = bestValue;
