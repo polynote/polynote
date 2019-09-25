@@ -219,7 +219,7 @@ export class About extends FullScreenModal {
             'Running Kernels': this.runningKernels.bind(this),
         };
         const tabnav = new TabNav(tabs);
-        this.content.replaceChild(tabnav.container, this.content.firstChild!);
+        this.content.replaceChild(tabnav.el, this.content.firstChild!);
         if (section) tabnav.showItem(section);
 
         super.show();

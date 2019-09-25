@@ -75,7 +75,7 @@ class ValueInspector extends FullScreenModal {
         );
 
         return tabsPromise.then(tabs => {
-            this.content.appendChild(new TabNav(tabs).container);
+            this.content.appendChild(new TabNav(tabs).el);
             this.setTitle(`Inspect: ${resultValue.name}`);
             this.show();
         })
