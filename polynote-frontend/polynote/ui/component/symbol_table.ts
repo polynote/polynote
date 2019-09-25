@@ -1,15 +1,32 @@
 import {UIEventTarget} from "../util/ui_event";
-import {div, h3, span, table} from "../util/tags";
+import {div, h3, span, table, TableElement, TableRowElement, TagElement} from "../util/tags";
 import {valueInspector} from "./value_inspector";
+import {ResultValue} from "../../data/result";
+
+interface ResultRow extends TableRowElement {
+    resultValue: ResultValue
+    data: {
+        name: string,
+        type: string
+    }
+}
 
 export class KernelSymbolsUI extends UIEventTarget {
-    constructor(path) {
+    readonly el: TagElement<"div">;
+    private tableEl: TableElement;
+    private resultSymbols: TagElement<"tbody">;
+    private scopeSymbols: TagElement<"tbody">;
+    private symbols: Record<number, Record<string, ResultValue>>;
+    private predefs: Record<number, number>;
+    private presentedCell: number;
+    private visibleCells: number[];
+
+    constructor(readonly path: string) {
         super();
         this.symbols = {};
         this.presentedCell = 0;
         this.visibleCells = [];
         this.predefs = {};
-        this.path = path;
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
             this.tableEl = table(['kernel-symbols-table'], {
@@ -19,20 +36,20 @@ export class KernelSymbolsUI extends UIEventTarget {
                 addToTop: true
             })
         ]);
-        this.resultSymbols = this.tableEl.tBodies[0].addClass('results');
+        this.resultSymbols = (this.tableEl.tBodies[0] as TagElement<"tbody">).addClass('results');
         this.scopeSymbols = this.tableEl.addBody().addClass('scope-symbols');
     }
 
-    updateRow(tr, resultValue) {
+    updateRow(tr: ResultRow, resultValue: ResultValue) {
         tr.resultValue = resultValue;
         tr.updateValues({type: span([], resultValue.typeName).attr('title', resultValue.typeName)})
     }
 
-    addRow(resultValue, whichBody) {
+    addRow(resultValue: ResultValue, whichBody: TagElement<"tbody">) {
         const tr = this.tableEl.addRow({
             name: resultValue.name,
             type: span([], [resultValue.typeName]).attr('title', resultValue.typeName)
-        }, whichBody);
+        }, whichBody) as ResultRow;
         tr.onclick = (evt) => {
             valueInspector.setEventParent(this);
             valueInspector.inspect(tr.resultValue, this.path);
@@ -42,15 +59,15 @@ export class KernelSymbolsUI extends UIEventTarget {
         return tr;
     }
 
-    addScopeRow(resultValue) {
+    addScopeRow(resultValue: ResultValue) {
         return this.addRow(resultValue, this.scopeSymbols);
     }
 
-    addResultRow(resultValue) {
+    addResultRow(resultValue: ResultValue) {
         return this.addRow(resultValue, this.resultSymbols);
     }
 
-    addSymbol(resultValue) {
+    addSymbol(resultValue: ResultValue) {
         const cellId = resultValue.sourceCell;
         const name = resultValue.name;
 
@@ -64,14 +81,14 @@ export class KernelSymbolsUI extends UIEventTarget {
         }
 
         if (cellId === this.presentedCell) {
-            const existing = this.tableEl.findRows({name}, this.resultSymbols)[0];
+            const existing = this.tableEl.findRows({name}, this.resultSymbols)[0] as ResultRow;
             if (existing) {
                 this.updateRow(existing, resultValue);
             } else {
                 this.addResultRow(resultValue);
             }
         } else if (this.visibleCells.indexOf(cellId) >= 0 || this.predefs[cellId]) {
-            const existing = this.tableEl.findRows({name}, this.scopeSymbols)[0];
+            const existing = this.tableEl.findRows({name}, this.scopeSymbols)[0] as ResultRow;
             if (existing) {
                 this.updateRow(existing, resultValue);
             } else {
@@ -80,11 +97,11 @@ export class KernelSymbolsUI extends UIEventTarget {
         }
     }
 
-    presentFor(id, visibleCellIds) {
+    presentFor(id: number, visibleCellIds: number[]) {
         visibleCellIds = [...Object.values(this.predefs), ...visibleCellIds];
         this.presentedCell = id;
         this.visibleCells = visibleCellIds;
-        const visibleSymbols = {};
+        const visibleSymbols: Record<string, ResultValue> = {};
         visibleCellIds.forEach(id => {
             const cellSymbols = this.symbols[id];
             for (const name in cellSymbols) {
@@ -95,11 +112,11 @@ export class KernelSymbolsUI extends UIEventTarget {
         });
 
         // update all existing symbols, remove any that aren't visible
-        [...this.scopeSymbols.rows].forEach(row => {
+        [...this.scopeSymbols.rows].forEach((row: ResultRow) => {
             if (row.data) {
                 const sym = visibleSymbols[row.data.name];
                 if (sym === undefined) {
-                    row.parentNode.removeChild(row);
+                    row.parentNode!.removeChild(row);
                 } else {
                     if (sym.typeName !== row.data.type) {
                         this.updateRow(row, sym);
@@ -130,10 +147,10 @@ export class KernelSymbolsUI extends UIEventTarget {
         }
     }
 
-    removeSymbol(name) {
+    removeSymbol(name: string) {
         const existing = this.tableEl.findRowsBy(row => row.name === name);
         if (existing.length) {
-            existing.forEach(tr => tr.parentNode.removeChild(tr));
+            existing.forEach(tr => tr.parentNode!.removeChild(tr));
         }
     }
 }

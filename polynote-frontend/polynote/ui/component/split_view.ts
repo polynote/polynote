@@ -1,12 +1,13 @@
-// BREAKOUT (split_view.js)
 import {storage} from "../util/storage";
-import {div} from "../util/tags";
+import {div, TagElement} from "../util/tags";
+
+interface Pane {
+    el: TagElement<"div">
+}
 
 export class SplitView {
-    constructor(id, left, center, right) {
-        this.left = left;
-        this.center = center;
-        this.right = right;
+    readonly el: TagElement<"div">;
+    constructor(readonly id: string, readonly left: Pane, readonly center: Pane, readonly right: Pane) {
         let children = [];
 
         if (left) {
@@ -15,9 +16,13 @@ export class SplitView {
             left.el.style.gridArea = 'left';
             left.el.style.width = storage.get(prefId) || '300px';
 
-            let leftDragger = div(['drag-handle', 'left'], [
-                div(['inner'], []).attr('draggable', 'true')
-            ]);
+            let leftDragger = Object.assign(
+                div(['drag-handle', 'left'], [
+                    div(['inner'], []).attr('draggable', 'true')
+                ]), {
+                  initialX: 0,
+                  initialWidth: 0
+                });
             leftDragger.style.gridArea = 'leftdrag';
 
             children.push(left.el);
@@ -51,9 +56,13 @@ export class SplitView {
             right.el.style.gridArea = 'right';
             right.el.style.width = storage.get(prefId) || '300px';
 
-            let rightDragger = div(['drag-handle', 'right'], [
-                div(['inner'], []).attr('draggable', 'true')
-            ]);
+            let rightDragger = Object.assign(
+                div(['drag-handle', 'right'], [
+                    div(['inner'], []).attr('draggable', 'true')
+                ]), {
+                    initialX: 0,
+                    initialWidth: 0
+                });
 
             rightDragger.style.gridArea = 'rightdrag';
 
@@ -82,7 +91,7 @@ export class SplitView {
     }
 
     // TODO: remove event dispatch on window, replace toggles with add, remove
-    collapse(side, force) {
+    collapse(side: 'left' | 'right', force: boolean = false) {
         if (side === 'left') {
             this.el.classList.toggle('left-collapsed', force || undefined) // undefined because we want it to toggle normally if we aren't forcing it.
             window.dispatchEvent(new CustomEvent('resize', {}));
