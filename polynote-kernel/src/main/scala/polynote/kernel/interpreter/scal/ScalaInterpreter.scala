@@ -2,7 +2,7 @@ package polynote.kernel
 package interpreter
 package scal
 
-import java.lang.reflect.Constructor
+import java.lang.reflect.{Constructor, InvocationTargetException}
 
 import scala.reflect.internal.util.NoPosition
 import scala.tools.nsc.interactive.Global
@@ -152,7 +152,9 @@ class ScalaInterpreter private[scal] (
     constructor   <- ZIO(cls.getDeclaredConstructors()(0))
     prevInstances  = collectPrevInstances(code, state)
     (nonImplicitInputs, implicitInputs) = partitionInputs(code, inputValues)
-    instance      <- zio.blocking.effectBlocking(createInstance(constructor, prevInstances, nonImplicitInputs ++ implicitInputs))
+    instance      <- zio.blocking.effectBlocking(createInstance(constructor, prevInstances, nonImplicitInputs ++ implicitInputs)).catchSome {
+      case err: InvocationTargetException if !(err.getCause eq err) && err.getCause != null => ZIO.fail(err.getCause)
+    }
   } yield instance
 
   private def getResultValues(id: CellID, code: CellCode, result: AnyRef) = {

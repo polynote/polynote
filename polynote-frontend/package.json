@@ -1,6 +1,8 @@
 {
   "browser": "polynote",
   "dependencies": {
+    "@types/katex": "^0.10.1",
+    "@types/tinycon": "^0.6.1",
     "acorn": "^6.2.0",
     "katex": "^0.10.2",
     "markdown-it": "^9.0.0",
@@ -21,6 +23,7 @@
     "monaco-editor-webpack-plugin": "^1.7.0",
     "style-loader": "^0.23.1",
     "ts-loader": "^5.4.5",
+    "typescript": "^3.5.3",
     "webpack": "^4.35.3",
     "webpack-cli": "^3.3.5"
   },

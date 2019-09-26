@@ -33,7 +33,7 @@ class KernelPublisher private (
   kernelStarting: Semaphore,
   kernelFactory: Kernel.Factory.Service,
   closed: Promise[Throwable, Unit]
-) {
+) extends TaskManager {
   val currentNotebook = new UnversionedRef(versionedNotebook)
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
@@ -115,7 +115,7 @@ class KernelPublisher private (
     busyState <- kernelOpt.fold[TaskB[KernelBusyState]](ZIO.succeed(KernelBusyState(busy = false, alive = false)).absorb)(_.status())
   } yield busyState
 
-  def cancelAll(): TaskB[Unit] = taskManager.cancelAll()
+  def cancelAll(): TaskB[Unit] = kernelRef.get.orDie.get.flatMap(_.cancelAll().provideSomeM(Env.enrich[BaseEnv](this: TaskManager))).ignore
 
   def subscribe(): TaskR[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = for {
     versioned          <- versionedNotebook.get

@@ -62,8 +62,8 @@ class CellIO(
     new KernelRuntime.Display {
       def content(contentType: String, content: String): Unit = runtime.unsafeRunSync(env.publishResult.publish1(Output(contentType, content)))
     },
-    (frac, detail) => runtime.unsafeRunAsync_(env.currentTask.tryUpdate(_.progress(frac, Option(detail).filter(_.nonEmpty)))),
-    posOpt => runtime.unsafeRunAsync_(env.publishStatus.publish1(ExecutionStatus(cellID, posOpt.map(boxed => (boxed._1.intValue(), boxed._2.intValue())))))
+    (frac, detail) => runtime.unsafeRun(env.currentTask.tryUpdate(_.progress(frac, Option(detail).filter(_.nonEmpty)))),
+    posOpt => runtime.unsafeRun(env.publishStatus.publish1(ExecutionStatus(cellID, posOpt.map(boxed => (boxed._1.intValue(), boxed._2.intValue())))))
   )
 }
 

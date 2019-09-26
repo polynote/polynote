@@ -73,6 +73,9 @@ object UpdateNotebookRequest extends RemoteRequestCompanion[UpdateNotebookReques
   implicit val codec: Codec[UpdateNotebookRequest] = cachedImplicit
 }
 
+final case class CancelAllRequest(reqId: Int) extends RemoteRequest
+object CancelAllRequest extends RemoteRequestCompanion[CancelAllRequest](12)
+
 object RemoteRequest {
   implicit val discriminated: Discriminated[RemoteRequest, Byte] = Discriminated(byte)
   implicit val codec: Codec[RemoteRequest] = cachedImplicit

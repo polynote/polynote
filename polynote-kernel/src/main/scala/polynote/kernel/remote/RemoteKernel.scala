@@ -107,6 +107,10 @@ class RemoteKernel[ServerAddress](
     }
   }
 
+  override def cancelAll(): TaskR[BaseEnv with TaskManager, Unit] = request(CancelAllRequest(nextReq)) {
+    case UnitResponse(reqId) => done(reqId, ())
+  }
+
   def completionsAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, List[Completion]] =
     request(CompletionsAtRequest(nextReq, id, pos)) {
       case CompletionsAtResponse(reqId, result) => done(reqId, result)
@@ -203,6 +207,7 @@ class RemoteKernelClient(
               .supervised
               .fork
         }.const(UnitResponse(reqId))
+        case CancelAllRequest(reqId)                      => kernel.cancelAll().const(UnitResponse(reqId))
         case CompletionsAtRequest(reqId, cellID, pos)     => kernel.completionsAt(cellID, pos).map(CompletionsAtResponse(reqId, _))
         case ParametersAtRequest(reqId, cellID, pos)      => kernel.parametersAt(cellID, pos).map(ParametersAtResponse(reqId, _))
         case ShutdownRequest(reqId)                       => kernel.shutdown() *> closed.complete(()).const(ShutdownResponse(reqId))
