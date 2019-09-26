@@ -32,7 +32,7 @@ function renderData(dataType: DataType, data: any) {
 
 export class TableView {
     private fields: StructField[];
-    private el: TagElement<"div">;
+    el: TagElement<"div">;
     private table: TableElement;
     private paginator: TagElement<"div">;
     private prevButton: TagElement<"button">;

@@ -1,24 +1,31 @@
-import {button, div, fakeSelectElem, h3, iconButton, tag} from "../util/tags";
+import {button, div, fakeSelectElem, h3, iconButton, tag, TagElement} from "../util/tags";
 import {FakeSelect} from "./fake_select";
 import {Cell, CodeCell, TextCell} from "./cell";
 import {LaTeXEditor} from "./latex_editor";
 import {UIEvent, UIEventTarget} from "../util/ui_event";
 import {preferences, storage} from "../util/storage";
+import {UIEventNameMap} from "../util/ui_events";
 
-export class ToolbarEvent extends UIEvent {
-    constructor(eventId, details) {
+export class ToolbarEvent extends UIEvent<any> {
+    constructor(eventId: keyof UIEventNameMap, details?: any) {
         super(eventId, details || {});
     }
 }
 
 export class ToolbarUI extends UIEventTarget {
+    private notebookToolbar: NotebookToolbarUI;
+    cellToolbar: CellToolbarUI;
+    private codeToolbar: CodeToolbarUI;
+    private textToolbar: TextToolbarUI;
+    private settingsToolbar: SettingsToolbarUI;
+    readonly el: TagElement<"div">;
     constructor() {
         super();
-        this.notebookToolbar = new NotebookToolbarUI().setEventParent(this);
-        this.cellToolbar = new CellToolbarUI().setEventParent(this);
-        this.codeToolbar = new CodeToolbarUI().setEventParent(this);
-        this.textToolbar = new TextToolbarUI().setEventParent(this);
-        this.settingsToolbar = new SettingsToolbarUI().setEventParent(this);
+        this.notebookToolbar = new NotebookToolbarUI(this);
+        this.cellToolbar = new CellToolbarUI(this);
+        this.codeToolbar = new CodeToolbarUI(this);
+        this.textToolbar = new TextToolbarUI(this);
+        this.settingsToolbar = new SettingsToolbarUI(this);
 
         this.el = div(['toolbar-container'], [
             this.notebookToolbar.el,
@@ -39,18 +46,32 @@ export class ToolbarUI extends UIEventTarget {
         }
     }
 
-    setDisabled(disable) {
+    setDisabled(disable: boolean) {
         if (disable) {
             [...this.el.querySelectorAll('button')].forEach(button => {
                 button.disabled = true;
             });
         } else {
-            [...this.el.querySelectorAll('button')].forEach(button => button.disabled = button.alwaysDisabled || false);
+            [...this.el.querySelectorAll('button')].forEach(button => {
+                function hasAlwaysDisabled(button: HTMLButtonElement): button is HTMLButtonElement & {alwaysDisabled: boolean} {
+                    return 'alwaysDisabled' in button
+                }
+                let disable = false;
+                if (hasAlwaysDisabled(button)) {
+                    disable = button.alwaysDisabled || false
+                }
+                button.disabled = disable;
+            });
         }
     }
 }
 
-function toolbarElem(name, buttonGroups) {
+interface FancyButtonConfig {
+    classes: string[],
+    elems: TagElement<any>[]
+}
+
+function toolbarElem(name: string, buttonGroups: (TagElement<any>[] | FancyButtonConfig)[]) {
     const contents = [h3([], [name])].concat(
         buttonGroups.map(group => {
             if (group instanceof Array) {
@@ -63,8 +84,9 @@ function toolbarElem(name, buttonGroups) {
 }
 
 class NotebookToolbarUI extends UIEventTarget {
-    constructor() {
-        super();
+    readonly el: TagElement<"div">;
+    constructor(parent: UIEventTarget) {
+        super(parent);
         this.el = toolbarElem("notebook", [
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
@@ -80,11 +102,15 @@ class NotebookToolbarUI extends UIEventTarget {
 }
 
 class CellToolbarUI extends UIEventTarget {
-    constructor() {
-        super();
+    readonly el: TagElement<"div">;
+    cellTypeSelector: FakeSelect;
+
+    constructor(parent?: UIEventTarget) {
+        super(parent);
+        let selectEl: TagElement<"div">;
         this.el = toolbarElem("cell", [
             [
-                this.cellTypeSelector = fakeSelectElem(["cell-language"], [
+                selectEl = fakeSelectElem(["cell-language"], [
                     button(["selected"], {value: "text"}, ["Text"])
                 ])
             ], [
@@ -99,11 +125,11 @@ class CellToolbarUI extends UIEventTarget {
             ]
         ]);
 
-        this.cellTypeSelector = new FakeSelect(this.cellTypeSelector)
+        this.cellTypeSelector = new FakeSelect(selectEl)
 
     }
 
-    setInterpreters(interpreters) {
+    setInterpreters(interpreters: Record<string, string>) {
         while (this.cellTypeSelector.options.length > 1) {
             this.cellTypeSelector.removeOption(this.cellTypeSelector.options[1]);
         }
@@ -117,8 +143,9 @@ class CellToolbarUI extends UIEventTarget {
 }
 
 class CodeToolbarUI extends UIEventTarget {
-    constructor() {
-        super();
+    readonly el: TagElement<"div">;
+    constructor(parent?: UIEventTarget) {
+        super(parent);
         this.el = toolbarElem("code", [
             [
                 iconButton(["run-cell"], "Run this cell (only)", "", "Run")
@@ -132,32 +159,40 @@ class CodeToolbarUI extends UIEventTarget {
     }
 }
 
+type CommandButton = TagElement<"button"> & {getState: () => string};
+
 class TextToolbarUI extends UIEventTarget {
-    constructor() {
-        super();
+    readonly el: TagElement<"div">;
+    private blockTypeSelector: FakeSelect;
+    private codeButton: CommandButton;
+    private equationButton: CommandButton;
+    private buttons: CommandButton[];
+    constructor(parent?: UIEventTarget) {
+        super(parent);
         let buttons = [];
 
-        function commandButton(cmd, title, icon, alt) {
+        function commandButton(cmd: string, title: string, icon: string, alt: string): CommandButton {
             const button = iconButton([cmd], title, icon, alt)
-                .attr('command', cmd)
+                // .attr('command', cmd)
                 .click(() => document.execCommand(cmd, false))
-                .withKey('getState', () => document.queryCommandValue(cmd));
+                .withKey('getState', () => document.queryCommandValue(cmd)) as CommandButton;
 
             buttons.push(button);
             return button
         }
+        let blockTypeSelectorEl: TagElement<"div">;
 
         this.el = toolbarElem("text", [
             [
-                this.blockTypeSelector = fakeSelectElem(["blockType"], [
+                blockTypeSelectorEl = fakeSelectElem(["blockType"], [
                     button(["selected"], {value: "p"}, ["Paragraph"]),
                     button([], {value: "h1"}, ["Heading 1"]),
                     button([], {value: "h2"}, ["Heading 2"]),
                     button([], {value: "h3"}, ["Heading 3"]),
                     button([], {value: "h4"}, ["Heading 4"]),
                     button([], {value: "blockquote"}, ["Quote"]),
-                ]).attr("command", "formatBlock").click(evt => {
-                    document.execCommand("formatBlock", false, `<${evt.target.value}>`)
+                ])/*.attr("command", "formatBlock")*/.click(evt => {
+                    document.execCommand("formatBlock", false, `<${(evt.target as HTMLButtonElement).value}>`)
                 })
             ], {
             classes: ["font"],
@@ -169,28 +204,28 @@ class TextToolbarUI extends UIEventTarget {
                 this.codeButton = iconButton(["code"], "Inline code", "", "Code")
                     .click(() => {
                         const selection = document.getSelection();
-                        if (selection.baseNode &&
-                            selection.baseNode.parentNode &&
-                            selection.baseNode.parentNode.tagName &&
-                            selection.baseNode.parentNode.tagName.toLowerCase() === "code") {
+                        if (selection && selection.anchorNode &&
+                            selection.anchorNode.parentNode &&
+                            (selection.anchorNode.parentNode as HTMLElement).tagName &&
+                            (selection.anchorNode.parentNode as HTMLElement).tagName.toLowerCase() === "code") {
 
                             if (selection.anchorOffset === selection.focusOffset) {
                                 // expand selection to the whole element
-                                document.getSelection().selectAllChildren(document.getSelection().anchorNode.parentNode);
+                                document.getSelection()!.selectAllChildren(document.getSelection()!.anchorNode!.parentNode!);
                             }
                             document.execCommand('removeFormat');
                         } else {
-                            document.execCommand('insertHTML', false, '<code>' + selection.toString() + '</code>');
+                            document.execCommand('insertHTML', false, '<code>' + selection!.toString() + '</code>');
                         }
                     }).withKey('getState', () => {
-                        const selection = document.getSelection();
+                        const selection = document.getSelection()!;
                         return (
-                            selection.baseNode &&
-                            selection.baseNode.parentNode &&
-                            selection.baseNode.parentNode.tagName &&
-                            selection.baseNode.parentNode.tagName.toLowerCase() === "code"
+                            selection.anchorNode &&
+                            selection.anchorNode.parentNode &&
+                            (selection.anchorNode.parentNode as HTMLElement).tagName &&
+                            (selection.anchorNode.parentNode as HTMLElement).tagName.toLowerCase() === "code"
                         )
-                    }),
+                    }) as CommandButton,
             ]}, {
             classes: ["lists"],
             elems: [
@@ -203,24 +238,24 @@ class TextToolbarUI extends UIEventTarget {
             elems: [
                 iconButton(["image"], "Insert image", "", "Image").disable().withKey('alwaysDisabled', true),
                 this.equationButton = iconButton(["equation"], "Insert/edit equation", "𝝨", "Equation")
-                    .click(() => LaTeXEditor.forSelection().show())
+                    .click(() => LaTeXEditor.forSelection()!.show())
                     .withKey('getState', () => {
-                        const selection = document.getSelection();
+                        const selection = document.getSelection()!;
                         if (selection.focusNode && selection.focusNode.childNodes) {
                             for (let i = 0; i < selection.focusNode.childNodes.length; i++) {
                                 const node = selection.focusNode.childNodes[i];
-                                if (node.nodeType === 1 && selection.containsNode(node, false) && (node.classList.contains('katex') || node.classList.contains('katex-block'))) {
+                                if (node.nodeType === 1 && selection.containsNode(node, false) && ((node as HTMLElement).classList.contains('katex') || (node as HTMLElement).classList.contains('katex-block'))) {
                                     return true;
                                 }
                             }
                         }
                         return false;
-                    }),
+                    }) as CommandButton,
                 iconButton(["table"], "Insert data table", "", "Table").disable().withKey('alwaysDisabled', true),
             ]}
         ]);
 
-        this.blockTypeSelector = new FakeSelect(this.blockTypeSelector);
+        this.blockTypeSelector = new FakeSelect(blockTypeSelectorEl);
 
         buttons.push(this.codeButton);
         buttons.push(this.equationButton);
@@ -246,8 +281,10 @@ class TextToolbarUI extends UIEventTarget {
 }
 
 class SettingsToolbarUI extends UIEventTarget {
-    constructor() {
-        super();
+    readonly el: TagElement<"div">;
+    private floatingMenu: TagElement<"div">;
+    constructor(parent?: UIEventTarget) {
+        super(parent);
         this.el = toolbarElem("about", [[
             iconButton(["preferences"], "View UI Preferences", "", "Preferences")
                 .click(() => this.dispatchEvent(new ToolbarEvent("ViewAbout", {section: "Preferences"}))),

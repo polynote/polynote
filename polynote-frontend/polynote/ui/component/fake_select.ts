@@ -22,7 +22,6 @@ export class FakeSelect extends UIEventTarget {
 
     constructor(readonly element: TagElement<"div">) {
         super();
-        // this.command = element.getAttribute('command');
 
         this.addEventListener('mousedown', evt => evt.preventDefault());
 

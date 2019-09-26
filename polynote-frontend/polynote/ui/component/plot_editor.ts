@@ -88,7 +88,7 @@ type SpecFun = ((this: PlotEditor, plotType: string, xField: StructField, yMeas:
 export class PlotEditor extends UIEventTarget {
     private fields: StructField[];
     private session: SocketSession;
-    private container: TagElement<"div">;
+    container: TagElement<"div">;
     private plotTypeSelector: FakeSelect;
     private specType: SpecFun;
     readonly el: TagElement<"div">;

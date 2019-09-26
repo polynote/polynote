@@ -1,14 +1,14 @@
 import {htmlToMarkdown} from "../util/html_to_md";
 import {LaTeXEditor} from "./latex_editor";
+import {MarkdownIt} from "../../util/markdown-it";
+import {TagElement} from "../util/tags";
 
 export class RichTextEditor {
-    constructor(elem, content) {
-        this.element = elem;
-
+    constructor(readonly element: TagElement<"div">, content: string) {
         if (content)
-            elem.innerHTML = MarkdownIt.render(content);
+            this.element.innerHTML = MarkdownIt.render(content);
 
-        this.element.contentEditable = true;
+        this.element.contentEditable = 'true';
 
         this.element.addEventListener('keydown', (evt) => {
             if (evt.key === 'Tab') {
@@ -36,18 +36,16 @@ export class RichTextEditor {
                         }
                     }
                     document.execCommand('formatBlock', false, `h${nextHeader}`);
-                    return false;
                 } else if (evt.key === 'e') {
                     evt.preventDefault();
-                    LaTeXEditor.forSelection().show();
-                    return false;
+                    LaTeXEditor.forSelection()!.show();
                 }
             }
         });
     }
 
-    set disabled(disable) {
-        this.element.contentEditable = !disable;
+    set disabled(disable: boolean) {
+        this.element.contentEditable = (!disable).toString();
     }
 
     focus() {

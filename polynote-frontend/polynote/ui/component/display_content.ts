@@ -3,7 +3,7 @@
 import * as monaco from "monaco-editor";
 import {div, span, tag, TagElement} from "../util/tags";
 
-export function displayContent(contentType: string, content: string, contentTypeArgs: Record<string, string>): Promise<TagElement<any>> {
+export function displayContent(contentType: string, content: string, contentTypeArgs?: Record<string, string>): Promise<TagElement<any>> {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);
 
     let result;
