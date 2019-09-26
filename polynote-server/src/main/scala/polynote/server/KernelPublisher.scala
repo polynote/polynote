@@ -92,7 +92,6 @@ class KernelPublisher private (
     }
 
     for {
-      notebook <- versionedNotebook.get
       env      <- cellEnv(cellID, tapResults = Some(captureOut.add))
       kernel   <- kernel
       result   <- kernel.queueCell(cellID).provideSomeM(Env.enrich[BaseEnv with GlobalEnv](env))
@@ -100,14 +99,12 @@ class KernelPublisher private (
   }
 
   def completionsAt(cellID: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv, List[Completion]] = for {
-    notebook    <- versionedNotebook.get
     env         <- cellEnv(cellID)
     kernel      <- kernel
     completions <- kernel.completionsAt(cellID, pos).provideSomeM(Env.enrich[BaseEnv with GlobalEnv](env))
   } yield completions
 
   def parametersAt(cellID: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv, Option[Signatures]] = for {
-    notebook    <- versionedNotebook.get
     env         <- cellEnv(cellID)
     kernel      <- kernel
     signatures  <- kernel.parametersAt(cellID, pos).provideSomeM(Env.enrich[BaseEnv with GlobalEnv](env))

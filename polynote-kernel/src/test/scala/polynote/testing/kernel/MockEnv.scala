@@ -46,7 +46,7 @@ case class MockKernelEnv(
   kernelFactory: Factory.Service,
   publishResult: MockPublish[Result],
   publishStatus: MockPublish[KernelStatusUpdate],
-  interpreterFactories: Map[String, Interpreter.Factory],
+  interpreterFactories: Map[String, List[Interpreter.Factory]],
   taskManager: TaskManager.Service,
   updateTopic: Topic[Task, Option[NotebookUpdate]],
   currentNotebook: SignallingRef[Task, Notebook],

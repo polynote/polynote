@@ -65,10 +65,11 @@ class SocketSession(
         case _ => Stream.empty
       }.evalMap {
         message =>
-          handler.applyOrElse(message, unhandled).catchAll(Logging.error("Kernel error", _)).provide(env).fork.unit
-      }.handleErrorWith {
-        err =>
-          Stream.eval(ZIO.fail(err))
+          handler.applyOrElse(message, unhandled).catchAll {
+            err =>
+              Logging.error("Kernel error", err) *>
+              PublishMessage(Error(0, err))
+          }.provide(env).fork.unit
       }
   }
 

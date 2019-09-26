@@ -23,7 +23,6 @@ class KernelSubscriber private[server] (
 
   def close(): Task[Unit] = closed.succeed(()).unit *> process.join
   def update(update: NotebookUpdate): Task[Unit] = publisher.update(id, update) *> ZIO(lastLocalVersion.set(update.localVersion)) *> ZIO(lastGlobalVersion.set(update.globalVersion))
-  def queueCell(cellID: CellID): TaskR[BaseEnv with GlobalEnv, Task[Unit]] = publisher.queueCell(cellID)
   def notebook(): Task[Notebook] = publisher.latestVersion.map(_._2)
 }
 

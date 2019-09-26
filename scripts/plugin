@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+cd "${0%/*}" || exit
+
+if ! test -e plugins
+then
+  mkdir -p plugins
+fi
+
+if ! test -e plugins.d
+then
+  mkdir -p plugins.d
+fi
+
+case $1 in
+  enable)
+    ln -s "plugins/$2.jar" "plugins.d/$2.jar"
+    ;;
+  disable)
+    unlink "plugins.d/$2.jar"
+    ;;
+  *)
+    echo "Usage: plugin enable [plugin-name]"
+    echo "       plugin disable [plugin-name]"
+esac

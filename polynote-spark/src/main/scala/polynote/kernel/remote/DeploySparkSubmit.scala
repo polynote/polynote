@@ -46,9 +46,10 @@ object DeploySparkSubmit extends DeployCommand {
   }
 
   override def apply(serverAddress: InetSocketAddress): TaskR[Config with CurrentNotebook, Seq[String]] = for {
-    config <- Config.access
+    config   <- Config.access
+    nbConfig <- CurrentNotebook.config
   } yield build(
-    sparkConfig = config.spark,
+    sparkConfig = config.spark ++ nbConfig.sparkConfig.getOrElse(Map.empty),
     serverArgs =
       "--address" :: serverAddress.getAddress.getHostAddress ::
       "--port" :: serverAddress.getPort.toString ::
