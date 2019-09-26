@@ -21,6 +21,9 @@ object PySparkInterpreter {
       interpreter <- PythonInterpreter(venv, "py4j" :: "pyspark" :: PythonInterpreter.sharedModules, getPy4JError(gatewayRef))
       _           <- setupPySpark(interpreter, gatewayRef)
     } yield interpreter
+
+    override val requireSpark: Boolean = true
+    override val priority: Int = 1
   }
 
   private def getPy4JError(gatewayRef: AtomicReference[GatewayServer]): String => Option[Throwable] = {

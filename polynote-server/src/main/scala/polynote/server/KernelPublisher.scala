@@ -49,7 +49,7 @@ class KernelPublisher private (
   }
 
   private def cellEnv(cellID: Int, tapResults: Option[Result => Task[Unit]] = None): Task[CellEnv] =
-    currentNotebook.get.map(nb => LocalCellEnv(nb.path, CellID(cellID)))
+    currentNotebook.get.map(nb => LocalCellEnv(nb.path, CellID(cellID), tapResults))
 
   private def kernelFactoryEnv: Task[CellEnv with NotebookUpdates] = currentNotebook.get.map(nb => LocalCellEnv(nb.path, CellID(-1)))
 

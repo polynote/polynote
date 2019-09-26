@@ -40,6 +40,8 @@ object ScalaSparkInterpreter {
       val res = ScalaSparkInterpreter()
       res
     }
+    override val requireSpark: Boolean = true
+    override val priority: Int = 1
   }
 
 }

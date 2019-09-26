@@ -164,12 +164,22 @@ lazy val `polynote-spark` = project.settings(
     val jars = (polynoteJars.value ++ dependencyJars.value).map(_._2.stripPrefix("polynote/")).mkString(":")
     (assemblyOption in assembly).value.copy(
       includeScala = false,
-      prependShellScript = Some(Seq(
-        s"""#!/usr/bin/env sh""",
-        s"""echo exec java -cp $jars $$JAVA_OPTS polynote.Main "$$@"""",
-        s"""exec java -cp $jars $$JAVA_OPTS polynote.Main "$$@"""",
-        s"""exit"""
-      )))
+      prependShellScript = Some(
+        s"""#!/usr/bin/env sh
+           |jep_path=`pip3 show jep | grep "^Location:" | cut -d ':' -f 2 | cut -d ' ' -f 2`
+           |python_lib_path=`dirname $${jep_path}`
+           |python_path=`dirname $${python_lib_path}`
+           |if test -e "$$python_path/libpython3.so"
+           |then
+           |  echo Using python library "$$python_path/libpython3.so"
+           |  export LD_PRELOAD="$$python_path/libpython3.so"
+           |else
+           |  echo Unable to locate libpython3.so (python support probably won't work)
+           |fi
+           |echo Running java -cp $jars -Djava.library.path=$${jep_path}/jep:$$JAVA_LIBRARY_PATH $$JAVA_OPTS polynote.Main "$$@"
+           |exec exec java -cp $jars -Djava.library.path=$${jep_path}/jep:$$JAVA_LIBRARY_PATH $$JAVA_OPTS polynote.Main "$$@"
+           |exit""".stripMargin.lines.toSeq
+      ))
   }
 ) dependsOn (
   `polynote-server` % "compile->compile;test->test",

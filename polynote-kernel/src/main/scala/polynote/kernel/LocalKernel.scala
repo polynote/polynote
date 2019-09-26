@@ -172,19 +172,24 @@ class LocalKernel private[kernel] (
 
   private def getOrLaunch(language: String, at: CellID): TaskR[BaseEnv with GlobalEnv with InterpreterEnv with CurrentNotebook with TaskManager with Interpreter.Factories with Config, Interpreter] =
     interpreters.getOrCreate(language) {
-      Interpreter.factory(language).flatMap {
-        factory => TaskManager.run(s"Launch$$$language", factory.languageName,s"Starting ${factory.languageName} interpreter") {
-          for {
-            interpreter  <- factory().provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with Config with CurrentTask](compilerProvider))
-            currentState <- interpreterState.get
-            insertStateAt = currentState.rewindWhile(s => s.id != at && !(s eq Root))
-            lastPredef    = currentState.lastPredef
-            newState     <- interpreter.init(State.predef(insertStateAt, lastPredef))
-            _            <- interpreterState.update(_.insert(insertStateAt.id, newState))
-          } yield interpreter
-        }
+      Interpreter.availableFactories(language)
+        .flatMap(facs => chooseInterpreterFactory(facs).mapError(_ => new UnsupportedOperationException(s"No available interpreter for $language")))
+        .flatMap {
+          factory => TaskManager.run(s"Launch$$$language", factory.languageName,s"Starting ${factory.languageName} interpreter") {
+            for {
+              interpreter  <- factory().provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with Config with CurrentTask](compilerProvider))
+              currentState <- interpreterState.get
+              insertStateAt = currentState.rewindWhile(s => s.id != at && !(s eq Root))
+              lastPredef    = currentState.lastPredef
+              newState     <- interpreter.init(State.predef(insertStateAt, lastPredef))
+              _            <- interpreterState.update(_.insert(insertStateAt.id, newState))
+            } yield interpreter
+          }
       }
     }
+
+  protected def chooseInterpreterFactory(factories: List[Interpreter.Factory]): ZIO[Any, Unit, Interpreter.Factory] =
+    ZIO.fromOption(factories.filterNot(_.requireSpark).headOption)
 
   /**
     * Finds reprs of each value in the state, and returns a new state with the values updated to include the reprs
@@ -201,11 +206,13 @@ class LocalKernel private[kernel] (
         }.toMap
 
         def updateValue(value: ResultValue): ResultValue = {
-          val reprs = instanceMap.get(value.name).toList.flatMap(_.apply(value.value).toList) match {
-            case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
-            case reprs => reprs :+ StringRepr(truncateTinyString(Option(value.value).map(_.toString).getOrElse("null")))
-          }
-          value.copy(reprs = reprs)
+          if (value.value != null) {
+            val reprs = instanceMap.get(value.name).toList.flatMap(_.apply(value.value).toList) match {
+              case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
+              case reprs => reprs :+ StringRepr(truncateTinyString(Option(value.value).map(_.toString).getOrElse("null")))
+            }
+            value.copy(reprs = reprs)
+          } else value
         }
 
         state.updateValues(updateValue)

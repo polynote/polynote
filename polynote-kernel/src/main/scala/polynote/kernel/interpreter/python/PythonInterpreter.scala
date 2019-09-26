@@ -8,7 +8,7 @@ import java.util.concurrent.{Executors, LinkedBlockingQueue, ThreadFactory}
 import cats.syntax.traverse._
 import cats.instances.list._
 import jep.python.{PyCallable, PyObject}
-import jep.{Jep, JepConfig, NamingConventionClassEnquirer, SubInterpreter}
+import jep.{Jep, JepConfig, JepException, NamingConventionClassEnquirer, SharedInterpreter, SubInterpreter}
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
@@ -412,7 +412,6 @@ object PythonInterpreter {
         .setClassEnquirer(new NamingConventionClassEnquirer(true).addTopLevelPackageName("polynote"))
       val interp = new SubInterpreter(conf)
       venv.foreach(path => interp.exec(s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"})"""))
-      //venv.foreach(path => interp.exec(s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"})"""))
       interp
     }
   }

@@ -278,15 +278,15 @@ object RemoteKernelClient extends polynote.app.App {
     currentNotebook: SignallingRef[Task, Notebook],
     reqId: Int,
     publishResponse: Publish[Task, RemoteResponse],
-    interpreterFactories: Map[String, Interpreter.Factory],
+    interpreterFactories: Map[String, List[Interpreter.Factory]],
     kernelFactory: Factory.Service,
     polynoteConfig: PolynoteConfig,
     updates: => Stream[Task, Option[NotebookUpdate]]
   ): KernelEnvironment = KernelEnvironment(
     currentNotebook,
     reqId,
-    publishResponse: Publish[Task, RemoteResponse],
-    interpreterFactories: Map[String, Interpreter.Factory],
+    publishResponse,
+    interpreterFactories,
     kernelFactory: Factory.Service,
     polynoteConfig: PolynoteConfig,
     updates
@@ -320,7 +320,7 @@ object RemoteKernelClient extends polynote.app.App {
     currentNotebook: Ref[Task, Notebook],
     reqId: Int,
     publishResponse: Publish[Task, RemoteResponse],
-    interpreterFactories: Map[String, Interpreter.Factory],
+    interpreterFactories: Map[String, List[Interpreter.Factory]],
     kernelFactory: Factory.Service,
     polynoteConfig: PolynoteConfig,
     updateStream: Stream[Task, Option[NotebookUpdate]]

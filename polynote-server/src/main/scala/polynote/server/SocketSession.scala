@@ -65,7 +65,7 @@ class SocketSession(
         case _ => Stream.empty
       }.evalMap {
         message =>
-          handler.applyOrElse(message, unhandled).catchAll(Logging.error("Kernel error", _)).provide(env)
+          handler.applyOrElse(message, unhandled).catchAll(Logging.error("Kernel error", _)).provide(env).fork.unit
       }.handleErrorWith {
         err =>
           Stream.eval(ZIO.fail(err))
@@ -75,7 +75,7 @@ class SocketSession(
   private def handshake: TaskG[ServerHandshake] =
     ZIO.access[Interpreter.Factories](_.interpreterFactories).map {
       factories => ServerHandshake(
-        (SortedMap.empty[String, String] ++ factories.mapValues(_.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
+        (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
         serverVersion = BuildInfo.version,
         serverCommit = BuildInfo.commit)
     }
@@ -119,7 +119,7 @@ class SocketSession(
 
     case RunCell(path, ids) =>
       subscribe(path).flatMap {
-        subscriber => ids.map(subscriber.publisher.queueCell).sequence.unit
+        subscriber => ids.map(id => subscriber.publisher.queueCell(id)).sequence.flatMap(_.sequence).unit
       }
 
     case req@CompletionsAt(notebook, id, pos, _) => for {

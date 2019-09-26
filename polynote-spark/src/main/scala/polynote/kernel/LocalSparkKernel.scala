@@ -1,6 +1,6 @@
 package polynote.kernel
 import java.io.File
-import java.nio.file.{Files, FileSystems}
+import java.nio.file.{FileSystems, Files}
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.concurrent.Ref
@@ -12,7 +12,7 @@ import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, InterpreterEnvironment}
-import polynote.kernel.interpreter.scal.ScalaInterpreter
+import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
 import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.{RefMap, pathOf}
@@ -36,7 +36,10 @@ class LocalSparkKernel private[kernel] (
   interpreterState: Ref[Task, State],
   interpreters: RefMap[String, Interpreter],
   busyState: SignallingRef[Task, KernelBusyState]
-) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState)
+) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState) {
+  override protected def chooseInterpreterFactory(factories: List[Interpreter.Factory]): ZIO[Any, Unit, Interpreter.Factory] =
+    ZIO.fromOption(factories.headOption)
+}
 
 class LocalSparkKernelFactory extends Kernel.Factory.Service {
   import LocalSparkKernel.kernelCounter
@@ -88,7 +91,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
     compiler              <- ScalaCompiler(settings, ZIO.succeed(classLoader), notebookPackage).map(ScalaCompiler.Provider.of)
     busyState             <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters          <- RefMap.empty[String, Interpreter]
-    scalaInterpreter      <- interpreters.getOrCreate("scala")(ScalaInterpreter.fromFactory().provide(compiler).flatten)
+    scalaInterpreter      <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provide(compiler))
     interpState           <- Ref[Task].of[State](State.predef(State.Root, State.Root))
   } yield new LocalSparkKernel(compiler, interpState, interpreters, busyState)
 

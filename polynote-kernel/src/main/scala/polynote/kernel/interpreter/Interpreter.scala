@@ -4,6 +4,10 @@ package interpreter
 import java.util.ServiceLoader
 
 import scala.collection.JavaConverters._
+
+import cats.syntax.semigroup._
+import cats.instances.map._
+import cats.instances.list._
 import polynote.messages.CellID
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, InterpreterEnvironment}
 import zio.blocking.{Blocking, effectBlocking}
@@ -71,27 +75,28 @@ object Interpreter {
   trait Factory {
     def languageName: String
     def apply(): TaskR[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter]
+    def requireSpark: Boolean = false
+    def priority: Int = 0
   }
 
   trait Factories {
-    val interpreterFactories: Map[String, Interpreter.Factory]
+    val interpreterFactories: Map[String, List[Interpreter.Factory]]
   }
 
-  def factory(language: String): TaskR[Factories, Interpreter.Factory] = for {
-    factories <- ZIO.access[Factories](_.interpreterFactories)
-    factory   <- ZIO.fromOption(factories.get(language)).mapError(_ => new IllegalArgumentException(s"No interpreter for $language"))
-  } yield factory
+  def availableFactories(language: String): TaskR[Factories, List[Interpreter.Factory]] = for {
+    allFactories <- ZIO.access[Factories](_.interpreterFactories)
+    factories    <- ZIO.fromOption(allFactories.get(language)).mapError(_ => new IllegalArgumentException(s"No interpreter for $language"))
+  } yield factories
 
 }
 
 trait Loader {
-  def priority: Int
   def factories: Map[String, Interpreter.Factory]
 }
 
 object Loader {
-  def load: TaskR[Blocking, Map[String, Interpreter.Factory]] = effectBlocking(ServiceLoader.load(classOf[Loader]).iterator.asScala.toList).map {
+  def load: TaskR[Blocking, Map[String, List[Interpreter.Factory]]] = effectBlocking(ServiceLoader.load(classOf[Loader]).iterator.asScala.toList).map {
     loaders =>
-      loaders.sortBy(_.priority).map(_.factories).foldLeft(Map.empty[String, Interpreter.Factory])(_ ++ _)
+      loaders.map(_.factories.mapValues(List(_))).foldLeft(Map.empty[String, List[Interpreter.Factory]])(_ |+| _).mapValues(_.sortBy(f => (-f.priority, !f.getClass.getName.startsWith("polynote"), f.getClass.getName)))
   }
 }

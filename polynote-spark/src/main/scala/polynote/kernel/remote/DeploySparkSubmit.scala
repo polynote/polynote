@@ -33,7 +33,7 @@ object DeploySparkSubmit extends DeployCommand {
 
     val allDriverOptions =
     (sparkConfig.get("spark.driver.extraJavaOptions").toList ++
-        List("-Dlog4j.configuration=log4j.properties", s"-Djava.library.path=${sys.env.get("java.library.path")}")).mkString(" ")
+        List("-Dlog4j.configuration=log4j.properties", s"-Djava.library.path=${sys.props("java.library.path")}")).mkString(" ")
 
     val additionalJars = pathOf(classOf[SparkReprsOf[_]]) :: pathOf(classOf[KernelRuntime]) :: Nil
 

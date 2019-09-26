@@ -181,21 +181,26 @@ class ScalaCompiler private (
       stat => stat.duplicate.setPos(stat.pos)
     }
 
+
     // The name of the class (and its companion object, in case one is needed)
     lazy val assignedTypeName: TypeName = freshTypeName(s"$name$$")(global.currentFreshNameCreator)
     lazy val assignedTermName: TermName = assignedTypeName.toTermName
 
-    // Separate the implicit inputs, since they must be in their own parameter list
-    lazy val (implicitInputs: List[ValDef], nonImplicitInputs: List[ValDef]) = inputs.partition(_.mods.isImplicit)
-
-    // a position to encompass the whole synthetic tree
-    private lazy val wrappedPos = Position.transparent(sourceFile, 0, 0, sourceFile.length + 1)
+    private lazy val priorCellNames = priorCells.map(_.assignedTypeName)
 
     // create constructor parameters to hold instances of prior cells; these are needed to access path-dependent types
     // for any classes, traits, type aliases, etc defined by previous cells
     lazy val priorCellInputs: List[ValDef] = priorCells.map {
-      cell => ValDef(Modifiers(), TermName(s"_input${cell.assignedTypeName.decodedName.toString}"), tq"${cell.assignedTypeName}".setType(cell.cellClassType).setSymbol(cell.cellClassSymbol), EmptyTree)
+      cell => ValDef(Modifiers(), TermName(s"_input${cell.assignedTypeName.decodedName.toString}"), TypeTree(cell.cellInstType).setType(cell.cellInstType), EmptyTree)
     }
+
+    lazy val typedInputs: List[ValDef] = inputs
+
+    // Separate the implicit inputs, since they must be in their own parameter list
+    lazy val (implicitInputs: List[ValDef], nonImplicitInputs: List[ValDef]) = typedInputs.partition(_.mods.isImplicit)
+
+    // a position to encompass the whole synthetic tree
+    private lazy val wrappedPos = Position.transparent(sourceFile, 0, 0, sourceFile.length + 1)
 
     // create imports for all types and methods defined by previous cells
     lazy val priorCellImports: List[Import] = priorCells.zip(priorCellInputs).map {
@@ -218,20 +223,50 @@ class ScalaCompiler private (
 
       def notUnit(tpe: Type) = {
         val notNullType = tpe != null
-//        val notUnitType = !(tpe <:< typeOf[Unit])
-//        val notBoxedUnitType = !(tpe <:< typeOf[BoxedUnit])
+        // val notUnitType = !(tpe <:< typeOf[Unit])
+        // val notBoxedUnitType = !(tpe <:< typeOf[BoxedUnit])
         // for some reason the type comparisons sometimes return false positives! WHAT?
         val notUnitType = tpe.typeSymbol.name.decoded != "Unit"
         val notBoxedUnitType = tpe.typeSymbol.name.decoded != "BoxedUnit"
         notNullType && notUnitType && notBoxedUnitType
       }
 
+      // We have to deal with dependent types. If a cell declares a class, and another cell creates a value of that
+      // class, it will be typed as i.e. Cell2.this._inputCell1.Foo. This will ordinarily be OK, but if we try
+      // to ascribe a type to it, like `foo: Foo` inside of Cell3, this will break because here `Foo` means
+      // `Cell3.this._inputCell1.Foo`. So the solution is that we create a fake value of each cell type in its
+      // companion, which is never used and is just null. *But*, we target all the values of a cell-defined type
+      // to be dependent on that dummy value's singleton type, so that the types will agree everywhere. And when
+      // a class takes a previous cell as input, we also type that input as the singleton type. It is a bit odd, but
+      // it works at runtime because the dummy value (as a *term*) is never actually referenced.
+      val mySym = cellClassSymbol
+      val myType = cellClassType
+      val dependentTypeMapping = priorCellInputs.zip(priorCells).map {
+        case (input, cell) => input.name.toString -> cell.cellInstType
+      }.toMap
+
+      def transformType(typ: Type): Type = typ match {
+        case TypeRef(pre, sym, Nil) =>
+          typeRef(transformType(pre), sym, Nil)
+        case TypeRef(pre, sym, args) =>
+          typeRef(transformType(pre), sym, args.mapConserve(transformType))
+        case SingleType(pre, sym) if pre.typeSymbol == mySym && (dependentTypeMapping contains sym.name.toString) =>
+          global.internal.singleType(dependentTypeMapping(sym.name.toString), sym)
+        case SingleType(pre, sym) =>
+          global.internal.singleType(transformType(pre), sym)
+        case `myType` =>
+          cellInstType
+        case _ =>
+          typ
+      }
+
       exitingTyper(compiledCode).collect {
         case vd@ValDef(_, name, tpt, _) if (prev contains name) && notUnit(vd.symbol.originalInfo) =>
           val tpe = vd.symbol.originalInfo
           val preTyper = prev(name)
-          val typeTree = TypeTree(tpe)
-          typeTree.setType(tpe)
+          val subst = transformType(tpe)
+          val typeTree = TypeTree(subst)
+          typeTree.setType(subst)
           ValDef(preTyper.mods, preTyper.name, typeTree, EmptyTree).setPos(preTyper.pos)
       }
     }
@@ -260,7 +295,7 @@ class ScalaCompiler private (
       val nonImplicitParamList = copyAndReset(nonImplicitInputs)
       val implicitParamList = copyAndReset(implicitInputs)
       q"""
-        class $assignedTypeName(..$priorCellParamList)(..$nonImplicitParamList)(..$implicitParamList) extends scala.Serializable {
+        final class $assignedTypeName(..$priorCellParamList)(..$nonImplicitParamList)(..$implicitParamList) extends scala.Serializable {
           ..${priorCellImports}
           ..${copyAndReset(inheritedImports.externalImports)}
           ..${copyAndReset(inheritedImports.localImports)}
@@ -269,12 +304,22 @@ class ScalaCompiler private (
       """
     }
 
+    private lazy val companion: ModuleDef = {
+      q"""
+         object $assignedTermName extends {
+           final val instance: $assignedTypeName = null
+           type Inst = instance.type
+         }
+       """
+    }
+
     // Wrap the code in a class within the given package. Constructing the class runs the code.
     // The constructor parameters are
     private lazy val wrapped: PackageDef = atPos(wrappedPos) {
       q"""
         package $packageName {
           $wrappedClass
+          $companion
         }
       """
     }
@@ -282,6 +327,9 @@ class ScalaCompiler private (
     // the type representing this cell's class. It may be null or NoType if invoked before compile is done!
     def cellClassType: Type = exitingTyper(wrappedClass.symbol.info)
     def cellClassSymbol: ClassSymbol = exitingTyper(wrappedClass.symbol.asClass)
+    lazy val cellCompanionSymbol: ModuleSymbol = exitingTyper(companion.symbol.asModule)
+    lazy val cellInstSymbol: Symbol = exitingTyper(cellCompanionSymbol.info.member(TermName("instance")).accessedOrSelf)
+    lazy val cellInstType: Type = exitingTyper(cellCompanionSymbol.info.member(TypeName("Inst")).info.dealias)
 
     // Note – you mustn't typecheck and then compile the same instance; those trees are done for. Instead, make a copy
     // of this CellCode and typecheck that if you need info about the typed trees without compiling all the way
@@ -338,20 +386,6 @@ class ScalaCompiler private (
       // symbol matching, but the symbols don't always seem to match when they ought to, so it matches on the
       // previous cell's accessor name.
       val traverser = new Traverser {
-        override def traverseParents(parents: List[global.Tree]): Unit = {
-          // class parents have been replaced with TypeTrees which won't get traversed; traverse the original if it has one
-          parents.foreach {
-            case parent@TypeTree() =>
-              traverse(parent)
-              parent.original match {
-                case null =>
-                case original if !(original eq parent) => traverse(original)
-              }
-            case parent =>
-              traverse(parent)
-          }
-        }
-
         override def traverse(tree: Tree): Unit = {
           // TODO: this doesn't cover type trees which reference a type imported from a cell
           if (tree.symbol != null) {
@@ -359,6 +393,13 @@ class ScalaCompiler private (
               used.add(tree.symbol.name)
             }
           }
+
+          // type trees don't get traversed in a useful way by default; traverse its original tree if it has one
+          tree match {
+            case tree@TypeTree() if tree.original != null => super.traverse(tree.original)
+            case _ =>
+          }
+
           super.traverse(tree)
         }
       }

@@ -24,9 +24,9 @@ package object kernel {
 
   type GlobalEnv = Config with Interpreter.Factories with Kernel.Factory
   trait GlobalEnvT extends Config with Interpreter.Factories with Kernel.Factory
-  def GlobalEnv(config: PolynoteConfig, interpFactories: Map[String, Interpreter.Factory], kernelFactoryService: Kernel.Factory.Service): GlobalEnv = new GlobalEnvT {
+  def GlobalEnv(config: PolynoteConfig, interpFactories: Map[String, List[Interpreter.Factory]], kernelFactoryService: Kernel.Factory.Service): GlobalEnv = new GlobalEnvT {
     val polynoteConfig: PolynoteConfig = config
-    val interpreterFactories: Map[String, Interpreter.Factory] = interpFactories
+    val interpreterFactories: Map[String, List[Interpreter.Factory]] = interpFactories
     val kernelFactory: Kernel.Factory.Service = kernelFactoryService
   }
 

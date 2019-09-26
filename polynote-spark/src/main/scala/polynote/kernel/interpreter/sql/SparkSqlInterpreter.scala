@@ -129,5 +129,6 @@ object SparkSqlInterpreter {
   object Factory extends Interpreter.Factory {
     def languageName: String = "SQL"
     def apply(): TaskR[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with TaskManager, Interpreter] = SparkSqlInterpreter()
+    override val requireSpark: Boolean = true
   }
 }

@@ -191,13 +191,6 @@ object ScalaInterpreter {
     compiler => new ScalaInterpreter(compiler)
   }
 
-  def fromFactory(): TaskR[ScalaCompiler.Provider, TaskR[Interpreter.Factories, ScalaInterpreter]] = ZIO.access[ScalaCompiler.Provider](identity).map {
-    compiler => Interpreter.factory("scala")
-      .collect(new IllegalStateException("Expected ScalaInterpreter.Factory")) {
-        case fac: ScalaInterpreter.Factory => fac().provide(compiler)
-      }.flatten
-  }
-
   // capture the last statement in a value Out, if it's a free expression
   def captureLastExpression(global: Global)(trees: List[global.Tree]): List[global.Tree] = {
     import global._
