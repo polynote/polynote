@@ -1,5 +1,6 @@
 package polynote.runtime.python
 
+import jep.JepException
 import jep.python.{PyCallable, PyObject}
 import polynote.runtime._
 import polynote.runtime.python.PythonObject.ReturnTypeFor
@@ -81,6 +82,7 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
       obj.toString
     } catch {
       case err: NullPointerException => "null"
+      case err: JepException => "<error converting python object to string>"
     }
   }
 

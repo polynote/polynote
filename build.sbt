@@ -174,7 +174,7 @@ lazy val `polynote-spark` = project.settings(
            |  echo Using python library "$$python_path/libpython3.so"
            |  export LD_PRELOAD="$$python_path/libpython3.so"
            |else
-           |  echo Unable to locate libpython3.so (python support probably won't work)
+           |  echo "Unable to locate libpython3.so (python support probably won't work)"
            |fi
            |echo Running java -cp $jars -Djava.library.path=$${jep_path}/jep:$$JAVA_LIBRARY_PATH $$JAVA_OPTS polynote.Main "$$@"
            |exec exec java -cp $jars -Djava.library.path=$${jep_path}/jep:$$JAVA_LIBRARY_PATH $$JAVA_OPTS polynote.Main "$$@"
@@ -192,10 +192,41 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote
   dist := {
     val jars = (polynoteJars in `polynote-spark`).value ++ (dependencyJars in `polynote-spark`).value
     val mainJar = (assembly in `polynote-spark`).value
-    val outFile = crossTarget.value / "polynote-dist.zip"
-    IO.zip(
-      jars :+ ((file(".") / "config-template.yml") -> "polynote/config-template.yml"),
-      outFile)
+    //val outFile = crossTarget.value / "polynote-dist.zip"
+    val tarFile = crossTarget.value / "polynote-dist.tar"
+    val outFile = crossTarget.value / "polynote-dist.tar.gz"
+
+    if (tarFile.exists())
+      tarFile.delete()
+
+    if(outFile.exists())
+      outFile.delete()
+
+    val files = jars :+ ((file(".") / "config-template.yml") -> "polynote/config-template.yml")
+
+    // build a .tar.gz by invoking command-line tools. Sorry, Windows.
+    val targetDir = crossTarget.value / "polynote"
+    targetDir.mkdirs()
+
+    val resolvedFiles = files.map {
+      case (srcFile, targetPath) => srcFile -> (crossTarget.value / targetPath)
+    }
+
+    IO.copy(resolvedFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
+
+    val rootPath = crossTarget.value.toPath
+    def relative(file: File): String = rootPath.relativize(file.toPath).toString
+
+    import sys.process.stringSeqToProcess
+    Seq("tar", "-cf", tarFile.toString, "-C", crossTarget.value.toString, "polynote").!
+    Seq("gzip", "-S", ".gz", tarFile.toString).!
+
+
+//    // simpler than all the above, but doesn't preserve executable status
+//    IO.zip(
+//      files,
+//      outFile)
+
     outFile
   },
   commonSettings
