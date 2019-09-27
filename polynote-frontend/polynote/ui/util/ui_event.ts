@@ -89,7 +89,7 @@ export class UIEventTarget extends EventTarget {
     }
 
     // Listen for registration requests that you know how to handle
-    handleEventListenerRegistration<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(eventType: K, listener: CallbackEventListener<Unpack<T> extends never ? undefined : Unpack<T>>, options?: boolean | AddEventListenerOptions) {
+    handleEventListenerRegistration<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(eventType: K, listener: CallbackEventListener<Unpack<T> extends never ? [] : Unpack<T>>, options?: boolean | AddEventListenerOptions) {
         const type = EventRegistration.registrationId(eventType);
         return this.addEventListener(type as keyof UIEventNameMap, listener, options);
     }
