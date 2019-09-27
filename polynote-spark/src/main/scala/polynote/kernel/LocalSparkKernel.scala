@@ -42,6 +42,7 @@ class LocalSparkKernel private[kernel] (
   override def info(): TaskG[KernelInfo] = super.info().map {
     info => sparkSession.sparkContext.uiWebUrl match {
       case Some(url) => info + ("Spark Web UI:" -> s"""<a href="$url" target="_blank">$url</a>""")
+      case None => info
     }
   }
 
