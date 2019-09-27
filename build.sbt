@@ -189,7 +189,10 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote
     if(outFile.exists())
       outFile.delete()
 
-    val files = jars :+ ((file(".") / "config-template.yml") -> "polynote/config-template.yml")
+    val files = jars ++ List(
+      (file(".") / "config-template.yml") -> "polynote/config-template.yml",
+      (file(".") / "scripts" / "polynote") -> "polynote/polynote",
+      (file(".") / "scripts" / "plugin") -> "polynote/plugin")
 
     // build a .tar.gz by invoking command-line tools. Sorry, Windows.
     val targetDir = crossTarget.value / "polynote"
