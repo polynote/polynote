@@ -77,12 +77,6 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
       queued2._1 shouldEqual TaskInfo("2", "2", "", Queued, 0)
       queued3._1 shouldEqual TaskInfo("3", "3", "", Queued, 0)
 
-      val completed1 = groupedTaskInfos("1").find(_._1.status == Complete).get
-
-      // 2 and 3 should both be queued before 1 completes
-      completed1._2 should be > queued2._2
-      completed1._2 should be > queued3._2
-
     }
 
     "interrupts running tasks and cancels queued tasks before they run" in {

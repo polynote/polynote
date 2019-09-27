@@ -41,6 +41,20 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     socketEnv = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
     app      <- httpApp(args.watchUI).provide(socketEnv).orDie
     exit     <- BlazeServerBuilder[Task]
+      .withBanner(
+        raw"""
+             |
+             |  _____      _                   _
+             | |  __ \    | |                 | |
+             | | |__) |__ | |_   _ _ __   ___ | |_ ___
+             | |  ___/ _ \| | | | | '_ \ / _ \| __/ _ \
+             | | |  | (_) | | |_| | | | | (_) | ||  __/
+             | |_|   \___/|_|\__, |_| |_|\___/ \__\___|
+             |                __/ |
+             |               |___/
+             |
+             |""".stripMargin.lines.toList
+      )
       .bindHttp(port, address)
       .withWebSockets(true)
       .withHttpApp(app)

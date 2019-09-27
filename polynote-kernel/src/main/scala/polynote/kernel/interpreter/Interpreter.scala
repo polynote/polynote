@@ -25,10 +25,6 @@ trait Interpreter {
     */
   def run(code: String, state: State): TaskR[InterpreterEnv, State]
 
-  def runId(id: Int, code: String): ZIO[Blocking with CellEnv with CurrentTask, Throwable, State] = {
-    run(code, State.id(id)).provideSomeM(InterpreterEnvironment.fromKernel(CellID(id)))
-  }
-
   /**
     * Ask for completions (if applicable) at the given position in the given code string.
     *
