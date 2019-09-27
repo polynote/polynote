@@ -1,5 +1,6 @@
 package polynote.runtime.python
 
+import jep.JepException
 import jep.python.{PyCallable, PyObject}
 import polynote.runtime._
 import polynote.runtime.python.PythonObject.ReturnTypeFor
@@ -16,17 +17,16 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
 
   private[polynote] def unwrap: PyObject = obj
 
-  protected def callPosArgs(callable: PyCallable, args: Seq[AnyRef]): AnyRef = {
+  protected def callPosArgs(callable: PyCallable, args: Seq[AnyRef]): PythonObject = {
     runner.run {
-      callable.call(args.map(unwrapArg): _*)
+      callable.callAs(classOf[PyObject], args.map(unwrapArg): _*)
     } match {
       case pc: PyCallable => new PythonFunction(pc, runner)
-      case po: PyObject   => new PythonObject(po, runner)
-      case other => other
+      case po => new PythonObject(po, runner)
     }
   }
 
-  protected def callKwArgs(callable: PyCallable, args: Seq[(String, Any)]): AnyRef = {
+  protected def callKwArgs(callable: PyCallable, args: Seq[(String, Any)]): PythonObject = {
     val kwArgIndex = args.indexWhere(_._1.nonEmpty)
     val (posArgs, kwArgs) = if (kwArgIndex >= 0) {
       args.splitAt(kwArgIndex)
@@ -37,23 +37,24 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
 
     runner.run {
       if (posArgsArray.nonEmpty && kwArgsMap.nonEmpty) {
-        callable.call(posArgsArray, kwArgsMap.asJava)
+        callable.callAs(classOf[PyObject], posArgsArray, kwArgsMap.asJava)
       } else if (posArgsArray.nonEmpty) {
-        callable.call(posArgsArray: _*)
+        callable.callAs(classOf[PyObject], posArgsArray: _*)
       } else if (kwArgsMap.nonEmpty) {
-        callable.call(kwArgsMap.asJava)
+        callable.callAs(classOf[PyObject], kwArgsMap.asJava)
       } else {
-        callable.call()
+        callable.callAs(classOf[PyObject])
       }
     } match {
       case pc: PyCallable => new PythonFunction(pc, runner)
-      case po: PyObject   => new PythonObject(po, runner)
-      case other => other
+      case po   => new PythonObject(po, runner)
     }
   }
 
+  def hasAttribute(name: String): Boolean = runner.hasAttribute(this, name)
   def asScalaList: List[Any] = runner.asScalaList(this)
   def asScalaMap: Map[Any, Any] = runner.asScalaMap(this)
+  def asScalaMapOf[K : ClassTag, V : ClassTag]: Map[K, V] = runner.asScalaMapOf[K, V](this)
 
   def selectDynamic[T](name: String)(implicit returnType: ReturnTypeFor[T]): returnType.Out = {
     runner.run {
@@ -65,19 +66,27 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
     obj.setAttr(name, value)
   }
 
-  // TODO: Jep doesn't give us a way to invoke a PyCallable and get back a PyObject in case the result can't be converted
-  //       to a Java representation. So we'll run into the stringification problem here. We should try to fix this upstream
-  //       in Jep.
-  def applyDynamic(method: String)(args: Any*): Any =
+  def applyDynamic(method: String)(args: Any*): PythonObject =
       callPosArgs(selectDynamic[PyCallable](method), args.asInstanceOf[Seq[AnyRef]])
 
-
-  def applyDynamicNamed(method: String)(args: (String, Any)*): Any =
+  def applyDynamicNamed(method: String)(args: (String, Any)*): PythonObject =
       callKwArgs(selectDynamic[PyCallable](method), args)
 
+  def as[T >: Null : ClassTag]: T = if (obj != null)
+    obj.as(classTag[T].runtimeClass.asInstanceOf[Class[T]])
+  else
+    null
+
   override def toString: String = runner.run {
-    obj.toString
+    try {
+      obj.toString
+    } catch {
+      case err: NullPointerException => "null"
+      case err: JepException => "<error converting python object to string>"
+    }
   }
+
+  override def hashCode(): Int = runner.run(obj.hashCode())
 
 }
 
@@ -92,9 +101,9 @@ object PythonObject {
         case err: Throwable => None
       }
 
-      val htmlRepr = attemptRepr("text/html", obj._repr_html_().asInstanceOf[String])
-      val textRepr = attemptRepr("text/plain", obj.__repr__().asInstanceOf[String])
-      val latexRepr = attemptRepr("application/latex", obj._repr_latex_().asInstanceOf[String])
+      val htmlRepr = if (obj.hasAttribute("_repr_html_")) attemptRepr("text/html", obj._repr_html_().as[String]) else None
+      val textRepr = if (obj.hasAttribute("__repr__")) attemptRepr("text/plain", obj.__repr__().as[String]) else None
+      val latexRepr = if (obj.hasAttribute("_repr_latex_")) attemptRepr("application/latex", obj._repr_latex_().as[String]) else None
 
       List(htmlRepr, textRepr, latexRepr).flatten.toArray
     }
@@ -140,8 +149,10 @@ object PythonObject {
 
   trait Runner {
     def run[T](task: => T): T
+    def hasAttribute(obj: PythonObject, name: String): Boolean
     def asScalaList(obj: PythonObject): List[Any]
     def asScalaMap(obj: PythonObject): Map[Any, Any]
+    def asScalaMapOf[K : ClassTag, V : ClassTag](obj: PythonObject): Map[K, V]
   }
 
 }

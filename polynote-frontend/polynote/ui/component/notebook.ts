@@ -349,7 +349,7 @@ export class NotebookUI extends UIEventTarget {
 
         this.addEventListener('UpdatedExecutionStatus', evt => {
             const update = evt.detail.update;
-            if (update.pos) this.cellUI.setExecutionHighlight(update.cellId, update.pos);
+            this.cellUI.setExecutionHighlight(update.cellId, update.pos || null);
         });
 
         socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {

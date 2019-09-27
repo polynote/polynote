@@ -18,7 +18,7 @@ class PythonFunction(callable: PyCallable, runner: PythonObject.Runner) extends 
     case obj => obj
   }
 
-  override def applyDynamic(method: String)(args: Any*): Any = {
+  override def applyDynamic(method: String)(args: Any*): PythonObject = {
     if (method == "apply" || method == "call" || method == "__call__")
       callPosArgs(callable, args.asInstanceOf[Seq[AnyRef]])
     else
@@ -26,7 +26,7 @@ class PythonFunction(callable: PyCallable, runner: PythonObject.Runner) extends 
 
   }
 
-  override def applyDynamicNamed(method: String)(args: (String, Any)*): Any = {
+  override def applyDynamicNamed(method: String)(args: (String, Any)*): PythonObject = {
     if (method == "apply" || method == "call" || method == "__call__")
       callKwArgs(callable, args)
     else

@@ -1,99 +1,80 @@
 package polynote.server
 
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
-import cats.Monad
-import cats.effect.{ContextShift, Fiber, IO}
-import cats.effect.concurrent.Semaphore
-import polynote.config.{PolyLogger, PolynoteConfig}
-import polynote.kernel.lang.LanguageInterpreter
-import polynote.kernel.util.OptionEither
+import cats.effect.ConcurrentEffect
+import polynote.kernel.environment.Config
+import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, LocalKernel}
+import polynote.kernel.util.{OptionEither, RefMap}
+import polynote.messages.{Notebook, NotebookUpdate}
 import polynote.server.repository.NotebookRepository
+import polynote.server.repository.ipynb.IPythonNotebookRepository
+import zio.blocking.Blocking
+import zio.{TaskR, ZIO}
+import zio.interop.catz._
 
-import scala.collection.immutable.SortedMap
-import scala.collection.JavaConverters._
+import KernelPublisher.SubscriberId
 
-/**
-  * This is how the sessions interact with notebooks. The sessions don't think about writing changes etc. They'll
-  * open a [[SharedNotebook]] and from there get a [[NotebookRef]] in exchange for an output queue. Their interactions
-  * with the notebook will go through the NotebookRef.
-  */
-abstract class NotebookManager[F[_]](implicit F: Monad[F]) {
-
-  def getNotebook(path: String): F[SharedNotebook[F]]
-
-  def listNotebooks(): F[List[String]]
-
-  def listRunningNotebooks(): F[List[String]]
-
-  def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): F[String]
-
-  def interpreterNames: Map[String, String]
-
+trait NotebookManager {
+  val notebookManager: NotebookManager.Service
 }
 
-class IONotebookManager(
-  config: PolynoteConfig,
-  repository: NotebookRepository[IO],
-  kernelFactory: KernelFactory[IO],
-  loadingNotebook: Semaphore[IO])(implicit
-  contextShift: ContextShift[IO]
-) extends NotebookManager[IO] {
+object NotebookManager {
 
-  private val writers = new ConcurrentHashMap[String, Fiber[IO, Unit]]
-  private val notebooks = new ConcurrentHashMap[String, SharedNotebook[IO]]
+  def access: TaskR[NotebookManager, Service] = ZIO.access[NotebookManager](_.notebookManager)
 
-  protected val logger = new PolyLogger
+  trait Service {
+    def open(path: String): TaskR[BaseEnv with GlobalEnv, KernelPublisher]
+    def list(): TaskR[BaseEnv with GlobalEnv, List[String]]
+    def listRunning(): TaskR[BaseEnv with GlobalEnv, List[String]]
+    def status(path: String): TaskR[BaseEnv with GlobalEnv, KernelBusyState]
+    def create(path: String, maybeUriOrContent: Option[Either[String, String]]): TaskR[BaseEnv with GlobalEnv, String]
+  }
 
-  private def writeChanges(notebook: SharedNotebook[IO]): IO[Fiber[IO, Unit]] = notebook.versions.map(_._2).evalMap {
-    updated => repository.saveNotebook(notebook.path, updated)
-  }.handleErrorWith { err =>
-    // TODO: Can we recover from this error? Or at least bubble it up to the UI?
-    fs2.Stream.eval(IO(logger.error(err)("Error while writing notebook")))
-  }.compile.drain.start
+  object Service {
 
-  private def loadNotebook(path: String): IO[SharedNotebook[IO]] = loadingNotebook.acquire.bracket { _ =>
-    Option(notebooks.get(path)) match {
-      case Some(sharedNotebook) => IO.pure(sharedNotebook)
-      case None =>
+    def apply(repository: NotebookRepository[TaskR[BaseEnv, ?]]): TaskR[BaseEnv, Service] = RefMap.empty[String, KernelPublisher].map {
+      openNotebooks =>new Impl(openNotebooks, repository)
+    }
+
+    private class Impl(
+      openNotebooks: RefMap[String, KernelPublisher],
+      repository: NotebookRepository[TaskR[BaseEnv, ?]]
+    ) extends Service {
+      def open(path: String): TaskR[BaseEnv with GlobalEnv, KernelPublisher] = openNotebooks.getOrCreate(path) {
         for {
-          loaded   <- repository.loadNotebook(path)
-          notebook <- IOSharedNotebook(path, loaded, kernelFactory, config)
-          _        <- IO { notebooks.put(path, notebook); () }
-          writer   <- writeChanges(notebook)
-          _        <- IO { writers.put(path, writer); () }
-        } yield notebook
-    }
-  }(_ => loadingNotebook.release)
+          notebook  <- repository.loadNotebook(path)
+          publisher <- KernelPublisher(notebook)
+          writer    <- publisher.notebooks
+            .evalMap(notebook => repository.saveNotebook(notebook.path, notebook))
+            .compile.drain.fork
+        } yield publisher
+      }
 
-  override lazy val interpreterNames: Map[String, String] = SortedMap.empty[String, String] ++
-    LanguageInterpreter.factories.mapValues(_.languageName)
+      def list(): TaskR[BaseEnv, List[String]] = repository.listNotebooks()
 
-  def getNotebook(path: String): IO[SharedNotebook[IO]] = notebooks.synchronized {
-    Option(notebooks.get(path)) match {
-      case Some(sharedNotebook) => IO.pure(sharedNotebook)
-      case None => loadNotebook(path)
+      def listRunning(): TaskR[BaseEnv, List[String]] = openNotebooks.keys
+
+      def create(path: String, maybeUriOrContent: Option[Either[String, String]]): TaskR[BaseEnv, String] =
+        repository.createNotebook(path, OptionEither.wrap(maybeUriOrContent))
+
+      override def status(path: String): TaskR[BaseEnv with GlobalEnv, KernelBusyState] = openNotebooks.get(path).flatMap {
+        case None => ZIO.succeed(KernelBusyState(busy = false, alive = false))
+        case Some(publisher) => publisher.kernelStatus()
+      }
     }
   }
 
-  override def listRunningNotebooks(): IO[List[String]] = notebooks.synchronized {
-    IO.pure(notebooks.keys.asScala.toList)
+  def apply()(implicit ev: ConcurrentEffect[TaskR[BaseEnv, ?]]): TaskR[BaseEnv with GlobalEnv, NotebookManager] = for {
+    config    <- Config.access
+    blocking  <- ZIO.accessM[Blocking](_.blocking.blockingExecutor)
+    repository = new IPythonNotebookRepository[TaskR[BaseEnv, ?]](
+      new File(System.getProperty("user.dir")).toPath.resolve(config.storage.dir),
+      config,
+      executionContext = blocking.asEC
+    )
+    service   <- Service(repository)
+  } yield new NotebookManager {
+    val notebookManager: Service = service
   }
-
-  override def listNotebooks(): IO[List[String]] = repository.listNotebooks()
-
-  override def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): IO[String] =
-    repository.createNotebook(path, maybeUriOrContent)
-}
-
-object IONotebookManager {
-  def apply(
-    config: PolynoteConfig,
-    repository: NotebookRepository[IO],
-    kernelFactory: KernelFactory[IO])(implicit
-    contextShift: ContextShift[IO]
-  ): IO[IONotebookManager] = for {
-    loadingNotebook <- Semaphore[IO](1)
-  } yield new IONotebookManager(config, repository, kernelFactory, loadingNotebook)
 }

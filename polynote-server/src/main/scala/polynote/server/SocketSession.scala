@@ -1,299 +1,217 @@
 package polynote.server
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.function.BiFunction
+import java.util.concurrent.atomic.AtomicInteger
 
-import cats.effect._
-import cats.effect.concurrent.{MVar, Ref, Semaphore}
-import cats.syntax.all._
+import cats.{Applicative, MonadError}
+import cats.effect.{Concurrent, Timer}
+import cats.syntax.traverse._
 import cats.instances.list._
-import cats.~>
-import fs2.Stream
-import fs2.concurrent.{Enqueue, Queue, SignallingRef, Topic}
+import fs2.{Pipe, Stream}
+import fs2.concurrent.Queue
 import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
-import WebSocketFrame._
+import org.http4s.websocket.WebSocketFrame.Binary
 import polynote.buildinfo.BuildInfo
-import polynote.config.{PolyLogger, PolynoteConfig}
-import polynote.kernel._
-import polynote.kernel.util.{OptionEither, ReadySignal, WindowBuffer}
+import polynote.kernel
+import polynote.kernel.util.{Publish, RefMap}
+import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, StreamOps, StreamingHandles, TaskG, UpdatedTasks}
+import polynote.kernel.environment.{Env, PublishMessage}
+import polynote.kernel.interpreter.Interpreter
+import polynote.kernel.logging.Logging
 import polynote.messages._
-import polynote.server.repository.NotebookRepository
+import zio.{Promise, Task, TaskR, ZIO}
 
-import scala.concurrent.duration._
-import scala.collection.JavaConverters._
+import scala.collection.immutable.SortedMap
+import scala.concurrent.duration.{Duration, SECONDS}
 
 class SocketSession(
-  notebookManager: NotebookManager[IO],
-  oq: Queue[IO, Message],
-  loadingNotebook: Semaphore[IO])(implicit
-  contextShift: ContextShift[IO],
-  timer: Timer[IO]
-) {
+  notebookManager: NotebookManager.Service,
+  subscribed: RefMap[String, KernelSubscriber],
+  closed: Promise[Throwable, Unit],
+  streamingHandles: StreamingHandles with BaseEnv
+)(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
 
-  private val name: String = "Anonymous"  // TODO
-  private[this] val logger = new PolyLogger
-  private val notebooks = new ConcurrentHashMap[String, NotebookRef[IO]]()
-
-  private def toFrame(message: Message) = {
-    Message.encode[IO](message).map(bits => Binary(bits.toByteVector))
-  }
-
-  private def logMessage(message: Message): IO[Unit]= IO(logger.info(message.toString))
-  private def logErrorMessage(message: Message): IO[Unit]= message match {
-    case Error(_, err) => logError(err)
-    case _ => IO.unit
-  }
-  private def logError(error: Throwable): IO[Unit] = IO(logger.error(error)(error.getMessage))
-
-  private val closeSignal = ReadySignal()
-
-  private def shutdown(): IO[Unit] = {
-
-    def closeNotebooks = notebooks.values.asScala.toList.map(_.close()).parSequence.as(())
-
-    for {
-      _ <- closeNotebooks
-      _ <- closeSignal.complete
-    } yield ()
-  }
-
-  lazy val toResponse: IO[Response[IO]] = Queue.unbounded[IO, WebSocketFrame].flatMap {
-    iq =>
-      /**
-        * The evaluation semantics here are tricky. respond() is going to return a suspension which contains a
-        * Stream with its own suspensions. We want to allow both the outer suspensions and the inner suspensions
-        * to run in parallel, but we also want to make sure the outer suspensions are run in the order they were
-        * received. So we start them as soon as they come in.
-        *
-        * TODO: can this be uncomplicated by having respond() just write to outbound queue rather than returning
-        *       its own stream?
-        */
-      val responses = iq.dequeue.evalMap {
-
-        case Binary(bytes, true) => Message.decode[IO](bytes).flatMap {
-          message =>
-            val resp = respond(message)
-              // catch IO errors here so we don't terminate the stream later on
-                .handleErrorWith { err =>
-                  val re = ErrorResult(err)
-                  IO(Stream.eval(logError(re).map(_ => Error(0, re))))
-                }
-
-            resp.start
-        }
-
-        case Close(data) => IO.pure(Stream.eval(shutdown()).drain).start
-
-        case other => IO.pure(Stream.emit(badMsgErr(other))).start
-
-      }.evalMap {
-        fiber => fiber.join.uncancelable
-      }.interruptWhen(closeSignal())
-
-      val toClient: Stream[IO, WebSocketFrame] =
-        Stream.awakeEvery[IO](10.seconds).map {
-          d => Text("Ping!")  // Websocket is supposed to have its own keepalives, but this seems to prevent the connection from dying all the time while idle.
-        }.merge {
-          Stream(oq.dequeue.interruptWhen(closeSignal()), responses.parJoinUnbounded).parJoinUnbounded
-            .handleErrorWith {
-              err =>
-                val re = UnrecoverableError(err)
-                Stream.eval(logError(re).map(_ => Error(0, re)))
-            }
-            //.evalTap(logMessage)
-            .evalTap(logErrorMessage)
-            .evalMap(toFrame).handleErrorWith {
-            err =>
-              Stream.eval(logError(UnrecoverableError(err))).drain
-          }
-        }.interruptWhen(closeSignal())
-
-      WebSocketBuilder[IO].build(toClient, iq.enqueue, onClose = IO.delay(shutdown()).flatten) <* oq.enqueue1(handshake)
-  }
-
-  private def getNotebook(path: String) = loadingNotebook.acquire.bracket { _ =>
-    Option(notebooks.get(path)).map(IO.pure).getOrElse {
-      notebookManager.getNotebook(path).flatMap {
-        sharedNotebook => for {
-          notebookRef <- sharedNotebook.open(name)
-          _            = notebooks.put(path, notebookRef)
-          _           <- notebookRef.messages.interruptWhen(closeSignal()).through(oq.enqueue).compile.drain.start
-        } yield notebookRef
-      }
+  private def subscribe(path: String): TaskR[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribed.getOrCreate(path) {
+    notebookManager.open(path).flatMap {
+      kernelPublisher => kernelPublisher.subscribe()
     }
-  }(_ => loadingNotebook.release)
+  }
 
-  private def handshake: ServerHandshake =
-    ServerHandshake(
-      interpreters = notebookManager.interpreterNames.asInstanceOf[TinyMap[TinyString, TinyString]],
-      serverVersion = BuildInfo.version,
-      serverCommit = BuildInfo.commit)
+  private def toFrame(message: Message): Task[Binary] = {
+    Message.encode[Task](message).map(bits => Binary(bits.toByteVector))
+  }
 
-  def respond(message: Message): IO[Stream[IO, Message]] = message match {
+  lazy val toResponse: TaskG[Response[Task]] = for {
+    input     <- Queue.unbounded[Task, WebSocketFrame]
+    output    <- Queue.unbounded[Task, WebSocketFrame]
+    processor <- process(input, output)
+    fiber     <- processor.interruptWhen(closed.await.either).compile.drain.fork
+    keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.fork
+    response  <- WebSocketBuilder[Task].build(
+      output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]),
+      input.enqueue,
+      onClose = keepalive.interrupt *> fiber.interrupt.unit)
+  } yield response
+
+  private def process(
+    input: Queue[Task, WebSocketFrame],
+    output: Queue[Task, WebSocketFrame]
+  ): ZIO[BaseEnv with GlobalEnv, Nothing, Stream[Task, Unit]] = Env.enrich[BaseEnv with GlobalEnv](PublishMessage.of(Publish(output).contraFlatMap(toFrame))).map {
+    env =>
+      Stream.eval(handshake.provide(env)).evalMap(env.publishMessage.publish1) ++ input.dequeue.flatMap {
+        case WebSocketFrame.Close(_) => Stream.eval(output.enqueue1(WebSocketFrame.Close())).drain
+        case WebSocketFrame.Binary(data, true) => Stream.eval(Message.decode[Task](data))
+        case _ => Stream.empty
+      }.evalMap {
+        message =>
+          handler.applyOrElse(message, unhandled).catchAll {
+            err =>
+              Logging.error("Kernel error", err) *>
+              PublishMessage(Error(0, err))
+          }.provide(env).fork.unit
+      }
+  }
+
+  private def handshake: TaskG[ServerHandshake] =
+    ZIO.access[Interpreter.Factories](_.interpreterFactories).map {
+      factories => ServerHandshake(
+        (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
+        serverVersion = BuildInfo.version,
+        serverCommit = BuildInfo.commit)
+    }
+
+  private def unhandled(msg: Message): TaskR[BaseEnv, Unit] = Logging.warn(s"Unhandled message type ${msg.getClass.getName}")
+
+  private val handler: PartialFunction[Message, TaskR[BaseEnv with GlobalEnv with PublishMessage, Unit]] = {
     case ListNotebooks(_) =>
-      notebookManager.listNotebooks().map {
-        notebooks => Stream.emit(ListNotebooks(notebooks.asInstanceOf[List[ShortString]]))
+      notebookManager.list().flatMap {
+        notebooks => PublishMessage(ListNotebooks(notebooks.map(ShortString.apply)))
       }
 
     case LoadNotebook(path) =>
-      getNotebook(path).map {
-        notebookRef =>
-          Stream.eval(notebookRef.get) ++
-            Stream.eval(notebookRef.currentSymbols()).flatMap(results => Stream.emits(results).map(rv => CellResult(path, rv.sourceCell, rv))) ++
-            Stream.eval(notebookRef.currentTasks()).map(tasks => KernelStatus(path, UpdatedTasks(tasks))) ++
-            Stream.eval(notebookRef.currentStatus).map(KernelStatus(path, _)) ++
-            Stream.eval(notebookRef.info).map(info => info.map(KernelStatus(path, _))).unNone
+      subscribe(path).flatMap {
+        subscriber =>
+          for {
+            notebook <- subscriber.notebook()
+            _        <- PublishMessage(notebook)
+            status   <- subscriber.publisher.kernelStatus()
+            _        <- PublishMessage(KernelStatus(path, status))
+            values   <- if (status.alive) subscriber.publisher.kernel.flatMap(_.values()) else ZIO.succeed(Nil)
+            _        <- values.map(rv => CellResult(path, rv.sourceCell, rv)).map(PublishMessage.apply).sequence
+            tasks    <- subscriber.publisher.taskManager.list
+            _        <- PublishMessage(KernelStatus(path, UpdatedTasks(tasks)))
+          } yield ()
       }
 
     case CreateNotebook(path, maybeUriOrContent) =>
-      notebookManager.createNotebook(path, maybeUriOrContent).map {
-        actualPath => CreateNotebook(ShortString(actualPath), OptionEither.Neither)
-      }.attempt.map {
-        // TODO: is there somewhere more universal we can put this mapping?
-        case Left(throwable) => Error(0, throwable)
-        case Right(m) => m
-      }.map(Stream.emit)
-
-    case upConfig @ UpdateConfig(path, _, _, config) =>
-      getNotebook(path).flatMap {
-        notebookRef => notebookRef.update(upConfig).flatMap {
-          globalVersion =>
-            notebookRef.isKernelStarted.flatMap {
-              case true => notebookRef.restartKernel()
-              case false => notebookRef.startKernel()
-            }
-        } *> notebookRef.currentStatus.map(status => Stream.emit(KernelStatus(path, status)))
+      notebookManager.create(path, maybeUriOrContent.unwrap).flatMap {
+        realPath => PublishMessage(CreateNotebook(ShortString(realPath)))
       }
 
+    case upConfig @ UpdateConfig(path, _, _, config) => for {
+      subscriber <- subscribe(path)
+      _          <- subscriber.update(upConfig)
+      _          <- subscriber.publisher.restartKernel(forceStart = false)
+    } yield ()
 
     case NotebookUpdate(update) =>
-      getNotebook(update.notebook).flatMap {
-        notebookRef => notebookRef.update(update).map(globalVersion => Stream.empty) // TODO: notify client of global version
-      }
+      subscribe(update.notebook).flatMap(_.update(update))
 
     case RunCell(path, ids) =>
-      getNotebook(path).flatMap {
-        notebookRef => notebookRef.runCells(ids).map(_.drain) // we throw away the messages because they already come through the notebook's messages stream
+      subscribe(path).flatMap {
+        subscriber => ids.map(id => subscriber.publisher.queueCell(id)).sequence.flatMap(_.sequence).unit
       }
-      // TODO: do we need to emit a kernel status here any more?
 
-    case req@CompletionsAt(notebook, id, pos, _) =>
-      for {
-        notebookRef <- getNotebook(notebook)
-        completions <- notebookRef.completionsAt(id, pos).handleErrorWith {
-          case RuntimeError(err) => IO.raiseError(err) // Since a completion request could start the Kernel, make sure to bubble these up
-          case err =>
-            IO(err.printStackTrace(System.err)).map(_ => Nil)
-        }
-      } yield Stream.emit(req.copy(completions = ShortList(completions)))
+    case req@CompletionsAt(notebook, id, pos, _) => for {
+      subscriber  <- subscribe(notebook)
+      completions <- subscriber.publisher.completionsAt(id, pos)
+      _           <- PublishMessage(req.copy(completions = ShortList(completions)))
+    } yield ()
 
-    case req@ParametersAt(notebook, id, pos, _) =>
-      for {
-        notebookRef <- getNotebook(notebook)
-        parameters  <- notebookRef.parametersAt(id, pos)
-      } yield Stream.emit(req.copy(signatures = parameters))
+    case req@ParametersAt(notebook, id, pos, _) => for {
+      subscriber <- subscribe(notebook)
+      signatures <- subscriber.publisher.parametersAt(id, pos)
+      _          <- PublishMessage(req.copy(signatures = signatures))
+    } yield ()
 
-    case KernelStatus(path, _) =>
-      for {
-        notebookRef <- getNotebook(path)
-        status      <- notebookRef.currentStatus
-      } yield Stream.emit(KernelStatus(path, status))
+    case KernelStatus(path, _) => for {
+      subscriber <- subscribe(path)
+      status     <- subscriber.publisher.kernelStatus()
+      _          <- PublishMessage(KernelStatus(path, status))
+    } yield ()
 
-    case StartKernel(path, StartKernel.NoRestart) =>
-      for {
-        notebookRef <- getNotebook(path)
-        _           <- notebookRef.startKernel()
-        status      <- notebookRef.currentStatus
-      } yield Stream.emit(KernelStatus(path, status))
-
+    case StartKernel(path, StartKernel.NoRestart)   => subscribe(path).flatMap(_.publisher.kernel).unit
     case StartKernel(path, StartKernel.WarmRestart) => ??? // TODO
-    case StartKernel(path, StartKernel.ColdRestart) =>
-      for {
-        notebookRef <- getNotebook(path)
-        _           <- notebookRef.restartKernel()
-        status      <- notebookRef.currentStatus
-      } yield Stream.emit(KernelStatus(path, status))
+    case StartKernel(path, StartKernel.ColdRestart) => subscribe(path).flatMap(_.publisher.restartKernel(true))
+    case StartKernel(path, StartKernel.Kill)        => subscribe(path).flatMap(_.publisher.killKernel())
 
-    case StartKernel(path, StartKernel.Kill) =>
-      for {
-        notebookRef <- getNotebook(path)
-        _           <- notebookRef.shutdown()
-        status      <- notebookRef.currentStatus
-      } yield Stream.emit(KernelStatus(path, status))
+    case req@HandleData(path, handleType, handle, count, _) => for {
+      subscriber <- subscribe(path)
+      kernel     <- subscriber.publisher.kernel
+      data       <- kernel.getHandleData(handleType, handle, count).provide(streamingHandles)
+      _          <- PublishMessage(req.copy(data = data))
+    } yield ()
 
-    case HandleData(path, handleType, handle, count, _) =>
-      for {
-        notebookRef <- getNotebook(path)
-        results     <- notebookRef.getHandleData(handleType, handle, count)
-      } yield Stream.emit(HandleData(path, handleType, handle, count, results))
+    case req @ ModifyStream(path, fromHandle, ops, _) => for {
+      subscriber <- subscribe(path)
+      kernel     <- subscriber.publisher.kernel
+      newRepr    <- kernel.modifyStream(fromHandle, ops).provide(streamingHandles)
+      _          <- PublishMessage(req.copy(newRepr = newRepr))
+    } yield ()
 
-    case CancelTasks(path) =>
-      for {
-        notebookRef <- getNotebook(path)
-        _           <- notebookRef.cancelTasks()
-      } yield Stream.empty
+    case req @ ReleaseHandle(path, handleType, handleId) => for {
+      subscriber <- subscribe(path)
+      kernel     <- subscriber.publisher.kernel
+      newRepr    <- kernel.releaseHandle(handleType, handleId).provide(streamingHandles)
+      _          <- PublishMessage(req)
+    } yield ()
 
-    case ClearOutput(path) =>
-      for {
-        notebookRef   <- getNotebook(path)
-        clearMessages <- notebookRef.clearOutput()
-      } yield clearMessages
+    case CancelTasks(path) => subscribe(path).flatMap(_.publisher.cancelAll())
 
-    case ms @ ModifyStream(path, fromHandle, ops, _) =>
-      for {
-        notebookRef <- getNotebook(path)
-        result      <- notebookRef.modifyStream(fromHandle, ops)
-      } yield Stream.emit(ms.copy(newRepr = result))
-
-    case rh @ ReleaseHandle(path, handleType, handleId) =>
-      for {
-        notebookRef <- getNotebook(path)
-        _           <- notebookRef.releaseHandle(handleType, handleId)
-      } yield Stream.emit(rh)
-
-    case nv @ NotebookVersion(path, _) =>
-      for {
-        notebookRef <- getNotebook(path)
-        version <- notebookRef.currentVersion
-      } yield {
-        Stream.emit(NotebookVersion(path, version))
-      }
-
-    case rk: RunningKernels =>
-      notebookManager.listRunningNotebooks().flatMap(_.map {
-        path =>
-          getNotebook(path).flatMap {
-            nbRef =>
-              nbRef.currentStatus.map(KernelStatus(nbRef.path, _))
+    case ClearOutput(path) => for {
+      subscriber <- subscribe(path)
+      publish    <- subscriber.publisher.currentNotebook.modify {
+        notebook =>
+          val (newCells, cellIds) = notebook.cells.foldRight((List.empty[NotebookCell], List.empty[CellID])) {
+            case (cell, (cells, ids)) if cell.results.nonEmpty => (cell.copy(results = ShortList(Nil)) :: cells, cell.id :: ids)
+            case (cell, (cells, ids)) => (cell :: cells, ids)
           }
-      }.sequence).map {
-        statuses =>
-          Stream.emit(RunningKernels(statuses))
+
+          val updates = cellIds.map(id => PublishMessage(CellResult(path, id, ClearResults()))).sequence.unit
+          (notebook.copy(cells = ShortList(newCells)), updates)
       }
+      _          <- publish
+    } yield ()
 
-    case other =>
-      IO.pure(Stream.empty)
+    case nv @ NotebookVersion(path, _) => for {
+      subscriber <- subscribe(path)
+      versioned  <- subscriber.publisher.latestVersion
+      _          <- PublishMessage(nv.copy(globalVersion = versioned._1))
+    } yield ()
+
+    case RunningKernels(_) => for {
+      paths          <- notebookManager.listRunning()
+      statuses       <- paths.map(notebookManager.status).sequence
+      kernelStatuses  = paths.zip(statuses).map {
+        case (path, status) => KernelStatus(ShortString(path), status)
+      }
+      _              <- PublishMessage(RunningKernels(kernelStatuses))
+    } yield ()
+
+    case other => ZIO.unit
   }
-
-  def badMsgErr(msg: WebSocketFrame) = Error(1, new RuntimeException(s"Received bad message frame ${truncate(msg.toString, 32)}"))
-
-  def truncate(str: String, len: Int): String = if (str.length < len) str else str.substring(0, len - 4) + "..."
 
 }
 
 object SocketSession {
+  def apply()(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]): TaskR[BaseEnv with NotebookManager, SocketSession] = for {
+    notebookManager  <- NotebookManager.access
+    subscribed       <- RefMap.empty[String, KernelSubscriber]
+    closed           <- Promise.make[Throwable, Unit]
+    sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
+    streamingHandles <- Env.enrichM[BaseEnv](StreamingHandles.make(sessionId))
+  } yield new SocketSession(notebookManager, subscribed, closed, streamingHandles)
 
-  def apply(
-    notebookManager: NotebookManager[IO])(implicit
-    contextShift: ContextShift[IO],
-    timer: Timer[IO]
-  ): IO[SocketSession] = for {
-    oq              <- Queue.unbounded[IO, Message]
-    loadingNotebook <- Semaphore[IO](1)
-  } yield new SocketSession(notebookManager, oq, loadingNotebook)
-
+  private val sessionId = new AtomicInteger(0)
 }
-
-case class UnrecoverableError(err: Throwable) extends Throwable(s"${err.getClass.getSimpleName}: ${err.getMessage}", err)

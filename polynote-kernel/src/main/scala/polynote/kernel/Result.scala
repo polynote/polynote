@@ -10,7 +10,6 @@ import scodec.codecs.implicits._
 import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
-import polynote.kernel.util.KernelContext
 import polynote.messages.{CellID, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
 import polynote.runtime.ValueRepr
 import scodec.bits.BitVector
@@ -82,13 +81,13 @@ object RuntimeError extends ResultCompanion[RuntimeError](2) {
 
   )
 
-  // extending only to access the protected constructor (which skips building a pointless stack trace)
-  final case class RecoveredException(msg: String, originalType: String) extends RuntimeException(s"$originalType: $msg", null, false, false)
+  final case class RecoveredException(msg: String, originalType: String) extends RuntimeException(s"$originalType: $msg")
 
   val throwableWithCausesCodec: Codec[Throwable] = {
     def collapse(errs: List[Throwable]): Attempt[Throwable] = errs match {
       case head :: tail =>
         var current = head
+
         tail.foreach {
           err =>
             current.initCause(err)
@@ -164,30 +163,14 @@ final case class ResultValue(
 }
 
 object ResultValue extends ResultCompanion[ResultValue](4) {
-  private def toGlobalType(ctx: KernelContext, typ: Universe#Type): (ctx.global.Type, String) = {
-    val globalType = try typ.asInstanceOf[ctx.global.Type] catch {
-      case err: ClassCastException => throw new RuntimeException(s"Type $typ is being used in a foreign kernel", err)
-    }
-    globalType -> ctx.formatType(globalType)
-  }
-
-  def apply(ctx: KernelContext, name: String, typ: Universe#Type, value: Any, sourceCell: CellID, pos: Option[(Int, Int)] = None): ResultValue = {
-    val (globalType, typeStr) = toGlobalType(ctx, typ)
-    ResultValue(name, typeStr, ctx.reprsOf(value, globalType), sourceCell, value, typ, pos)
-  }
-
-  def apply(ctx: KernelContext, name: String, value: Any, sourceCell: CellID): ResultValue =
-    apply(ctx, name, ctx.inferType(value), value, sourceCell)
-
   // manual codec - we'll never encode nor decode `value` nor `scalaType`.
   implicit val codec: Codec[ResultValue] =
     (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec(ValueReprCodec.codec) ~ short16 ~ optional(bool(8), int32 ~ int32)).xmap(
       {
-        case ((((name, typeName), reprs), sourceCell), optPos) => ResultValue(name, typeName, reprs, sourceCell, Unit, scala.reflect.runtime.universe.NoType, optPos)
+        case ((((name, typeName), reprs), sourceCell), optPos) => ResultValue(name, typeName, reprs, sourceCell, (), scala.reflect.runtime.universe.NoType, optPos)
       },
       v => ((((v.name, v.typeName), v.reprs), v.sourceCell), v.pos)
     )
-
 }
 
 final case class ExecutionInfo(startTs: Long, endTs: Option[Long]) extends Result

@@ -28,7 +28,7 @@ class MarkdownNotebookRepository(
   val chunkSize: Int = 8192,
   val executionContext: ExecutionContext = ExecutionContext.global)(implicit
   val contextShift: ContextShift[IO]
-) extends FileBasedRepository {
+) extends FileBasedRepository[IO] {
 
   private lazy val parser = Parser.builder().extensions(List(YamlFrontMatterExtension.create()).asJava).build()
   private lazy val printer = Printer.spaces2.copy(dropNullKeys = true)

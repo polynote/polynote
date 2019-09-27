@@ -1,9 +1,9 @@
 package polynote.config
 
-import org.scalatest._
+import cats.syntax.either._
 import io.circe._
 import io.circe.syntax._
-import cats.syntax.either._
+import org.scalatest._
 
 class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
 
