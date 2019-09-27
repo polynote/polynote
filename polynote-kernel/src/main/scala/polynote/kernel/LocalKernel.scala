@@ -34,7 +34,7 @@ class LocalKernel private[kernel] (
   import compilerProvider.scalaCompiler
 
   override def queueCell(id: CellID): TaskR[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] =
-    TaskManager.queue(s"Cell$id", s"Cell $id", errorWith = TaskStatus.Complete) {
+    TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = TaskStatus.Complete) {
 
       val run = for {
         _             <- busyState.update(_.setBusy)
