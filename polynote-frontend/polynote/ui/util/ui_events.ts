@@ -7,9 +7,10 @@ import {
     RunCellEvent,
     SelectCellEvent, SetCellLanguageEvent
 } from "../component/cell";
-import {ExecutionStatus, TaskInfo} from "../../data/messages";
+import {ExecutionStatus, KernelStatus, RunningKernels, TaskInfo} from "../../data/messages";
 import {NotebookConfig} from "../../data/data";
 import {ReprDataRequest} from "../component/table_view";
+import {KernelError} from "../../data/result";
 
 type TriggerItem = UIEvent<{item: string}>
 export type ImportNotebook = UIEvent<{name: string, content: string}>
@@ -17,6 +18,9 @@ type ToggleNotebookListUI = UIEvent<{force?: boolean}>
 
 type ViewAbout = UIEvent<{ section: string }>
 type ServerVersion = UIEvent<{ version: number, commit: number }>
+type RunningKernelsEvt = UIEvent<ConstructorParameters<typeof RunningKernels>>
+type KernelStatusEvt = UIEvent<ConstructorParameters<typeof KernelStatus>>
+type KernelErrorEvt = UIEvent<ConstructorParameters<typeof KernelError>>
 type StartKernel = UIEvent<{path: string}>
 type KillKernel = UIEvent<{path: string}>
 type LoadNotebook = UIEvent<{path: string}>
@@ -31,37 +35,37 @@ type UpdatedConfig = UIEvent<{config: NotebookConfig}>
 
 export interface UIEventNameMap extends WindowEventMap {
     "TriggerItem": TriggerItem;
-    "NewNotebook": UIEvent<undefined>;
+    "NewNotebook": UIEvent<[]>;
     "ImportNotebook": ImportNotebook;
     "ToggleNotebookListUI": ToggleNotebookListUI;
     "TabActivated": TabActivated;
     "NoActiveTab": NoActiveTab;
     "TabRemoved": TabRemoved;
-    "RunAll": UIEvent<undefined>;
-    "RunToCursor": UIEvent<undefined>;
-    "RunCurrentCell": UIEvent<undefined>;
-    "CancelTasks": UIEvent<undefined>;
-    "Undo": UIEvent<undefined>;
-    "InsertAbove": UIEvent<undefined>;
-    "InsertBelow": UIEvent<undefined>;
+    "RunAll": UIEvent<[]>;
+    "RunToCursor": UIEvent<[]>;
+    "RunCurrentCell": UIEvent<[]>;
+    "CancelTasks": UIEvent<[]>;
+    "Undo": UIEvent<[]>;
+    "InsertAbove": UIEvent<[]>;
+    "InsertBelow": UIEvent<[]>;
     "InsertCellBefore": InsertCellEvent;
     "InsertCellAfter": InsertCellEvent;
     "DeleteCell": DeleteCellEvent;
     "ViewAbout": ViewAbout;
-    "DownloadNotebook": UIEvent<undefined>;
-    "ClearOutput": UIEvent<undefined>;
+    "DownloadNotebook": UIEvent<[]>;
+    "ClearOutput": UIEvent<[]>;
     "ServerVersion": ServerVersion;
-    "RunningKernels": UIEvent<undefined>;
+    "RunningKernels": RunningKernelsEvt;
     "StartKernel": StartKernel;
     "KillKernel": KillKernel;
     "LoadNotebook": LoadNotebook;
-    "Connect": UIEvent<undefined>;
-    "KernelStatus": UIEvent<undefined>;
-    "SocketClosed": UIEvent<undefined>;
-    "KernelError": UIEvent<undefined>;
+    "Connect": UIEvent<[]>;
+    "KernelStatus": KernelStatusEvt;
+    "SocketClosed": UIEvent<[]>;
+    "KernelError": KernelErrorEvt;
     "CellResult": CellResult;
     "ToggleKernelUI": ToggleKernelUI;
-    "CellsLoaded": UIEvent<undefined>;
+    "CellsLoaded": UIEvent<[]>;
     "SelectCell": SelectCellEvent;
     "RunCell": RunCellEvent;
     "BeforeCellRun": BeforeCellRunEvent;
