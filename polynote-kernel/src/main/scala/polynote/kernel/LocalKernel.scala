@@ -45,7 +45,7 @@ class LocalKernel private[kernel] (
         interpreter   <- getOrLaunch(cell.language, CellID(0)).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](interpEnv: InterpreterEnv))
         state         <- interpreterState.get
         prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                    // find the latest executed state that correlates to a notebook cell
-        prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(state.rewindWhile(_.id >= -1))
+        prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(latestPredef(state))
         _             <- PublishResult(ClearResults())
         clock         <- ZIO.access[Clock](_.clock)                                                                   // time the execution and notify clients of timing
         start         <- clock.currentTime(TimeUnit.MILLISECONDS)
@@ -69,6 +69,11 @@ class LocalKernel private[kernel] (
           PublishResult(ErrorResult(err)) *> busyState.update(_.setIdle)
       }
     }
+
+  private def latestPredef(state: State) = state.rewindWhile(_.id >= 0) match {
+    case s if s.id < 0 => s
+    case s             => s.prev
+  }
 
   private def updateState(resultState: State) = {
     interpreterState.update {
@@ -134,6 +139,7 @@ class LocalKernel private[kernel] (
     initialState  <- interpreterState.get
     predefEnv     <- InterpreterEnvironment.fromKernel(initialState.id)
     predefState   <- scalaInterp.init(initialState).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](predefEnv: InterpreterEnv))
+    predefState   <- updateValues(predefState)
     _             <- interpreterState.set(predefState)
   } yield predefState
 

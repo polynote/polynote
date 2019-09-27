@@ -111,7 +111,7 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    setExecutionHighlight(id: number, pos: PosRange) {
+    setExecutionHighlight(id: number, pos: PosRange | null) {
         const cell = this.getCell(id);
         if (cell instanceof CodeCell) {
             cell.setHighlight(pos, "currently-executing");

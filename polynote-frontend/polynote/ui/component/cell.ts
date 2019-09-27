@@ -856,7 +856,7 @@ export class CodeCell extends Cell {
         }
     }
 
-    setHighlight(pos?: {startPos: monaco.Position, endPos: monaco.Position} | PosRange, className?: string) {
+    setHighlight(pos?: {startPos: monaco.Position, endPos: monaco.Position} | PosRange | null, className?: string) {
         if (!className) {
             className = "currently-executing"
         }

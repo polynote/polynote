@@ -170,6 +170,10 @@ object TaskManager {
 
   def access: TaskR[TaskManager, TaskManager.Service] = ZIO.access[TaskManager](_.taskManager)
 
+  def of(service: Service): TaskManager = new TaskManager {
+    val taskManager: Service = service
+  }
+
   def queue[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "", errorWith: TaskStatus.DoneStatus = TaskStatus.Error)(task: TaskR[R, A])(implicit ev: R1 with CurrentTask =:= R, enrich: Enrich[R1, CurrentTask]): TaskR[R1, Task[A]] =
     ZIO.access[TaskManager](_.taskManager).flatMap {
       taskManager => taskManager.queue[R, A, R1](id, label, detail, errorWith)(task)

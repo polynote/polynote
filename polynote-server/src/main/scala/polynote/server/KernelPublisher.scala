@@ -33,7 +33,7 @@ class KernelPublisher private (
   kernelStarting: Semaphore,
   kernelFactory: Kernel.Factory.Service,
   closed: Promise[Throwable, Unit]
-) extends TaskManager {
+) {
   val currentNotebook = new UnversionedRef(versionedNotebook)
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
@@ -56,7 +56,9 @@ class KernelPublisher private (
   private val nextSubscriberId = new AtomicInteger(0)
 
   def notebooks: Stream[Task, Notebook] = versionedNotebook.discrete.map(_._2).interruptWhen(closed.await.either)
+
   def latestVersion: Task[(GlobalVersion, Notebook)] = versionedNotebook.get
+
   def update(subscriberId: SubscriberId, update: NotebookUpdate): Task[Unit] =
     publishUpdate.publish1((subscriberId, update))
 
@@ -69,6 +71,7 @@ class KernelPublisher private (
           kernel <- createKernel()
           _      <- kernel.init().provideSomeM(Env.enrichM[BaseEnv with GlobalEnv](cellEnv(-1)))
           _      <- kernelRef.set(Some(kernel))
+          _      <- kernel.info() >>= publishStatus.publish1
         } yield kernel
       }
     }
@@ -115,7 +118,12 @@ class KernelPublisher private (
     busyState <- kernelOpt.fold[TaskB[KernelBusyState]](ZIO.succeed(KernelBusyState(busy = false, alive = false)).absorb)(_.status())
   } yield busyState
 
-  def cancelAll(): TaskB[Unit] = kernelRef.get.orDie.get.flatMap(_.cancelAll().provideSomeM(Env.enrich[BaseEnv](this: TaskManager))).ignore
+  def cancelAll(): TaskB[Unit] = {
+    for {
+      kernel <- kernelRef.get.orDie.get
+      _      <- kernel.cancelAll().provideSomeM(Env.enrich[BaseEnv](TaskManager.of(taskManager)))
+    } yield ()
+  }.ignore
 
   def subscribe(): TaskR[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = for {
     versioned          <- versionedNotebook.get

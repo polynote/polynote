@@ -156,12 +156,14 @@ trait State {
     * predecessor is found before a state with the same ID as the given state, the given state will be inserted
     * between the predecessor and its successor.
     */
-  def insertOrReplace(state: State): State = if (state.id == id || state.prev.id == id) {
+  def insertOrReplace(state: State): State = if (state.id == id) {
     state
   } else if (this eq Root) {
     state.withPrev(this)
   } else if (state.prev.id == prev.id) {
     withPrev(state)
+  } else if (state.prev.id == id) {
+    state
   } else withPrev(prev.insertOrReplace(state))
 
   def at(id: CellID): Option[State] = {

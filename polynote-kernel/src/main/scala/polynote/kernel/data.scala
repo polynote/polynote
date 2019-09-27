@@ -228,6 +228,8 @@ final case class KernelInfo(content: TinyMap[ShortString, String]) extends Kerne
   def combine(other: KernelInfo): KernelInfo = {
     copy(TinyMap(content ++ other.content))
   }
+
+  def +(kv: (String, String)): KernelInfo = copy(content = TinyMap(content + (ShortString(kv._1) -> kv._2)))
 }
 object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3) {
   def apply(tups: (String, String)*): KernelInfo = KernelInfo(TinyMap(tups.map {

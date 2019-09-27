@@ -1,5 +1,6 @@
 package polynote.kernel
 
+import polynote.buildinfo.BuildInfo
 import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates}
 import polynote.messages.{ByteVector32, CellID, HandleType}
 import polynote.runtime.{StreamingDataRepr, TableOp}
@@ -38,6 +39,14 @@ trait Kernel {
     * Provide the current busy status of the kernel
     */
   def status(): TaskB[KernelBusyState]
+
+  /**
+    * Provide free-form key/value HTML information about the kernel
+    */
+  def info(): TaskG[KernelInfo] = ZIO.succeed(KernelInfo(
+    "Polynote Version:" -> s"""<span id="version">${BuildInfo.version}</span>""",
+    "Build Commit:"     -> s"""<span id="commit">${BuildInfo.commit}</span>"""
+  ))
 
   /**
     * Provide all values that currently are known by the kernel

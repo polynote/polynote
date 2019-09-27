@@ -33,12 +33,21 @@ import scala.tools.nsc.io.Directory
 // TODO: this class may not even be necessary
 class LocalSparkKernel private[kernel] (
   compilerProvider: ScalaCompiler.Provider,
+  sparkSession: SparkSession,
   interpreterState: Ref[Task, State],
   interpreters: RefMap[String, Interpreter],
   busyState: SignallingRef[Task, KernelBusyState]
 ) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState) {
+
+  override def info(): TaskG[KernelInfo] = super.info().map {
+    info => sparkSession.sparkContext.uiWebUrl match {
+      case Some(url) => info + ("Spark Web UI:" -> s"""<a href="$url" target="_blank">$url</a>""")
+    }
+  }
+
   override protected def chooseInterpreterFactory(factories: List[Interpreter.Factory]): ZIO[Any, Unit, Interpreter.Factory] =
     ZIO.fromOption(factories.headOption)
+
 }
 
 class LocalSparkKernelFactory extends Kernel.Factory.Service {
@@ -93,7 +102,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
     interpreters          <- RefMap.empty[String, Interpreter]
     scalaInterpreter      <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provide(compiler))
     interpState           <- Ref[Task].of[State](State.predef(State.Root, State.Root))
-  } yield new LocalSparkKernel(compiler, interpState, interpreters, busyState)
+  } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState)
 
   private def startSparkSession(deps: List[(String, File)], settings: Settings): TaskR[BaseEnv with GlobalEnv with CellEnv, (SparkSession, AbstractFileClassLoader)] = {
     def mkSpark(
