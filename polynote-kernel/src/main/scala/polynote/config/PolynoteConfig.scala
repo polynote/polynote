@@ -51,7 +51,7 @@ object KernelIsolation {
 
 final case class Behavior(
   dependencyIsolation: Boolean = true,
-  kernelIsolation: KernelIsolation = KernelIsolation.Never
+  kernelIsolation: KernelIsolation = KernelIsolation.SparkOnly
 )
 
 object Behavior {

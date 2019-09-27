@@ -203,14 +203,18 @@ class ScalaCompiler private (
     private lazy val wrappedPos = Position.transparent(sourceFile, 0, 0, sourceFile.length + 1)
 
     // create imports for all types and methods defined by previous cells
-    lazy val priorCellImports: List[Import] = priorCells.zip(priorCellInputs).map {
-      case (cell, ValDef(_, term, _, _)) =>
-        Import(
-          Ident(term),
-          cell.definedTypesAndMethods.zipWithIndex.map {
-            case (name, index) => ImportSelector(name, index, name, index)
-          }
-        )
+    lazy val priorCellImports: List[Import] = priorCells.zip(priorCellInputs).foldLeft(Map.empty[String, (TermName, Name)]) {
+      case (accum, (cell, input)) =>
+        val newNames = cell.definedTypesAndMethods.collect {
+          case name if !accum.contains(name.decoded) => name
+        }
+        accum ++ newNames.map(name => name.decoded -> (input.name, name)).toMap
+    }.values.groupBy(_._1).toList.map {
+      case (input, imports) =>
+        val importSelectors = imports.map(_._2).zipWithIndex.map {
+          case (name, index) => ImportSelector(name, index, name, index)
+        }.toList
+        Import(Ident(input), importSelectors)
     }
 
     // what output values does this code define?

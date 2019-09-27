@@ -215,7 +215,7 @@ class LocalKernel private[kernel] (
           if (value.value != null) {
             val reprs = instanceMap.get(value.name).toList.flatMap(_.apply(value.value).toList) match {
               case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
-              case reprs => reprs :+ StringRepr(truncateTinyString(Option(value.value).map(_.toString).getOrElse("null")))
+              case reprs => reprs :+ StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
             }
             value.copy(reprs = reprs)
           } else value
