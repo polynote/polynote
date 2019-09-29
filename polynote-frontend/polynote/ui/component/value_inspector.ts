@@ -6,7 +6,7 @@ import {ResultValue} from "../../data/result";
 import {MIMERepr, DataRepr, LazyDataRepr, StreamingDataRepr, StringRepr} from "../../data/value_repr";
 import match from "../../util/match";
 import {displayContent, displayData, contentTypeName} from "./display_content"
-import {ArrayType, DataType, StructType} from "../../data/data_type";
+import {ArrayType, DataType, MapType, StructType} from "../../data/data_type";
 import {PlotEditor} from "./plot_editor";
 import {TableView} from "./table_view";
 import {TabNav} from "./tab_nav";
@@ -26,6 +26,8 @@ function dataTypeToObjectField(name: string, dataType: DataType): [string, any] 
         return [name, schemaToObject(dataType)];
     } else if (dataType instanceof ArrayType) {
         return [`${name}[]`, dataTypeToObjectField('element', dataType.element)[1]];
+    } else if (dataType instanceof MapType) {
+        return [`${name}`, schemaToObject(dataType.element)]
     } else {
         return [name, (dataType.constructor as typeof DataType).typeName(dataType)];
     }

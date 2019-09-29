@@ -54,6 +54,33 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
     case struct @ sparkTypes.StructType(_) =>
       val (structType, encode) = structDataTypeAndEncoder(struct)
       structType -> (out => row => index => encode(out, row.getStruct(index, struct.fields.length)))
+    case sparkTypes.MapType(sparkKeyType, sparkValueType, nullValues)
+        if dataTypeAndEncoder(sparkKeyType).nonEmpty && dataTypeAndEncoder(sparkValueType).nonEmpty =>
+      val (keyType, encodeKey) = dataTypeAndEncoder(sparkKeyType).get
+      val (valueType, encodeValue) = dataTypeAndEncoder(sparkValueType).get
+      MapType(StructType(List(StructField("key", keyType), StructField("value", valueType)))) -> {
+        out =>
+          row => {
+            index =>
+              val mapData = row.getMap(index)
+              val len = mapData.numElements()
+              out.writeInt(len)
+              val keyData = mapData.keyArray()
+              val valueData = mapData.valueArray()
+              val encodeItem: Int => Unit = {
+                i =>
+                  encodeKey(out)(keyData)(i)
+                  encodeValue(out)(valueData)(i)
+              }
+
+              var i = 0
+              while (i < len) {
+                encodeItem(i)
+                i += 1
+              }
+          }
+      }
+
   }
 
   private def structDataTypeAndEncoder(schema: sparkTypes.StructType): (StructType, (DataOutput, InternalRow) => Unit) = {
