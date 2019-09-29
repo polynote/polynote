@@ -31,6 +31,7 @@ class KernelPublisher private (
   updater: Fiber[Throwable, Unit],
   kernelRef: Ref[Task, Option[Kernel]],
   kernelStarting: Semaphore,
+  queueingCell: Semaphore,
   kernelFactory: Kernel.Factory.Service,
   closed: Promise[Throwable, Unit]
 ) {
@@ -88,7 +89,7 @@ class KernelPublisher private (
     case Some(_) => killKernel() *> this.kernel.unit
   }
 
-  def queueCell(cellID: CellID): TaskR[BaseEnv with GlobalEnv, Task[Unit]] = {
+  def queueCell(cellID: CellID): TaskR[BaseEnv with GlobalEnv, Task[Unit]] = queueingCell.withPermit {
     val captureOut  = new Deque[Result]()
     val saveResults = captureOut.toList.flatMap {
       results => currentNotebook.update(_.setResults(cellID, results)).orDie
@@ -175,6 +176,7 @@ object KernelPublisher {
     taskManager      <- TaskManager(broadcastStatus)
     versionBuffer     = new VersionBuffer[NotebookUpdate]
     kernelStarting   <- Semaphore.make(1)
+    queueingCell     <- Semaphore.make(1)
     kernel           <- Ref[Task].of[Option[Kernel]](None)
     subscriberVersions = new ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)]()
     updater          <- updates.dequeue.unNoneTerminate
@@ -191,6 +193,7 @@ object KernelPublisher {
     updater,
     kernel,
     kernelStarting,
+    queueingCell,
     kernelFactory,
     closed
   )

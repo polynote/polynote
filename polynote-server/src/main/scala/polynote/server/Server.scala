@@ -2,13 +2,13 @@ package polynote.server
 
 import java.io.File
 
-
 import org.http4s.{HttpApp, HttpRoutes, Request, Response, StaticFile}
 import org.http4s.blaze.pipeline.Command.EOF
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeServerBuilder
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
+import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, interpreter}
 import zio.{Cause, Runtime, Task, TaskR, ZIO, system}
 import zio.interop.catz._
@@ -30,6 +30,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
     args     <- ZIO.fromEither(Server.parseArgs(args)).orDie
+    _        <- Logging.info(s"Loading configuration from ${args.configFile}")
     config   <- PolynoteConfig.load(args.configFile).orDie
     port      = config.listen.port
     address   = config.listen.host
