@@ -18,14 +18,6 @@ import {IvyRepository, MavenRepository, NotebookConfig, PipRepository, Repositor
 
 export class NotebookConfigUI extends UIEventTarget {
     readonly el: TagElement<"div">;
-    private readonly dependencyContainer: TagElement<"div">;
-    private readonly dependencyRowTemplate: TagElement<"div">;
-    private readonly resolverRowTemplate: TagElement<"div">;
-    private readonly resolverContainer: TagElement<"div">;
-    private readonly exclusionRowTemplate: TagElement<"div">;
-    private readonly exclusionContainer: TagElement<"div">;
-    private readonly sparkConfigRowTemplate: TagElement<"div">;
-    private readonly sparkConfigContainer: TagElement<"div">;
     private lastConfig: NotebookConfig;
     private configHandler: NotebookConfigHandler;
 
@@ -95,18 +87,32 @@ export class NotebookConfigUI extends UIEventTarget {
 interface ConfigEl {
     row: TagElement<"div"> | null
 }
+const defaultConfigEl = {row: null}
 interface Dep extends ConfigEl {
     data: {
         lang: string,
         dep: string
     }
 }
+const defaultDep: Dep = {
+    ...defaultConfigEl,
+    data: {
+        lang: "scala",
+        dep: ""
+    }
+};
 
 interface Excl extends ConfigEl {
     data: {
         exclusion: string
     }
 }
+const defaultExcl: Excl = {
+    ...defaultConfigEl,
+    data: {
+        exclusion: ""
+    }
+};
 
 interface Res extends ConfigEl {
     data: {
@@ -116,6 +122,13 @@ interface Res extends ConfigEl {
         metadata?: string
     }
 }
+const defaultRes: Res = {
+    ...defaultConfigEl,
+    data: {
+        type: 'ivy',
+        url: '',
+    }
+};
 
 interface SparkConf extends ConfigEl {
     data: {
@@ -123,6 +136,14 @@ interface SparkConf extends ConfigEl {
         val: string
     }
 }
+const defaultSparkConf: SparkConf = {
+    ...defaultConfigEl,
+    data: {
+        key: "",
+        val: ""
+    }
+};
+
 class NotebookConfigHandler extends UIEventTarget {
     readonly dependencyContainer: TagElement<"div">;
     readonly resolverContainer: TagElement<"div">;
@@ -149,14 +170,14 @@ class NotebookConfigHandler extends UIEventTarget {
                 }
             }
         }
-        if (this.dependencies.length == 0) this.addDep();
+        if (this.dependencies.length == 0) this.addDep(defaultDep);
 
         if (config.exclusions) {
             for (const excl of config.exclusions) {
                 this.addExcl({data: {exclusion: excl}, row: null});
             }
         }
-        if (this.exclusions.length == 0) this.addExcl();
+        if (this.exclusions.length == 0) this.addExcl(defaultExcl);
 
         if (config.repositories) {
             for (const repository of config.repositories) {
@@ -171,14 +192,14 @@ class NotebookConfigHandler extends UIEventTarget {
                 }
             }
         }
-        if (this.resolvers.length == 0) this.addRes();
+        if (this.resolvers.length == 0) this.addRes(defaultRes);
 
         if (config.sparkConfig) {
             for (const [key, val] of Object.entries(config.sparkConfig)) {
                 this.addSparkConf({data: {key, val}, row: null});
             }
         }
-        if (this.sparkConfigs.length == 0) this.addSparkConf();
+        if (this.sparkConfigs.length == 0) this.addSparkConf(defaultSparkConf);
 
     }
 
@@ -224,23 +245,23 @@ class NotebookConfigHandler extends UIEventTarget {
 
     }
 
-    addDep(previous?: Dep) {
+    addDep(previous: Dep) {
         const dep = {
             elements: {
-                type: dropdown(['dependency-type'], {scala: 'scala/jvm', python: 'pip'}, previous ? previous.data.lang : "scala").change(evt => {
+                type: dropdown(['dependency-type'], {scala: 'scala/jvm', python: 'pip'}, previous.data.lang).change(evt => {
                     const self = dep.elements.type;
                     dep.row.classList.remove(dep.data.lang);
                     dep.data.lang = self.options[self.selectedIndex].value;
                     dep.row.classList.add(dep.data.lang);
 
                 }) as DropdownElement,
-                dep: textbox(['dependency'], 'Dependency coordinate, URL, pip package', previous ? previous.data.dep : "").change(evt => {
+                dep: textbox(['dependency'], 'Dependency coordinate, URL, pip package', previous.data.dep).change(evt => {
                     dep.data.dep = dep.elements.dep.value
                 }),
                 remove: iconButton(['remove'], 'Remove', '', 'Remove').click(evt => {
                     this.dependencyContainer.removeChild(dep.row);
                     this.dependencies = this.dependencies.filter(d => d !== dep);
-                    if (this.dependencies.length === 0) this.addDep()
+                    if (this.dependencies.length === 0) this.addDep(defaultDep)
                 }),
                 add: iconButton(['add'], 'Add', '', 'Add').click(evt => {
                     this.addDep(dep)
@@ -248,8 +269,8 @@ class NotebookConfigHandler extends UIEventTarget {
             },
             row: div(['dependency-row', 'notebook-config-row'], []),
             data: {
-                lang: previous ? previous.data.lang : "scala",
-                dep: previous ? previous.data.dep : ""
+                lang: previous.data.lang,
+                dep: previous.data.dep
             }
         };
 
@@ -257,47 +278,47 @@ class NotebookConfigHandler extends UIEventTarget {
             dep.row.appendChild(el);
         }
 
-        this.dependencyContainer.insertBefore(dep.row, previous ? previous.row : null);
+        this.dependencyContainer.insertBefore(dep.row, previous.row);
 
         this.dependencies.push(dep);
 
         return dep;
     }
 
-    addRes(previous?: Res) {
+    addRes(previous: Res) {
         const res = {
             elements: {
-                type: dropdown(['resolver-type'], {ivy: 'Ivy', maven: 'Maven', pip: 'Pip'}, previous ? previous.data.type : "ivy").change(evt => {
+                type: dropdown(['resolver-type'], {ivy: 'Ivy', maven: 'Maven', pip: 'Pip'}, previous.data.type).change(evt => {
                     const self = res.elements.type;
                     res.row.classList.remove(res.data.type);
                     res.data.type = self.options[self.selectedIndex].value;
                     res.row.classList.add(res.data.type);
                 }) as DropdownElement,
 
-                url: textbox(['resolver-url'], 'Resolver URL or pattern', previous ? previous.data.url : "").change(() => {
+                url: textbox(['resolver-url'], 'Resolver URL or pattern', previous.data.url).change(() => {
                     res.data.url = res.elements.url.value;
                 }),
-                pattern: textbox(['resolver-artifact-pattern', 'ivy'], 'Artifact pattern (blank for default)', previous ? previous.data.pattern : "").change(() => {
+                pattern: textbox(['resolver-artifact-pattern', 'ivy'], 'Artifact pattern (blank for default)', previous.data.pattern).change(() => {
                     res.data.pattern = res.elements.pattern.value
                 }),
-                metadata: textbox(['resolver-metadata-pattern', 'ivy'], 'Metadata pattern (blank for default)', previous ? previous.data.metadata : "").change(() => {
+                metadata: textbox(['resolver-metadata-pattern', 'ivy'], 'Metadata pattern (blank for default)', previous.data.metadata).change(() => {
                     res.data.metadata = res.elements.metadata.value
                 }),
                 remove: iconButton(['remove'], 'Remove', '', 'Remove').click(evt => {
                     this.resolverContainer.removeChild(res.row);
                     this.resolvers = this.resolvers.filter(r => r !== res);
-                    if (this.resolvers.length === 0) this.addRes()
+                    if (this.resolvers.length === 0) this.addRes(defaultRes)
                 }),
                 add: iconButton(['add'], 'Add', '', 'Add').click(evt => {
                     this.addRes(res)
                 }),
             },
-            row: div(['resolver-row', 'notebook-config-row', previous ? previous.data.type : 'ivy'], []),
+            row: div(['resolver-row', 'notebook-config-row', previous.data.type], []),
             data: {
-                type: previous ? previous.data.type : "ivy",
-                url: previous ? previous.data.url : "",
-                pattern: previous ? previous.data.pattern : undefined,
-                metadata: previous ? previous.data.pattern : undefined
+                type: previous.data.type,
+                url: previous.data.url,
+                pattern: previous.data.pattern,
+                metadata: previous.data.pattern
             }
         };
 
@@ -305,23 +326,22 @@ class NotebookConfigHandler extends UIEventTarget {
             res.row.appendChild(el);
         }
 
-        this.resolverContainer.insertBefore(res.row, previous ? previous.row : null);
-
+        this.resolverContainer.insertBefore(res.row, previous.row);
         this.resolvers.push(res);
 
         return res;
     }
 
-    addExcl(previous?: Excl) {
+    addExcl(previous: Excl) {
         const excl = {
             elements: {
-                excl: textbox(['exclusion'], 'Exclusion organization:name', previous ? previous.data.exclusion : undefined).change(() => {
+                excl: textbox(['exclusion'], 'Exclusion organization:name', previous.data.exclusion).change(() => {
                     excl.data.exclusion = excl.elements.excl.value
                 }),
                 remove: iconButton(['remove'], 'Remove', '', 'Remove').click(evt => {
                     this.exclusionContainer.removeChild(excl.row);
                     this.exclusions = this.exclusions.filter(e => e !== excl);
-                    if (this.exclusions.length === 0) this.addExcl()
+                    if (this.exclusions.length === 0) this.addExcl(defaultExcl)
                 }),
                 add: iconButton(['add'], 'Add', '', 'Add').click(evt => {
                     this.addExcl(excl)
@@ -329,7 +349,7 @@ class NotebookConfigHandler extends UIEventTarget {
             },
             row: div(['exclusion-row', 'notebook-config-row'], []),
             data: {
-                exclusion: previous ? previous.data.exclusion : "",
+                exclusion: previous.data.exclusion,
             }
         };
 
@@ -337,26 +357,26 @@ class NotebookConfigHandler extends UIEventTarget {
             excl.row.appendChild(el);
         }
 
-        this.exclusionContainer.insertBefore(excl.row, previous ? previous.row : null);
+        this.exclusionContainer.insertBefore(excl.row, previous.row);
 
         this.exclusions.push(excl);
 
         return excl;
     }
 
-    addSparkConf(previous?: SparkConf) {
+    addSparkConf(previous: SparkConf) {
         const conf = {
             elements: {
-                key: textbox(['spark-config-key'], 'key', previous ? previous.data.key : undefined).change(() => {
+                key: textbox(['spark-config-key'], 'key', previous.data.key).change(() => {
                     conf.data.key = conf.elements.key.value
                 }),
-                val: textbox(['spark-config-val'], 'val', previous ? previous.data.val : undefined).change(() => {
+                val: textbox(['spark-config-val'], 'val', previous.data.val).change(() => {
                     conf.data.val = conf.elements.val.value
                 }),
                 remove: iconButton(['remove'], 'Remove', '', 'Remove').click(evt => {
                     this.sparkConfigContainer.removeChild(conf.row);
                     this.sparkConfigs = this.sparkConfigs.filter(c => c !== conf);
-                    if (this.sparkConfigs.length === 0) this.addSparkConf()
+                    if (this.sparkConfigs.length === 0) this.addSparkConf(defaultSparkConf)
                 }),
                 add: iconButton(['add'], 'Add', '', 'Add').click(evt => {
                     this.addSparkConf(conf)
@@ -364,8 +384,8 @@ class NotebookConfigHandler extends UIEventTarget {
             },
             row: div(['exclusion-row', 'notebook-config-row'], []),
             data: {
-                key: previous ? previous.data.key : "",
-                val: previous ? previous.data.val : "",
+                key: previous.data.key,
+                val: previous.data.val,
             }
         };
 
@@ -373,7 +393,7 @@ class NotebookConfigHandler extends UIEventTarget {
             conf.row.appendChild(el);
         }
 
-        this.sparkConfigContainer.insertBefore(conf.row, previous ? previous.row : null);
+        this.sparkConfigContainer.insertBefore(conf.row, previous.row);
 
         this.sparkConfigs.push(conf);
 
