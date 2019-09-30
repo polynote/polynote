@@ -312,7 +312,7 @@ object RemoteKernelClient extends polynote.app.App {
   case class Args(address: Option[String] = None, port: Option[Int] = None, kernelFactory: Option[Kernel.Factory.Service] = None) {
     def getSocketAddress: Task[InetSocketAddress] = for {
       address       <- ZIO.fromOption(address).mapError(_ => new IllegalArgumentException("Missing required argument address"))
-      port          <- ZIO.fromOption(port).mapError(_ => new IllegalArgumentException("Missing required argument address"))
+      port          <- ZIO.fromOption(port).mapError(_ => new IllegalArgumentException("Missing required argument port"))
       socketAddress <- ZIO(new InetSocketAddress(address, port))
     } yield socketAddress
 
