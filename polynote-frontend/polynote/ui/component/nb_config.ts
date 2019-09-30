@@ -267,7 +267,7 @@ class NotebookConfigHandler extends UIEventTarget {
     addRes(previous?: Res) {
         const res = {
             elements: {
-                type: dropdown(['resolver-type'], {ivy: 'Ivy', maven: 'Maven', pip: 'Pip'}, previous ? previous.data.type : undefined).change(evt => {
+                type: dropdown(['resolver-type'], {ivy: 'Ivy', maven: 'Maven', pip: 'Pip'}, previous ? previous.data.type : "ivy").change(evt => {
                     const self = res.elements.type;
                     res.row.classList.remove(res.data.type);
                     res.data.type = self.options[self.selectedIndex].value;
@@ -294,7 +294,7 @@ class NotebookConfigHandler extends UIEventTarget {
             },
             row: div(['resolver-row', 'notebook-config-row', previous ? previous.data.type : 'ivy'], []),
             data: {
-                type: previous ? previous.data.type : "",
+                type: previous ? previous.data.type : "ivy",
                 url: previous ? previous.data.url : "",
                 pattern: previous ? previous.data.pattern : undefined,
                 metadata: previous ? previous.data.pattern : undefined

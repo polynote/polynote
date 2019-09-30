@@ -28,6 +28,7 @@
     "webpack-cli": "3.3.6"
   },
   "scripts": {
+    "clean": "rm dist/*.js dist/*.map || echo Nothing to clean",
     "build": "webpack --config webpack.config.js",
     "dist": "webpack --config webpack.config.js --mode production",
     "watch": "webpack --config webpack.config.js --watch"
