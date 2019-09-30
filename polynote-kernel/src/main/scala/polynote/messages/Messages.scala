@@ -11,7 +11,6 @@ import scodec.codecs.implicits._
 import io.circe.generic.semiauto._
 import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig}
 import polynote.data.Rope
-import polynote.kernel.util.OptionEither
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import shapeless.cachedImplicit
 
@@ -264,7 +263,7 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
 final case class ListNotebooks(paths: List[ShortString]) extends Message
 object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 
-final case class CreateNotebook(path: ShortString, externalURI: OptionEither[ShortString, String] = OptionEither.Neither) extends Message
+final case class CreateNotebook(path: ShortString, externalURI: Option[Either[ShortString, String]] = None) extends Message
 object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
 final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate

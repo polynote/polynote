@@ -105,7 +105,7 @@ class SocketSession(
       }
 
     case CreateNotebook(path, maybeUriOrContent) =>
-      notebookManager.create(path, maybeUriOrContent.unwrap).flatMap {
+      notebookManager.create(path, maybeUriOrContent).flatMap {
         realPath => PublishMessage(CreateNotebook(ShortString(realPath)))
       }
 

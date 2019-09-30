@@ -7,7 +7,7 @@ import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
 import scodec.{Attempt, Codec, DecodeResult, SizeBound, codecs}
 import scodec.bits.{BitVector, ByteVector}
 import codecs.{byte, int32, listOfN, string, uint16, uint32, uint8, variableSizeBytes, provide}
-import polynote.kernel.util.OptionEither
+
 import shapeless.Lazy
 import shapeless.tag.@@
 
@@ -147,10 +147,6 @@ package object messages {
     .|(0) { case Ior.Left(a) => a } (Ior.left) (codecA)
     .|(1) { case Ior.Right(b) => b } (Ior.right) (codecB)
     .|(2) { case Ior.Both(a, b) => (a, b) } ((Ior.both[A, B] _).tupled) (codecA ~ codecB)
-
-  implicit def optionEitherCodec[A, B](implicit cguard: Codec[Boolean], ca: Codec[A], cb: Codec[B]): Codec[OptionEither[A, B]] =
-    scodec.codecs.optional(cguard, scodec.codecs.either(cguard, ca, cb))
-      .xmap(OptionEither.wrap, _.unwrap)
 
   implicit def eitherCodec[A, B](implicit cguard: Lazy[Codec[Boolean]], ca: Lazy[Codec[A]], cb: Lazy[Codec[B]]): Codec[Either[A, B]] =
     scodec.codecs.either(cguard.value, ca.value, cb.value)
