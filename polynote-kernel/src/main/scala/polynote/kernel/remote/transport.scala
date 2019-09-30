@@ -1,6 +1,7 @@
 package polynote.kernel
 package remote
 
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, ServerSocketChannel, SocketChannel}
@@ -342,7 +343,9 @@ object SocketTransport {
     def isConnected: Boolean = socketChannel.isConnected
 
     val bitVectors: Stream[TaskB, BitVector] =
-      Stream.repeatEval(read()).unNoneTerminate.unNone
+      Stream.repeatEval(read())
+        .handleErrorWith(err => Stream.eval(Logging.error("Remote kernel connection failure", err)).drain)
+        .unNoneTerminate.unNone
         .map(BitVector.view)
   }
 
@@ -356,8 +359,11 @@ object SocketTransport {
         closed       <- Promise.make[Throwable, Unit]
         doKeepalive  <- if (keepalive) {
           Stream.awakeEvery[Task](Duration(5, SECONDS)).evalMap { _ =>
-              framedSocket.write(BitVector.empty).catchSome {
+              framedSocket.write(BitVector.empty).catchAll {
                 case err: ClosedChannelException => closed.succeed(())
+                case err =>
+                  // the keepalive needn't throw this error
+                  ZIO.unit
               }
             }
             .interruptWhen(closed.await.either)
