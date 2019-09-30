@@ -19,7 +19,7 @@ val versions = new {
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
 
 val commonSettings = Seq(
-  version := "0.1.24-SNAPSHOT",
+  version := "0.2.1-SNAPSHOT",
   scalaVersion := "2.11.11",
   scalacOptions ++= Seq(
     "-Ypartial-unification",

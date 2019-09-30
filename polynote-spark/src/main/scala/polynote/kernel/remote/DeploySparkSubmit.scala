@@ -31,8 +31,12 @@ object DeploySparkSubmit extends DeployCommand {
     val sparkSubmitArgs = sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
 
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
-    val libraryPath = List(sys.props.get("java.library.path"), sys.env.get("LD_LIBRARY_PATH")).flatten.mkString(File.pathSeparator)
-    val javaOptions = sys.props.toMap ++ Map(
+    val libraryPath = List(sys.props.get("java.library.path"), sys.env.get("LD_LIBRARY_PATH"))
+      .flatten
+      .map(_.trim().stripPrefix(File.pathSeparator).stripSuffix(File.pathSeparator))
+      .mkString(File.pathSeparator)
+    
+    val javaOptions = Map(
       "log4j.configuration" -> "log4j.properties",
       "java.library.path"   -> libraryPath
     )

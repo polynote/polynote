@@ -3,7 +3,7 @@ package polynote.kernel.remote
 import java.nio.charset.StandardCharsets
 
 import polynote.config.PolynoteConfig
-import polynote.kernel.{Completion, KernelBusyState, KernelStatusUpdate, Result, ResultValue, Signatures}
+import polynote.kernel.{Completion, KernelBusyState, KernelInfo, KernelStatusUpdate, Result, ResultValue, Signatures}
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.codecs.{Discriminated, Discriminator, byte}
@@ -76,6 +76,9 @@ object UpdateNotebookRequest extends RemoteRequestCompanion[UpdateNotebookReques
 final case class CancelAllRequest(reqId: Int) extends RemoteRequest
 object CancelAllRequest extends RemoteRequestCompanion[CancelAllRequest](12)
 
+final case class KernelInfoRequest(reqId: Int) extends RemoteRequest
+object KernelInfoRequest extends RemoteRequestCompanion[KernelInfoRequest](13)
+
 object RemoteRequest {
   implicit val discriminated: Discriminated[RemoteRequest, Byte] = Discriminated(byte)
   implicit val codec: Codec[RemoteRequest] = cachedImplicit
@@ -134,6 +137,8 @@ object GetHandleDataResponse extends RemoteResponseCompanion[GetHandleDataRespon
 final case class ModifyStreamResponse(reqId: Int, result: Option[StreamingDataRepr]) extends RemoteRequestResponse
 object ModifyStreamResponse extends RemoteResponseCompanion[ModifyStreamResponse](9)
 
+final case class KernelInfoResponse(reqId: Int, info: KernelInfo) extends RemoteRequestResponse
+object KernelInfoResponse extends RemoteResponseCompanion[KernelInfoResponse](13)
 
 object RemoteResponse {
   implicit val discriminated: Discriminated[RemoteResponse, Byte] = Discriminated(byte)

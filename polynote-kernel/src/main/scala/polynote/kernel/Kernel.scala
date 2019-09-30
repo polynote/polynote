@@ -11,24 +11,24 @@ trait Kernel {
     * Enqueues a cell to be run with its appropriate interpreter. Evaluating the outer task causes the cell to be
     * queued, and evaluating the inner task blocks until it is finished evaluating.
     */
-  def queueCell(id: CellID): TaskR[BaseEnv with GlobalEnv with CellEnv, Task[Unit]]
+  def queueCell(id: CellID): TaskC[Task[Unit]]
 
   def cancelAll(): TaskR[BaseEnv with TaskManager, Unit] = TaskManager.access.flatMap(_.cancelAll())
 
   /**
     * Provide completions for the given position in the given cell
     */
-  def completionsAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, List[Completion]]
+  def completionsAt(id: CellID, pos: Int): TaskC[List[Completion]]
 
   /**
     * Provide parameter hints for the given position in the given cell
     */
-  def parametersAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, Option[Signatures]]
+  def parametersAt(id: CellID, pos: Int): TaskC[Option[Signatures]]
 
   /**
     * Perform any initialization for the kernel
     */
-  def init(): TaskR[BaseEnv with GlobalEnv with CellEnv, Unit]
+  def init(): TaskC[Unit]
 
   /**
     * Shut down this kernel and its interpreters, releasing their resources and ending any internally managed tasks or processes
