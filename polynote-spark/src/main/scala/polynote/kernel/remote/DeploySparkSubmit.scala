@@ -1,5 +1,6 @@
 package polynote.kernel.remote
 
+import java.io.File
 import java.net.InetSocketAddress
 
 import polynote.kernel.{Kernel, LocalSparkKernelFactory, ScalaCompiler, remote}
@@ -30,10 +31,21 @@ object DeploySparkSubmit extends DeployCommand {
     val sparkSubmitArgs = sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
 
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
+    val libraryPath = List(sys.props.get("java.library.path"), sys.env.get("LD_LIBRARY_PATH"))
+      .flatten
+      .map(_.trim().stripPrefix(File.pathSeparator).stripSuffix(File.pathSeparator))
+      .mkString(File.pathSeparator)
+    
+    val javaOptions = Map(
+      "log4j.configuration" -> "log4j.properties",
+      "java.library.path"   -> libraryPath
+    )
 
     val allDriverOptions =
-    (sparkConfig.get("spark.driver.extraJavaOptions").toList ++
-        List("-Dlog4j.configuration=log4j.properties", s"-Djava.library.path=${sys.props("java.library.path")}")).mkString(" ")
+      sparkConfig.get("spark.driver.extraJavaOptions").toList ++
+      javaOptions.toList.map {
+        case (name, value) => s"-D$name=$value"
+      } mkString " "
 
     val additionalJars = pathOf(classOf[SparkReprsOf[_]]) :: pathOf(classOf[KernelRuntime]) :: Nil
 

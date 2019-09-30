@@ -157,6 +157,10 @@ class RemoteKernel[ServerAddress](
       }
     }
 
+  override def info(): TaskG[KernelInfo] = request(KernelInfoRequest(nextReq)) {
+    case KernelInfoResponse(reqId, info) => done(reqId, info)
+  }
+
   private def close(): TaskB[Unit] = for {
     _ <- closed.succeed(())
     _ <- waiting.values().asScala.toList.map(_.promise.interrupt).sequence
@@ -216,6 +220,7 @@ class RemoteKernelClient(
         case GetHandleDataRequest(reqId, sid, ht, hid, c) => kernel.getHandleData(ht, hid, c).map(GetHandleDataResponse(reqId, _)).provideSomeM(streamingHandles(sid))
         case ModifyStreamRequest(reqId, sid, hid, ops)    => kernel.modifyStream(hid, ops).map(ModifyStreamResponse(reqId, _)).provideSomeM(streamingHandles(sid))
         case ReleaseHandleRequest(reqId, sid,  ht, hid)   => kernel.releaseHandle(ht, hid).const(UnitResponse(reqId)).provideSomeM(streamingHandles(sid))
+        case KernelInfoRequest(reqId)                     => kernel.info().map(KernelInfoResponse(reqId, _))
         // TODO: Kernel needs an API to release all streaming handles (then we could let go of elements from sessionHandles map; right now they will just accumulate forever)
         case req => ZIO.succeed(UnitResponse(req.reqId))
       }

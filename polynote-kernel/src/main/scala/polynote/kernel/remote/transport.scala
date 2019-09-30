@@ -231,6 +231,7 @@ object SocketTransport {
 
         val processBuilder = new ProcessBuilder(command: _*).inheritIO()
         for {
+          _       <- Logging.info(s"Deploying with command:\n$displayCommand")
           process <- effectBlocking(processBuilder.start())
         } yield new DeploySubprocess.Subprocess(process)
     }

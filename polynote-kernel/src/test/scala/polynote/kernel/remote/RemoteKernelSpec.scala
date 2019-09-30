@@ -4,7 +4,7 @@ import org.scalamock.scalatest.MockFactory
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FreeSpec, Matchers}
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.environment.{NotebookUpdates, PublishResult, PublishStatus}
-import polynote.kernel.{BaseEnv, CellEnv, Completion, CompletionType, GlobalEnv, Kernel, KernelBusyState, Output, ParameterHint, ParameterHints, ResultValue, Signatures, TaskInfo, UpdatedTasks}
+import polynote.kernel.{BaseEnv, CellEnv, Completion, CompletionType, GlobalEnv, Kernel, KernelBusyState, KernelInfo, Output, ParameterHint, ParameterHints, ResultValue, Signatures, TaskInfo, UpdatedTasks}
 import polynote.kernel.logging.Logging
 import polynote.messages._
 import polynote.runtime.ReprsOf.DataReprsOf
@@ -67,6 +67,12 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
         val status = KernelBusyState(busy = false, alive = true)
         (kernel.status _).expects().returning(ZIO.succeed(status))
         unsafeRun(remoteKernel.status()) shouldEqual status
+      }
+
+      "info" in {
+        val info = KernelInfo("foo" -> "bar", "baz" -> "buzz")
+        (kernel.info _).expects().returning(ZIO.succeed(info))
+        unsafeRun(remoteKernel.info().provide(env)) shouldEqual info
       }
 
       "values" in {
