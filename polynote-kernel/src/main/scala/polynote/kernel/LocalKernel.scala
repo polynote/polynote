@@ -164,7 +164,7 @@ class LocalKernel private[kernel] (
       cell        <- CurrentNotebook.getCell(id)
       state       <- interpreterState.get.orDie
       prevCells    = notebook.cells.takeWhile(_.id != cell.id)
-      prevState    = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(State.Root)
+      prevState    = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(latestPredef(state))
       interpreter <-
         if (forceStart)
           getOrLaunch(cell.language, id).provideSomeM(Env.enrichM[BaseEnv with GlobalEnv with CellEnv](

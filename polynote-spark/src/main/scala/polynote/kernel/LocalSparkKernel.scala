@@ -89,27 +89,26 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
       .map(_.split(File.pathSeparator).toList.map(new File(_)))
 
   def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
-    scalaDeps             <- CoursierFetcher.fetch("scala")
-    sparkRuntimeJar        = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
-    sparkClasspath        <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
-    _                     <- Logging.info(s"Using spark classpath: ${sparkClasspath.mkString(":")}")
-    settings               = ScalaCompiler.defaultSettings(new Settings(), sparkRuntimeJar :: scalaDeps.map(_._2) ::: sparkClasspath)
-    sparkJars              = (sparkRuntimeJar :: ScalaCompiler.requiredPaths).map(f => f.toString -> f) ::: scalaDeps
-    sessionAndClassLoader <- startSparkSession(sparkJars, settings)
-    (session, classLoader) = sessionAndClassLoader
-    notebookPackage        = s"$$notebook$$${kernelCounter.getAndIncrement()}"
-    compiler              <- ScalaCompiler(settings, ZIO.succeed(classLoader), notebookPackage).map(ScalaCompiler.Provider.of)
-    busyState             <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
-    interpreters          <- RefMap.empty[String, Interpreter]
-    scalaInterpreter      <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provide(compiler))
-    interpState           <- Ref[Task].of[State](State.predef(State.Root, State.Root))
+    scalaDeps        <- CoursierFetcher.fetch("scala")
+    sparkRuntimeJar   = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
+    sparkClasspath   <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
+    _                <- Logging.info(s"Using spark classpath: ${sparkClasspath.mkString(":")}")
+    settings          = ScalaCompiler.defaultSettings(new Settings(), sparkRuntimeJar :: scalaDeps.map(_._2) ::: sparkClasspath)
+    sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps
+    session          <- startSparkSession(sparkJars, settings)
+    notebookPackage   = s"$$notebook$$${kernelCounter.getAndIncrement()}"
+    compiler         <- ScalaCompiler.provider(sparkRuntimeJar :: scalaDeps.map(_._2) ::: sparkClasspath)
+    busyState        <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
+    interpreters     <- RefMap.empty[String, Interpreter]
+    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provide(compiler))
+    interpState      <- Ref[Task].of[State](State.predef(State.Root, State.Root))
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState)
 
-  private def startSparkSession(deps: List[(String, File)], settings: Settings): TaskR[BaseEnv with GlobalEnv with CellEnv, (SparkSession, AbstractFileClassLoader)] = {
+  private def startSparkSession(deps: List[(String, File)], settings: Settings): TaskR[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
     def mkSpark(
       notebookConfig: NotebookConfig,
       settings: Settings
-    ): TaskR[Blocking with Config with Logging, (SparkSession, AbstractFileClassLoader)] = Config.access.flatMap {
+    ): TaskR[Blocking with Config with Logging, SparkSession] = Config.access.flatMap {
       config =>
         effectBlocking {
           val outputPath = org.apache.spark.repl.Main.outputDir.toPath
@@ -135,22 +134,14 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
   
           val outputDir = new PlainDirectory(new Directory(outputPath.toFile))
           settings.outputDirs.setSingleOutput(outputDir)
-  
-          ScalaCompiler.makeClassLoader(settings).flatMap {
-            classLoader => effectBlocking {
-              val session = classLoader.asContext {
-                org.apache.spark.repl.Main.createSparkSession()
-              }
-              (session, classLoader)
-            }.tap {
-              case (session, _) =>
-                // if the session was already started by a different notebook, then it doesn't have our dependencies
-                val existingJars = session.conf.get("spark.jars").split(',').map(_.trim).filter(_.nonEmpty)
-                existingJars.diff(jars).toList.map {
-                  jar => effectBlocking(session.sparkContext.addJar(jar)).catchAll(Logging.error(s"Unable to add dependency $jar to spark", _))
-                }.sequence
-            }
-          }
+          val session = org.apache.spark.repl.Main.createSparkSession()
+
+          // if the session was already started by a different notebook, then it doesn't have our dependencies
+          val existingJars = session.conf.get("spark.jars").split(',').map(_.trim).filter(_.nonEmpty)
+          existingJars.diff(jars).toList.map {
+            jar => effectBlocking(session.sparkContext.addJar(jar)).catchAll(Logging.error(s"Unable to add dependency $jar to spark", _))
+          }.sequence.const(session)
+
       }.flatten
     }
 
@@ -162,11 +153,10 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
 
     TaskManager.run("Spark", "Spark", "Starting Spark session") {
       for {
-        notebookConfig        <- CurrentNotebook.config
-        sessionAndClassLoader <- mkSpark(notebookConfig, settings)
-        (session, _)           = sessionAndClassLoader
-        _                     <- attachListener(session)
-      } yield sessionAndClassLoader
+        notebookConfig <- CurrentNotebook.config
+        session        <- mkSpark(notebookConfig, settings)
+        _              <- attachListener(session)
+      } yield session
     }
   }
 }
