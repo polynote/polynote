@@ -35,7 +35,7 @@ object DeploySparkSubmit extends DeployCommand {
       .flatten
       .map(_.trim().stripPrefix(File.pathSeparator).stripSuffix(File.pathSeparator))
       .mkString(File.pathSeparator)
-    
+
     val javaOptions = Map(
       "log4j.configuration" -> "log4j.properties",
       "java.library.path"   -> libraryPath
