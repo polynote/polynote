@@ -2,6 +2,11 @@
 
 *
 
+# 0.2.0 (September 27, 2019)
+
+* Significant rewrite of most backend code, switching over to ZIO! 
+* Frontend ported to Typescript!
+
 # 0.1.24 (September 9, 2019)
 
 * Fix bug preventing jar dependencies with `+` in their name from working
