@@ -165,7 +165,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
       private var depth = 0
       private var deepestDepth = -1
       override def traverse(tree: compiler.global.Tree): Unit = {
-        if (tree.pos != null && tree.pos.isOpaqueRange && tree.pos.end == offset && depth >= deepestDepth) {
+        if (tree.pos != null && tree.pos.isDefined && !tree.pos.isTransparent && tree.pos.end == offset && depth >= deepestDepth) {
           deepest = tree
           deepestDepth = depth
         }
