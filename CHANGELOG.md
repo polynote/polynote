@@ -2,6 +2,15 @@
 
 *
 
+# 0.2.1 (October 1, 2019)
+
+* Fix cell queuing order bug
+* add map types to schema view
+* fix spark executors ui error
+* fix remote kernel crash
+* fix some bugs in Configuration UI
+* fix case where some completions weren't working
+
 # 0.2.0 (September 27, 2019)
 
 * Significant rewrite of most backend code, switching over to ZIO! 
