@@ -5,7 +5,7 @@ import java.io.File
 import cats.effect.ConcurrentEffect
 import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, LocalKernel}
-import polynote.kernel.util.{OptionEither, RefMap}
+import polynote.kernel.util.RefMap
 import polynote.messages.{Notebook, NotebookUpdate}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
@@ -56,7 +56,7 @@ object NotebookManager {
       def listRunning(): TaskR[BaseEnv, List[String]] = openNotebooks.keys
 
       def create(path: String, maybeUriOrContent: Option[Either[String, String]]): TaskR[BaseEnv, String] =
-        repository.createNotebook(path, OptionEither.wrap(maybeUriOrContent))
+        repository.createNotebook(path, maybeUriOrContent)
 
       override def status(path: String): TaskR[BaseEnv with GlobalEnv, KernelBusyState] = openNotebooks.get(path).flatMap {
         case None => ZIO.succeed(KernelBusyState(busy = false, alive = false))

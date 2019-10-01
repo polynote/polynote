@@ -2,7 +2,6 @@ package polynote.testing.repository
 
 import java.io.FileNotFoundException
 
-import polynote.kernel.util.OptionEither
 import polynote.messages._
 import polynote.server.repository.NotebookRepository
 import zio.{Task, UIO, ZIO}
@@ -20,6 +19,6 @@ class MemoryRepository extends NotebookRepository[Task] {
 
   def listNotebooks(): UIO[List[String]] = ZIO.effectTotal(notebooks.keys.toList)
 
-  def createNotebook(path: String, maybeUriOrContent: OptionEither[String, String]): UIO[String] =
+  def createNotebook(path: String, maybeUriOrContent: Option[Either[String, String]]): UIO[String] =
     ZIO.effectTotal(notebooks.put(path, Notebook(path, ShortList.of(), None))).const(path)
 }
