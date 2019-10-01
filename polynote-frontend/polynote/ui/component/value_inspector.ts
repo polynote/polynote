@@ -41,7 +41,7 @@ class ValueInspector extends FullScreenModal {
             { windowClasses: ['value-inspector'] }
         );
 
-        this.addEventListener('InsertCellAfter', evt => this.hide());
+        this.addTypedEventListener('InsertCellAfter', evt => this.hide());
     }
 
     inspect(resultValue: ResultValue, notebookPath: string) {

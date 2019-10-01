@@ -3,25 +3,41 @@ import {
     uint16, uint8
 } from "./codec";
 import {ExecutionInfo, Result} from "./result";
+import {keys} from "vega-lite/build/src/util";
 
-export class CellMetadata {
+export class Copyable {
+    copy<T, C extends (new (...args: any) => T) & {unapply: (inst: T) => ConstructorParameters<C>}>(
+        this: T,
+        args: Partial<ConstructorParameters<C>>
+    ): T {
+        const myConstructor: C = (this as any as {constructor: C}).constructor;
+        const theirArgs = myConstructor.unapply(args as T);
+        const myArgs: ConstructorParameters<C> = (this as any as {constructor: C}).constructor.unapply(this);
+
+        const mergedArgs: any[] = [];
+        for (let i = 0; i < myArgs.length; i++) {
+            mergedArgs[i] = theirArgs[i];
+            if (mergedArgs[i] === undefined) {
+                mergedArgs[i] = myArgs[i];
+            }
+        }
+
+        return new myConstructor(...mergedArgs);
+    }
+}
+
+export class CellMetadata extends Copyable {
     static codec = combined(bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
     static unapply(inst: CellMetadata): ConstructorParameters<typeof CellMetadata> {
         return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.executionInfo];
     }
 
-    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly executionInfo?: ExecutionInfo) {}
-
-    copy(metadata: Partial<CellMetadata>) {
-        const disableRun = typeof metadata.disableRun !== 'undefined' ? metadata.disableRun : this.disableRun;
-        const hideSource = typeof metadata.hideSource !== 'undefined' ? metadata.hideSource : this.hideSource;
-        const hideOutput = typeof metadata.hideOutput !== 'undefined' ? metadata.hideOutput : this.hideOutput;
-        const executionInfo = typeof metadata.executionInfo !== 'undefined' ? metadata.executionInfo : this.executionInfo;
-        return new CellMetadata(disableRun, hideSource, hideOutput, executionInfo);
+    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly executionInfo?: ExecutionInfo) {
+        super();
     }
 }
 
-export class NotebookCell {
+export class NotebookCell extends Copyable {
     static codec = combined(int16, tinyStr, str, arrayCodec(int16, Result.codec), CellMetadata.codec).to(NotebookCell);
     static unapply(inst: NotebookCell): ConstructorParameters<typeof NotebookCell> {
         return [inst.id, inst.language, inst.content, inst.results, inst.metadata];
@@ -31,7 +47,9 @@ export class NotebookCell {
                 readonly language: string,
                 readonly content: string = '',
                 readonly results: Result[] = [],
-                readonly metadata: CellMetadata = new CellMetadata(false, false, false)) {}
+                readonly metadata: CellMetadata = new CellMetadata(false, false, false)) {
+        super();
+    }
 }
 
 export abstract class RepositoryConfig extends CodecContainer {
@@ -98,7 +116,7 @@ RepositoryConfig.codec = discriminated(
     (msgTypeId) => RepositoryConfig.codecs[msgTypeId].codec,
     msg => (msg.constructor as typeof RepositoryConfig).msgTypeId);
 
-export class NotebookConfig {
+export class NotebookConfig extends Copyable {
     static codec = combined(
         optional(mapCodec(uint8, tinyStr, arrayCodec(uint8, tinyStr))),
         optional(arrayCodec(uint8, tinyStr)),
@@ -111,6 +129,7 @@ export class NotebookConfig {
 
     constructor(readonly dependencies?: Record<string, string[]>, readonly exclusions?: string[],
                 readonly repositories?: RepositoryConfig[], readonly sparkConfig?: Record<string, string>) {
+        super();
         Object.freeze(this);
     }
 

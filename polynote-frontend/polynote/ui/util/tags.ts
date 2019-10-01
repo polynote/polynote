@@ -1,6 +1,8 @@
 'use strict';
+import {UIComponent} from "../component/component";
+import {UIEventBase, UIEventTarget} from "./ui_event";
 
-type ContentElement = (Node | string | undefined)
+type ContentElement = (Node | UIComponent | string | undefined)
 export type Content = ContentElement | ContentElement[]
 
 function appendContent(el: Node, content: Content) {
@@ -11,6 +13,8 @@ function appendContent(el: Node, content: Content) {
     for (let item of content) {
         if (typeof item === "string") {
             el.appendChild(document.createTextNode(item));
+        } else if (item instanceof UIComponent) {
+            el.appendChild(item.container);
         } else if (item !== undefined) {
             el.appendChild(item);
         }
@@ -19,13 +23,14 @@ function appendContent(el: Node, content: Content) {
 
 type AllowedElAttrs<T extends HTMLElement> = Partial<Record<keyof T, string | boolean>>
 
+
 export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> = HTMLElementTagNameMap[K] & {
     attr(a: keyof T, b: string | boolean): TagElement<K, T>
     attrs(obj: AllowedElAttrs<HTMLElementTagNameMap[K]>): TagElement<K, T>
     withId(id: string): TagElement<K, T>
     click(handler: EventListenerOrEventListenerObject): TagElement<K, T>
-    change(handler: EventListenerOrEventListenerObject): TagElement<K, T>
-    listener(name: string, handler: EventListenerOrEventListenerObject): TagElement<K, T>
+    change<Self extends TagElement<K>>(this: Self, handler: EventListenerOrEventListenerObject): Self
+    listener<Self extends TagElement<K>>(this: Self, name: string, handler: EventListenerOrEventListenerObject): Self
     withKey(key: string, value: any): TagElement<K, T>
     disable(): TagElement<K, T>
     addClass(cls: string): TagElement<K, T>
@@ -78,7 +83,7 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
             el.classList.add(cls);
             return el;
         }
-    });
+    }) as TagElement<T>;
 
     el.classList.add(...classes);
     if (attributes) el.attrs(attributes);
@@ -123,6 +128,7 @@ export function textbox(classes: string[], placeholder: string, value: string = 
     if (value) {
         input.value = value;
     }
+
     return input;
 }
 

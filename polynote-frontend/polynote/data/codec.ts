@@ -1,6 +1,7 @@
 'use strict';
 
 import {Both, Either, ExtractorConstructor, Ior, Left, Right} from "./types";
+import {Copyable} from "./data";
 
 // Add `getBigInt64` to DataView
 declare global {
@@ -524,10 +525,10 @@ export function discriminated<T>(discriminatorCodec: Codec<number>, selectCodec:
     });
 }
 
-abstract class HasCodec {
+abstract class HasCodec extends Copyable {
     static codec: Codec<CodecContainer>;
     static unapply: (inst: any) => any[];
-    protected constructor(...args: any[]) {};
+    protected constructor(...args: any[]) { super() };
 }
 
 export abstract class CodecContainer extends HasCodec {

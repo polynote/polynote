@@ -1,23 +1,18 @@
 import {UIEventNameMap} from "./ui_events";
 import {type} from "vega-lite/build/src/compile/legend/properties";
+import {BeforeCellRunEvent} from "../component/cell";
 
-export class UIEvent<T> extends CustomEvent<T> {
+export class UIEventBase<T> extends CustomEvent<T> {
     public propagationStopped = false;
     public originalTarget: UIEventTarget;
+    static type: string;
 
-    static type: keyof UIEventNameMap;
-
-    constructor(readonly eventType: keyof UIEventNameMap, detail?: T) {
-        super(eventType, {detail: detail});
-    }
-
-    stopPropagation() {
-        super.stopPropagation();
-        this.propagationStopped = true;
+    constructor(readonly eventType: string, detail?: T) {
+        super(eventType, {detail});
     }
 
     copy() {
-        const c = new UIEvent(this.eventType, this.detail);
+        const c = new UIEventBase(this.eventType, this.detail);
         c.originalTarget = this.originalTarget;
         Object.setPrototypeOf(c, this.constructor.prototype);
         return c;
@@ -25,6 +20,22 @@ export class UIEvent<T> extends CustomEvent<T> {
 
     forward(el: EventTarget) {
         el.dispatchEvent(this.copy())
+    }
+
+    stopPropagation() {
+        super.stopPropagation();
+        this.propagationStopped = true;
+    }
+}
+
+export class UIEvent<T> extends UIEventBase<T> {
+    public propagationStopped = false;
+    public originalTarget: UIEventTarget;
+
+    static type: keyof UIEventNameMap;
+
+    constructor(readonly eventType: keyof UIEventNameMap, detail?: T) {
+        super(eventType, detail);
     }
 }
 
@@ -70,14 +81,16 @@ export class CallbackEvent<T> extends UIEvent<T & HasCallback> {
 
 type Unpack<T> = T extends UIEvent<infer P> ? P : never;
 
+
+
 export class UIEventTarget extends EventTarget {
-    private readonly listeners: Record<string, UIEventListener<any>[]>;
-    constructor(private eventParent?: UIEventTarget) {
+    private readonly listeners: Record<string, EventListenerOrEventListenerObject[]>;
+    constructor(private eventParent?: EventTarget) {
         super();
         this.listeners = {};
     }
 
-    setEventParent(parent: UIEventTarget) {
+    setEventParent(parent: EventTarget | undefined) {
         this.eventParent = parent;
         return this;
     }
@@ -91,7 +104,7 @@ export class UIEventTarget extends EventTarget {
     // Listen for registration requests that you know how to handle
     handleEventListenerRegistration<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(eventType: K, listener: CallbackEventListener<Unpack<T> extends never ? [] : Unpack<T>>, options?: boolean | AddEventListenerOptions) {
         const type = EventRegistration.registrationId(eventType);
-        return this.addEventListener(type as keyof UIEventNameMap, listener, options);
+        return this.addTypedEventListener(type as keyof UIEventNameMap, listener, options);
     }
 
     // Send a request to be responded to by someone upstream
@@ -103,15 +116,15 @@ export class UIEventTarget extends EventTarget {
     // Respond to a request
     respond<K extends keyof UIEventNameMap>(type: K, response: CallbackEventListener<Unpack<UIEventNameMap[K]>>) {
         const requestType = Request.requestId(type);
-        return this.addEventListener(requestType as keyof UIEventNameMap, response)
+        return this.addTypedEventListener(requestType as keyof UIEventNameMap, response)
     }
 
     dispatchEvent(event: Event) {
-        if (event instanceof UIEvent) {
+        if (event instanceof UIEventBase) {
             event.originalTarget = event.originalTarget || this;
         }
         const res = super.dispatchEvent(event);
-        if (event instanceof UIEvent) {
+        if (event instanceof UIEventBase) {
             if(this.eventParent && !event.propagationStopped) {
                 if (!this.eventParent.dispatchEvent) {
                     console.log('Event parent is not an event target!', this.eventParent);
@@ -127,7 +140,18 @@ export class UIEventTarget extends EventTarget {
         return child.setEventParent(this);
     }
 
-    addEventListener<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(type: K, listener: UIEventListener<Unpack<T>>, options?: boolean | AddEventListenerOptions) {
+    addEventListener(type: string, listener: EventListener | EventListenerObject, options?: boolean | AddEventListenerOptions): EventListener | EventListenerObject {
+        super.addEventListener(type, listener, options);
+        if (!this.listeners[type]) {
+            this.listeners[type] = [];
+        }
+        if (listener) {
+            this.listeners[type].push(listener);
+        }
+        return listener;
+    }
+
+    addTypedEventListener<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(type: K, listener: UIEventListener<Unpack<T>>, options?: boolean | AddEventListenerOptions) {
         super.addEventListener(type, listener, options);
         if (!this.listeners[type]) {
             this.listeners[type] = [];
@@ -136,7 +160,18 @@ export class UIEventTarget extends EventTarget {
         return listener;
     }
 
-    removeEventListener<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(type: K, listener: UIEventListener<Unpack<T>>, options?: boolean | AddEventListenerOptions) {
+    removeEventListener(type: string, callback: EventListener | EventListenerObject | null, options?: EventListenerOptions | boolean): void {
+        super.removeEventListener(type, callback, options);
+        const listenersOfType = this.listeners[type];
+        if (listenersOfType && callback) {
+            const listenerIndex = listenersOfType.indexOf(callback);
+            if (listenerIndex !== -1) {
+                listenersOfType.splice(listenerIndex, 1);
+            }
+        }
+    }
+
+    removeTypedEventListener<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(type: K, listener: UIEventListener<Unpack<T>>, options?: boolean | AddEventListenerOptions) {
         super.removeEventListener(type, listener, options);
         const listenersOfType = this.listeners[type];
         if (listenersOfType) {
@@ -159,7 +194,7 @@ export class UIEventTarget extends EventTarget {
             if (this.listeners.hasOwnProperty(listenerType)) {
                 const listenersOfType = this.listeners[listenerType];
                 for (const listener of listenersOfType) {
-                    this.removeEventListener(listenerType as keyof UIEventNameMap, listener);
+                    this.removeEventListener(listenerType, listener);
                 }
             }
         }

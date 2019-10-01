@@ -62,15 +62,15 @@ export class MainUI extends UIEventTarget {
 
         this.browseUI = new NotebookListUI().setEventParent(this);
         this.mainView.left.el.appendChild(this.browseUI.el);
-        this.addEventListener('TriggerItem', evt => {
+        this.addTypedEventListener('TriggerItem', evt => {
             if (!this.disabled) {
                 this.loadNotebook(evt.detail.item);
             }
         });
         // TODO: remove listeners on children.
-        this.browseUI.addEventListener('NewNotebook', () => this.createNotebook());
-        this.browseUI.addEventListener('ImportNotebook', evt => this.importNotebook(evt));
-        this.browseUI.addEventListener('ToggleNotebookListUI', (evt) => this.mainView.collapse('left', evt.detail && evt.detail.force));
+        this.browseUI.addTypedEventListener('NewNotebook', () => this.createNotebook());
+        this.browseUI.addTypedEventListener('ImportNotebook', evt => this.importNotebook(evt));
+        this.browseUI.addTypedEventListener('ToggleNotebookListUI', (evt) => this.mainView.collapse('left', evt.detail && evt.detail.force));
         this.browseUI.init();
 
         socket.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
@@ -112,7 +112,7 @@ export class MainUI extends UIEventTarget {
            }
         });
 
-        this.tabUI.addEventListener('TabActivated', evt => {
+        this.tabUI.addTypedEventListener('TabActivated', evt => {
             const tab = evt.detail.tab;
             if (tab.type === 'notebook') {
                 const tabPath = `/notebook/${tab.name}`;
@@ -145,33 +145,33 @@ export class MainUI extends UIEventTarget {
         });
 
         // TODO: we probably shouldn't be adding listeners on our children like this
-        this.tabUI.addEventListener('NoActiveTab', () => {
+        this.tabUI.addTypedEventListener('NoActiveTab', () => {
             this.showWelcome();
         });
 
-        this.toolbarUI.addEventListener('RunAll', (evt) => {
+        this.toolbarUI.addTypedEventListener('RunAll', (evt) => {
             if (this.currentNotebook) {
                 evt.forward(this.currentNotebook);
             }
         });
 
-        this.toolbarUI.addEventListener('RunToCursor', (evt) => {
+        this.toolbarUI.addTypedEventListener('RunToCursor', (evt) => {
             if (this.currentNotebook) {
                 evt.forward(this.currentNotebook);
             }
         });
 
-        this.toolbarUI.addEventListener('RunCurrentCell', (evt) => {
+        this.toolbarUI.addTypedEventListener('RunCurrentCell', (evt) => {
             if (this.currentNotebook) {
                 evt.forward(this.currentNotebook);
             }
         });
 
-        this.toolbarUI.addEventListener('CancelTasks', () => {
+        this.toolbarUI.addTypedEventListener('CancelTasks', () => {
            this.socket.send(new messages.CancelTasks(this.currentNotebookPath));
         });
 
-        this.toolbarUI.addEventListener('Undo', () => {
+        this.toolbarUI.addTypedEventListener('Undo', () => {
            const notebookUI = this.currentNotebook.notebookUI;
            if (notebookUI instanceof NotebookUI) {
                notebookUI // TODO: implement undoing after deciding on behavior
@@ -182,7 +182,7 @@ export class MainUI extends UIEventTarget {
         // TODO: Can we get rid of Cell.currentFocus and instead put the cell ID in the event itself?
         // TODO: Do we need InsertAbove / InsertBelow if we already have InsertCellAfter / InsertCellBefore?
         // TODO: shares a lot of logic with InsertBelow
-        this.toolbarUI.addEventListener('InsertAbove', () => {
+        this.toolbarUI.addTypedEventListener('InsertAbove', () => {
             const cellsUI = this.currentNotebook;
             let activeCell = Cell.currentFocus || cellsUI.firstCell();
             const activeCellId = activeCell.id;
@@ -194,7 +194,7 @@ export class MainUI extends UIEventTarget {
             cellsUI.dispatchEvent(new UIEvent('InsertCellBefore', { cellId: activeCellId }));
         });
 
-        this.toolbarUI.addEventListener('InsertBelow', () => {
+        this.toolbarUI.addTypedEventListener('InsertBelow', () => {
             const cellsUI = this.currentNotebook;
             let activeCell = Cell.currentFocus || cellsUI.firstCell();
             const activeCellId = activeCell.id;
@@ -206,7 +206,7 @@ export class MainUI extends UIEventTarget {
             cellsUI.dispatchEvent(new UIEvent('InsertCellAfter', { cellId: activeCellId }));
         });
 
-        this.toolbarUI.addEventListener('DeleteCell', () => {
+        this.toolbarUI.addTypedEventListener('DeleteCell', () => {
             const cellsUI = this.currentNotebook;
             const activeCell = Cell.currentFocus;
             if (activeCell) {
@@ -221,18 +221,18 @@ export class MainUI extends UIEventTarget {
             }
         });
 
-        this.toolbarUI.addEventListener('ViewAbout', (evt) => {
+        this.toolbarUI.addTypedEventListener('ViewAbout', (evt) => {
             if (!this.about) {
                 this.about = new About().setEventParent(this);
             }
             this.about.show(evt.detail.section);
         });
 
-        this.toolbarUI.addEventListener('DownloadNotebook', () => {
+        this.toolbarUI.addTypedEventListener('DownloadNotebook', () => {
             MainUI.browserDownload(window.location.pathname + "?download=true", this.currentNotebook.path);
         });
 
-        this.toolbarUI.addEventListener('ClearOutput', () => {
+        this.toolbarUI.addTypedEventListener('ClearOutput', () => {
             this.socket.send(new messages.ClearOutput(this.currentNotebookPath))
         });
 
@@ -249,20 +249,20 @@ export class MainUI extends UIEventTarget {
         });
 
         // TODO: consolidate all start kernel requests to this function
-        this.addEventListener('StartKernel', evt => {
+        this.addTypedEventListener('StartKernel', evt => {
             this.socket.send(new messages.StartKernel(evt.detail.path, messages.StartKernel.NoRestart));
         });
 
         // TODO: consolidate all kill kernel requests to this function
-        this.addEventListener('KillKernel', evt => {
+        this.addTypedEventListener('KillKernel', evt => {
             if (confirm("Kill running kernel? State will be lost.")) {
                 this.socket.send(new messages.StartKernel(evt.detail.path, messages.StartKernel.Kill));
             }
         });
 
-        this.addEventListener('LoadNotebook', evt => this.loadNotebook(evt.detail.path));
+        this.addTypedEventListener('LoadNotebook', evt => this.loadNotebook(evt.detail.path));
 
-        this.addEventListener('Connect', () => {
+        this.addTypedEventListener('Connect', () => {
             if (this.socket.isClosed) {
                 this.socket.reconnect(true);
             }
@@ -321,14 +321,14 @@ export class MainUI extends UIEventTarget {
             }, 'notebook');
             this.tabUI.activateTab(tab);
 
-            this.toolbarUI.cellToolbar.cellTypeSelector.addEventListener('change', (evt: any) => { // event types are so annoying. this is probably fine... TODO: a proper type eventually.
+            this.toolbarUI.cellToolbar.cellTypeSelector.addTypedEventListener('change', (evt: any) => { // event types are so annoying. this is probably fine... TODO: a proper type eventually.
                 // hacky way to tell whether this is the current notebook ...
                 if (this.currentNotebook.notebookUI === notebookUI) {
                     notebookUI.onCellLanguageSelected(evt.target.value, path);
                 }
             });
 
-            notebookUI.kernelUI.addEventListener('ToggleKernelUI', (evt) => {
+            notebookUI.kernelUI.addTypedEventListener('ToggleKernelUI', (evt) => {
                 this.mainView.collapse('right', evt.detail && evt.detail.force)
             });
 
@@ -384,7 +384,7 @@ export class MainUI extends UIEventTarget {
     }
 
     handleHashChange() {
-        this.addEventListener('CellsLoaded', evt => {
+        this.addTypedEventListener('CellsLoaded', evt => {
             const hash = document.location.hash;
             // the hash can (potentially) have two parts: the selected cell and selected lines.
             // for example: #Cell2,6-12 would mean Cell2 lines 6-12

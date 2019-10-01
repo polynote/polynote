@@ -52,17 +52,17 @@ export class NotebookUI extends UIEventTarget {
 
         this.editBuffer = new EditBuffer();
 
-        this.addEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, this.path, evt.detail.cellId));
+        this.addTypedEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, this.path, evt.detail.cellId));
 
         // TODO: remove listeners on children.
-        this.cellUI.addEventListener('UpdatedConfig', evt => {
+        this.cellUI.addTypedEventListener('UpdatedConfig', evt => {
             const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
             this.editBuffer.push(this.localVersion, update);
             this.kernelUI.tasks.clear(); // old tasks no longer relevant with new config.
             this.socket.send(update);
         });
 
-        this.cellUI.addEventListener('SelectCell', evt => {
+        this.cellUI.addTypedEventListener('SelectCell', evt => {
             const cellTypeSelector = mainUI.toolbarUI.cellToolbar.cellTypeSelector;
             const id = evt.detail.cellId;
             let i = 0;
@@ -102,7 +102,7 @@ export class NotebookUI extends UIEventTarget {
             this.kernelUI.symbols.presentFor(id, ids);
         });
 
-        this.cellUI.addEventListener('AdvanceCell', evt => {
+        this.cellUI.addTypedEventListener('AdvanceCell', evt => {
             if (Cell.currentFocus) {
                 if (evt.detail.backward) {
                     const prev = Cell.currentFocus.prevCell!();
@@ -120,7 +120,7 @@ export class NotebookUI extends UIEventTarget {
             }
         });
 
-        this.addEventListener('InsertCellAfter', evt => {
+        this.addTypedEventListener('InsertCellAfter', evt => {
             const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.firstCell().id);
             const nextId = this.cellUI.getMaxCellId() + 1;
             let newCell: Cell;
@@ -142,7 +142,7 @@ export class NotebookUI extends UIEventTarget {
 
         // TODO: shares a lot of logic with InsertCellAfter
         // TODO: BUG! what if there are no cells!
-        this.cellUI.addEventListener('InsertCellBefore', evt => {
+        this.cellUI.addTypedEventListener('InsertCellBefore', evt => {
             const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.firstCell();
             const nextId = this.cellUI.getMaxCellId() + 1;
             const newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
@@ -161,7 +161,7 @@ export class NotebookUI extends UIEventTarget {
             newCell.focus();
         });
 
-        this.cellUI.addEventListener('DeleteCell', evt => {
+        this.cellUI.addTypedEventListener('DeleteCell', evt => {
             const current = Cell.currentFocus;
             if (current) {
                 const allCellIds = this.cellUI.getCells().map(cell => cell.id);
@@ -212,20 +212,20 @@ export class NotebookUI extends UIEventTarget {
             }
         });
 
-        this.cellUI.addEventListener('RunCell', (evt) => {
+        this.cellUI.addTypedEventListener('RunCell', (evt) => {
             this.runCells(evt.detail.cellId);
         });
 
-        this.cellUI.addEventListener('RunCurrentCell', () => {
+        this.cellUI.addTypedEventListener('RunCurrentCell', () => {
             this.runCells(Cell.currentFocus!.id);
         });
 
-        this.cellUI.addEventListener('RunAll', () => {
+        this.cellUI.addTypedEventListener('RunAll', () => {
             const cellIds = this.cellUI.getCodeCellIds();
             this.runCells(cellIds);
         });
 
-        this.cellUI.addEventListener('RunToCursor', () => {
+        this.cellUI.addTypedEventListener('RunToCursor', () => {
             const allCellIds = this.cellUI.getCodeCellIds();
             const activeCellIdx = allCellIds.indexOf(Cell.currentFocus!.id);
             if (activeCellIdx < 0) {
@@ -236,13 +236,13 @@ export class NotebookUI extends UIEventTarget {
             }
         });
 
-        this.cellUI.addEventListener('ContentChange', (evt) => {
+        this.cellUI.addTypedEventListener('ContentChange', (evt) => {
             const update = new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits, evt.detail.metadata);
             this.socket.send(update);
             this.editBuffer.push(this.localVersion, update);
         });
 
-        this.cellUI.addEventListener('CompletionRequest', (evt) => {
+        this.cellUI.addTypedEventListener('CompletionRequest', (evt) => {
             const id = evt.detail.cellId;
             const pos = evt.detail.pos;
             const resolve = evt.detail.resolve;
@@ -288,7 +288,7 @@ export class NotebookUI extends UIEventTarget {
             this.socket.send(new messages.CompletionsAt(path, id, pos, []));
         });
 
-        this.cellUI.addEventListener('ParamHintRequest', (evt) => {
+        this.cellUI.addTypedEventListener('ParamHintRequest', (evt) => {
             const id = evt.detail.cellId;
             const pos = evt.detail.pos;
             const resolve = evt.detail.resolve;
@@ -324,7 +324,7 @@ export class NotebookUI extends UIEventTarget {
             this.socket.send(new messages.ParametersAt(path, id, pos))
         });
 
-        this.cellUI.addEventListener("ReprDataRequest", evt => {
+        this.cellUI.addTypedEventListener("ReprDataRequest", evt => {
             const req = evt.detail;
             this.socket.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data) => {
                 if (path === this.path && handleType === req.handleType && handleId === req.handleId) {
@@ -337,7 +337,7 @@ export class NotebookUI extends UIEventTarget {
 
         socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
-        this.addEventListener('UpdatedTask', evt => {
+        this.addTypedEventListener('UpdatedTask', evt => {
             // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
             //       and instead have an EOF message to tell us when a cell is done
             const taskInfo = evt.detail.taskInfo;
@@ -347,7 +347,7 @@ export class NotebookUI extends UIEventTarget {
             }
         });
 
-        this.addEventListener('UpdatedExecutionStatus', evt => {
+        this.addTypedEventListener('UpdatedExecutionStatus', evt => {
             const update = evt.detail.update;
             this.cellUI.setExecutionHighlight(update.cellId, update.pos || null);
         });

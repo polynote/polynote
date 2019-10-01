@@ -33,6 +33,7 @@ type UpdatedExecutionStatus = UIEvent<{update: ExecutionStatus}>
 
 type UpdatedConfig = UIEvent<{config: NotebookConfig}>
 
+
 export interface UIEventNameMap extends WindowEventMap {
     "TriggerItem": TriggerItem;
     "NewNotebook": UIEvent<[]>;
