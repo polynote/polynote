@@ -7,7 +7,6 @@ import cats.syntax.traverse._
 import cats.instances.list._
 import polynote.kernel.environment.Config
 import polynote.kernel.util.{KernelReporter, LimitedSharingClassLoader, pathOf}
-import polynote.runtime.python.TypedPythonObject
 import zio.blocking.Blocking
 import zio.system.{System, env}
 import zio.internal.{ExecutionMetrics, Executor}
@@ -18,9 +17,9 @@ import scala.collection.mutable
 import scala.reflect.internal.util.{AbstractFileClassLoader, NoSourceFile, Position, SourceFile}
 import scala.reflect.io.VirtualDirectory
 import scala.reflect.runtime.universe
-import scala.runtime.BoxedUnit
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
+import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 
 class ScalaCompiler private (
   val global: Global,
@@ -482,7 +481,7 @@ object ScalaCompiler {
     compilerOutput        <- ZIO.fromOption(settings.outputDirs.getSingleOutput).mapError(_ => new IllegalArgumentException("Compiler must have a single output directory"))
   } yield new AbstractFileClassLoader(compilerOutput, dependencyClassLoader)
 
-  def makeDependencyClassLoader(settings: Settings): TaskR[Config, ClassLoader] = Config.access.flatMap {
+  def makeDependencyClassLoader(settings: Settings): TaskR[Config, URLClassLoader] = Config.access.flatMap {
     config => ZIO {
       val dependencyClassPath = settings.classpath.value.split(File.pathSeparator).toSeq.map(new File(_).toURI.toURL)
 
@@ -492,7 +491,7 @@ object ScalaCompiler {
           dependencyClassPath,
           getClass.getClassLoader)
       } else {
-        new scala.reflect.internal.util.ScalaClassLoader.URLClassLoader(dependencyClassPath, getClass.getClassLoader)
+        new URLClassLoader(dependencyClassPath, getClass.getClassLoader)
       }
     }
   }
