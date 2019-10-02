@@ -15,7 +15,7 @@ import org.http4s.websocket.WebSocketFrame.Binary
 import polynote.buildinfo.BuildInfo
 import polynote.kernel
 import polynote.kernel.util.{Publish, RefMap}
-import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, StreamOps, StreamingHandles, TaskG, UpdatedTasks}
+import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, Kernel, StreamOps, StreamingHandles, TaskG, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
@@ -90,6 +90,12 @@ class SocketSession(
       }
 
     case LoadNotebook(path) =>
+      def publishRunningKernelState(publisher: KernelPublisher) = for {
+        kernel <- publisher.kernel
+        _      <- kernel.values().flatMap(_.map(rv => PublishMessage(CellResult(path, rv.sourceCell, rv))).sequence)
+        _      <- kernel.info().map(KernelStatus(path, _)) >>= PublishMessage.apply
+      } yield ()
+
       subscribe(path).flatMap {
         subscriber =>
           for {
@@ -97,8 +103,7 @@ class SocketSession(
             _        <- PublishMessage(notebook)
             status   <- subscriber.publisher.kernelStatus()
             _        <- PublishMessage(KernelStatus(path, status))
-            values   <- if (status.alive) subscriber.publisher.kernel.flatMap(_.values()) else ZIO.succeed(Nil)
-            _        <- values.map(rv => CellResult(path, rv.sourceCell, rv)).map(PublishMessage.apply).sequence
+            _        <- if (status.alive) publishRunningKernelState(subscriber.publisher) else ZIO.unit
             tasks    <- subscriber.publisher.taskManager.list
             _        <- PublishMessage(KernelStatus(path, UpdatedTasks(tasks)))
           } yield ()
@@ -199,7 +204,8 @@ class SocketSession(
       _              <- PublishMessage(RunningKernels(kernelStatuses))
     } yield ()
 
-    case other => ZIO.unit
+    case other =>
+      ZIO.unit
   }
 
 }
