@@ -131,7 +131,6 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
           thread.setName("Spark session")
           thread.setDaemon(true)
           thread.setContextClassLoader(classLoader)
-          thread.getThreadGroup
           thread
         }
       }
