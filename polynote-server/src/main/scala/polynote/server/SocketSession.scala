@@ -99,6 +99,7 @@ class SocketSession(
             _        <- PublishMessage(KernelStatus(path, status))
             values   <- if (status.alive) subscriber.publisher.kernel.flatMap(_.values()) else ZIO.succeed(Nil)
             _        <- values.map(rv => CellResult(path, rv.sourceCell, rv)).map(PublishMessage.apply).sequence
+            _        <- if (status.alive) subscriber.publisher.kernel.flatMap(_.info()).map(KernelStatus(path, _)).flatMap(PublishMessage.apply) else ZIO.unit
             tasks    <- subscriber.publisher.taskManager.list
             _        <- PublishMessage(KernelStatus(path, UpdatedTasks(tasks)))
           } yield ()
@@ -199,7 +200,8 @@ class SocketSession(
       _              <- PublishMessage(RunningKernels(kernelStatuses))
     } yield ()
 
-    case other => ZIO.unit
+    case other =>
+      ZIO.unit
   }
 
 }
