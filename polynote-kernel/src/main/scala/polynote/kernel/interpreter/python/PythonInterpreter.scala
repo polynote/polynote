@@ -17,7 +17,7 @@ import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyLis
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Runtime, Task, TaskR, ZIO}
+import zio.{Runtime, Task, TaskR, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
@@ -382,18 +382,21 @@ object PythonInterpreter {
   }
 
 
-  private[python] def jepExecutor(jepThread: AtomicReference[Thread]): Executor = Executor.fromExecutionContext(Int.MaxValue) {
-    ExecutionContext.fromExecutorService {
-      Executors.newSingleThreadExecutor {
-        new ThreadFactory {
-          def newThread(r: Runnable): Thread = {
-            val thread = new Thread(r)
-            thread.setName("Python interpreter thread")
-            thread.setDaemon(true)
-            if (!jepThread.compareAndSet(null, thread)) {
-              throw new IllegalStateException("Python interpreter thread died; can't replace it with a new one")
+  private[python] def jepExecutor(jepThread: AtomicReference[Thread])(classLoader: ClassLoader): UIO[Executor] = ZIO.effectTotal {
+    Executor.fromExecutionContext(Int.MaxValue) {
+      ExecutionContext.fromExecutorService {
+        Executors.newSingleThreadExecutor {
+          new ThreadFactory {
+            def newThread(r: Runnable): Thread = {
+              val thread = new Thread(r)
+              thread.setName("Python interpreter thread")
+              thread.setDaemon(true)
+              thread.setContextClassLoader(classLoader)
+              if (!jepThread.compareAndSet(null, thread)) {
+                throw new IllegalStateException("Python interpreter thread died; can't replace it with a new one")
+              }
+              thread
             }
-            thread
           }
         }
       }
@@ -430,7 +433,7 @@ object PythonInterpreter {
     val jepThread = new AtomicReference[Thread](null)
     for {
       compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
-      executor <- ZIO.effectTotal(jepExecutor(jepThread))
+      executor <- compiler.classLoader >>= jepExecutor(jepThread)
       jep      <- mkJep(venv, sharedModules).lock(executor)
       blocking  = mkJepBlocking(executor)
       api      <- effectBlocking(new PythonAPI(jep)).lock(executor).provide(blocking)

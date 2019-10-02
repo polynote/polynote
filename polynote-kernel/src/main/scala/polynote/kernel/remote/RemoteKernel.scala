@@ -123,9 +123,10 @@ class RemoteKernel[ServerAddress](
 
   def shutdown(): TaskB[Unit] = request(ShutdownRequest(nextReq)) {
     case ShutdownResponse(reqId) => done(reqId, ())
-  }.timeout(Duration(2, TimeUnit.MINUTES)).flatMap {
+  }.timeout(Duration(10, TimeUnit.SECONDS)).flatMap {
     case Some(()) => ZIO.succeed(())
-    case None => ZIO.fail(new TimeoutException("Waited for remote kernel to shut down for 2 minutes"))
+    case None =>
+      Logging.warn("Waited for remote kernel to shut down for 10 seconds; killing the process") *> transport.close()
   }.ensuring(close().orDie)
 
   def status(): TaskB[KernelBusyState] = request(StatusRequest(nextReq)) {
@@ -197,6 +198,7 @@ class RemoteKernelClient(
   def run(): TaskR[KernelEnvironment, Int] =
     requests
       .evalMap(handleRequest)
+      .terminateAfter(_.isInstanceOf[ShutdownResponse])
       .evalMap(publishResponse.publish1)
       .compile.drain.const(0)
 
@@ -214,7 +216,7 @@ class RemoteKernelClient(
         case CancelAllRequest(reqId)                      => kernel.cancelAll().const(UnitResponse(reqId))
         case CompletionsAtRequest(reqId, cellID, pos)     => kernel.completionsAt(cellID, pos).map(CompletionsAtResponse(reqId, _))
         case ParametersAtRequest(reqId, cellID, pos)      => kernel.parametersAt(cellID, pos).map(ParametersAtResponse(reqId, _))
-        case ShutdownRequest(reqId)                       => kernel.shutdown() *> closed.complete(()).const(ShutdownResponse(reqId))
+        case ShutdownRequest(reqId)                       => kernel.shutdown().const(ShutdownResponse(reqId))
         case StatusRequest(reqId)                         => kernel.status().map(StatusResponse(reqId, _))
         case ValuesRequest(reqId)                         => kernel.values().map(ValuesResponse(reqId, _))
         case GetHandleDataRequest(reqId, sid, ht, hid, c) => kernel.getHandleData(ht, hid, c).map(GetHandleDataResponse(reqId, _)).provideSomeM(streamingHandles(sid))

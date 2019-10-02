@@ -28,17 +28,12 @@ class LimitedSharingClassLoader(
     val c = if (share.test(name)) {
       //System.err.println(s"Delegating class $name")
       try {
-        super.loadClass(name, resolve)
+        super.loadClass(name, false)
       } catch {
         case err: ClassNotFoundException => findClass(name)
       }
     } else try {
-      findLoadedClass(name) match {
-        case null =>
-          //System.err.println(s"Privately loading class $name")
-          findClass(name)
-        case lc => lc
-      }
+      findClass(name)
     } catch {
       case _: ClassNotFoundException | _: LinkageError =>
         super.loadClass(name, resolve)

@@ -159,13 +159,13 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
   private def isVisibleSymbol(sym: Symbol) =
     sym.isPublic && !sym.isSynthetic && !sym.isConstructor && !sym.isOmittablePrefix && !sym.name.decodedName.containsChar('$')
 
-  private def deepestSubtreeEndingAt(tree: Tree, offset: Int): Tree = {
-    var deepest: Tree = tree
+  private def deepestSubtreeEndingAt(topTree: Tree, offset: Int): Tree = {
+    var deepest: Tree = topTree
     val traverser: Traverser = new Traverser {
       private var depth = 0
       private var deepestDepth = -1
       override def traverse(tree: compiler.global.Tree): Unit = {
-        if (tree.pos != null && tree.pos.isDefined && !tree.pos.isTransparent && tree.pos.end == offset && depth >= deepestDepth) {
+        if (tree.pos != null && tree.pos.isDefined && !tree.pos.isTransparent && (tree.pos.source eq topTree.pos.source) && tree.pos.end == offset && depth >= deepestDepth) {
           deepest = tree
           deepestDepth = depth
         }
@@ -174,7 +174,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
         depth -= 1
       }
     }
-    traverser.traverse(tree)
+    traverser.traverse(topTree)
     deepest
   }
 
