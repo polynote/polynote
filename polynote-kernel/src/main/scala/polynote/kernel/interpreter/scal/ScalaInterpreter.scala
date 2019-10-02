@@ -37,14 +37,14 @@ class ScalaInterpreter private[scal] (
   override def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = for {
     collectedState   <- injectState(collectState(state)).provide(CurrentRuntime.NoCurrentRuntime)
     valDefs           = collectedState.values.mapValues(_._1).values.toList
-    cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n$code", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
+    cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n${code.substring(0, pos)}", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
   } yield completer.completions(cellCode, pos + 1)
 
   override def parametersAt(code: String, pos: Int, state: State): Task[Option[Signatures]] = for {
     collectedState <- injectState(collectState(state)).provide(CurrentRuntime.NoCurrentRuntime)
     valDefs         = collectedState.values.mapValues(_._1).values.toList
-    cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", code, collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
-  } yield completer.paramHints(cellCode, pos)
+    cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n$code", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
+  } yield completer.paramHints(cellCode, pos + 1)
 
   override def init(state: State): TaskR[InterpreterEnv, State] = ZIO.succeed(state)
 

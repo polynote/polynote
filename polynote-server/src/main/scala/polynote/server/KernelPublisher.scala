@@ -26,7 +26,7 @@ class KernelPublisher private (
   publishUpdate: Publish[Task, (SubscriberId, NotebookUpdate)],
   val broadcastUpdates: Topic[Task, Option[(SubscriberId, NotebookUpdate)]],
   val status: Topic[Task, KernelStatusUpdate],
-  val cellResults: Topic[Task, CellResult],
+  val cellResults: Topic[Task, Option[CellResult]],
   val taskManager: TaskManager.Service,
   updater: Fiber[Throwable, Unit],
   kernelRef: Ref[Task, Option[Kernel]],
@@ -43,7 +43,7 @@ class KernelPublisher private (
     override val taskManager: TaskManager.Service = KernelPublisher.this.taskManager
     override val publishStatus: Publish[Task, KernelStatusUpdate] = KernelPublisher.this.publishStatus
     override val publishResult: Publish[Task, Result] = {
-      val publish = Publish(cellResults.imap(_.result)(CellResult(notebookPath, cellID, _)))
+      val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(notebookPath, cellID, result)))
       tapResults.fold(publish)(fn => publish.tap(fn))
     }
     override lazy val notebookUpdates: Stream[Task, NotebookUpdate] = broadcastUpdates.subscribe(128).unNone.map(_._2)
@@ -172,7 +172,7 @@ object KernelPublisher {
     updates          <- Queue.unbounded[Task, Option[(SubscriberId, NotebookUpdate)]]
     broadcastUpdates <- Topic[Task, Option[(SubscriberId, NotebookUpdate)]](None)
     broadcastStatus  <- Topic[Task, KernelStatusUpdate](KernelBusyState(busy = false, alive = false))
-    broadcastResults <- Topic[Task, CellResult](CellResult(notebook.path, CellID(-1), ClearResults()))
+    broadcastResults <- Topic[Task, Option[CellResult]](None)
     taskManager      <- TaskManager(broadcastStatus)
     versionBuffer     = new VersionBuffer[NotebookUpdate]
     kernelStarting   <- Semaphore.make(1)

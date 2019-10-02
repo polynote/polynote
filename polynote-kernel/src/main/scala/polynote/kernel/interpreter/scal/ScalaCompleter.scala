@@ -16,7 +16,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
   def completions(cellCode: compiler.CellCode, pos: Int): List[Completion] = {
 
     def symToCompletion(sym: Symbol, inType: Type) = {
-      val name = sym.name.decodedName.toString
+      val name = sym.name.decodedName.toString.trim // term names seem to get an extra space at the end?
       val typ  = sym.typeSignatureIn(inType)
       val tParams = sym.typeParams.map(_.name.decodedName.toString)
       val vParams = TinyList(sym.paramss.map(_.map{p => (p.name.decodedName.toString: TinyString, compiler.unsafeFormatType(p.infoIn(typ)): ShortString)}: TinyList[(TinyString, ShortString)]))
@@ -68,12 +68,6 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
           val cellScope = context.owner.info.decls.filter(isVisibleSymbol).toList.map(_.accessedOrSelf).distinct
 
           (cellScope ++ imports).map(symToCompletion(_, NoType))
-//
-//          NoType ->
-//            (context.scope.filter(_.name.startsWith(name)).toList
-//              ++ results._2.filter(_.symbol != NoSymbol).map(_.symbol)
-//              ++ fromScopes
-//              ++ imports)
 
         // this works pretty well. Really helps with imports. But is there a way we can index classes & auto-import them like IntelliJ does?
         case Import(qual: Tree, names) if !qual.isErrorTyped =>
@@ -84,16 +78,12 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
           }
 
           val result = qual.tpe.members.filter(isVisibleSymbol).filter(_.isDefinedInPackage)
-            //.sorted(importOrdering) // TODO: monaco seems to re-sort them anyway.
+            .toList
+            .sorted(importOrdering)
             .groupBy(_.name.decoded).values.map(_.head).toList
             .map(symToCompletion(_, NoType))
 
           result
-//          val syms = qual.tpe.members  // for imports, provide only the visible symbols, and only distinct names
-//            .filter(isVisibleSymbol)        // (since imports import all overloads of a name)
-//            .filter(_.isDefinedInPackage)   // and sort them so that packages come first
-            //.groupBy(_.name.toString).map(_._2.toSeq.minBy(s => !s.isTerm))
-            //.sortBy(_.isPackageClass)(Ordering.Boolean.reverse)
 
         case other =>
           val o = other
@@ -120,31 +110,48 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
       val (paramList, prevArgs, outerApply) = whichParamList(a, 0, 0)
       val whichArg = args.size
 
-      val hints = fun.symbol match {
-        // TODO: overloads
-        case method if method != null && method.isMethod =>
-          val paramsStr = method.asMethod.paramLists.map {
-            pl => "(" + pl.map {
-              param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(a.tpe).finalResultType.toString}"
-            }.mkString(", ") + ")"
-          }.mkString
+      def methodHints(method: MethodSymbol) = {
+        val paramsStr = method.paramLists.map {
+          pl => "(" + pl.map {
+            param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(a.tpe).finalResultType.toString}"
+          }.mkString(", ") + ")"
+        }.mkString
 
-          val params = method.asMethod.paramLists.flatMap {
-            pl => pl.map {
-              param => ParameterHint(
-                TinyString(param.name.decodedName.toString),
-                TinyString(param.typeSignatureIn(a.tpe).finalResultType.toString),
-                None  // TODO
-              )
-            }
+        val params = method.paramLists.flatMap {
+          pl => pl.map {
+            param => ParameterHint(
+              TinyString(param.name.decodedName.toString),
+              TinyString(param.typeSignatureIn(a.tpe).finalResultType.toString),
+              None  // TODO
+            )
           }
+        }
 
-          List(ParameterHints(
-            method.name.decodedName.toString + paramsStr,
-            None,
-            params
-          ))
+        List(ParameterHints(
+          method.name.decodedName.toString + paramsStr,
+          None,
+          params
+        ))
+      }
 
+      val hints = fun.symbol match {
+        case null => Nil
+        case err if err.isError =>
+          fun match {
+            case Select(qual, name) if !qual.isErrorTyped => qual.tpe.member(name) match {
+              case sym if sym.isMethod =>
+                methodHints(sym.asMethod)
+              case sym if sym.isTerm && sym.isOverloaded =>
+                sym.asTerm.alternatives.collect {
+                  case sym if sym.isMethod => methodHints(sym.asMethod)
+                }.flatten
+              case other =>
+                Nil
+            }
+            case other =>
+              Nil
+          }
+        case method if method.isMethod => methodHints(method.asMethod)
         case _ => Nil
       }
       Signatures(hints, 0, (prevArgs + whichArg).toByte)
@@ -179,7 +186,8 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
   }
 
   private def applyTreeAt(tree: Tree, offset: Int): Option[Apply] = tree.collect {
-    case a: Apply if a.pos != null && a.pos.isOpaqueRange && a.pos.start <= offset && a.pos.end >= offset => a
+    case a: Apply if a.pos != null && a.pos.isOpaqueRange && a.pos.start <= offset && a.pos.end >= offset =>
+      a
   }.headOption
 
   private def treesAt(tree: Tree, targetPos: Position): List[Tree] = if (tree.pos.properlyIncludes(targetPos)) {

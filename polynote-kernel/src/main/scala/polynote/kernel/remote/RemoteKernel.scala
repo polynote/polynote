@@ -197,7 +197,9 @@ class RemoteKernelClient(
 
   def run(): TaskR[KernelEnvironment, Int] =
     requests
-      .evalMap(handleRequest)
+      .map(handleRequest)
+      .map(Stream.eval)
+      .parJoinUnbounded
       .terminateAfter(_.isInstanceOf[ShutdownResponse])
       .evalMap(publishResponse.publish1)
       .compile.drain.const(0)
