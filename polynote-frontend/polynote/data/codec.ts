@@ -527,7 +527,6 @@ export function discriminated<T>(discriminatorCodec: Codec<number>, selectCodec:
 
 abstract class HasCodec extends Copyable {
     static codec: Codec<CodecContainer>;
-    static unapply: (inst: any) => any[];
     protected constructor(...args: any[]) { super() };
 }
 

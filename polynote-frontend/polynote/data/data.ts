@@ -5,14 +5,14 @@ import {
 import {ExecutionInfo, Result} from "./result";
 import {keys} from "vega-lite/build/src/util";
 
-export class Copyable {
+export abstract class Copyable {
     copy<T, C extends (new (...args: any) => T) & {unapply: (inst: T) => ConstructorParameters<C>}>(
         this: T,
-        args: Partial<ConstructorParameters<C>>
+        args: Partial<T>
     ): T {
         const myConstructor: C = (this as any as {constructor: C}).constructor;
         const theirArgs = myConstructor.unapply(args as T);
-        const myArgs: ConstructorParameters<C> = (this as any as {constructor: C}).constructor.unapply(this);
+        const myArgs: ConstructorParameters<C> = myConstructor.unapply(this);
 
         const mergedArgs: any[] = [];
         for (let i = 0; i < myArgs.length; i++) {
