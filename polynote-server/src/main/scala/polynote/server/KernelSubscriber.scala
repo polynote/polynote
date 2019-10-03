@@ -53,7 +53,7 @@ object KernelSubscriber {
       updater          <- Stream.emits(Seq(
           foreignUpdates(lastLocalVersion, lastGlobalVersion),
           publisher.status.subscribe(128).map(KernelStatus(notebook.path, _)),
-          publisher.cellResults.subscribe(128)
+          publisher.cellResults.subscribe(128).unNone
         )).parJoinUnbounded.interruptWhen(closed.await.either).through(publishMessage.publish).compile.drain.fork
     } yield new KernelSubscriber(
       id,

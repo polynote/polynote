@@ -251,7 +251,9 @@ export class NotebookUI extends UIEventTarget {
             const receiveCompletions = (notebook: string, cell: number, receivedPos: number, completions: CompletionCandidate[]) => {
                 if (notebook === path && cell === id && pos === receivedPos) {
                     this.socket.removeMessageListener([messages.CompletionsAt, receiveCompletions]);
-                    const completionResults = completions.map(candidate => {
+                    const len = completions.length;
+                    const indexStrLen = ("" + len).length;
+                    const completionResults = completions.map((candidate, index) => {
                         const isMethod = candidate.params.length > 0 || candidate.typeParams.length > 0;
 
                         const typeParams = candidate.typeParams.length ? `[${candidate.typeParams.join(', ')}]`
@@ -263,18 +265,19 @@ export class NotebookUI extends UIEventTarget {
                         const label = `${candidate.name}${typeParams}${params}`;
 
                         const insertText =
-                            candidate.name + (typeParams.length ? '[$1]' : '') + (params.length ? '($2)' : '');
+                            candidate.name; //+ (params.length ? '($2)' : '');
 
                         // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
                         const model = (this.cellUI.getCell(cell) as CodeCell).editor.getModel()!;
-                        const offsetAsPosition = model.getPositionAt(pos);
-                        const range = Range.fromPositions(offsetAsPosition);
-
+                        const p = model.getPositionAt(pos);
+                        const word = model.getWordUntilPosition(p);
+                        const range = new Range(p.lineNumber, word.startColumn, p.lineNumber, word.endColumn);
                         return {
                             kind: isMethod ? 1 : 9,
                             label: label,
                             insertText: insertText,
                             insertTextRules: 4,
+                            sortText: ("" + index).padStart(indexStrLen, '0'),
                             detail: candidate.type,
                             range: range
                         };
