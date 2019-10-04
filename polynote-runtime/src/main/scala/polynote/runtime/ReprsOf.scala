@@ -21,7 +21,11 @@ object ReprsOf extends ExpandedScopeReprs {
   }
 
   class DataReprsOf[T](val dataType: DataType, val encode: T => ByteBuffer) extends ReprsOf[T] {
-    def apply(t: T): Array[ValueRepr] = Array(DataRepr(dataType, encode(t)))
+    def apply(t: T): Array[ValueRepr] = try {
+      Array(DataRepr(dataType, encode(t)))
+    } catch {
+      case err: Throwable => Array()
+    }
   }
 
   object DataReprsOf {
