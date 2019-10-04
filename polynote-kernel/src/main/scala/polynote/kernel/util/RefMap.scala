@@ -23,11 +23,9 @@ class RefMap[K, V] private (
       ZIO.succeed(underlying.get(key)).flatMap(_.get)
     } else {
       semaphore.withPermit {
-        if (underlying.containsKey(key)) {
-          ZIO.succeed(underlying.get(key)).flatMap(_.get)
-        } else {
-          create.tap(v => Ref[Task].of(v).flatMap(ref =>
-            ZIO(underlying.put(key, ref))))
+        ZIO(underlying.containsKey(key)).flatMap {
+          case true => ZIO.succeed(underlying.get(key)).flatMap(_.get)
+          case false => create.tap(v => Ref[Task].of(v).flatMap(ref => ZIO(underlying.put(key, ref))))
         }
       }
     }
@@ -38,10 +36,9 @@ class RefMap[K, V] private (
       ZIO.succeed(underlying.get(key)).flatMap(_.get)
     } else {
       semaphore.withPermit {
-        if (underlying.containsKey(key)) {
-          ZIO.succeed(underlying.get(key)).flatMap(_.get)
-        } else {
-          create.tap(ref => ZIO(underlying.put(key, ref))).flatMap(_.get)
+        ZIO(underlying.containsKey(key)).flatMap {
+          case true => ZIO.succeed(underlying.get(key)).flatMap(_.get)
+          case false => create.tap(ref => ZIO(underlying.put(key, ref))).flatMap(_.get)
         }
       }
     }
