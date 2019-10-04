@@ -2,6 +2,14 @@
 
 *
 
+# 0.2.2 (October 3, 2019)
+
+* Fix bug setting spark output path
+* Fix bug preventing download of dependencies
+* Fix more completion bugs
+* Fix more classloader bugs
+* Fix more remote kernel bugs
+
 # 0.2.1 (October 1, 2019)
 
 * Fix cell queuing order bug
