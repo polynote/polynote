@@ -2753,29 +2753,22 @@ button {
       }
     }
   }
+}
 
-  .schema-display {
-    .object-summary {
-      .summary-content::before {
-        content: none;
-      }
+.result-name-and-type {
+  font-family: @code-fonts;
+  font-weight: 400;
+  margin: 0;
+}
 
-      .summary-content * {
-        display: none;
-      }
+.schema-display {
 
-      .summary-content::after {
-        content: 'struct';
-        font-family: @code-fonts;
-      }
+  .object-fields .object-field {
+    .field-name::after {
+      content: none;
     }
-
-    .string {
-      color: inherit;
-    }
-
-    .string::before, .string::after { content: none; }
   }
+
 }
 
 .tab-nav {

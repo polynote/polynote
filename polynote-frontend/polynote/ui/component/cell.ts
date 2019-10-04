@@ -695,7 +695,7 @@ export class CodeCell extends Cell {
         return (div(['output'], content) as MIMEElement).attr('rel', rel).attr('mime-type', mimeType);
     }
 
-    buildOutput(mimeType: string, args: Record<string, string>, content: string) {
+    buildOutput(mimeType: string, args: Record<string, string>, content: string | DocumentFragment) {
         return displayContent(mimeType, content, args).then(
             (result: TagElement<any>) => this.mimeEl(mimeType, args, result)
         ).catch(function(err: any) {
@@ -842,12 +842,14 @@ export class CodeCell extends Cell {
                 this.cellResultMargin.innerHTML = '';
                 this.cellResultMargin.appendChild(outLabel);
 
-                const [mime, content] = result.displayRepr;
-                const [mimeType, args] = parseContentType(mime);
-                this.buildOutput(mime, args, content).then((el: MIMEElement) => {
-                    this.resultTabs.appendChild(el);
-                    this.cellOutputTools.classList.add('output');
-                })
+                result.displayRepr.then(display => {
+                    const [mime, content] = display;
+                    const [mimeType, args] = parseContentType(mime);
+                    this.buildOutput(mime, args, content).then((el: MIMEElement) => {
+                        this.resultTabs.appendChild(el);
+                        this.cellOutputTools.classList.add('output');
+                    })
+                });
             }
         } else {
             this.cellOutputTools.classList.add('output');

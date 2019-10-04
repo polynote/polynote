@@ -1,13 +1,22 @@
 "use strict";
 
 import * as monaco from "monaco-editor";
-import {div, span, tag, TagElement} from "../util/tags";
+import {Content, details, div, span, tag, TagElement} from "../util/tags";
+import {ArrayType, DataType, MapType, StructField, StructType} from "../../data/data_type";
 
-export function displayContent(contentType: string, content: string, contentTypeArgs?: Record<string, string>): Promise<TagElement<any>> {
+export function displayContent(contentType: string, content: string | DocumentFragment, contentTypeArgs?: Record<string, string>): Promise<TagElement<any>> {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);
 
     let result;
-    if (mimeType === "text/plain") {
+    if (mimeType === "text/html" || mimeType === "image/svg" || mimeType === "image/svg+xml" || content instanceof DocumentFragment) {
+        const node = div(['htmltext'], []);
+        if (content instanceof DocumentFragment) {
+            node.appendChild(content);
+        } else {
+            node.innerHTML = content;
+        }
+        result = Promise.resolve(node);
+    } else if (mimeType === "text/plain") {
         if (args.lang) {
             result = monaco.editor.colorize(content, args.lang, {}).then(html => {
                 const node = (span(['plaintext', 'colorized'], []) as TagElement<"span", HTMLSpanElement & {"data-lang": string}>).attr('data-lang', args.lang);
@@ -18,10 +27,6 @@ export function displayContent(contentType: string, content: string, contentType
             result = Promise.resolve(span(['plaintext'], [document.createTextNode(content)]));
         }
 
-    } else if (mimeType === "text/html" || mimeType === "image/svg" || mimeType === "image/svg+xml") {
-        const node = div(['htmltext'], []);
-        node.innerHTML = content;
-        result = Promise.resolve(node);
     } else if (mimeType.startsWith("image/")) {
         const img = document.createElement('img');
         img.setAttribute('src', `data:${mimeType};base64,${content}`);
@@ -191,4 +196,60 @@ export function prettyDuration(milliseconds: number) {
     }
 
     return duration.join(":")
+}
+
+export function displaySchema(structType: StructType): HTMLElement {
+
+    function displayField(field: StructField): HTMLElement {
+        if (field.dataType instanceof ArrayType) {
+            const nameAndType = [
+                span(['field-name'], [field.name]), ': ',
+                span(['field-type'], [span(['bracket'], ['[']), field.dataType.element.typeName(), span(['bracket'], [']'])])];
+
+            let description: Content = nameAndType;
+            if (field.dataType.element instanceof StructType) {
+                description = [details([], nameAndType, [displayStruct(field.dataType.element)])]
+            } else if (field.dataType.element instanceof MapType) {
+                description = [details([], nameAndType, [displayMap(field.dataType.element)])]
+            }
+
+            return tag("li", ['object-field', 'array-field'], {}, description);
+        }
+
+        if (field.dataType instanceof StructType) {
+            return tag("li", ['object-field', 'struct-field'], {}, [
+                details([], [span(['field-name'], [field.name]), ': ', span(['field-type'], ['struct'])], [
+                    displayStruct(field.dataType)
+                ])
+            ]);
+        }
+
+        if (field.dataType instanceof MapType) {
+            return tag("li", ['object-field', 'struct-field'], {}, [
+                details([], [span(['field-name'], [field.name]), ': ', span(['field-type'], ['map'])], [
+                    displayMap(field.dataType)
+                ])
+            ]);
+        }
+        const typeName = field.dataType.typeName();
+        const attrs = {"data-fieldType": typeName} as any;
+        return tag("li", ['object-field'], attrs, [
+            span(['field-name'], [field.name]), ': ', span(['field-type'], [typeName])
+        ]);
+    }
+
+    function displayStruct(typ: StructType): HTMLElement {
+        return tag("ul", ["object-fields"], {}, typ.fields.map(displayField));
+    }
+
+    function displayMap(typ: MapType): HTMLElement {
+        return tag("ul", ["object-fields", "map-type"], {}, typ.element.fields.map(displayField));
+    }
+
+    return div(['schema-display'], [
+        details(
+            ['object-display'],
+            [span(['object-summary', 'schema-summary'], [span(['summary-content', 'object-field-summary'], [truncate(structType.fields.map(f => f.name).join(", "), 64)])])],
+            [tag("ul", ['object-fields'], {}, structType.fields.map(displayField))])
+    ]);
 }

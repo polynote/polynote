@@ -5,9 +5,12 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32, ior, CodecContainer
 } from './codec'
 
-import { ValueRepr, StringRepr, MIMERepr } from './value_repr'
+import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr} from './value_repr'
 import {int16, int64} from "./codec";
 import {Cell} from "../ui/component/cell";
+import {displayData, displaySchema} from "../ui/component/display_content";
+import {div, h4, span} from "../ui/util/tags";
+import * as monaco from "monaco-editor";
 
 export class Result extends CodecContainer {
     static codec: Codec<Result>;
@@ -223,18 +226,34 @@ export class ResultValue extends Result {
     /**
      * Get a default MIME type and string, for display purposes
      */
-    get displayRepr() {
+    get displayRepr(): Promise<[string, string | DocumentFragment]> {
         // TODO: make this smarter
         let index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/html"));
         if (index < 0)
             index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/"));
         if (index < 0)
             index = this.reprs.findIndex(repr => repr instanceof MIMERepr);
-
         if (index < 0) {
-            return ["text/plain", this.valueText];
+            index = this.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
+            if (index >= 0) {
+                // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
+                return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
+                    const streamingRepr = this.reprs[index] as StreamingDataRepr;
+                    const frag = document.createDocumentFragment();
+                    const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                    resultType.innerHTML = typeHTML;
+                    frag.appendChild(div([], [
+                        h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
+                        displaySchema(streamingRepr.dataType)
+                    ]));
+                    return ["text/html", frag];
+                })
+            }
+        }
+        if (index < 0) {
+            return Promise.resolve(["text/plain", this.valueText]);
         } else {
-            return MIMERepr.unapply(this.reprs[index] as MIMERepr);
+            return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
         }
 
     }

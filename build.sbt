@@ -13,7 +13,7 @@ val versions = new {
   val coursier   = "2.0.0-RC2-6"
   val circe      = "0.11.1"
   val circeYaml  = "0.10.0"
-  val spark      = "2.1.1"
+  val spark      = "2.1.3"
 }
 
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
