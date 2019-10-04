@@ -212,6 +212,7 @@ object CoursierFetcher {
       task        <- CurrentTask.access
       ec          <- blockingEnv.blocking.blockingExecutor.map(_.asEC)
       size        <- blocking(LiftIO[Task].liftIO(file.size))
+      _           <- ZIO(Files.createDirectories(cacheFile.toPath.getParent))
       _           <- ZManaged.fromAutoCloseable(effectBlocking(new FileOutputStream(cacheFile))).use {
         os =>
           val fs2IS = fs2.io.readInputStream[Task](effectBlocking(file.openStream.unsafeRunSync()).provide(blockingEnv), chunkSize, ec)
