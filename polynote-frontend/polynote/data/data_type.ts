@@ -160,30 +160,29 @@ export const TimestampType = SingletonDataType(13, buffer => {throw "TODO"}, 'ti
 export const TypeType = SingletonDataType(14, buffer => buffer.readString(), 'type');
 
 export class MapType extends DataType {
+    static codec = combined(DataType.delegatedCodec, DataType.delegatedCodec).to(MapType);
     static get msgTypeId() { return 15; }
-    static typeName(inst: MapType) { return `[${(inst.element.constructor as typeof DataType).typeName(inst.element)}]`}
+    static typeName(inst: MapType) { return `map[${inst.keyType.typeName()} -> ${inst.valueType.typeName()}]`}
     static unapply(inst: MapType): ConstructorParameters<typeof MapType>{
-        return [inst.element];
+        return [inst.keyType, inst.valueType];
     }
 
     typeName() { return MapType.typeName(this); }
 
-    constructor(readonly element: StructType) {
+    constructor(readonly keyType: DataType, readonly valueType: DataType) {
         super();
         Object.freeze(this);
     }
 
     decodeBuffer(reader: DataReader) {
         const len = reader.readInt32();
-        const result: [string, any][][] = [];
+        const result: [string, any][] = [];
         for (let i = 0; i < len; i++) {
-            result[i] = Object.entries(this.element.decodeBuffer(reader))
+            result[i] = [this.keyType.decodeBuffer(reader), this.valueType.decodeBuffer(reader)]
         }
-        return new Map<string, any>(result.flat());
+        return new Map<string, any>(result);
     }
 }
-
-MapType.codec = combined(StructType.codec).to(MapType);
 
 DataType.codecs = [
     ByteType,     //  0

@@ -7,7 +7,14 @@ class StructDataEncoderSpec extends FreeSpec with Matchers {
 
   case class TestAllEncodable(first: Int, second: Double, third: Boolean, fourth: String)
 
+  case class Nested(a: TestAllEncodable)
+
+  case class NestedMap(a: Map[String, Double], b: TestAllEncodable, c: Map[String, TestAllEncodable])
+
+  val e1 = implicitly[DataEncoder[NestedMap]]
+
   "can encode a case class" in {
+    val e1 = DataEncoder.StructDataEncoder
     val encoder = implicitly[DataEncoder[TestAllEncodable]].asInstanceOf[DataEncoder.StructDataEncoder[TestAllEncodable]]
 
     encoder.dataType shouldEqual StructType(List(

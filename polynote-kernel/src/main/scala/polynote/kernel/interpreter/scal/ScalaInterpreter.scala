@@ -106,7 +106,12 @@ class ScalaInterpreter private[scal] (
       val valuesMap = values.map(v => v.name -> v.value).toMap
       val inputs = cellCode.typedOutputs.map(_.duplicate.setPos(NoPosition))
         .flatMap {
-          v => valuesMap.get(v.name.decodedName.toString).map(value => v.name.encodedName.toString -> (v, value)).toList
+          v =>
+            val (nameString, input) = v.name.decodedName.toString match {
+              case "$Out" => "Out" -> v.copy(name = TermName("Out"))
+              case name   => name -> v
+            }
+            valuesMap.get(nameString).map(value => nameString -> (input, value)).toList
         }.toMap
       (inputs, Option(cellCode))
     case state =>

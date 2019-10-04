@@ -5,7 +5,7 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32, ior, CodecContainer
 } from './codec'
 
-import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr} from './value_repr'
+import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr} from './value_repr'
 import {int16, int64} from "./codec";
 import {Cell} from "../ui/component/cell";
 import {displayData, displaySchema} from "../ui/component/display_content";
@@ -245,6 +245,22 @@ export class ResultValue extends Result {
                     frag.appendChild(div([], [
                         h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
                         displaySchema(streamingRepr.dataType)
+                    ]));
+                    return ["text/html", frag];
+                })
+            }
+        }
+        if (index < 0) {
+            index = this.reprs.findIndex(repr => repr instanceof DataRepr);
+            if (index >= 0) {
+                return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
+                    const dataRepr = this.reprs[index] as DataRepr;
+                    const frag = document.createDocumentFragment();
+                    const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                    resultType.innerHTML = typeHTML;
+                    frag.appendChild(div([], [
+                        h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
+                        displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
                     ]));
                     return ["text/html", frag];
                 })
