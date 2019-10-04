@@ -20,6 +20,7 @@ import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
 import {NotebookCellsUI} from "./nb_cells";
 import {ImportNotebook} from "../util/ui_events";
+import {CurrentNotebook} from "./current_notebook";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
@@ -132,6 +133,7 @@ export class MainUI extends UIEventTarget {
 
                 this.currentNotebookPath = tab.name;
                 this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI; // TODO: remove cellsUI reference
+                CurrentNotebook.current = this.currentNotebook.notebookUI; // TODO: better way to set
                 this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
                 const title = 'Polynote';
@@ -176,49 +178,6 @@ export class MainUI extends UIEventTarget {
            if (notebookUI instanceof NotebookUI) {
                notebookUI // TODO: implement undoing after deciding on behavior
            }
-        });
-
-
-        // TODO: Can we get rid of Cell.currentFocus and instead put the cell ID in the event itself?
-        // TODO: Do we need InsertAbove / InsertBelow if we already have InsertCellAfter / InsertCellBefore?
-        // TODO: shares a lot of logic with InsertBelow
-        this.toolbarUI.addEventListener('InsertAbove', () => {
-            const cellsUI = this.currentNotebook;
-            let activeCell = Cell.currentFocus || cellsUI.firstCell();
-            const activeCellId = activeCell.id;
-            if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== activeCell) {
-                console.log("Active cell is not part of current notebook?");
-                return;
-            }
-
-            cellsUI.dispatchEvent(new UIEvent('InsertCellBefore', { cellId: activeCellId }));
-        });
-
-        this.toolbarUI.addEventListener('InsertBelow', () => {
-            const cellsUI = this.currentNotebook;
-            let activeCell = Cell.currentFocus || cellsUI.firstCell();
-            const activeCellId = activeCell.id;
-            if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== activeCell) {
-                console.log("Active cell is not part of current notebook?");
-                return;
-            }
-
-            cellsUI.dispatchEvent(new UIEvent('InsertCellAfter', { cellId: activeCellId }));
-        });
-
-        this.toolbarUI.addEventListener('DeleteCell', () => {
-            const cellsUI = this.currentNotebook;
-            const activeCell = Cell.currentFocus;
-            if (activeCell) {
-                const activeCellId = activeCell.id;
-                if (!cellsUI.getCell(activeCellId) || cellsUI.getCell(activeCellId) !== Cell.currentFocus) {
-                    console.log("Active cell is not part of current notebook?");
-                    return;
-                }
-                cellsUI.dispatchEvent(new UIEvent('DeleteCell', {cellId: activeCellId }));
-            } else {
-                console.log("No active cell!");
-            }
         });
 
         this.toolbarUI.addEventListener('ViewAbout', (evt) => {

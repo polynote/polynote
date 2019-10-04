@@ -27,7 +27,7 @@ export class ValueInspector extends FullScreenModal {
             { windowClasses: ['value-inspector'] }
         );
 
-        this.addEventListener('InsertCellAfter', evt => this.hide());
+        // this.addEventListener('InsertCellAfter', evt => this.hide());
     }
 
     inspect(resultValue: ResultValue, notebookPath: string, jumpTo?: string) {
@@ -56,7 +56,7 @@ export class ValueInspector extends FullScreenModal {
                         if (dataType instanceof StructType) {
                             tabs['Schema'] = displaySchema(dataType);
                             try {
-                                tabs['Plot data'] = new PlotEditor(repr, notebookPath, resultValue.name, resultValue.sourceCell).setEventParent(this).container;
+                                tabs['Plot data'] = new PlotEditor(repr, notebookPath, resultValue.name, resultValue.sourceCell, () => this.hide()).container;
                                 tabs['View data'] = new TableView(repr, notebookPath).el;
                             } catch(err) {
                                 console.log(err);

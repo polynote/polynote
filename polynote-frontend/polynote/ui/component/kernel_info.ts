@@ -27,8 +27,8 @@ export class KernelInfoUI {
     toggleCollapse() {
         if (this.toggleEl.classList.contains('collapsed')) {
             this.toggleEl.classList.remove('collapsed');
-            this.infoEl.style.display = null;
-            (this.el.querySelector(".title") as HTMLElement).style.display = null;
+            this.infoEl.style.display = '';
+            (this.el.querySelector(".title") as HTMLElement).style.display = '';
         } else {
             this.toggleEl.classList.add('collapsed');
             this.infoEl.style.display = "none";

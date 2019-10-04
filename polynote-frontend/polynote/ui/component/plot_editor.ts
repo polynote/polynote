@@ -8,7 +8,8 @@ import {
     DateType, DoubleType,
     FloatType,
     IntType,
-    LongType, OptionalType,
+    LongType,
+    OptionalType,
     ShortType,
     StringType, StructField,
     TimestampType
@@ -26,6 +27,7 @@ import {ToolbarEvent} from "./toolbar";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {ClientResult, Output} from "../../data/result";
 import {CellMetadata} from "../../data/data";
+import {CurrentNotebook} from "./current_notebook";
 
 
 function isDimension(dataType: DataType): boolean {
@@ -122,7 +124,7 @@ export class PlotEditor extends UIEventTarget {
     private spec: any;
     private plot: VegaResult;
 
-    constructor(readonly repr: StreamingDataRepr, readonly path: string, readonly name: string, readonly sourceCell: number) {
+    constructor(readonly repr: StreamingDataRepr, readonly path: string, readonly name: string, readonly sourceCell: number, readonly plotSavedCb?: () => void) {
         super();
         this.fields = repr.dataType.fields;
 
@@ -497,15 +499,11 @@ export class PlotEditor extends UIEventTarget {
         content = content.replace('"$DATA_STREAM$"', streamSpec);
         const mkCell = (cellId: number) => new CodeCell(cellId, `(${content})`, 'vega', this.path, new CellMetadata(false, true, false));
         VegaClientResult.plotToOutput(this.plot).then(output => {
-            const event = new ToolbarEvent('InsertCellAfter', {
-                mkCell,
-                cellId: this.sourceCell,
-                results: [output],
-                afterInsert: (cell: CodeCell) => {
-                    cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output));
-                }
+            CurrentNotebook.current.insertCell("below", this.sourceCell, mkCell, [output], (cell: CodeCell) => {
+                cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
             });
-            this.dispatchEvent(event);
+
+            if (this.plotSavedCb) this.plotSavedCb()
         });
     }
 

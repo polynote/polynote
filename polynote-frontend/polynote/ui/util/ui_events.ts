@@ -3,7 +3,7 @@ import {TabActivated, NoActiveTab, TabRemoved} from "../component/tab";
 import {
     AdvanceCellEvent,
     BeforeCellRunEvent, CellExecutionFinished, CellExecutionStarted, CompletionRequest,
-    ContentChangeEvent, DeleteCellEvent, InsertCellEvent, ParamHintRequest,
+    ContentChangeEvent, DeleteCellEvent, ParamHintRequest,
     RunCellEvent,
     SelectCellEvent, SetCellLanguageEvent
 } from "../component/cell";
@@ -11,6 +11,7 @@ import {ExecutionStatus, KernelStatus, RunningKernels, TaskInfo} from "../../dat
 import {NotebookConfig} from "../../data/data";
 import {ReprDataRequest} from "../component/table_view";
 import {KernelError} from "../../data/result";
+import {NotebookSelected} from "../component/current_notebook";
 
 type TriggerItem = UIEvent<{item: string}>
 export type ImportNotebook = UIEvent<{name: string, content: string}>
@@ -46,10 +47,7 @@ export interface UIEventNameMap extends WindowEventMap {
     "RunCurrentCell": UIEvent<[]>;
     "CancelTasks": UIEvent<[]>;
     "Undo": UIEvent<[]>;
-    "InsertAbove": UIEvent<[]>;
     "InsertBelow": UIEvent<[]>;
-    "InsertCellBefore": InsertCellEvent;
-    "InsertCellAfter": InsertCellEvent;
     "DeleteCell": DeleteCellEvent;
     "ViewAbout": ViewAbout;
     "DownloadNotebook": UIEvent<[]>;
@@ -80,4 +78,5 @@ export interface UIEventNameMap extends WindowEventMap {
     "UpdatedExecutionStatus": UpdatedExecutionStatus;
     "UpdatedConfig": UpdatedConfig;
     "ReprDataRequest": ReprDataRequest;
+    "NotebookSelected": NotebookSelected;
 }

@@ -9,8 +9,8 @@ import {storage} from "../util/storage";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import * as monaco from "monaco-editor";
 import {PosRange} from "../../data/result";
-import {type} from "vega-lite/build/src/compile/legend/properties";
 import {NotebookUI} from "./notebook";
+import {CurrentNotebook} from "./current_notebook";
 
 type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
@@ -43,13 +43,13 @@ export class NotebookCellsUI extends UIEventTarget {
         return div(['new-cell-divider'], []).click((evt) => {
             const nextCell = this.getCellAfterEl(evt.target as HTMLElement);
             if (nextCell) {
-                this.dispatchEvent(new UIEvent('InsertCellBefore', {cellId: nextCell.id}));
+                CurrentNotebook.current.insertCell("above", nextCell.id);
             } else {
                 const prevCell = this.getCellBeforeEl((evt.target as HTMLElement));
                 if (prevCell) { // last cell
-                    this.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: prevCell.id}));
+                    CurrentNotebook.current.insertCell("below", prevCell.id);
                 } else { // no cells
-                    this.dispatchEvent(new UIEvent('InsertBelow'));
+                    CurrentNotebook.current.insertCell("below")
                 }
             }
         });
@@ -122,7 +122,7 @@ export class NotebookCellsUI extends UIEventTarget {
         return this.getCells()[0];
     }
 
-    getCell(cellId: number) {
+    getCell(cellId: number): Cell | undefined {
         return this.cells[cellId];
     }
 
@@ -208,7 +208,7 @@ export class NotebookCellsUI extends UIEventTarget {
         if (after && after instanceof Cell) {
             prevCell = after.container;
         } else if ((after || after === 0) && typeof after === "number" && this.getCell(after)) {
-            prevCell = this.getCell(after).container;
+            prevCell = this.getCell(after)!.container;
         } else if (!after) {
             prevCell = this.configUI.el;
         } else {

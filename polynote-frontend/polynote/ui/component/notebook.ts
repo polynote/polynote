@@ -41,8 +41,6 @@ export class NotebookUI extends UIEventTarget {
         super(eventParent);
         let cellUI = new NotebookCellsUI(this, path);
         let kernelUI = new KernelUI(this, path);
-        //super(null, cellUI, kernelUI);
-        //this.el.classList.add('notebook-ui');
         this.cellUI = cellUI;
         this.kernelUI = kernelUI;
 
@@ -115,102 +113,9 @@ export class NotebookUI extends UIEventTarget {
                     if (next) {
                         next.focus();
                     } else {
-                        this.cellUI.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: Cell.currentFocus.id}));
+                        this.insertCell("below", Cell.currentFocus.id);
                     }
                 }
-            }
-        });
-
-        this.addEventListener('InsertCellAfter', evt => {
-            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.firstCell().id);
-            const nextId = this.cellUI.getMaxCellId() + 1;
-            let newCell: Cell;
-            if (evt.detail.mkCell) {
-                newCell = evt.detail.mkCell(nextId);
-            } else {
-                const lang = current.language == 'text' ? 'scala' : current.language;
-                newCell = new CodeCell(nextId, '', lang, this.path);
-            }
-            const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata);
-            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, current.id);
-            this.socket.send(update);
-            this.editBuffer.push(this.localVersion, update);
-            this.cellUI.insertCell(newCell, current);
-            if (evt.detail.afterInsert) {
-                evt.detail.afterInsert(newCell);
-            }
-            newCell.focus();
-        });
-
-        // TODO: shares a lot of logic with InsertCellAfter
-        // TODO: BUG! what if there are no cells!
-        this.cellUI.addEventListener('InsertCellBefore', evt => {
-            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.firstCell();
-            const nextId = this.cellUI.getMaxCellId() + 1;
-            const newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
-            const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata);
-            if (current === this.cellUI.firstCell()) {
-                const update = new messages.InsertCell(path, this.globalVersion, this.localVersion++, notebookCell, -1);
-                this.socket.send(update);
-                this.cellUI.insertCell(newCell, null);
-            } else {
-                const prev = current.prevCell!()!; // TODO: this could be undefined, fix later.
-                const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, prev.id);
-                this.socket.send(update);
-                this.cellUI.insertCell(newCell, prev);
-
-            }
-            newCell.focus();
-        });
-
-        this.cellUI.addEventListener('DeleteCell', evt => {
-            const current = Cell.currentFocus;
-            if (current) {
-                const allCellIds = this.cellUI.getCells().map(cell => cell.id);
-                const currentIndex = allCellIds.indexOf(current.id);
-                if (currentIndex < 0) {
-                    throw "Active cell is not part of current notebook?"
-                }
-                const prevCells = allCellIds.slice(0, currentIndex);
-
-                const update = new messages.DeleteCell(path, this.globalVersion, ++this.localVersion, current.id);
-                this.socket.send(update);
-                this.editBuffer.push(this.localVersion, update);
-                const nextCell = current.nextCell!();
-
-                const cell = new NotebookCell(current.id, current.language, current.content);
-
-                const undoEl = div(['undo-delete'], [
-                    span(['close-button', 'fa'], ['']).click(evt => {
-                        undoEl.parentNode!.removeChild(undoEl);
-                    }),
-                    span(['undo-message'], [
-                        'Cell deleted. ',
-                        span(['undo-link'], ['Undo']).click(evt => {
-                            let prevCell = prevCells.pop()!;
-                            while (prevCells.length && !this.cellUI.getCell(prevCell!)) {
-                                prevCell = prevCells.pop()!;
-                            }
-
-                            // TODO: check if passing -1 actually works (Polykernel.updateNotebook might need to handle that case?) ! We might need to change InsertCell to take an optional `after` instead?
-                            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, cell, this.cellUI.getCell(prevCell) ? prevCell : -1);
-                            this.socket.send(update);
-                            const newCell = cell.language === 'text' ? new TextCell(cell.id, cell.content, this.path) : new CodeCell(cell.id, cell.content, cell.language, this.path);
-                            this.cellUI.insertCell(newCell, prevCell);
-                            undoEl.parentNode!.removeChild(undoEl);
-                        })
-                    ])
-                ]);
-
-                if (nextCell) {
-                    nextCell.focus();
-                    nextCell.container.parentNode!.insertBefore(undoEl, nextCell.container);
-                } else {
-                    const prev = current.prevCell!();
-                    if (prev) prev.focus();
-                    current.container.parentNode!.insertBefore(undoEl, current.container);
-                }
-                this.cellUI.removeCell(current.id);
             }
         });
 
@@ -390,7 +295,14 @@ export class NotebookUI extends UIEventTarget {
                         })
                         .when(messages.DeleteCell, (p: string, g: number, l: number, id: number) => this.cellUI.removeCell(id))
                         .when(messages.UpdateConfig, (p: string, g: number, l: number, config: NotebookConfig) => this.cellUI.configUI.setConfig(config))
-                        .when(messages.SetCellLanguage, (p: string, g: number, l: number, id, language: string) => this.cellUI.setCellLanguage(this.cellUI.getCell(id), language))
+                        .when(messages.SetCellLanguage, (p: string, g: number, l: number, id, language: string) => {
+                            const cell = this.cellUI.getCell(id);
+                            if (cell) {
+                                this.cellUI.setCellLanguage(cell, language)
+                            } else {
+                                throw new Error(`Cell ${id} does not exist in the current notebook`)
+                            }
+                        })
                         .when(messages.SetCellOutput, (p: string, g: number, l: number, id, output?: Output) => {
                             const cell = this.cellUI.getCell(id);
                             if (cell instanceof CodeCell) {
@@ -440,7 +352,11 @@ export class NotebookUI extends UIEventTarget {
         socket.addMessageListener(messages.CellResult, (path, id, result) => {
             if (path === this.path) {
                 const cell = this.cellUI.getCell(id);
-                this.handleResult(result, cell);
+                if (cell) {
+                    this.handleResult(result, cell);
+                } else if (id >= 0) { // Cell ids less than 0 refer to the Predef and other server-side things we can safely ignore.
+                    throw new Error(`Cell Id ${id} does not exist in the current notebook`)
+                }
             }
         });
     }
@@ -552,14 +468,15 @@ export class NotebookUI extends UIEventTarget {
         this.socket.send(new messages.RunCell(this.path, serverRunCells));
     }
 
+    // TODO: doesn't seem necessary - logic should be handled in nb_cells I think
     onCellLanguageSelected(setLanguage: string, path: string, id?: number) {
         if (path !== this.path) {
             return;
         }
 
-        id = id || Cell.currentFocus!.id;
-        if (id) {
-            const cell = this.cellUI.getCell(id);
+        id = id !== undefined ? id : (Cell.currentFocus ? Cell.currentFocus.id : undefined);
+        const cell = id && this.cellUI.getCell(id);
+        if (id && cell) {
             if (cell.language !== setLanguage) {
                 this.cellUI.setCellLanguage(cell, setLanguage);
                 this.socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
@@ -606,5 +523,109 @@ export class NotebookUI extends UIEventTarget {
             }
         }
         this.mainUI.dispatchEvent(new UIEvent('CellsLoaded'))
+    }
+
+    get currentCell() {
+        return Cell.currentFocus // TODO: better way to keep track of this.
+    }
+
+    insertCell(direction: "above" | "below", cellId?: number, mkCell?: (nextCellId: number) => Cell, results?: Output[], postInsertCb?: (cell: Cell) => void): void {
+        const maxCellId = this.cellUI.getMaxCellId();
+        const nextCellId = maxCellId + 1;
+
+        const currentId = cellId !== undefined ? cellId : (this.currentCell ? this.currentCell.id : undefined);
+
+        let anchorId: number;
+        if (currentId) {
+            if (direction === "below") {
+                anchorId = currentId;
+            } else {
+                // for "after", we need to insert the cell relative to the cell above this one.
+                const prevCell = this.cellUI.getCell(currentId);
+                const prev = prevCell ? prevCell.prevCell ? prevCell.prevCell() : undefined : undefined; // oh my
+                if (prev) {
+                    anchorId = prev.id;
+                } else { // must be the first cell
+                    anchorId = -1;
+                }
+            }
+        } else {
+            // if no cell is selected, then we insert a cell either in the beginning or end of the nb depending on `direction`
+            anchorId = direction === "above" ? -1 : maxCellId;
+        }
+
+        const mkCellFun = mkCell || (nextCellId => {
+            const anchorCell = this.cellUI.getCell(anchorId);
+            if (anchorCell) {
+                const lang = current.language == 'text' ? 'scala' : current.language;
+                return new CodeCell(nextCellId, '', lang, this.path)
+            } else {
+                // There's no cell to anchor to, so we'll just create a default cell.
+                return new CodeCell(nextCellId, '', 'scala', this.path)
+            }
+        });
+        const newCell = mkCellFun(nextCellId);
+
+        const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, results || [], newCell.metadata);
+        const update = new messages.InsertCell(this.path, this.globalVersion, ++this.localVersion, notebookCell, anchorId);
+        this.socket.send(update);
+        this.editBuffer.push(this.localVersion, update);
+        this.cellUI.insertCell(newCell, anchorId);
+        if (postInsertCb) {
+            postInsertCb(newCell);
+        }
+        newCell.focus();
+    }
+
+    deleteCell(cellId?: number): void {
+        const deleteCellId = cellId !== undefined ? cellId : (this.currentCell ? this.currentCell.id : undefined);
+        if (deleteCellId !== undefined) {
+            const deleteCell = this.cellUI.getCell(deleteCellId);
+            if (!deleteCell) {
+                throw "Active cell is not part of current notebook?"
+            }
+
+            const update = new messages.DeleteCell(this.path, this.globalVersion, ++this.localVersion, deleteCellId);
+            this.socket.send(update);
+            this.editBuffer.push(this.localVersion, update);
+            const nextCell = deleteCell.nextCell && deleteCell.nextCell();
+
+            // defensive copy since deleteCell could be modified later.
+            const deletedCellInfo = {
+                language: deleteCell.language,
+                content: deleteCell.content,
+                metadata: deleteCell.metadata,
+            };
+
+            const undoEl = div(['undo-delete'], [
+                span(['close-button', 'fa'], ['']).click(evt => {
+                    undoEl.parentNode!.removeChild(undoEl);
+                }),
+                span(['undo-message'], [
+                    'Cell deleted. ',
+                    span(['undo-link'], ['Undo']).click(evt => {
+
+                        const prevCell = this.cellUI.getCellBeforeEl(undoEl);
+                        const prevCellId = prevCell ? prevCell.id : -1;
+                        this.insertCell("below", prevCellId, (nextCellId => {
+                            return deletedCellInfo.language === 'text' ?
+                                new TextCell(nextCellId, deletedCellInfo.content, this.path, deletedCellInfo.metadata) :
+                                new CodeCell(nextCellId, deletedCellInfo.content, deletedCellInfo.language, this.path, deletedCellInfo.metadata);
+                        }));
+                        undoEl.parentNode!.removeChild(undoEl);
+                    })
+                ])
+            ]);
+
+            if (nextCell) {
+                nextCell.focus();
+                nextCell.container.parentNode!.insertBefore(undoEl, nextCell.container);
+            } else {
+                const prev = deleteCell.prevCell!();
+                if (prev) prev.focus();
+                deleteCell.container.parentNode!.insertBefore(undoEl, deleteCell.container);
+            }
+            this.cellUI.removeCell(deleteCellId);
+        }
     }
 }

@@ -5,6 +5,7 @@ import {LaTeXEditor} from "./latex_editor";
 import {UIEvent, UIEventTarget} from "../util/ui_event";
 import {preferences, storage} from "../util/storage";
 import {UIEventNameMap} from "../util/ui_events";
+import {CurrentNotebook} from "./current_notebook";
 
 export class ToolbarEvent extends UIEvent<any> {
     constructor(eventId: keyof UIEventNameMap, details?: any) {
@@ -115,11 +116,11 @@ class CellToolbarUI extends UIEventTarget {
                 ])
             ], [
                 iconButton(["insert-cell-above"], "Insert cell above current", "", "Insert above")
-                    .click(() => this.dispatchEvent(new ToolbarEvent(("InsertAbove")))),
+                    .click(() => CurrentNotebook.current.insertCell('above')),
                 iconButton(["insert-cell-below"], "Insert cell below current", "", "Insert below")
-                    .click(() => this.dispatchEvent(new ToolbarEvent(("InsertBelow")))),
+                    .click(() => CurrentNotebook.current.insertCell('below')),
                 iconButton(["delete-cell"], "Delete current cell", "", "Delete")
-                    .click(() => this.dispatchEvent(new ToolbarEvent(("DeleteCell")))),
+                    .click(() => CurrentNotebook.current.deleteCell())
                 // iconButton(['undo'], 'Undo', '', 'Undo')
                 //     .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
             ]

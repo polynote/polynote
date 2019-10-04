@@ -28,6 +28,7 @@ import {FoldingController, FoldingModel, SuggestController} from "../monaco/exte
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import {UIEventNameMap} from "../util/ui_events";
+import {CurrentNotebook} from "./current_notebook";
 
 export class CellEvent<T = {}> extends UIEvent<T & { cellId: number }> {
     constructor(eventId: keyof UIEventNameMap, cellId: number, otherDetails: T = {} as any) {  // `{} as any` seems ugly, any better alternative?
@@ -70,16 +71,6 @@ export class AdvanceCellEvent extends CellEvent<{ backward: boolean }> {
     }
 
     get backward() { return this.detail.backward; }
-}
-
-export class InsertCellEvent extends CellEvent<{ mkCell?: (cellId: number) => Cell, results?: Output[], afterInsert?: (cell: Cell) => void }> {
-    constructor(cellId: number, before: boolean = false, mkCell?: (cellId: number) => Cell, results?: Output[], afterInsert?: (cell: Cell) => void) {
-        if (before) {
-            super('InsertCellBefore', cellId, {mkCell, results, afterInsert});
-        } else {
-            super('InsertCellAfter', cellId, {mkCell, results, afterInsert});
-        }
-    }
 }
 
 export class DeleteCellEvent extends CellEvent {
@@ -144,6 +135,7 @@ export abstract class Cell extends UIEventTarget {
     protected keyMap: Map<KeyCode, KeyAction>;
 
     // the following are added when the cell is inserted into the DOM.
+    // TODO: it's a pain to deal with these... maybe we should enforce these when creating the cell?
     nextCell?: () => (Cell | undefined);
     prevCell?: () => (Cell | undefined);
 
@@ -324,7 +316,7 @@ export abstract class Cell extends UIEventTarget {
             cell.dispatchEvent(new AdvanceCellEvent(cell.id));
         }).withPreventDefault(true).withDesc("Move to next cell. If there is no next cell, create it.")],
         [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
-            cell.dispatchEvent(new InsertCellEvent(cell.id));
+            CurrentNotebook.current.insertCell("below", cell.id);
         }).withPreventDefault(true).withDesc("Insert a cell after this one.")],
         [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown,
             new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, false)))
@@ -333,13 +325,13 @@ export abstract class Cell extends UIEventTarget {
             new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, true)))
                 .withDesc("Move to previous cell. If there is no previous cell, create it.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A, // A for Above (from Zep)
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id, true)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.current.insertCell("above", cell.id))
                 .withDesc("Insert cell above this cell.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B, // B for Below (from Zep)
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.current.insertCell("below", cell.id))
                 .withDesc("Insert a cell below this cell.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D, // D for Delete (from Zep)
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new DeleteCellEvent(cell.id)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.current.deleteCell(cell.id))
                 .withDesc("Delete this cell.")],
     ]);
 
