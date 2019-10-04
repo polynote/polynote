@@ -22,7 +22,7 @@ trait DataEncoder[@specialized T] extends Serializable {
   def numeric: Option[Numeric[T]]
 }
 
-object DataEncoder extends DataEncoderDerivations {
+object DataEncoder extends DataEncoder0 {
 
   def sizedInstance[@specialized T](typ: DataType, size: T => Int, numericOpt: Option[Numeric[T]] = None)(fn: (DataOutput, T) => Unit): DataEncoder[T] = new DataEncoder[T] {
     def encode(dataOutput: DataOutput, value: T): Unit = fn(dataOutput, value)
@@ -76,7 +76,7 @@ object DataEncoder extends DataEncoderDerivations {
       }
   }
 
-  implicit def array[A](implicit encodeA: DataEncoder[A]): DataEncoder[Array[A]] = sizedInstance[Array[A]](ArrayType(encodeA.dataType), arr => arr.length * encodeA.dataType.size) {
+  implicit def array[A](implicit encodeA: DataEncoder[A]): DataEncoder[Array[A]] = sizedInstance[Array[A]](ArrayType(encodeA.dataType), arr => arr.length * encodeA.dataType.size + 4) {
     (output, arr) =>
       output.writeInt(arr.length)
       var i = 0
@@ -86,19 +86,17 @@ object DataEncoder extends DataEncoderDerivations {
       }
   }
 
-  implicit def traversable[F[X] <: GenTraversable[X], A](implicit encodeA: DataEncoder[A]): DataEncoder[F[A]] = sizedInstance[F[A]](ArrayType(encodeA.dataType), seq => seq.size * encodeA.dataType.size) {
-    (output, seq) =>
-      output.writeInt(seq.size)
-      seq.foreach(encodeA.encode(output, _))
-  }
-
-  implicit def map[F[KK, VV] <: Map[KK, VV], K, V](implicit structEncoder: DataEncoder.StructDataEncoder[(K, V)]): DataEncoder[Map[K, V]] = sizedInstance[Map[K, V]](
-    MapType(structEncoder.dataType),
-    map => map.size * structEncoder.dataType.size) {
-    (output, map) =>
-      output.writeInt(map.size)
-      map.foreach(structEncoder.encode(output, _))
-  }
+//  implicit def collectionMap[F[KK, VV] <: scala.collection.Map[KK, VV], K, V](implicit keyEncoder: DataEncoder[K], valueEncoder: DataEncoder[V]): DataEncoder[F[K, V]] = sizedInstance[F[K, V]](
+//    MapType(keyEncoder.dataType, valueEncoder.dataType),
+//    map => map.size * keyEncoder.dataType.size * valueEncoder.dataType.size + 4) {
+//    (output, map) =>
+//      output.writeInt(map.size)
+//      map.foreach {
+//        case (k, v) =>
+//          keyEncoder.encode(output, k)
+//          valueEncoder.encode(output, v)
+//      }
+//  }
 
   private[polynote] class BufferOutput(buf: ByteBuffer) extends DataOutput {
     def write(b: Int): Unit = buf.put(b.toByte)
@@ -150,7 +148,40 @@ object DataEncoder extends DataEncoderDerivations {
   def combineSize(a: Int, b: Int): Int = if (a >= 0 && b >= 0) a + b else -1
 }
 
+private[runtime] sealed trait DataEncoder0 extends DataEncoderDerivations { self: DataEncoder.type =>
+
+  class MapDataEncoder[F[A, B] <: scala.collection.GenMap[A, B], K, V](encodeK: DataEncoder[K], encodeV: DataEncoder[V]) extends DataEncoder[F[K, V]] {
+    def encode(output: DataOutput, map: F[K, V]): Unit = {
+      output.writeInt(map.size)
+      map.foreach {
+        case (k, v) =>
+          encodeK.encode(output, k)
+          encodeV.encode(output, v)
+      }
+    }
+
+    def dataType: DataType = MapType(encodeK.dataType, encodeV.dataType)
+
+    def sizeOf(map: F[K, V]): Int =
+      if (encodeK.dataType.size >= 0 && encodeV.dataType.size >= 0)
+        map.size * encodeK.dataType.size * encodeV.dataType.size + 4
+      else
+        -1
+
+    def numeric: Option[Numeric[F[K, V]]] = None
+  }
+
+
+  implicit def mapOfStruct[K, V](implicit encodeK: DataEncoder[K], encodeV: StructDataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
+  //implicit def predefMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
+  //implicit def collectionMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[scala.collection.Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
+
+}
+
 private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
+
+
+  implicit def predefMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
 
   abstract class StructDataEncoder[T](
     val dataType: StructType
@@ -161,34 +192,34 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
 
   object StructDataEncoder {
 
-    implicit val hnil: StructDataEncoder[HNil] = new StructDataEncoder[HNil](StructType(Nil)) {
-      def encode(dataOutput: DataOutput, value: HNil): Unit = ()
-      def sizeOf(t: HNil): Int = 0
-      def field(name: String): Option[(HNil => Any, DataEncoder[_])] = None
-    }
-
-    implicit def hcons[K <: Symbol, H, T <: HList](implicit
-      label: Witness.Aux[K],
-      encoderH: DataEncoder[H],
-      encoderT: StructDataEncoder[T]
-    ): StructDataEncoder[FieldType[K, H] :: T] =
-      new StructDataEncoder[FieldType[K, H] :: T](StructType(StructField(label.value.name, encoderH.dataType) :: encoderT.dataType.fields)) {
-        val fieldName: String = label.value.name
-        def encode(output: DataOutput, value: FieldType[K, H] :: T): Unit = encoderT.encode(encoderH.encodeAnd(output, value.head), value.tail)
-        def sizeOf(value: FieldType[K, H] :: T): Int = combineSize(encoderH.sizeOf(value.head), encoderT.sizeOf(value.tail))
-
-        // Note: the returned getter here is very slow.
-        def field(name: String): Option[((FieldType[K, H] :: T) => Any, DataEncoder[_])] = if (name == fieldName) {
-          val getter: (FieldType[K, H] :: T) => Any = ht => ht.head
-          Some(getter -> encoderH)
-        } else {
-          encoderT.field(name).map {
-            case (getterT, enc) =>
-              val getter: (FieldType[K, H] :: T) => Any = getterT.compose(_.tail)
-              getter -> enc
-          }
-        }
-      }
+//    implicit val hnil: StructDataEncoder[HNil] = new StructDataEncoder[HNil](StructType(Nil)) {
+//      def encode(dataOutput: DataOutput, value: HNil): Unit = ()
+//      def sizeOf(t: HNil): Int = 0
+//      def field(name: String): Option[(HNil => Any, DataEncoder[_])] = None
+//    }
+//
+//    implicit def hcons[K <: Symbol, H, T <: HList](implicit
+//      label: Witness.Aux[K],
+//      encoderH: DataEncoder[H],
+//      encoderT: StructDataEncoder[T]
+//    ): StructDataEncoder[FieldType[K, H] :: T] =
+//      new StructDataEncoder[FieldType[K, H] :: T](StructType(StructField(label.value.name, encoderH.dataType) :: encoderT.dataType.fields)) {
+//        val fieldName: String = label.value.name
+//        def encode(output: DataOutput, value: FieldType[K, H] :: T): Unit = encoderT.encode(encoderH.encodeAnd(output, value.head), value.tail)
+//        def sizeOf(value: FieldType[K, H] :: T): Int = combineSize(encoderH.sizeOf(value.head), encoderT.sizeOf(value.tail))
+//
+//        // Note: the returned getter here is very slow.
+//        def field(name: String): Option[((FieldType[K, H] :: T) => Any, DataEncoder[_])] = if (name == fieldName) {
+//          val getter: (FieldType[K, H] :: T) => Any = ht => ht.head
+//          Some(getter -> encoderH)
+//        } else {
+//          encoderT.field(name).map {
+//            case (getterT, enc) =>
+//              val getter: (FieldType[K, H] :: T) => Any = getterT.compose(_.tail)
+//              getter -> enc
+//          }
+//        }
+//      }
 
     implicit def caseClassMacro[A <: Product]: StructDataEncoder[A] = macro StructDataEncoderMacros.materialize[A]
 
@@ -208,4 +239,18 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
   }
 
   implicit def fromStructDataEncoder[T](implicit structDataEncoderT: StructDataEncoder[T]): DataEncoder[T] = structDataEncoderT
+
+  class SeqEncoder[F[X] <: scala.collection.GenSeq[X], A](encodeA: DataEncoder[A]) extends DataEncoder[F[A]] {
+    def encode(output: DataOutput, seq: F[A]): Unit = {
+      output.writeInt(seq.size)
+      seq.foreach(encodeA.encode(output, _))
+    }
+    def dataType: DataType = ArrayType(encodeA.dataType)
+    def sizeOf(t: F[A]): Int = if (encodeA.dataType.size >= 0) encodeA.dataType.size * t.size else -1
+    def numeric: Option[Numeric[F[A]]] = None
+  }
+
+  implicit def seq[A](implicit encodeA: DataEncoder[A]): DataEncoder[Seq[A]] = new SeqEncoder(encodeA)
+  implicit def list[A](implicit encodeA: DataEncoder[A]): DataEncoder[List[A]] = new SeqEncoder(encodeA)
+  implicit def vec[A](implicit encodeA: DataEncoder[A]): DataEncoder[Vector[A]] = new SeqEncoder(encodeA)
 }

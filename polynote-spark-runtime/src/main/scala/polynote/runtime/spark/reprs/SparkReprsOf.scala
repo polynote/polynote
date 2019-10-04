@@ -58,7 +58,7 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         if dataTypeAndEncoder(sparkKeyType).nonEmpty && dataTypeAndEncoder(sparkValueType).nonEmpty =>
       val (keyType, encodeKey) = dataTypeAndEncoder(sparkKeyType).get
       val (valueType, encodeValue) = dataTypeAndEncoder(sparkValueType).get
-      MapType(StructType(List(StructField("key", keyType), StructField("value", valueType)))) -> {
+      MapType(keyType, valueType) -> {
         out =>
           row => {
             index =>

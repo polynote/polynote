@@ -79,7 +79,8 @@ export function truncate(string: any, len?: number) {
     return string;
 }
 
-export function displayData(data: any, fieldName?: string, expandObjects: boolean = false) {
+export function displayData(data: any, fieldName?: string, expandObjects: boolean | number = false) {
+    const expandNext: boolean | number = typeof(expandObjects) === "number" ? (expandObjects > 0 ? expandObjects - 1 : false) : expandObjects;
 
     function shortDisplay(data: any) {
         if (data instanceof Array) {
@@ -110,7 +111,7 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
                 break;
             }
             count++;
-            elems.appendChild(tag('li', [], {}, displayData(elem, undefined, expandObjects)));
+            elems.appendChild(tag('li', [], {}, displayData(elem, undefined, expandNext)));
         }
         return details;
     } else if (data instanceof Map) {
@@ -125,7 +126,7 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
         const details = tag('details', ['object-display'], expandObjects ? { open: 'open' } : {}, [summary, fields]);
 
         for (let [key, val] of data) {
-            fields.appendChild(tag('li', [], {}, [displayData(val, key, expandObjects)]));
+            fields.appendChild(tag('li', [], {}, [displayData(val, key, expandNext)]));
         }
         return details;
     } else if (typeof data === "object" && !(data instanceof String)) {
@@ -147,7 +148,7 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
         const details = tag('details', ['object-display'], expandObjects ? { open: 'open' } : {}, [summary, fields]);
 
         for (let key of keys) {
-            fields.appendChild(tag('li', [], {}, [displayData(data[key], key, expandObjects)]));
+            fields.appendChild(tag('li', [], {}, [displayData(data[key], key, expandNext)]));
         }
         return details;
     } else {
@@ -243,7 +244,7 @@ export function displaySchema(structType: StructType): HTMLElement {
     }
 
     function displayMap(typ: MapType): HTMLElement {
-        return tag("ul", ["object-fields", "map-type"], {}, typ.element.fields.map(displayField));
+        return tag("ul", ["object-fields", "map-type"], {}, [displayField(new StructField("key", typ.keyType)), displayField(new StructField("value", typ.valueType))]);
     }
 
     return div(['schema-display'], [
