@@ -134,11 +134,6 @@ export abstract class Cell extends UIEventTarget {
     readonly resultTabs: TagElement<"div">;
     protected keyMap: Map<KeyCode, KeyAction>;
 
-    // the following are added when the cell is inserted into the DOM.
-    // TODO: it's a pain to deal with these... maybe we should enforce these when creating the cell?
-    nextCell?: () => (Cell | undefined);
-    prevCell?: () => (Cell | undefined);
-
     constructor(readonly id: number, public language: string, readonly path: string, public metadata?: CellMetadata) {
         super();
         if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
