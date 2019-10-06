@@ -243,7 +243,7 @@ class LocalKernelFactory extends Kernel.Factory.Service {
     compiler     <- ScalaCompiler.provider(scalaDeps.map(_._2))
     busyState    <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters <- RefMap.empty[String, Interpreter]
-    _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provide(compiler))
+    _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provideSomeM(Env.enrich[Blocking](compiler)))
     interpState  <- Ref[Task].of[State](State.predef(State.Root, State.Root))
   } yield new LocalKernel(compiler, interpState, interpreters, busyState)
 

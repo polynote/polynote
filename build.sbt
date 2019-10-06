@@ -101,6 +101,7 @@ val `polynote-kernel` = project.settings(
     "io.get-coursier" %% "coursier" % versions.coursier,
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
     "io.get-coursier" %% "coursier-cats-interop" % versions.coursier,
+    "io.github.classgraph" % "classgraph" % "4.8.47",
     "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
     "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"

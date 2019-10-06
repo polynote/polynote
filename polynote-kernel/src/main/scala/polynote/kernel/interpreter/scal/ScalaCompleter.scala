@@ -2,97 +2,107 @@ package polynote.kernel.interpreter.scal
 
 import polynote.kernel.{Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
 import polynote.messages.{ShortString, TinyList, TinyString}
-
 import cats.syntax.either._
+import zio.{Fiber, Task}
 
 import scala.annotation.tailrec
+import scala.collection.immutable.TreeMap
 import scala.reflect.internal.util.Position
 import scala.util.control.NonFatal
 
-class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
+class ScalaCompleter[Compiler <: ScalaCompiler](
+  val compiler: Compiler,
+  index: Fiber[Throwable, TreeMap[String, List[String]]]
+) {
 
   import compiler.global._
 
-  def completions(cellCode: compiler.CellCode, pos: Int): List[Completion] = {
+  def completions(cellCode: compiler.CellCode, pos: Int): Task[List[Completion]] = index.poll.map {
+    indexState =>
 
-    def symToCompletion(sym: Symbol, inType: Type) = {
-      val name = sym.name.decodedName.toString.trim // term names seem to get an extra space at the end?
-      val typ  = sym.typeSignatureIn(inType)
-      val tParams = sym.typeParams.map(_.name.decodedName.toString)
-      val vParams = TinyList(sym.paramss.map(_.map{p => (p.name.decodedName.toString: TinyString, compiler.unsafeFormatType(p.infoIn(typ)): ShortString)}: TinyList[(TinyString, ShortString)]))
-      Completion(name, tParams, vParams, compiler.unsafeFormatType(typ), completionType(sym))
-    }
+      val classIndex = indexState.map(_.getOrElse(_ => TreeMap.empty)).getOrElse(TreeMap.empty)
 
-    def scopeToCompletions(scope: Scope, name: Name, inType: Type): List[Completion] = {
-      val isError = name.decoded == "<error>"
-      val matchingSymbols = scope.filter(isVisibleSymbol).collect {
-        case sym if isError || name.isEmpty || sym.name.startsWith(name) => sym.accessedOrSelf
-      }.toList
-
-      matchingSymbols.sortBy(_.name).map(symToCompletion(_, inType))
-    }
-
-    try {
-      deepestSubtreeEndingAt(cellCode.typed, pos) match {
-        case tree@Select(qual, name) if qual != null =>
-
-          // start with completions from the qualifier's type
-          val scope = qual.tpe.members.cloneScope
-
-          // bring in completions from implicit enrichments
-          val context = locateContext(tree.pos).getOrElse(NoContext)
-          val ownerTpe = qual.tpe match {
-            case MethodType(List(), rtpe) => rtpe
-            case _ => qual.tpe
-          }
-
-          if (ownerTpe != null) {
-            val allImplicits = new analyzer.ImplicitSearch(qual, definitions.functionType(List(ownerTpe), definitions.AnyTpe), isView = true, context0 = context).allImplicits
-
-            allImplicits.foreach {
-              result =>
-                val members = result.tree.tpe.finalResultType.members
-                members.foreach(scope.enterIfNew)
-            }
-          }
-          scopeToCompletions(scope, name, qual.tpe)
-
-
-        case tree@Ident(name: Name) =>
-          val context = locateContext(tree.pos).getOrElse(NoContext)
-
-          val imports = context.imports.flatMap {
-            importInfo => importInfo.allImportedSymbols.filter(sym => !sym.isImplicit && sym.isPublic && sym.name.startsWith(name) && !sym.name.startsWith("deprecated"))
-          }
-
-          val cellScope = context.owner.info.decls.filter(isVisibleSymbol).toList.map(_.accessedOrSelf).distinct
-
-          (cellScope ++ imports).map(symToCompletion(_, NoType))
-
-        // this works pretty well. Really helps with imports. But is there a way we can index classes & auto-import them like IntelliJ does?
-        case Import(qual: Tree, names) if !qual.isErrorTyped =>
-          val searchName = names.dropWhile(_.namePos < pos).headOption match {
-            case None => TermName("")
-            case Some(sel) if sel.name.decoded == "<error>" => TermName("")
-            case Some(sel) => sel.name
-          }
-
-          val result = qual.tpe.members.filter(isVisibleSymbol).filter(_.isDefinedInPackage)
-            .toList
-            .sorted(importOrdering)
-            .groupBy(_.name.decoded).values.map(_.head).toList
-            .map(symToCompletion(_, NoType))
-
-          result
-
-        case other =>
-          val o = other
-          Nil
-
+      def symToCompletion(sym: Symbol, inType: Type) = {
+        val name = sym.name.decodedName.toString.trim // term names seem to get an extra space at the end?
+        val typ  = sym.typeSignatureIn(inType)
+        val tParams = sym.typeParams.map(_.name.decodedName.toString)
+        val vParams = TinyList(sym.paramss.map(_.map{p => (p.name.decodedName.toString: TinyString, compiler.unsafeFormatType(p.infoIn(typ)): ShortString)}: TinyList[(TinyString, ShortString)]))
+        Completion(name, tParams, vParams, compiler.unsafeFormatType(typ), completionType(sym))
       }
-    } catch {
-      case NonFatal(err) => Nil
-    }
+
+      def scopeToCompletions(scope: Scope, name: Name, inType: Type): List[Completion] = {
+        val isError = name.decoded == "<error>"
+        val matchingSymbols = scope.filter(isVisibleSymbol).collect {
+          case sym if isError || name.isEmpty || sym.name.startsWith(name) => sym.accessedOrSelf
+        }.toList
+
+        matchingSymbols.sortBy(_.name).map(symToCompletion(_, inType))
+      }
+
+      try {
+        deepestSubtreeEndingAt(cellCode.typed, pos) match {
+          case tree@Select(qual, name) if qual != null =>
+
+            // start with completions from the qualifier's type
+            val scope = qual.tpe.members.cloneScope
+
+            // bring in completions from implicit enrichments
+            val context = locateContext(tree.pos).getOrElse(NoContext)
+            val ownerTpe = qual.tpe match {
+              case MethodType(List(), rtpe) => rtpe
+              case _ => qual.tpe
+            }
+
+            if (ownerTpe != null) {
+              val allImplicits = new analyzer.ImplicitSearch(qual, definitions.functionType(List(ownerTpe), definitions.AnyTpe), isView = true, context0 = context).allImplicits
+
+              allImplicits.foreach {
+                result =>
+                  val members = result.tree.tpe.finalResultType.members
+                  members.foreach(scope.enterIfNew)
+              }
+            }
+            scopeToCompletions(scope, name, qual.tpe)
+
+
+          case tree@Ident(name: Name) =>
+            val nameString = name.toString
+            val context = locateContext(tree.pos).getOrElse(NoContext)
+
+            val imports = context.imports.flatMap {
+              importInfo => importInfo.allImportedSymbols.filter(sym => !sym.isImplicit && sym.isPublic && sym.name.startsWith(name) && !sym.name.startsWith("deprecated"))
+            }
+
+            val fromClasspath = classIndex.range(nameString, nameString + Char.MaxValue).values.toList.flatten
+
+            val cellScope = context.owner.info.decls.filter(isVisibleSymbol).filter(_.name.startsWith(name)).toList.map(_.accessedOrSelf).distinct
+
+            (cellScope ++ imports).map(symToCompletion(_, NoType))
+
+          // this works pretty well. Really helps with imports. But is there a way we can index classes & auto-import them like IntelliJ does?
+          case Import(qual: Tree, names) if !qual.isErrorTyped =>
+            val searchName = names.dropWhile(_.namePos < pos).headOption match {
+              case None => TermName("")
+              case Some(sel) if sel.name.decoded == "<error>" => TermName("")
+              case Some(sel) => sel.name
+            }
+
+            val result = qual.tpe.members.filter(isVisibleSymbol).filter(_.isDefinedInPackage).filter(_.name.startsWith(searchName))
+              .toList
+              .sorted(importOrdering)
+              .groupBy(_.name.decoded).values.map(_.head).toList
+              .map(symToCompletion(_, NoType))
+
+            result
+
+          case other =>
+            val o = other
+            Nil
+
+        }
+      } catch {
+        case NonFatal(err) => Nil
+      }
   }
 
   private val importOrdering: Ordering[Symbol] = new Ordering[Symbol] {
@@ -219,5 +229,5 @@ class ScalaCompleter[Compiler <: ScalaCompiler](val compiler: Compiler) {
 }
 
 object ScalaCompleter {
-  def apply(compiler: ScalaCompiler): ScalaCompleter[compiler.type] = new ScalaCompleter(compiler)
+  def apply(compiler: ScalaCompiler, index: Fiber[Throwable, TreeMap[String, List[String]]]): ScalaCompleter[compiler.type] = new ScalaCompleter(compiler, index)
 }
