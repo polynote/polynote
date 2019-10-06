@@ -103,7 +103,7 @@ export class NotebookConfig {
         optional(mapCodec(uint8, tinyStr, arrayCodec(uint8, tinyStr))),
         optional(arrayCodec(uint8, tinyStr)),
         optional(arrayCodec(uint8, RepositoryConfig.codec)),
-        optional(mapCodec(uint16, str, str)),
+        optional(mapCodec(uint16, str as Codec<string>, str)),
     ).to(NotebookConfig);
     static unapply(inst: NotebookConfig): ConstructorParameters<typeof NotebookConfig> {
         return [inst.dependencies, inst.exclusions, inst.repositories, inst.sparkConfig];

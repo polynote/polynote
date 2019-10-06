@@ -261,19 +261,19 @@ object StreamingDataRepr {
 
     val repr = StreamingDataRepr(handleId, handle.dataType, handle.knownSize)
 
-    Cleaner.create(repr, new Runnable {
-      def run(): Unit = {
-        val handle = handles.get(handleId)
-        if (handle != null) {
-          try handle.release() catch {
-            case err: Throwable =>
-              System.err.println("Error cleaning streaming handle")
-              err.printStackTrace()
-          }
-          handles.remove(handleId)
-        }
-      }
-    })
+//    Cleaner.create(repr, new Runnable {
+//      def run(): Unit = {
+//        val handle = handles.get(handleId)
+//        if (handle != null) {
+//          try handle.release() catch {
+//            case err: Throwable =>
+//              System.err.println("Error cleaning streaming handle")
+//              err.printStackTrace()
+//          }
+//          handles.remove(handleId)
+//        }
+//      }
+//    })
 
     repr
   }

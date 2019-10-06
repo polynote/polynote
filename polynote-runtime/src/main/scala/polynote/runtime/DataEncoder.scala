@@ -45,8 +45,13 @@ object DataEncoder extends DataEncoder0 {
   implicit val double: DataEncoder[Double] = numericInstance(DoubleType)(_ writeDouble _)
   implicit val string: DataEncoder[String] = instance(StringType) {
     (out, str) =>
-      out.writeInt(str.length)
-      out.write(str.getBytes(StandardCharsets.UTF_8))
+      if (out == null) {
+        out.writeInt(-1)
+      } else {
+        val bytes = str.getBytes(StandardCharsets.UTF_8)
+        out.writeInt(bytes.length)
+        out.write(bytes)
+      }
   }
 
   // NOT implicit!
@@ -86,17 +91,13 @@ object DataEncoder extends DataEncoder0 {
       }
   }
 
-//  implicit def collectionMap[F[KK, VV] <: scala.collection.Map[KK, VV], K, V](implicit keyEncoder: DataEncoder[K], valueEncoder: DataEncoder[V]): DataEncoder[F[K, V]] = sizedInstance[F[K, V]](
-//    MapType(keyEncoder.dataType, valueEncoder.dataType),
-//    map => map.size * keyEncoder.dataType.size * valueEncoder.dataType.size + 4) {
-//    (output, map) =>
-//      output.writeInt(map.size)
-//      map.foreach {
-//        case (k, v) =>
-//          keyEncoder.encode(output, k)
-//          valueEncoder.encode(output, v)
-//      }
-//  }
+  implicit def optional[A](implicit encodeA: DataEncoder[A]): DataEncoder[Option[A]] = sizedInstance[Option[A]](OptionalType(encodeA.dataType), opt => opt.fold(1)(a => encodeA.sizeOf(a) + 4)) {
+    case (output, None) =>
+      output.writeByte(0)
+    case (output, Some(a)) =>
+      output.writeByte(1)
+      encodeA.encode(output, a)
+  }
 
   private[polynote] class BufferOutput(buf: ByteBuffer) extends DataOutput {
     def write(b: Int): Unit = buf.put(b.toByte)
@@ -173,8 +174,6 @@ private[runtime] sealed trait DataEncoder0 extends DataEncoderDerivations { self
 
 
   implicit def mapOfStruct[K, V](implicit encodeK: DataEncoder[K], encodeV: StructDataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
-  //implicit def predefMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
-  //implicit def collectionMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[scala.collection.Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
 
 }
 
@@ -182,6 +181,7 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
 
 
   implicit def predefMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
+  implicit def collectionMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[scala.collection.Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
 
   abstract class StructDataEncoder[T](
     val dataType: StructType

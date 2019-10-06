@@ -8,7 +8,7 @@ import {
     DateType, DoubleType,
     FloatType,
     IntType,
-    LongType,
+    LongType, OptionalType,
     ShortType,
     StringType, StructField,
     TimestampType
@@ -28,7 +28,10 @@ import {ClientResult, Output} from "../../data/result";
 import {CellMetadata} from "../../data/data";
 
 
-function isDimension(dataType: DataType) {
+function isDimension(dataType: DataType): boolean {
+    if (dataType instanceof OptionalType) {
+      return isDimension(dataType.element);
+    }
     return (
         dataType === ByteType ||
         dataType === BoolType ||
@@ -48,7 +51,11 @@ type MeasureConfig = {
 }
 
 function measures(field: StructField): MeasureEl[] {
-    const dataType = field.dataType;
+    let dataType = field.dataType;
+    if (dataType instanceof OptionalType) {
+        dataType = dataType.element;
+    }
+
     if (
         dataType === ByteType ||
         dataType === ShortType ||
@@ -72,7 +79,8 @@ function measures(field: StructField): MeasureEl[] {
     } else return [];
 }
 
-function dimensionType(dataType: DataType) {
+function dimensionType(dataType: DataType): 'nominal' | 'ordinal' | 'quantitative' {
+    if (dataType instanceof OptionalType) return dimensionType(dataType.element);
     if (dataType === StringType || dataType === BoolType) return 'nominal';
     if (dataType === DoubleType) return 'quantitative';
     return 'ordinal';
@@ -556,8 +564,11 @@ xySpec.noAggregates = true;
 // we kind of have to roll our own boxplot layering, because we are pre-aggregating the data (see https://github.com/vega/vega-lite/issues/4343)
 // The way to construct it was taken from https://vega.github.io/vega-lite/docs/boxplot.html
 // it's essentially what an actual box plot expands to.
-function boxplotSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig) {
+function boxplotSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig | MeasureConfig[]) {
     // TODO: can we allow multiple series of boxes? Does `fold` support a struct like this?
+    if (yMeas instanceof Array) {
+        yMeas = yMeas[0];
+    }
     const yName = `quartiles(${yMeas.field.name})`;
     const yTitle = this.yTitle.value || yName;
     const x: any = { field: xField.name, type: dimensionType(xField.dataType) };

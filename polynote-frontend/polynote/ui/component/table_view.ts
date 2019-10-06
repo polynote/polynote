@@ -19,13 +19,15 @@ export class ReprDataRequest extends UIEvent<{
 }
 
 
-function renderData(dataType: DataType, data: any) {
+function renderData(dataType: DataType, data: any): HTMLElement {
     // TODO: nicer display
     let value = '';
     if (dataType instanceof ArrayType || dataType instanceof StructType) {
         value = JSON.stringify(data);
-    } else {
+    } else if (data !== null) {
         value = data.toString();
+    } else {
+        value = "<null>";
     }
     return span([], value).attr('title', value);
 }
