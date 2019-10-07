@@ -501,7 +501,9 @@ export class PlotEditor extends UIEventTarget {
                 mkCell,
                 cellId: this.sourceCell,
                 results: [output],
-                afterInsert: (cell: { addResult: (arg0: PlotEditorResult) => void; }) => cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
+                afterInsert: (cell: CodeCell) => {
+                    cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output));
+                }
             });
             this.dispatchEvent(event);
         });
@@ -533,8 +535,7 @@ function normalSpec(this: PlotEditor, plotType: string, xField: StructField, yMe
             fold: yMeas.map(measure => measure.agg ? `${measure.agg}(${measure.field.name})` : measure.field.name)
         }];
         spec.encoding.y = {
-            field: 'value',
-            scale: {zero: false } // TODO: configurable
+            field: 'value'
         };
         spec.encoding.color = {
             field: 'key',
@@ -543,8 +544,7 @@ function normalSpec(this: PlotEditor, plotType: string, xField: StructField, yMe
     } else {
         spec.encoding.y = {
             field: yMeas.agg ? `${yMeas.agg}(${yMeas.field.name})` : yMeas.field.name,
-            type: 'quantitative',
-            scale: {zero: false } // TODO: configurable
+            type: 'quantitative'
         };
     }
 

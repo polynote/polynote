@@ -7,7 +7,7 @@ import {
 
 import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr, LazyDataRepr} from './value_repr'
 import {int16, int64} from "./codec";
-import {Cell} from "../ui/component/cell";
+import {Cell, CodeCell} from "../ui/component/cell";
 import {displayData, displaySchema} from "../ui/component/display_content";
 import {div, h4, iconButton, span} from "../ui/util/tags";
 import * as monaco from "monaco-editor";
@@ -227,7 +227,7 @@ export class ResultValue extends Result {
     /**
      * Get a default MIME type and string, for display purposes
      */
-    displayRepr(path: string, valueInspector: ValueInspector): Promise<[string, string | DocumentFragment]> {
+    displayRepr(cell: CodeCell, valueInspector: ValueInspector): Promise<[string, string | DocumentFragment]> {
         // TODO: make this smarter
         let index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/html"));
         if (index > 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
@@ -252,9 +252,12 @@ export class ResultValue extends Result {
                     h4(['result-name-and-type'], [
                         span(['result-name'], [this.name]), ': ', resultType,
                         iconButton(['view-data'], 'View data', '', '[View]')
-                            .click(_ => valueInspector.inspect(this, path, 'View data')),
+                            .click(_ => valueInspector.inspect(this, cell.path, 'View data')),
                         iconButton(['plot-data'], 'Plot data', '', '[Plot]')
-                            .click(_ => valueInspector.inspect(this, path, 'Plot data'))
+                            .click(_ => {
+                                valueInspector.setEventParent(cell);
+                                valueInspector.inspect(this, cell.path, 'Plot data');
+                            })
                     ]),
                     displaySchema(streamingRepr.dataType)
                 ]);

@@ -842,7 +842,7 @@ export class CodeCell extends Cell {
                 this.cellResultMargin.innerHTML = '';
                 this.cellResultMargin.appendChild(outLabel);
 
-                result.displayRepr(this.path, ValueInspector.get()).then(display => {
+                result.displayRepr(this, ValueInspector.get()).then(display => {
                     const [mime, content] = display;
                     const [mimeType, args] = parseContentType(mime);
                     this.buildOutput(mime, args, content).then((el: MIMEElement) => {
