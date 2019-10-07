@@ -1,6 +1,6 @@
 import {UIEventTarget} from "../util/ui_event";
 import {div, h3, span, table, TableElement, TableRowElement, TagElement} from "../util/tags";
-import {valueInspector} from "./value_inspector";
+import {ValueInspector} from "./value_inspector";
 import {ResultValue} from "../../data/result";
 
 interface ResultRow extends TableRowElement {
@@ -51,8 +51,8 @@ export class KernelSymbolsUI extends UIEventTarget {
             type: span([], [resultValue.typeName]).attr('title', resultValue.typeName)
         }, whichBody) as ResultRow;
         tr.onclick = (evt) => {
-            valueInspector.setEventParent(this);
-            valueInspector.inspect(tr.resultValue, this.path);
+            ValueInspector.get().setEventParent(this);
+            ValueInspector.get().inspect(tr.resultValue, this.path);
         };
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;

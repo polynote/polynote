@@ -103,14 +103,14 @@ export function div(classes: string[], content: Content) {
     return tag('div', classes, undefined, content);
 }
 
-export function button(classes: string[], attributes: Record<string, string>, content: Content) {
+export function button(classes: string[], attributes: Record<string, string>, content: Content): TagElement<"button"> {
     if (!("type" in attributes)) {
         attributes["type"] = "button"
     }
     return tag('button', classes, attributes, content);
 }
 
-export function iconButton(classes: string[], title: string, icon: string, alt: string) {
+export function iconButton(classes: string[], title: string, icon: string, alt: string): TagElement<"button"> {
     classes.push('icon-button');
     return button(classes, {title: title}, [
         span(['icon', 'fas'], [icon]),
