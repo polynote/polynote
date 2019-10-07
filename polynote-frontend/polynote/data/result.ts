@@ -5,7 +5,7 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32, ior, CodecContainer
 } from './codec'
 
-import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr} from './value_repr'
+import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr, LazyDataRepr} from './value_repr'
 import {int16, int64} from "./codec";
 import {Cell} from "../ui/component/cell";
 import {displayData, displaySchema} from "../ui/component/display_content";
@@ -229,49 +229,48 @@ export class ResultValue extends Result {
     get displayRepr(): Promise<[string, string | DocumentFragment]> {
         // TODO: make this smarter
         let index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/html"));
-        if (index < 0)
-            index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/"));
-        if (index < 0)
-            index = this.reprs.findIndex(repr => repr instanceof MIMERepr);
-        if (index < 0) {
-            index = this.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
-            if (index >= 0) {
-                // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
-                return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
-                    const streamingRepr = this.reprs[index] as StreamingDataRepr;
-                    const frag = document.createDocumentFragment();
-                    const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-                    resultType.innerHTML = typeHTML;
-                    frag.appendChild(div([], [
-                        h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
-                        displaySchema(streamingRepr.dataType)
-                    ]));
-                    return ["text/html", frag];
-                })
-            }
-        }
-        if (index < 0) {
-            index = this.reprs.findIndex(repr => repr instanceof DataRepr);
-            if (index >= 0) {
-                return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
-                    const dataRepr = this.reprs[index] as DataRepr;
-                    const frag = document.createDocumentFragment();
-                    const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-                    resultType.innerHTML = typeHTML;
-                    frag.appendChild(div([], [
-                        h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
-                        displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
-                    ]));
-                    return ["text/html", frag];
-                })
-            }
-        }
-        if (index < 0) {
-            return Promise.resolve(["text/plain", this.valueText]);
-        } else {
-            return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+        if (index > 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+
+        index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/"));
+        if (index > 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+
+        index = this.reprs.findIndex(repr => repr instanceof MIMERepr);
+        if (index > 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+
+        index = this.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
+        if (index >= 0) {
+            // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
+            return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
+                const streamingRepr = this.reprs[index] as StreamingDataRepr;
+                const frag = document.createDocumentFragment();
+                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                resultType.innerHTML = typeHTML;
+                frag.appendChild(div([], [
+                    h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
+                    displaySchema(streamingRepr.dataType)
+                ]));
+                return ["text/html", frag];
+            })
         }
 
+        index = this.reprs.findIndex(repr => repr instanceof DataRepr);
+        if (index >= 0) {
+            return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
+                const dataRepr = this.reprs[index] as DataRepr;
+                const frag = document.createDocumentFragment();
+                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                resultType.innerHTML = typeHTML;
+                frag.appendChild(div([], [
+                    h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
+                    displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
+                ]));
+                return ["text/html", frag];
+            })
+        }
+
+        // TODO: for lazy data repr, inform that it can't be displayed immediately; maybe give a
+
+        return Promise.resolve(["text/plain", this.valueText]);
     }
 }
 

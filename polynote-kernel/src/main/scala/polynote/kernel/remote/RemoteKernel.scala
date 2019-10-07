@@ -286,6 +286,7 @@ object RemoteKernelClient extends polynote.app.App {
     _               <- kernel.init().provide(kernelEnv)
     _               <- publishResponse.publish1(Announce(initial.reqId, localAddress))
     exitCode        <- client.run().provide(kernelEnv)
+    _               <- processUpdates.interrupt
   } yield exitCode
 
   def mkEnv(

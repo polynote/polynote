@@ -63,15 +63,15 @@ export class DataRepr extends ValueRepr {
 }
 
 export class LazyDataRepr extends ValueRepr {
-    static codec = combined(int32, DataType.codec).to(LazyDataRepr);
+    static codec = combined(int32, DataType.codec, optional(int32)).to(LazyDataRepr);
     static get handleTypeId() { return 0; }
     static get msgTypeId() { return 3; }
 
     static unapply(inst: LazyDataRepr): ConstructorParameters<typeof LazyDataRepr> {
-        return [inst.handle, inst.dataType];
+        return [inst.handle, inst.dataType, inst.knownSize];
     }
 
-    constructor(readonly handle: number, readonly dataType: DataType) {
+    constructor(readonly handle: number, readonly dataType: DataType, readonly knownSize: number | null) {
         super();
         Object.freeze(this);
     }
