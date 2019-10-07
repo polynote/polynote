@@ -488,14 +488,14 @@ export class ServerHandshake extends Message {
 
 
 export class HandleData extends Message {
-    static codec = combined(shortStr, uint8, int32, int32, arrayCodec(int32, bufferCodec)).to(HandleData);
+    static codec = combined(shortStr, uint8, int32, int32, either(Error.codec, arrayCodec(int32, bufferCodec))).to(HandleData);
     static get msgTypeId() { return 17; }
     static unapply(inst: HandleData): ConstructorParameters<typeof HandleData>{
         return [inst.path, inst.handleType, inst.handle, inst.count, inst.data];
     }
 
     constructor(readonly path: string, readonly handleType: number, readonly handle: number, readonly count: number,
-                readonly data: ArrayBuffer[]) {
+                readonly data: Left<Error> | Right<ArrayBuffer[]>) {
         super();
         Object.freeze(this);
     }

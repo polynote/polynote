@@ -502,9 +502,9 @@ export function either<L, R>(leftCodec: Codec<L>, rightCodec: Codec<R>) {
     const decode = (reader: DataReader) => {
         const isRight = reader.readUint8();
         if (isRight !== 0) {
-            return Either.right(leftCodec.decode(reader));
+            return Either.right(rightCodec.decode(reader));
         } else {
-            return Either.left(rightCodec.decode(reader));
+            return Either.left(leftCodec.decode(reader));
         }
     };
 

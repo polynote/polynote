@@ -65,6 +65,12 @@ export class Either {
         return (either as Right<R>).right !== undefined;
     }
 
+    static fold<L, R, T>(either: Left<L> | Right<R>, left: (l: L) => T, right: (r: R) => T): T {
+        if (Either.isLeft(either))
+            return left(either.left);
+        else return right(either.right);
+    }
+
     static left<T>(left: T) {
         return <Left<T>>{left: left};
     }

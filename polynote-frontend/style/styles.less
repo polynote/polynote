@@ -2500,6 +2500,14 @@ button {
         color: green;
         margin-right: 2pt;
       }
+
+      button.cancel {
+        display: none;
+        .fas {
+          color: red;
+          margin-right: 2pt;
+        }
+      }
     }
 
     .numeric-field-title {
@@ -2626,6 +2634,19 @@ button {
     .drop-disallowed {
       background: #ffeeee;
     }
+  }
+
+  &.running {
+    .left-controls .control-buttons {
+      button.plot {
+        display: none;
+      }
+
+      button.cancel {
+        display: inline-block;
+      }
+    }
+
   }
 }
 

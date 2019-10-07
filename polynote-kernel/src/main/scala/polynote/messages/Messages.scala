@@ -314,7 +314,7 @@ final case class HandleData(
   handleType: HandleType,
   handle: Int,
   count: Int,
-  data: Array[ByteVector32]
+  data: Either[Error, Array[ByteVector32]]
 ) extends Message
 
 object HandleData extends MessageCompanion[HandleData](17)

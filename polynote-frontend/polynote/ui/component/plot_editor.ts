@@ -106,6 +106,8 @@ export class PlotEditor extends UIEventTarget {
     readonly plotOutput: TagElement<"div">;
     private saveButton: TagElement<"button">;
     private runButton: TagElement<"button">;
+    private cancelButton: TagElement<"button">;
+    private currentStream?: DataStream;
     private plotArea: TagElement<"div">;
     private plotTitle: TagElement<"input">;
     private xAxisDrop: TagElement<"div">;
@@ -166,7 +168,11 @@ export class PlotEditor extends UIEventTarget {
                     this.runButton = button(['plot'], {}, [
                         span(['fas'], ''),
                         'Plot'
-                    ]).click(_ => this.runPlot())
+                    ]).click(_ => this.runPlot()),
+                    this.cancelButton = button(['cancel'], {}, [
+                        span(['fas'], ""),
+                        'Cancel'
+                    ]).click(_ => this.abortPlot())
                 ])
             ]),
             this.plotArea = div(['plot-area'], [
@@ -412,9 +418,13 @@ export class PlotEditor extends UIEventTarget {
 
     runPlot() {
         //this.runButton.disabled = true;
-        this.runButton.disabled = true;
+        this.el.classList.add('running');
         this.saveButton.style.display = 'none';
-        const stream = new DataStream(this.path, this.repr, this.session, this.getTableOps()).batch(500);
+        if (this.currentStream) {
+            throw new Error("Plot can't be run when a previous plot stream is already running");
+        }
+
+        const stream = this.currentStream = new DataStream(this.path, this.repr, this.session, this.getTableOps()).batch(500);
 
         // TODO: multiple Ys
         // TODO: encode color
@@ -445,11 +455,27 @@ export class PlotEditor extends UIEventTarget {
                     this.saveButton.style.display = '';
                     this.plotOutput.style.width = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetWidth + "px";
                     this.plotOutput.style.height = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetHeight + "px";
-                    this.runButton.disabled = false;
+                    this.el.classList.remove('running');
                     this.plot = plot;
+                    this.currentStream = undefined;
                     //this.session.send(new ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, repr.handle));
+                }).catch(reason => {
+                    this.handleError(reason);
                 });
         });
+    }
+
+    handleError(err: any) {
+        this.abortPlot();
+        // TODO: display error to the user
+    }
+
+    abortPlot() {
+        if (this.currentStream) {
+            this.currentStream.abort();
+        }
+        this.currentStream = undefined;
+        this.el.classList.remove('running');
     }
 
     savePlot() {
