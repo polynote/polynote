@@ -119,6 +119,7 @@ export class OptionalType extends DataType {
 
     constructor(readonly element: DataType) {
         super();
+        this.isNumeric = element.isNumeric;
         Object.freeze(this);
     }
 

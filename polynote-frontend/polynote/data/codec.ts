@@ -79,8 +79,12 @@ export class DataReader {
     }
 
     readString() {
-        const len = this.readUint32();
-        return this.readStringBytes(len);
+        const len = this.readInt32();
+        if (len >= 0) {
+            return this.readStringBytes(len);
+        } else {
+            return null;
+        }
     }
 
     readShortString() {
@@ -182,11 +186,15 @@ export class DataWriter {
         this.offset += 8;
     }
 
-    writeString(value: string) {
-        const bytes = stringEncoder.encode(value);
-        this.ensureBufSize(this.buffer.byteLength + bytes.length + 4);
-        this.writeUint32(bytes.length);
-        this.writeStrBytes(bytes, 0xFFFFFFFF);
+    writeString(value: string | null) {
+        if (value === null) {
+            this.writeInt32(-1);
+        } else {
+            const bytes = stringEncoder.encode(value);
+            this.ensureBufSize(this.buffer.byteLength + bytes.length + 4);
+            this.writeInt32(bytes.length);
+            this.writeStrBytes(bytes, 0xFFFFFFFF);
+        }
     }
 
     writeShortString(value: string) {
@@ -251,7 +259,7 @@ export abstract class Codec<T> {
     abstract decode(reader: DataReader): T;
 }
 
-export const str: Codec<string> = Object.freeze({
+export const str: Codec<string | null> = Object.freeze({
     encode: (str, writer) => writer.writeString(str),
     decode: (reader) => reader.readString()
 });
@@ -494,9 +502,9 @@ export function either<L, R>(leftCodec: Codec<L>, rightCodec: Codec<R>) {
     const decode = (reader: DataReader) => {
         const isRight = reader.readUint8();
         if (isRight !== 0) {
-            return Either.right(leftCodec.decode(reader));
+            return Either.right(rightCodec.decode(reader));
         } else {
-            return Either.left(rightCodec.decode(reader));
+            return Either.left(leftCodec.decode(reader));
         }
     };
 

@@ -251,6 +251,6 @@ export function displaySchema(structType: StructType): HTMLElement {
         details(
             ['object-display'],
             [span(['object-summary', 'schema-summary'], [span(['summary-content', 'object-field-summary'], [truncate(structType.fields.map(f => f.name).join(", "), 64)])])],
-            [tag("ul", ['object-fields'], {}, structType.fields.map(displayField))])
+            [tag("ul", ['object-fields'], {}, structType.fields.map(displayField))]).attr('open', 'open')
     ]);
 }

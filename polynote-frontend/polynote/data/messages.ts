@@ -445,7 +445,7 @@ export class ListNotebooks extends Message {
 }
 
 export class CreateNotebook extends Message {
-    static codec = combined(shortStr, optional(either(shortStr, str))).to(CreateNotebook);
+    static codec = combined(shortStr, optional(either(shortStr, str as Codec<string>))).to(CreateNotebook);
     static get msgTypeId() { return 14; }
     static unapply(inst: CreateNotebook): ConstructorParameters<typeof CreateNotebook> {
         return [inst.path, inst.uriOrContents];
@@ -488,14 +488,14 @@ export class ServerHandshake extends Message {
 
 
 export class HandleData extends Message {
-    static codec = combined(shortStr, uint8, int32, int32, arrayCodec(int32, bufferCodec)).to(HandleData);
+    static codec = combined(shortStr, uint8, int32, int32, either(Error.codec, arrayCodec(int32, bufferCodec))).to(HandleData);
     static get msgTypeId() { return 17; }
     static unapply(inst: HandleData): ConstructorParameters<typeof HandleData>{
         return [inst.path, inst.handleType, inst.handle, inst.count, inst.data];
     }
 
     constructor(readonly path: string, readonly handleType: number, readonly handle: number, readonly count: number,
-                readonly data: ArrayBuffer[]) {
+                readonly data: Left<Error> | Right<ArrayBuffer[]>) {
         super();
         Object.freeze(this);
     }

@@ -28,7 +28,7 @@ final case class DataRepr(dataType: DataType, data: ByteBuffer) extends ValueRep
   * We use Ints for the handle, because JS needs to store the handle, and it can't store Long. We just can't have
   * more than 2^32^ different handles... I think there would be bigger issues at that point.
   */
-final case class LazyDataRepr private[polynote](handle: Int, dataType: DataType) extends ValueRepr {
+final case class LazyDataRepr private[polynote](handle: Int, dataType: DataType, knownSize: Option[Int]) extends ValueRepr {
   def isEvaluated: Option[Boolean] = LazyDataRepr.getHandle(handle).map(_.isEvaluated)
 
   def release(): Unit = {
@@ -64,11 +64,11 @@ object LazyDataRepr {
   private val nextHandle: AtomicInteger = new AtomicInteger(0)
   private[polynote] def getHandle(handleId: Int): Option[Handle] = Option(handles.get(handleId))
   private[polynote] def releaseHandle(handleId: Int): Unit = getHandle(handleId).foreach(_.release())
-  private[polynote] def fromHandle(mkHandle: Int => Handle): LazyDataRepr = {
+  private[polynote] def fromHandle(knownSize: Option[Int], mkHandle: Int => Handle): LazyDataRepr = {
     val handleId = nextHandle.getAndIncrement()
     val handle = mkHandle(handleId)
     handles.put(handleId, handle)
-    val repr = LazyDataRepr(handleId, handle.dataType)
+    val repr = LazyDataRepr(handleId, handle.dataType, knownSize)
 
     // if the repr object gets GC'ed, we can let the handle go as well
     Cleaner.create(repr, new Runnable {
@@ -78,7 +78,7 @@ object LazyDataRepr {
     repr
   }
 
-  def apply(dataType: DataType, value: => ByteBuffer): LazyDataRepr = fromHandle(new DefaultHandle(_, dataType, value))
+  def apply(dataType: DataType, value: => ByteBuffer, knownSize: Option[Int]): LazyDataRepr = fromHandle(knownSize, new DefaultHandle(_, dataType, value))
 
 }
 

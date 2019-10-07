@@ -22,71 +22,84 @@ private[reprs] sealed trait LowPrioritySparkReprsOf { self: SparkReprsOf.type =>
 
 object SparkReprsOf extends LowPrioritySparkReprsOf {
   
-  private def dataTypeAndEncoder(dataType: sparkTypes.DataType): Option[(DataType, DataOutput => SpecializedGetters => Int => Unit)] = Option(dataType).collect {
-    case sparkTypes.ByteType    => ByteType -> (out => row => index => DataEncoder.byte.encode(out, row.getByte(index)))
-    case sparkTypes.BooleanType => BoolType -> (out => row => index => DataEncoder.boolean.encode(out, row.getBoolean(index)))
-    case sparkTypes.ShortType   => ShortType -> (out => row => index => DataEncoder.short.encode(out, row.getShort(index)))
-    case sparkTypes.IntegerType => IntType -> (out => row => index => DataEncoder.int.encode(out, row.getInt(index)))
-    case sparkTypes.LongType    => LongType ->(out => row => index => DataEncoder.long.encode(out, row.getLong(index)))
-    case sparkTypes.FloatType   => FloatType -> (out => row => index => DataEncoder.float.encode(out, row.getFloat(index)))
-    case sparkTypes.DoubleType  => DoubleType -> (out => row => index => DataEncoder.double.encode(out, row.getDouble(index)))
-    case sparkTypes.BinaryType  => BinaryType -> (out => row => index => DataEncoder.byteArray.encode(out, row.getBinary(index)))
-    case sparkTypes.StringType  => StringType -> (out => row => index => DataEncoder.string.encode(out, row.getUTF8String(index).toString))
-    case sparkTypes.ArrayType(sparkElementType, nullable) if dataTypeAndEncoder(sparkElementType).nonEmpty =>
-      val (elementType, encode) = dataTypeAndEncoder(sparkElementType).get
-      ArrayType(elementType) -> {
-        out => {
-          row => {
-            index =>
-              val arrayData = row.getArray(index)
-              val len = arrayData.numElements()
-              out.writeInt(len)
-              val encodeItem = encode(out)(arrayData)
-              var i = 0
-              while (i < len) {
-                encodeItem(i)
-                i += 1
-              }
+  private def dataTypeAndEncoder(dataType: sparkTypes.DataType, nullable: Boolean): Option[(DataType, DataOutput => SpecializedGetters => Int => Unit)] =
+    if (nullable) {
+      dataTypeAndEncoder(dataType, nullable = false).map {
+        case (dt, encode) => OptionalType(dt) -> {
+          out => {
+            val encodeUnderlying = encode(out)
+            row => index => if (row.isNullAt(index)) out.writeBoolean(false) else {
+              out.writeBoolean(true)
+              encodeUnderlying(row)(index)
+            }
           }
-
         }
       }
-    case struct @ sparkTypes.StructType(_) =>
-      val (structType, encode) = structDataTypeAndEncoder(struct)
-      structType -> (out => row => index => encode(out, row.getStruct(index, struct.fields.length)))
-    case sparkTypes.MapType(sparkKeyType, sparkValueType, nullValues)
-        if dataTypeAndEncoder(sparkKeyType).nonEmpty && dataTypeAndEncoder(sparkValueType).nonEmpty =>
-      val (keyType, encodeKey) = dataTypeAndEncoder(sparkKeyType).get
-      val (valueType, encodeValue) = dataTypeAndEncoder(sparkValueType).get
-      MapType(keyType, valueType) -> {
-        out =>
-          row => {
-            index =>
-              val mapData = row.getMap(index)
-              val len = mapData.numElements()
-              out.writeInt(len)
-              val keyData = mapData.keyArray()
-              val valueData = mapData.valueArray()
-              val encodeItem: Int => Unit = {
-                i =>
-                  encodeKey(out)(keyData)(i)
-                  encodeValue(out)(valueData)(i)
-              }
+    } else Option(dataType).collect {
+      case sparkTypes.ByteType    => ByteType -> (out => row => index => DataEncoder.byte.encode(out, row.getByte(index)))
+      case sparkTypes.BooleanType => BoolType -> (out => row => index => DataEncoder.boolean.encode(out, row.getBoolean(index)))
+      case sparkTypes.ShortType   => ShortType -> (out => row => index => DataEncoder.short.encode(out, row.getShort(index)))
+      case sparkTypes.IntegerType => IntType -> (out => row => index => DataEncoder.int.encode(out, row.getInt(index)))
+      case sparkTypes.LongType    => LongType ->(out => row => index => DataEncoder.long.encode(out, row.getLong(index)))
+      case sparkTypes.FloatType   => FloatType -> (out => row => index => DataEncoder.float.encode(out, row.getFloat(index)))
+      case sparkTypes.DoubleType  => DoubleType -> (out => row => index => DataEncoder.double.encode(out, row.getDouble(index)))
+      case sparkTypes.BinaryType  => BinaryType -> (out => row => index => DataEncoder.byteArray.encode(out, row.getBinary(index)))
+      case sparkTypes.StringType  => StringType -> (out => row => index => DataEncoder.string.encode(out, row.getUTF8String(index).toString))
+      case sparkTypes.ArrayType(sparkElementType, nullable) if dataTypeAndEncoder(sparkElementType, nullable).nonEmpty =>
+        val (elementType, encode) = dataTypeAndEncoder(sparkElementType, nullable).get
+        ArrayType(elementType) -> {
+          out => {
+            row => {
+              index =>
+                val arrayData = row.getArray(index)
+                val len = arrayData.numElements()
+                out.writeInt(len)
+                val encodeItem = encode(out)(arrayData)
+                var i = 0
+                while (i < len) {
+                  encodeItem(i)
+                  i += 1
+                }
+            }
 
-              var i = 0
-              while (i < len) {
-                encodeItem(i)
-                i += 1
-              }
           }
-      }
+        }
+      case struct @ sparkTypes.StructType(_) =>
+        val (structType, encode) = structDataTypeAndEncoder(struct)
+        structType -> (out => row => index => encode(out, row.getStruct(index, struct.fields.length)))
+      case sparkTypes.MapType(sparkKeyType, sparkValueType, nullValues)
+          if dataTypeAndEncoder(sparkKeyType, nullable = false).nonEmpty && dataTypeAndEncoder(sparkValueType, nullValues).nonEmpty =>
+        val (keyType, encodeKey) = dataTypeAndEncoder(sparkKeyType, nullable = false).get
+        val (valueType, encodeValue) = dataTypeAndEncoder(sparkValueType, nullValues).get
+        MapType(keyType, valueType) -> {
+          out =>
+            row => {
+              index =>
+                val mapData = row.getMap(index)
+                val len = mapData.numElements()
+                out.writeInt(len)
+                val keyData = mapData.keyArray()
+                val valueData = mapData.valueArray()
+                val encodeItem: Int => Unit = {
+                  i =>
+                    encodeKey(out)(keyData)(i)
+                    encodeValue(out)(valueData)(i)
+                }
 
-  }
+                var i = 0
+                while (i < len) {
+                  encodeItem(i)
+                  i += 1
+                }
+            }
+        }
+
+    }
 
   private def structDataTypeAndEncoder(schema: sparkTypes.StructType): (StructType, (DataOutput, InternalRow) => Unit) = {
     val (fieldTypes, fieldEncoders) = schema.fields.zipWithIndex.flatMap {
       case (sparkTypes.StructField(name, dataType, nullable, _), index) =>
-        Option(dataType).flatMap(dataTypeAndEncoder).map {
+        Option(dataType).flatMap(dataTypeAndEncoder(_, nullable)).map {
           case (dt, enc) => StructField(name, dt) -> ((out: DataOutput, row: InternalRow) => enc(out)(row)(index))
         }
     }.unzip
@@ -173,7 +186,7 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
           List(quartilesAgg, meanAgg) -> Some(post)
 
         case (name, "sum") => List(sum(col(name)) as s"sum($name)") -> None
-        case (name, "count") => List(count(col(name)) as s"count($name)") -> None
+        case (name, "count") => List(count(col(name).cast("double")) as s"count($name)") -> None
         case (name, "approx_count_distinct") => List(approx_count_distinct(col(name)) as s"approx_count_distinct($name)") -> None
         case (name, "mean") => List(avg(col(name)) as s"mean($name)") -> None
 

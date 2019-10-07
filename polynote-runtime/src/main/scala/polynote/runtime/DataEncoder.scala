@@ -43,10 +43,15 @@ object DataEncoder extends DataEncoder0 {
   implicit val long: DataEncoder[Long] = numericInstance(LongType)(_ writeLong _)
   implicit val float: DataEncoder[Float] = numericInstance(FloatType)(_ writeFloat _)
   implicit val double: DataEncoder[Double] = numericInstance(DoubleType)(_ writeDouble _)
-  implicit val string: DataEncoder[String] = instance(StringType) {
+  implicit val string: DataEncoder[String] = sizedInstance[String](StringType, _.getBytes(StandardCharsets.UTF_8).length) {
     (out, str) =>
-      out.writeInt(str.length)
-      out.write(str.getBytes(StandardCharsets.UTF_8))
+      if (out == null) {
+        out.writeInt(-1)
+      } else {
+        val bytes = str.getBytes(StandardCharsets.UTF_8)
+        out.writeInt(bytes.length)
+        out.write(bytes)
+      }
   }
 
   // NOT implicit!
@@ -76,7 +81,24 @@ object DataEncoder extends DataEncoder0 {
       }
   }
 
-  implicit def array[A](implicit encodeA: DataEncoder[A]): DataEncoder[Array[A]] = sizedInstance[Array[A]](ArrayType(encodeA.dataType), arr => arr.length * encodeA.dataType.size + 4) {
+  private[runtime] def seqSize[A](arr: Traversable[A], encoder: DataEncoder[A]): Int =
+    if (encoder.dataType.size >= 0) {
+      encoder.dataType.size * arr.size
+    } else try {
+      var s = 0L
+      val iter = arr.toIterator
+      while (iter.hasNext) {
+        s += encoder.sizeOf(iter.next())
+        if (s > Int.MaxValue) {
+          return -1;
+        }
+      }
+      s.toInt
+    } catch {
+      case err: Throwable => -1
+    }
+
+  implicit def array[A](implicit encodeA: DataEncoder[A]): DataEncoder[Array[A]] = sizedInstance[Array[A]](ArrayType(encodeA.dataType), arr => combineSize(seqSize(arr, encodeA), 4)) {
     (output, arr) =>
       output.writeInt(arr.length)
       var i = 0
@@ -86,17 +108,13 @@ object DataEncoder extends DataEncoder0 {
       }
   }
 
-//  implicit def collectionMap[F[KK, VV] <: scala.collection.Map[KK, VV], K, V](implicit keyEncoder: DataEncoder[K], valueEncoder: DataEncoder[V]): DataEncoder[F[K, V]] = sizedInstance[F[K, V]](
-//    MapType(keyEncoder.dataType, valueEncoder.dataType),
-//    map => map.size * keyEncoder.dataType.size * valueEncoder.dataType.size + 4) {
-//    (output, map) =>
-//      output.writeInt(map.size)
-//      map.foreach {
-//        case (k, v) =>
-//          keyEncoder.encode(output, k)
-//          valueEncoder.encode(output, v)
-//      }
-//  }
+  implicit def optional[A](implicit encodeA: DataEncoder[A]): DataEncoder[Option[A]] = sizedInstance[Option[A]](OptionalType(encodeA.dataType), opt => opt.fold(1)(a => combineSize(encodeA.sizeOf(a), 1))) {
+    case (output, None) =>
+      output.writeBoolean(false)
+    case (output, Some(a)) =>
+      output.writeBoolean(true)
+      encodeA.encode(output, a)
+  }
 
   private[polynote] class BufferOutput(buf: ByteBuffer) extends DataOutput {
     def write(b: Int): Unit = buf.put(b.toByte)
@@ -127,7 +145,8 @@ object DataEncoder extends DataEncoder0 {
     }
   }
 
-  def writeSized[T](value: T)(implicit dataEncoder: DataEncoder[T]): ByteBuffer = dataEncoder.sizeOf(value) match {
+  def writeSized[T](value: T)(implicit dataEncoder: DataEncoder[T]): ByteBuffer = writeSized(value, dataEncoder.dataType.size)
+  def writeSized[T](value: T, size: Int)(implicit dataEncoder: DataEncoder[T]): ByteBuffer = size match {
     case size if size >= 0 =>
       val buf = ByteBuffer.allocate(size)
       dataEncoder.encode(new BufferOutput(buf), value)
@@ -146,6 +165,12 @@ object DataEncoder extends DataEncoder0 {
   }
 
   def combineSize(a: Int, b: Int): Int = if (a >= 0 && b >= 0) a + b else -1
+  def multiplySize(size: Int, count: Int): Int = if (size >= 0 && count >= 0) {
+    (size.toLong * count) match {
+      case s if s <= Int.MaxValue => s.toInt
+      case _ => -1
+    }
+  } else -1
 }
 
 private[runtime] sealed trait DataEncoder0 extends DataEncoderDerivations { self: DataEncoder.type =>
@@ -162,19 +187,31 @@ private[runtime] sealed trait DataEncoder0 extends DataEncoderDerivations { self
 
     def dataType: DataType = MapType(encodeK.dataType, encodeV.dataType)
 
-    def sizeOf(map: F[K, V]): Int =
-      if (encodeK.dataType.size >= 0 && encodeV.dataType.size >= 0)
-        map.size * encodeK.dataType.size * encodeV.dataType.size + 4
-      else
-        -1
+    def sizeOf(map: F[K, V]): Int = if (encodeK.dataType.size >= 0 && encodeV.dataType.size >= 0) {
+      (map.size.toLong * (encodeK.dataType.size + encodeV.dataType.size)) match {
+        case s if s <= Int.MaxValue => s.toInt
+        case s => -1
+      }
+    } else try {
+      var s = 4L
+      val iter = map.iterator
+      while (iter.hasNext) {
+        val (k, v) = iter.next()
+        s += encodeK.sizeOf(k) + encodeV.sizeOf(v)
+        if (s > Int.MaxValue) {
+          return -1
+        }
+      }
+      s.toInt
+    } catch {
+      case err: Throwable => -1
+    }
 
     def numeric: Option[Numeric[F[K, V]]] = None
   }
 
 
   implicit def mapOfStruct[K, V](implicit encodeK: DataEncoder[K], encodeV: StructDataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
-  //implicit def predefMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
-  //implicit def collectionMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[scala.collection.Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
 
 }
 
@@ -182,6 +219,7 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
 
 
   implicit def predefMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
+  implicit def collectionMap[K, V](implicit encodeK: DataEncoder[K], encodeV: DataEncoder[V]): DataEncoder[scala.collection.Map[K, V]] = new MapDataEncoder(encodeK, encodeV)
 
   abstract class StructDataEncoder[T](
     val dataType: StructType

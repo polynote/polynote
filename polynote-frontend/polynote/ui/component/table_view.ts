@@ -11,21 +11,23 @@ export class ReprDataRequest extends UIEvent<{
     handleId: number,
     count: number,
     onComplete: (data: ArrayBuffer[]) => void,
-    onFail: () => void}>
+    onFail: (err?: any) => void}>
 {
-    constructor(reprType: typeof LazyDataRepr | typeof StreamingDataRepr | typeof UpdatingDataRepr, handleId: number, count: number, onComplete: (data: ArrayBuffer[]) => void, onFail: () => void) {
+    constructor(reprType: typeof LazyDataRepr | typeof StreamingDataRepr | typeof UpdatingDataRepr, handleId: number, count: number, onComplete: (data: ArrayBuffer[]) => void, onFail: (err?: any) => void) {
         super("ReprDataRequest", {handleType: reprType.handleTypeId, handleId, count, onComplete, onFail});
     }
 }
 
 
-function renderData(dataType: DataType, data: any) {
+function renderData(dataType: DataType, data: any): HTMLElement {
     // TODO: nicer display
     let value = '';
     if (dataType instanceof ArrayType || dataType instanceof StructType) {
         value = JSON.stringify(data);
-    } else {
+    } else if (data !== null) {
         value = data.toString();
+    } else {
+        value = "<null>";
     }
     return span([], value).attr('title', value);
 }

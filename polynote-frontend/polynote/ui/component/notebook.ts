@@ -26,6 +26,7 @@ import {languages, Range} from "monaco-editor";
 import CompletionItem = languages.CompletionItem;
 import {ContentEdit} from "../../data/content_edit";
 import {StructType} from "../../data/data_type";
+import {Either, Left, Right} from "../../data/types";
 
 export class NotebookUI extends UIEventTarget {
     readonly cellUI: NotebookCellsUI;
@@ -329,13 +330,13 @@ export class NotebookUI extends UIEventTarget {
 
         this.cellUI.addEventListener("ReprDataRequest", evt => {
             const req = evt.detail;
-            this.socket.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data) => {
+            this.socket.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
                 if (path === this.path && handleType === req.handleType && handleId === req.handleId) {
-                    req.onComplete(data);
+                    Either.fold(data, err => req.onFail(err), bufs => req.onComplete(bufs));
                     return false;
                 } else return true;
             });
-            this.socket.send(new messages.HandleData(path, req.handleType, req.handleId, req.count, []));
+            this.socket.send(new messages.HandleData(path, req.handleType, req.handleId, req.count, Either.right([])));
         });
 
         socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));

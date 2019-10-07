@@ -8,7 +8,7 @@ import {
     DateType, DoubleType,
     FloatType,
     IntType,
-    LongType,
+    LongType, OptionalType,
     ShortType,
     StringType, StructField,
     TimestampType
@@ -28,7 +28,10 @@ import {ClientResult, Output} from "../../data/result";
 import {CellMetadata} from "../../data/data";
 
 
-function isDimension(dataType: DataType) {
+function isDimension(dataType: DataType): boolean {
+    if (dataType instanceof OptionalType) {
+      return isDimension(dataType.element);
+    }
     return (
         dataType === ByteType ||
         dataType === BoolType ||
@@ -48,7 +51,11 @@ type MeasureConfig = {
 }
 
 function measures(field: StructField): MeasureEl[] {
-    const dataType = field.dataType;
+    let dataType = field.dataType;
+    if (dataType instanceof OptionalType) {
+        dataType = dataType.element;
+    }
+
     if (
         dataType === ByteType ||
         dataType === ShortType ||
@@ -72,7 +79,8 @@ function measures(field: StructField): MeasureEl[] {
     } else return [];
 }
 
-function dimensionType(dataType: DataType) {
+function dimensionType(dataType: DataType): 'nominal' | 'ordinal' | 'quantitative' {
+    if (dataType instanceof OptionalType) return dimensionType(dataType.element);
     if (dataType === StringType || dataType === BoolType) return 'nominal';
     if (dataType === DoubleType) return 'quantitative';
     return 'ordinal';
@@ -98,6 +106,8 @@ export class PlotEditor extends UIEventTarget {
     readonly plotOutput: TagElement<"div">;
     private saveButton: TagElement<"button">;
     private runButton: TagElement<"button">;
+    private cancelButton: TagElement<"button">;
+    private currentStream?: DataStream;
     private plotArea: TagElement<"div">;
     private plotTitle: TagElement<"input">;
     private xAxisDrop: TagElement<"div">;
@@ -158,7 +168,11 @@ export class PlotEditor extends UIEventTarget {
                     this.runButton = button(['plot'], {}, [
                         span(['fas'], ''),
                         'Plot'
-                    ]).click(_ => this.runPlot())
+                    ]).click(_ => this.runPlot()),
+                    this.cancelButton = button(['cancel'], {}, [
+                        span(['fas'], ""),
+                        'Cancel'
+                    ]).click(_ => this.abortPlot())
                 ])
             ]),
             this.plotArea = div(['plot-area'], [
@@ -198,52 +212,35 @@ export class PlotEditor extends UIEventTarget {
            this.draggingEl = null;
         });
 
-        this.xAxisDrop.addEventListener('dragenter', evt => {
-           if (this.draggingEl && this.draggingEl.classList.contains(this.correctXType)) {
-               this.xAxisDrop.classList.add('drop-ok');
-           } else {
-               this.xAxisDrop.classList.add('drop-disallowed');
-           }
-        });
-
-        this.xAxisDrop.addEventListener('dragover', evt => {
-            if (this.draggingEl && this.draggingEl.classList.contains(this.correctXType)) {
-                evt.preventDefault();
-            }
-        });
-
-        this.xAxisDrop.addEventListener('dragleave', _ => {
+        this.el.addEventListener('dragenter', evt => {
+           this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
            this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
         });
 
-        this.xAxisDrop.addEventListener('drop', evt => {
-            if (this.draggingEl) this.setXField(this.draggingEl.field);
-            this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-        });
+        const attachAxisListener = (axisEl: HTMLElement, setField: (from: MeasureEl) => void, axisType: () => string) => {
+            axisEl.addEventListener('dragenter', evt => {
+                evt.stopPropagation();
+                if (this.draggingEl && this.draggingEl.classList.contains(axisType())) {
+                    axisEl.classList.add('drop-ok');
+                } else {
+                    axisEl.classList.add('drop-disallowed');
+                }
+            });
 
-        this.yAxisDrop.addEventListener('dragenter', evt => {
-            if (this.draggingEl && this.draggingEl.classList.contains(this.correctYType)) {
-                this.yAxisDrop.classList.add('drop-ok');
-            } else {
-                this.yAxisDrop.classList.add('drop-disallowed');
-            }
-        });
+            axisEl.addEventListener('dragover', evt => {
+                if (this.draggingEl && this.draggingEl.classList.contains(axisType())) {
+                    evt.preventDefault();
+                }
+            });
 
-        this.yAxisDrop.addEventListener('dragover', evt => {
-            if (this.draggingEl && this.draggingEl.classList.contains(this.correctYType)) {
-                evt.preventDefault();
-            }
-        });
+            axisEl.addEventListener('drop', evt => {
+                if (this.draggingEl) setField(this.draggingEl);
+                axisEl.classList.remove('drop-ok', 'drop-disallowed');
+            });
+        };
 
-        this.yAxisDrop.addEventListener('dragleave', _ => {
-            this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-        });
-
-        this.yAxisDrop.addEventListener('drop', evt => {
-           if (this.draggingEl) this.addYField(this.draggingEl);
-           this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-        });
-
+        attachAxisListener(this.xAxisDrop, m => this.setXField(m), () => this.correctXType);
+        attachAxisListener(this.yAxisDrop, m => this.addYField(m), () => this.correctYType);
         this.onPlotTypeChange();
     }
 
@@ -349,7 +346,8 @@ export class PlotEditor extends UIEventTarget {
         return ops;
     }
 
-    setXField(field: StructField) {
+    setXField(from: MeasureEl) {
+        const field = from.field;
         this.xDimension = field;
         this.xAxisDrop.classList.add('nonempty');
         const label = this.xAxisDrop.querySelector('.label')!;
@@ -420,9 +418,13 @@ export class PlotEditor extends UIEventTarget {
 
     runPlot() {
         //this.runButton.disabled = true;
-        this.runButton.disabled = true;
+        this.el.classList.add('running');
         this.saveButton.style.display = 'none';
-        const stream = new DataStream(this.path, this.repr, this.session, this.getTableOps()).batch(500);
+        if (this.currentStream) {
+            throw new Error("Plot can't be run when a previous plot stream is already running");
+        }
+
+        const stream = this.currentStream = new DataStream(this.path, this.repr, this.session, this.getTableOps()).batch(500);
 
         // TODO: multiple Ys
         // TODO: encode color
@@ -453,11 +455,27 @@ export class PlotEditor extends UIEventTarget {
                     this.saveButton.style.display = '';
                     this.plotOutput.style.width = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetWidth + "px";
                     this.plotOutput.style.height = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetHeight + "px";
-                    this.runButton.disabled = false;
+                    this.el.classList.remove('running');
                     this.plot = plot;
+                    this.currentStream = undefined;
                     //this.session.send(new ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, repr.handle));
+                }).catch(reason => {
+                    this.handleError(reason);
                 });
         });
+    }
+
+    handleError(err: any) {
+        this.abortPlot();
+        // TODO: display error to the user
+    }
+
+    abortPlot() {
+        if (this.currentStream) {
+            this.currentStream.abort();
+        }
+        this.currentStream = undefined;
+        this.el.classList.remove('running');
     }
 
     savePlot() {
@@ -515,7 +533,8 @@ function normalSpec(this: PlotEditor, plotType: string, xField: StructField, yMe
             fold: yMeas.map(measure => measure.agg ? `${measure.agg}(${measure.field.name})` : measure.field.name)
         }];
         spec.encoding.y = {
-            field: 'value'
+            field: 'value',
+            scale: {zero: false } // TODO: configurable
         };
         spec.encoding.color = {
             field: 'key',
@@ -524,7 +543,8 @@ function normalSpec(this: PlotEditor, plotType: string, xField: StructField, yMe
     } else {
         spec.encoding.y = {
             field: yMeas.agg ? `${yMeas.agg}(${yMeas.field.name})` : yMeas.field.name,
-            type: 'quantitative'
+            type: 'quantitative',
+            scale: {zero: false } // TODO: configurable
         };
     }
 
@@ -556,8 +576,11 @@ xySpec.noAggregates = true;
 // we kind of have to roll our own boxplot layering, because we are pre-aggregating the data (see https://github.com/vega/vega-lite/issues/4343)
 // The way to construct it was taken from https://vega.github.io/vega-lite/docs/boxplot.html
 // it's essentially what an actual box plot expands to.
-function boxplotSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig) {
+function boxplotSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas: MeasureConfig | MeasureConfig[]) {
     // TODO: can we allow multiple series of boxes? Does `fold` support a struct like this?
+    if (yMeas instanceof Array) {
+        yMeas = yMeas[0];
+    }
     const yName = `quartiles(${yMeas.field.name})`;
     const yTitle = this.yTitle.value || yName;
     const x: any = { field: xField.name, type: dimensionType(xField.dataType) };
@@ -579,7 +602,8 @@ function boxplotSpec(this: PlotEditor, plotType: string, xField: StructField, yM
                     y: {
                         field: `${yName}.min`,
                         type: 'quantitative',
-                        axis: {title: yTitle}
+                        axis: {title: yTitle},
+                        scale: {zero: false } // TODO: configurable
                     },
                     y2: {
                         field: `${yName}.q1`
@@ -712,7 +736,8 @@ function lineSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas
                     y: {
                         field: `${yField}.q1`,
                         type: 'quantitative',
-                        axis: { title: this.yTitle.value || yField }
+                        axis: { title: this.yTitle.value || yField },
+                        scale: {zero: false } // TODO: configurable
                     },
                     y2: {
                         field: `${yField}.q3`

@@ -36,6 +36,15 @@ class ValueInspector extends FullScreenModal {
                     .when(DataRepr, (dataType, data) => {
                         tabs[`Data(${resultValue.typeName})`] = displayData(dataType.decodeBuffer(new DataReader(data)))
                     })
+                    .when(LazyDataRepr, (handle, dataType, knownSize) => {
+                        const tabName = `Data(${resultValue.typeName})`;
+                        if (!tabs[tabName]) {
+                            // TODO: a UI for downloading & viewing the data anyway.
+                            tabs[tabName] = div(['lazy-data'], [
+                                `The data was too large to transmit (${knownSize ? knownSize + " bytes" : 'unknown size'}), so it can't be displayed here.`
+                            ]);
+                        }
+                    })
                     .when(StreamingDataRepr, (handle, dataType, knownSize) => {
                         const repr = new StreamingDataRepr(handle, dataType, knownSize);
                         if (dataType instanceof StructType) {

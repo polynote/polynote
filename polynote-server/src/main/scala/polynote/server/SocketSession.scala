@@ -154,7 +154,7 @@ class SocketSession(
     case req@HandleData(path, handleType, handle, count, _) => for {
       subscriber <- subscribe(path)
       kernel     <- subscriber.publisher.kernel
-      data       <- kernel.getHandleData(handleType, handle, count).provide(streamingHandles)
+      data       <- kernel.getHandleData(handleType, handle, count).provide(streamingHandles).mapError(err => Error(0, err)).either
       _          <- PublishMessage(req.copy(data = data))
     } yield ()
 

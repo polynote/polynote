@@ -134,7 +134,7 @@ export class FakeSelect extends UIEventTarget {
            }
         });
 
-        if (typeof lastVisible !== undefined) {
+        if (lastVisible) {
             lastVisible!.classList.add('last-visible');
         }
     }

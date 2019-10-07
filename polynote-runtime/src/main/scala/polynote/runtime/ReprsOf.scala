@@ -16,11 +16,19 @@ trait ReprsOf[T] extends Serializable {
 
 object ReprsOf extends ExpandedScopeReprs {
 
+  // If a data value is larger than 1 MiB, we'll make it lazy so it doesn't get spammed to the client
+  // In the future we could make this configurable by the client.
+  private val EagerSizeThreshold = 1024 * 1024
+
   def instance[T](reprs: T => Array[ValueRepr]): ReprsOf[T] = new ReprsOf[T] {
     def apply(value: T): Array[ValueRepr] = reprs(value)
   }
 
-  class DataReprsOf[T](val dataType: DataType, val encode: T => ByteBuffer) extends ReprsOf[T] {
+  abstract class DataReprsOf[T](val dataType: DataType) extends ReprsOf[T] {
+    val encode: T => ByteBuffer
+  }
+
+  class StrictDataReprsOf[T](dataType: DataType, val encode: T => ByteBuffer) extends DataReprsOf[T](dataType) {
     def apply(t: T): Array[ValueRepr] = try {
       Array(DataRepr(dataType, encode(t)))
     } catch {
@@ -29,7 +37,7 @@ object ReprsOf extends ExpandedScopeReprs {
   }
 
   object DataReprsOf {
-    def apply[T](dataType: DataType)(encode: T => ByteBuffer): DataReprsOf[T] = new DataReprsOf(dataType, encode)
+    def apply[T](dataType: DataType)(encode: T => ByteBuffer): DataReprsOf[T] = new StrictDataReprsOf(dataType, encode)
 
     implicit val byte: DataReprsOf[Byte] = DataReprsOf(ByteType)(byte => ByteBuffer.wrap(Array(byte)))
     implicit val boolean: DataReprsOf[Boolean] = DataReprsOf(BoolType)(bool => ByteBuffer.wrap(Array(if (bool) 1.toByte else 0.toByte)))
@@ -50,8 +58,13 @@ object ReprsOf extends ExpandedScopeReprs {
 
     implicit val byteArray: DataReprsOf[Array[Byte]] = DataReprsOf(BinaryType)(ByteBuffer.wrap)
 
-    implicit def fromDataEncoder[T](implicit dataEncoder: DataEncoder[T]): DataReprsOf[T] = DataReprsOf(dataEncoder.dataType) {
-      t => DataEncoder.writeSized(t)
+    implicit def fromDataEncoder[T](implicit dataEncoder: DataEncoder[T]): DataReprsOf[T] = new DataReprsOf[T](dataEncoder.dataType) {
+      val encode: T => ByteBuffer = t => DataEncoder.writeSized(t)
+      override def apply(value: T): Array[ValueRepr] = dataEncoder.sizeOf(value) match {
+        case s if s >= 0 && s <= EagerSizeThreshold => Array(DataRepr(dataType, DataEncoder.writeSized(value, s)))
+        case s if s >= 0 => Array(LazyDataRepr(dataType, DataEncoder.writeSized(value, s), Some(s))) // writeSized is suspended byname
+        case _ => Array(LazyDataRepr(dataType, DataEncoder.writeSized(value), None)) // writeSized is suspended byname
+      }
     }
 
   }
