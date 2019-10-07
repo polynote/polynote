@@ -206,52 +206,35 @@ export class PlotEditor extends UIEventTarget {
            this.draggingEl = null;
         });
 
-        this.xAxisDrop.addEventListener('dragenter', evt => {
-           if (this.draggingEl && this.draggingEl.classList.contains(this.correctXType)) {
-               this.xAxisDrop.classList.add('drop-ok');
-           } else {
-               this.xAxisDrop.classList.add('drop-disallowed');
-           }
-        });
-
-        this.xAxisDrop.addEventListener('dragover', evt => {
-            if (this.draggingEl && this.draggingEl.classList.contains(this.correctXType)) {
-                evt.preventDefault();
-            }
-        });
-
-        this.xAxisDrop.addEventListener('dragleave', _ => {
+        this.el.addEventListener('dragenter', evt => {
+           this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
            this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
         });
 
-        this.xAxisDrop.addEventListener('drop', evt => {
-            if (this.draggingEl) this.setXField(this.draggingEl.field);
-            this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-        });
+        const attachAxisListener = (axisEl: HTMLElement, setField: (from: MeasureEl) => void, axisType: () => string) => {
+            axisEl.addEventListener('dragenter', evt => {
+                evt.stopPropagation();
+                if (this.draggingEl && this.draggingEl.classList.contains(axisType())) {
+                    axisEl.classList.add('drop-ok');
+                } else {
+                    axisEl.classList.add('drop-disallowed');
+                }
+            });
 
-        this.yAxisDrop.addEventListener('dragenter', evt => {
-            if (this.draggingEl && this.draggingEl.classList.contains(this.correctYType)) {
-                this.yAxisDrop.classList.add('drop-ok');
-            } else {
-                this.yAxisDrop.classList.add('drop-disallowed');
-            }
-        });
+            axisEl.addEventListener('dragover', evt => {
+                if (this.draggingEl && this.draggingEl.classList.contains(axisType())) {
+                    evt.preventDefault();
+                }
+            });
 
-        this.yAxisDrop.addEventListener('dragover', evt => {
-            if (this.draggingEl && this.draggingEl.classList.contains(this.correctYType)) {
-                evt.preventDefault();
-            }
-        });
+            axisEl.addEventListener('drop', evt => {
+                if (this.draggingEl) setField(this.draggingEl);
+                axisEl.classList.remove('drop-ok', 'drop-disallowed');
+            });
+        };
 
-        this.yAxisDrop.addEventListener('dragleave', _ => {
-            this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-        });
-
-        this.yAxisDrop.addEventListener('drop', evt => {
-           if (this.draggingEl) this.addYField(this.draggingEl);
-           this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-        });
-
+        attachAxisListener(this.xAxisDrop, m => this.setXField(m), () => this.correctXType);
+        attachAxisListener(this.yAxisDrop, m => this.addYField(m), () => this.correctYType);
         this.onPlotTypeChange();
     }
 
@@ -357,7 +340,8 @@ export class PlotEditor extends UIEventTarget {
         return ops;
     }
 
-    setXField(field: StructField) {
+    setXField(from: MeasureEl) {
+        const field = from.field;
         this.xDimension = field;
         this.xAxisDrop.classList.add('nonempty');
         const label = this.xAxisDrop.querySelector('.label')!;
@@ -523,7 +507,8 @@ function normalSpec(this: PlotEditor, plotType: string, xField: StructField, yMe
             fold: yMeas.map(measure => measure.agg ? `${measure.agg}(${measure.field.name})` : measure.field.name)
         }];
         spec.encoding.y = {
-            field: 'value'
+            field: 'value',
+            scale: {zero: false } // TODO: configurable
         };
         spec.encoding.color = {
             field: 'key',
@@ -532,7 +517,8 @@ function normalSpec(this: PlotEditor, plotType: string, xField: StructField, yMe
     } else {
         spec.encoding.y = {
             field: yMeas.agg ? `${yMeas.agg}(${yMeas.field.name})` : yMeas.field.name,
-            type: 'quantitative'
+            type: 'quantitative',
+            scale: {zero: false } // TODO: configurable
         };
     }
 
@@ -590,7 +576,8 @@ function boxplotSpec(this: PlotEditor, plotType: string, xField: StructField, yM
                     y: {
                         field: `${yName}.min`,
                         type: 'quantitative',
-                        axis: {title: yTitle}
+                        axis: {title: yTitle},
+                        scale: {zero: false } // TODO: configurable
                     },
                     y2: {
                         field: `${yName}.q1`
@@ -723,7 +710,8 @@ function lineSpec(this: PlotEditor, plotType: string, xField: StructField, yMeas
                     y: {
                         field: `${yField}.q1`,
                         type: 'quantitative',
-                        axis: { title: this.yTitle.value || yField }
+                        axis: { title: this.yTitle.value || yField },
+                        scale: {zero: false } // TODO: configurable
                     },
                     y2: {
                         field: `${yField}.q3`

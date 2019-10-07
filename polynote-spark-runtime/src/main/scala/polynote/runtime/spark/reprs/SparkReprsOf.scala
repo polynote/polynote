@@ -186,7 +186,7 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
           List(quartilesAgg, meanAgg) -> Some(post)
 
         case (name, "sum") => List(sum(col(name)) as s"sum($name)") -> None
-        case (name, "count") => List(count(col(name)) as s"count($name)") -> None
+        case (name, "count") => List(count(col(name).cast("double")) as s"count($name)") -> None
         case (name, "approx_count_distinct") => List(approx_count_distinct(col(name)) as s"approx_count_distinct($name)") -> None
         case (name, "mean") => List(avg(col(name)) as s"mean($name)") -> None
 
