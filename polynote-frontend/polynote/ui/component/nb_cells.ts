@@ -1,7 +1,7 @@
 import {UIEventTarget} from "../util/ui_event";
 import {NotebookConfigUI} from "./nb_config";
 import {div, span, TagElement} from "../util/tags";
-import {Cell, CellContainer, CellExecutionFinished, CodeCell, TextCell} from "./cell";
+import {Cell, CellContainer, CellExecutionFinished, CodeCell, isCellContainer, TextCell} from "./cell";
 import {TaskInfo, TaskStatus} from "../../data/messages";
 import * as Tinycon from "tinycon";
 import {storage} from "../util/storage";
@@ -10,6 +10,8 @@ import * as monaco from "monaco-editor";
 import {PosRange} from "../../data/result";
 import {NotebookUI} from "./notebook";
 import {CurrentNotebook} from "./current_notebook";
+import {errorBarCenterAndExtentAreNotNeeded} from "vega-lite/build/src/log/message";
+import {baseEncodeEntry} from "vega-lite/build/src/compile/mark/mixins";
 
 type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
@@ -40,7 +42,11 @@ export class NotebookCellsUI extends UIEventTarget {
         return div(['new-cell-divider'], []).click((evt) => {
             const self = evt.target as TagElement<"div">;
             const prevCell = this.getCellBeforeEl(self);
-            CurrentNotebook.current.insertCell("below", prevCell && prevCell.id)
+            if (prevCell) {
+                CurrentNotebook.current.insertCell("below", prevCell.id)
+            } else {
+                CurrentNotebook.current.insertCell("above") // no cell above this one, so it must be at the top of the file
+            }
         });
     }
 
@@ -101,28 +107,23 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    iterCellsForwardWhile(cond: (el: HTMLElement) => boolean): Cell | undefined {
-        let before = this.el.firstElementChild as CellContainer;
-        let cell = undefined;
-        while (before && (cond(before) || cell === undefined)) {
-            if (before && before.cell) {
-                cell = before.cell;
-            }
-            before = before.nextElementSibling as CellContainer;
+    /**
+     * Iterate through cells while `cond` is true.
+     *
+     * @param initial   The initial element value to start with.
+     * @param nextCell  How to get to the next cell or element given the previous one.
+     * @param cond      Whether to continue iteration based on the current selected element.
+     */
+    iterCellsWhile(initial: Element | null, nextCell: (el: Element) => Element | null, cond: (el: Element) => boolean): void {
+        let current = initial;
+        while (current && cond(current)) {
+            current = nextCell(current);
         }
-        return cell
     }
 
-    iterCellsBackwardWhile(cond: (el: HTMLElement) => boolean): Cell | undefined {
-        let after = this.el.lastElementChild as CellContainer;
-        let cell = undefined;
-        while (after && (cond(after) || cell === undefined)) {
-            if (after && after.cell) {
-                cell = after.cell;
-            }
-            after = after.previousElementSibling as CellContainer;
-        }
-        return cell
+    iterCellsForwardWhile(cond: (el: Element) => boolean): void {
+        const first = this.el.firstElementChild;
+        this.iterCellsWhile(first, (el: Element) => el.nextElementSibling, cond);
     }
 
     forEachCell(cb: (cell: Cell) => void): void {
@@ -134,16 +135,26 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 
     getCell(cellId: number): Cell | undefined {
-        return this.iterCellsForwardWhile(before => {
-            if (before) {
-                const cc = before as CellContainer;
-                return cc.cell && cc.cell.id === cellId;
-            } else return false;
+        let cell = undefined;
+        this.iterCellsForwardWhile(before => {
+            const cc = before as CellContainer;
+            if (cc && cc.cell && cc.cell.id === cellId) {
+                cell = cc.cell;
+                return false;
+            } else return true;
         });
+        return cell;
     }
 
     getCellBeforeEl(el: HTMLElement): Cell | undefined {
-        return this.iterCellsForwardWhile(before => before !== el);
+        let cell = undefined;
+        this.iterCellsWhile(el.previousElementSibling, (elem: Element) => elem.previousElementSibling, elem => {
+            if (isCellContainer(elem)) {
+                cell = elem.cell;
+                return false
+            } else return true
+        });
+        return cell;
     }
 
     getCellBefore(cell: Cell): Cell | undefined {
@@ -151,7 +162,14 @@ export class NotebookCellsUI extends UIEventTarget {
     }
 
     getCellAfterEl(el: HTMLElement): Cell | undefined {
-        return this.iterCellsBackwardWhile(after => after !== el);
+        let cell = undefined;
+        this.iterCellsWhile(el.nextElementSibling, elem => elem.nextElementSibling, elem => {
+            if (isCellContainer(elem)) {
+                cell = elem.cell;
+                return false
+            } else return true
+        });
+        return cell;
     }
 
     getCellAfter(cell: Cell): Cell | undefined {
@@ -207,7 +225,20 @@ export class NotebookCellsUI extends UIEventTarget {
         const prev = el && this.getCellBeforeEl(el);
         const newCell = (cell && cell(newCellId)) || mkCell(prev);
 
-        const anchorEl = (prev ? prev.container : this.configEl).nextElementSibling;
+        // it'd be nice if we could use some simpler logic here :\
+        // most of this logic is to ensure that there's always a new cell divider in between each cell, above the first cell, and below the last cell.
+        let anchorEl;
+        if (prev) {
+            anchorEl = prev.container.nextElementSibling; // we insert between the prev cell and its divider
+        } else if (el && el !== this.configEl) {
+            if (isCellContainer(el)) {
+                anchorEl = el.nextElementSibling // if el is a cell, we insert between it and its divider.
+            } else {
+                anchorEl = el // if el is not a cell, it must be a divider, in which case we just want to insert above it
+            }
+        } else {
+            anchorEl = this.configEl.nextElementSibling // if there's nothing, we insert between the config element and its divider
+        }
         this.el.insertBefore(newCell.container, anchorEl);
         this.el.insertBefore(this.newCellDivider(), newCell.container);
 
@@ -239,7 +270,6 @@ export class NotebookCellsUI extends UIEventTarget {
                 span(['undo-message'], [
                     'Cell deleted. ',
                     span(['undo-link'], ['Undo']).click(evt => {
-
                         this.insertCellBelow(anchorEl, () => cellToDelete);
                         undoEl.parentNode!.removeChild(undoEl);
                     })

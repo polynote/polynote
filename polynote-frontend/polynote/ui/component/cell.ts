@@ -121,6 +121,10 @@ export type CellContainer = TagElement<"div"> & {
     cell: Cell
 }
 
+export function isCellContainer(el: Element): el is CellContainer {
+    return 'cell' in el;
+}
+
 export abstract class Cell extends UIEventTarget {
     readonly container: CellContainer;
     readonly cellInput: TagElement<"div">;
