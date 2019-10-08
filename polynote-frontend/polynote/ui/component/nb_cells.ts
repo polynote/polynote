@@ -272,10 +272,10 @@ export class NotebookCellsUI extends UIEventTarget {
                 span(['undo-message'], [
                     'Cell deleted. ',
                     span(['undo-link'], ['Undo']).click(evt => {
-                        const mkCell = () => {
+                        const mkCell = (nextCellId: number) => {
                             return cellToDelete.language !== "text"
-                                ? new CodeCell(cellToDelete.id, cellToDelete.content, cellToDelete.language, this.path)
-                                : new TextCell(cellToDelete.id, cellToDelete.content, this.path);
+                                ? new CodeCell(nextCellId, cellToDelete.content, cellToDelete.language, this.path)
+                                : new TextCell(nextCellId, cellToDelete.content, this.path);
                         };
 
                         const prevCell = this.getCellBeforeEl(undoEl);
