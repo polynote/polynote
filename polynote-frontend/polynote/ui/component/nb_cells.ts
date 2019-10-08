@@ -261,16 +261,29 @@ export class NotebookCellsUI extends UIEventTarget {
             const prevCell = this.getCellBefore(cellToDelete);
             const nextCell = this.getCellAfter(cellToDelete);
 
-            const anchorEl = prevCell && prevCell.container || this.configEl; // if there is no prevCell to be found, anchor by anchorEl;
             const undoEl = div(['undo-delete'], [
                 span(['close-button', 'fa'], ['']).click(evt => {
                     undoEl.parentNode!.removeChild(undoEl);
+
+                    // don't actually get rid of the cell from the UI while we still might undo it.
+                    cellToDelete.dispose();
                     cellToDelete.container.innerHTML = ''
                 }),
                 span(['undo-message'], [
                     'Cell deleted. ',
                     span(['undo-link'], ['Undo']).click(evt => {
-                        this.insertCellBelow(anchorEl, () => cellToDelete);
+                        const mkCell = () => {
+                            return cellToDelete.language !== "text"
+                                ? new CodeCell(cellToDelete.id, cellToDelete.content, cellToDelete.language, this.path)
+                                : new TextCell(cellToDelete.id, cellToDelete.content, this.path);
+                        };
+
+                        const prevCell = this.getCellBeforeEl(undoEl);
+                        if (prevCell) {
+                            CurrentNotebook.current.insertCell("below", prevCell.id, mkCell);
+                        } else {
+                            CurrentNotebook.current.insertCell("above", undefined, mkCell)
+                        }
                         undoEl.parentNode!.removeChild(undoEl);
                     })
                 ])
@@ -290,8 +303,6 @@ export class NotebookCellsUI extends UIEventTarget {
             } else {
                 throw new Error(`Couldn't find divider after ${cellId} !`) // why wasn't the divider there??
             }
-
-            cellToDelete.dispose();
 
             if (cb) cb()
         }
