@@ -23,7 +23,6 @@ import {DataStream, StreamingDataRepr} from "../../data/value_repr";
 import embed, {Result as VegaResult} from "vega-embed";
 import {UIEventTarget} from "../util/ui_event";
 import {Cell, CodeCell} from "./cell";
-import {ToolbarEvent} from "./toolbar";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {ClientResult, Output} from "../../data/result";
 import {CellMetadata} from "../../data/data";
@@ -97,7 +96,6 @@ type SpecFun = ((this: PlotEditor, plotType: string, xField: StructField, yMeas:
 
 export class PlotEditor extends UIEventTarget {
     private fields: StructField[];
-    private session: SocketSession;
     container: TagElement<"div">;
     private plotTypeSelector: FakeSelect;
     private specType: SpecFun;
@@ -128,9 +126,7 @@ export class PlotEditor extends UIEventTarget {
         super();
         this.fields = repr.dataType.fields;
 
-        this.session = SocketSession.get; // TODO: ew! remove!!!
-
-        if (!this.session.isOpen) {
+        if (!SocketSession.get.isOpen) {
             this.container = div(['plot-editor-container', 'disconnected'], [
                 "Not connected to server – must be connected in order to plot."
             ]);
@@ -426,7 +422,7 @@ export class PlotEditor extends UIEventTarget {
             throw new Error("Plot can't be run when a previous plot stream is already running");
         }
 
-        const stream = this.currentStream = new DataStream(this.path, this.repr, this.session, this.getTableOps()).batch(500);
+        const stream = this.currentStream = new DataStream(this.path, this.repr, this.getTableOps()).batch(500);
 
         // TODO: multiple Ys
         // TODO: encode color

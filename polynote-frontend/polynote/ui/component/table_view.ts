@@ -76,7 +76,7 @@ export class TableView {
                 ])])
         );
 
-        this.stream = new DataStream(path, repr, SocketSession.get).batch(20);
+        this.stream = new DataStream(path, repr).batch(20);
         this.rows = [];
         this.currentPos = 0;
     }
