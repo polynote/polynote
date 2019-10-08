@@ -32,7 +32,9 @@ class VersionBuffer[T] {
     }
   }
 
-  def getRange(startVersion: Int, endVersion: Int): List[(Int, T)] = {
+  def getRange(startVersion: Int, endVersion: Int): List[T] = getRangeV(startVersion, endVersion).map(_._2)
+
+  def getRangeV(startVersion: Int, endVersion: Int): List[(Int, T)] = {
     val iter = buffer.iterator()
     val results = new ListBuffer[(Int, T)]
     var finished = false

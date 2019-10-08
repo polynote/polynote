@@ -30,15 +30,20 @@ object KernelSubscriber {
 
   def apply(
     id: SubscriberId,
-    publisher: KernelPublisher,
-    globalVersion: GlobalVersion
+    publisher: KernelPublisher
   ): TaskR[PublishMessage, KernelSubscriber] = {
+
+    def rebaseUpdate(update: NotebookUpdate, globalVersion: GlobalVersion, localVersion: Int) =
+      publisher.versionBuffer.getRange(update.globalVersion, globalVersion)
+        .foldLeft(update)(_ rebase _)
+        .withVersions(globalVersion, localVersion)
+
     def foreignUpdates(local: AtomicInteger, global: AtomicInteger) =
       publisher.broadcastUpdates.subscribe(128).unNone.filter(_._1 != id).map(_._2).map {
         update =>
           val knownGlobalVersion = global.get()
           if (update.globalVersion < knownGlobalVersion) {
-            Some(publisher.versionBuffer.getRange(update.globalVersion, knownGlobalVersion).map(_._2).foldLeft(update)(_ rebase _).withVersions(knownGlobalVersion, local.get()))
+            Some(rebaseUpdate(update, knownGlobalVersion, local.get()))
           } else if (update.globalVersion > knownGlobalVersion) {
             Some(update.withVersions(update.globalVersion, local.get()))
           } else None
@@ -46,14 +51,15 @@ object KernelSubscriber {
 
     for {
       closed           <- Promise.make[Throwable, Unit]
-      notebook         <- publisher.currentNotebook.get
+      versioned        <- publisher.versionedNotebook.get
+      (ver, notebook)   = versioned
       lastLocalVersion  = new AtomicInteger(0)
-      lastGlobalVersion = new AtomicInteger(globalVersion)
+      lastGlobalVersion = new AtomicInteger(ver)
       publishMessage   <- PublishMessage.access
       updater          <- Stream.emits(Seq(
           foreignUpdates(lastLocalVersion, lastGlobalVersion),
-          publisher.status.subscribe(128).map(KernelStatus(notebook.path, _)),
-          publisher.cellResults.subscribe(128).unNone
+          publisher.status.subscribe(128).tail.map(KernelStatus(notebook.path, _)),
+          publisher.cellResults.subscribe(128).tail.unNone
         )).parJoinUnbounded.interruptWhen(closed.await.either).through(publishMessage.publish).compile.drain.fork
     } yield new KernelSubscriber(
       id,

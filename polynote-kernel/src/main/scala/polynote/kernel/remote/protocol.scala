@@ -21,7 +21,7 @@ abstract class RemoteRequestCompanion[T](msgTypeId: Byte) {
   implicit val discriminator: Discriminator[RemoteRequest, T, Byte] = Discriminator(msgTypeId)
 }
 
-final case class StartupRequest(reqId: Int, notebook: Notebook, config: PolynoteConfig) extends RemoteRequest
+final case class StartupRequest(reqId: Int, notebook: Notebook, globalVersion: Int, config: PolynoteConfig) extends RemoteRequest
 
 object StartupRequest extends RemoteRequestCompanion[StartupRequest](1) {
   private implicit val notebookCodec: Codec[Notebook] = Message.codec.exmap(

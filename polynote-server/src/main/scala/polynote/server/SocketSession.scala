@@ -92,7 +92,7 @@ class SocketSession(
     case LoadNotebook(path) =>
       def publishRunningKernelState(publisher: KernelPublisher) = for {
         kernel <- publisher.kernel
-        _      <- kernel.values().flatMap(_.map(rv => PublishMessage(CellResult(path, rv.sourceCell, rv))).sequence)
+        _      <- kernel.values().flatMap(_.filter(_.sourceCell < 0).map(rv => PublishMessage(CellResult(path, rv.sourceCell, rv))).sequence)
         _      <- kernel.info().map(KernelStatus(path, _)) >>= PublishMessage.apply
       } yield ()
 
@@ -176,15 +176,15 @@ class SocketSession(
 
     case ClearOutput(path) => for {
       subscriber <- subscribe(path)
-      publish    <- subscriber.publisher.currentNotebook.modify {
-        notebook =>
+      publish    <- subscriber.publisher.versionedNotebook.modify {
+        case (ver, notebook) =>
           val (newCells, cellIds) = notebook.cells.foldRight((List.empty[NotebookCell], List.empty[CellID])) {
             case (cell, (cells, ids)) if cell.results.nonEmpty => (cell.copy(results = ShortList(Nil)) :: cells, cell.id :: ids)
             case (cell, (cells, ids)) => (cell :: cells, ids)
           }
 
           val updates = cellIds.map(id => PublishMessage(CellResult(path, id, ClearResults()))).sequence.unit
-          (notebook.copy(cells = ShortList(newCells)), updates)
+          (ver -> notebook.copy(cells = ShortList(newCells)), updates)
       }
       _          <- publish
     } yield ()

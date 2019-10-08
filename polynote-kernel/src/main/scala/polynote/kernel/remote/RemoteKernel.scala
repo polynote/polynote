@@ -74,7 +74,7 @@ class RemoteKernel[ServerAddress](
     case _ => ZIO.unit
   }
 
-  private val processRequests = transport.responses.evalMap[TaskC, Unit] {
+  private val processResponses = transport.responses.evalMap[TaskC, Unit] {
     case KernelStatusResponse(status)    => PublishStatus(status)
     case rep@ResultResponse(_, result)   => withHandler(rep)(handler => PublishResult(result).provide(handler.env.asInstanceOf[PublishResult]))
     case rep@ResultsResponse(_, results) => withHandler(rep)(handler => PublishResult(results).provide(handler.env.asInstanceOf[PublishResult]))
@@ -82,15 +82,20 @@ class RemoteKernel[ServerAddress](
   }.onFinalize(PublishStatus(KernelBusyState(busy = false, alive = false)))
 
   def init(): TaskR[BaseEnv with GlobalEnv with CellEnv, Unit] = for {
-    update   <- updates.evalMap(update => transport.sendRequest(UpdateNotebookRequest(nextReq, update)))
-        .interruptWhen(closed.await.either)
-        .compile.drain.fork
-    process  <- processRequests.compile.drain.fork
-    notebook <- CurrentNotebook.get
-    config   <- Config.access
-    startup  <- request(StartupRequest(nextReq, notebook, config)) {
+    updateQueue    <- Queue.unbounded[TaskB, NotebookUpdate]                                                            // have to start pulling the updates before getting the current notebook
+    pullUpdates    <- updates.through(updateQueue.enqueue).interruptWhen(closed.await.either).compile.drain.fork        // otherwise some may be missed
+    versioned      <- CurrentNotebook.getVersioned
+    (ver, notebook) = versioned
+    config         <- Config.access
+    process        <- processResponses.compile.drain.fork
+    startup        <- request(StartupRequest(nextReq, notebook, ver, config)) {
       case Announce(reqId, remoteAddress) => done(reqId, ()) // TODO: may want to keep the remote address to try reconnecting?
     }
+    update         <- updateQueue.dequeue
+      .dropWhile(_.globalVersion <= ver)
+      .evalMap(update => transport.sendRequest(UpdateNotebookRequest(nextReq, update)))
+      .interruptWhen(closed.await.either)
+      .compile.drain.fork
   } yield ()
 
   def queueCell(id: CellID): TaskR[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = {
@@ -172,7 +177,7 @@ class RemoteKernel[ServerAddress](
 }
 
 object RemoteKernel extends Kernel.Factory.Service {
-  def apply[ServerAddress](transport: Transport[ServerAddress]): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = for {
+  def apply[ServerAddress](transport: Transport[ServerAddress]): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, RemoteKernel[ServerAddress]] = for {
     server  <- transport.serve()
     updates <- NotebookUpdates.access
     closed  <- Promise.make[Throwable, Unit]
@@ -190,7 +195,8 @@ class RemoteKernelClient(
   kernel: Kernel,
   requests: Stream[TaskB, RemoteRequest],
   publishResponse: Publish[Task, RemoteResponse],
-  closed: Deferred[Task, Unit]
+  closed: Deferred[Task, Unit],
+  private[remote] val notebookRef: SignallingRef[Task, (Int, Notebook)] // for testing
 ) {
 
   private val sessionHandles = new ConcurrentHashMap[Int, BaseEnv with StreamingHandles]()
@@ -258,7 +264,10 @@ object RemoteKernelClient extends polynote.app.App {
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] =
     (parseArgs(args) >>= runThrowable).orDie
 
-  def runThrowable(args: Args): TaskR[Environment, Int] = for {
+  def runThrowable(args: Args): TaskR[Environment, Int] = tapRunThrowable(args, None)
+
+  // for testing – so we can get out the remote kernel client
+  def tapRunThrowable(args: Args, tapClient: Option[zio.Ref[RemoteKernelClient]]): TaskR[Environment, Int] = for {
     addr            <- args.getSocketAddress
     kernelFactory   <- args.getKernelFactory
     transport       <- SocketTransport.connectClient(addr)
@@ -271,18 +280,20 @@ object RemoteKernelClient extends polynote.app.App {
     localAddress    <- effectBlocking(InetAddress.getLocalHost.getHostAddress)
     firstRequest    <- requests.head.compile.lastOrError
     initial         <- firstRequest match {
-      case req@StartupRequest(_, _, _) => ZIO.succeed(req)
-      case other                       => ZIO.fail(new RuntimeException(s"Handshake error; expected StartupRequest but found ${other.getClass.getName}"))
+      case req@StartupRequest(_, _, _, _) => ZIO.succeed(req)
+      case other                          => ZIO.fail(new RuntimeException(s"Handshake error; expected StartupRequest but found ${other.getClass.getName}"))
     }
-    notebookRef     <- SignallingRef[Task, Notebook](initial.notebook)
-    processUpdates  <- updates.subscribe(128).unNone.evalMap(update => notebookRef.update(update.applyTo))
-        .compile.drain
-        .fork
+    notebookRef     <- SignallingRef[Task, (Int, Notebook)](initial.globalVersion -> initial.notebook)
+    processUpdates  <- updates.subscribe(128).unNone.dropWhile(_.globalVersion <= initial.globalVersion)
+      .evalMap(update => notebookRef.update { case (ver, notebook) => update.globalVersion -> update.applyTo(notebook) })
+      .compile.drain
+      .fork
     interpFactories <- interpreter.Loader.load
     kernelEnv       <- mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config, updates.subscribe(128))
     kernel          <- kernelFactory.apply().provide(kernelEnv)
     closed          <- Deferred[Task, Unit]
-    client           = new RemoteKernelClient(kernel, requests, publishResponse, closed)
+    client           = new RemoteKernelClient(kernel, requests, publishResponse, closed, notebookRef)
+    _               <- tapClient.fold(ZIO.unit)(_.set(client))
     _               <- kernel.init().provide(kernelEnv)
     _               <- publishResponse.publish1(Announce(initial.reqId, localAddress))
     exitCode        <- client.run().provide(kernelEnv)
@@ -290,7 +301,7 @@ object RemoteKernelClient extends polynote.app.App {
   } yield exitCode
 
   def mkEnv(
-    currentNotebook: SignallingRef[Task, Notebook],
+    currentNotebook: SignallingRef[Task, (Int, Notebook)],
     reqId: Int,
     publishResponse: Publish[Task, RemoteResponse],
     interpreterFactories: Map[String, List[Interpreter.Factory]],
@@ -339,7 +350,7 @@ object RemoteKernelClient extends polynote.app.App {
   } yield factoryInst
 
   case class KernelEnvironment(
-    currentNotebook: Ref[Task, Notebook],
+    currentNotebook: Ref[Task, (Int, Notebook)],
     reqId: Int,
     publishResponse: Publish[Task, RemoteResponse],
     interpreterFactories: Map[String, List[Interpreter.Factory]],

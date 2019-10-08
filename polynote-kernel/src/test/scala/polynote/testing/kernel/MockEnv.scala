@@ -49,7 +49,7 @@ case class MockKernelEnv(
   interpreterFactories: Map[String, List[Interpreter.Factory]],
   taskManager: TaskManager.Service,
   updateTopic: Topic[Task, Option[NotebookUpdate]],
-  currentNotebook: SignallingRef[Task, Notebook],
+  currentNotebook: SignallingRef[Task, (Int, Notebook)],
   streamingHandles: StreamingHandles.Service,
   sessionID: Int = 0
 ) extends BaseEnvT with GlobalEnvT with CellEnvT with StreamingHandles with NotebookUpdates {
@@ -64,7 +64,7 @@ case class MockKernelEnv(
 object MockKernelEnv {
   def apply(kernelFactory: Factory.Service): TaskR[BaseEnv, MockKernelEnv] = for {
     baseEnv         <- ZIO.access[BaseEnv](identity)
-    currentNotebook <- SignallingRef[Task, Notebook](Notebook("empty", ShortList(Nil), None))
+    currentNotebook <- SignallingRef[Task, (Int, Notebook)](0 -> Notebook("empty", ShortList(Nil), None))
     updateTopic     <- Topic[Task, Option[NotebookUpdate]](None)
     publishUpdates   = new MockPublish[KernelStatusUpdate]
     taskManager     <- TaskManager(publishUpdates)
