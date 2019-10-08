@@ -3,7 +3,7 @@ import {NotebookCellsUI} from "./nb_cells";
 import {KernelUI} from "./kernel_ui";
 import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
-import {BeforeCellRunEvent, Cell, CellExecutionFinished, CodeCell, TextCell} from "./cell";
+import {Cell, CodeCell, TextCell} from "./cell";
 import match from "../../util/match";
 import {
     ClearResults,
@@ -19,9 +19,8 @@ import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
 import {SocketSession} from "../../comms";
 import {MainUI} from "./ui";
-import {CompletionCandidate, Signatures} from "../../data/messages";
-import {languages, Range} from "monaco-editor";
-import CompletionItem = languages.CompletionItem;
+import {CompletionCandidate, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
+import {Range} from "monaco-editor";
 import {ContentEdit} from "../../data/content_edit";
 import {StructType} from "../../data/data_type";
 import {Either, Left, Right} from "../../data/types";
@@ -33,6 +32,9 @@ export class NotebookUI extends UIEventTarget {
     private globalVersion: number;
     private localVersion: number;
     private editBuffer: EditBuffer;
+    private cellStatusListeners: ((cellId: number, status: number) => void)[] = [];
+    private queuedCells: number[] = [];
+    private runningCell?: number;
 
     // TODO: remove mainUI reference
     constructor(eventParent: UIEventTarget, readonly path: string, readonly mainUI: MainUI) {
@@ -76,6 +78,7 @@ export class NotebookUI extends UIEventTarget {
             // notify toolbar of context change
             mainUI.toolbarUI.onContextChanged();
 
+            // TODO: should probably generate some scroll-to-element event and handle this up in mainUI itself
             // check if element is in viewport
             const viewport = mainUI.notebookContent;
             const viewportScrollTop = viewport.scrollTop;
@@ -97,30 +100,6 @@ export class NotebookUI extends UIEventTarget {
             // update the symbol table to reflect what's visible from this cell
             const ids = this.cellUI.getCodeCellIdsBefore(id);
             this.kernelUI.symbols.presentFor(id, ids);
-        });
-
-        this.cellUI.addEventListener('AdvanceCell', evt => {
-            if (this.currentCell) {
-                if (evt.detail.backward) {
-                    const prev = this.cellUI.getCellBefore(this.currentCell);
-                    if (prev) {
-                        prev.focus();
-                    }
-                } else {
-                    const next = this.cellUI.getCellAfter(this.currentCell);
-                    if (next) {
-                        next.focus();
-                    } else {
-                        this.insertCell("below", this.currentCell.id);
-                    }
-                }
-            }
-        });
-
-        this.cellUI.addEventListener('ContentChange', (evt) => {
-            const update = new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits, evt.detail.metadata);
-            SocketSession.get.send(update);
-            this.editBuffer.push(this.localVersion, update);
         });
 
         this.cellUI.addEventListener('CompletionRequest', (evt) => {
@@ -221,19 +200,26 @@ export class NotebookUI extends UIEventTarget {
 
         SocketSession.get.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
-        this.addEventListener('UpdatedTask', evt => {
-            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
-            //       and instead have an EOF message to tell us when a cell is done
-            const taskInfo = evt.detail.taskInfo;
-            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
-            if (cellMatch && cellMatch[1]) {
-                this.cellUI.setStatus(+(cellMatch[1]), taskInfo);
+        SocketSession.get.addMessageListener(messages.KernelStatus, (path, update) => {
+            if (path === this.path) {
+                switch(update.constructor) {
+                    case messages.UpdatedTasks:
+                        update.tasks.forEach((task: TaskInfo) => {
+                            this.handleTaskUpdate(task);
+                        });
+                        break;
+                    case messages.KernelBusyState:
+                        const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
+                        this.kernelUI.setKernelState(state);
+                        break;
+                    case messages.KernelInfo:
+                        this.kernelUI.updateInfo(update.content);
+                        break;
+                    case messages.ExecutionStatus:
+                        this.cellUI.setExecutionHighlight(update.cellId, update.pos || null);
+                        break;
+                }
             }
-        });
-
-        this.addEventListener('UpdatedExecutionStatus', evt => {
-            const update = evt.detail.update;
-            this.cellUI.setExecutionHighlight(update.cellId, update.pos || null);
         });
 
         SocketSession.get.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
@@ -335,6 +321,33 @@ export class NotebookUI extends UIEventTarget {
                 this.handleResult(result, id, cell);
             }
         });
+
+        // update list of currently running cells
+        this.cellStatusListeners.push((cellId: number, status: number) => {
+            if (status === TaskStatus.Running) {
+                this.runningCell = cellId;
+                this.queuedCells = this.queuedCells.filter(item => item !== cellId)
+            } else if (status === TaskStatus.Complete || status === TaskStatus.Error) {
+                this.runningCell = undefined;
+                this.queuedCells = this.queuedCells.filter(item => item !== cellId) // just in case
+            } else if (status === TaskStatus.Queued) {
+                if (!this.queuedCells.includes(cellId)) {
+                    this.queuedCells.push(cellId)
+                }
+            }
+        })
+    }
+
+    handleTaskUpdate(task: TaskInfo) {
+        this.kernelUI.updateTask(task);
+        // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
+        //       and instead have an EOF message to tell us when a cell is done
+        const cellMatch = task.id.match(/^Cell (\d+)$/);
+        if (cellMatch && cellMatch[1]) {
+            const cellId = +(cellMatch[1]);
+            this.cellUI.setStatus(cellId, task);
+            this.cellStatusListeners.forEach(listener => listener(cellId, task.status))
+        }
     }
 
     // Some results (like Predef ResultValues or ClearResults) have an ID but no cell associated with them.
@@ -424,22 +437,23 @@ export class NotebookUI extends UIEventTarget {
             cellIds = [cellIds];
         }
         const serverRunCells: number[] = [];
-        let prevCell: number;
         cellIds.forEach(id => {
             const cell = this.cellUI.getCell(id);
-            if (cell) {
-                cell.dispatchEvent(new BeforeCellRunEvent(id));
+            if (cell && !this.queuedCells.includes(id) && this.runningCell !== id) {
                 if (!clientInterpreters[cell.language]) {
                     serverRunCells.push(id);
                 } else if (cell.language !== 'text' && cell instanceof CodeCell) {
                     const code = cell.content;
                     const cellsBefore = this.cellUI.getCodeCellIdsBefore(id);
+                    const taskId = `Cell ${id}`;
                     const runCell = () => {
                         cell.clearResult();
+                        this.handleTaskUpdate(new TaskInfo(taskId, taskId, '', TaskStatus.Running, 1));
                         let results = clientInterpreters[cell.language].interpret(
                             code,
                             {id, availableValues: this.getCellContext(cellsBefore)}
                         );
+                        this.handleTaskUpdate(new TaskInfo(taskId, taskId, '', TaskStatus.Complete, 256));
                         results.forEach(result => {
                             this.handleResult(result, id, cell);
                             if (result instanceof ClientResult) {
@@ -448,22 +462,35 @@ export class NotebookUI extends UIEventTarget {
                             }
                         });
                     };
-                    if (prevCell) {
-                        const predecessor = prevCell;
-                        // when the preceeding cell finishes executing, execute this one
-                        const listener = (evt: CellExecutionFinished) => {
-                            if (evt.cellId === predecessor) {
-                                removeEventListener('CellExecutionFinished', listener);
+
+                    const prevCellId = serverRunCells[serverRunCells.length -1] // check whether we need to wait for a soon-to-be queued up cell
+                        || this.queuedCells[this.queuedCells.length - 1] // otherwise, make sure we wait for cells already queued up
+                        || this.runningCell; // ok, what if there's a currently running cell then...
+                    if (prevCellId) {
+                        const runListener = (cellId: number, status: number) => {
+                            if (cellId === prevCellId && status === TaskStatus.Complete) {
+                                this.cellStatusListeners = this.cellStatusListeners.filter(item => item !== runListener);
                                 runCell();
                             }
                         };
-                        addEventListener('CellExecutionFinished', listener)
+                        this.cellStatusListeners.push(runListener);
+
+                        // this might be overkill, but it ensures that the cell queue task shows up in order...
+                        const queueTask = () => this.handleTaskUpdate(new TaskInfo(taskId, taskId, '', TaskStatus.Queued, 0));
+                        if (this.queuedCells.includes(prevCellId) || this.runningCell === prevCellId) {
+                            queueTask()
+                        } else {
+                            const queueListener = (cellId: number, status: number) => {
+                                if (cellId === prevCellId && (status === TaskStatus.Queued || status === TaskStatus.Running)) {
+                                    this.cellStatusListeners = this.cellStatusListeners.filter(item => item !== queueListener);
+                                    queueTask()
+                                }
+                            };
+                            this.cellStatusListeners.push(queueListener)
+                        }
                     } else {
                         runCell();
                     }
-                }
-                if (cell.language !== 'text') {
-                    prevCell = id;
                 }
             }
         });
@@ -505,19 +532,7 @@ export class NotebookUI extends UIEventTarget {
 
                 // inserts cells at the end
                 this.cellUI.insertCellBelow(undefined, () => cell);
-                cellInfo.results.forEach(
-                    result => {
-                        if (result instanceof CompileErrors) {
-                            (cell as CodeCell).setErrors(result.reports)
-                        } else if (result instanceof RuntimeError) {
-                            (cell as CodeCell).setRuntimeError(result.error)
-                        } else if (result instanceof Output) {
-                            (cell as CodeCell).addOutput(result.contentType, result.content)
-                        } else if (result instanceof ResultValue) {
-                            (cell as CodeCell).addResult(result);
-                        }
-                    }
-                )
+                cellInfo.results.forEach(result => this.handleResult(result, cell.id, cell))
             }
         }
         this.mainUI.dispatchEvent(new UIEvent('CellsLoaded'))
@@ -561,5 +576,33 @@ export class NotebookUI extends UIEventTarget {
 
             });
         }
+    }
+
+    selectNextCell(cellId: number) {
+        const current = this.cellUI.getCell(cellId);
+        if (current) {
+            const next = this.cellUI.getCellAfter(current);
+            if (next) {
+                next.focus();
+            } else {
+                this.insertCell("below", cellId);
+            }
+        }
+    }
+
+    selectPrevCell(cellId: number) {
+        const current = this.cellUI.getCell(cellId);
+        if (current) {
+            const prev = this.cellUI.getCellBefore(current);
+            if (prev) {
+                prev.focus();
+            }
+        }
+    }
+
+    handleContentChange(cellId: number, edits: ContentEdit[], metadata?: CellMetadata) {
+        const update = new messages.UpdateCell(this.path, this.globalVersion, ++this.localVersion, cellId, edits, metadata);
+        SocketSession.get.send(update);
+        this.editBuffer.push(this.localVersion, update);
     }
 }

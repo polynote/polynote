@@ -41,32 +41,6 @@ export class KernelUI extends UIEventTarget {
             ])
         ]);
 
-        this.registerEventListener('KernelStatus', (path, update) => {
-            if (path === this.path) {
-                switch (update.constructor) {
-                    case messages.UpdatedTasks:
-                        update.tasks.forEach((taskInfo: TaskInfo) => {
-                            this.tasks.updateTask(taskInfo.id, taskInfo.label, taskInfo.detail, taskInfo.status, taskInfo.progress);
-                            this.dispatchEvent(new UIEvent('UpdatedTask', {taskInfo: taskInfo}));
-                        });
-                        break;
-
-                    case messages.KernelBusyState:
-                        const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
-                        this.setKernelState(state);
-                        break;
-
-                    case messages.KernelInfo:
-                        this.info.updateInfo(update.content);
-                        break;
-
-                    case messages.ExecutionStatus:
-                        this.dispatchEvent(new UIEvent('UpdatedExecutionStatus', {update: update}));
-                        break;
-                }
-            }
-        });
-
         this.registerEventListener('SocketClosed', () => this.setKernelState('disconnected'));
 
         this.registerEventListener('KernelError', (code, err) => {
@@ -90,6 +64,14 @@ export class KernelUI extends UIEventTarget {
         if (prefs && prefs.collapsed) {
             this.collapse(true);
         }
+    }
+
+    updateInfo(info: Record<string, string>) {
+        this.info.updateInfo(info)
+    }
+
+    updateTask(task: TaskInfo) {
+        this.tasks.updateTask(task.id, task.label, task.detail, task.status, task.progress);
     }
 
     getStorage() {

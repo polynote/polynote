@@ -1,9 +1,8 @@
 import {UIEvent} from "./ui_event";
 import {TabActivated, NoActiveTab, TabRemoved} from "../component/tab";
 import {
-    AdvanceCellEvent,
-    BeforeCellRunEvent, CellExecutionFinished, CellExecutionStarted, CompletionRequest,
-    ContentChangeEvent, DeleteCellEvent, ParamHintRequest,
+    CompletionRequest,
+    ParamHintRequest,
     SelectCellEvent, SetCellLanguageEvent
 } from "../component/cell";
 import {ExecutionStatus, KernelStatus, RunningKernels, TaskInfo} from "../../data/messages";
@@ -48,7 +47,6 @@ export interface UIEventNameMap extends WindowEventMap {
     "CancelTasks": UIEvent<[]>;
     "Undo": UIEvent<[]>;
     "InsertBelow": UIEvent<[]>;
-    "DeleteCell": DeleteCellEvent;
     "ViewAbout": ViewAbout;
     "DownloadNotebook": UIEvent<[]>;
     "ClearOutput": UIEvent<[]>;
@@ -65,11 +63,6 @@ export interface UIEventNameMap extends WindowEventMap {
     "ToggleKernelUI": ToggleKernelUI;
     "CellsLoaded": UIEvent<[]>;
     "SelectCell": SelectCellEvent;
-    "BeforeCellRun": BeforeCellRunEvent;
-    "ContentChange": ContentChangeEvent;
-    "AdvanceCell": AdvanceCellEvent;
-    "CellExecutionStarted": CellExecutionStarted;
-    "CellExecutionFinished": CellExecutionFinished;
     "CompletionRequest": CompletionRequest;
     "ParamHintRequest": ParamHintRequest;
     "SetCellLanguage": SetCellLanguageEvent;

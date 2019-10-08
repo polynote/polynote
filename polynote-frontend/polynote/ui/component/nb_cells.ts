@@ -1,7 +1,7 @@
 import {UIEventTarget} from "../util/ui_event";
 import {NotebookConfigUI} from "./nb_config";
 import {div, span, TagElement} from "../util/tags";
-import {Cell, CellContainer, CellExecutionFinished, CodeCell, isCellContainer, TextCell} from "./cell";
+import {Cell, CellContainer, CodeCell, isCellContainer, TextCell} from "./cell";
 import {TaskInfo, TaskStatus} from "../../data/messages";
 import * as Tinycon from "tinycon";
 import {storage} from "../util/storage";
@@ -62,7 +62,6 @@ export class NotebookCellsUI extends UIEventTarget {
 
         switch (status.status) {
             case TaskStatus.Complete:
-                dispatchEvent(new CellExecutionFinished(cell.id));
                 cell.container.classList.remove('running', 'queued', 'error');
                 this.queuedCells -= 1;
                 break;
@@ -213,8 +212,6 @@ export class NotebookCellsUI extends UIEventTarget {
         const mkCell = (oldCell?: Cell) => {
             if (oldCell instanceof CodeCell) {
                 return new CodeCell(newCellId, '', oldCell.language, this.path)
-            } else if (oldCell instanceof TextCell) {
-                return new TextCell(newCellId, '', this.path);
             } else {
                 return new CodeCell(newCellId, '', 'scala', this.path) // default new cells are scala cells
             }
