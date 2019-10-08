@@ -90,8 +90,8 @@ object Generators {
 
   def genNotebookUpdates(globalVersion: Int, initial: Notebook): Gen[(Notebook, List[NotebookUpdate])] = for {
     size  <- Gen.size
-    count <- Gen.choose(1, size)
-    (finalNotebook, edits) <- ((globalVersion + 1) until (globalVersion + count + 1)).foldLeft(Gen.const((initial, Queue.empty[NotebookUpdate]))) {
+    count <- Gen.choose(1, math.max(1,size))
+    (finalNotebook, edits) <- ((globalVersion + 1) to (globalVersion + count + 1)).foldLeft(Gen.const((initial, Queue.empty[NotebookUpdate]))) {
       (accum, nextVersion) => accum.flatMap {
         case (currentNotebook, updates) => genNotebookUpdate(currentNotebook, nextVersion).map {
           update => (update.applyTo(currentNotebook) -> updates.enqueue(update))

@@ -114,7 +114,7 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
       }
 
       "handles notebook updates" in {
-        forAll((Generators.genNotebookUpdates _).tupled(unsafeRun(env.currentNotebook.get))) {
+        forAll((Generators.genNotebookUpdates _).tupled(unsafeRun(env.currentNotebook.get)), MinSize(4)) {
           case (finalNotebook, updates) =>
             whenever(updates.nonEmpty) {
               val finalVersion = updates.last.globalVersion
