@@ -1,5 +1,5 @@
 import {button, div, fakeSelectElem, h3, iconButton, tag, TagElement} from "../util/tags";
-import {FakeSelect} from "./fake_select";
+import {FakeSelect, SelectionChangedEvent} from "./fake_select";
 import {Cell, CodeCell, TextCell} from "./cell";
 import {LaTeXEditor} from "./latex_editor";
 import {UIEvent, UIEventTarget} from "../util/ui_event";
@@ -91,7 +91,7 @@ class NotebookToolbarUI extends UIEventTarget {
         this.el = toolbarElem("notebook", [
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
-                    .click(() => this.dispatchEvent(new ToolbarEvent("RunAll"))),
+                    .click(() => CurrentNotebook.get.runAllCells()),
                 iconButton(["branch"], "Create branch", "", "Branch").disable().withKey('alwaysDisabled', true),
                 iconButton(["download"], "Download", "", "Download").click(() => this.dispatchEvent(new ToolbarEvent("DownloadNotebook"))),
                 iconButton(["clear"], "Clear notebook output", "", "Clear").click(() => this.dispatchEvent(new ToolbarEvent("ClearOutput")))
@@ -116,17 +116,21 @@ class CellToolbarUI extends UIEventTarget {
                 ])
             ], [
                 iconButton(["insert-cell-above"], "Insert cell above current", "", "Insert above")
-                    .click(() => CurrentNotebook.current.insertCell('above')),
+                    .click(() => CurrentNotebook.get.insertCell('above')),
                 iconButton(["insert-cell-below"], "Insert cell below current", "", "Insert below")
-                    .click(() => CurrentNotebook.current.insertCell('below')),
+                    .click(() => CurrentNotebook.get.insertCell('below')),
                 iconButton(["delete-cell"], "Delete current cell", "", "Delete")
-                    .click(() => CurrentNotebook.current.deleteCell())
+                    .click(() => CurrentNotebook.get.deleteCell())
                 // iconButton(['undo'], 'Undo', '', 'Undo')
                 //     .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
             ]
         ]);
 
-        this.cellTypeSelector = new FakeSelect(selectEl)
+        this.cellTypeSelector = new FakeSelect(selectEl);
+
+        this.cellTypeSelector.addEventListener('SelectionChange', (evt: SelectionChangedEvent) => {
+            CurrentNotebook.get.onCellLanguageSelected(evt.newValue)
+        })
 
     }
 
@@ -150,9 +154,9 @@ class CodeToolbarUI extends UIEventTarget {
         this.el = toolbarElem("code", [
             [
                 iconButton(["run-cell"], "Run this cell (only)", "", "Run")
-                    .click(() => this.dispatchEvent(new ToolbarEvent(("RunCurrentCell")))),
+                    .click(() => CurrentNotebook.get.runCurrentCell()),
                 iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "", "Run to cursor")
-                    .click(() => this.dispatchEvent(new ToolbarEvent(("RunToCursor")))),
+                    .click(() => CurrentNotebook.get.runToCursor()),
                 iconButton(["stop-cell"], "Stop/cancel this cell", "", "Cancel")
                     .click(() => this.dispatchEvent(new ToolbarEvent("CancelTasks"))),
             ]

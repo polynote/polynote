@@ -38,8 +38,6 @@ export class MainUI extends UIEventTarget {
     private disabled: boolean;
     private currentServerCommit?: number;
     private currentServerVersion: number;
-    private currentNotebookPath: string;
-    private currentNotebook: NotebookCellsUI;
     private about?: About;
     private welcomeUI?: HomeUI;
 
@@ -51,7 +49,7 @@ export class MainUI extends UIEventTarget {
         let right = { el: div(['grid-shell'], []) };
 
         this.mainView = new SplitView('split-view', left, center, right);
-        this.toolbarUI = new ToolbarUI();
+        this.toolbarUI = new ToolbarUI().setEventParent(this);
 
         this.el = div(['main-ui'], [this.toolbarUI.el, this.mainView.el]);
 
@@ -131,10 +129,9 @@ export class MainUI extends UIEventTarget {
                     window.history.pushState({notebook: tab.name}, title, tabPath);
                 }
 
-                this.currentNotebookPath = tab.name;
-                this.currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI; // TODO: remove cellsUI reference
-                CurrentNotebook.current = this.currentNotebook.notebookUI; // TODO: better way to set
-                this.currentNotebook.notebookUI.cellUI.forceLayout(evt)
+                const currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
+                CurrentNotebook.get = currentNotebook.notebookUI; // TODO: better way to set
+                currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
                 const title = 'Polynote';
                 window.history.pushState({notebook: tab.name}, title, '/');
@@ -151,48 +148,23 @@ export class MainUI extends UIEventTarget {
             this.showWelcome();
         });
 
-        this.toolbarUI.addEventListener('RunAll', (evt) => {
-            if (this.currentNotebook) {
-                evt.forward(this.currentNotebook);
-            }
+        this.addEventListener('CancelTasks', () => {
+           this.socket.send(new messages.CancelTasks(CurrentNotebook.get.path));
         });
 
-        this.toolbarUI.addEventListener('RunToCursor', (evt) => {
-            if (this.currentNotebook) {
-                evt.forward(this.currentNotebook);
-            }
-        });
-
-        this.toolbarUI.addEventListener('RunCurrentCell', (evt) => {
-            if (this.currentNotebook) {
-                evt.forward(this.currentNotebook);
-            }
-        });
-
-        this.toolbarUI.addEventListener('CancelTasks', () => {
-           this.socket.send(new messages.CancelTasks(this.currentNotebookPath));
-        });
-
-        this.toolbarUI.addEventListener('Undo', () => {
-           const notebookUI = this.currentNotebook.notebookUI;
-           if (notebookUI instanceof NotebookUI) {
-               notebookUI // TODO: implement undoing after deciding on behavior
-           }
-        });
-
-        this.toolbarUI.addEventListener('ViewAbout', (evt) => {
+        this.addEventListener('ViewAbout', (evt) => {
             if (!this.about) {
                 this.about = new About().setEventParent(this);
             }
             this.about.show(evt.detail.section);
         });
 
-        this.toolbarUI.addEventListener('DownloadNotebook', () => {
-            MainUI.browserDownload(window.location.pathname + "?download=true", this.currentNotebook.path);
+        this.addEventListener('DownloadNotebook', () => {
+            MainUI.browserDownload(window.location.pathname + "?download=true", CurrentNotebook.get.path);
         });
 
-        this.toolbarUI.addEventListener('ClearOutput', () => {
-            this.socket.send(new messages.ClearOutput(this.currentNotebookPath))
+        this.addEventListener('ClearOutput', () => {
+            this.socket.send(new messages.ClearOutput(CurrentNotebook.get.path))
         });
 
         // START new listeners TODO: remove this comment once everything's cleaned up
@@ -279,13 +251,6 @@ export class MainUI extends UIEventTarget {
                 kernel: notebookUI.kernelUI.el
             }, 'notebook');
             this.tabUI.activateTab(tab);
-
-            this.toolbarUI.cellToolbar.cellTypeSelector.addEventListener('change', (evt: any) => { // event types are so annoying. this is probably fine... TODO: a proper type eventually.
-                // hacky way to tell whether this is the current notebook ...
-                if (this.currentNotebook.notebookUI === notebookUI) {
-                    notebookUI.onCellLanguageSelected(evt.target.value, path);
-                }
-            });
 
             notebookUI.kernelUI.addEventListener('ToggleKernelUI', (evt) => {
                 this.mainView.collapse('right', evt.detail && evt.detail.force)

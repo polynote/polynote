@@ -20,7 +20,7 @@ monaco.languages.setLanguageConfiguration('vega', vega.config);
 // use our theme
 monaco.editor.defineTheme('polynote', theme);
 
-const mainUI = new MainUI(SocketSession.current);
+const mainUI = new MainUI(SocketSession.get);
 const mainEl = document.getElementById('Main');
 mainEl && mainEl.appendChild(mainUI.el);
 const path = unescape(window.location.pathname);

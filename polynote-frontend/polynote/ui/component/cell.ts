@@ -45,12 +45,6 @@ export class SelectCellEvent extends CellEvent<{ cell: Cell }> {
     }
 }
 
-export class RunCellEvent extends CellEvent {
-    constructor(cellId: number) {
-        super('RunCell', cellId)
-    }
-}
-
 export class BeforeCellRunEvent extends CellEvent {
     constructor(cellId: number) {
         super('BeforeCellRun', cellId);
@@ -146,7 +140,7 @@ export abstract class Cell extends UIEventTarget {
             this.cellInput = div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', '', 'Run').click((evt) => {
-                        this.dispatchEvent(new RunCellEvent(this.id));
+                        CurrentNotebook.get.runCells(this.id);
                     }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
@@ -315,7 +309,7 @@ export abstract class Cell extends UIEventTarget {
             cell.dispatchEvent(new AdvanceCellEvent(cell.id));
         }).withPreventDefault(true).withDesc("Move to next cell. If there is no next cell, create it.")],
         [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
-            CurrentNotebook.current.insertCell("below", cell.id);
+            CurrentNotebook.get.insertCell("below", cell.id);
         }).withPreventDefault(true).withDesc("Insert a cell after this one.")],
         [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown,
             new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, false)))
@@ -324,13 +318,13 @@ export abstract class Cell extends UIEventTarget {
             new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, true)))
                 .withDesc("Move to previous cell. If there is no previous cell, create it.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A, // A for Above (from Zep)
-            new KeyAction((pos, range, selection, cell) => CurrentNotebook.current.insertCell("above", cell.id))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.insertCell("above", cell.id))
                 .withDesc("Insert cell above this cell.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B, // B for Below (from Zep)
-            new KeyAction((pos, range, selection, cell) => CurrentNotebook.current.insertCell("below", cell.id))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.insertCell("below", cell.id))
                 .withDesc("Insert a cell below this cell.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D, // D for Delete (from Zep)
-            new KeyAction((pos, range, selection, cell) => CurrentNotebook.current.deleteCell(cell.id))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.deleteCell(cell.id))
                 .withDesc("Delete this cell.")],
     ]);
 
@@ -404,11 +398,11 @@ export class CodeCell extends Cell {
         })],
         // run cell on enter
         [monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new RunCellEvent(cell.id)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.runCells(cell.id))
                 .withIgnoreWhenSuggesting(false)
                 .withDesc("Run this cell and move to next cell. If there is no next cell, create it.")],
         [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new RunCellEvent(cell.id)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.runCells(cell.id))
                 .withIgnoreWhenSuggesting(false)
                 .withDesc("Run this cell and insert a new cell below it.")]
     ]);

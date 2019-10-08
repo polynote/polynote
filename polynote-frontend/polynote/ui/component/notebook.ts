@@ -51,7 +51,7 @@ export class NotebookUI extends UIEventTarget {
 
         this.editBuffer = new EditBuffer();
 
-        this.addEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, this.path, evt.detail.cellId));
+        this.addEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, evt.detail.cellId));
 
         // TODO: remove listeners on children.
         this.cellUI.addEventListener('UpdatedConfig', evt => {
@@ -102,44 +102,20 @@ export class NotebookUI extends UIEventTarget {
         });
 
         this.cellUI.addEventListener('AdvanceCell', evt => {
-            if (Cell.currentFocus) {
+            if (this.currentCell) {
                 if (evt.detail.backward) {
-                    const prev = this.cellUI.getCellBefore(Cell.currentFocus);
+                    const prev = this.cellUI.getCellBefore(this.currentCell);
                     if (prev) {
                         prev.focus();
                     }
                 } else {
-                    const next = this.cellUI.getCellAfter(Cell.currentFocus);
+                    const next = this.cellUI.getCellAfter(this.currentCell);
                     if (next) {
                         next.focus();
                     } else {
-                        this.insertCell("below", Cell.currentFocus.id);
+                        this.insertCell("below", this.currentCell.id);
                     }
                 }
-            }
-        });
-
-        this.cellUI.addEventListener('RunCell', (evt) => {
-            this.runCells(evt.detail.cellId);
-        });
-
-        this.cellUI.addEventListener('RunCurrentCell', () => {
-            this.runCells(Cell.currentFocus!.id);
-        });
-
-        this.cellUI.addEventListener('RunAll', () => {
-            const cellIds = this.cellUI.getCodeCellIds();
-            this.runCells(cellIds);
-        });
-
-        this.cellUI.addEventListener('RunToCursor', () => {
-            const allCellIds = this.cellUI.getCodeCellIds();
-            const activeCellIdx = allCellIds.indexOf(Cell.currentFocus!.id);
-            if (activeCellIdx < 0) {
-                console.log("Active cell is not part of current notebook?")
-            } else {
-                const cellIds = this.cellUI.getCodeCellIds();
-                this.runCells(cellIds.slice(0, activeCellIdx + 1));
             }
         });
 
@@ -421,6 +397,30 @@ export class NotebookUI extends UIEventTarget {
         return cellContext;
     }
 
+    runToCursor() {
+        if (this.currentCell) {
+            const allCellIds = this.cellUI.getCodeCellIds();
+            const activeCellIdx = allCellIds.indexOf(this.currentCell.id);
+            if (activeCellIdx < 0) {
+                console.log("Active cell is not part of current notebook?")
+            } else {
+                const cellIds = this.cellUI.getCodeCellIds();
+                this.runCells(cellIds.slice(0, activeCellIdx + 1));
+            }
+        }
+    }
+
+    runCurrentCell() {
+        if (this.currentCell) {
+            this.runCells(this.currentCell.id)
+        }
+    }
+
+    runAllCells() {
+        const cellIds = this.cellUI.getCodeCellIds();
+        this.runCells(cellIds);
+    }
+
     runCells(cellIds: number[] | number) {
         if (!(cellIds instanceof Array)) {
             cellIds = [cellIds];
@@ -472,18 +472,13 @@ export class NotebookUI extends UIEventTarget {
         this.socket.send(new messages.RunCell(this.path, serverRunCells));
     }
 
-    // TODO: doesn't seem necessary - logic should be handled in nb_cells I think
-    onCellLanguageSelected(setLanguage: string, path: string, id?: number) {
-        if (path !== this.path) {
-            return;
-        }
-
-        id = id !== undefined ? id : (Cell.currentFocus ? Cell.currentFocus.id : undefined);
+    onCellLanguageSelected(setLanguage: string, id?: number) {
+        id = id !== undefined ? id : (this.currentCell ? this.currentCell.id : undefined);
         const cell = id && this.cellUI.getCell(id);
         if (id && cell) {
             if (cell.language !== setLanguage) {
                 this.cellUI.setCellLanguage(cell, setLanguage);
-                this.socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
+                this.socket.send(new messages.SetCellLanguage(this.path, this.globalVersion, this.localVersion++, id, setLanguage));
             }
         }
 

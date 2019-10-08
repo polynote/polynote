@@ -4,7 +4,6 @@ import {
     AdvanceCellEvent,
     BeforeCellRunEvent, CellExecutionFinished, CellExecutionStarted, CompletionRequest,
     ContentChangeEvent, DeleteCellEvent, ParamHintRequest,
-    RunCellEvent,
     SelectCellEvent, SetCellLanguageEvent
 } from "../component/cell";
 import {ExecutionStatus, KernelStatus, RunningKernels, TaskInfo} from "../../data/messages";
@@ -12,6 +11,7 @@ import {NotebookConfig} from "../../data/data";
 import {ReprDataRequest} from "../component/table_view";
 import {KernelError} from "../../data/result";
 import {NotebookSelected} from "../component/current_notebook";
+import {SelectionChangedEvent} from "../component/fake_select";
 
 type TriggerItem = UIEvent<{item: string}>
 export type ImportNotebook = UIEvent<{name: string, content: string}>
@@ -65,7 +65,6 @@ export interface UIEventNameMap extends WindowEventMap {
     "ToggleKernelUI": ToggleKernelUI;
     "CellsLoaded": UIEvent<[]>;
     "SelectCell": SelectCellEvent;
-    "RunCell": RunCellEvent;
     "BeforeCellRun": BeforeCellRunEvent;
     "ContentChange": ContentChangeEvent;
     "AdvanceCell": AdvanceCellEvent;
@@ -79,4 +78,5 @@ export interface UIEventNameMap extends WindowEventMap {
     "UpdatedConfig": UpdatedConfig;
     "ReprDataRequest": ReprDataRequest;
     "NotebookSelected": NotebookSelected;
+    "SelectionChange": SelectionChangedEvent;
 }

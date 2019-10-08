@@ -10,8 +10,6 @@ import * as monaco from "monaco-editor";
 import {PosRange} from "../../data/result";
 import {NotebookUI} from "./notebook";
 import {CurrentNotebook} from "./current_notebook";
-import {errorBarCenterAndExtentAreNotNeeded} from "vega-lite/build/src/log/message";
-import {baseEncodeEntry} from "vega-lite/build/src/compile/mark/mixins";
 
 type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
@@ -43,9 +41,9 @@ export class NotebookCellsUI extends UIEventTarget {
             const self = evt.target as TagElement<"div">;
             const prevCell = this.getCellBeforeEl(self);
             if (prevCell) {
-                CurrentNotebook.current.insertCell("below", prevCell.id)
+                CurrentNotebook.get.insertCell("below", prevCell.id)
             } else {
-                CurrentNotebook.current.insertCell("above") // no cell above this one, so it must be at the top of the file
+                CurrentNotebook.get.insertCell("above") // no cell above this one, so it must be at the top of the file
             }
         });
     }
@@ -280,9 +278,9 @@ export class NotebookCellsUI extends UIEventTarget {
 
                         const prevCell = this.getCellBeforeEl(undoEl);
                         if (prevCell) {
-                            CurrentNotebook.current.insertCell("below", prevCell.id, mkCell);
+                            CurrentNotebook.get.insertCell("below", prevCell.id, mkCell);
                         } else {
-                            CurrentNotebook.current.insertCell("above", undefined, mkCell)
+                            CurrentNotebook.get.insertCell("above", undefined, mkCell)
                         }
                         undoEl.parentNode!.removeChild(undoEl);
                     })

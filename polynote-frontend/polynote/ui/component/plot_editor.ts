@@ -128,7 +128,7 @@ export class PlotEditor extends UIEventTarget {
         super();
         this.fields = repr.dataType.fields;
 
-        this.session = SocketSession.current; // TODO: ew! remove!!!
+        this.session = SocketSession.get; // TODO: ew! remove!!!
 
         if (!this.session.isOpen) {
             this.container = div(['plot-editor-container', 'disconnected'], [
@@ -202,7 +202,7 @@ export class PlotEditor extends UIEventTarget {
         this.plotOutput.style.width = '960px';
         this.plotOutput.style.height = '480px';
 
-        this.plotTypeSelector.addEventListener('change', evt => this.onPlotTypeChange());
+        this.plotTypeSelector.addEventListener('SelectionChange', evt => this.onPlotTypeChange());
 
         this.el.addEventListener('dragstart', evt => {
            this.draggingEl = evt.target as MeasureEl;
@@ -499,7 +499,7 @@ export class PlotEditor extends UIEventTarget {
         content = content.replace('"$DATA_STREAM$"', streamSpec);
         const mkCell = (cellId: number) => new CodeCell(cellId, `(${content})`, 'vega', this.path, new CellMetadata(false, true, false));
         VegaClientResult.plotToOutput(this.plot).then(output => {
-            CurrentNotebook.current.insertCell("below", this.sourceCell, mkCell, [output], (cell: CodeCell) => {
+            CurrentNotebook.get.insertCell("below", this.sourceCell, mkCell, [output], (cell: CodeCell) => {
                 cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
             });
 

@@ -7,14 +7,14 @@ import {NotebookUI} from "./notebook";
  * coordinate to generate, and react to, modifications of the current notebook.
  */
 export class CurrentNotebook extends UIEventTarget {
-    private static _current: NotebookUI;
+    private static inst: NotebookUI;
 
-    static get current() {
-        return this._current
+    static get get() {
+        return this.inst
     }
 
-    static set current(nb: NotebookUI) {
-        this._current = nb
+    static set get(nb: NotebookUI) {
+        this.inst = nb
     }
 }
 

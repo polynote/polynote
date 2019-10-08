@@ -13,13 +13,13 @@ type ListenerCallback = (...args: any[]) => void
 export type MessageListener = [typeof Message, ListenerCallback, boolean?];
 
 export class SocketSession extends EventTarget {
-    private static _current: SocketSession;
+    private static inst: SocketSession;
 
-    static get current() {
-        if (!SocketSession._current) {
-            SocketSession._current = new SocketSession()
+    static get get() {
+        if (!SocketSession.inst) {
+            SocketSession.inst = new SocketSession()
         }
-        return SocketSession._current
+        return SocketSession.inst
     }
 
     socket: WebSocket;
