@@ -15,7 +15,7 @@ import {createVim} from "../util/vim";
 import {DeleteCell} from "../../data/messages";
 import {Hotkeys, KeyAction} from "../util/hotkeys";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
-import {valueInspector} from "./value_inspector";
+import {ValueInspector} from "./value_inspector";
 import {Interpreters} from "./ui";
 import {displayContent, parseContentType, prettyDuration} from "./display_content";
 import {CellMetadata} from "../../data/data";
@@ -831,8 +831,8 @@ export class CodeCell extends Cell {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', '', 'Inspect').click(
                             evt => {
-                                valueInspector.setEventParent(this);
-                                valueInspector.inspect(result, this.path)
+                                ValueInspector.get().setEventParent(this);
+                                ValueInspector.get().inspect(result, this.path)
                             }
                         )
                     ]
@@ -842,7 +842,7 @@ export class CodeCell extends Cell {
                 this.cellResultMargin.innerHTML = '';
                 this.cellResultMargin.appendChild(outLabel);
 
-                result.displayRepr.then(display => {
+                result.displayRepr(this, ValueInspector.get()).then(display => {
                     const [mime, content] = display;
                     const [mimeType, args] = parseContentType(mime);
                     this.buildOutput(mime, args, content).then((el: MIMEElement) => {

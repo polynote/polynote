@@ -13,8 +13,14 @@ import {TabNav} from "./tab_nav";
 import {DataReader} from "../../data/codec";
 
 
-class ValueInspector extends FullScreenModal {
-
+export class ValueInspector extends FullScreenModal {
+    private static inst: ValueInspector;
+    static get() {
+        if (!ValueInspector.inst) {
+            ValueInspector.inst = new ValueInspector();
+        }
+        return ValueInspector.inst;
+    }
     constructor() {
         super(
             div([], []),
@@ -24,7 +30,7 @@ class ValueInspector extends FullScreenModal {
         this.addEventListener('InsertCellAfter', evt => this.hide());
     }
 
-    inspect(resultValue: ResultValue, notebookPath: string) {
+    inspect(resultValue: ResultValue, notebookPath: string, jumpTo?: string) {
         this.content.innerHTML = "";
         let tabsPromise = Promise.resolve({} as Record<string, TagElement<any>>);
 
@@ -63,7 +69,11 @@ class ValueInspector extends FullScreenModal {
 
         return tabsPromise.then(tabs => {
             if (Object.keys(tabs).length) {
-                this.content.appendChild(new TabNav(tabs).el);
+                const nav = new TabNav(tabs);
+                if (jumpTo && tabs[jumpTo]) {
+                    nav.showItem(jumpTo);
+                }
+                this.content.appendChild(nav.el);
                 this.setTitle(`Inspect: ${resultValue.name}`);
                 this.show();
             }
@@ -71,5 +81,3 @@ class ValueInspector extends FullScreenModal {
     }
 
 }
-
-export const valueInspector = new ValueInspector();

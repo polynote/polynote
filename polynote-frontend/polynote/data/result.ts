@@ -7,10 +7,11 @@ import {
 
 import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr, LazyDataRepr} from './value_repr'
 import {int16, int64} from "./codec";
-import {Cell} from "../ui/component/cell";
+import {Cell, CodeCell} from "../ui/component/cell";
 import {displayData, displaySchema} from "../ui/component/display_content";
-import {div, h4, span} from "../ui/util/tags";
+import {div, h4, iconButton, span} from "../ui/util/tags";
 import * as monaco from "monaco-editor";
+import {ValueInspector} from "../ui/component/value_inspector";
 
 export class Result extends CodecContainer {
     static codec: Codec<Result>;
@@ -226,7 +227,7 @@ export class ResultValue extends Result {
     /**
      * Get a default MIME type and string, for display purposes
      */
-    get displayRepr(): Promise<[string, string | DocumentFragment]> {
+    displayRepr(cell: CodeCell, valueInspector: ValueInspector): Promise<[string, string | DocumentFragment]> {
         // TODO: make this smarter
         let index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/html"));
         if (index > 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
@@ -245,10 +246,22 @@ export class ResultValue extends Result {
                 const frag = document.createDocumentFragment();
                 const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
                 resultType.innerHTML = typeHTML;
-                frag.appendChild(div([], [
-                    h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
+                // Why do they put a <br> in there?
+                [...resultType.getElementsByTagName("br")].forEach(br => {if (br && br.parentNode) br.parentNode.removeChild(br)});
+                const el = div([], [
+                    h4(['result-name-and-type'], [
+                        span(['result-name'], [this.name]), ': ', resultType,
+                        iconButton(['view-data'], 'View data', '', '[View]')
+                            .click(_ => valueInspector.inspect(this, cell.path, 'View data')),
+                        iconButton(['plot-data'], 'Plot data', '', '[Plot]')
+                            .click(_ => {
+                                valueInspector.setEventParent(cell);
+                                valueInspector.inspect(this, cell.path, 'Plot data');
+                            })
+                    ]),
                     displaySchema(streamingRepr.dataType)
-                ]));
+                ]);
+                frag.appendChild(el);
                 return ["text/html", frag];
             })
         }

@@ -128,7 +128,8 @@ export class NotebookUI extends UIEventTarget {
             if (evt.detail.mkCell) {
                 newCell = evt.detail.mkCell(nextId);
             } else {
-                newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
+                const lang = current.language == 'text' ? 'scala' : current.language;
+                newCell = new CodeCell(nextId, '', lang, this.path);
             }
             const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata);
             const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, current.id);
