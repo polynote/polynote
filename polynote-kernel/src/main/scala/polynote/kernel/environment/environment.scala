@@ -2,6 +2,7 @@ package polynote.kernel.environment
 
 import cats.effect.concurrent.Ref
 import fs2.Stream
+import fs2.concurrent.SignallingRef
 import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
 import polynote.kernel.interpreter.CellExecutor
@@ -145,28 +146,19 @@ object CurrentRuntime {
   */
 // TODO: should separate out a read-only capability for interpreters (they have no business modifying the notebook)
 trait CurrentNotebook {
-  val currentNotebook: Ref[Task, Notebook]
+  val currentNotebook: Ref[Task, (Int, Notebook)]
 }
 
 object CurrentNotebook {
-  def of(ref: Ref[Task, Notebook]): CurrentNotebook = new CurrentNotebook {
-    val currentNotebook: Ref[Task, Notebook] = ref
+  def of(ref: Ref[Task, (Int, Notebook)]): CurrentNotebook = new CurrentNotebook {
+    val currentNotebook: Ref[Task, (Int, Notebook)] = ref
   }
 
-  def access: TaskR[CurrentNotebook, Ref[Task, Notebook]] = ZIO.access[CurrentNotebook](_.currentNotebook)
-
-  def get: TaskR[CurrentNotebook, Notebook] = ZIO.accessM[CurrentNotebook](_.currentNotebook.get)
+  def get: TaskR[CurrentNotebook, Notebook] = getVersioned.map(_._2)
+  def getVersioned: TaskR[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.currentNotebook.get)
 
   def getCell(id: CellID): TaskR[CurrentNotebook, NotebookCell] = get.flatMap {
     notebook => ZIO.fromOption(notebook.getCell(id)).mapError(_ => new NoSuchElementException(s"No such cell $id in notebook ${notebook.path}"))
-  }
-
-  def update(fn: Notebook => Notebook): TaskR[CurrentNotebook, Notebook] = ZIO.accessM[CurrentNotebook] {
-    cn => cn.currentNotebook.modify(notebook => fn(notebook) match { case nb => (nb, nb) })
-  }
-
-  def setResults(cellID: CellID, results: List[Result]): TaskR[CurrentNotebook, Unit] = access.flatMap {
-    ref => ref.update(_.setResults(cellID, results))
   }
 
   def config: TaskR[CurrentNotebook, NotebookConfig] = get.map(_.config.getOrElse(NotebookConfig.empty))

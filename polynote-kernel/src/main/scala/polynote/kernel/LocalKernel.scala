@@ -38,8 +38,7 @@ class LocalKernel private[kernel] (
 
       val run = for {
         _             <- busyState.update(_.setBusy)
-        notebookRef   <- CurrentNotebook.access
-        notebook      <- notebookRef.get
+        notebook      <- CurrentNotebook.get
         cell          <- ZIO(notebook.cell(id))
         interpEnv     <- InterpreterEnvironment.fromKernel(id)
         interpreter   <- getOrLaunch(cell.language, CellID(0)).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](interpEnv: InterpreterEnv))
@@ -56,7 +55,7 @@ class LocalKernel private[kernel] (
           .provideSomeM(interpEnv.mkExecutor(scalaCompiler.classLoader))
         end           <- clock.currentTime(TimeUnit.MILLISECONDS)                                                     // finish timing and notify clients of elapsed time
         _             <- PublishResult(ExecutionInfo(start, Some(end))).provide(interpEnv)
-        _             <- updateState(resultState) //interpreterState.update(_.insertOrReplace(resultState))
+        _             <- updateState(resultState)
         _             <- resultState.values.map(PublishResult.apply).sequence.unit                                    // publish the result values
         _             <- busyState.update(_.setIdle)
       } yield ()

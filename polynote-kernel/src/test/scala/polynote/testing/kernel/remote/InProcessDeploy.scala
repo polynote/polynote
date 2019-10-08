@@ -6,15 +6,17 @@ import java.util.concurrent.TimeUnit
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel}
 import polynote.kernel.environment.CurrentNotebook
 import polynote.kernel.remote.{RemoteKernelClient, SocketTransport}
-import zio.{Fiber, TaskR, ZIO}
+import zio.{Fiber, Ref, TaskR, ZIO}
 import zio.duration.Duration
 
-class InProcessDeploy(kernelFactory: Kernel.Factory.Service) extends SocketTransport.Deploy {
+class InProcessDeploy(kernelFactory: Kernel.Factory.Service, clientRef: Ref[RemoteKernelClient]) extends SocketTransport.Deploy {
   def deployKernel(transport: SocketTransport, serverAddress: InetSocketAddress): TaskR[BaseEnv with GlobalEnv with CurrentNotebook, SocketTransport.DeployedProcess] = {
-    val connectClient = RemoteKernelClient.runThrowable(RemoteKernelClient.Args(
-      Some(serverAddress.getHostString),
-      Some(serverAddress.getPort),
-      Some(kernelFactory))).interruptChildren
+    val connectClient = RemoteKernelClient.tapRunThrowable(
+      RemoteKernelClient.Args(
+        Some(serverAddress.getHostString),
+        Some(serverAddress.getPort),
+        Some(kernelFactory)),
+      Some(clientRef)).interruptChildren
 
     connectClient.fork.map(new InProcessDeploy.Process(_))
   }

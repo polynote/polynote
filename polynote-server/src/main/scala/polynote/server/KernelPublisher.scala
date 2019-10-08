@@ -21,7 +21,7 @@ import zio.interop.catz._
 import KernelPublisher.{GlobalVersion, SubscriberId}
 
 class KernelPublisher private (
-  versionedNotebook: SignallingRef[Task, (GlobalVersion, Notebook)],
+  val versionedNotebook: SignallingRef[Task, (GlobalVersion, Notebook)],
   val versionBuffer: VersionBuffer[NotebookUpdate],
   publishUpdate: Publish[Task, (SubscriberId, NotebookUpdate)],
   val broadcastUpdates: Topic[Task, Option[(SubscriberId, NotebookUpdate)]],
@@ -35,11 +35,10 @@ class KernelPublisher private (
   kernelFactory: Kernel.Factory.Service,
   closed: Promise[Throwable, Unit]
 ) {
-  val currentNotebook = new UnversionedRef(versionedNotebook)
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
   private case class LocalCellEnv(notebookPath: ShortString, cellID: CellID, tapResults: Option[Result => Task[Unit]] = None) extends CellEnvT with NotebookUpdates {
-    override val currentNotebook: Ref[Task, Notebook] = KernelPublisher.this.currentNotebook
+    override val currentNotebook: Ref[Task, (GlobalVersion, Notebook)] = versionedNotebook
     override val taskManager: TaskManager.Service = KernelPublisher.this.taskManager
     override val publishStatus: Publish[Task, KernelStatusUpdate] = KernelPublisher.this.publishStatus
     override val publishResult: Publish[Task, Result] = {
@@ -50,9 +49,13 @@ class KernelPublisher private (
   }
 
   private def cellEnv(cellID: Int, tapResults: Option[Result => Task[Unit]] = None): Task[CellEnv] =
-    currentNotebook.get.map(nb => LocalCellEnv(nb.path, CellID(cellID), tapResults))
+    versionedNotebook.get.map {
+      case (_, nb) => LocalCellEnv(nb.path, CellID(cellID), tapResults)
+    }
 
-  private def kernelFactoryEnv: Task[CellEnv with NotebookUpdates] = currentNotebook.get.map(nb => LocalCellEnv(nb.path, CellID(-1)))
+  private def kernelFactoryEnv: Task[CellEnv with NotebookUpdates] = versionedNotebook.get.map {
+    case (_, nb) => LocalCellEnv(nb.path, CellID(-1))
+  }
 
   private val nextSubscriberId = new AtomicInteger(0)
 
@@ -92,7 +95,9 @@ class KernelPublisher private (
   def queueCell(cellID: CellID): TaskR[BaseEnv with GlobalEnv, Task[Unit]] = queueingCell.withPermit {
     val captureOut  = new Deque[Result]()
     val saveResults = captureOut.toList.flatMap {
-      results => currentNotebook.update(_.setResults(cellID, results)).orDie
+      results => versionedNotebook.update {
+        case (ver, nb) => ver -> nb.setResults(cellID, results)
+      }.orDie
     }
 
     for {
@@ -127,10 +132,8 @@ class KernelPublisher private (
   }.ignore
 
   def subscribe(): TaskR[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = for {
-    versioned          <- versionedNotebook.get
-    (version, notebook) = versioned
     subscriberId       <- ZIO.effectTotal(nextSubscriberId.getAndIncrement())
-    subscriber         <- KernelSubscriber(subscriberId, this, version)
+    subscriber         <- KernelSubscriber(subscriberId, this)
   } yield subscriber
 
   def close(): Task[Unit] = closed.succeed(()).const(())

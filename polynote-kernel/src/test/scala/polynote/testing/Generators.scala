@@ -2,7 +2,7 @@ package polynote.testing
 
 import org.scalacheck.{Arbitrary, Gen}
 import polynote.data.Rope
-import polynote.messages.{CellID, ContentEdit, ContentEdits, Delete, Insert, NotebookCell, ShortList, TinyString}
+import polynote.messages.{CellID, ContentEdit, ContentEdits, Delete, DeleteCell, Insert, InsertCell, Notebook, NotebookCell, NotebookUpdate, ShortList, TinyString, UpdateCell}
 
 import scala.collection.immutable.Queue
 
@@ -52,5 +52,52 @@ object Generators {
     content <- genRope
     // TODO: also generate results & metadata
   } yield NotebookCell(id, lang, content)
+
+  def genDeleteCell(notebook: Notebook, globalVersion: Int): Gen[DeleteCell] = notebook.cells.map(_.id) match {
+    case Nil => Gen.fail
+    case one :: Nil => Gen.const(DeleteCell(notebook.path, globalVersion, 0, one))
+    case one :: two :: rest => Gen.oneOf(one, two, rest: _*).map {
+      cellId => DeleteCell(notebook.path, globalVersion, 0, cellId)
+    }
+  }
+
+  def genInsertCell(notebook: Notebook, globalVersion: Int): Gen[InsertCell] = notebook.cells.map(_.id) match {
+    case Nil => genCell(CellID(0)).flatMap(cell => Gen.const(InsertCell(notebook.path, globalVersion, 0, cell, CellID(-1))))
+    case ids@(first :: rest) =>
+      val nextId = CellID(ids.max + 1)
+      genCell(nextId).flatMap {
+        cell => Gen.oneOf(
+          Gen.oneOf(ids).map(after => InsertCell(notebook.path, globalVersion, 0, cell, after)),
+          Gen.const(InsertCell(notebook.path, globalVersion, 0, cell, CellID(-1)))
+        )
+      }
+  }
+
+  def genUpdateCell(notebook: Notebook, globalVersion: Int): Gen[UpdateCell] = notebook.cells.toList match {
+    case Nil   => Gen.fail
+    case cells => Gen.oneOf(cells).flatMap {
+      cell => genEditsFor(cell.content).map {
+        case (edits, _) => UpdateCell(notebook.path, globalVersion, 0, cell.id, edits, None)
+      }
+    }
+  }
+
+  def genNotebookUpdate(notebook: Notebook, globalVersion: Int): Gen[NotebookUpdate] = Gen.oneOf(
+    Gen.delay(if (notebook.cells.nonEmpty) genDeleteCell(notebook, globalVersion) else genInsertCell(notebook, globalVersion)),
+    Gen.delay(genInsertCell(notebook, globalVersion)),
+    Gen.delay(genUpdateCell(notebook, globalVersion))
+  )
+
+  def genNotebookUpdates(globalVersion: Int, initial: Notebook): Gen[(Notebook, List[NotebookUpdate])] = for {
+    size  <- Gen.size
+    count <- Gen.choose(1, math.max(1,size))
+    (finalNotebook, edits) <- ((globalVersion + 1) to (globalVersion + count + 1)).foldLeft(Gen.const((initial, Queue.empty[NotebookUpdate]))) {
+      (accum, nextVersion) => accum.flatMap {
+        case (currentNotebook, updates) => genNotebookUpdate(currentNotebook, nextVersion).map {
+          update => (update.applyTo(currentNotebook) -> updates.enqueue(update))
+        }
+      }
+    }
+  } yield finalNotebook -> edits.toList
 
 }

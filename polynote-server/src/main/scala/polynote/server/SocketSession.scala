@@ -26,17 +26,8 @@ import scala.collection.immutable.SortedMap
 import scala.concurrent.duration.{Duration, SECONDS}
 
 class SocketSession(
-  notebookManager: NotebookManager.Service,
-  subscribed: RefMap[String, KernelSubscriber],
-  closed: Promise[Throwable, Unit],
-  streamingHandles: StreamingHandles with BaseEnv
+  handler: SessionHandler
 )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
-
-  private def subscribe(path: String): TaskR[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribed.getOrCreate(path) {
-    notebookManager.open(path).flatMap {
-      kernelPublisher => kernelPublisher.subscribe()
-    }
-  }
 
   private def toFrame(message: Message): Task[Binary] = {
     Message.encode[Task](message).map(bits => Binary(bits.toByteVector))
@@ -46,7 +37,7 @@ class SocketSession(
     input     <- Queue.unbounded[Task, WebSocketFrame]
     output    <- Queue.unbounded[Task, WebSocketFrame]
     processor <- process(input, output)
-    fiber     <- processor.interruptWhen(closed.await.either).compile.drain.fork
+    fiber     <- processor.interruptWhen(handler.awaitClosed).compile.drain.fork
     keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.fork
     response  <- WebSocketBuilder[Task].build(
       output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]),
@@ -65,7 +56,7 @@ class SocketSession(
         case _ => Stream.empty
       }.evalMap {
         message =>
-          handler.applyOrElse(message, unhandled).catchAll {
+          handler.handle(message).catchAll {
             err =>
               Logging.error("Kernel error", err) *>
               PublishMessage(Error(0, err))
@@ -80,6 +71,25 @@ class SocketSession(
         serverVersion = BuildInfo.version,
         serverCommit = BuildInfo.commit)
     }
+}
+
+class SessionHandler(
+  notebookManager: NotebookManager.Service,
+  subscribed: RefMap[String, KernelSubscriber],
+  closed: Promise[Throwable, Unit],
+  streamingHandles: StreamingHandles with BaseEnv
+)(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
+
+  def handle(message: Message): TaskR[BaseEnv with GlobalEnv with PublishMessage, Unit] =
+    handler.applyOrElse(message, unhandled)
+
+  def awaitClosed: ZIO[Any, Nothing, Either[Throwable, Unit]] = closed.await.either
+
+  private def subscribe(path: String): TaskR[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribed.getOrCreate(path) {
+    notebookManager.open(path).flatMap {
+      kernelPublisher => kernelPublisher.subscribe()
+    }
+  }
 
   private def unhandled(msg: Message): TaskR[BaseEnv, Unit] = Logging.warn(s"Unhandled message type ${msg.getClass.getName}")
 
@@ -92,7 +102,7 @@ class SocketSession(
     case LoadNotebook(path) =>
       def publishRunningKernelState(publisher: KernelPublisher) = for {
         kernel <- publisher.kernel
-        _      <- kernel.values().flatMap(_.map(rv => PublishMessage(CellResult(path, rv.sourceCell, rv))).sequence)
+        _      <- kernel.values().flatMap(_.filter(_.sourceCell < 0).map(rv => PublishMessage(CellResult(path, rv.sourceCell, rv))).sequence)
         _      <- kernel.info().map(KernelStatus(path, _)) >>= PublishMessage.apply
       } yield ()
 
@@ -176,15 +186,15 @@ class SocketSession(
 
     case ClearOutput(path) => for {
       subscriber <- subscribe(path)
-      publish    <- subscriber.publisher.currentNotebook.modify {
-        notebook =>
+      publish    <- subscriber.publisher.versionedNotebook.modify {
+        case (ver, notebook) =>
           val (newCells, cellIds) = notebook.cells.foldRight((List.empty[NotebookCell], List.empty[CellID])) {
             case (cell, (cells, ids)) if cell.results.nonEmpty => (cell.copy(results = ShortList(Nil)) :: cells, cell.id :: ids)
             case (cell, (cells, ids)) => (cell :: cells, ids)
           }
 
           val updates = cellIds.map(id => PublishMessage(CellResult(path, id, ClearResults()))).sequence.unit
-          (notebook.copy(cells = ShortList(newCells)), updates)
+          (ver -> notebook.copy(cells = ShortList(newCells)), updates)
       }
       _          <- publish
     } yield ()
@@ -207,7 +217,6 @@ class SocketSession(
     case other =>
       ZIO.unit
   }
-
 }
 
 object SocketSession {
@@ -217,7 +226,7 @@ object SocketSession {
     closed           <- Promise.make[Throwable, Unit]
     sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
     streamingHandles <- Env.enrichM[BaseEnv](StreamingHandles.make(sessionId))
-  } yield new SocketSession(notebookManager, subscribed, closed, streamingHandles)
+  } yield new SocketSession(new SessionHandler(notebookManager, subscribed, closed, streamingHandles))
 
   private val sessionId = new AtomicInteger(0)
 }
