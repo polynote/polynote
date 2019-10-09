@@ -18,3 +18,13 @@ export function isEqual(a: any, b: any) {
 
     return false;
 }
+
+// Use to avoid the common error of `x || y` or `if (x) {...}` and forgetting about `0`
+// TODO: once typescript releases 3.7 use the new `??` operator instead of this!!
+// export function _<T, U>(x: T, orElse: U): T | U {
+//     if (x !== null && x !== undefined) {
+//         return x
+//     } else {
+//         return orElse
+//     }
+// }

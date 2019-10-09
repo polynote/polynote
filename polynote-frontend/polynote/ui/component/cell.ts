@@ -28,6 +28,7 @@ import {FoldingController, FoldingModel, SuggestController} from "../monaco/exte
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import {UIEventNameMap} from "../util/ui_events";
+import {CurrentNotebook} from "./current_notebook";
 
 export class CellEvent<T = {}> extends UIEvent<T & { cellId: number }> {
     constructor(eventId: keyof UIEventNameMap, cellId: number, otherDetails: T = {} as any) {  // `{} as any` seems ugly, any better alternative?
@@ -44,61 +45,7 @@ export class SelectCellEvent extends CellEvent<{ cell: Cell }> {
     }
 }
 
-export class RunCellEvent extends CellEvent {
-    constructor(cellId: number) {
-        super('RunCell', cellId)
-    }
-}
-
-export class BeforeCellRunEvent extends CellEvent {
-    constructor(cellId: number) {
-        super('BeforeCellRun', cellId);
-    }
-}
-
-export class ContentChangeEvent extends CellEvent<{ edits: ContentEdit[], metadata?: CellMetadata}> {
-    constructor(cellId: number, edits: ContentEdit[], metadata?: CellMetadata) {
-        super('ContentChange', cellId, {edits: edits, metadata: metadata });
-    }
-
-    get edits() { return this.detail.edits }
-}
-
-export class AdvanceCellEvent extends CellEvent<{ backward: boolean }> {
-    constructor(cellId: number, backward: boolean = false) {
-        super('AdvanceCell', cellId, {backward: backward});
-    }
-
-    get backward() { return this.detail.backward; }
-}
-
-export class InsertCellEvent extends CellEvent<{ mkCell?: (cellId: number) => Cell, results?: Output[], afterInsert?: (cell: Cell) => void }> {
-    constructor(cellId: number, before: boolean = false, mkCell?: (cellId: number) => Cell, results?: Output[], afterInsert?: (cell: Cell) => void) {
-        if (before) {
-            super('InsertCellBefore', cellId, {mkCell, results, afterInsert});
-        } else {
-            super('InsertCellAfter', cellId, {mkCell, results, afterInsert});
-        }
-    }
-}
-
-export class DeleteCellEvent extends CellEvent {
-    constructor(cellId: number) {
-        super('DeleteCell', cellId);
-    }
-}
-
-export class CellExecutionStarted extends CellEvent {
-    constructor(cellId: number) {
-        super('CellExecutionStarted', cellId);
-    }
-}
-
-export class CellExecutionFinished extends CellEvent {
-    constructor(cellId: number) {
-        super('CellExecutionFinished', cellId);
-    }
-}
+// TODO remove these events?
 
 export class CompletionRequest extends CellEvent<{pos: number, resolve: (completions: CompletionList) => void, reject: () => void}> {
     constructor(cellId: number, pos: number, resolve: (completions: CompletionList) => void, reject: () => void) {
@@ -130,6 +77,10 @@ export type CellContainer = TagElement<"div"> & {
     cell: Cell
 }
 
+export function isCellContainer(el: Element): el is CellContainer {
+    return 'cell' in el;
+}
+
 export abstract class Cell extends UIEventTarget {
     readonly container: CellContainer;
     readonly cellInput: TagElement<"div">;
@@ -143,10 +94,6 @@ export abstract class Cell extends UIEventTarget {
     readonly resultTabs: TagElement<"div">;
     protected keyMap: Map<KeyCode, KeyAction>;
 
-    // the following are added when the cell is inserted into the DOM.
-    nextCell?: () => (Cell | undefined);
-    prevCell?: () => (Cell | undefined);
-
     constructor(readonly id: number, public language: string, readonly path: string, public metadata?: CellMetadata) {
         super();
         if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
@@ -155,7 +102,7 @@ export abstract class Cell extends UIEventTarget {
             this.cellInput = div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', '', 'Run').click((evt) => {
-                        this.dispatchEvent(new RunCellEvent(this.id));
+                        CurrentNotebook.get.runCells(this.id);
                     }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
                 ]),
@@ -312,34 +259,34 @@ export abstract class Cell extends UIEventTarget {
     static keyMap = new Map([
         [monaco.KeyCode.UpArrow, new KeyAction((pos, range, selection, cell) => {
             if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                cell.dispatchEvent(new AdvanceCellEvent(cell.id, true));
+                CurrentNotebook.get.selectPrevCell(cell.id);
             }
         })],
         [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell) => {
             if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
-                cell.dispatchEvent(new AdvanceCellEvent(cell.id, false));
+                CurrentNotebook.get.selectNextCell(cell.id);
             }
         })],
         [monaco.KeyMod.Shift | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
-            cell.dispatchEvent(new AdvanceCellEvent(cell.id));
+            CurrentNotebook.get.selectNextCell(cell.id);
         }).withPreventDefault(true).withDesc("Move to next cell. If there is no next cell, create it.")],
         [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, new KeyAction((pos, range, selection, cell) => {
-            cell.dispatchEvent(new InsertCellEvent(cell.id));
+            CurrentNotebook.get.insertCell("below", cell.id);
         }).withPreventDefault(true).withDesc("Insert a cell after this one.")],
         [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown,
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, false)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.selectNextCell(cell.id))
                 .withDesc("Move to next cell. If there is no next cell, create it.")],
         [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp,
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new AdvanceCellEvent(cell.id, true)))
-                .withDesc("Move to previous cell. If there is no previous cell, create it.")],
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.selectPrevCell(cell.id))
+                .withDesc("Move to previous cell.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A, // A for Above (from Zep)
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id, true)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.insertCell("above", cell.id))
                 .withDesc("Insert cell above this cell.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B, // B for Below (from Zep)
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new InsertCellEvent(cell.id)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.insertCell("below", cell.id))
                 .withDesc("Insert a cell below this cell.")],
         [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D, // D for Delete (from Zep)
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new DeleteCellEvent(cell.id)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.deleteCell(cell.id))
                 .withDesc("Delete this cell.")],
     ]);
 
@@ -413,11 +360,11 @@ export class CodeCell extends Cell {
         })],
         // run cell on enter
         [monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new RunCellEvent(cell.id)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.runCells(cell.id))
                 .withIgnoreWhenSuggesting(false)
                 .withDesc("Run this cell and move to next cell. If there is no next cell, create it.")],
         [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-            new KeyAction((pos, range, selection, cell) => cell.dispatchEvent(new RunCellEvent(cell.id)))
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.runCells(cell.id))
                 .withIgnoreWhenSuggesting(false)
                 .withDesc("Run this cell and insert a new cell below it.")]
     ]);
@@ -566,14 +513,14 @@ export class CodeCell extends Cell {
     toggleCode() {
         const prevMetadata = this.metadata || new CellMetadata();
         this.setMetadata(prevMetadata.copy({hideSource: !prevMetadata.hideSource}));
-        this.dispatchEvent(new ContentChangeEvent(this.id, [], this.metadata));
+        CurrentNotebook.get.handleContentChange(this.id, [], this.metadata);
     }
 
     toggleOutput() {
         this.container.classList.toggle('hide-output');
         const prevMetadata = this.metadata || new CellMetadata();
         this.setMetadata(prevMetadata.copy({hideOutput: !prevMetadata.hideOutput}));
-        this.dispatchEvent(new ContentChangeEvent(this.id, [], this.metadata));
+        CurrentNotebook.get.handleContentChange(this.id, [], this.metadata);
     }
 
     onChangeModelContent(event: IModelContentChangedEvent) {
@@ -593,7 +540,7 @@ export class CodeCell extends Cell {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        this.dispatchEvent(new ContentChangeEvent(this.id, edits));
+        CurrentNotebook.get.handleContentChange(this.id, edits);
     }
 
     updateEditorHeight() {
@@ -1148,7 +1095,7 @@ export class TextCell extends Cell {
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.dispatchEvent(new ContentChangeEvent(this.id, edits));
+            CurrentNotebook.get.handleContentChange(this.id, edits);
         }
     }
 

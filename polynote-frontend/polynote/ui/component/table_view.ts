@@ -49,7 +49,7 @@ export class TableView {
         const fieldClasses = dataType.fields.map(field => field.name);
         const fieldNames = dataType.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
 
-        if (!SocketSession.current.isOpen) {
+        if (!SocketSession.get.isOpen) {
             this.el = div(['table-view', 'disconnected'], [
                 "Not connected to server – must be connected in order to view data."
             ]);
@@ -76,7 +76,7 @@ export class TableView {
                 ])])
         );
 
-        this.stream = new DataStream(path, repr, SocketSession.current).batch(20);
+        this.stream = new DataStream(path, repr).batch(20);
         this.rows = [];
         this.currentPos = 0;
     }

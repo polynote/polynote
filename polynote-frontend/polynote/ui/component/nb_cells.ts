@@ -1,16 +1,15 @@
-// BREAKOUT (nb_cells.js)
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {UIEventTarget} from "../util/ui_event";
 import {NotebookConfigUI} from "./nb_config";
-import {div, TagElement} from "../util/tags";
-import {Cell, CellContainer, CellExecutionFinished, CodeCell, TextCell} from "./cell";
+import {div, span, TagElement} from "../util/tags";
+import {Cell, CellContainer, CodeCell, isCellContainer, TextCell} from "./cell";
 import {TaskInfo, TaskStatus} from "../../data/messages";
 import * as Tinycon from "tinycon";
 import {storage} from "../util/storage";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import * as monaco from "monaco-editor";
 import {PosRange} from "../../data/result";
-import {type} from "vega-lite/build/src/compile/legend/properties";
 import {NotebookUI} from "./notebook";
+import {CurrentNotebook} from "./current_notebook";
 
 type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
@@ -18,10 +17,10 @@ export class NotebookCellsUI extends UIEventTarget {
     private disabled: boolean;
     readonly configUI: NotebookConfigUI;
     readonly el: NotebookCellsEl;
-    private readonly cells: Record<number, Cell>;
     private queuedCells: number;
     resizeTimeout: number;
     readonly notebookUI: NotebookUI;
+    private configEl: TagElement<"div">;
 
     constructor(parent: NotebookUI, readonly path: string) {
         super(parent);
@@ -29,11 +28,9 @@ export class NotebookCellsUI extends UIEventTarget {
         this.disabled = false;
         this.configUI = new NotebookConfigUI().setEventParent(this);
         this.el = Object.assign(
-            div(['notebook-cells'], [this.configUI.el, this.newCellDivider()]),
+            div(['notebook-cells'], [this.configEl = this.configUI.el, this.newCellDivider()]),
             // TODO: remove when we get to TabUI
             { cellsUI: this });  // TODO: this is hacky and bad (used for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
-        this.el.cellsUI = this;
-        this.cells = {};
         this.queuedCells = 0;
 
         this.registerEventListener('resize', this.forceLayout.bind(this));
@@ -41,16 +38,12 @@ export class NotebookCellsUI extends UIEventTarget {
 
     newCellDivider() {
         return div(['new-cell-divider'], []).click((evt) => {
-            const nextCell = this.getCellAfterEl(evt.target as HTMLElement);
-            if (nextCell) {
-                this.dispatchEvent(new UIEvent('InsertCellBefore', {cellId: nextCell.id}));
+            const self = evt.target as TagElement<"div">;
+            const prevCell = this.getCellBeforeEl(self);
+            if (prevCell) {
+                CurrentNotebook.get.insertCell("below", prevCell.id)
             } else {
-                const prevCell = this.getCellBeforeEl((evt.target as HTMLElement));
-                if (prevCell) { // last cell
-                    this.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: prevCell.id}));
-                } else { // no cells
-                    this.dispatchEvent(new UIEvent('InsertBelow'));
-                }
+                CurrentNotebook.get.insertCell("above") // no cell above this one, so it must be at the top of the file
             }
         });
     }
@@ -60,13 +53,7 @@ export class NotebookCellsUI extends UIEventTarget {
             return;
         }
         this.disabled = disabled;
-
-        for (let cellId in this.cells) {
-            if (this.cells.hasOwnProperty(cellId)) {
-                const cell = this.cells[cellId];
-                cell.setDisabled(disabled);
-            }
-        }
+        this.forEachCell(cell => cell.setDisabled(disabled));
     }
 
     setStatus(id: number, status: TaskInfo) {
@@ -75,7 +62,6 @@ export class NotebookCellsUI extends UIEventTarget {
 
         switch (status.status) {
             case TaskStatus.Complete:
-                dispatchEvent(new CellExecutionFinished(cell.id));
                 cell.container.classList.remove('running', 'queued', 'error');
                 this.queuedCells -= 1;
                 break;
@@ -118,58 +104,100 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    firstCell() {
-        return this.getCells()[0];
-    }
-
-    getCell(cellId: number) {
-        return this.cells[cellId];
-    }
-
-    getCellBeforeEl(el: HTMLElement) {
-        let before = this.el.firstElementChild as CellContainer;
-        let cell = undefined;
-        while (before !== el) {
-            if (before && before.cell) {
-                cell = before.cell;
-            }
-            before = before.nextElementSibling as CellContainer;
+    /**
+     * Iterate through cells while `cond` is true.
+     *
+     * @param initial   The initial element value to start with.
+     * @param nextCell  How to get to the next cell or element given the previous one.
+     * @param cond      Whether to continue iteration based on the current selected element.
+     */
+    iterCellsWhile(initial: Element | null, nextCell: (el: Element) => Element | null, cond: (el: Element) => boolean): void {
+        let current = initial;
+        while (current && cond(current)) {
+            current = nextCell(current);
         }
-        return cell
     }
 
-    getCellAfterEl(el: HTMLElement) {
-        let after = this.el.lastElementChild as CellContainer;
+    iterCellsForwardWhile(cond: (el: Element) => boolean): void {
+        const first = this.el.firstElementChild;
+        this.iterCellsWhile(first, (el: Element) => el.nextElementSibling, cond);
+    }
+
+    forEachCell(cb: (cell: Cell) => void): void {
+        this.iterCellsForwardWhile(el => {
+            const cc = el as CellContainer;
+            if (cc && cc.cell) cb(cc.cell);
+            return true
+        })
+    }
+
+    getCell(cellId: number): Cell | undefined {
         let cell = undefined;
-        while (after !== el) {
-            if (after && after.cell) {
-                cell = after.cell;
-            }
-            after = after.previousElementSibling as CellContainer;
-        }
-        return cell
+        this.iterCellsForwardWhile(before => {
+            const cc = before as CellContainer;
+            if (cc && cc.cell && cc.cell.id === cellId) {
+                cell = cc.cell;
+                return false;
+            } else return true;
+        });
+        return cell;
     }
 
-    getCells() {
-        return Array.from(this.el.children)
-            .filter(container => "cell" in container)
-            .map((container: CellContainer) => container.cell)
+    getCellBeforeEl(el: HTMLElement): Cell | undefined {
+        let cell = undefined;
+        this.iterCellsWhile(el.previousElementSibling, (elem: Element) => elem.previousElementSibling, elem => {
+            if (isCellContainer(elem)) {
+                cell = elem.cell;
+                return false
+            } else return true
+        });
+        return cell;
+    }
+
+    getCellBefore(cell: Cell): Cell | undefined {
+        return this.getCellBeforeEl(cell.container)
+    }
+
+    getCellAfterEl(el: HTMLElement): Cell | undefined {
+        let cell = undefined;
+        this.iterCellsWhile(el.nextElementSibling, elem => elem.nextElementSibling, elem => {
+            if (isCellContainer(elem)) {
+                cell = elem.cell;
+                return false
+            } else return true
+        });
+        return cell;
+    }
+
+    getCellAfter(cell: Cell): Cell | undefined {
+        return this.getCellAfterEl(cell.container);
+    }
+
+    getCells(): Cell[] {
+        const cells: Cell[] = [];
+        this.forEachCell(cell => cells.push(cell));
+        return cells;
     }
 
     getCodeCellIds() {
         return this.getCells().filter(cell => cell instanceof CodeCell).map(cell => cell.id);
     }
 
-    getCodeCellIdsBefore(id: number) {
-        const result = [];
-        let child = this.el.firstElementChild as CellContainer;
-        while (child && (!child.cell || child.cell.id !== id)) {
-            if (child.cell) {
-                result.push(child.cell.id);
+    getCodeCellIdsBefore(id: number): number[] {
+        const ids: number[] = [];
+        this.iterCellsForwardWhile(el => {
+            const cc = el as CellContainer;
+            if (cc && cc.cell) {
+                if (cc.cell.id === id) {
+                    return false;
+                } else if (cc.cell instanceof CodeCell) {
+                    ids.push(cc.cell.id);
+                }
             }
-            child = child.nextElementSibling as CellContainer;
-        }
-        return result;
+            return true
+        });
+
+        return ids;
     }
 
     getMaxCellId() {
@@ -177,6 +205,102 @@ export class NotebookCellsUI extends UIEventTarget {
             const id = cell.id;
             return acc > id ? acc : id
         }, -1)
+    }
+
+    insertCellAbove(el?: HTMLElement, cell?: (nextCellId: number) => Cell): Cell {
+        const newCellId = this.getMaxCellId() + 1;
+        const mkCell = (oldCell?: Cell) => {
+            if (oldCell instanceof CodeCell) {
+                return new CodeCell(newCellId, '', oldCell.language, this.path)
+            } else {
+                return new CodeCell(newCellId, '', 'scala', this.path) // default new cells are scala cells
+            }
+        };
+
+        const prev = el && this.getCellBeforeEl(el);
+        const newCell = (cell && cell(newCellId)) || mkCell(prev);
+
+        // it'd be nice if we could use some simpler logic here :\
+        // most of this logic is to ensure that there's always a new cell divider in between each cell, above the first cell, and below the last cell.
+        let anchorEl;
+        if (prev) {
+            anchorEl = prev.container.nextElementSibling; // we insert between the prev cell and its divider
+        } else if (el && el !== this.configEl) {
+            if (isCellContainer(el)) {
+                anchorEl = el.nextElementSibling // if el is a cell, we insert between it and its divider.
+            } else {
+                anchorEl = el // if el is not a cell, it must be a divider, in which case we just want to insert above it
+            }
+        } else {
+            anchorEl = this.configEl.nextElementSibling // if there's nothing, we insert between the config element and its divider
+        }
+        this.el.insertBefore(newCell.container, anchorEl);
+        this.el.insertBefore(this.newCellDivider(), newCell.container);
+
+        this.setupCell(newCell);
+        return newCell;
+    }
+
+    insertCellBelow(el?: HTMLElement, mkCell?: (nextCellId: number) => Cell): Cell {
+        const nextCell = el && this.getCellAfterEl(el);
+        if (nextCell) {
+            return this.insertCellAbove(nextCell.container, mkCell)
+        } else {  // if there are no cells under here, we need to insert above the last divider
+            return this.insertCellAbove(this.el.lastElementChild as HTMLElement, mkCell)
+        }
+    }
+
+    deleteCell(cellId: number, cb?: () => void) {
+        const cellToDelete = this.getCell(cellId);
+        if (cellToDelete) {
+            const prevCell = this.getCellBefore(cellToDelete);
+            const nextCell = this.getCellAfter(cellToDelete);
+
+            const undoEl = div(['undo-delete'], [
+                span(['close-button', 'fa'], ['']).click(evt => {
+                    undoEl.parentNode!.removeChild(undoEl);
+
+                    // don't actually get rid of the cell from the UI while we still might undo it.
+                    cellToDelete.dispose();
+                    cellToDelete.container.innerHTML = ''
+                }),
+                span(['undo-message'], [
+                    'Cell deleted. ',
+                    span(['undo-link'], ['Undo']).click(evt => {
+                        const mkCell = (nextCellId: number) => {
+                            return cellToDelete.language !== "text"
+                                ? new CodeCell(nextCellId, cellToDelete.content, cellToDelete.language, this.path)
+                                : new TextCell(nextCellId, cellToDelete.content, this.path);
+                        };
+
+                        const prevCell = this.getCellBeforeEl(undoEl);
+                        if (prevCell) {
+                            CurrentNotebook.get.insertCell("below", prevCell.id, mkCell);
+                        } else {
+                            CurrentNotebook.get.insertCell("above", undefined, mkCell)
+                        }
+                        undoEl.parentNode!.removeChild(undoEl);
+                    })
+                ])
+            ]);
+
+            if (nextCell) {
+                nextCell.focus();
+            } else if (prevCell) {
+                prevCell.focus();
+            }
+
+            const divider = cellToDelete.container.previousElementSibling;
+            this.el.insertBefore(undoEl, cellToDelete.container);
+            this.el.removeChild(cellToDelete.container);
+            if (divider) {
+                this.el.removeChild(divider);
+            } else {
+                throw new Error(`Couldn't find divider after ${cellId} !`) // why wasn't the divider there??
+            }
+
+            if (cb) cb()
+        }
     }
 
     forceLayout(evt: Event) {
@@ -197,63 +321,11 @@ export class NotebookCellsUI extends UIEventTarget {
         }, 333);
     }
 
-    addCell(cell: Cell) {
-        this.el.appendChild(cell.container);
-        this.el.appendChild(this.newCellDivider());
-        this.setupCell(cell);
-    }
-
-    insertCell(cell: Cell, after: Cell | HTMLElement | number | null) {
-        let prevCell: HTMLElement;
-        if (after && after instanceof Cell) {
-            prevCell = after.container;
-        } else if ((after || after === 0) && typeof after === "number" && this.getCell(after)) {
-            prevCell = this.getCell(after).container;
-        } else if (!after) {
-            prevCell = this.configUI.el;
-        } else {
-            prevCell = after as HTMLElement;
-        }
-
-        const prevCellDivider = prevCell.nextElementSibling;
-
-        const newDivider = this.newCellDivider();
-        this.el.insertBefore(cell.container, prevCellDivider);
-        this.el.insertBefore(newDivider, cell.container);
-
-        this.setupCell(cell);
-    }
-
-    removeCell(cellId: number) {
-        const cell = this.getCell(cellId);
-        if (cell) {
-            const divider = cell.container.nextElementSibling;
-            this.el.removeChild(cell.container);
-            if (divider) {
-                this.el.removeChild(divider);
-            } else {
-                throw ["couldn't find divider after", cell.container] // why wasn't the divider there??
-            }
-            delete this.cells[cellId];
-            cell.dispose();
-            cell.container.innerHTML = '';
-        }
-    }
-
     setupCell(cell: Cell) {
-        this.cells[cell.id] = cell;
         if (cell instanceof CodeCell && cell.editor && cell.editor.layout) {
             cell.editor.layout();
         }
         cell.setEventParent(this);
-
-        cell.nextCell = () => {
-            return this.getCellAfterEl(cell.container);
-        };
-
-        cell.prevCell = () => {
-            return this.getCellBeforeEl(cell.container);
-        }
     }
 
     setCellLanguage(cell: Cell, language: string) {

@@ -8,7 +8,8 @@ import {
     DateType, DoubleType,
     FloatType,
     IntType,
-    LongType, OptionalType,
+    LongType,
+    OptionalType,
     ShortType,
     StringType, StructField,
     TimestampType
@@ -22,10 +23,10 @@ import {DataStream, StreamingDataRepr} from "../../data/value_repr";
 import embed, {Result as VegaResult} from "vega-embed";
 import {UIEventTarget} from "../util/ui_event";
 import {Cell, CodeCell} from "./cell";
-import {ToolbarEvent} from "./toolbar";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {ClientResult, Output} from "../../data/result";
 import {CellMetadata} from "../../data/data";
+import {CurrentNotebook} from "./current_notebook";
 
 
 function isDimension(dataType: DataType): boolean {
@@ -95,7 +96,6 @@ type SpecFun = ((this: PlotEditor, plotType: string, xField: StructField, yMeas:
 
 export class PlotEditor extends UIEventTarget {
     private fields: StructField[];
-    private session: SocketSession;
     container: TagElement<"div">;
     private plotTypeSelector: FakeSelect;
     private specType: SpecFun;
@@ -122,13 +122,11 @@ export class PlotEditor extends UIEventTarget {
     private spec: any;
     private plot: VegaResult;
 
-    constructor(readonly repr: StreamingDataRepr, readonly path: string, readonly name: string, readonly sourceCell: number) {
+    constructor(readonly repr: StreamingDataRepr, readonly path: string, readonly name: string, readonly sourceCell: number, readonly plotSavedCb?: () => void) {
         super();
         this.fields = repr.dataType.fields;
 
-        this.session = SocketSession.current; // TODO: ew! remove!!!
-
-        if (!this.session.isOpen) {
+        if (!SocketSession.get.isOpen) {
             this.container = div(['plot-editor-container', 'disconnected'], [
                 "Not connected to server – must be connected in order to plot."
             ]);
@@ -200,7 +198,7 @@ export class PlotEditor extends UIEventTarget {
         this.plotOutput.style.width = '960px';
         this.plotOutput.style.height = '480px';
 
-        this.plotTypeSelector.addEventListener('change', evt => this.onPlotTypeChange());
+        this.plotTypeSelector.addEventListener('SelectionChange', evt => this.onPlotTypeChange());
 
         this.el.addEventListener('dragstart', evt => {
            this.draggingEl = evt.target as MeasureEl;
@@ -424,7 +422,7 @@ export class PlotEditor extends UIEventTarget {
             throw new Error("Plot can't be run when a previous plot stream is already running");
         }
 
-        const stream = this.currentStream = new DataStream(this.path, this.repr, this.session, this.getTableOps()).batch(500);
+        const stream = this.currentStream = new DataStream(this.path, this.repr, this.getTableOps()).batch(500);
 
         // TODO: multiple Ys
         // TODO: encode color
@@ -497,15 +495,11 @@ export class PlotEditor extends UIEventTarget {
         content = content.replace('"$DATA_STREAM$"', streamSpec);
         const mkCell = (cellId: number) => new CodeCell(cellId, `(${content})`, 'vega', this.path, new CellMetadata(false, true, false));
         VegaClientResult.plotToOutput(this.plot).then(output => {
-            const event = new ToolbarEvent('InsertCellAfter', {
-                mkCell,
-                cellId: this.sourceCell,
-                results: [output],
-                afterInsert: (cell: CodeCell) => {
-                    cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output));
-                }
+            CurrentNotebook.get.insertCell("below", this.sourceCell, mkCell, [output], (cell: CodeCell) => {
+                cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
             });
-            this.dispatchEvent(event);
+
+            if (this.plotSavedCb) this.plotSavedCb()
         });
     }
 

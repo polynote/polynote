@@ -3,7 +3,7 @@ import {button, Content, TagElement} from '../util/tags'
 
 export class SelectionChangedEvent extends UIEvent<{ changedFromEl: HTMLButtonElement, changedToEl: HTMLButtonElement, changedFromIndex: number, changedToIndex: number }> {
     constructor(readonly changedFromEl: HTMLButtonElement, readonly changedToEl: HTMLButtonElement, readonly changedFromIndex: number, readonly changedToIndex: number) {
-        super('change', { changedFromEl: changedFromEl, changedToEl: changedToEl, changedFromIndex: changedFromIndex, changedToIndex: changedToIndex });
+        super('SelectionChange', { changedFromEl: changedFromEl, changedToEl: changedToEl, changedFromIndex: changedFromIndex, changedToIndex: changedToIndex });
     }
 
     get newIndex() { return this.detail.changedToIndex }

@@ -457,7 +457,12 @@ body {
   }
 
   &.code-cell .cell-input .cell-input-editor {
-    //min-height: 150px !important;
+    // making cell-input-editor content-editable means users can sometimes select it rather than the monaco editor itself.
+    // we can make it unselectable by setting pointer-events (we then need to make its child selectable again)
+    pointer-events: none;
+    .monaco-editor {
+      pointer-events: auto;
+    }
   }
 
   &.scala .cell-input .cell-input-tools button.run-cell {

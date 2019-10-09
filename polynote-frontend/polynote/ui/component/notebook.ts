@@ -1,11 +1,9 @@
-// REMOVE SOCKET
 import {UIEvent, UIEventTarget} from "../util/ui_event";
 import {NotebookCellsUI} from "./nb_cells";
 import {KernelUI} from "./kernel_ui";
 import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
-import {BeforeCellRunEvent, Cell, CellExecutionFinished, CodeCell, TextCell} from "./cell";
-import {div, span} from "../util/tags";
+import {Cell, CodeCell, TextCell} from "./cell";
 import match from "../../util/match";
 import {
     ClearResults,
@@ -21,9 +19,8 @@ import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
 import {SocketSession} from "../../comms";
 import {MainUI} from "./ui";
-import {CompletionCandidate, Signatures} from "../../data/messages";
-import {languages, Range} from "monaco-editor";
-import CompletionItem = languages.CompletionItem;
+import {CompletionCandidate, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
+import {Range} from "monaco-editor";
 import {ContentEdit} from "../../data/content_edit";
 import {StructType} from "../../data/data_type";
 import {Either, Left, Right} from "../../data/types";
@@ -35,14 +32,15 @@ export class NotebookUI extends UIEventTarget {
     private globalVersion: number;
     private localVersion: number;
     private editBuffer: EditBuffer;
+    private cellStatusListeners: ((cellId: number, status: number) => void)[] = [];
+    private queuedCells: number[] = [];
+    private runningCell?: number;
 
-    // TODO: remove socket, mainUI references
-    constructor(eventParent: UIEventTarget, readonly path: string, readonly socket: SocketSession, readonly mainUI: MainUI) {
+    // TODO: remove mainUI reference
+    constructor(eventParent: UIEventTarget, readonly path: string, readonly mainUI: MainUI) {
         super(eventParent);
         let cellUI = new NotebookCellsUI(this, path);
         let kernelUI = new KernelUI(this, path);
-        //super(null, cellUI, kernelUI);
-        //this.el.classList.add('notebook-ui');
         this.cellUI = cellUI;
         this.kernelUI = kernelUI;
 
@@ -53,14 +51,14 @@ export class NotebookUI extends UIEventTarget {
 
         this.editBuffer = new EditBuffer();
 
-        this.addEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, this.path, evt.detail.cellId));
+        this.addEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, evt.detail.cellId));
 
         // TODO: remove listeners on children.
         this.cellUI.addEventListener('UpdatedConfig', evt => {
             const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
             this.editBuffer.push(this.localVersion, update);
             this.kernelUI.tasks.clear(); // old tasks no longer relevant with new config.
-            this.socket.send(update);
+            SocketSession.get.send(update);
         });
 
         this.cellUI.addEventListener('SelectCell', evt => {
@@ -80,6 +78,7 @@ export class NotebookUI extends UIEventTarget {
             // notify toolbar of context change
             mainUI.toolbarUI.onContextChanged();
 
+            // TODO: should probably generate some scroll-to-element event and handle this up in mainUI itself
             // check if element is in viewport
             const viewport = mainUI.notebookContent;
             const viewportScrollTop = viewport.scrollTop;
@@ -103,147 +102,6 @@ export class NotebookUI extends UIEventTarget {
             this.kernelUI.symbols.presentFor(id, ids);
         });
 
-        this.cellUI.addEventListener('AdvanceCell', evt => {
-            if (Cell.currentFocus) {
-                if (evt.detail.backward) {
-                    const prev = Cell.currentFocus.prevCell!();
-                    if (prev) {
-                        prev.focus();
-                    }
-                } else {
-                    const next = Cell.currentFocus.nextCell!();
-                    if (next) {
-                        next.focus();
-                    } else {
-                        this.cellUI.dispatchEvent(new UIEvent('InsertCellAfter', {cellId: Cell.currentFocus.id}));
-                    }
-                }
-            }
-        });
-
-        this.addEventListener('InsertCellAfter', evt => {
-            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.getCell(this.cellUI.firstCell().id);
-            const nextId = this.cellUI.getMaxCellId() + 1;
-            let newCell: Cell;
-            if (evt.detail.mkCell) {
-                newCell = evt.detail.mkCell(nextId);
-            } else {
-                const lang = current.language == 'text' ? 'scala' : current.language;
-                newCell = new CodeCell(nextId, '', lang, this.path);
-            }
-            const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata);
-            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, current.id);
-            this.socket.send(update);
-            this.editBuffer.push(this.localVersion, update);
-            this.cellUI.insertCell(newCell, current);
-            if (evt.detail.afterInsert) {
-                evt.detail.afterInsert(newCell);
-            }
-            newCell.focus();
-        });
-
-        // TODO: shares a lot of logic with InsertCellAfter
-        // TODO: BUG! what if there are no cells!
-        this.cellUI.addEventListener('InsertCellBefore', evt => {
-            const current = this.cellUI.getCell(evt.detail.cellId) || this.cellUI.firstCell();
-            const nextId = this.cellUI.getMaxCellId() + 1;
-            const newCell = current.language === 'text' ? new TextCell(nextId, '', this.path) : new CodeCell(nextId, '', current.language, this.path);
-            const notebookCell = new NotebookCell(newCell.id, newCell.language, newCell.content, evt.detail.results || [], newCell.metadata);
-            if (current === this.cellUI.firstCell()) {
-                const update = new messages.InsertCell(path, this.globalVersion, this.localVersion++, notebookCell, -1);
-                this.socket.send(update);
-                this.cellUI.insertCell(newCell, null);
-            } else {
-                const prev = current.prevCell!()!; // TODO: this could be undefined, fix later.
-                const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, notebookCell, prev.id);
-                this.socket.send(update);
-                this.cellUI.insertCell(newCell, prev);
-
-            }
-            newCell.focus();
-        });
-
-        this.cellUI.addEventListener('DeleteCell', evt => {
-            const current = Cell.currentFocus;
-            if (current) {
-                const allCellIds = this.cellUI.getCells().map(cell => cell.id);
-                const currentIndex = allCellIds.indexOf(current.id);
-                if (currentIndex < 0) {
-                    throw "Active cell is not part of current notebook?"
-                }
-                const prevCells = allCellIds.slice(0, currentIndex);
-
-                const update = new messages.DeleteCell(path, this.globalVersion, ++this.localVersion, current.id);
-                this.socket.send(update);
-                this.editBuffer.push(this.localVersion, update);
-                const nextCell = current.nextCell!();
-
-                const cell = new NotebookCell(current.id, current.language, current.content);
-
-                const undoEl = div(['undo-delete'], [
-                    span(['close-button', 'fa'], ['']).click(evt => {
-                        undoEl.parentNode!.removeChild(undoEl);
-                    }),
-                    span(['undo-message'], [
-                        'Cell deleted. ',
-                        span(['undo-link'], ['Undo']).click(evt => {
-                            let prevCell = prevCells.pop()!;
-                            while (prevCells.length && !this.cellUI.getCell(prevCell!)) {
-                                prevCell = prevCells.pop()!;
-                            }
-
-                            // TODO: check if passing -1 actually works (Polykernel.updateNotebook might need to handle that case?) ! We might need to change InsertCell to take an optional `after` instead?
-                            const update = new messages.InsertCell(path, this.globalVersion, ++this.localVersion, cell, this.cellUI.getCell(prevCell) ? prevCell : -1);
-                            this.socket.send(update);
-                            const newCell = cell.language === 'text' ? new TextCell(cell.id, cell.content, this.path) : new CodeCell(cell.id, cell.content, cell.language, this.path);
-                            this.cellUI.insertCell(newCell, prevCell);
-                            undoEl.parentNode!.removeChild(undoEl);
-                        })
-                    ])
-                ]);
-
-                if (nextCell) {
-                    nextCell.focus();
-                    nextCell.container.parentNode!.insertBefore(undoEl, nextCell.container);
-                } else {
-                    const prev = current.prevCell!();
-                    if (prev) prev.focus();
-                    current.container.parentNode!.insertBefore(undoEl, current.container);
-                }
-                this.cellUI.removeCell(current.id);
-            }
-        });
-
-        this.cellUI.addEventListener('RunCell', (evt) => {
-            this.runCells(evt.detail.cellId);
-        });
-
-        this.cellUI.addEventListener('RunCurrentCell', () => {
-            this.runCells(Cell.currentFocus!.id);
-        });
-
-        this.cellUI.addEventListener('RunAll', () => {
-            const cellIds = this.cellUI.getCodeCellIds();
-            this.runCells(cellIds);
-        });
-
-        this.cellUI.addEventListener('RunToCursor', () => {
-            const allCellIds = this.cellUI.getCodeCellIds();
-            const activeCellIdx = allCellIds.indexOf(Cell.currentFocus!.id);
-            if (activeCellIdx < 0) {
-                console.log("Active cell is not part of current notebook?")
-            } else {
-                const cellIds = this.cellUI.getCodeCellIds();
-                this.runCells(cellIds.slice(0, activeCellIdx + 1));
-            }
-        });
-
-        this.cellUI.addEventListener('ContentChange', (evt) => {
-            const update = new messages.UpdateCell(path, this.globalVersion, ++this.localVersion, evt.detail.cellId, evt.detail.edits, evt.detail.metadata);
-            this.socket.send(update);
-            this.editBuffer.push(this.localVersion, update);
-        });
-
         this.cellUI.addEventListener('CompletionRequest', (evt) => {
             const id = evt.detail.cellId;
             const pos = evt.detail.pos;
@@ -252,7 +110,7 @@ export class NotebookUI extends UIEventTarget {
 
             const receiveCompletions = (notebook: string, cell: number, receivedPos: number, completions: CompletionCandidate[]) => {
                 if (notebook === path && cell === id && pos === receivedPos) {
-                    this.socket.removeMessageListener([messages.CompletionsAt, receiveCompletions]);
+                    SocketSession.get.removeMessageListener([messages.CompletionsAt, receiveCompletions]);
                     const len = completions.length;
                     const indexStrLen = ("" + len).length;
                     const completionResults = completions.map((candidate, index) => {
@@ -289,8 +147,8 @@ export class NotebookUI extends UIEventTarget {
                 }
             };
 
-            this.socket.addMessageListener(messages.CompletionsAt, receiveCompletions);
-            this.socket.send(new messages.CompletionsAt(path, id, pos, []));
+            SocketSession.get.addMessageListener(messages.CompletionsAt, receiveCompletions);
+            SocketSession.get.send(new messages.CompletionsAt(path, id, pos, []));
         });
 
         this.cellUI.addEventListener('ParamHintRequest', (evt) => {
@@ -301,7 +159,7 @@ export class NotebookUI extends UIEventTarget {
 
             const receiveHints = (notebook: string, cell: number, receivedPos: number, signatures?: Signatures) => {
                 if (notebook === path && cell === id && pos === receivedPos) {
-                    this.socket.removeMessageListener([messages.ParametersAt, receiveHints]);
+                    SocketSession.get.removeMessageListener([messages.ParametersAt, receiveHints]);
                     if (signatures) {
                         resolve({
                             activeParameter: signatures.activeParameter,
@@ -325,39 +183,46 @@ export class NotebookUI extends UIEventTarget {
                 }
             };
 
-            this.socket.addMessageListener(messages.ParametersAt, receiveHints);
-            this.socket.send(new messages.ParametersAt(path, id, pos))
+            SocketSession.get.addMessageListener(messages.ParametersAt, receiveHints);
+            SocketSession.get.send(new messages.ParametersAt(path, id, pos))
         });
 
         this.cellUI.addEventListener("ReprDataRequest", evt => {
             const req = evt.detail;
-            this.socket.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
+            SocketSession.get.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
                 if (path === this.path && handleType === req.handleType && handleId === req.handleId) {
                     Either.fold(data, err => req.onFail(err), bufs => req.onComplete(bufs));
                     return false;
                 } else return true;
             });
-            this.socket.send(new messages.HandleData(path, req.handleType, req.handleId, req.count, Either.right([])));
+            SocketSession.get.send(new messages.HandleData(path, req.handleType, req.handleId, req.count, Either.right([])));
         });
 
-        socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
+        SocketSession.get.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
-        this.addEventListener('UpdatedTask', evt => {
-            // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
-            //       and instead have an EOF message to tell us when a cell is done
-            const taskInfo = evt.detail.taskInfo;
-            const cellMatch = taskInfo.id.match(/^Cell (\d+)$/);
-            if (cellMatch && cellMatch[1]) {
-                this.cellUI.setStatus(+(cellMatch[1]), taskInfo);
+        SocketSession.get.addMessageListener(messages.KernelStatus, (path, update) => {
+            if (path === this.path) {
+                switch(update.constructor) {
+                    case messages.UpdatedTasks:
+                        update.tasks.forEach((task: TaskInfo) => {
+                            this.handleTaskUpdate(task);
+                        });
+                        break;
+                    case messages.KernelBusyState:
+                        const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
+                        this.kernelUI.setKernelState(state);
+                        break;
+                    case messages.KernelInfo:
+                        this.kernelUI.updateInfo(update.content);
+                        break;
+                    case messages.ExecutionStatus:
+                        this.cellUI.setExecutionHighlight(update.cellId, update.pos || null);
+                        break;
+                }
             }
         });
 
-        this.addEventListener('UpdatedExecutionStatus', evt => {
-            const update = evt.detail.update;
-            this.cellUI.setExecutionHighlight(update.cellId, update.pos || null);
-        });
-
-        socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
+        SocketSession.get.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
             if (update.path === this.path) {
                 if (update.globalVersion >= this.globalVersion) {
                     this.globalVersion = update.globalVersion;
@@ -386,11 +251,19 @@ export class NotebookUI extends UIEventTarget {
                             const newCell = (prev && prev.language && prev.language !== "text")
                                 ? new CodeCell(cell.id, cell.content, cell.language, this.path)
                                 : new TextCell(cell.id, cell.content, this.path);
-                            this.cellUI.insertCell(newCell, after)
+
+                            this.cellUI.insertCellBelow(prev && prev.container, () => newCell)
                         })
-                        .when(messages.DeleteCell, (p: string, g: number, l: number, id: number) => this.cellUI.removeCell(id))
+                        .when(messages.DeleteCell, (p: string, g: number, l: number, id: number) => this.cellUI.deleteCell(id))
                         .when(messages.UpdateConfig, (p: string, g: number, l: number, config: NotebookConfig) => this.cellUI.configUI.setConfig(config))
-                        .when(messages.SetCellLanguage, (p: string, g: number, l: number, id, language: string) => this.cellUI.setCellLanguage(this.cellUI.getCell(id), language))
+                        .when(messages.SetCellLanguage, (p: string, g: number, l: number, id, language: string) => {
+                            const cell = this.cellUI.getCell(id);
+                            if (cell) {
+                                this.cellUI.setCellLanguage(cell, language)
+                            } else {
+                                throw new Error(`Cell ${id} does not exist in the current notebook`)
+                            }
+                        })
                         .when(messages.SetCellOutput, (p: string, g: number, l: number, id, output?: Output) => {
                             const cell = this.cellUI.getCell(id);
                             if (cell instanceof CodeCell) {
@@ -413,69 +286,103 @@ export class NotebookUI extends UIEventTarget {
         // TODO: this doesn't seem like the best place for this reconnection logic.
         // when the socket is disconnected, we're going to try reconnecting when the window gets focus.
         const reconnectOnWindowFocus = () => {
-            if (socket.isClosed) {
-                socket.reconnect(true);
+            if (SocketSession.get.isClosed) {
+                SocketSession.get.reconnect(true);
             }
             // TODO: replace with `socket.request`
-            socket.listenOnceFor(messages.NotebookVersion, (path, serverGlobalVersion) => {
+            SocketSession.get.listenOnceFor(messages.NotebookVersion, (path, serverGlobalVersion) => {
                 if (this.globalVersion !== serverGlobalVersion) {
                     // looks like there's been a change while we were disconnected, so reload.
                     document.location.reload();
                 }
             });
-            socket.send(new messages.NotebookVersion(path, this.globalVersion))
+            SocketSession.get.send(new messages.NotebookVersion(path, this.globalVersion))
         };
 
-        socket.addEventListener('close', evt => {
+        SocketSession.get.addEventListener('close', evt => {
             this.cellUI.setDisabled(true);
             window.addEventListener('focus', reconnectOnWindowFocus);
         });
 
-        socket.addEventListener('open', evt => {
+        SocketSession.get.addEventListener('open', evt => {
             window.removeEventListener('focus', reconnectOnWindowFocus);
-            this.socket.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false)));
+            SocketSession.get.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false)));
             this.cellUI.setDisabled(false);
         });
 
-        socket.addMessageListener(messages.CellResult, (path, id, result) => {
+        SocketSession.get.addMessageListener(messages.CellResult, (path, id, result) => {
             if (path === this.path) {
                 const cell = this.cellUI.getCell(id);
-                this.handleResult(result, cell);
+
+                // Cell ids less than 0 refer to the Predef and other server-side things we can safely ignore.
+                // However, Cell Ids >=0 are expected to exist in the current notebook, so we throw if we can't find 'em
+                if (id >=0 && !cell) throw new Error(`Cell Id ${id} does not exist in the current notebook`);
+
+                this.handleResult(result, id, cell);
             }
         });
-    }
 
-    handleResult(result: Result, cell: Cell) {
-        if (cell instanceof CodeCell) {
-            if (result instanceof CompileErrors) {
-                cell.setErrors(result.reports);
-            } else if (result instanceof RuntimeError) {
-                console.log(result.error);
-                cell.setRuntimeError(result.error);
-            } else if (result instanceof Output) {
-                cell.addOutput(result.contentType, result.content);
-            } else if (result instanceof ClearResults) {
-                this.cellResults[cell.id] = {};
-                cell.clearResult();
-            } else if (result instanceof ExecutionInfo) {
-                cell.setExecutionInfo(result);
-            } else if (result instanceof ResultValue) {
-                if (!this.cellResults[cell.id]) {
-                    this.cellResults[cell.id] = {};
+        // update list of currently running cells
+        this.cellStatusListeners.push((cellId: number, status: number) => {
+            if (status === TaskStatus.Running) {
+                this.runningCell = cellId;
+                this.queuedCells = this.queuedCells.filter(item => item !== cellId)
+            } else if (status === TaskStatus.Complete || status === TaskStatus.Error) {
+                this.runningCell = undefined;
+                this.queuedCells = this.queuedCells.filter(item => item !== cellId) // just in case
+            } else if (status === TaskStatus.Queued) {
+                if (!this.queuedCells.includes(cellId)) {
+                    this.queuedCells.push(cellId)
                 }
-                this.cellResults[cell.id][result.name] = result;
-                cell.addResult(result);
-            } else if (result instanceof ClientResult) {
-                cell.addResult(result);
             }
-        }
+        })
+    }
 
-        if (result instanceof ResultValue) {
-            this.kernelUI.symbols.addSymbol(result);
+    handleTaskUpdate(task: TaskInfo) {
+        this.kernelUI.updateTask(task);
+        // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
+        //       and instead have an EOF message to tell us when a cell is done
+        const cellMatch = task.id.match(/^Cell (\d+)$/);
+        if (cellMatch && cellMatch[1]) {
+            const cellId = +(cellMatch[1]);
+            this.cellUI.setStatus(cellId, task);
+            this.cellStatusListeners.forEach(listener => listener(cellId, task.status))
         }
     }
 
-    getCellContext(ids: number[]) {
+    // Some results (like Predef ResultValues or ClearResults) have an ID but no cell associated with them.
+    handleResult(result: Result, id: number, cell?: Cell) {
+        const ifCell = (f: (_: CodeCell) => void) => {
+            if (cell instanceof CodeCell) f(cell)
+        };
+
+        if (result instanceof CompileErrors) {
+            ifCell(cell => cell.setErrors(result.reports));
+        } else if (result instanceof RuntimeError) {
+            console.log(result.error);
+            ifCell(cell => cell.setRuntimeError(result.error));
+        } else if (result instanceof Output) {
+            ifCell(cell => cell.addOutput(result.contentType, result.content));
+        } else if (result instanceof ClearResults) {
+            this.cellResults[id] = {};
+            ifCell(cell => cell.clearResult());
+        } else if (result instanceof ExecutionInfo) {
+            ifCell(cell => cell.setExecutionInfo(result));
+        } else if (result instanceof ResultValue) {
+            this.kernelUI.symbols.addSymbol(result);
+
+            if (!this.cellResults[id]) {
+                this.cellResults[id] = {};
+            }
+            this.cellResults[id][result.name] = result;
+
+            ifCell(cell => cell.addResult(result));
+        } else if (result instanceof ClientResult) {
+            ifCell(cell => cell.addResult(result));
+        }
+    }
+
+    getCellContext(ids: number[]): Record<string, any> {
         const cellContext: Record<string, any> = {};
         for (let id of ids) {
             const results = this.cellResults[id];
@@ -492,7 +399,7 @@ export class NotebookUI extends UIEventTarget {
                 } else {
                     const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
                     if (streamingRepr) {
-                        bestValue = new DataStream(this.path, streamingRepr as StreamingDataRepr, this.socket);
+                        bestValue = new DataStream(this.path, streamingRepr as StreamingDataRepr);
                     }
                 }
                 cellContext[key] = bestValue;
@@ -501,68 +408,102 @@ export class NotebookUI extends UIEventTarget {
         return cellContext;
     }
 
+    runToCursor() {
+        if (this.currentCell) {
+            const allCellIds = this.cellUI.getCodeCellIds();
+            const activeCellIdx = allCellIds.indexOf(this.currentCell.id);
+            if (activeCellIdx < 0) {
+                console.log("Active cell is not part of current notebook?")
+            } else {
+                const cellIds = this.cellUI.getCodeCellIds();
+                this.runCells(cellIds.slice(0, activeCellIdx + 1));
+            }
+        }
+    }
+
+    runCurrentCell() {
+        if (this.currentCell) {
+            this.runCells(this.currentCell.id)
+        }
+    }
+
+    runAllCells() {
+        const cellIds = this.cellUI.getCodeCellIds();
+        this.runCells(cellIds);
+    }
+
     runCells(cellIds: number[] | number) {
         if (!(cellIds instanceof Array)) {
             cellIds = [cellIds];
         }
         const serverRunCells: number[] = [];
-        let prevCell: number;
         cellIds.forEach(id => {
             const cell = this.cellUI.getCell(id);
-            if (cell) {
-                cell.dispatchEvent(new BeforeCellRunEvent(id));
+            if (cell && !this.queuedCells.includes(id) && this.runningCell !== id) {
                 if (!clientInterpreters[cell.language]) {
                     serverRunCells.push(id);
                 } else if (cell.language !== 'text' && cell instanceof CodeCell) {
                     const code = cell.content;
                     const cellsBefore = this.cellUI.getCodeCellIdsBefore(id);
+                    const taskId = `Cell ${id}`;
                     const runCell = () => {
                         cell.clearResult();
+                        this.handleTaskUpdate(new TaskInfo(taskId, taskId, '', TaskStatus.Running, 1));
                         let results = clientInterpreters[cell.language].interpret(
                             code,
                             {id, availableValues: this.getCellContext(cellsBefore)}
                         );
+                        this.handleTaskUpdate(new TaskInfo(taskId, taskId, '', TaskStatus.Complete, 256));
                         results.forEach(result => {
-                            this.handleResult(result, cell);
+                            this.handleResult(result, id, cell);
                             if (result instanceof ClientResult) {
                                 // notify the server of the MIME representation
-                                result.toOutput().then(output => this.socket.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
+                                result.toOutput().then(output => SocketSession.get.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
                             }
                         });
                     };
-                    if (prevCell) {
-                        const predecessor = prevCell;
-                        // when the preceeding cell finishes executing, execute this one
-                        const listener = (evt: CellExecutionFinished) => {
-                            if (evt.cellId === predecessor) {
-                                removeEventListener('CellExecutionFinished', listener);
+
+                    const prevCellId = serverRunCells[serverRunCells.length -1] // check whether we need to wait for a soon-to-be queued up cell
+                        || this.queuedCells[this.queuedCells.length - 1] // otherwise, make sure we wait for cells already queued up
+                        || this.runningCell; // ok, what if there's a currently running cell then...
+                    if (prevCellId) {
+                        const runListener = (cellId: number, status: number) => {
+                            if (cellId === prevCellId && status === TaskStatus.Complete) {
+                                this.cellStatusListeners = this.cellStatusListeners.filter(item => item !== runListener);
                                 runCell();
                             }
                         };
-                        addEventListener('CellExecutionFinished', listener)
+                        this.cellStatusListeners.push(runListener);
+
+                        // this might be overkill, but it ensures that the cell queue task shows up in order...
+                        const queueTask = () => this.handleTaskUpdate(new TaskInfo(taskId, taskId, '', TaskStatus.Queued, 0));
+                        if (this.queuedCells.includes(prevCellId) || this.runningCell === prevCellId) {
+                            queueTask()
+                        } else {
+                            const queueListener = (cellId: number, status: number) => {
+                                if (cellId === prevCellId && (status === TaskStatus.Queued || status === TaskStatus.Running)) {
+                                    this.cellStatusListeners = this.cellStatusListeners.filter(item => item !== queueListener);
+                                    queueTask()
+                                }
+                            };
+                            this.cellStatusListeners.push(queueListener)
+                        }
                     } else {
                         runCell();
                     }
                 }
-                if (cell.language !== 'text') {
-                    prevCell = id;
-                }
             }
         });
-        this.socket.send(new messages.RunCell(this.path, serverRunCells));
+        SocketSession.get.send(new messages.RunCell(this.path, serverRunCells));
     }
 
-    onCellLanguageSelected(setLanguage: string, path: string, id?: number) {
-        if (path !== this.path) {
-            return;
-        }
-
-        id = id || Cell.currentFocus!.id;
-        if (id) {
-            const cell = this.cellUI.getCell(id);
+    onCellLanguageSelected(setLanguage: string, id?: number) {
+        id = id !== undefined ? id : (this.currentCell ? this.currentCell.id : undefined);
+        const cell = id && this.cellUI.getCell(id);
+        if (id && cell) {
             if (cell.language !== setLanguage) {
                 this.cellUI.setCellLanguage(cell, setLanguage);
-                this.socket.send(new messages.SetCellLanguage(path, this.globalVersion, this.localVersion++, id, setLanguage));
+                SocketSession.get.send(new messages.SetCellLanguage(this.path, this.globalVersion, this.localVersion++, id, setLanguage));
             }
         }
 
@@ -577,7 +518,7 @@ export class NotebookUI extends UIEventTarget {
                 this.cellUI.configUI.setConfig(NotebookConfig.default);
             }
             // TODO: move all of this logic out.
-            this.socket.removeMessageListener([messages.NotebookCells, this.onCellsLoaded]);
+            SocketSession.get.removeMessageListener([messages.NotebookCells, this.onCellsLoaded]);
             for (const cellInfo of cells) {
                 let cell: Cell;
                 switch (cellInfo.language) {
@@ -589,22 +530,79 @@ export class NotebookUI extends UIEventTarget {
                         cell = new CodeCell(cellInfo.id, cellInfo.content, cellInfo.language, path, cellInfo.metadata);
                 }
 
-                this.cellUI.addCell(cell);
-                cellInfo.results.forEach(
-                    result => {
-                        if (result instanceof CompileErrors) {
-                            (cell as CodeCell).setErrors(result.reports)
-                        } else if (result instanceof RuntimeError) {
-                            (cell as CodeCell).setRuntimeError(result.error)
-                        } else if (result instanceof Output) {
-                            (cell as CodeCell).addOutput(result.contentType, result.content)
-                        } else if (result instanceof ResultValue) {
-                            (cell as CodeCell).addResult(result);
-                        }
-                    }
-                )
+                // inserts cells at the end
+                this.cellUI.insertCellBelow(undefined, () => cell);
+                cellInfo.results.forEach(result => this.handleResult(result, cell.id, cell))
             }
         }
         this.mainUI.dispatchEvent(new UIEvent('CellsLoaded'))
+    }
+
+    get currentCell() {
+        return Cell.currentFocus // TODO: better way to keep track of this.
+    }
+
+    insertCell(direction: "above" | "below", anchor?: number, mkCell?: (nextCellId: number) => Cell, results?: Output[], postInsertCb?: (cell: Cell) => void): void {
+
+        const anchorCell = anchor !== undefined ? this.cellUI.getCell(anchor) : this.currentCell || undefined; // sigh
+        const anchorEl = anchorCell && anchorCell.container;
+
+        let insertedCell: Cell;
+        if (direction === "above") {
+            insertedCell = this.cellUI.insertCellAbove(anchorEl, mkCell)
+        } else {
+            insertedCell = this.cellUI.insertCellBelow(anchorEl, mkCell)
+        }
+
+        const notebookCell = new NotebookCell(insertedCell.id, insertedCell.language, insertedCell.content, results || [], insertedCell.metadata);
+
+        const prevCell = this.cellUI.getCellBefore(insertedCell);
+        const update = new messages.InsertCell(this.path, this.globalVersion, ++this.localVersion, notebookCell, prevCell ? prevCell.id : -1);
+        SocketSession.get.send(update);
+        this.editBuffer.push(this.localVersion, update);
+
+        if (postInsertCb) {
+            postInsertCb(insertedCell);
+        }
+    }
+
+    deleteCell(cellId?: number): void {
+        const deleteCellId = cellId !== undefined ? cellId : (this.currentCell ? this.currentCell.id : undefined);
+        if (deleteCellId !== undefined) {
+            this.cellUI.deleteCell(deleteCellId, () => {
+                const update = new messages.DeleteCell(this.path, this.globalVersion, ++this.localVersion, deleteCellId);
+                SocketSession.get.send(update);
+                this.editBuffer.push(this.localVersion, update);
+
+            });
+        }
+    }
+
+    selectNextCell(cellId: number) {
+        const current = this.cellUI.getCell(cellId);
+        if (current) {
+            const next = this.cellUI.getCellAfter(current);
+            if (next) {
+                next.focus();
+            } else {
+                this.insertCell("below", cellId);
+            }
+        }
+    }
+
+    selectPrevCell(cellId: number) {
+        const current = this.cellUI.getCell(cellId);
+        if (current) {
+            const prev = this.cellUI.getCellBefore(current);
+            if (prev) {
+                prev.focus();
+            }
+        }
+    }
+
+    handleContentChange(cellId: number, edits: ContentEdit[], metadata?: CellMetadata) {
+        const update = new messages.UpdateCell(this.path, this.globalVersion, ++this.localVersion, cellId, edits, metadata);
+        SocketSession.get.send(update);
+        this.editBuffer.push(this.localVersion, update);
     }
 }
