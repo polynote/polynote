@@ -2,6 +2,17 @@
 
 *
 
+# 0.2.3 (October 8, 2019)
+
+* Better output display for some types
+* Two new quick link buttons to go straight to the plot and data inspectors
+* Fix race condition leading to the 'double typing issue'
+* Fix some data encoding bugs
+* Improvements and fixes to plot editor
+* Better nullability handling across the board. 
+* Fixes for some remote kernel sync issues
+* Various bugfixes
+
 # 0.2.2 (October 3, 2019)
 
 * Fix bug setting spark output path
