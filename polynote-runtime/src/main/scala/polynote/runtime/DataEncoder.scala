@@ -43,7 +43,7 @@ object DataEncoder extends DataEncoder0 {
   implicit val long: DataEncoder[Long] = numericInstance(LongType)(_ writeLong _)
   implicit val float: DataEncoder[Float] = numericInstance(FloatType)(_ writeFloat _)
   implicit val double: DataEncoder[Double] = numericInstance(DoubleType)(_ writeDouble _)
-  implicit val string: DataEncoder[String] = sizedInstance[String](StringType, _.getBytes(StandardCharsets.UTF_8).length) {
+  implicit val string: DataEncoder[String] = sizedInstance[String](StringType, _.getBytes(StandardCharsets.UTF_8).length + 4) {
     (out, str) =>
       if (out == null) {
         out.writeInt(-1)
@@ -188,7 +188,7 @@ private[runtime] sealed trait DataEncoder0 extends DataEncoderDerivations { self
     def dataType: DataType = MapType(encodeK.dataType, encodeV.dataType)
 
     def sizeOf(map: F[K, V]): Int = if (encodeK.dataType.size >= 0 && encodeV.dataType.size >= 0) {
-      (map.size.toLong * (encodeK.dataType.size + encodeV.dataType.size)) match {
+      (4L + map.size.toLong * (encodeK.dataType.size + encodeV.dataType.size)) match {
         case s if s <= Int.MaxValue => s.toInt
         case s => -1
       }
@@ -284,7 +284,7 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
       seq.foreach(encodeA.encode(output, _))
     }
     def dataType: DataType = ArrayType(encodeA.dataType)
-    def sizeOf(t: F[A]): Int = if (encodeA.dataType.size >= 0) encodeA.dataType.size * t.size else -1
+    def sizeOf(t: F[A]): Int = if (encodeA.dataType.size >= 0) (encodeA.dataType.size * t.size + 4) else -1
     def numeric: Option[Numeric[F[A]]] = None
   }
 

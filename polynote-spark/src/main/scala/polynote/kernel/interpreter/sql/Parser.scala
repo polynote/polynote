@@ -18,11 +18,12 @@ class Parser {
         else Character.toUpperCase(la)
       }
     })
+
     val tokenStream = new CommonTokenStream(lexer)
     val parser = new SqlBaseParser(tokenStream)
 
     val errors = ListBuffer[KernelReport]()
-
+    parser.removeErrorListeners()
     parser.addErrorListener(new BaseErrorListener {
       override def syntaxError(recognizer: Recognizer[_, _], offendingSymbol: AnyRef, line: Int, charPositionInLine: Int, msg: String, e: RecognitionException): Unit = {
         errors += report(id, msg, e)

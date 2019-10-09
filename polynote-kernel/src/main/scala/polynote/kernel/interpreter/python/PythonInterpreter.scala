@@ -351,6 +351,8 @@ class PythonInterpreter private[python] (
   case class PythonState(id: CellID, prev: State, values: List[ResultValue], globalsDict: PyObject) extends State {
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
+    override def updateValuesM[R](fn: ResultValue => TaskR[R, ResultValue]): TaskR[R, State] =
+      ZIO.sequence(values.map(fn)).map(values => copy(values = values))
   }
 }
 

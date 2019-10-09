@@ -189,6 +189,8 @@ class ScalaInterpreter private[scal] (
   case class ScalaCellState(id: CellID, prev: State, values: List[ResultValue], cellCode: CellCode, instance: AnyRef) extends State {
     override def withPrev(prev: State): ScalaCellState = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
+    override def updateValuesM[R](fn: ResultValue => TaskR[R, ResultValue]): TaskR[R, State] =
+      ZIO.sequence(values.map(fn)).map(values => copy(values = values))
   }
 
 }
