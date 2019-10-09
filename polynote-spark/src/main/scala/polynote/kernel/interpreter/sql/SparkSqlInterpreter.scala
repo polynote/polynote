@@ -49,9 +49,9 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
   def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = {
     def completeAtPos(statement: SingleStatementContext) = {
       val dfs = state.scope.collect {
-        case rv if rv.value.isInstanceOf[Dataset[_]] => rv.name
+        case rv if rv.value.isInstanceOf[Dataset[_]] => rv.name: String
       }
-      val results = statement.accept(new CompletionVisitor(pos, mutable.TreeSet(dfs: _*)))
+      val results = statement.accept(new CompletionVisitor(pos, mutable.TreeSet(dfs: _*) ++ tables.getOrElse(sessionCatalog.getCurrentDatabase, mutable.TreeSet.empty[String])))
       results
     }
 
@@ -60,24 +60,24 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
 
   def parametersAt(code: String, pos: Int, state: State): Task[Option[Signatures]] = ZIO.succeed(None)
 
-  private def loadCatalog(): Unit = {
-    val dbs = sessionCatalog.listDatabases()
-    dbs.foreach(databases.add)
-    dbs.foreach {
-      db =>
-        val tableSet = new mutable.TreeSet[String]()
-        tables.put(db, tableSet)
-        sessionCatalog.listTables(db) foreach {
-          table => tableSet.add(table.table)
-        }
-    }
 
-    sessionCatalog.listFunctions(sessionCatalog.getCurrentDatabase).foreach {
-      fn => functions.add(fn._1.funcName)
-    }
+  private def loadCatalog() = effectBlocking(sessionCatalog.listDatabases()).flatMap {
+    dbs => ZIO.sequencePar {
+      effectBlocking(sessionCatalog.listFunctions(sessionCatalog.getCurrentDatabase)).map {
+        fns => functions ++= fns.map(_._1.funcName)
+      } :: dbs.toList.map {
+        db => ZIO(databases.add(db)) *> effectBlocking {
+          val tableSet = new mutable.TreeSet[String]()
+          tables.put(db, tableSet)
+          sessionCatalog.listTables(db) foreach {
+            table => tableSet.add(table.table)
+          }
+        }
+      }
+    }.unit
   }
 
-  def init(state: State): TaskR[InterpreterEnv, State] = effectBlocking(loadCatalog()).fork.const(state)
+  def init(state: State): TaskR[InterpreterEnv, State] = loadCatalog().fork.const(state)
 
   def shutdown(): Task[Unit] = ZIO.unit
 

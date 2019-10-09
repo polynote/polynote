@@ -14,12 +14,13 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, Cur
 import polynote.kernel.interpreter.State.Root
 import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.kernel.interpreter.scal.ScalaInterpreter
+import polynote.kernel.logging.Logging
 import polynote.kernel.util.RefMap
 import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
 import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr}
 import scodec.bits.ByteVector
 import zio.{Task, TaskR, ZIO}
-import zio.blocking.Blocking
+import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.interop.catz._
 
@@ -52,7 +53,7 @@ class LocalKernel private[kernel] (
         initialState   = State.id(id, prevState)                                                                      // run the cell while capturing outputs
         resultState   <- (interpreter.run(cell.content.toString, initialState) >>= updateValues)
           .onTermination(_ => CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
-          .provideSomeM(interpEnv.mkExecutor(scalaCompiler.classLoader))
+          .provideSomeM(Env.enrichM[Logging](interpEnv.mkExecutor(scalaCompiler.classLoader).widen[InterpreterEnv]))
         end           <- clock.currentTime(TimeUnit.MILLISECONDS)                                                     // finish timing and notify clients of elapsed time
         _             <- PublishResult(ExecutionInfo(start, Some(end))).provide(interpEnv)
         _             <- updateState(resultState)
@@ -199,28 +200,37 @@ class LocalKernel private[kernel] (
   /**
     * Finds reprs of each value in the state, and returns a new state with the values updated to include the reprs
     */
-  private def updateValues(state: State): TaskR[Blocking, State] = {
+  private def updateValues(state: State): TaskR[Blocking with Logging, State] = {
     import scalaCompiler.global, global.{appliedType, typeOf}
     val (names, types) = state.values.map {v =>
       v.name -> appliedType(typeOf[ReprsOf[Any]].typeConstructor, v.scalaType.asInstanceOf[global.Type])
     }.toMap.toList.unzip
-    scalaCompiler.inferImplicits(types).map {
+    scalaCompiler.inferImplicits(types).flatMap {
       instances =>
         val instanceMap = names.zip(instances).collect {
           case (name, Some(instance)) => name -> instance.asInstanceOf[ReprsOf[Any]]
         }.toMap
 
-        def updateValue(value: ResultValue): ResultValue = {
+        def updateValue(value: ResultValue): TaskR[Blocking with Logging, ResultValue] = {
           if (value.value != null) {
-            val reprs = instanceMap.get(value.name).toList.flatMap(_.apply(value.value).toList) match {
-              case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
-              case reprs => reprs :+ StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
+            ZIO.effectTotal(instanceMap.get(value.name)).flatMap {
+              case Some(instance) =>
+                effectBlocking(instance.apply(value.value))
+                  .onError(err => Logging.error("Error creating result reprs", err))
+                  .catchAll(_ => ZIO.succeed(Array.empty)).map(_.toList).map {
+                    case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
+                    case reprs => reprs :+ StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
+                  }.map {
+                    reprs => value.copy(reprs = reprs)
+                  }
+
+              case None =>
+                ZIO.succeed(value)
             }
-            value.copy(reprs = reprs)
-          } else value
+          } else ZIO.succeed(value)
         }
 
-        state.updateValues(updateValue)
+        state.updateValuesM(updateValue)
     }
 
   }
