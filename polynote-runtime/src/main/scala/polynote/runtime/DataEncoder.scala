@@ -43,7 +43,7 @@ object DataEncoder extends DataEncoder0 {
   implicit val long: DataEncoder[Long] = numericInstance(LongType)(_ writeLong _)
   implicit val float: DataEncoder[Float] = numericInstance(FloatType)(_ writeFloat _)
   implicit val double: DataEncoder[Double] = numericInstance(DoubleType)(_ writeDouble _)
-  implicit val string: DataEncoder[String] = sizedInstance[String](StringType, _.getBytes(StandardCharsets.UTF_8).length + 4) {
+  implicit val string: DataEncoder[String] = sizedInstance[String](StringType, str => if (str == null) 4 else str.getBytes(StandardCharsets.UTF_8).length + 4) {
     (out, str) =>
       if (out == null) {
         out.writeInt(-1)

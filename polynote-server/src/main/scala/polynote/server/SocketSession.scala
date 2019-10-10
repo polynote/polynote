@@ -56,7 +56,7 @@ class SocketSession(
         case _ => Stream.empty
       }.evalMap {
         message =>
-          handler.handle(message).catchAll {
+          handler.handle(message).supervised.catchAll {
             err =>
               Logging.error("Kernel error", err) *>
               PublishMessage(Error(0, err))

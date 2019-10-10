@@ -24,7 +24,8 @@ import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 class ScalaCompiler private (
   val global: Global,
   val notebookPackage: String,
-  val classLoader: Task[AbstractFileClassLoader]
+  val classLoader: Task[AbstractFileClassLoader],
+  val dependencies: List[File]
 ) {
   import global._
   private val packageName = TermName(notebookPackage)
@@ -458,11 +459,15 @@ class ScalaCompiler private (
 
 object ScalaCompiler {
 
+  def access: ZIO[Provider, Nothing, ScalaCompiler]    = ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
+  def settings: ZIO[Provider, Nothing, Settings]       = access.map(_.global.settings)
+  def dependencies: ZIO[Provider, Nothing, List[File]] = access.map(_.dependencies)
+
   def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader], notebookPackage: String = "$notebook"): Task[ScalaCompiler] =
     classLoader.memoize.flatMap {
       classLoader => ZIO {
         val global = new Global(settings, KernelReporter(settings))
-        new ScalaCompiler(global, notebookPackage, classLoader)
+        new ScalaCompiler(global, notebookPackage, classLoader, settings.classpath.value.split(File.pathSeparatorChar).toList.map(new File(_)))
       }
     }
 
@@ -474,7 +479,7 @@ object ScalaCompiler {
     global            <- ZIO(new Global(settings, KernelReporter(settings)))
     notebookPackage    = "$notebook"
     classLoader       <- makeClassLoader(settings).memoize
-  } yield new ScalaCompiler(global, notebookPackage, classLoader)
+  } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencyClasspath)
 
   def makeClassLoader(settings: Settings): TaskR[Config, AbstractFileClassLoader] = for {
     dependencyClassLoader <- makeDependencyClassLoader(settings)

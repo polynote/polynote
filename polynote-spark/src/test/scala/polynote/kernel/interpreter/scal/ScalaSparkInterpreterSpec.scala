@@ -4,7 +4,9 @@ package scal
 import org.apache.spark.sql.SparkSession
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.ScalaCompiler
+import polynote.kernel.environment.Env
 import polynote.testing.InterpreterSpec
+import zio.blocking.Blocking
 
 import scala.reflect.io.{PlainDirectory, VirtualDirectory}
 import scala.tools.nsc.Settings
@@ -21,7 +23,7 @@ class ScalaSparkInterpreterSpec extends FreeSpec with InterpreterSpec with Match
     Main.createSparkSession()
   }
 
-  lazy val interpreter: ScalaInterpreter = ScalaSparkInterpreter().provide(ScalaCompiler.Provider.of(compiler)).runIO()
+  lazy val interpreter: ScalaInterpreter = ScalaSparkInterpreter().provideSomeM(Env.enrich[Blocking](ScalaCompiler.Provider.of(compiler))).runIO()
 
 
   "The Scala Spark Kernel" - {

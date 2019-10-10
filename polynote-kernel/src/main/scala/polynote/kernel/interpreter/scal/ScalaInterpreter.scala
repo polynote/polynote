@@ -2,26 +2,19 @@ package polynote.kernel
 package interpreter
 package scal
 
-import java.io.File
 import java.lang.reflect.{Constructor, InvocationTargetException}
-import java.util.concurrent.atomic.AtomicReference
-import java.util.function.UnaryOperator
 
 import scala.reflect.internal.util.NoPosition
 import scala.tools.nsc.interactive.Global
 import polynote.messages.CellID
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Fiber, Task, TaskR, ZIO}
+import zio.{Task, TaskR, ZIO}
 import ScalaInterpreter.{addPositionUpdates, captureLastExpression}
-import io.github.classgraph.ClassGraph
 import polynote.kernel.environment.CurrentRuntime
-
-import scala.collection.immutable.TreeMap
-import scala.tools.nsc.Settings
 
 class ScalaInterpreter private[scal] (
   val scalaCompiler: ScalaCompiler,
-  index: Fiber[Throwable, TreeMap[String, List[String]]]
+  indexer: ClassIndexer
 ) extends Interpreter {
   import scalaCompiler.{CellCode, global, Imports}
   import global.{Tree, ValDef, TermName, Modifiers, EmptyTree, TypeTree, Import, Name, Type, Quasiquote, typeOf, atPos, NoType}
@@ -99,7 +92,7 @@ class ScalaInterpreter private[scal] (
   // Private scala-specific stuff //
   //////////////////////////////////
 
-  private val completer = ScalaCompleter(scalaCompiler, index)
+  private val completer = ScalaCompleter(scalaCompiler, indexer)
 
   // create the parameter that's used to inject the `kernel` value into cell scope
   private def runtimeValDef = ValDef(Modifiers(), TermName("kernel"), tq"polynote.runtime.KernelRuntime", EmptyTree)
@@ -208,7 +201,7 @@ object ScalaInterpreter {
 
   def apply(): TaskR[Blocking with ScalaCompiler.Provider, ScalaInterpreter] = for {
     compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
-    index    <- scanClasspath(compiler.global.settings).fork
+    index    <- ClassIndexer.default
   } yield new ScalaInterpreter(compiler, index)
 
   // capture the last statement in a value Out, if it's a free expression
@@ -249,22 +242,6 @@ object ScalaInterpreter {
           case tree => wrapWithProgress(lineStr, tree)
         }
     } :+ q"kernel.clearExecutionStatus()"
-  }
-
-  private def scanClasspath(settings: Settings) = effectBlocking {
-    new ClassGraph().overrideClasspath(settings.classpath.value).enableClassInfo().scan()
-  }.flatMap {
-    scanResult => effectBlocking {
-      import scala.collection.JavaConverters._
-      val classes = new AtomicReference[TreeMap[String, List[String]]](new TreeMap)
-      scanResult.getAllClasses.iterator().asScala.filter(_.isPublic).filter(!_.isSynthetic).foreach {
-        classInfo => classes.updateAndGet(new UnaryOperator[TreeMap[String, List[String]]] {
-          def apply(t: TreeMap[String, List[String]]): TreeMap[String, List[String]] =
-            t + (classInfo.getSimpleName -> (classInfo.getName :: t.getOrElse(classInfo.getSimpleName, Nil)))
-        })
-      }
-      classes.get()
-    }
   }
 
   trait Factory extends Interpreter.Factory {
