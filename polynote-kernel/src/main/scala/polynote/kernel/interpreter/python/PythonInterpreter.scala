@@ -90,17 +90,20 @@ class PythonInterpreter private[python] (
   def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = populateGlobals(state).flatMap {
     globals => jep {
       jep =>
-        val jedi = new polynote.runtime.python.PythonFunction(jep.getValue("jedi.Interpreter", classOf[PyCallable]), runner)
+        val jedi = jep.getValue("jedi.Interpreter", classOf[PyCallable])
         val lines = code.substring(0, pos).split('\n')
         val lineNo = lines.length
         val col = lines.last.length
-        val pyCompletions = jedi(code, Array(globals), line = lineNo, column = col).completions().as[Array[PyObject]].map(new PythonObject(_, runner))
+        val pyCompletions = jedi.callAs[PyObject](classOf[PyObject], Array[Object](code, Array(globals)), Map[String, Object]("line" -> Integer.valueOf(lineNo), "column" -> Integer.valueOf(col)).asJava)
+          .getAttr("completions", classOf[PyCallable])
+          .callAs(classOf[Array[PyObject]])
+
         pyCompletions.map {
           completion =>
-            val name = completion.name[String]
-            val typ = completion.`type`[String]
+            val name = completion.getAttr("name", classOf[String])
+            val typ = completion.getAttr("type", classOf[String])
             val params = typ match {
-              case "function" => List(TinyList(completion.params[Array[PyObject]].map {
+              case "function" => List(TinyList(completion.getAttr("params", classOf[Array[PyObject]]).map {
                   paramObj =>
                     TinyString(paramObj.getAttr("name", classOf[String])) -> ShortString("")
                 }.toList))
@@ -131,8 +134,8 @@ class PythonInterpreter private[python] (
           jep.eval(s"__polynote_sig__ = jedi.Interpreter(__polynote_code__, [__polynote_globals__, {}], line=$line, column=$col).call_signatures()[0]")
           // If this comes back as a List, Jep will mash all the elements to strings. So gotta use it as a PyObject. Hope that gets fixed!
           // TODO: will need some reusable PyObject wrappings anyway
-          val sig = new PythonObject(jep.getValue("__polynote_sig__", classOf[PyObject]), runner)
-          val index = sig.index[java.lang.Long]
+          val sig = jep.getValue("__polynote_sig__", classOf[PyObject])
+          val index = sig.getAttr("index", classOf[java.lang.Long])
           jep.eval("__polynote_params__ = list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], __polynote_sig__.params))")
           val params = jep.getValue("__polynote_params__", classOf[java.util.List[java.util.List[String]]]).asScala.map {
             tup =>
@@ -141,11 +144,11 @@ class PythonInterpreter private[python] (
               ParameterHint(name, typeName.getOrElse(""), None) // TODO: can we parse per-param docstrings out of the main docstring?
           }
 
-          val docString = Try(sig.docstring(true))
+          val docString = Try(sig.getAttr("docstring", classOf[PyCallable]).callAs(classOf[String], java.lang.Boolean.TRUE))
             .map(_.toString.split("\n\n").head)
             .toOption.filterNot(_.isEmpty).map(ShortString.truncate)
 
-          val name = s"${sig.name[String]}(${params.mkString(", ")})"
+          val name = s"${sig.getAttr("name", classOf[String])}(${params.mkString(", ")})"
           val hints = ParameterHints(
             name,
             docString,
