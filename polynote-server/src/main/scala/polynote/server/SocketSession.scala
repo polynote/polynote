@@ -56,7 +56,7 @@ class SocketSession(
         case _ => Stream.empty
       }.evalMap {
         message =>
-          handler.handle(message).catchAll {
+          handler.accept(message).catchAll {
             err =>
               Logging.error("Kernel error", err) *>
               PublishMessage(Error(0, err))
@@ -80,7 +80,7 @@ class SessionHandler(
   streamingHandles: StreamingHandles with BaseEnv
 )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
 
-  def handle(message: Message): TaskR[BaseEnv with GlobalEnv with PublishMessage, Unit] =
+  def accept(message: Message): TaskR[BaseEnv with GlobalEnv with PublishMessage, Unit] =
     handler.applyOrElse(message, unhandled)
 
   def awaitClosed: ZIO[Any, Nothing, Either[Throwable, Unit]] = closed.await.either

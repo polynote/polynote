@@ -104,7 +104,8 @@ val `polynote-kernel` = project.settings(
     "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
     "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
-  )
+  ),
+  coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
 val `polynote-server` = project.settings(
