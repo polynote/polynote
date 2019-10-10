@@ -7,6 +7,7 @@ import java.util.function.UnaryOperator
 
 import io.github.classgraph.ClassGraph
 import polynote.kernel.ScalaCompiler
+import polynote.kernel.util.pathOf
 import zio.blocking.{Blocking, effectBlocking}
 import zio.{Fiber, TaskR, UIO, ZIO}
 
@@ -44,13 +45,13 @@ class SimpleClassIndexer(running: Fiber[Throwable, TreeMap[String, List[(Int, St
 
 object SimpleClassIndexer {
   def apply(): ZIO[Blocking with ScalaCompiler.Provider, Nothing, SimpleClassIndexer] = {
-    def buildIndex(classPath: Array[File]) = effectBlocking {
+    def buildIndex(priorityDependencies: Array[File], classPath: Array[File]) = effectBlocking {
       import scala.collection.JavaConverters._
 
-      val lastPriority = classPath.length
-      val priorities = classPath.zipWithIndex.toMap
+      val lastPriority = priorityDependencies.length + classPath.length
+      val priorities = (priorityDependencies ++ classPath.diff(priorityDependencies)).distinct.zipWithIndex.toMap
 
-      val classGraph = new ClassGraph().overrideClasspath(classPath: _*).enableClassInfo()
+      val classGraph = new ClassGraph().overrideClasspath(priorityDependencies ++ classPath: _*).enableClassInfo()
       val scanResult = classGraph.scan()
       val classes = new AtomicReference[TreeMap[String, List[(Int, String)]]](new TreeMap)
       scanResult.getAllClasses.iterator().asScala
@@ -76,8 +77,9 @@ object SimpleClassIndexer {
 
     for {
       classPath <- ScalaCompiler.settings.map(_.classpath.value.split(File.pathSeparatorChar).map(new File(_)))
-      javaPath   = javaLibraryPath.toArray
-      process   <- buildIndex(javaPath ++ classPath).fork
+      deps      <- ScalaCompiler.dependencies
+      javaPath   = javaLibraryPath.toArray :+ new File(pathOf(classOf[List[_]]).toURI)
+      process   <- buildIndex(javaPath ++ deps, classPath).fork
     } yield new SimpleClassIndexer(process)
   }
 }

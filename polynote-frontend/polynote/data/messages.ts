@@ -184,12 +184,12 @@ export class ParamInfo {
 
 export class CompletionCandidate {
     static codec =
-        combined(tinyStr, arrayCodec(uint8, tinyStr), arrayCodec(uint8, arrayCodec(uint8, ParamInfo.codec)), shortStr, uint8).to(CompletionCandidate);
+        combined(tinyStr, arrayCodec(uint8, tinyStr), arrayCodec(uint8, arrayCodec(uint8, ParamInfo.codec)), shortStr, uint8, optional(shortStr)).to(CompletionCandidate);
     static unapply(inst: CompletionCandidate): ConstructorParameters<typeof CompletionCandidate> {
-        return [inst.name, inst.typeParams, inst.params, inst.type, inst.completionType];
+        return [inst.name, inst.typeParams, inst.params, inst.type, inst.completionType, inst.insertText];
     }
 
-    constructor(readonly name: string, readonly typeParams: string[], readonly params: ParamInfo[][], readonly type: string, readonly completionType: number) {
+    constructor(readonly name: string, readonly typeParams: string[], readonly params: ParamInfo[][], readonly type: string, readonly completionType: number, readonly insertText?: string) {
         Object.freeze(this);
     }
 }

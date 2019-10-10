@@ -99,7 +99,8 @@ final case class Completion(
   typeParams: TinyList[TinyString],
   paramLists: TinyList[TinyList[(TinyString, ShortString)]],
   resultType: ShortString,
-  completionType: CompletionType)
+  completionType: CompletionType,
+  insertText: Option[ShortString] = None)
 
 final case class ParameterHint(
   name: TinyString,

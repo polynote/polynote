@@ -125,7 +125,7 @@ export class NotebookUI extends UIEventTarget {
                         const label = `${candidate.name}${typeParams}${params}`;
 
                         const insertText =
-                            candidate.name; //+ (params.length ? '($2)' : '');
+                            candidate.insertText || candidate.name; //+ (params.length ? '($2)' : '');
 
                         // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
                         const model = (this.cellUI.getCell(cell) as CodeCell).editor.getModel()!;

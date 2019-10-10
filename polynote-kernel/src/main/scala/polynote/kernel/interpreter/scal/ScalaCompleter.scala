@@ -83,14 +83,14 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
               val prevCellScopes = if (context.owner.isClass) {
                 context.owner.asClass.primaryConstructor.paramLists.headOption.toList.flatten.collect {
                   case sym if sym.name.startsWith("_input") => sym.info.nonPrivateDecls.collect {
-                    case decl if decl.isClass || decl.isMethod || decl.isType => decl
+                    case decl if (decl.isClass || decl.isMethod || decl.isType) && decl.name.startsWith(name) => decl
                   }
                 }.flatten
               } else Nil
 
               val indexCompletions = fromClasspath.filterKeys(name => !imports.exists(_.nameString == name)).toList.flatMap {
                 case (simpleName, qualifiedNames) => qualifiedNames.map {
-                  case (priority, qualifiedName) => priority -> Completion(qualifiedName, Nil, Nil, simpleName, CompletionType.ClassType)
+                  case (priority, qualifiedName) => priority -> Completion(simpleName, Nil, Nil, qualifiedName, CompletionType.ClassType, Some(qualifiedName))
                 }
               }.sortBy(_._1).take(10).map(_._2)
               (cellScope ++ prevCellScopes ++ imports).map(symToCompletion(_, NoType)) ++ indexCompletions

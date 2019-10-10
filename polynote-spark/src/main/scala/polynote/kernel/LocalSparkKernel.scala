@@ -99,11 +99,12 @@ class LocalSparkKernelFactory extends Kernel.Factory.Service {
 
   def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps        <- CoursierFetcher.fetch("scala")
+    (main, transitive) = scalaDeps.partition(_._1)
     sparkRuntimeJar   = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
     sparkClasspath   <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
     _                <- Logging.info(s"Using spark classpath: ${sparkClasspath.mkString(":")}")
-    sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps
-    compiler         <- ScalaCompiler.provider(sparkRuntimeJar :: scalaDeps.map(_._2) ::: sparkClasspath, updateSettings)
+    sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map { case (_, uri, file) => (uri, file) }
+    compiler         <- ScalaCompiler.provider(main.map(_._3), sparkRuntimeJar :: transitive.map(_._3) ::: sparkClasspath, updateSettings)
     classLoader      <- compiler.scalaCompiler.classLoader
     session          <- startSparkSession(sparkJars, classLoader)
     notebookPackage   = s"$$notebook$$${kernelCounter.getAndIncrement()}"
