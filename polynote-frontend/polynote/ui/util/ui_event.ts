@@ -82,18 +82,6 @@ export class UIEventTarget extends EventTarget {
         return this;
     }
 
-    // Register your callback with someone upstream who knows what to do when they see your registration (fingers crossed!)
-    registerEventListener<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(type: K, callback: (...args: any[]) => void, options?: AddEventListenerOptions) {
-        const registration = new EventRegistration(new CallbackEvent(type, callback, options));
-        return this.dispatchEvent(registration);
-    }
-
-    // Listen for registration requests that you know how to handle
-    handleEventListenerRegistration<K extends keyof UIEventNameMap, T extends UIEventNameMap[K] = UIEventNameMap[K]>(eventType: K, listener: CallbackEventListener<Unpack<T> extends never ? [] : Unpack<T>>, options?: boolean | AddEventListenerOptions) {
-        const type = EventRegistration.registrationId(eventType);
-        return this.addEventListener(type as keyof UIEventNameMap, listener, options);
-    }
-
     // Send a request to be responded to by someone upstream
     request<K extends keyof UIEventNameMap>(type: K, callback: (...args: any[]) => void) {
         const request = new Request(new CallbackEvent(type, callback));

@@ -20,10 +20,12 @@ import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
 import {SocketSession} from "../../comms";
 import {MainUI} from "./ui";
 import {CompletionCandidate, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
-import {Range} from "monaco-editor";
+import {languages, Range} from "monaco-editor";
 import {ContentEdit} from "../../data/content_edit";
 import {StructType} from "../../data/data_type";
 import {Either, Left, Right} from "../../data/types";
+import CompletionList = languages.CompletionList;
+import SignatureHelp = languages.SignatureHelp;
 
 export class NotebookUI extends UIEventTarget {
     readonly cellUI: NotebookCellsUI;
@@ -51,15 +53,7 @@ export class NotebookUI extends UIEventTarget {
 
         this.editBuffer = new EditBuffer();
 
-        this.addEventListener('SetCellLanguage', evt => this.onCellLanguageSelected(evt.detail.language, evt.detail.cellId));
-
         // TODO: remove listeners on children.
-        this.cellUI.addEventListener('UpdatedConfig', evt => {
-            const update = new messages.UpdateConfig(path, this.globalVersion, ++this.localVersion, evt.detail.config);
-            this.editBuffer.push(this.localVersion, update);
-            this.kernelUI.tasks.clear(); // old tasks no longer relevant with new config.
-            SocketSession.get.send(update);
-        });
 
         this.cellUI.addEventListener('SelectCell', evt => {
             const cellTypeSelector = mainUI.toolbarUI.cellToolbar.cellTypeSelector;
@@ -100,91 +94,6 @@ export class NotebookUI extends UIEventTarget {
             // update the symbol table to reflect what's visible from this cell
             const ids = this.cellUI.getCodeCellIdsBefore(id);
             this.kernelUI.symbols.presentFor(id, ids);
-        });
-
-        this.cellUI.addEventListener('CompletionRequest', (evt) => {
-            const id = evt.detail.cellId;
-            const pos = evt.detail.pos;
-            const resolve = evt.detail.resolve;
-            const reject = evt.detail.reject;
-
-            const receiveCompletions = (notebook: string, cell: number, receivedPos: number, completions: CompletionCandidate[]) => {
-                if (notebook === path && cell === id && pos === receivedPos) {
-                    SocketSession.get.removeMessageListener([messages.CompletionsAt, receiveCompletions]);
-                    const len = completions.length;
-                    const indexStrLen = ("" + len).length;
-                    const completionResults = completions.map((candidate, index) => {
-                        const isMethod = candidate.params.length > 0 || candidate.typeParams.length > 0;
-
-                        const typeParams = candidate.typeParams.length ? `[${candidate.typeParams.join(', ')}]`
-                            : '';
-
-                        const params = isMethod ? candidate.params.map(pl => `(${pl.map(param => `${param.name}: ${param.type}`).join(', ')})`).join('')
-                            : '';
-
-                        const label = `${candidate.name}${typeParams}${params}`;
-
-                        const insertText =
-                            candidate.insertText || candidate.name; //+ (params.length ? '($2)' : '');
-
-                        // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
-                        const model = (this.cellUI.getCell(cell) as CodeCell).editor.getModel()!;
-                        const p = model.getPositionAt(pos);
-                        const word = model.getWordUntilPosition(p);
-                        const range = new Range(p.lineNumber, word.startColumn, p.lineNumber, word.endColumn);
-                        return {
-                            kind: isMethod ? 1 : 9,
-                            label: label,
-                            insertText: insertText,
-                            insertTextRules: 4,
-                            sortText: ("" + index).padStart(indexStrLen, '0'),
-                            detail: candidate.type,
-                            range: range
-                        };
-                    });
-                    //console.log(completionResults);
-                    resolve({suggestions: completionResults});
-                }
-            };
-
-            SocketSession.get.addMessageListener(messages.CompletionsAt, receiveCompletions);
-            SocketSession.get.send(new messages.CompletionsAt(path, id, pos, []));
-        });
-
-        this.cellUI.addEventListener('ParamHintRequest', (evt) => {
-            const id = evt.detail.cellId;
-            const pos = evt.detail.pos;
-            const resolve = evt.detail.resolve;
-            const reject = evt.detail.reject;
-
-            const receiveHints = (notebook: string, cell: number, receivedPos: number, signatures?: Signatures) => {
-                if (notebook === path && cell === id && pos === receivedPos) {
-                    SocketSession.get.removeMessageListener([messages.ParametersAt, receiveHints]);
-                    if (signatures) {
-                        resolve({
-                            activeParameter: signatures.activeParameter,
-                            activeSignature: signatures.activeSignature,
-                            signatures: signatures.hints.map(sig => {
-                                const params = sig.parameters.map(param => {
-                                    return {
-                                        label: param.typeName ? `${param.name}: ${param.typeName}` : param.name,
-                                        documentation: param.docString
-                                    };
-                                });
-
-                                return {
-                                    documentation: sig.docString,
-                                    label: sig.name,
-                                    parameters: params
-                                }
-                            })
-                        });
-                    } else resolve(undefined);
-                }
-            };
-
-            SocketSession.get.addMessageListener(messages.ParametersAt, receiveHints);
-            SocketSession.get.send(new messages.ParametersAt(path, id, pos))
         });
 
         this.cellUI.addEventListener("ReprDataRequest", evt => {
@@ -604,5 +513,88 @@ export class NotebookUI extends UIEventTarget {
         const update = new messages.UpdateCell(this.path, this.globalVersion, ++this.localVersion, cellId, edits, metadata);
         SocketSession.get.send(update);
         this.editBuffer.push(this.localVersion, update);
+    }
+
+    completionRequest(id: number, pos: number, resolve: (completions: CompletionList) => void, reject: () => void) {
+        const receiveCompletions = (notebook: string, cell: number, receivedPos: number, completions: CompletionCandidate[]) => {
+            if (notebook === this.path && cell === id && pos === receivedPos) {
+                SocketSession.get.removeMessageListener([messages.CompletionsAt, receiveCompletions]);
+                const len = completions.length;
+                const indexStrLen = ("" + len).length;
+                const completionResults = completions.map((candidate, index) => {
+                    const isMethod = candidate.params.length > 0 || candidate.typeParams.length > 0;
+
+                    const typeParams = candidate.typeParams.length ? `[${candidate.typeParams.join(', ')}]`
+                        : '';
+
+                    const params = isMethod ? candidate.params.map(pl => `(${pl.map(param => `${param.name}: ${param.type}`).join(', ')})`).join('')
+                        : '';
+
+                    const label = `${candidate.name}${typeParams}${params}`;
+
+                    const insertText =
+                        candidate.insertText || candidate.name; //+ (params.length ? '($2)' : '');
+
+                    // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
+                    const model = (this.cellUI.getCell(cell) as CodeCell).editor.getModel()!;
+                    const p = model.getPositionAt(pos);
+                    const word = model.getWordUntilPosition(p);
+                    const range = new Range(p.lineNumber, word.startColumn, p.lineNumber, word.endColumn);
+                    return {
+                        kind: isMethod ? 1 : 9,
+                        label: label,
+                        insertText: insertText,
+                        insertTextRules: 4,
+                        sortText: ("" + index).padStart(indexStrLen, '0'),
+                        detail: candidate.type,
+                        range: range
+                    };
+                });
+                //console.log(completionResults);
+                resolve({suggestions: completionResults});
+            }
+        };
+
+        SocketSession.get.addMessageListener(messages.CompletionsAt, receiveCompletions);
+        SocketSession.get.send(new messages.CompletionsAt(this.path, id, pos, []));
+    }
+
+    paramHintRequest(id: number, pos: number, resolve: (completions?: SignatureHelp) => void, reject: () => void) {
+
+        const receiveHints = (notebook: string, cell: number, receivedPos: number, signatures?: Signatures) => {
+            if (notebook === this.path && cell === id && pos === receivedPos) {
+                SocketSession.get.removeMessageListener([messages.ParametersAt, receiveHints]);
+                if (signatures) {
+                    resolve({
+                        activeParameter: signatures.activeParameter,
+                        activeSignature: signatures.activeSignature,
+                        signatures: signatures.hints.map(sig => {
+                            const params = sig.parameters.map(param => {
+                                return {
+                                    label: param.typeName ? `${param.name}: ${param.typeName}` : param.name,
+                                    documentation: param.docString
+                                };
+                            });
+
+                            return {
+                                documentation: sig.docString,
+                                label: sig.name,
+                                parameters: params
+                            }
+                        })
+                    });
+                } else resolve(undefined);
+            }
+        };
+
+        SocketSession.get.addMessageListener(messages.ParametersAt, receiveHints);
+        SocketSession.get.send(new messages.ParametersAt(this.path, id, pos))
+    }
+
+    updateConfig(conf: NotebookConfig) {
+        const update = new messages.UpdateConfig(this.path, this.globalVersion, ++this.localVersion, conf);
+        this.editBuffer.push(this.localVersion, update);
+        this.kernelUI.tasks.clear(); // old tasks no longer relevant with new config.
+        SocketSession.get.send(update);
     }
 }

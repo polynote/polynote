@@ -21,7 +21,7 @@ export class NotebookConfigUI extends UIEventTarget {
     private lastConfig: NotebookConfig;
     private configHandler: NotebookConfigHandler;
 
-    constructor() {
+    constructor(private onConfigUpdate: (conf: NotebookConfig) => void) {
         super();
 
         this.el = div(['notebook-config'], []);
@@ -61,7 +61,7 @@ export class NotebookConfigUI extends UIEventTarget {
                         const conf = this.configHandler.toConfig();
                         this.lastConfig = conf;
                         this.el.classList.remove("open");
-                        this.dispatchEvent(new UIEvent('UpdatedConfig', {config: conf}));
+                        this.onConfigUpdate(conf);
                     }),
                     button(['cancel'], {}, ['Cancel']).click(evt => {
                         if (this.lastConfig) {

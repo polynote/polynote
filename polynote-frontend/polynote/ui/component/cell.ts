@@ -47,26 +47,6 @@ export class SelectCellEvent extends CellEvent<{ cell: Cell }> {
 
 // TODO remove these events?
 
-export class CompletionRequest extends CellEvent<{pos: number, resolve: (completions: CompletionList) => void, reject: () => void}> {
-    constructor(cellId: number, pos: number, resolve: (completions: CompletionList) => void, reject: () => void) {
-        super('CompletionRequest', cellId, {pos: pos, resolve: resolve, reject: reject});
-    }
-
-    get pos() { return this.detail.pos }
-    get resolve() { return this.detail.resolve }
-    get reject() { return this.detail.reject }
-}
-
-export class ParamHintRequest extends CellEvent<{pos: number, resolve: (signature?: SignatureHelp) => void, reject: () => void}> {
-    constructor(cellId: number, pos: number, resolve: (signature?: SignatureHelp) => void, reject: () => void) {
-        super('ParamHintRequest', cellId, {pos: pos, resolve: resolve, reject: reject});
-    }
-
-    get pos() { return this.detail.pos }
-    get resolve() { return this.detail.resolve }
-    get reject() { return this.detail.reject }
-}
-
 export class SetCellLanguageEvent extends CellEvent<{ language: string}> {
     constructor(cellId: number, readonly language: string) {
         super('SetCellLanguage', cellId, { language });
@@ -383,7 +363,7 @@ export class CodeCell extends Cell {
         this.langSelector.setSelectedValue(language);
         this.langSelector.addEventListener('input', (evt) => {
             if (this.langSelector.getSelectedValue() !== this.language) {
-                this.dispatchEvent(new SetCellLanguageEvent(this.id, this.langSelector.getSelectedValue()));
+                CurrentNotebook.get.onCellLanguageSelected(this.langSelector.getSelectedValue(), this.id);
             }
         });
 
@@ -893,13 +873,14 @@ export class CodeCell extends Cell {
 
     requestCompletion(pos: number): Promise<CompletionList> {
         return new Promise(
-            (resolve, reject) => this.dispatchEvent(new CompletionRequest(this.id, pos, resolve, reject))
+            (resolve, reject) =>
+                CurrentNotebook.get.completionRequest(this.id, pos, resolve, reject)
         ) //.catch();
     }
 
     requestSignatureHelp(pos: number): Promise<SignatureHelp> {
         return new Promise((resolve, reject) =>
-            this.dispatchEvent(new ParamHintRequest(this.id, pos, resolve, reject))
+            CurrentNotebook.get.paramHintRequest(this.id, pos, resolve, reject)
         ) //.catch();
     }
 

@@ -10,6 +10,7 @@ import * as monaco from "monaco-editor";
 import {PosRange} from "../../data/result";
 import {NotebookUI} from "./notebook";
 import {CurrentNotebook} from "./current_notebook";
+import {NotebookConfig} from "../../data/data";
 
 type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
@@ -19,21 +20,19 @@ export class NotebookCellsUI extends UIEventTarget {
     readonly el: NotebookCellsEl;
     private queuedCells: number;
     resizeTimeout: number;
-    readonly notebookUI: NotebookUI;
     private configEl: TagElement<"div">;
 
     constructor(parent: NotebookUI, readonly path: string) {
         super(parent);
-        this.notebookUI = parent; // TODO: get rid of this
         this.disabled = false;
-        this.configUI = new NotebookConfigUI().setEventParent(this);
+        this.configUI = new NotebookConfigUI(CurrentNotebook.get.updateConfig).setEventParent(this);
         this.el = Object.assign(
             div(['notebook-cells'], [this.configEl = this.configUI.el, this.newCellDivider()]),
             // TODO: remove when we get to TabUI
             { cellsUI: this });  // TODO: this is hacky and bad (used for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
         this.queuedCells = 0;
 
-        this.registerEventListener('resize', this.forceLayout.bind(this));
+        window.addEventListener('resize', this.forceLayout.bind(this));
     }
 
     newCellDivider() {

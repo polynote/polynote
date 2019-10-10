@@ -13,13 +13,7 @@ export class CurrentNotebook extends UIEventTarget {
         return this.inst
     }
 
-    static set get(nb: NotebookUI) {
+    static set(nb: NotebookUI) {
         this.inst = nb
-    }
-}
-
-export class NotebookSelected extends UIEvent<{current: NotebookUI, prev: NotebookUI}> {
-    constructor(current: NotebookUI, prev: NotebookUI) {
-        super('NotebookSelected', {current, prev})
     }
 }

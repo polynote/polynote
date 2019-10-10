@@ -8,6 +8,7 @@ import * as messages from "../../data/messages";
 import {TaskInfo, TaskStatus} from "../../data/messages";
 import {errorDisplay} from "./cell";
 import {storage} from "../util/storage";
+import {SocketSession} from "../../comms";
 
 export class KernelUI extends UIEventTarget {
     private info: KernelInfoUI;
@@ -41,9 +42,9 @@ export class KernelUI extends UIEventTarget {
             ])
         ]);
 
-        this.registerEventListener('SocketClosed', () => this.setKernelState('disconnected'));
+        SocketSession.get.addEventListener('close', () => this.setKernelState('disconnected'));
 
-        this.registerEventListener('KernelError', (code, err) => {
+        SocketSession.get.addMessageListener(messages.Error, (code, err) => {
             console.log("Kernel error:", err);
 
             const {el, messageStr, cellLine} = errorDisplay(err, this.path);
@@ -56,7 +57,7 @@ export class KernelUI extends UIEventTarget {
             this.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
 
             // clean up (assuming that running another cell means users are done with this error)
-            this.registerEventListener('CellResult', () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100), {once: true})
+            SocketSession.get.listenOnceFor(messages.CellResult, () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100));
         });
 
         // Check storage to see whether this should be collapsed
@@ -84,7 +85,9 @@ export class KernelUI extends UIEventTarget {
 
     connect(evt: Event) {
         evt.stopPropagation();
-        this.dispatchEvent(new UIEvent('Connect'))
+        if (SocketSession.get.isClosed) {
+            SocketSession.get.reconnect(true);
+        }
     }
 
     startKernel(evt: Event) {

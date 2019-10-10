@@ -128,7 +128,7 @@ export class MainUI extends UIEventTarget {
                 }
 
                 const currentNotebook = this.tabUI.getTab(tab.name).content.notebook.cellsUI;
-                CurrentNotebook.get = currentNotebook.notebookUI; // TODO: better way to set
+                CurrentNotebook.set(currentNotebook.notebookUI);
                 currentNotebook.notebookUI.cellUI.forceLayout(evt)
             } else if (tab.type === 'home') {
                 const title = 'Polynote';
@@ -190,41 +190,6 @@ export class MainUI extends UIEventTarget {
         });
 
         this.addEventListener('LoadNotebook', evt => this.loadNotebook(evt.detail.path));
-
-        this.addEventListener('Connect', () => {
-            if (SocketSession.get.isClosed) {
-                SocketSession.get.reconnect(true);
-            }
-        });
-
-        // socket message handlers
-        this.handleEventListenerRegistration('KernelStatus', evt => {
-            SocketSession.get.addMessageListener(messages.KernelStatus, (path, update) => {
-                evt.detail.callback(path, update)
-            });
-        });
-
-        this.handleEventListenerRegistration('SocketClosed', evt => {
-            SocketSession.get.addEventListener('close', _ => {
-                evt.detail.callback()
-            });
-        });
-
-        this.handleEventListenerRegistration('KernelError', evt => {
-            SocketSession.get.addMessageListener(messages.Error, (code, err) => {
-                evt.detail.callback(code, err)
-            });
-        });
-
-        this.handleEventListenerRegistration('CellResult', evt => {
-           SocketSession.get.addMessageListener(messages.CellResult, () => {
-               evt.detail.callback();
-           }, evt.detail.once);
-        });
-
-        this.handleEventListenerRegistration('resize', evt => {
-            window.addEventListener('resize', () => evt.detail.callback())
-        })
     }
 
     showWelcome() {
