@@ -65,7 +65,7 @@ object CoursierFetcher {
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val cache = FileCache[ArtifactTask]()
 
-  def fetch(language: String): TaskR[CurrentNotebook with TaskManager with Blocking, List[(String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
+  def fetch(language: String): TaskR[CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
       config       <- CurrentNotebook.config
       dependencies  = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
@@ -168,7 +168,7 @@ object CoursierFetcher {
         }
     }
 
-    
+
 
     Resolve(cache)
       .addDependencies(coursierDeps: _*)
@@ -182,19 +182,21 @@ object CoursierFetcher {
   private def download(
     resolution: Resolution,
     maxIterations: Int = 100
-  ): TaskR[TaskManager with ParentTask, List[(String, File)]] = ZIO.runtime[Any].flatMap {
+  ): TaskR[TaskManager with ParentTask, List[(Boolean, String, File)]] = ZIO.runtime[Any].flatMap {
     runtime =>
       ZIO.access[ParentTask](identity).flatMap {
         parentTask =>
-          Artifacts(new TaskManagedCache(cache, parentTask, runtime.Platform.executor.asEC)).withResolution(resolution).withMainArtifacts(true).io.map {
-            artifacts => artifacts.toList.map {
-              case (artifact, file) => artifact.url -> file
-            }
+          Artifacts(new TaskManagedCache(cache, parentTask, runtime.Platform.executor.asEC)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
+            artifactResult =>
+              artifactResult.detailedArtifacts.toList.map {
+                case (dep, pub, artifact, file) =>
+                  (resolution.rootDependencies.contains(dep), artifact.url, file)
+              }
           }
       }
   }
 
-  private def downloadUris(uris: List[URI]): TaskR[TaskManager with CurrentTask with ParentTask with Blocking, List[(String, File)]] = {
+  private def downloadUris(uris: List[URI]): TaskR[TaskManager with CurrentTask with ParentTask with Blocking, List[(Boolean, String, File)]] = {
     ZIO.collectAllPar {
       uris.map {
         uri => for {
@@ -203,7 +205,7 @@ object CoursierFetcher {
           download <- TaskManager.runR[Blocking with CurrentTask with TaskManager](uri.toString, uri.toString){
             fetchUrl(uri, cacheLocation(uri).toFile).ensuring(task.completedSubtask().orDie)
           }
-        } yield uri.toString -> download
+        } yield (true, uri.toString, download)
       }
     }
   }

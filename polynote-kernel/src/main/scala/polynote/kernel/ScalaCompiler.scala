@@ -25,7 +25,8 @@ class ScalaCompiler private (
   val global: Global,
   val notebookPackage: String,
   val classLoader: Task[AbstractFileClassLoader],
-  val dependencies: List[File]
+  val dependencies: List[File],
+  val otherClasspath: List[File]
 ) {
   import global._
   private val packageName = TermName(notebookPackage)
@@ -467,19 +468,20 @@ object ScalaCompiler {
     classLoader.memoize.flatMap {
       classLoader => ZIO {
         val global = new Global(settings, KernelReporter(settings))
-        new ScalaCompiler(global, notebookPackage, classLoader, settings.classpath.value.split(File.pathSeparatorChar).toList.map(new File(_)))
+        new ScalaCompiler(global, notebookPackage, classLoader, Nil, settings.classpath.value.split(File.pathSeparatorChar).toList.map(new File(_)))
       }
     }
 
   def apply(
     dependencyClasspath: List[File],
+    otherClasspath: List[File],
     modifySettings: Settings => Settings
   ): TaskR[Config with System, ScalaCompiler] = for {
-    settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencyClasspath)))
+    settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencyClasspath ++ otherClasspath)))
     global            <- ZIO(new Global(settings, KernelReporter(settings)))
     notebookPackage    = "$notebook"
     classLoader       <- makeClassLoader(settings).memoize
-  } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencyClasspath)
+  } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencyClasspath, otherClasspath)
 
   def makeClassLoader(settings: Settings): TaskR[Config, AbstractFileClassLoader] = for {
     dependencyClassLoader <- makeDependencyClassLoader(settings)
@@ -503,11 +505,12 @@ object ScalaCompiler {
 
   def provider(
     dependencyClasspath: List[File],
+    otherClasspath: List[File],
     modifySettings: Settings => Settings
-  ): TaskR[Config with System, ScalaCompiler.Provider] = apply(dependencyClasspath, modifySettings).map(Provider.of)
+  ): TaskR[Config with System, ScalaCompiler.Provider] = apply(dependencyClasspath, otherClasspath, modifySettings).map(Provider.of)
 
-  def provider(dependencyClasspath: List[File]): TaskR[Config with System, ScalaCompiler.Provider] =
-    provider(dependencyClasspath, identity[Settings])
+  def provider(dependencyClasspath: List[File], otherClasspath: List[File]): TaskR[Config with System, ScalaCompiler.Provider] =
+    provider(dependencyClasspath, otherClasspath, identity[Settings])
 
   private def pathAsFile(url: URL): File = url match {
     case url if url.getProtocol == "file" => new File(url.getPath)
