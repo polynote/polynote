@@ -98,7 +98,7 @@ class KernelListener(taskManager: TaskManager.Service, session: SparkSession, ru
     jobTasksCompleted.put(jobId, new AtomicInteger(0))
 
     runtime.unsafeRun {
-      taskManager.register(sparkJobTaskId(jobId), label, "", TaskStatus.Complete) {
+      taskManager.register(sparkJobTaskId(jobId), label, "", Complete) {
         updater =>
           jobUpdaters.put(jobId, updater)
           cancelJob(jobId)
@@ -139,7 +139,7 @@ class KernelListener(taskManager: TaskManager.Service, session: SparkSession, ru
     }
 
     runtime.unsafeRun {
-      taskManager.register(sparkStageTaskId(stageId), s"Stage $stageId", stageInfo.name, TaskStatus.Complete) {
+      taskManager.register(sparkStageTaskId(stageId), s"Stage $stageId", stageInfo.name, Complete) {
         updater =>
           stageUpdaters.put(stageId, updater)
           cancelStage(stageId)

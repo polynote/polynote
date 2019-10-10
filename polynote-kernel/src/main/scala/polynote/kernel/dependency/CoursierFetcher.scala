@@ -100,7 +100,7 @@ object CoursierFetcher {
     dependencies: List[String],
     exclusions: List[String],
     repositories: List[Repository]
-  ): TaskR[CurrentTask, Resolution] = {
+  ): TaskR[CurrentTask, Resolution] = ZIO {
     val coursierExclude = exclusions.map { exclusionStr =>
       exclusionStr.split(":") match {
         case Array(org, name) => (Organization(org), ModuleName(name))
@@ -108,7 +108,7 @@ object CoursierFetcher {
       }
     }.toSet ++ excludedOrgs.map(_ -> Exclusions.allNames)
 
-    val coursierDeps = dependencies.map {
+    lazy val coursierDeps = dependencies.map {
       moduleStr =>
         val (org, name, typ, config, classifier, ver) = moduleStr.split(':') match {
           case Array(org, name, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier.empty, ver)
@@ -124,7 +124,7 @@ object CoursierFetcher {
           .withTransitive(classifier.value != "all")
     }
 
-    val rootModules = coursierDeps.map(_.module).toSet
+    lazy val rootModules = coursierDeps.map(_.module).toSet
 
     // need to do some magic on the default repositories, because the sax parser for maven poms don't work
     val mavenRepository = classOf[MavenRepository]
@@ -168,6 +168,8 @@ object CoursierFetcher {
         }
     }
 
+    
+
     Resolve(cache)
       .addDependencies(coursierDeps: _*)
       .withRepositories(repos)
@@ -175,7 +177,7 @@ object CoursierFetcher {
       .transformFetcher(countingFetcher)
       .io
       .catchAll(recover)
-  }
+  }.flatten  // this is pretty lazy, it's just so we can throw an exception in the main block.
 
   private def download(
     resolution: Resolution,

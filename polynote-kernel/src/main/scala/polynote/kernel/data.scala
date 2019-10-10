@@ -7,6 +7,7 @@ import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
 import scodec.codecs.implicits._
 import shapeless.cachedImplicit
+import zio.Cause
 
 import scala.reflect.internal.util.Position
 import scala.util.Try
@@ -145,27 +146,29 @@ sealed trait TaskStatus {
   def isDone: Boolean
 }
 
-object TaskStatus {
-  sealed trait DoneStatus extends TaskStatus { final val isDone: Boolean = true }
-  sealed trait NotDoneStatus extends TaskStatus { final val isDone: Boolean = false }
+sealed trait DoneStatus extends TaskStatus { final val isDone: Boolean = true }
+sealed trait NotDoneStatus extends TaskStatus { final val isDone: Boolean = false }
 
-  final case object Complete extends DoneStatus
-  final case object Queued extends NotDoneStatus
-  final case object Running extends NotDoneStatus
-  final case object Error extends DoneStatus
+case object Complete extends DoneStatus
+case object Queued extends NotDoneStatus
+case object Running extends NotDoneStatus
+case object ErrorStatus extends DoneStatus
+
+object TaskStatus {
+
 
   val fromByte: PartialFunction[Byte, TaskStatus] = {
     case 0 => Complete
     case 1 => Running
     case 2 => Queued
-    case 3 => Error
+    case 3 => ErrorStatus
   }
 
   def toByte(taskStatus: TaskStatus): Byte = taskStatus match {
     case Complete => 0
     case Running => 1
     case Queued => 2
-    case Error => 3
+    case ErrorStatus => 3
   }
 
   implicit val codec: Codec[TaskStatus] = byte.exmap(
@@ -176,13 +179,13 @@ object TaskStatus {
   implicit val ordering: Ordering[TaskStatus] = new Ordering[TaskStatus] {
     // this isn't the most concise comparison routine, but it should give compiler warnings if any statuses are added w/o being handled
     def compare(x: TaskStatus, y: TaskStatus): Int = (x, y) match {
-      case (Complete, Complete) | (Running, Running) | (Queued, Queued) | (Error, Error) => 0
+      case (Complete, Complete) | (Running, Running) | (Queued, Queued) | (ErrorStatus, ErrorStatus) => 0
       case (Complete, _) => 1
       case (_, Complete) => -1
       case (Queued, _)   => -1
       case (_, Queued)   => 1
-      case (Error, _)    => 1
-      case (_, Error)    => -1
+      case (ErrorStatus, _)    => 1
+      case (_, ErrorStatus)    => -1
     }
   }
 }
@@ -194,17 +197,18 @@ final case class TaskInfo(
   status: TaskStatus,
   progress: Byte = 0) {
 
-  def running: TaskInfo = copy(status = TaskStatus.Running)
-  def completed: TaskInfo = copy(status = TaskStatus.Complete, progress = 255.toByte)
-  def failed: TaskInfo = if (status == TaskStatus.Complete) this else copy(status = TaskStatus.Error, progress = 255.toByte)
-  def done(status: TaskStatus.DoneStatus): TaskInfo = if (this.status.isDone) this else copy(status = status, progress = 255.toByte)
+  def running: TaskInfo = copy(status = Running)
+  def completed: TaskInfo = copy(status = Complete, progress = 255.toByte)
+  def failed: TaskInfo = if (status == Complete) this else copy(status = ErrorStatus, progress = 255.toByte)
+  def failed(err: Cause[Throwable]): TaskInfo = if (status == Complete) this else copy(status = ErrorStatus, detail = ShortString.truncate(err.squash.getMessage), progress = 255.toByte)
+  def done(status: DoneStatus): TaskInfo = if (this.status.isDone) this else copy(status = status, progress = 255.toByte)
   def progress(fraction: Double): TaskInfo = copy(progress = (fraction * 255).toByte)
   def progress(fraction: Double, detailOpt: Option[String]): TaskInfo = copy(progress = (fraction * 255).toByte, detail = detailOpt.getOrElse(detail))
   def progressFraction: Double = progress.toDouble / 255
 }
 
 object TaskInfo {
-  def apply(id: String): TaskInfo = TaskInfo(id, "", "", TaskStatus.Queued)
+  def apply(id: String): TaskInfo = TaskInfo(id, "", "", Queued)
 }
 
 final case class UpdatedTasks(

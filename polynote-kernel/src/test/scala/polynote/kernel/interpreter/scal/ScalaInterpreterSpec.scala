@@ -23,8 +23,9 @@ import scala.tools.nsc.Settings
 
 class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
-  val interpreter: ScalaInterpreter = ScalaInterpreter().provide(new ScalaCompiler.Provider {
+  val interpreter: ScalaInterpreter = ScalaInterpreter().provide(new ScalaCompiler.Provider with Blocking {
     val scalaCompiler: ScalaCompiler = compiler
+    override val blocking: Blocking.Service[Any] = ScalaInterpreterSpec.this.Environment.blocking
   }).runIO()
   import interpreter.ScalaCellState
 

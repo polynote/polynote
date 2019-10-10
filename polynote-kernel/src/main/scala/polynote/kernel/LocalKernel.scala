@@ -35,7 +35,7 @@ class LocalKernel private[kernel] (
   import compilerProvider.scalaCompiler
 
   override def queueCell(id: CellID): TaskR[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] =
-    TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = TaskStatus.Complete) {
+    TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
 
       val run = for {
         _             <- busyState.update(_.setBusy)
@@ -243,7 +243,7 @@ class LocalKernelFactory extends Kernel.Factory.Service {
     compiler     <- ScalaCompiler.provider(scalaDeps.map(_._2))
     busyState    <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters <- RefMap.empty[String, Interpreter]
-    _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provide(compiler))
+    _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provideSomeM(Env.enrich[Blocking](compiler)))
     interpState  <- Ref[Task].of[State](State.predef(State.Root, State.Root))
   } yield new LocalKernel(compiler, interpState, interpreters, busyState)
 

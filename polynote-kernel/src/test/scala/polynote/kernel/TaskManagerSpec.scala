@@ -6,7 +6,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import cats.effect.concurrent.Ref
 import fs2.Pipe
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.kernel.TaskStatus.{Complete, Queued, Running}
 import polynote.kernel.util.Publish
 import polynote.messages.TinyList
 import polynote.testing.{MockPublish, ZIOSpec}
