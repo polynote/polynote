@@ -198,7 +198,7 @@ export class PlotEditor extends UIEventTarget {
         this.plotOutput.style.width = '960px';
         this.plotOutput.style.height = '480px';
 
-        this.plotTypeSelector.addEventListener('SelectionChange', evt => this.onPlotTypeChange());
+        this.plotTypeSelector.addListener(() => this.onPlotTypeChange());
 
         this.el.addEventListener('dragstart', evt => {
            this.draggingEl = evt.target as MeasureEl;

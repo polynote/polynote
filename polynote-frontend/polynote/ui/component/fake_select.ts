@@ -1,15 +1,13 @@
 import { UIEvent, UIEventTarget } from '../util/ui_event'
 import {button, Content, TagElement} from '../util/tags'
 
-export class SelectionChangedEvent extends UIEvent<{ changedFromEl: HTMLButtonElement, changedToEl: HTMLButtonElement, changedFromIndex: number, changedToIndex: number }> {
-    constructor(readonly changedFromEl: HTMLButtonElement, readonly changedToEl: HTMLButtonElement, readonly changedFromIndex: number, readonly changedToIndex: number) {
-        super('SelectionChange', { changedFromEl: changedFromEl, changedToEl: changedToEl, changedFromIndex: changedFromIndex, changedToIndex: changedToIndex });
-    }
+class SelectionChange {
+    constructor(readonly changedFromEl: HTMLButtonElement, readonly changedToEl: HTMLButtonElement, readonly changedFromIndex: number, readonly changedToIndex: number) {}
 
-    get newIndex() { return this.detail.changedToIndex }
-    get oldIndex() { return this.detail.changedFromIndex }
-    get newValue() { return this.detail.changedToEl.value }
-    get oldValue() { return this.detail.changedFromEl.value }
+    get newIndex() { return this.changedToIndex }
+    get oldIndex() { return this.changedFromIndex }
+    get newValue() { return this.changedToEl.value }
+    get oldValue() { return this.changedFromEl.value }
 }
 
 export class FakeSelect extends UIEventTarget {
@@ -19,6 +17,7 @@ export class FakeSelect extends UIEventTarget {
     private moved: boolean;
     private opener: TagElement<"button"> | null;
     private selectedElementCopy: TagElement<"button"> | null;
+    private selectionListeners: ((change: SelectionChange) => void)[] = [];
 
     constructor(readonly element: TagElement<"div">) {
         super();
@@ -48,6 +47,15 @@ export class FakeSelect extends UIEventTarget {
         }
 
         this.updateOptions();
+    }
+
+    addListener(listener: (change: SelectionChange) => void) {
+        if (!this.selectionListeners.includes(listener)) this.selectionListeners.push(listener);
+        return listener;
+    }
+
+    removeListener(listener: (change: SelectionChange) => void) {
+        this.selectionListeners = this.selectionListeners.filter(l => l !== listener)
     }
 
     updateOptions() {
@@ -209,8 +217,7 @@ export class FakeSelect extends UIEventTarget {
             this.value = this.selectedElement.value;
             const newIndex = this.options.indexOf(el);
             if (!noEvent) {
-                let event = new SelectionChangedEvent(prevEl, el, prevIndex, newIndex);
-                this.dispatchEvent(event);
+                this.selectionListeners.forEach(listener => listener(new SelectionChange(prevEl, el, prevIndex, newIndex)));
             }
         }
     }

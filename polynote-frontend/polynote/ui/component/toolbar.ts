@@ -1,5 +1,5 @@
 import {button, div, fakeSelectElem, h3, iconButton, tag, TagElement} from "../util/tags";
-import {FakeSelect, SelectionChangedEvent} from "./fake_select";
+import {FakeSelect} from "./fake_select";
 import {Cell, CodeCell, TextCell} from "./cell";
 import {LaTeXEditor} from "./latex_editor";
 import {UIEvent, UIEventTarget} from "../util/ui_event";
@@ -128,8 +128,8 @@ class CellToolbarUI extends UIEventTarget {
 
         this.cellTypeSelector = new FakeSelect(selectEl);
 
-        this.cellTypeSelector.addEventListener('SelectionChange', (evt: SelectionChangedEvent) => {
-            CurrentNotebook.get.onCellLanguageSelected(evt.newValue)
+        this.cellTypeSelector.addListener(change => {
+            CurrentNotebook.get.onCellLanguageSelected(change.newValue)
         })
 
     }
