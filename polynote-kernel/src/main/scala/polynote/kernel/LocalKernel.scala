@@ -17,7 +17,7 @@ import polynote.kernel.interpreter.scal.ScalaInterpreter
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.RefMap
 import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
-import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr}
+import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr, ValueRepr}
 import scodec.bits.ByteVector
 import zio.{Task, TaskR, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
@@ -217,7 +217,7 @@ class LocalKernel private[kernel] (
               case Some(instance) =>
                 effectBlocking(instance.apply(value.value))
                   .onError(err => Logging.error("Error creating result reprs", err))
-                  .catchAll(_ => ZIO.succeed(Array.empty)).map(_.toList).map {
+                  .catchAll(_ => ZIO.succeed(Array.empty[ValueRepr])).map(_.toList).map {
                     case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
                     case reprs => reprs :+ StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
                   }.map {

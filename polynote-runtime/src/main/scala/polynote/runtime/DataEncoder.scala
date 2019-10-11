@@ -81,7 +81,7 @@ object DataEncoder extends DataEncoder0 {
       }
   }
 
-  private[runtime] def seqSize[A](arr: Traversable[A], encoder: DataEncoder[A]): Int =
+  private[runtime] def seqSize[A](arr: GenTraversable[A], encoder: DataEncoder[A]): Int =
     if (encoder.dataType.size >= 0) {
       encoder.dataType.size * arr.size
     } else try {
@@ -284,7 +284,7 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
       seq.foreach(encodeA.encode(output, _))
     }
     def dataType: DataType = ArrayType(encodeA.dataType)
-    def sizeOf(t: F[A]): Int = if (encodeA.dataType.size >= 0) (encodeA.dataType.size * t.size + 4) else -1
+    def sizeOf(t: F[A]): Int = if (encodeA.dataType.size >= 0) (encodeA.dataType.size * t.size + 4) else seqSize[A](t, encodeA) + 4
     def numeric: Option[Numeric[F[A]]] = None
   }
 
