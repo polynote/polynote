@@ -1,6 +1,6 @@
 // TODO: Shouldn't it extend UIEventTarget?
 import {div, span, TagElement} from "../util/tags";
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {NoActiveTab, TabActivated, TabRemoved, UIMessage, UIMessageTarget} from "../util/ui_event";
 import {storage} from "../util/storage";
 
 interface Tab {
@@ -15,11 +15,7 @@ function isTabEl(tabEl: any): tabEl is TabEl {
     return (tabEl as TabEl).tab !== undefined;
 }
 
-export type TabActivated = UIEvent<{tab: Tab}>
-export type TabRemoved = UIEvent<{name: string}>
-export type NoActiveTab = UIEvent<undefined>
-
-export class TabUI extends UIEventTarget {
+export class TabUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private tabContainer: TagElement<"div">;
     private readonly tabs: Record<string, Tab> = {};
@@ -76,7 +72,7 @@ export class TabUI extends UIEventTarget {
                 if (nextTab && isTabEl(nextTab) && nextTab.tab) {
                     this.activateTab(nextTab.tab);
                 } else {
-                    setTimeout(() => this.dispatchEvent(new UIEvent('NoActiveTab')), 0);
+                    setTimeout(() => this.publish(new NoActiveTab()), 0);
                 }
             }
         }
@@ -88,7 +84,7 @@ export class TabUI extends UIEventTarget {
         delete this.tabEls[tab.name];
         delete this.tabs[tab.name];
 
-        this.dispatchEvent(new UIEvent('TabRemoved', {name: tab.name}));
+        this.publish(new TabRemoved(tab.name));
 
         // if (tab.content && tab.content.parentNode) {
         //     tab.content.parentNode.removeChild(tab.content);
@@ -143,7 +139,7 @@ export class TabUI extends UIEventTarget {
         }
         this.tabEls[tab.name].classList.add('active');
         this.currentTab = tab;
-        this.dispatchEvent(new UIEvent('TabActivated', {tab: tab}));
+        this.publish(new TabActivated(tab.name, tab.type));
     }
 
     getTab(name: string) {

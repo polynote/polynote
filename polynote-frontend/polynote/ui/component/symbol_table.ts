@@ -1,4 +1,4 @@
-import {UIEventTarget} from "../util/ui_event";
+import {UIMessageTarget} from "../util/ui_event";
 import {div, h3, span, table, TableElement, TableRowElement, TagElement} from "../util/tags";
 import {ValueInspector} from "./value_inspector";
 import {ResultValue} from "../../data/result";
@@ -11,7 +11,7 @@ interface ResultRow extends TableRowElement {
     }
 }
 
-export class KernelSymbolsUI extends UIEventTarget {
+export class KernelSymbolsUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private tableEl: TableElement;
     private resultSymbols: TagElement<"tbody">;
@@ -51,7 +51,7 @@ export class KernelSymbolsUI extends UIEventTarget {
             type: span([], [resultValue.typeName]).attr('title', resultValue.typeName)
         }, whichBody) as ResultRow;
         tr.onclick = (evt) => {
-            ValueInspector.get().setEventParent(this);
+            ValueInspector.get().setParent(this);
             ValueInspector.get().inspect(tr.resultValue, this.path);
         };
         tr.data = {name: resultValue.name, type: resultValue.typeName};

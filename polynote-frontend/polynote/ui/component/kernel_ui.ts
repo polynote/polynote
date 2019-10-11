@@ -1,5 +1,4 @@
-// REMOVE SOCKET
-import {CallbackEvent, UIEvent, UIEventTarget} from "../util/ui_event";
+import {KernelCommand, UIMessage, UIMessageTarget, UIToggle} from "../util/ui_event";
 import {KernelInfoUI} from "./kernel_info";
 import {KernelSymbolsUI} from "./symbol_table";
 import {KernelTasksUI} from "./tasks";
@@ -10,7 +9,7 @@ import {errorDisplay} from "./cell";
 import {storage} from "../util/storage";
 import {SocketSession} from "../../comms";
 
-export class KernelUI extends UIEventTarget {
+export class KernelUI extends UIMessageTarget {
     private info: KernelInfoUI;
     readonly tasks: KernelTasksUI;
     readonly symbols: KernelSymbolsUI;
@@ -19,10 +18,10 @@ export class KernelUI extends UIEventTarget {
     private status: TagElement<"span">;
 
     // TODO: instead of passing path in, can it be enriched by a parent?
-    constructor(eventParent: UIEventTarget, readonly path: string, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
+    constructor(eventParent: UIMessageTarget, readonly path: string, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
         super(eventParent);
         this.info = new KernelInfoUI();
-        this.symbols = new KernelSymbolsUI(path).setEventParent(this);
+        this.symbols = new KernelSymbolsUI(path).setParent(this);
         this.tasks = new KernelTasksUI();
         this.path = path;
         this.el = div(['kernel-ui', 'ui-panel'], [
@@ -92,12 +91,12 @@ export class KernelUI extends UIEventTarget {
 
     startKernel(evt: Event) {
         evt.stopPropagation();
-        this.dispatchEvent(new UIEvent('StartKernel', {path: this.path}))
+        this.publish(new KernelCommand(this.path, 'start'));
     }
 
     killKernel(evt: Event) {
         evt.stopPropagation();
-        this.dispatchEvent(new UIEvent('KillKernel', {path: this.path}))
+        this.publish(new KernelCommand(this.path, 'kill'));
     }
 
     setKernelState(state: 'busy' | 'idle' | 'dead' | 'disconnected') {
@@ -116,13 +115,13 @@ export class KernelUI extends UIEventTarget {
     collapse(force = false) {
         const prefs = this.getStorage();
         if (force) {
-            this.dispatchEvent(new UIEvent('ToggleKernelUI', {force: true}))
+            this.publish(new UIToggle('KernelUI', /* force */ true));
         } else if (prefs && prefs.collapsed) {
             this.setStorage({collapsed: false});
-            this.dispatchEvent(new UIEvent('ToggleKernelUI'))
+            this.publish(new UIToggle('KernelUI'));
         } else {
             this.setStorage({collapsed: true});
-            this.dispatchEvent(new UIEvent('ToggleKernelUI'))
+            this.publish(new UIToggle('KernelUI'));
         }
     }
 }

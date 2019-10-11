@@ -1,6 +1,6 @@
 "use strict"
 
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {UIMessage, UIMessageTarget} from "../util/ui_event";
 import {
     button,
     div,
@@ -16,7 +16,7 @@ import {
 } from "../util/tags";
 import {IvyRepository, MavenRepository, NotebookConfig, PipRepository, RepositoryConfig} from "../../data/data";
 
-export class NotebookConfigUI extends UIEventTarget {
+export class NotebookConfigUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private lastConfig: NotebookConfig;
     private configHandler: NotebookConfigHandler;
@@ -144,7 +144,7 @@ const defaultSparkConf: SparkConf = {
     }
 };
 
-class NotebookConfigHandler extends UIEventTarget {
+class NotebookConfigHandler extends UIMessageTarget {
     readonly dependencyContainer: TagElement<"div">;
     readonly resolverContainer: TagElement<"div">;
     readonly exclusionContainer: TagElement<"div">;

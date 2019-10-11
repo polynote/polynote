@@ -1,10 +1,10 @@
 "use strict";
 
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {TriggerItem, UIMessage, UIMessageTarget} from "../util/ui_event";
 import {div, span, tag, TagElement} from "../util/tags";
 import {storage} from "../util/storage";
 
-export class HomeUI extends UIEventTarget {
+export class HomeUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     constructor() {
         super();
@@ -26,8 +26,7 @@ export class HomeUI extends UIEventTarget {
         (storage.get('recentNotebooks') || []).forEach((nb: {name: string, path: string}) => {
             recent!.appendChild(
                 tag('li', ['notebook-link'], {}, [
-                    span([], nb.name).click(
-                        evt => this.dispatchEvent(new UIEvent('TriggerItem', {item: nb.path})))
+                    span([], nb.name).click(() => this.publish(new TriggerItem(nb.path)))
                 ])
             );
         });

@@ -1,4 +1,4 @@
-import { UIEvent, UIEventTarget } from '../util/ui_event'
+import { UIMessage, UIMessageTarget } from '../util/ui_event'
 import {button, Content, TagElement} from '../util/tags'
 
 class SelectionChange {
@@ -10,7 +10,7 @@ class SelectionChange {
     get oldValue() { return this.changedFromEl.value }
 }
 
-export class FakeSelect extends UIEventTarget {
+export class FakeSelect extends UIMessageTarget {
     options: TagElement<"button">[];
     value: string;
     private selectedElement: TagElement<"button">;
@@ -22,7 +22,7 @@ export class FakeSelect extends UIEventTarget {
     constructor(readonly element: TagElement<"div">) {
         super();
 
-        this.addEventListener('mousedown', evt => evt.preventDefault());
+        element.addEventListener('mousedown', evt => evt.preventDefault());
 
         Object.defineProperty(element, 'selectedIndex', {
             get: () => this.selectedIndex,

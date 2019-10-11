@@ -1,4 +1,4 @@
-import {UIEventTarget} from "../util/ui_event";
+import {UIMessageTarget} from "../util/ui_event";
 import {NotebookConfigUI} from "./nb_config";
 import {div, span, TagElement} from "../util/tags";
 import {Cell, CellContainer, CodeCell, isCellContainer, TextCell} from "./cell";
@@ -14,18 +14,20 @@ import {NotebookConfig} from "../../data/data";
 
 type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
-export class NotebookCellsUI extends UIEventTarget {
+export class NotebookCellsUI extends UIMessageTarget {
     private disabled: boolean;
     readonly configUI: NotebookConfigUI;
     readonly el: NotebookCellsEl;
     private queuedCells: number;
     resizeTimeout: number;
+    readonly notebookUI: NotebookUI;
     private configEl: TagElement<"div">;
 
     constructor(parent: NotebookUI, readonly path: string) {
         super(parent);
+        this.notebookUI = parent; // TODO: get rid of this
         this.disabled = false;
-        this.configUI = new NotebookConfigUI(CurrentNotebook.get.updateConfig).setEventParent(this);
+        this.configUI = new NotebookConfigUI((conf: NotebookConfig) => CurrentNotebook.get.updateConfig(conf)).setParent(this);
         this.el = Object.assign(
             div(['notebook-cells'], [this.configEl = this.configUI.el, this.newCellDivider()]),
             // TODO: remove when we get to TabUI
@@ -302,7 +304,7 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    forceLayout(evt: Event) {
+    forceLayout() {
         if (this.resizeTimeout) {
             window.clearTimeout(this.resizeTimeout);
         }
@@ -324,7 +326,7 @@ export class NotebookCellsUI extends UIEventTarget {
         if (cell instanceof CodeCell && cell.editor && cell.editor.layout) {
             cell.editor.layout();
         }
-        cell.setEventParent(this);
+        cell.setParent(this);
     }
 
     setCellLanguage(cell: Cell, language: string) {
@@ -334,8 +336,10 @@ export class NotebookCellsUI extends UIEventTarget {
         }
 
 
-        if (currentCell.language === language)
+        if (currentCell.language === language) {
+            currentCell.focus();
             return;
+        }
 
         // TODO: should cell-specific logic be moved into the cell itself?
         if (currentCell instanceof TextCell && language !== 'text') {
@@ -364,6 +368,7 @@ export class NotebookCellsUI extends UIEventTarget {
             const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
             monaco.editor.setModelLanguage((currentCell as CodeCell).editor.getModel()!, highlightLanguage);
             currentCell.setLanguage(language);
+            currentCell.focus();
         }
     }
 }

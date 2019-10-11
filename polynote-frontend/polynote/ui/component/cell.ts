@@ -1,57 +1,41 @@
 "use strict";
 
-import {blockquote, button, Content, div, DropdownElement, iconButton, span, tag, TagElement} from "../util/tags";
+import {blockquote, button, div, DropdownElement, iconButton, span, tag, TagElement} from "../util/tags";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 // @ts-ignore (ignore use of non-public monaco api)
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent'
-import {CompileErrors, KernelErrorWithCause, KernelReport, Output, PosRange, ResultValue} from "../../data/result"
+import {
+    ClearResults,
+    CompileErrors,
+    KernelErrorWithCause,
+    KernelReport,
+    Output,
+    PosRange,
+    Result,
+    ResultValue, RuntimeError
+} from "../../data/result"
 import {RichTextEditor} from "./text_editor";
-import {UIEvent, UIEventTarget} from "../util/ui_event"
+import {SelectCell, UIMessageTarget} from "../util/ui_event"
 import {Diff} from '../../util/diff'
 import {details, dropdown} from "../util/tags";
 import {ClientResult, ExecutionInfo} from "../../data/result";
 import {preferences} from "../util/storage";
 import {createVim} from "../util/vim";
-import {DeleteCell} from "../../data/messages";
-import {Hotkeys, KeyAction} from "../util/hotkeys";
+import {KeyAction} from "../util/hotkeys";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {ValueInspector} from "./value_inspector";
 import {Interpreters} from "./ui";
 import {displayContent, parseContentType, prettyDuration} from "./display_content";
 import {CellMetadata} from "../../data/data";
 import {ContentEdit, Delete, Insert} from "../../data/content_edit";
-import { editor, IDisposable, IKeyboardEvent, IPosition, ISelection, KeyCode, languages } from "monaco-editor/esm/vs/editor/editor.api";
+import { editor, IDisposable, IKeyboardEvent, IPosition, KeyCode, languages } from "monaco-editor/esm/vs/editor/editor.api";
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
-import {FoldingController, FoldingModel, SuggestController} from "../monaco/extensions";
+import {FoldingController, SuggestController} from "../monaco/extensions";
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
-import {UIEventNameMap} from "../util/ui_events";
 import {CurrentNotebook} from "./current_notebook";
-
-export class CellEvent<T = {}> extends UIEvent<T & { cellId: number }> {
-    constructor(eventId: keyof UIEventNameMap, cellId: number, otherDetails: T = {} as any) {  // `{} as any` seems ugly, any better alternative?
-        const allDetails = {...otherDetails, cellId: cellId};
-        super(eventId, allDetails);
-    }
-
-    get cellId() { return this.detail.cellId }
-}
-
-export class SelectCellEvent extends CellEvent<{ cell: Cell }> {
-    constructor(cell: Cell) {
-        super('SelectCell', cell.id, {cell});
-    }
-}
-
-// TODO remove these events?
-
-export class SetCellLanguageEvent extends CellEvent<{ language: string}> {
-    constructor(cellId: number, readonly language: string) {
-        super('SetCellLanguage', cellId, { language });
-    }
-}
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -61,7 +45,7 @@ export function isCellContainer(el: Element): el is CellContainer {
     return 'cell' in el;
 }
 
-export abstract class Cell extends UIEventTarget {
+export abstract class Cell extends UIMessageTarget {
     readonly container: CellContainer;
     readonly cellInput: TagElement<"div">;
     readonly cellInputTools: TagElement<"div">;
@@ -135,7 +119,7 @@ export abstract class Cell extends UIEventTarget {
                 this.setUrl();
             }
 
-            this.dispatchEvent(new SelectCellEvent(this));
+            this.publish(new SelectCell(this));
         }
     }
 
@@ -163,7 +147,7 @@ export abstract class Cell extends UIEventTarget {
     }
 
     dispose() {
-        this.removeAllListeners();
+        this.unsubscribeAll();
     }
 
     get content() {
@@ -744,7 +728,26 @@ export class CodeCell extends Cell {
         }
     }
 
-    addResult(result: ResultValue | ClientResult) {
+    addResult(result: Result) {
+        if (result instanceof CompileErrors) {
+            this.setErrors(result.reports);
+        } else if (result instanceof RuntimeError) {
+            console.log(result.error);
+            this.setRuntimeError(result.error);
+        } else if (result instanceof Output) {
+            this.addOutput(result.contentType, result.content);
+        } else if (result instanceof ClearResults) {
+            this.clearResult();
+        } else if (result instanceof ExecutionInfo) {
+            this.setExecutionInfo(result);
+        } else if (result instanceof ResultValue) {
+            this.displayResult(result);
+        } else if (result instanceof ClientResult) {
+            this.displayResult(result);
+        }
+    }
+
+    displayResult(result: ResultValue | ClientResult) {
         if (result instanceof ResultValue) {
             // clear results
             this.resultTabs.innerHTML = '';
@@ -758,7 +761,7 @@ export class CodeCell extends Cell {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', '', 'Inspect').click(
                             evt => {
-                                ValueInspector.get().setEventParent(this);
+                                ValueInspector.get().setParent(this);
                                 ValueInspector.get().inspect(result, this.path)
                             }
                         )

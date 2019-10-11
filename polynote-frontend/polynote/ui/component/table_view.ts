@@ -1,23 +1,9 @@
 "use strict";
 
-import {UIEvent} from "../util/ui_event";
 import {DataStream, LazyDataRepr, StreamingDataRepr, UpdatingDataRepr} from "../../data/value_repr";
 import {div, iconButton, span, table, TableElement, tag, TagElement} from "../util/tags";
 import {StructType, ArrayType, StructField, DataType} from "../../data/data_type";
 import {SocketSession} from "../../comms";
-
-export class ReprDataRequest extends UIEvent<{
-    handleType: number,
-    handleId: number,
-    count: number,
-    onComplete: (data: ArrayBuffer[]) => void,
-    onFail: (err?: any) => void}>
-{
-    constructor(reprType: typeof LazyDataRepr | typeof StreamingDataRepr | typeof UpdatingDataRepr, handleId: number, count: number, onComplete: (data: ArrayBuffer[]) => void, onFail: (err?: any) => void) {
-        super("ReprDataRequest", {handleType: reprType.handleTypeId, handleId, count, onComplete, onFail});
-    }
-}
-
 
 function renderData(dataType: DataType, data: any): HTMLElement {
     // TODO: nicer display

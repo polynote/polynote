@@ -1,19 +1,11 @@
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {CellsLoaded, ReprDataRequest, SelectCell, UIMessage, UIMessageTarget} from "../util/ui_event";
 import {NotebookCellsUI} from "./nb_cells";
 import {KernelUI} from "./kernel_ui";
 import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
 import {Cell, CodeCell, TextCell} from "./cell";
 import match from "../../util/match";
-import {
-    ClearResults,
-    ClientResult,
-    CompileErrors,
-    ExecutionInfo,
-    Output, Result,
-    ResultValue,
-    RuntimeError
-} from "../../data/result";
+import { ClearResults, ClientResult, Output, Result, ResultValue } from "../../data/result";
 import {DataRepr, DataStream, StreamingDataRepr} from "../../data/value_repr";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
@@ -22,12 +14,11 @@ import {MainUI} from "./ui";
 import {CompletionCandidate, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
 import {languages, Range} from "monaco-editor";
 import {ContentEdit} from "../../data/content_edit";
-import {StructType} from "../../data/data_type";
 import {Either, Left, Right} from "../../data/types";
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 
-export class NotebookUI extends UIEventTarget {
+export class NotebookUI extends UIMessageTarget {
     readonly cellUI: NotebookCellsUI;
     readonly kernelUI: KernelUI;
     private cellResults: Record<number, Record<string, ResultValue>>;
@@ -39,7 +30,7 @@ export class NotebookUI extends UIEventTarget {
     private runningCell?: number;
 
     // TODO: remove mainUI reference
-    constructor(eventParent: UIEventTarget, readonly path: string, readonly mainUI: MainUI) {
+    constructor(eventParent: UIMessageTarget, readonly path: string, readonly mainUI: MainUI) {
         super(eventParent);
         let cellUI = new NotebookCellsUI(this, path);
         let kernelUI = new KernelUI(this, path);
@@ -55,14 +46,14 @@ export class NotebookUI extends UIEventTarget {
 
         // TODO: remove listeners on children.
 
-        this.cellUI.addEventListener('SelectCell', evt => {
+        this.subscribe(SelectCell, cell => {
             const cellTypeSelector = mainUI.toolbarUI.cellToolbar.cellTypeSelector;
-            const id = evt.detail.cellId;
+            const id = cell.id;
             let i = 0;
 
             // update cell type selector
             for (const opt of cellTypeSelector.options) {
-                if (opt.value === evt.detail.cell.language) {
+                if (opt.value === cell.language) {
                     cellTypeSelector.selectedIndex = i;
                     break;
                 }
@@ -78,14 +69,14 @@ export class NotebookUI extends UIEventTarget {
             const viewportScrollTop = viewport.scrollTop;
             const viewportScrollBottom = viewportScrollTop + viewport.clientHeight;
 
-            const container = evt.detail.cell.container;
+            const container = cell.container;
             const elTop = container.offsetTop;
             const elBottom = elTop + container.offsetHeight;
 
             if (elBottom < viewportScrollTop) { // need to scroll up
-                evt.detail.cell.container.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
+                cell.container.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
             } else if (elTop > viewportScrollBottom) { // need to scroll down
-                evt.detail.cell.container.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
+                cell.container.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
             }
 
             //update notebook scroll store with new position:
@@ -96,15 +87,14 @@ export class NotebookUI extends UIEventTarget {
             this.kernelUI.symbols.presentFor(id, ids);
         });
 
-        this.cellUI.addEventListener("ReprDataRequest", evt => {
-            const req = evt.detail;
+        this.subscribe(ReprDataRequest, (reqHandleType, reqHandleId, reqCount, reqOnComplete, reqOnFail) => {
             SocketSession.get.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
-                if (path === this.path && handleType === req.handleType && handleId === req.handleId) {
-                    Either.fold(data, err => req.onFail(err), bufs => req.onComplete(bufs));
+                if (path === this.path && handleType === reqHandleType && handleId === reqHandleId) {
+                    Either.fold(data, err => reqOnFail(err), bufs => reqOnComplete(bufs));
                     return false;
                 } else return true;
             });
-            SocketSession.get.send(new messages.HandleData(path, req.handleType, req.handleId, req.count, Either.right([])));
+            SocketSession.get.send(new messages.HandleData(path, reqHandleType, reqHandleId, reqCount, Either.right([])));
         });
 
         SocketSession.get.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
@@ -227,7 +217,8 @@ export class NotebookUI extends UIEventTarget {
                 // However, Cell Ids >=0 are expected to exist in the current notebook, so we throw if we can't find 'em
                 if (id >=0 && !cell) throw new Error(`Cell Id ${id} does not exist in the current notebook`);
 
-                this.handleResult(result, id, cell);
+                this.updateCellResults(result, id);
+                if (cell instanceof CodeCell) cell.addResult(result)
             }
         });
 
@@ -259,24 +250,9 @@ export class NotebookUI extends UIEventTarget {
         }
     }
 
-    // Some results (like Predef ResultValues or ClearResults) have an ID but no cell associated with them.
-    handleResult(result: Result, id: number, cell?: Cell) {
-        const ifCell = (f: (_: CodeCell) => void) => {
-            if (cell instanceof CodeCell) f(cell)
-        };
-
-        if (result instanceof CompileErrors) {
-            ifCell(cell => cell.setErrors(result.reports));
-        } else if (result instanceof RuntimeError) {
-            console.log(result.error);
-            ifCell(cell => cell.setRuntimeError(result.error));
-        } else if (result instanceof Output) {
-            ifCell(cell => cell.addOutput(result.contentType, result.content));
-        } else if (result instanceof ClearResults) {
+    updateCellResults(result: Result, id: number) {
+        if (result instanceof ClearResults) {
             this.cellResults[id] = {};
-            ifCell(cell => cell.clearResult());
-        } else if (result instanceof ExecutionInfo) {
-            ifCell(cell => cell.setExecutionInfo(result));
         } else if (result instanceof ResultValue) {
             this.kernelUI.symbols.addSymbol(result);
 
@@ -284,10 +260,6 @@ export class NotebookUI extends UIEventTarget {
                 this.cellResults[id] = {};
             }
             this.cellResults[id][result.name] = result;
-
-            ifCell(cell => cell.addResult(result));
-        } else if (result instanceof ClientResult) {
-            ifCell(cell => cell.addResult(result));
         }
     }
 
@@ -364,7 +336,8 @@ export class NotebookUI extends UIEventTarget {
                         );
                         this.handleTaskUpdate(new TaskInfo(taskId, taskId, '', TaskStatus.Complete, 256));
                         results.forEach(result => {
-                            this.handleResult(result, id, cell);
+                            this.updateCellResults(result, id);
+                            cell.addResult(result);
                             if (result instanceof ClientResult) {
                                 // notify the server of the MIME representation
                                 result.toOutput().then(output => SocketSession.get.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
@@ -441,10 +414,14 @@ export class NotebookUI extends UIEventTarget {
 
                 // inserts cells at the end
                 this.cellUI.insertCellBelow(undefined, () => cell);
-                cellInfo.results.forEach(result => this.handleResult(result, cell.id, cell))
+                cellInfo.results.forEach(result => {
+                    if (cell instanceof CodeCell) {
+                        cell.addResult(result)
+                    }
+                })
             }
         }
-        this.mainUI.dispatchEvent(new UIEvent('CellsLoaded'))
+        this.mainUI.publish(new CellsLoaded());
     }
 
     get currentCell() {

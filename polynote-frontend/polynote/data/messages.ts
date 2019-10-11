@@ -11,7 +11,6 @@ import {isEqual} from "../util/functions";
 import {CellMetadata, NotebookCell, NotebookConfig} from "./data";
 import {ContentEdit} from "./content_edit";
 import {Left, Right} from "./types";
-import {DataType} from "./data_type";
 
 export abstract class Message extends CodecContainer {
     static codec: Codec<Message>;

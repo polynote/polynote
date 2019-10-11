@@ -21,7 +21,7 @@ import {GroupAgg, ModifyStream, ReleaseHandle, TableOp} from "../../data/message
 import {Pair} from "../../data/codec";
 import {DataStream, StreamingDataRepr} from "../../data/value_repr";
 import embed, {Result as VegaResult} from "vega-embed";
-import {UIEventTarget} from "../util/ui_event";
+import {UIMessageTarget} from "../util/ui_event";
 import {Cell, CodeCell} from "./cell";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {ClientResult, Output} from "../../data/result";
@@ -94,7 +94,7 @@ type SpecFun = ((this: PlotEditor, plotType: string, xField: StructField, yMeas:
     singleMeasure?: boolean
 };
 
-export class PlotEditor extends UIEventTarget {
+export class PlotEditor extends EventTarget {
     private fields: StructField[];
     container: TagElement<"div">;
     private plotTypeSelector: FakeSelect;
@@ -204,7 +204,7 @@ export class PlotEditor extends UIEventTarget {
            this.draggingEl = evt.target as MeasureEl;
         });
 
-        this.addEventListener('dragend', evt => {
+        this.el.addEventListener('dragend', evt => {
            this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
            this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
            this.draggingEl = null;
@@ -496,7 +496,7 @@ export class PlotEditor extends UIEventTarget {
         const mkCell = (cellId: number) => new CodeCell(cellId, `(${content})`, 'vega', this.path, new CellMetadata(false, true, false));
         VegaClientResult.plotToOutput(this.plot).then(output => {
             CurrentNotebook.get.insertCell("below", this.sourceCell, mkCell, [output], (cell: CodeCell) => {
-                cell.addResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
+                cell.displayResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
             });
 
             if (this.plotSavedCb) this.plotSavedCb()

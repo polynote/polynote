@@ -1,9 +1,9 @@
 import {div, span, textbox, para, TagElement} from "../util/tags";
 import {CellContainer, TextCell} from "./cell"
 import * as katex from "katex";
-import {UIEventTarget} from "../util/ui_event";
+import {UIMessageTarget} from "../util/ui_event";
 
-export class LaTeXEditor extends UIEventTarget {
+export class LaTeXEditor extends UIMessageTarget {
     private readonly editorParent: HTMLElement;
     readonly el: TagElement<"div">;
     private pointer: TagElement<"span">;

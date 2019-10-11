@@ -1,6 +1,6 @@
 "use strict";
 
-import {UIEvent, UIEventTarget} from "../util/ui_event"
+import {UIMessage, UIMessageTarget} from "../util/ui_event"
 import {div, button, iconButton, TagElement} from "../util/tags"
 
 interface ModalOptions {
@@ -8,7 +8,7 @@ interface ModalOptions {
     windowClasses?: string[]
 }
 
-export class Modal extends UIEventTarget {
+export class Modal extends UIMessageTarget {
     private container: TagElement<"div">;
     private background: TagElement<"div">;
     private window: TagElement<"div">;
