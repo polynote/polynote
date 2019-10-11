@@ -180,13 +180,25 @@ class KernelListener(taskManager: TaskManager.Service, session: SparkSession, ru
   override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
     import taskEnd.stageId
     if (taskEnd.reason == org.apache.spark.Success) {
-      stageTasksCompleted.get(stageId) match {
+      val task = stageTasksCompleted.get(stageId) match {
         case null =>
           stageTasksCompleted.putIfAbsent(stageId, new AtomicInteger(0))
           stageTasksCompleted.get(stageId).incrementAndGet()
+          jobTasksCompleted.get(stageJobIds.get(stageId)).incrementAndGet()
+          0
         case ai => ai.incrementAndGet()
+          jobTasksCompleted.get(stageJobIds.get(stageId)).incrementAndGet()
       }
-      updateStageProgress(stageId)
+
+      val numTasks = allStages.get(stageId).numTasks
+      val increments = numTasks / 256
+      if (increments > 0) {
+        if (task % increments == 0) {
+          updateStageProgress(stageId)
+        }
+      } else {
+        updateStageProgress(stageId)
+      }
     }
   }
 
