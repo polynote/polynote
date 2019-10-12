@@ -38,29 +38,8 @@ import scala.tools.nsc.interpreter.InputStream
 
 object CoursierFetcher {
   type ArtifactTask[A] = TaskR[CurrentTask, A]
-  type OuterTask[A] = TaskR[TaskManager, A]
+  type OuterTask[A] = TaskR[TaskManager with CurrentTask, A]
   //type ArtifactTask[A] = TaskR[CurrentTask, A]
-
-  // TODO: should factor out the "sub-task" thing into a general-purpose concept. It would help with UI treatment too.
-  trait ParentTask {
-    def newSubtask(): Task[Unit]
-    def completedSubtask(): Task[Unit]
-  }
-
-  // Rotate the current task to be the parent task
-  def parentTask: TaskR[CurrentTask, ParentTask] = CurrentTask.access.map {
-    ref => new ParentTask {
-      private val totalTasks = new AtomicInteger(0)
-      private val completedTasks = new AtomicInteger(0)
-      override def newSubtask(): Task[Unit] = ZIO.effectTotal(totalTasks.incrementAndGet()).unit
-      override def completedSubtask(): Task[Unit] = for {
-        completed <- ZIO.effectTotal(completedTasks.incrementAndGet())
-        total     <- ZIO.effectTotal(totalTasks.get())
-        progress   = if (total == 0) 0.0 else completed.toDouble / total
-        _         <- ref.update(_.progress(progress))
-      } yield ()
-    }
-  }
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val cache = FileCache[ArtifactTask]()
@@ -75,9 +54,8 @@ object CoursierFetcher {
       repositories <- ZIO.fromEither(repositories(repoConfigs))
       resolution   <- resolution(deps, exclusions, repositories)
       _            <- CurrentTask.update(_.copy(detail = "Downloading dependencies...", progress = 0))
-      downloadEnv  <- Env.enrichM[TaskManager with CurrentTask with Blocking](parentTask)
-      downloadDeps <- download(resolution).provide(downloadEnv).fork
-      downloadUris <- downloadUris(uris).provide(downloadEnv).fork
+      downloadDeps <- download(resolution).fork
+      downloadUris <- downloadUris(uris).fork
       downloaded   <- downloadDeps.join.map2(downloadUris.join)(_ ++ _)
     } yield downloaded
   }
@@ -182,28 +160,23 @@ object CoursierFetcher {
   private def download(
     resolution: Resolution,
     maxIterations: Int = 100
-  ): TaskR[TaskManager with ParentTask, List[(Boolean, String, File)]] = ZIO.runtime[Any].flatMap {
+  ): TaskR[TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Any].flatMap {
     runtime =>
-      ZIO.access[ParentTask](identity).flatMap {
-        parentTask =>
-          Artifacts(new TaskManagedCache(cache, parentTask, runtime.Platform.executor.asEC)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
-            artifactResult =>
-              artifactResult.detailedArtifacts.toList.map {
-                case (dep, pub, artifact, file) =>
-                  (resolution.rootDependencies.contains(dep), artifact.url, file)
-              }
+      Artifacts(new TaskManagedCache(cache, runtime.Platform.executor.asEC)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
+        artifactResult =>
+          artifactResult.detailedArtifacts.toList.map {
+            case (dep, pub, artifact, file) =>
+              (resolution.rootDependencies.contains(dep), artifact.url, file)
           }
       }
   }
 
-  private def downloadUris(uris: List[URI]): TaskR[TaskManager with CurrentTask with ParentTask with Blocking, List[(Boolean, String, File)]] = {
+  private def downloadUris(uris: List[URI]): TaskR[TaskManager with CurrentTask with Blocking, List[(Boolean, String, File)]] = {
     ZIO.collectAllPar {
       uris.map {
         uri => for {
-          task     <- ZIO.access[ParentTask](identity)
-          _        <- task.newSubtask()
-          download <- TaskManager.runR[Blocking with CurrentTask with TaskManager](uri.toString, uri.toString){
-            fetchUrl(uri, cacheLocation(uri).toFile).ensuring(task.completedSubtask().orDie)
+          download <- TaskManager.runSubtask(uri.toString, uri.toString){
+            fetchUrl(uri, cacheLocation(uri).toFile)
           }
         } yield (true, uri.toString, download)
       }
@@ -284,16 +257,16 @@ object CoursierFetcher {
   /**
     * Wraps an underlying [[FileCache]] such that each cache task is managed by the TaskManager
     */
-  class TaskManagedCache(underlying: FileCache[ArtifactTask], parentTask: ParentTask, val ec: ExecutionContext) extends Cache[OuterTask] {
-    def fetch: Artifact => EitherT[OuterTask, String, String] = {
+  class TaskManagedCache(underlying: FileCache[ArtifactTask], val ec: ExecutionContext) extends Cache[OuterTask] {
+    override def fetch: Artifact => EitherT[OuterTask, String, String] = {
       artifact =>
         val name = taskName(artifact.url)
-        EitherT(TaskManager.run(name, name, artifact.url)(logged(_.fetch(artifact).run)))
+        EitherT(TaskManager.runSubtask(name, name, artifact.url)(logged(_.fetch(artifact).run)))
     }
 
-    def file(artifact: Artifact): EitherT[OuterTask, ArtifactError, File] = {
+    override def file(artifact: Artifact): EitherT[OuterTask, ArtifactError, File] = {
       val name = taskName(artifact.url)
-      EitherT(TaskManager.run(name, name, artifact.url)(logged(_.file(artifact).run)))
+      EitherT(TaskManager.runSubtask(name, name, artifact.url)(logged(_.file(artifact).run)))
     }
 
     def logged[A](fn: FileCache[ArtifactTask] => ArtifactTask[A]): TaskR[CurrentTask, A] = for {

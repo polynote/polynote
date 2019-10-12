@@ -292,13 +292,13 @@ export const TaskStatus = Object.freeze({
 });
 
 export class TaskInfo {
-    static codec = combined(tinyStr, tinyStr, shortStr, uint8, uint8).to(TaskInfo);
+    static codec = combined(tinyStr, tinyStr, shortStr, uint8, uint8, optional(tinyStr)).to(TaskInfo);
     static unapply(inst: TaskInfo): ConstructorParameters<typeof TaskInfo> {
-        return [inst.id, inst.label, inst.detail, inst.status, inst.progress];
+        return [inst.id, inst.label, inst.detail, inst.status, inst.progress, inst.parent];
     }
 
     constructor(readonly id: string, readonly label: string, readonly detail: string, readonly status: number,
-                readonly progress: number) {
+                readonly progress: number, readonly parent?: string) {
         Object.freeze(this);
     }
 }

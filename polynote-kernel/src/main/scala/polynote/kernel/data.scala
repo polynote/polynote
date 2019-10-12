@@ -196,7 +196,8 @@ final case class TaskInfo(
   label: TinyString,
   detail: ShortString,
   status: TaskStatus,
-  progress: Byte = 0) {
+  progress: Byte = 0,
+  parent: Option[TinyString] = None) {
 
   def running: TaskInfo = copy(status = Running)
   def completed: TaskInfo = copy(status = Complete, progress = 255.toByte)
