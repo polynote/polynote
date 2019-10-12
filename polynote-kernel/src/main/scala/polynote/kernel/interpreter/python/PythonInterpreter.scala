@@ -278,7 +278,7 @@ class PythonInterpreter private[python] (
       |        def show(cls):
       |            managers = Gcf.get_all_fig_managers()
       |            if not managers:
-      |                raise Exception("did not find any managers oh noes")
+      |                return  # this means there's nothing to plot, apparently.
       |            for manager in managers:
       |                manager.show()
       |
@@ -287,6 +287,7 @@ class PythonInterpreter private[python] (
       |    matplotlib.use("module://" + PolynoteBackend.__module__)
       |
       |except ImportError as e:
+      |    import sys
       |    sys.err.write("No matplotlib support:", e)
       |""".stripMargin
 
