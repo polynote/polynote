@@ -1670,10 +1670,13 @@ button.inspect.icon-button {
         &:empty {
           display: none;
         }
-        padding: .5em 0;
+        padding: .5em 0 0;
+        margin-top: .5em;
+        border-top: 1px dotted @ui-border-light;
+
         .task {
           display: none;
-          height: 1em;
+          height: 1.2em;
           &.running {
             display: block;
           }
@@ -1688,7 +1691,7 @@ button.inspect.icon-button {
           h4 {
             font-size: 100%;
             font-weight: 400;
-            line-height: 1;
+            line-height: 1.2;
             width: 50%;
             position: absolute;
             left: 0;
