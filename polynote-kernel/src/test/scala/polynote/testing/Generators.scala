@@ -85,13 +85,12 @@ object Generators {
   def genNotebookUpdate(notebook: Notebook, globalVersion: Int): Gen[NotebookUpdate] = Gen.oneOf(
     Gen.delay(if (notebook.cells.nonEmpty) genDeleteCell(notebook, globalVersion) else genInsertCell(notebook, globalVersion)),
     Gen.delay(genInsertCell(notebook, globalVersion)),
-    Gen.delay(genUpdateCell(notebook, globalVersion))
+    Gen.delay(if (notebook.cells.nonEmpty) genUpdateCell(notebook, globalVersion) else genInsertCell(notebook, globalVersion))
   )
 
   def genNotebookUpdates(globalVersion: Int, initial: Notebook): Gen[(Notebook, List[NotebookUpdate])] = for {
     size  <- Gen.size
-    count <- Gen.choose(1, math.max(1,size))
-    (finalNotebook, edits) <- ((globalVersion + 1) to (globalVersion + count + 1)).foldLeft(Gen.const((initial, Queue.empty[NotebookUpdate]))) {
+    (finalNotebook, edits) <- ((globalVersion + 1) to (globalVersion + size + 1)).foldLeft(Gen.const((initial, Queue.empty[NotebookUpdate]))) {
       (accum, nextVersion) => accum.flatMap {
         case (currentNotebook, updates) => genNotebookUpdate(currentNotebook, nextVersion).map {
           update => (update.applyTo(currentNotebook) -> updates.enqueue(update))
