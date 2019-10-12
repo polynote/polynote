@@ -85,7 +85,7 @@ object Generators {
   def genNotebookUpdate(notebook: Notebook, globalVersion: Int): Gen[NotebookUpdate] = Gen.oneOf(
     Gen.delay(if (notebook.cells.nonEmpty) genDeleteCell(notebook, globalVersion) else genInsertCell(notebook, globalVersion)),
     Gen.delay(genInsertCell(notebook, globalVersion)),
-    Gen.delay(genUpdateCell(notebook, globalVersion))
+    Gen.delay(if (notebook.cells.nonEmpty) genUpdateCell(notebook, globalVersion) else genInsertCell(notebook, globalVersion))
   )
 
   def genNotebookUpdates(globalVersion: Int, initial: Notebook): Gen[(Notebook, List[NotebookUpdate])] = for {
