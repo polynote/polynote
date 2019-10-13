@@ -1665,6 +1665,53 @@ button.inspect.icon-button {
         background-color: #ffeef0;
         border: 1px solid #cc0000;
       }
+
+      .child-tasks {
+        &:empty {
+          display: none;
+        }
+        padding: .5em 0 0;
+        margin-top: .5em;
+        border-top: 1px dotted @ui-border-light;
+
+        .task {
+          display: none;
+          height: 1.2em;
+          &.running {
+            display: block;
+          }
+
+          border: none;
+          background: transparent;
+          box-shadow: none;
+          padding: 0;
+          margin: 0;
+          position: relative;
+
+          h4 {
+            font-size: 100%;
+            font-weight: 400;
+            line-height: 1.2;
+            width: 50%;
+            position: absolute;
+            left: 0;
+            top: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .detail { display: none; }
+
+          .progress {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            width: 50%;
+            margin-top: -2px;
+          }
+        }
+      }
     }
 
     /*.task.complete {

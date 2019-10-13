@@ -38,7 +38,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
 
     def completeSelect(tree: Select) = tree match {
-      case Select(qual, name) =>
+      case Select(qual, name) if qual.tpe != null =>
         // start with completions from the qualifier's type
         val scope = qual.tpe.members.cloneScope
 
@@ -63,6 +63,8 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
         enrichSelected.map {
           _ => scopeToCompletions(scope, name, ownerTpe)
         }
+
+      case _ => ZIO.succeed(Nil)
     }
 
     def completeIdent(tree: Ident) = tree match {
@@ -99,7 +101,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
 
     def completeImport(tree: Import) = tree match {
-      case Import(qual, names) =>
+      case Import(qual, names) if qual.tpe != null =>
         val searchName = names.dropWhile(_.namePos < pos).headOption match {
           case None => TermName("")
           case Some(sel) if sel.name.decoded == "<error>" => TermName("")
@@ -113,6 +115,8 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
             .groupBy(_.name.decoded).values.map(_.head).toList
             .map(symToCompletion(_, NoType))
         }
+
+      case _ => ZIO.succeed(Nil)
     }
 
     def completeApply(tree: Apply) = tree match {

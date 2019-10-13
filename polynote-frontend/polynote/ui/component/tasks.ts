@@ -5,7 +5,8 @@ import {TaskStatus} from "../../data/messages";
 type KernelTask = TagElement<"div"> & {
     labelText: string,
     detailText: Content,
-    status: number
+    status: number,
+    childTasks: Record<string, KernelTask>
 }
 
 export class KernelTasksUI {
@@ -27,28 +28,38 @@ export class KernelTasksUI {
         this.tasks = {};
     }
 
-    addTask(id: string, label: string, detail: Content, status: number, progress: number) {
+    addTask(id: string, label: string, detail: Content, status: number, progress: number, parent?: string) {
         const taskEl: KernelTask = Object.assign(div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
             h4([], [label]),
             div(['detail'], detail),
-            div(['progress'], [div(['progress-bar'], [])])
+            div(['progress'], [div(['progress-bar'], [])]),
+            div(['child-tasks'], [])
         ]), {
             labelText: label,
             detailText: detail,
             status: status,
+            childTasks: {}
         });
 
-
-        KernelTasksUI.setProgress(taskEl, progress);
-
-        let before = this.taskContainer.firstChild as KernelTask;
-        while (before && before.status <= status) {
-            before = before.nextSibling as KernelTask;
+        if (detail && typeof detail === "string") {
+            taskEl.attr('title', detail);
         }
 
-        this.taskContainer.insertBefore(taskEl, before);
+        const container = parent ? (this.tasks[parent] && this.tasks[parent].querySelector('.child-tasks'))
+                                 : this.taskContainer;
 
-        this.tasks[id] = taskEl;
+        if (container) {
+            KernelTasksUI.setProgress(taskEl, progress);
+
+            let before = container.firstChild as KernelTask;
+            while (before && before.status <= status) {
+                before = before.nextSibling as KernelTask;
+            }
+
+            container.insertBefore(taskEl, before);
+
+            this.tasks[id] = taskEl;
+        }
     }
 
     static setProgress(el: KernelTask, progress: number) {
@@ -61,13 +72,14 @@ export class KernelTasksUI {
         return task && task.status;
     }
 
-    updateTask(id: string, label: string, detail: Content, status: number, progress: number) {
-        if (!this.tasks[id]) {
+    updateTask(id: string, label: string, detail: Content, status: number, progress: number, parent?: string) {
+        let task = this.tasks[id];
+
+        if (!task) {
             if (status > TaskStatus.Complete) {
-                this.addTask(id, label, detail, status, progress);
+                this.addTask(id, label, detail, status, progress, parent);
             }
         } else {
-            const task = this.tasks[id];
             if (task.labelText !== label) {
                 const heading = task.querySelector('h4') as HTMLElement;
                 heading.innerHTML = '';
@@ -79,6 +91,7 @@ export class KernelTasksUI {
                 detailEl.innerHTML = '';
                 detailEl.appendChild(document.createTextNode(detail));
                 task.detailText = detail;
+                task.attr("title", detail);
             }
 
             const statusClass = (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase();

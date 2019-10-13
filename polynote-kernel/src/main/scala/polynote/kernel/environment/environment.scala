@@ -91,7 +91,13 @@ trait CurrentTask {
 object CurrentTask {
   def access: TaskR[CurrentTask, Ref[Task, TaskInfo]] = ZIO.access[CurrentTask](_.currentTask)
   def get: TaskR[CurrentTask, TaskInfo] = access.flatMap(_.get)
-  def update(fn: TaskInfo => TaskInfo): TaskR[CurrentTask, Unit] = access.flatMap(_.update(fn))
+
+  def update(fn: TaskInfo => TaskInfo): TaskR[CurrentTask, Unit] = for {
+    ref   <- access
+    value <- ref.get
+    _     <- if (fn(value) != value) ref.update(fn) else ZIO.unit
+  } yield ()
+
   def of(ref: Ref[Task, TaskInfo]): CurrentTask = new CurrentTask {
     val currentTask: Ref[Task, TaskInfo] = ref
   }

@@ -71,7 +71,7 @@ export class KernelUI extends UIEventTarget {
     }
 
     updateTask(task: TaskInfo) {
-        this.tasks.updateTask(task.id, task.label, task.detail, task.status, task.progress);
+        this.tasks.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent);
     }
 
     getStorage() {

@@ -98,7 +98,7 @@ class KernelListener(taskManager: TaskManager.Service, session: SparkSession, ru
     jobTasksCompleted.put(jobId, new AtomicInteger(0))
 
     runtime.unsafeRun {
-      taskManager.register(sparkJobTaskId(jobId), label, "", Complete) {
+      taskManager.register(sparkJobTaskId(jobId), label, "", None, Complete) {
         updater =>
           jobUpdaters.put(jobId, updater)
           cancelJob(jobId)
@@ -138,15 +138,19 @@ class KernelListener(taskManager: TaskManager.Service, session: SparkSession, ru
       allStages.put(stageId, stageInfo)
     }
 
+    val maybeJobId = Option(stageJobIds.get(stageId))
+
+    val parent = maybeJobId.map(jobId => sparkJobTaskId(jobId))
+
     runtime.unsafeRun {
-      taskManager.register(sparkStageTaskId(stageId), s"Stage $stageId", stageInfo.name, Complete) {
+      taskManager.register(sparkStageTaskId(stageId), s"Stage $stageId", stageInfo.name, parent, Complete) {
         updater =>
           stageUpdaters.put(stageId, updater)
           cancelStage(stageId)
       }
     }
 
-    Option(stageJobIds.get(stageId)).foreach {
+    maybeJobId.foreach {
       jobId =>
         jobStages.get(jobId) match {
           case null =>
