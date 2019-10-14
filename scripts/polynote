@@ -20,5 +20,5 @@ else
 fi
 
 cp=$(IFS=: ; echo "${deps[*]}")
-exec exec java -cp "polynote.jar:${cp}" "-Djava.library.path=${jep_path}/jep:${JAVA_LIBRARY_PATH} ${JAVA_OPTS}" polynote.Main "$@"
+exec java -cp "polynote.jar:${cp}" "-Djava.library.path=${jep_path}/jep:${JAVA_LIBRARY_PATH} ${JAVA_OPTS}" polynote.Main "$@"
 exit
