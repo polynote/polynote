@@ -46,7 +46,8 @@ class ScalaInterpreter private[scal] (
     collectedState <- injectState(collectState(state)).provide(CurrentRuntime.NoCurrentRuntime)
     valDefs         = collectedState.values.mapValues(_._1).values.toList
     cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n$code", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
-  } yield completer.paramHints(cellCode, pos + 1)
+    hints          <- completer.paramHints(cellCode, pos + 1)
+  } yield hints
 
   override def init(state: State): TaskR[InterpreterEnv, State] = ZIO.succeed(state)
 
