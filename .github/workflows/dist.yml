@@ -1,4 +1,4 @@
-name: CI
+name: Release artifact
 
 on:
   release:
@@ -15,6 +15,7 @@ jobs:
     - name: Create archive
       run: |
         cd $GITHUB_WORKSPACE/polynote-frontend
+        npm install
         npm run dist
         cd $GITHUB_WORKSPACE
         sbt dist
