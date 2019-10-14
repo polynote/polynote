@@ -289,7 +289,7 @@ class PythonInterpreter private[python] (
       |
       |except ImportError as e:
       |    import sys
-      |    sys.err.write("No matplotlib support:", e)
+      |    sys.stderr.write("No matplotlib support:", e)
       |""".stripMargin
 
   protected def injectGlobals(globals: PyObject): TaskR[CurrentRuntime, Unit] = CurrentRuntime.access.flatMap {
