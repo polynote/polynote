@@ -15,6 +15,7 @@ import {CompletionCandidate, Signatures, TaskInfo, TaskStatus} from "../../data/
 import {languages, Range} from "monaco-editor";
 import {ContentEdit} from "../../data/content_edit";
 import {Either, Left, Right} from "../../data/types";
+import * as Tinycon from "tinycon";
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 
@@ -234,6 +235,14 @@ export class NotebookUI extends UIMessageTarget {
                 if (!this.queuedCells.includes(cellId)) {
                     this.queuedCells.push(cellId)
                 }
+            }
+
+            const numRunningOrQueued = this.queuedCells.length + (this.runningCell ? 1 : 0);
+            if (numRunningOrQueued <= 0) {
+                Tinycon.setBubble(0);
+                Tinycon.reset();
+            } else {
+                Tinycon.setBubble(numRunningOrQueued)
             }
         })
     }

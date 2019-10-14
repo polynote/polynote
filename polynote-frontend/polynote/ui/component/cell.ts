@@ -833,6 +833,26 @@ export class CodeCell extends Cell {
         }
     }
 
+    setStatus(status: "running" | "queued" | "error" | "complete") {
+        switch(status) {
+            case "complete":
+                this.container.classList.remove('running', 'queued', 'error');
+                break;
+            case "error":
+                this.container.classList.remove('queued', 'running');
+                this.container.classList.add('error');
+                break;
+            case "queued":
+                this.container.classList.remove('running', 'error');
+                this.container.classList.add('queued');
+                break;
+            case "running":
+                this.container.classList.remove('queued', 'error');
+                this.container.classList.add('running');
+                break;
+        }
+    }
+
     isRunning() {
         return this.execInfoEl.classList.contains("running")
     }

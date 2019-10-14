@@ -3,7 +3,6 @@ import {NotebookConfigUI} from "./nb_config";
 import {div, span, TagElement} from "../util/tags";
 import {Cell, CellContainer, CodeCell, isCellContainer, TextCell} from "./cell";
 import {TaskInfo, TaskStatus} from "../../data/messages";
-import * as Tinycon from "tinycon";
 import {storage} from "../util/storage";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import * as monaco from "monaco-editor";
@@ -18,7 +17,6 @@ export class NotebookCellsUI extends UIMessageTarget {
     private disabled: boolean;
     readonly configUI: NotebookConfigUI;
     readonly el: NotebookCellsEl;
-    private queuedCells: number;
     resizeTimeout: number;
     readonly notebookUI: NotebookUI;
     private configEl: TagElement<"div">;
@@ -32,7 +30,6 @@ export class NotebookCellsUI extends UIMessageTarget {
             div(['notebook-cells'], [this.configEl = this.configUI.el, this.newCellDivider()]),
             // TODO: remove when we get to TabUI
             { cellsUI: this });  // TODO: this is hacky and bad (used for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
-        this.queuedCells = 0;
 
         window.addEventListener('resize', this.forceLayout.bind(this));
     }
@@ -59,42 +56,24 @@ export class NotebookCellsUI extends UIMessageTarget {
 
     setStatus(id: number, status: TaskInfo) {
         const cell = this.getCell(id);
-        if (!cell) return;
+        if (cell instanceof CodeCell) {
+            switch (status.status) {
+                case TaskStatus.Complete:
+                    cell.setStatus("complete");
+                    break;
 
-        switch (status.status) {
-            case TaskStatus.Complete:
-                cell.container.classList.remove('running', 'queued', 'error');
-                this.queuedCells -= 1;
-                break;
+                case TaskStatus.Error:
+                    cell.setStatus("error");
+                    break;
 
-            case TaskStatus.Error:
-                cell.container.classList.remove('queued', 'running');
-                cell.container.classList.add('error');
-                this.queuedCells -= 1;
-                break;
+                case TaskStatus.Queued:
+                    cell.setStatus("queued");
+                    break;
 
-            case TaskStatus.Queued:
-                cell.container.classList.remove('running', 'error');
-                cell.container.classList.add('queued');
-                this.queuedCells += 1;
-                break;
-
-            case TaskStatus.Running:
-                cell.container.classList.remove('queued', 'error');
-                cell.container.classList.add('running');
-                const progressBar = cell.container.querySelector('.progress-bar');
-                if (progressBar instanceof HTMLElement && status.progress) {
-                    progressBar.style.width = (status.progress * 100 / 255).toFixed(0) + "%";
-                }
-
-
-        }
-        if (this.queuedCells <= 0) {
-            this.queuedCells = 0;
-            Tinycon.setBubble(this.queuedCells);
-            Tinycon.reset();
-        } else {
-            Tinycon.setBubble(this.queuedCells);
+                case TaskStatus.Running:
+                    cell.setStatus("running");
+                    break;
+            }
         }
     }
 
