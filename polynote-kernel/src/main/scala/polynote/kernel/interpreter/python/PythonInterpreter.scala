@@ -376,7 +376,7 @@ class PythonInterpreter private[python] (
                     val (typ, value) = typeStr match {
                       case "int" => (typeOf[Long], valueAs(classOf[java.lang.Number]).longValue())
                       case "float" => (typeOf[Double], valueAs(classOf[java.lang.Number]).doubleValue())
-                      case "str" => (typeOf[String], valueAs(classOf[String]))
+                      case "str" => (typeOf[java.lang.String], valueAs(classOf[String]))
                       case "bool" => (typeOf[Boolean], valueAs(classOf[java.lang.Boolean]).booleanValue())
                       case "function" | "builtin_function_or_method" | "type" =>
                         (typeOf[PythonFunction], new PythonFunction(valueAs(classOf[PyCallable]), runner))
