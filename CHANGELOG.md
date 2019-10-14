@@ -2,6 +2,24 @@
 
 *
 
+# 0.2.5 (October 14, 2019)
+
+* Subtasks!
+  * Now related tasks are properly grouped together as parent and child tasks for less UI clutter
+* Matplotlib backend
+  * A proper Polynote backend for Matplotlib! Only supports regular old plotting, no interactive or animation support (for now)
+* Finally added a license :) 
+* Fix some bugs that were slowing down some Spark jobs. 
+* Fix some bugs with Python-Scala interop
+* Fix some more data encoding bugs
+
+# 0.2.4 (October 10, 2019)
+
+* Fix some bugs with data encoding
+* Surface some error messages better in the UI
+* Improve completions
+* Add rudimentary auto-importing, kinda
+
 # 0.2.3 (October 8, 2019)
 
 * Better output display for some types
