@@ -1,6 +1,6 @@
 "use strict"
 
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {UIMessage, UIMessageTarget} from "../util/ui_event";
 import {
     button,
     div,
@@ -16,12 +16,12 @@ import {
 } from "../util/tags";
 import {IvyRepository, MavenRepository, NotebookConfig, PipRepository, RepositoryConfig} from "../../data/data";
 
-export class NotebookConfigUI extends UIEventTarget {
+export class NotebookConfigUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private lastConfig: NotebookConfig;
     private configHandler: NotebookConfigHandler;
 
-    constructor() {
+    constructor(private onConfigUpdate: (conf: NotebookConfig) => void) {
         super();
 
         this.el = div(['notebook-config'], []);
@@ -61,7 +61,7 @@ export class NotebookConfigUI extends UIEventTarget {
                         const conf = this.configHandler.toConfig();
                         this.lastConfig = conf;
                         this.el.classList.remove("open");
-                        this.dispatchEvent(new UIEvent('UpdatedConfig', {config: conf}));
+                        this.onConfigUpdate(conf);
                     }),
                     button(['cancel'], {}, ['Cancel']).click(evt => {
                         if (this.lastConfig) {
@@ -144,7 +144,7 @@ const defaultSparkConf: SparkConf = {
     }
 };
 
-class NotebookConfigHandler extends UIEventTarget {
+class NotebookConfigHandler extends UIMessageTarget {
     readonly dependencyContainer: TagElement<"div">;
     readonly resolverContainer: TagElement<"div">;
     readonly exclusionContainer: TagElement<"div">;

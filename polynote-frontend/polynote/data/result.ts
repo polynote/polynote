@@ -255,7 +255,7 @@ export class ResultValue extends Result {
                             .click(_ => valueInspector.inspect(this, cell.path, 'View data')),
                         iconButton(['plot-data'], 'Plot data', '', '[Plot]')
                             .click(_ => {
-                                valueInspector.setEventParent(cell);
+                                valueInspector.setParent(cell);
                                 valueInspector.inspect(this, cell.path, 'Plot data');
                             })
                     ]),

@@ -1,12 +1,13 @@
 "use strict";
 
-import {button, div, dropdown, h2, h3, iconButton, span, table, tag, TagElement} from "../util/tags";
+import {button, div, dropdown, h2, h3, iconButton, span, table, tag} from "../util/tags";
 import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
 import {preferences, storage} from "../util/storage";
-import { UIEvent } from '../util/ui_event';
 import * as monaco from "monaco-editor";
+import {KernelCommand, LoadNotebook, RunningKernels, ServerVersion, UIMessageRequest} from "../util/ui_event";
+import {KernelBusyState} from "../../data/messages";
 
 export class About extends FullScreenModal {
     readonly storageUpdateListeners: string[];
@@ -27,7 +28,7 @@ export class About extends FullScreenModal {
             ])
         ]);
 
-        this.request('ServerVersion', (version, commit) => {
+        this.subscribe(ServerVersion, (version, commit) => {
             const info = [
                 ["Server Version", version],
                 ["Server Commit", commit]
@@ -39,13 +40,14 @@ export class About extends FullScreenModal {
             });
             for (const [k, v] of info) {
                 tableEl.addRow({
-                    key: k,
-                    val: v
+                    key: k.toString(),
+                    val: v.toString()
                 })
             }
 
             el.appendChild(tableEl);
-        });
+            return false // remove the subscription.
+        }, /*removeWhenFalse*/ true);
         return el;
     }
 
@@ -167,7 +169,7 @@ export class About extends FullScreenModal {
         ]);
 
         const getKernelStatuses = () => {
-            this.request('RunningKernels', (statuses) => {
+            this.publish(new UIMessageRequest(RunningKernels, statuses => {
                 const tableEl = table(['kernels'], {
                     header: ['path', 'status', 'actions'],
                     classes: ['path', 'status', 'actions'],
@@ -176,35 +178,37 @@ export class About extends FullScreenModal {
                 });
 
                 for (const status of statuses) {
-                    const state = (status.update.busy && 'busy') || (!status.update.alive && 'dead') || 'idle';
-                    const statusEl = span([], [
-                        span(['status'], [state]),
-                    ]);
-                    const actionsEl = div([], [
-                        iconButton(['start'], 'Start kernel', '', 'Start').click(() => {
-                            this.dispatchEvent(new UIEvent('StartKernel', {path: status.path}));
-                            getKernelStatuses();
-                        }),
-                        iconButton(['kill'], 'Kill kernel', '', 'Kill').click(() => {
-                            this.dispatchEvent(new UIEvent('KillKernel', {path: status.path}));
-                            getKernelStatuses();
-                        }),
-                        iconButton(['open'], 'Open notebook', '', 'Open').click(() => {
-                            this.dispatchEvent(new UIEvent('LoadNotebook', {path: status.path}));
-                            this.hide();
-                        })
-                    ]);
+                    if (status.update instanceof KernelBusyState) {
+                        const state = (status.update.busy && 'busy') || (!status.update.alive && 'dead') || 'idle';
+                        const statusEl = span([], [
+                            span(['status'], [state]),
+                        ]);
+                        const actionsEl = div([], [
+                            iconButton(['start'], 'Start kernel', '', 'Start').click(() => {
+                                this.publish(new KernelCommand(status.path, 'kill'));
+                                getKernelStatuses();
+                            }),
+                            iconButton(['kill'], 'Kill kernel', '', 'Kill').click(() => {
+                                this.publish(new KernelCommand(status.path, 'start'));
+                                getKernelStatuses();
+                            }),
+                            iconButton(['open'], 'Open notebook', '', 'Open').click(() => {
+                                this.publish(new LoadNotebook(status.path));
+                                this.hide();
+                            })
+                        ]);
 
-                    const rowEl = tableEl.addRow({
-                        path: status.path,
-                        status: statusEl,
-                        actions: actionsEl
-                    });
-                    rowEl.classList.add('kernel-status', state)
+                        const rowEl = tableEl.addRow({
+                            path: status.path,
+                            status: statusEl,
+                            actions: actionsEl
+                        });
+                        rowEl.classList.add('kernel-status', state)
+                    }
                 }
 
                 if (statuses.length > 0) content.replaceChild(tableEl, content.firstChild!);
-            });
+            }));
         };
         getKernelStatuses();
 

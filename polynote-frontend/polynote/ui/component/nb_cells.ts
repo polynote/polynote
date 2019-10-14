@@ -1,23 +1,22 @@
-import {UIEventTarget} from "../util/ui_event";
+import {UIMessageTarget} from "../util/ui_event";
 import {NotebookConfigUI} from "./nb_config";
 import {div, span, TagElement} from "../util/tags";
 import {Cell, CellContainer, CodeCell, isCellContainer, TextCell} from "./cell";
 import {TaskInfo, TaskStatus} from "../../data/messages";
-import * as Tinycon from "tinycon";
 import {storage} from "../util/storage";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import * as monaco from "monaco-editor";
 import {PosRange} from "../../data/result";
 import {NotebookUI} from "./notebook";
 import {CurrentNotebook} from "./current_notebook";
+import {NotebookConfig} from "../../data/data";
 
 type NotebookCellsEl = TagElement<"div"> & { cellsUI: NotebookCellsUI }
 
-export class NotebookCellsUI extends UIEventTarget {
+export class NotebookCellsUI extends UIMessageTarget {
     private disabled: boolean;
     readonly configUI: NotebookConfigUI;
     readonly el: NotebookCellsEl;
-    private queuedCells: number;
     resizeTimeout: number;
     readonly notebookUI: NotebookUI;
     private configEl: TagElement<"div">;
@@ -26,14 +25,13 @@ export class NotebookCellsUI extends UIEventTarget {
         super(parent);
         this.notebookUI = parent; // TODO: get rid of this
         this.disabled = false;
-        this.configUI = new NotebookConfigUI().setEventParent(this);
+        this.configUI = new NotebookConfigUI((conf: NotebookConfig) => CurrentNotebook.get.updateConfig(conf)).setParent(this);
         this.el = Object.assign(
             div(['notebook-cells'], [this.configEl = this.configUI.el, this.newCellDivider()]),
             // TODO: remove when we get to TabUI
             { cellsUI: this });  // TODO: this is hacky and bad (used for getting to this instance via the element, from the tab content area of MainUI#currentNotebook)
-        this.queuedCells = 0;
 
-        this.registerEventListener('resize', this.forceLayout.bind(this));
+        window.addEventListener('resize', this.forceLayout.bind(this));
     }
 
     newCellDivider() {
@@ -58,42 +56,24 @@ export class NotebookCellsUI extends UIEventTarget {
 
     setStatus(id: number, status: TaskInfo) {
         const cell = this.getCell(id);
-        if (!cell) return;
+        if (cell instanceof CodeCell) {
+            switch (status.status) {
+                case TaskStatus.Complete:
+                    cell.setStatus("complete");
+                    break;
 
-        switch (status.status) {
-            case TaskStatus.Complete:
-                cell.container.classList.remove('running', 'queued', 'error');
-                this.queuedCells -= 1;
-                break;
+                case TaskStatus.Error:
+                    cell.setStatus("error");
+                    break;
 
-            case TaskStatus.Error:
-                cell.container.classList.remove('queued', 'running');
-                cell.container.classList.add('error');
-                this.queuedCells -= 1;
-                break;
+                case TaskStatus.Queued:
+                    cell.setStatus("queued");
+                    break;
 
-            case TaskStatus.Queued:
-                cell.container.classList.remove('running', 'error');
-                cell.container.classList.add('queued');
-                this.queuedCells += 1;
-                break;
-
-            case TaskStatus.Running:
-                cell.container.classList.remove('queued', 'error');
-                cell.container.classList.add('running');
-                const progressBar = cell.container.querySelector('.progress-bar');
-                if (progressBar instanceof HTMLElement && status.progress) {
-                    progressBar.style.width = (status.progress * 100 / 255).toFixed(0) + "%";
-                }
-
-
-        }
-        if (this.queuedCells <= 0) {
-            this.queuedCells = 0;
-            Tinycon.setBubble(this.queuedCells);
-            Tinycon.reset();
-        } else {
-            Tinycon.setBubble(this.queuedCells);
+                case TaskStatus.Running:
+                    cell.setStatus("running");
+                    break;
+            }
         }
     }
 
@@ -303,7 +283,7 @@ export class NotebookCellsUI extends UIEventTarget {
         }
     }
 
-    forceLayout(evt: Event) {
+    forceLayout() {
         if (this.resizeTimeout) {
             window.clearTimeout(this.resizeTimeout);
         }
@@ -325,7 +305,7 @@ export class NotebookCellsUI extends UIEventTarget {
         if (cell instanceof CodeCell && cell.editor && cell.editor.layout) {
             cell.editor.layout();
         }
-        cell.setEventParent(this);
+        cell.setParent(this);
     }
 
     setCellLanguage(cell: Cell, language: string) {
@@ -335,8 +315,10 @@ export class NotebookCellsUI extends UIEventTarget {
         }
 
 
-        if (currentCell.language === language)
+        if (currentCell.language === language) {
+            currentCell.focus();
             return;
+        }
 
         // TODO: should cell-specific logic be moved into the cell itself?
         if (currentCell instanceof TextCell && language !== 'text') {
@@ -365,6 +347,7 @@ export class NotebookCellsUI extends UIEventTarget {
             const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
             monaco.editor.setModelLanguage((currentCell as CodeCell).editor.getModel()!, highlightLanguage);
             currentCell.setLanguage(language);
+            currentCell.focus();
         }
     }
 }

@@ -1,4 +1,4 @@
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {ImportNotebook, UIMessage, UIMessageTarget, CreateNotebook, TriggerItem, UIToggle} from "../util/ui_event";
 import {div, h2, iconButton, span, tag, TagElement} from "../util/tags";
 import {storage} from "../util/storage";
 
@@ -17,7 +17,7 @@ function isDirNode(node: Element): node is DirectoryNode {
     return (node as DirectoryNode).pathStr !== undefined
 }
 
-export class NotebookListUI extends UIEventTarget {
+export class NotebookListUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private treeView: TagElement<"div">;
     private tree: Tree<DirectoryNode | NotebookNode>;
@@ -33,11 +33,11 @@ export class NotebookListUI extends UIEventTarget {
                     span(['buttons'], [
                         iconButton(['import-notebook'], 'Import a notebook', '', 'Import').click(evt => {
                             evt.stopPropagation();
-                            this.dispatchEvent(new UIEvent('ImportNotebook'));
+                            this.publish(new ImportNotebook());
                         }),
                         iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => {
                             evt.stopPropagation();
-                            this.dispatchEvent(new UIEvent('NewNotebook'));
+                            this.publish(new CreateNotebook());
                         })
                     ])
                 ]).click(evt => this.collapse()),
@@ -124,7 +124,7 @@ export class NotebookListUI extends UIEventTarget {
                     itemEl = Object.assign(
                         tag('li', ['leaf'], {}, [
                             span(['name'], [itemName]).click(evt => {
-                                this.dispatchEvent(new UIEvent('TriggerItem', {item: item}));
+                                this.publish(new TriggerItem(item));
                             })
                         ]), {
                           item: item
@@ -184,13 +184,13 @@ export class NotebookListUI extends UIEventTarget {
     collapse(force: boolean = false) {
         const prefs = this.getPrefs();
         if (force) {
-            this.dispatchEvent(new UIEvent('ToggleNotebookListUI', {force: true}))
+            this.publish(new UIToggle('NotebookList', /* force */ true));
         } else if (prefs && prefs.collapsed) {
             this.setPrefs({collapsed: false});
-            this.dispatchEvent(new UIEvent('ToggleNotebookListUI'))
+            this.publish(new UIToggle('NotebookList'));
         } else {
             this.setPrefs({collapsed: true});
-            this.dispatchEvent(new UIEvent('ToggleNotebookListUI'))
+            this.publish(new UIToggle('NotebookList'));
         }
     }
 
@@ -216,7 +216,12 @@ export class NotebookListUI extends UIEventTarget {
                     const reader = new FileReader();
                     reader.readAsText(file);
                     reader.onloadend = () => {
-                        this.dispatchEvent(new UIEvent('ImportNotebook', {name: file.name, content: reader.result}))
+                        if (reader.result) {
+                            // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
+                            this.publish(new ImportNotebook(file.name, reader.result as string));
+                        } else {
+                            throw new Error(`Didn't get any file contents when reading ${file.name}! `)
+                        }
                     }
                 })
             }

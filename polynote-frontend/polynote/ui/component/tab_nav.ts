@@ -1,13 +1,13 @@
 "use strict";
 
-import {UIEventTarget} from "../util/ui_event";
+import {UIMessageTarget} from "../util/ui_event";
 import {div, TagElement} from "../util/tags";
 
 interface ItemLabel extends TagElement<"div"> {
     name: string
 }
 
-export class TabNav extends UIEventTarget {
+export class TabNav extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private itemLabels: ItemLabel[];
     private content: TagElement<"div">;

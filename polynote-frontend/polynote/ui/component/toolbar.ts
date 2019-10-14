@@ -1,19 +1,12 @@
 import {button, div, fakeSelectElem, h3, iconButton, tag, TagElement} from "../util/tags";
-import {FakeSelect, SelectionChangedEvent} from "./fake_select";
+import {FakeSelect} from "./fake_select";
 import {Cell, CodeCell, TextCell} from "./cell";
 import {LaTeXEditor} from "./latex_editor";
-import {UIEvent, UIEventTarget} from "../util/ui_event";
+import {CancelTasks, ClearOutput, DownloadNotebook, UIMessageTarget, ViewAbout} from "../util/ui_event";
 import {preferences, storage} from "../util/storage";
-import {UIEventNameMap} from "../util/ui_events";
 import {CurrentNotebook} from "./current_notebook";
 
-export class ToolbarEvent extends UIEvent<any> {
-    constructor(eventId: keyof UIEventNameMap, details?: any) {
-        super(eventId, details || {});
-    }
-}
-
-export class ToolbarUI extends UIEventTarget {
+export class ToolbarUI extends UIMessageTarget {
     private notebookToolbar: NotebookToolbarUI;
     cellToolbar: CellToolbarUI;
     private codeToolbar: CodeToolbarUI;
@@ -84,17 +77,17 @@ function toolbarElem(name: string, buttonGroups: (TagElement<any>[] | FancyButto
     return div(["toolbar", name], contents)
 }
 
-class NotebookToolbarUI extends UIEventTarget {
+class NotebookToolbarUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
-    constructor(parent: UIEventTarget) {
+    constructor(parent: UIMessageTarget) {
         super(parent);
         this.el = toolbarElem("notebook", [
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
                     .click(() => CurrentNotebook.get.runAllCells()),
                 iconButton(["branch"], "Create branch", "", "Branch").disable().withKey('alwaysDisabled', true),
-                iconButton(["download"], "Download", "", "Download").click(() => this.dispatchEvent(new ToolbarEvent("DownloadNotebook"))),
-                iconButton(["clear"], "Clear notebook output", "", "Clear").click(() => this.dispatchEvent(new ToolbarEvent("ClearOutput")))
+                iconButton(["download"], "Download", "", "Download").click(() => this.publish(new DownloadNotebook(CurrentNotebook.get.path))),
+                iconButton(["clear"], "Clear notebook output", "", "Clear").click(() => this.publish(new ClearOutput(CurrentNotebook.get.path)))
             ], [
                 iconButton(["schedule-notebook"], "Schedule notebook", "", "Schedule").disable().withKey('alwaysDisabled', true),
             ]
@@ -102,11 +95,11 @@ class NotebookToolbarUI extends UIEventTarget {
     }
 }
 
-class CellToolbarUI extends UIEventTarget {
+class CellToolbarUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     cellTypeSelector: FakeSelect;
 
-    constructor(parent?: UIEventTarget) {
+    constructor(parent?: UIMessageTarget) {
         super(parent);
         let selectEl: TagElement<"div">;
         this.el = toolbarElem("cell", [
@@ -128,8 +121,8 @@ class CellToolbarUI extends UIEventTarget {
 
         this.cellTypeSelector = new FakeSelect(selectEl);
 
-        this.cellTypeSelector.addEventListener('SelectionChange', (evt: SelectionChangedEvent) => {
-            CurrentNotebook.get.onCellLanguageSelected(evt.newValue)
+        this.cellTypeSelector.addListener(change => {
+            CurrentNotebook.get.onCellLanguageSelected(change.newValue)
         })
 
     }
@@ -147,9 +140,9 @@ class CellToolbarUI extends UIEventTarget {
     }
 }
 
-class CodeToolbarUI extends UIEventTarget {
+class CodeToolbarUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
-    constructor(parent?: UIEventTarget) {
+    constructor(parent?: UIMessageTarget) {
         super(parent);
         this.el = toolbarElem("code", [
             [
@@ -158,7 +151,7 @@ class CodeToolbarUI extends UIEventTarget {
                 iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "", "Run to cursor")
                     .click(() => CurrentNotebook.get.runToCursor()),
                 iconButton(["stop-cell"], "Stop/cancel this cell", "", "Cancel")
-                    .click(() => this.dispatchEvent(new ToolbarEvent("CancelTasks"))),
+                    .click(() => this.publish(new CancelTasks(CurrentNotebook.get.path))),
             ]
         ]);
     }
@@ -166,13 +159,13 @@ class CodeToolbarUI extends UIEventTarget {
 
 type CommandButton = TagElement<"button"> & {getState: () => string};
 
-class TextToolbarUI extends UIEventTarget {
+class TextToolbarUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private blockTypeSelector: FakeSelect;
     private codeButton: CommandButton;
     private equationButton: CommandButton;
     private buttons: CommandButton[];
-    constructor(parent?: UIEventTarget) {
+    constructor(parent?: UIMessageTarget) {
         super(parent);
         let buttons = [];
 
@@ -285,16 +278,16 @@ class TextToolbarUI extends UIEventTarget {
 
 }
 
-class SettingsToolbarUI extends UIEventTarget {
+class SettingsToolbarUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private floatingMenu: TagElement<"div">;
-    constructor(parent?: UIEventTarget) {
+    constructor(parent?: UIMessageTarget) {
         super(parent);
         this.el = toolbarElem("about", [[
             iconButton(["preferences"], "View UI Preferences", "", "Preferences")
-                .click(() => this.dispatchEvent(new ToolbarEvent("ViewAbout", {section: "Preferences"}))),
+                .click(() => this.publish(new ViewAbout("Preferences"))),
             iconButton(["help"], "help", "", "Help")
-                .click(() => this.dispatchEvent(new ToolbarEvent("ViewAbout", {section: "Hotkeys"}))),
+                .click(() => this.publish(new ViewAbout("Hotkeys"))),
         ]]);
 
         this.floatingMenu = div(['floating-menu'], []);
