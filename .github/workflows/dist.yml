@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v1
+    - uses: actions/setup-node@v1
+    - name: Create archive
+      run: |
+        cd $GITHUB_WORKSPACE/polynote-frontend
+        npm run dist
+        cd $GITHUB_WORKSPACE
+        sbt dist
+    - name: Add archive to release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: target/scala-2.11/polynote-dist.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
