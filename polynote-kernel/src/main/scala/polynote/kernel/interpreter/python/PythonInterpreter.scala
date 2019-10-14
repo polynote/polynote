@@ -163,6 +163,7 @@ class PythonInterpreter private[python] (
 
   def init(state: State): TaskR[InterpreterEnv, State] = for {
     _       <- exec(setup)
+    _       <- exec(matplotlib)
     globals <- getValue("globals().copy()")
     scope   <- populateGlobals(state)
     _       <- jep { _ =>
@@ -243,12 +244,64 @@ class PythonInterpreter private[python] (
       |
       |""".stripMargin
 
+  protected def matplotlib: String =
+    """
+      |try:
+      |    import matplotlib
+      |
+      |    from matplotlib._pylab_helpers import Gcf
+      |    from matplotlib.backend_bases import (_Backend, FigureManagerBase)
+      |    from matplotlib.backends.backend_agg import _BackendAgg
+      |
+      |    class FigureManagerTemplate(FigureManagerBase):
+      |        def show(self):
+      |            # Save figure as SVG for display
+      |            import io
+      |            buf = io.StringIO()
+      |            self.canvas.figure.savefig(buf, format='svg')
+      |            buf.seek(0)
+      |            html = "<div style='width:600px'>" + buf.getvalue() + "</div>"
+      |
+      |            # Display image as html
+      |            kernel.display.html(html)
+      |
+      |            # destroy the figure now that we've shown it
+      |            Gcf.destroy_all()
+      |
+      |
+      |    @_Backend.export
+      |    class PolynoteBackend(_BackendAgg):
+      |        __module__ = "polynote"
+      |
+      |        FigureManager = FigureManagerTemplate
+      |
+      |        @classmethod
+      |        def show(cls):
+      |            managers = Gcf.get_all_fig_managers()
+      |            if not managers:
+      |                return  # this means there's nothing to plot, apparently.
+      |            for manager in managers:
+      |                manager.show()
+      |
+      |
+      |    import matplotlib
+      |    matplotlib.use("module://" + PolynoteBackend.__module__)
+      |
+      |except ImportError as e:
+      |    import sys
+      |    sys.err.write("No matplotlib support:", e)
+      |""".stripMargin
+
   protected def injectGlobals(globals: PyObject): TaskR[CurrentRuntime, Unit] = CurrentRuntime.access.flatMap {
     runtime =>
       jep {
         jep =>
           val setItem = globals.getAttr("__setitem__", classOf[PyCallable])
           setItem.call("kernel", runtime)
+          // TODO: Also update the global `kernel` so matplotlib integration (and other libraries?) can access the
+          //       correct kernel. We may want to have a better way to do this though, like a first class getKernel()
+          //       function for libraries (this only solves the problem for python)
+          jep.set("kernel", runtime)
       }
   }
 
