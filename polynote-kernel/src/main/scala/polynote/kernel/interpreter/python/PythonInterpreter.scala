@@ -225,7 +225,7 @@ class PythonInterpreter private[python] (
       |        for stat in compiled:
       |            exec(stat, _globals, _locals)
       |            _globals.update(_locals)
-      |            types = { x: type(y).__name__ for x,y in _locals.items() }
+      |        types = { x: type(y).__name__ for x,y in _locals.items() }
       |        return { 'globals': _globals, 'locals': _locals, 'types': types }
       |    except Exception as err:
       |        import traceback
