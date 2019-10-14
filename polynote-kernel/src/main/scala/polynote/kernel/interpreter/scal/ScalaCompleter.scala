@@ -3,7 +3,7 @@ package polynote.kernel.interpreter.scal
 import polynote.kernel.{Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
 import polynote.messages.{ShortString, TinyList, TinyString}
 import cats.syntax.either._
-import zio.{Fiber, Task, ZIO}
+import zio.{Fiber, Task, UIO, ZIO}
 import ZIO.effect
 
 import scala.annotation.tailrec
@@ -18,7 +18,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 
   import compiler.global._
 
-  def completions(cellCode: compiler.CellCode, pos: Int): Task[List[Completion]] = {
+  def completions(cellCode: compiler.CellCode, pos: Int): UIO[List[Completion]] = {
     val position = Position.offset(cellCode.sourceFile, pos)
     def symToCompletion(sym: Symbol, inType: Type) = {
       val name = sym.name.decodedName.toString.trim // term names seem to get an extra space at the end?
@@ -159,57 +159,59 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
   }
 
-  def paramHints(cellCode: compiler.CellCode, pos: Int): Option[Signatures] = applyTreeAt(cellCode.typed, pos).map {
-    case a@Apply(fun, args) =>
-      val (paramList, prevArgs, outerApply) = whichParamList(a, 0, 0)
-      val whichArg = args.size
+  def paramHints(cellCode: compiler.CellCode, pos: Int): UIO[Option[Signatures]] = effect {
+    applyTreeAt(cellCode.typed, pos).map {
+      case a@Apply(fun, args) =>
+        val (paramList, prevArgs, outerApply) = whichParamList(a, 0, 0)
+        val whichArg = args.size
 
-      def methodHints(method: MethodSymbol) = {
-        val paramsStr = method.paramLists.map {
-          pl => "(" + pl.map {
-            param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(a.tpe).finalResultType.toString}"
-          }.mkString(", ") + ")"
-        }.mkString
+        def methodHints(method: MethodSymbol) = {
+          val paramsStr = method.paramLists.map {
+            pl => "(" + pl.map {
+              param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(a.tpe).finalResultType.toString}"
+            }.mkString(", ") + ")"
+          }.mkString
 
-        val params = method.paramLists.flatMap {
-          pl => pl.map {
-            param => ParameterHint(
-              TinyString(param.name.decodedName.toString),
-              TinyString(param.typeSignatureIn(a.tpe).finalResultType.toString),
-              None  // TODO
-            )
+          val params = method.paramLists.flatMap {
+            pl => pl.map {
+              param => ParameterHint(
+                TinyString(param.name.decodedName.toString),
+                TinyString(param.typeSignatureIn(a.tpe).finalResultType.toString),
+                None  // TODO
+              )
+            }
           }
+
+          List(ParameterHints(
+            method.name.decodedName.toString + paramsStr,
+            None,
+            params
+          ))
         }
 
-        List(ParameterHints(
-          method.name.decodedName.toString + paramsStr,
-          None,
-          params
-        ))
-      }
-
-      val hints = fun.symbol match {
-        case null => Nil
-        case err if err.isError =>
-          fun match {
-            case Select(qual, name) if !qual.isErrorTyped => qual.tpe.member(name) match {
-              case sym if sym.isMethod =>
-                methodHints(sym.asMethod)
-              case sym if sym.isTerm && sym.isOverloaded =>
-                sym.asTerm.alternatives.collect {
-                  case sym if sym.isMethod => methodHints(sym.asMethod)
-                }.flatten
+        val hints = fun.symbol match {
+          case null => Nil
+          case err if err.isError =>
+            fun match {
+              case Select(qual, name) if !qual.isErrorTyped => qual.tpe.member(name) match {
+                case sym if sym.isMethod =>
+                  methodHints(sym.asMethod)
+                case sym if sym.isTerm && sym.isOverloaded =>
+                  sym.asTerm.alternatives.collect {
+                    case sym if sym.isMethod => methodHints(sym.asMethod)
+                  }.flatten
+                case other =>
+                  Nil
+              }
               case other =>
                 Nil
             }
-            case other =>
-              Nil
-          }
-        case method if method.isMethod => methodHints(method.asMethod)
-        case _ => Nil
-      }
-      Signatures(hints, 0, (prevArgs + whichArg).toByte)
-  }
+          case method if method.isMethod => methodHints(method.asMethod)
+          case _ => Nil
+        }
+        Signatures(hints, 0, (prevArgs + whichArg).toByte)
+    }
+  }.option.map(_.flatten)
 
   @tailrec
   private def whichParamList(tree: Apply, n: Int, nArgs: Int): (Int, Int, Apply) = tree.fun match {

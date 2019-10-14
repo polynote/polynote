@@ -225,7 +225,8 @@ class PythonInterpreter private[python] (
       |        for stat in compiled:
       |            exec(stat, _globals, _locals)
       |            _globals.update(_locals)
-      |        return { 'globals': _globals, 'locals': _locals }
+      |            types = { x: type(y).__name__ for x,y in _locals.items() }
+      |        return { 'globals': _globals, 'locals': _locals, 'types': types }
       |    except Exception as err:
       |        import traceback
       |        typ, err_val, tb = sys.exc_info()
@@ -303,6 +304,7 @@ class PythonInterpreter private[python] (
             case null =>
               val globals = get.callAs(classOf[PyObject], "globals")
               val locals = get.callAs(classOf[PyObject], "locals")
+              val types = get.callAs(classOf[java.util.Map[String, String]], "types")
 
               val localsItems = dictToItemsList(locals)
               val getLocal = localsItems.getAttr("__getitem__", classOf[PyCallable])
@@ -313,25 +315,27 @@ class PythonInterpreter private[python] (
                 if (item != null) {
                   val getField = item.getAttr("__getitem__", classOf[PyCallable])
                   val key = getField.callAs(classOf[String], Integer.valueOf(0))
-                  val pyValue = getField.callAs(classOf[PyObject], Integer.valueOf(1))
-                  val typeStr = typeName(pyValue)
-                  if (typeStr != "NoneType" && typeStr != "module") {
+                  val typeStr = types.get(key)
+
+                  def valueAs[T](cls: Class[T]): T = getField.callAs(cls, Integer.valueOf(1))
+
+                  if (typeStr != null && typeStr != "NoneType" && typeStr != "module") {
                     val (typ, value) = typeStr match {
-                      case "int" => (typeOf[Long], pyValue.as(classOf[java.lang.Number]).longValue())
-                      case "float" => (typeOf[Double], pyValue.as(classOf[java.lang.Number]).doubleValue())
-                      case "str" => (typeOf[String], pyValue.as(classOf[String]))
-                      case "bool" => (typeOf[Boolean], pyValue.as(classOf[java.lang.Boolean]).booleanValue())
+                      case "int" => (typeOf[Long], valueAs(classOf[java.lang.Number]).longValue())
+                      case "float" => (typeOf[Double], valueAs(classOf[java.lang.Number]).doubleValue())
+                      case "str" => (typeOf[String], valueAs(classOf[String]))
+                      case "bool" => (typeOf[Boolean], valueAs(classOf[java.lang.Boolean]).booleanValue())
                       case "function" | "builtin_function_or_method" | "type" =>
-                        (typeOf[PythonFunction], new PythonFunction(pyValue.as(classOf[PyCallable]), runner))
+                        (typeOf[PythonFunction], new PythonFunction(valueAs(classOf[PyCallable]), runner))
                       case "PyJObject" | "PyJCallable" | "PyJAutoCloseable" =>
-                        val jValue = pyValue.as(classOf[Object])
+                        val jValue = valueAs(classOf[Object])
                         val typ = runtime.unsafeRun(compiler.reflect(jValue)).symbol.info
                         (typ, jValue)
                       case other =>
                         // should we use the qualified type? It's confusing that both Spark and Pandas have a "DataFrame".
                         // But in every other case it's just noise.
                         val typ = appliedType(typeOf[TypedPythonObject[Nothing]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
-                        (typ, new TypedPythonObject[String](pyValue, runner))
+                        (typ, new TypedPythonObject[String](valueAs(classOf[PyObject]), runner))
                     }
                     Some(new ResultValue(key, compiler.unsafeFormatType(typ.asInstanceOf[Type]), Nil, state.id, value, typ.asInstanceOf[Type], None))
                   } else None
