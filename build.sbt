@@ -19,8 +19,23 @@ val versions = new {
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
 
 val commonSettings = Seq(
+  organization := "org.polynote",
+  publishMavenStyle := true,
+  homepage := Some(url("https://polynote.org")),
+  licenses := Seq("APL2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
+  scmInfo := Some(
+    ScmInfo(
+      url("https://github.com/polynote/polynote"),
+      "scm:git@github.com:polynote/polynote.git"
+    )
+  ),
   version := "0.2.5-SNAPSHOT",
   scalaVersion := "2.11.11",
+  publishTo := sonatypePublishToBundle.value,
+  developers := List(
+    Developer(id = "jeremyrsmith", name = "Jeremy Smith", email = "", url = url("https://github.com/jeremyrsmith")),
+    Developer(id = "jonathanindig", name = "Jonathan Indig", email = "", url = url("https://github.com/jonathanindig"))
+  ),
   scalacOptions ++= Seq(
     "-Ypartial-unification",
     "-language:higherKinds",
@@ -106,6 +121,7 @@ val `polynote-kernel` = project.settings(
     "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
+  publish := {},
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
@@ -123,6 +139,7 @@ val `polynote-server` = project.settings(
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
+  publish := {},
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "compile->compile;test->test")
 
@@ -147,6 +164,7 @@ lazy val `polynote-spark` = project.settings(
     "org.apache.spark" %% "spark-sql" % versions.spark % "test",
     "org.apache.spark" %% "spark-repl" % versions.spark % "test"
   ),
+  publish := {},
   dependencyJars := {
     (dependencyClasspath in (`polynote-kernel`, Compile)).value.collect {
       case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") =>
@@ -177,7 +195,7 @@ lazy val `polynote-spark` = project.settings(
   `polynote-runtime` % "provided",
   `polynote-runtime` % "test")
 
-lazy val polynote = project.in(file(".")).aggregate(`polynote-kernel`, `polynote-server`, `polynote-spark`).settings(
+lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`).settings(
   dist := {
     val jars = (polynoteJars in `polynote-spark`).value ++ (dependencyJars in `polynote-spark`).value
     val mainJar = (assembly in `polynote-spark`).value
