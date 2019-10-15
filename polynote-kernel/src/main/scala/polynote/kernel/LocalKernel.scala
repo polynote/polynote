@@ -50,9 +50,10 @@ class LocalKernel private[kernel] (
         clock         <- ZIO.access[Clock](_.clock)                                                                   // time the execution and notify clients of timing
         start         <- clock.currentTime(TimeUnit.MILLISECONDS)
         _             <- PublishResult(ExecutionInfo(start, None)).provide(interpEnv)
+        _             <- CurrentNotebook.get
         initialState   = State.id(id, prevState)                                                                      // run the cell while capturing outputs
         resultState   <- (interpreter.run(cell.content.toString, initialState) >>= updateValues)
-          .onTermination(_ => CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
+          .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
           .provideSomeM(Env.enrichM[Logging](interpEnv.mkExecutor(scalaCompiler.classLoader).widen[InterpreterEnv]))
         end           <- clock.currentTime(TimeUnit.MILLISECONDS)                                                     // finish timing and notify clients of elapsed time
         _             <- PublishResult(ExecutionInfo(start, Some(end))).provide(interpEnv)

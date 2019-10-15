@@ -1,6 +1,7 @@
 package polynote.server
 
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 import cats.effect.ConcurrentEffect
 import polynote.kernel.environment.Config
@@ -10,10 +11,11 @@ import polynote.messages.{Notebook, NotebookUpdate}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.ipynb.IPythonNotebookRepository
 import zio.blocking.Blocking
-import zio.{TaskR, ZIO}
+import zio.{TaskR, UIO, ZIO}
 import zio.interop.catz._
-
 import KernelPublisher.SubscriberId
+
+import scala.concurrent.duration.Duration
 
 trait NotebookManager {
   val notebookManager: NotebookManager.Service
@@ -45,9 +47,10 @@ object NotebookManager {
         for {
           notebook  <- repository.loadNotebook(path)
           publisher <- KernelPublisher(notebook)
-          writer    <- publisher.notebooks
-            .evalMap(notebook => repository.saveNotebook(notebook.path, notebook))
-            .compile.drain.fork
+          // write the notebook every 1 second, if it's changed.
+          writer    <- publisher.notebooksTimed(Duration(1, TimeUnit.SECONDS))
+              .evalMap(notebook => repository.saveNotebook(notebook.path, notebook))
+              .compile.drain.fork
         } yield publisher
       }
 
