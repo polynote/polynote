@@ -8,6 +8,7 @@ public class KernelRuntime implements Serializable {
 
         default void html(String content) { content("text/html", content); }
         default void write(String str) { content("text/plain; rel=stdout", str); }
+        default void flush() {} // So python doesn't error on sys.stdout.flush().
         default void text(String str) { content("text/plain", str); }
     }
 

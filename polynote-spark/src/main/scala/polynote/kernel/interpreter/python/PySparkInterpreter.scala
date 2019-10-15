@@ -6,7 +6,6 @@ import org.apache.spark.sql.SparkSession
 import polynote.kernel.{BaseEnv, GlobalEnv, ScalaCompiler, TaskManager}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.interpreter.Interpreter
-import polynote.kernel.interpreter.python.PythonInterpreter.{PythonAPI, jepExecutor, mkJep, mkJepBlocking}
 import py4j.GatewayServer
 import zio.{Task, TaskR, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
@@ -101,6 +100,25 @@ object PySparkInterpreter {
            |  auto_convert = True,
            |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True),
            |  callback_server_parameters = CallbackServerParameters(port = 0))""".stripMargin)
+
+      // Register shutdown handlers so pyspark exits cleanly. We need to make sure that all threads are closed before stopping jep.
+      jep.eval("import atexit")
+      jep.eval(
+        """def __exit_pyspark__():
+          |    # remove the link between pyspark's sc and the real sc, so the call to stop() doesn't reach back into the real sc
+          |    sc._jsc = None
+          |    # stop pyspark and close all its threads (accumulator server etc)
+          |    sc.stop()
+          |    # for local mode to work properly, we need to clean up some of this global state so we can start another pyspark instance later
+          |    SparkContext._gateway = None
+          |    SparkContext._jvm = None
+          |    SparkContext._next_accum_id = 0
+          |    SparkContext._active_spark_context = None
+          |    SparkContext._python_includes = None
+          |    # shutdown the py4j gateway in order to close all _its_ threads as well
+          |    gateway.shutdown()
+          |""".stripMargin)
+      jep.eval("atexit.register(__exit_pyspark__)")
 
       val pythonPort = jep.getValue("gateway.get_callback_server().get_listening_port()", classOf[java.lang.Number]).intValue()
 
