@@ -105,6 +105,10 @@ package object kernel {
     def widen[A1 >: A]: ZIO[R, E, A1] = self
   }
 
+  final implicit class TaskRSyntax[R, A](val self: ZIO[R, Throwable, A]) extends AnyVal {
+    def withFilter(predicate: A => Boolean): ZIO[R, Throwable, A] = self.filterOrFail(predicate)(new MatchError("Predicate is not satisfied"))
+  }
+
   def withContextClassLoaderIO[A](cl: ClassLoader)(thunk: => A): TaskR[Blocking, A] =
     zio.blocking.effectBlocking(withContextClassLoader(cl)(thunk))
 

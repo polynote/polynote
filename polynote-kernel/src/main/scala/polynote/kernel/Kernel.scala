@@ -86,6 +86,10 @@ object Kernel {
       def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel]
     }
 
+    trait LocalService extends Service {
+      override def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel]
+    }
+
     def of(factory: Service): Factory = new Factory {
       val kernelFactory: Service = factory
     }

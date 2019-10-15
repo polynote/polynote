@@ -1,5 +1,6 @@
 package polynote.kernel.remote
 
+import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 import polynote.config.PolynoteConfig
@@ -12,6 +13,32 @@ import scodec.{Attempt, Codec, Err, codecs}
 import shapeless.{Coproduct, cachedImplicit}
 import polynote.kernel.ValueReprCodec.streamingDataReprCodec
 import polynote.kernel.TableOpCodec.tableOpCodec
+import scodec.bits.BitVector
+import zio.{Task, ZIO}
+
+sealed trait IdentifyChannel
+case object MainChannel extends IdentifyChannel
+case object NotebookUpdatesChannel extends IdentifyChannel
+object IdentifyChannel {
+  implicit val codec: Codec[IdentifyChannel] = byte.exmap(
+    {
+      case 0 => Attempt.successful(MainChannel)
+      case 1 => Attempt.successful(NotebookUpdatesChannel)
+      case n => Attempt.failure(Err(s"Invalid channel type identifier $n"))
+    },
+    {
+      case MainChannel => Attempt.successful(0)
+      case NotebookUpdatesChannel => Attempt.successful(1)
+    }
+  )
+
+  def decodeBuffer(buf: ByteBuffer): Task[IdentifyChannel] = ZIO.fromEither(codec.decode(BitVector(buf)).toEither).mapError(err => new RuntimeException(err.message)).map(_.value)
+  def encode(value: IdentifyChannel): Task[BitVector] = ZIO.fromEither(codec.encode(value).toEither).mapError(err => new RuntimeException(err.message))
+}
+
+object Update {
+  implicit val notebookUpdateCodec: Codec[NotebookUpdate] = NotebookUpdate.codec
+}
 
 sealed trait RemoteRequest {
   val reqId: Int
@@ -67,11 +94,6 @@ object ModifyStreamRequest extends RemoteRequestCompanion[ModifyStreamRequest](9
 
 final case class ReleaseHandleRequest(reqId: Int, sessionId: Int, handleType: HandleType, handleId: Int) extends RemoteRequest
 object ReleaseHandleRequest extends RemoteRequestCompanion[ReleaseHandleRequest](10)
-
-final case class UpdateNotebookRequest(reqId: Int, update: NotebookUpdate) extends RemoteRequest
-object UpdateNotebookRequest extends RemoteRequestCompanion[UpdateNotebookRequest](11) {
-  implicit val codec: Codec[UpdateNotebookRequest] = cachedImplicit
-}
 
 final case class CancelAllRequest(reqId: Int) extends RemoteRequest
 object CancelAllRequest extends RemoteRequestCompanion[CancelAllRequest](12)

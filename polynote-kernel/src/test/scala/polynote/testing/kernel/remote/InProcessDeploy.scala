@@ -9,7 +9,7 @@ import polynote.kernel.remote.{RemoteKernelClient, SocketTransport}
 import zio.{Fiber, Ref, TaskR, ZIO}
 import zio.duration.Duration
 
-class InProcessDeploy(kernelFactory: Kernel.Factory.Service, clientRef: Ref[RemoteKernelClient]) extends SocketTransport.Deploy {
+class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref[RemoteKernelClient]) extends SocketTransport.Deploy {
   def deployKernel(transport: SocketTransport, serverAddress: InetSocketAddress): TaskR[BaseEnv with GlobalEnv with CurrentNotebook, SocketTransport.DeployedProcess] = {
     val connectClient = RemoteKernelClient.tapRunThrowable(
       RemoteKernelClient.Args(

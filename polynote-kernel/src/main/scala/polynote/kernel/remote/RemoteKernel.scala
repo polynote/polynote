@@ -81,9 +81,8 @@ class RemoteKernel[ServerAddress](
     case rep: RemoteRequestResponse      => withHandler(rep)(_.run(rep))
   }.onFinalize(PublishStatus(KernelBusyState(busy = false, alive = false)))
 
-  def init(): TaskR[BaseEnv with GlobalEnv with CellEnv, Unit] = for {
-    updateQueue    <- Queue.unbounded[TaskB, NotebookUpdate]                                                            // have to start pulling the updates before getting the current notebook
-    pullUpdates    <- updates.through(updateQueue.enqueue).interruptWhen(closed.await.either).compile.drain.fork        // otherwise some may be missed
+  def init(): TaskR[BaseEnv with GlobalEnv with CellEnv, Unit] = for {                                                           // have to start pulling the updates before getting the current notebook
+    pullUpdates    <- updates.evalMap(transport.sendNotebookUpdate).interruptWhen(closed.await.either).compile.drain.fork        // otherwise some may be missed
     versioned      <- CurrentNotebook.getVersioned
     (ver, notebook) = versioned
     config         <- Config.access
@@ -91,11 +90,6 @@ class RemoteKernel[ServerAddress](
     startup        <- request(StartupRequest(nextReq, notebook, ver, config)) {
       case Announce(reqId, remoteAddress) => done(reqId, ()) // TODO: may want to keep the remote address to try reconnecting?
     }
-    update         <- updateQueue.dequeue
-      .dropWhile(_.globalVersion <= ver)
-      .evalMap(update => transport.sendRequest(UpdateNotebookRequest(nextReq, update)))
-      .interruptWhen(closed.await.either)
-      .compile.drain.fork
   } yield ()
 
   def queueCell(id: CellID): TaskR[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = {
@@ -271,11 +265,7 @@ object RemoteKernelClient extends polynote.app.App {
     addr            <- args.getSocketAddress
     kernelFactory   <- args.getKernelFactory
     transport       <- SocketTransport.connectClient(addr)
-    updates         <- Topic[Task, Option[NotebookUpdate]](None)
-    requests         = transport.requests.evalTap {
-      case UpdateNotebookRequest(reqId, update) => updates.publish1(Some(update))
-      case _ => ZIO.unit
-    }
+    requests         = transport.requests
     publishResponse  = Publish.fn[Task, RemoteResponse](rep => transport.sendResponse(rep).provide(Environment))
     localAddress    <- effectBlocking(InetAddress.getLocalHost.getHostAddress)
     firstRequest    <- requests.head.compile.lastOrError
@@ -284,12 +274,12 @@ object RemoteKernelClient extends polynote.app.App {
       case other                          => ZIO.fail(new RuntimeException(s"Handshake error; expected StartupRequest but found ${other.getClass.getName}"))
     }
     notebookRef     <- SignallingRef[Task, (Int, Notebook)](initial.globalVersion -> initial.notebook)
-    processUpdates  <- updates.subscribe(128).unNone.dropWhile(_.globalVersion <= initial.globalVersion)
+    processUpdates  <- transport.updates.dropWhile(_.globalVersion <= initial.globalVersion)
       .evalMap(update => notebookRef.update { case (ver, notebook) => update.globalVersion -> update.applyTo(notebook) })
       .compile.drain
       .fork
     interpFactories <- interpreter.Loader.load
-    kernelEnv       <- mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config, updates.subscribe(128))
+    kernelEnv       <- mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config)
     kernel          <- kernelFactory.apply().provide(kernelEnv)
     closed          <- Deferred[Task, Unit]
     client           = new RemoteKernelClient(kernel, requests, publishResponse, closed, notebookRef)
@@ -306,8 +296,7 @@ object RemoteKernelClient extends polynote.app.App {
     publishResponse: Publish[Task, RemoteResponse],
     interpreterFactories: Map[String, List[Interpreter.Factory]],
     kernelFactory: Factory.Service,
-    polynoteConfig: PolynoteConfig,
-    updates: => Stream[Task, Option[NotebookUpdate]]
+    polynoteConfig: PolynoteConfig
   ): Task[KernelEnvironment] = {
     val publishStatus = publishResponse.contramap(KernelStatusResponse.apply)
     TaskManager(publishStatus).map {
@@ -318,21 +307,20 @@ object RemoteKernelClient extends polynote.app.App {
         interpreterFactories,
         kernelFactory: Factory.Service,
         polynoteConfig: PolynoteConfig,
-        updates,
         taskManager,
         publishStatus
       )
     }
   }
 
-  case class Args(address: Option[String] = None, port: Option[Int] = None, kernelFactory: Option[Kernel.Factory.Service] = None) {
+  case class Args(address: Option[String] = None, port: Option[Int] = None, kernelFactory: Option[Kernel.Factory.LocalService] = None) {
     def getSocketAddress: Task[InetSocketAddress] = for {
       address       <- ZIO.fromOption(address).mapError(_ => new IllegalArgumentException("Missing required argument address"))
       port          <- ZIO.fromOption(port).mapError(_ => new IllegalArgumentException("Missing required argument port"))
       socketAddress <- ZIO(new InetSocketAddress(address, port))
     } yield socketAddress
 
-    def getKernelFactory: Task[Kernel.Factory.Service] = ZIO.succeed(kernelFactory.getOrElse(LocalKernel))
+    def getKernelFactory: Task[Kernel.Factory.LocalService] = ZIO.succeed(kernelFactory.getOrElse(LocalKernel))
   }
 
   private def parseArgs(args: List[String], current: Args = Args(), sideEffects: ZIO[Logging, Nothing, Unit] = ZIO.unit): TaskR[Logging, Args] =
@@ -345,7 +333,7 @@ object RemoteKernelClient extends polynote.app.App {
     }
 
   private def parseKernelFactory(str: String) = for {
-    factoryClass <- ZIO(Class.forName(str).asSubclass(classOf[Kernel.Factory.Service]))
+    factoryClass <- ZIO(Class.forName(str).asSubclass(classOf[Kernel.Factory.LocalService]))
     factoryInst  <- ZIO(factoryClass.newInstance())
   } yield factoryInst
 
@@ -356,11 +344,9 @@ object RemoteKernelClient extends polynote.app.App {
     interpreterFactories: Map[String, List[Interpreter.Factory]],
     kernelFactory: Factory.Service,
     polynoteConfig: PolynoteConfig,
-    updateStream: Stream[Task, Option[NotebookUpdate]],
     taskManager: TaskManager.Service,
     publishStatus: Publish[Task, KernelStatusUpdate]
-  ) extends BaseEnvT with GlobalEnvT with CellEnvT with NotebookUpdates {
-    override lazy val notebookUpdates: Stream[Task, NotebookUpdate] = updateStream.unNone
+  ) extends BaseEnvT with GlobalEnvT with CellEnvT {
     override val blocking: Blocking.Service[Any] = Environment.blocking
     override val clock: Clock.Service[Any] = Environment.clock
     override val logging: Logging.Service = Environment.logging

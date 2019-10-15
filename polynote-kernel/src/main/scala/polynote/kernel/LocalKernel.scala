@@ -236,7 +236,7 @@ class LocalKernel private[kernel] (
   }
 }
 
-class LocalKernelFactory extends Kernel.Factory.Service {
+class LocalKernelFactory extends Kernel.Factory.LocalService {
 
   def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps    <- CoursierFetcher.fetch("scala")
