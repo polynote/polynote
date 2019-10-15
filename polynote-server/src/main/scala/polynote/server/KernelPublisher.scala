@@ -13,12 +13,14 @@ import polynote.config.PolynoteConfig
 import polynote.env.ops._
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
-import polynote.messages.{CellID, CellResult, KernelStatus, Message, Notebook, NotebookUpdate, ShortString}
-import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, GlobalEnv, Kernel, KernelBusyState, KernelStatusUpdate, Result, ScalaCompiler, Signatures, TaskB, TaskManager}
+import polynote.messages.{CellID, CellResult, KernelStatus, Message, Notebook, NotebookUpdate, ShortList, ShortString}
+import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelStatusUpdate, Result, ScalaCompiler, Signatures, TaskB, TaskManager}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Promise, Semaphore, Task, TaskR, UIO, ZIO}
 import zio.interop.catz._
 import KernelPublisher.{GlobalVersion, SubscriberId}
+
+import scala.concurrent.duration.FiniteDuration
 
 class KernelPublisher private (
   val versionedNotebook: SignallingRef[Task, (GlobalVersion, Notebook)],
@@ -59,7 +61,24 @@ class KernelPublisher private (
 
   private val nextSubscriberId = new AtomicInteger(0)
 
+  /**
+    * @return A stream of all discrete versions of the notebook, even if the version number isn't updated. The version
+    *         number is updated only after a content change, while this stream will also contain a notebook for other
+    *         changes (such as results). See [[SignallingRef.discrete]] for the semantics of "discrete".
+    */
   def notebooks: Stream[Task, Notebook] = versionedNotebook.discrete.map(_._2).interruptWhen(closed.await.either)
+
+  /**
+    * @param duration The minimum delay between notebook versions
+    * @return A stream of notebook versions, which returns no more than one version per specified duration. When the
+    *         notebook is closed, emits one final version with no delay.
+    */
+  def notebooksTimed(duration: FiniteDuration): Stream[Task, Notebook] = {
+    import zio.interop.catz.implicits.ioTimer
+    (Stream.eval(versionedNotebook.get) ++ Stream.fixedDelay[UIO](duration).zipRight(versionedNotebook.continuous)).filterWithPrevious {
+      (previous, current) => !(previous eq current) && previous != current
+    }.map(_._2).interruptWhen(closed.await.either) ++ Stream.eval(versionedNotebook.get.map(_._2))
+  }
 
   def latestVersion: Task[(GlobalVersion, Notebook)] = versionedNotebook.get
 
@@ -93,18 +112,21 @@ class KernelPublisher private (
   }
 
   def queueCell(cellID: CellID): TaskR[BaseEnv with GlobalEnv, Task[Unit]] = queueingCell.withPermit {
-    val captureOut  = new Deque[Result]()
-    val saveResults = captureOut.toList.flatMap {
-      results => versionedNotebook.update {
-        case (ver, nb) => ver -> nb.setResults(cellID, results)
-      }.orDie
+    def writeResult(result: Result) = versionedNotebook.update {
+      case (ver, nb) => ver -> nb.updateCell(cellID) {
+        cell => result match {
+          case ClearResults() => cell.copy(results = ShortList(Nil))
+          case execInfo@ExecutionInfo(_, _) => cell.copy(results = ShortList(cell.results :+ execInfo), metadata = cell.metadata.copy(executionInfo = Some(execInfo)))
+          case result => cell.copy(results = ShortList(cell.results :+ result))
+        }
+      }
     }
 
     for {
-      env      <- cellEnv(cellID, tapResults = Some(captureOut.add))
+      env      <- cellEnv(cellID, tapResults = Some(writeResult))
       kernel   <- kernel
       result   <- kernel.queueCell(cellID).provideSomeM(Env.enrich[BaseEnv with GlobalEnv](env))
-    } yield result.ensuring(saveResults)
+    } yield result
   }
 
   def completionsAt(cellID: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv, List[Completion]] = for {
