@@ -189,7 +189,7 @@ class RemoteKernelClient(
   kernel: Kernel,
   requests: Stream[TaskB, RemoteRequest],
   publishResponse: Publish[Task, RemoteResponse],
-  closed: Deferred[Task, Unit],
+  close: TaskB[Unit],
   private[remote] val notebookRef: SignallingRef[Task, (Int, Notebook)] // for testing
 ) {
 
@@ -202,7 +202,7 @@ class RemoteKernelClient(
       .parJoinUnbounded
       .terminateAfter(_.isInstanceOf[ShutdownResponse])
       .evalMap(publishResponse.publish1)
-      .compile.drain.const(0)
+      .compile.drain.const(0) <* close
 
   private def handleRequest(req: RemoteRequest): TaskR[KernelEnvironment, RemoteResponse] = ZIO.access[KernelEnvironment](identity).flatMap {
     env =>
@@ -282,7 +282,7 @@ object RemoteKernelClient extends polynote.app.App {
     kernelEnv       <- mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config)
     kernel          <- kernelFactory.apply().provide(kernelEnv)
     closed          <- Deferred[Task, Unit]
-    client           = new RemoteKernelClient(kernel, requests, publishResponse, closed, notebookRef)
+    client           = new RemoteKernelClient(kernel, requests, publishResponse, transport.close(), notebookRef)
     _               <- tapClient.fold(ZIO.unit)(_.set(client))
     _               <- kernel.init().provide(kernelEnv)
     _               <- publishResponse.publish1(Announce(initial.reqId, localAddress))

@@ -163,7 +163,7 @@ class SocketTransportClient private (channels: SocketTransport.Channels, closed:
     _     <- channels.mainChannel.write(bytes)
   } yield ()
 
-  override val requests: Stream[TaskB, RemoteRequest] = requestStream.terminateAfter(_.isInstanceOf[ShutdownRequest]) ++ Stream.eval(close()).drain
+  override val requests: Stream[TaskB, RemoteRequest] = requestStream.terminateAfter(_.isInstanceOf[ShutdownRequest])
 
   override val updates: Stream[TaskB, NotebookUpdate] = updateStream.interruptWhen(closed.get.either)
 
