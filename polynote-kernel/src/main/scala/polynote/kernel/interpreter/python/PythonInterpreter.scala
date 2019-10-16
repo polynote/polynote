@@ -131,13 +131,15 @@ class PythonInterpreter private[python] (
           val lines = code.substring(0, pos).split('\n')
           val line = lines.length
           val col = lines.last.length
-          jep.eval(s"__polynote_sig__ = jedi.Interpreter(__polynote_code__, [__polynote_globals__, {}], line=$line, column=$col).call_signatures()[0]")
-          // If this comes back as a List, Jep will mash all the elements to strings. So gotta use it as a PyObject. Hope that gets fixed!
-          // TODO: will need some reusable PyObject wrappings anyway
-          val sig = jep.getValue("__polynote_sig__", classOf[PyObject])
+          val jedi = jep.getValue("jedi.Interpreter", classOf[PyCallable])
+          val sig = jedi.callAs[PyObject](classOf[PyObject], Array[Object](code, Array(globals)), Map[String, Object]("line" -> Integer.valueOf(line), "column" -> Integer.valueOf(col)).asJava)
+            .getAttr("call_signatures", classOf[PyCallable])
+            .callAs(classOf[Array[PyObject]])
+            .head
+
           val index = sig.getAttr("index", classOf[java.lang.Long])
-          jep.eval("__polynote_params__ = list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], __polynote_sig__.params))")
-          val params = jep.getValue("__polynote_params__", classOf[java.util.List[java.util.List[String]]]).asScala.map {
+          val getParams = jep.getValue("lambda sig: list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], sig.params))", classOf[PyCallable])
+          val params = getParams.callAs(classOf[java.util.List[java.util.List[String]]], sig).asScala.map {
             tup =>
               val name = tup.get(0)
               val typeName = if (tup.size > 1) Option(tup.get(1)) else None
@@ -156,7 +158,9 @@ class PythonInterpreter private[python] (
           )
           Some(Signatures(List(hints), 0, index.byteValue()))
         } catch {
-          case err: Throwable => None
+          case err: Throwable =>
+            println(err)
+            None
         }
     }
   }
