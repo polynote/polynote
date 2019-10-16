@@ -55,7 +55,7 @@ class LocalSparkKernel private[kernel] (
 
 }
 
-class LocalSparkKernelFactory extends Kernel.Factory.Service {
+class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
   import LocalSparkKernel.kernelCounter
 
   // all the JARs in Spark's classpath. I don't think this is actually needed.

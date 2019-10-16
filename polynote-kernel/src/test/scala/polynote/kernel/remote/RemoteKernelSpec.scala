@@ -24,8 +24,8 @@ import scala.concurrent.TimeoutException
 
 class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterAll with BeforeAndAfterEach with MockFactory with GeneratorDrivenPropertyChecks {
   private val kernel        = mock[Kernel]
-  private val kernelFactory = new Factory.Service {
-    def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(kernel)
+  private val kernelFactory = new Factory.LocalService {
+    def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(kernel)
   }
 
   private val env           = unsafeRun(MockKernelEnv(kernelFactory))

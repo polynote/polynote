@@ -217,6 +217,7 @@ sealed trait NotebookUpdate extends Message {
 
 }
 
+
 object NotebookUpdate {
   def unapply(message: Message): Option[NotebookUpdate] = message match {
     case msg: NotebookUpdate => Some(msg)
@@ -224,6 +225,7 @@ object NotebookUpdate {
   }
 
   implicit val discriminated: Discriminated[NotebookUpdate, Byte] = Discriminated(byte)
+  val codec: Codec[NotebookUpdate] = Codec[NotebookUpdate]
 }
 
 abstract class NotebookUpdateCompanion[T <: NotebookUpdate](msgTypeId: Byte) extends MessageCompanion[T](msgTypeId) {
