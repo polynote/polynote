@@ -459,6 +459,8 @@ export class NotebookUI extends UIMessageTarget {
         if (postInsertCb) {
             postInsertCb(insertedCell);
         }
+
+        insertedCell.focus();
     }
 
     deleteCell(cellId?: number): void {
