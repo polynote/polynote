@@ -36,6 +36,7 @@ import {FoldingController, SuggestController} from "../monaco/extensions";
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import {CurrentNotebook} from "./current_notebook";
+import SignatureHelpResult = languages.SignatureHelpResult;
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -901,10 +902,13 @@ export class CodeCell extends Cell {
         ) //.catch();
     }
 
-    requestSignatureHelp(pos: number): Promise<SignatureHelp> {
-        return new Promise((resolve, reject) =>
+    requestSignatureHelp(pos: number): Promise<SignatureHelpResult> {
+        return new Promise<SignatureHelp>((resolve, reject) =>
             CurrentNotebook.get.paramHintRequest(this.id, pos, resolve, reject)
-        ) //.catch();
+        ).then(sigHelp => ({
+            value: sigHelp,
+            dispose(): void {}
+        } as SignatureHelpResult)) //.catch();
     }
 
     makeActive() {
