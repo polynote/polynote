@@ -55,11 +55,13 @@ object DataEncoder extends DataEncoder0 {
   }
 
   // NOT implicit!
-  def unknownDataEncoder[T](typeName: String): DataEncoder[T] = instance[T](TypeType) {
-    (out, _) =>
-      val unknownMessage = s"Missing DataRepr for type $typeName"
-      out.writeInt(unknownMessage.length)
-      out.write(unknownMessage.getBytes(StandardCharsets.UTF_8))
+  def unknownDataEncoder[T](typeName: String): DataEncoder[T] = {
+    val msg = s"Missing DataRepr for type $typeName".getBytes(StandardCharsets.UTF_8)
+    sizedInstance[T](TypeType, _ => msg.length + 4) {
+      (out, _) =>
+        out.writeInt(msg.length)
+        out.write(msg)
+    }
   }
 
   implicit val byteArray: DataEncoder[Array[Byte]] = sizedInstance[Array[Byte]](BinaryType, arr => arr.length + 4) {

@@ -213,6 +213,7 @@ class LocalKernel private[kernel] (
         }.toMap
 
         def updateValue(value: ResultValue): TaskR[Blocking with Logging, ResultValue] = {
+          def stringRepr = StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
           if (value.value != null) {
             ZIO.effectTotal(instanceMap.get(value.name)).flatMap {
               case Some(instance) =>
@@ -220,15 +221,15 @@ class LocalKernel private[kernel] (
                   .onError(err => Logging.error("Error creating result reprs", err))
                   .catchAll(_ => ZIO.succeed(Array.empty[ValueRepr])).map(_.toList).map {
                     case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
-                    case reprs => reprs :+ StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
+                    case reprs => reprs :+ stringRepr
                   }.map {
                     reprs => value.copy(reprs = reprs)
                   }
 
               case None =>
-                ZIO.succeed(value)
+                ZIO.succeed(value.copy(reprs = List(stringRepr)))
             }
-          } else ZIO.succeed(value)
+          } else ZIO.succeed(value.copy(reprs = List(stringRepr)))
         }
 
         state.updateValuesM(updateValue)
