@@ -400,6 +400,7 @@ export class CodeCell extends Cell {
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
         this.editorEl.contentEditable = 'true'; // so right-click copy/paste can work.
+        this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
         this.editor.layout();
 
         this.editor.onDidFocusEditorWidget(() => {
