@@ -425,8 +425,9 @@ export class NotebookUI extends UIMessageTarget {
                 this.cellUI.insertCellBelow(undefined, () => cell);
                 cellInfo.results.forEach(result => {
                     if (cell instanceof CodeCell) {
-                        cell.addResult(result)
+                        cell.addResult(result);
                     }
+                    this.updateCellResults(result, cellInfo.id);
                 })
             }
         }
