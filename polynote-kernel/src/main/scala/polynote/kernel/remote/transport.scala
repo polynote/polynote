@@ -128,7 +128,7 @@ object SocketTransportServer {
     def identify(channel: FramedSocket) = channel.read().repeat {
       ZSchedule.doUntil[Option[Option[ByteBuffer]]] {
         case Some(Some(_)) => true
-        case None => false
+        case _ => false
       }
     }.flatMap {
       case Some(Some(buf)) => IdentifyChannel.decodeBuffer(buf)
