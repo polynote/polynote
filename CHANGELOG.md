@@ -2,6 +2,19 @@
 
 *
 
+# 0.2.6 (October 18, 2019)
+
+* Fix regression causing missing ExecutionInfo
+* Fix regression causing the python interpreter shutdown to crash the kernel
+* Fix regression causing symbol table to be stale after page reload
+* Fix regression causing inserted cells not to be focused
+* Remove spellcheck on code cells that would sometimes come up
+* Always add a StringRepr. 
+* Some minor cleanup of UI events
+* Update fonts to address a bug in Firefox (https://bugzilla.mozilla.org/show_bug.cgi?id=1589156)
+* Add some initial docs (more to come!)
+* Update the logo (slightly)
+
 # 0.2.5 (October 14, 2019)
 
 * Subtasks!

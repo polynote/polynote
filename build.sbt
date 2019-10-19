@@ -29,7 +29,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.2.5-SNAPSHOT",
+  version := "0.2.6-SNAPSHOT",
   scalaVersion := "2.11.11",
   publishTo := sonatypePublishToBundle.value,
   developers := List(
