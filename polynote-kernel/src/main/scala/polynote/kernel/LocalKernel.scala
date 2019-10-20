@@ -34,40 +34,45 @@ class LocalKernel private[kernel] (
 
   import compilerProvider.scalaCompiler
 
+  def currentTime: ZIO[Clock, Nothing, Long] = ZIO.accessM[Clock](_.clock.currentTime(TimeUnit.MILLISECONDS))
+
   override def queueCell(id: CellID): TaskR[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] =
     TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
+      currentTime.flatMap {
+        startTime =>
+          def publishEndTime: TaskR[PublishResult with Clock, Unit] =
+            currentTime.flatMap(endTime => PublishResult(ExecutionInfo(startTime, Some(endTime))))
 
-      val run = for {
-        _             <- busyState.update(_.setBusy)
-        notebook      <- CurrentNotebook.get
-        cell          <- ZIO(notebook.cell(id))
-        interpEnv     <- InterpreterEnvironment.fromKernel(id)
-        interpreter   <- getOrLaunch(cell.language, CellID(0)).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](interpEnv: InterpreterEnv))
-        state         <- interpreterState.get
-        prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                    // find the latest executed state that correlates to a notebook cell
-        prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(latestPredef(state))
-        _             <- PublishResult(ClearResults())
-        clock         <- ZIO.access[Clock](_.clock)                                                                   // time the execution and notify clients of timing
-        start         <- clock.currentTime(TimeUnit.MILLISECONDS)
-        _             <- PublishResult(ExecutionInfo(start, None)).provide(interpEnv)
-        _             <- CurrentNotebook.get
-        initialState   = State.id(id, prevState)                                                                      // run the cell while capturing outputs
-        resultState   <- (interpreter.run(cell.content.toString, initialState) >>= updateValues)
-          .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
-          .provideSomeM(Env.enrichM[Logging](interpEnv.mkExecutor(scalaCompiler.classLoader).widen[InterpreterEnv]))
-        end           <- clock.currentTime(TimeUnit.MILLISECONDS)                                                     // finish timing and notify clients of elapsed time
-        _             <- PublishResult(ExecutionInfo(start, Some(end))).provide(interpEnv)
-        _             <- updateState(resultState)
-        _             <- resultState.values.map(PublishResult.apply).sequence.unit                                    // publish the result values
-        _             <- busyState.update(_.setIdle)
-      } yield ()
+          val run = for {
+            _             <- busyState.update(_.setBusy)
+            notebook      <- CurrentNotebook.get
+            cell          <- ZIO(notebook.cell(id))
+            interpEnv     <- InterpreterEnvironment.fromKernel(id)
+            interpreter   <- getOrLaunch(cell.language, CellID(0)).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](interpEnv: InterpreterEnv))
+            state         <- interpreterState.get
+            prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                  // find the latest executed state that correlates to a notebook cell
+            prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(latestPredef(state))
+            _             <- PublishResult(ClearResults())
+            _             <- PublishResult(ExecutionInfo(startTime, None))
+            _             <- CurrentNotebook.get
+            initialState   = State.id(id, prevState)                                                                    // run the cell while capturing outputs
+            resultState   <- (interpreter.run(cell.content.toString, initialState) >>= updateValues)
+              .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
+              .provideSomeM(Env.enrichM[Logging](interpEnv.mkExecutor(scalaCompiler.classLoader).widen[InterpreterEnv]))
+            _             <- publishEndTime
+            _             <- updateState(resultState)
+            _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
+            _             <- busyState.update(_.setIdle)
+          } yield ()
 
-      run.supervised.onInterrupt {
-        PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
-        busyState.update(_.setIdle).orDie
-      }.catchAll {
-        err =>
-          PublishResult(ErrorResult(err)) *> busyState.update(_.setIdle)
+          run.supervised.onInterrupt {
+            PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
+            busyState.update(_.setIdle).orDie *>
+            publishEndTime.orDie
+          }.catchAll {
+            err =>
+              PublishResult(ErrorResult(err)) *> busyState.update(_.setIdle) *> publishEndTime.orDie
+          }
       }
     }
 

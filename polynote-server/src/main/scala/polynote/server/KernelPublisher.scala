@@ -158,7 +158,7 @@ class KernelPublisher private (
     subscriber         <- KernelSubscriber(subscriberId, this)
   } yield subscriber
 
-  def close(): Task[Unit] = closed.succeed(()).const(())
+  def close(): Task[Unit] = closed.succeed(()).const(()) *> taskManager.shutdown()
 
   private def createKernel(): TaskR[BaseEnv with GlobalEnv, Kernel] = kernelFactory()
     .provideSomeM(Env.enrichM[BaseEnv with GlobalEnv](kernelFactoryEnv))

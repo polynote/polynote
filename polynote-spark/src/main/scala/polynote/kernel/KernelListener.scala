@@ -96,9 +96,10 @@ class KernelListener(taskManager: TaskManager.Service, session: SparkSession, ru
 
     jobStages.put(jobId, stageMap)
     jobTasksCompleted.put(jobId, new AtomicInteger(0))
+    val jobName = jobStart.stageInfos.headOption.map(_.name).getOrElse("")
 
     runtime.unsafeRun {
-      taskManager.register(sparkJobTaskId(jobId), label, "", None, Complete) {
+      taskManager.register(sparkJobTaskId(jobId), label, jobName, None, Complete) {
         updater =>
           jobUpdaters.put(jobId, updater)
           cancelJob(jobId)

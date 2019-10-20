@@ -331,8 +331,8 @@ class ScalaCompiler private (
     }
 
     // the type representing this cell's class. It may be null or NoType if invoked before compile is done!
-    def cellClassType: Type = exitingTyper(wrappedClass.symbol.info)
-    def cellClassSymbol: ClassSymbol = exitingTyper(wrappedClass.symbol.asClass)
+    lazy val cellClassType: Type = exitingTyper(wrappedClass.symbol.info)
+    lazy val cellClassSymbol: ClassSymbol = exitingTyper(wrappedClass.symbol.asClass)
     lazy val cellCompanionSymbol: ModuleSymbol = exitingTyper(companion.symbol.asModule)
     lazy val cellInstSymbol: Symbol = exitingTyper(cellCompanionSymbol.info.member(TermName("instance")).accessedOrSelf)
     lazy val cellInstType: Type = exitingTyper(cellCompanionSymbol.info.member(TypeName("Inst")).info.dealias)
@@ -358,6 +358,13 @@ class ScalaCompiler private (
         reporter.attempt {
           run.compileUnits(List(compilationUnit), run.namerPhase)
           exitingTyper(compilationUnit.body)
+          // materialize these lazy vals now while the run is still active
+          val _1 = cellClassSymbol
+          val _2 = cellClassType
+          val _3 = cellCompanionSymbol
+          val _4 = cellInstSymbol
+          val _5 = cellInstType
+          val _6 = typedOutputs
         }
       }.lock(compilerThread).absolve
     }.flatten
