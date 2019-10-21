@@ -224,13 +224,13 @@ object ScalaInterpreter {
     val numTrees = trees.size
     trees.zipWithIndex.flatMap {
       case (tree, index) =>
-        val treeProgress = index.toDouble / numTrees
+        val treeProgress = Literal(Constant(index.toDouble / numTrees))
         val lineStr = s"Line ${tree.pos.line}"
         // code to notify kernel of progress in the cell
-        def setProgress(detail: String) = q"""kernel.setProgress($treeProgress, $detail)"""
+        def setProgress(detail: String) = q"""kernel.setProgress($treeProgress, ${Literal(Constant(detail))})"""
         def setPos(mark: Tree) =
           if(mark.pos.isRange)
-            Some(q"""kernel.setExecutionStatus(${mark.pos.start}, ${mark.pos.end})""")
+            Some(q"""kernel.setExecutionStatus(${Literal(Constant(mark.pos.start))}, ${Literal(Constant(mark.pos.end))})""")
           else None
 
         def wrapWithProgress(name: String, tree: Tree): List[Tree] =

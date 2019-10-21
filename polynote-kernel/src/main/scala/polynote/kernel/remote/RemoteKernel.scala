@@ -125,7 +125,7 @@ class RemoteKernel[ServerAddress](
   }.timeout(Duration(10, TimeUnit.SECONDS)).flatMap {
     case Some(()) => ZIO.succeed(())
     case None =>
-      Logging.warn("Waited for remote kernel to shut down for 10 seconds; killing the process") *> transport.close()
+      Logging.warn("Waited for remote kernel to shut down for 10 seconds; killing the process")
   }.ensuring(close().orDie)
 
   def status(): TaskB[KernelBusyState] = request(StatusRequest(nextReq)) {
