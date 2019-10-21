@@ -14,7 +14,7 @@ import polynote.kernel.util.Publish
 import polynote.messages.TinyString
 import zio.blocking.Blocking
 import zio.clock.Clock
-import zio.{Cause, Fiber, Promise, Semaphore, Task, TaskR, UIO, ZIO, ZSchedule}
+import zio.{Cause, Fiber, Promise, Semaphore, Task, TaskR, UIO, ZIO, ZQueue, ZSchedule}
 import zio.interop.catz._
 
 trait TaskManager {
@@ -84,6 +84,11 @@ object TaskManager {
     def cancelAll(): UIO[Unit]
 
     /**
+      * Shut down the task manager and stop executing any tasks in the queue. Cancels all running tasks (see [[cancelAll]])
+      */
+    def shutdown(): UIO[Unit]
+
+    /**
       * List all currently running tasks
       */
     def list: UIO[List[TaskInfo]]
@@ -91,8 +96,9 @@ object TaskManager {
 
   private class Impl (
     queueing: Semaphore,
-    running: Semaphore,
-    statusUpdates: Publish[Task, KernelStatusUpdate]
+    statusUpdates: Publish[Task, KernelStatusUpdate],
+    readyQueue: zio.Queue[(Promise[Throwable, Unit], Promise[Throwable, Unit])],
+    process: Fiber[Throwable, Nothing]
   ) extends Service {
 
     private val taskCounter = new AtomicLong(0)
@@ -116,7 +122,10 @@ object TaskManager {
             .either
             .tap(_.fold(err => fail(Cause.fail(err)), _ => complete)) <* updater.join
         }
-        runTask        = running.withPermit(statusRef.update(_.running) *> taskBody).onTermination(fail)
+        myTurn        <- Promise.make[Throwable, Unit]
+        imDone        <- Promise.make[Throwable, Unit]
+        _             <- readyQueue.offer((myTurn, imDone))
+        runTask        = (myTurn.await *> statusRef.update(_.running) *> taskBody).ensuring(imDone.succeed(())).onTermination(fail)
         taskFiber     <- runTask.fork
         descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
         _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
@@ -176,19 +185,30 @@ object TaskManager {
         _           <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
       } yield process
 
-    override def cancelAll(): UIO[Unit] = tasks.values().asScala.toList.reverse.map {
-      case (status, fiber, _) => fiber.interrupt
-    }.sequence.unit
+    override def cancelAll(): UIO[Unit] = {
+      tasks.values().asScala.toList.reverse.map {
+        case (status, fiber, _) => fiber.interrupt
+      }.sequence zipPar readyQueue.takeAll.flatMap {
+        brokenPromises => brokenPromises.map {
+          case (ready, done) => ready.interrupt *> done.interrupt
+        }.sequence
+      }
+    }.unit
 
     override def list: UIO[List[TaskInfo]] = tasks.values().asScala.toList.sortBy(_._3).map(_._1.get.orDie).sequence
+
+    override def shutdown(): UIO[Unit] = cancelAll() *> process.interrupt.unit
   }
 
   def apply(
     statusUpdates: Publish[Task, KernelStatusUpdate]
   ): Task[TaskManager.Service] = for {
     queueing <- Semaphore.make(1)
-    running  <- Semaphore.make(1)
-  } yield new Impl(queueing, running, statusUpdates)
+    queue    <- ZQueue.unbounded[(Promise[Throwable, Unit], Promise[Throwable, Unit])]
+    run      <- queue.take.flatMap {
+      case (ready, done) => ready.succeed(()) *> done.await
+    }.forever.fork
+  } yield new Impl(queueing, statusUpdates, queue, run)
 
   def access: TaskR[TaskManager, TaskManager.Service] = ZIO.access[TaskManager](_.taskManager)
 

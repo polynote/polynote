@@ -1585,6 +1585,7 @@ button.inspect.icon-button {
   grid-template-areas: "head" "body";
   grid-template-rows: 2em 1fr;
   display: grid;
+  width: 100%;
 
   .ui-panel-content {
     display: inline-block;
@@ -1597,8 +1598,6 @@ button.inspect.icon-button {
   background-color: @ui-background;
   border-left: 1px solid @ui-border;
 
-  // so the ui-panel-content can scroll properly
-  position: absolute;
   max-height: 100%;
   width: 100%;
 
@@ -1969,9 +1968,8 @@ button {
 }
 
 .grid-shell {
-  display: grid;
-  grid-template-rows: 1fr;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: row;
   position: relative;
   background-color: @ui-background;
 }

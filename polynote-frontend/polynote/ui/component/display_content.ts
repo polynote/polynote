@@ -2,7 +2,7 @@
 
 import * as monaco from "monaco-editor";
 import {Content, details, div, span, tag, TagElement} from "../util/tags";
-import {ArrayType, DataType, MapType, StructField, StructType} from "../../data/data_type";
+import {ArrayType, DataType, MapType, OptionalType, StructField, StructType} from "../../data/data_type";
 
 export function displayContent(contentType: string, content: string | DocumentFragment, contentTypeArgs?: Record<string, string>): Promise<TagElement<any>> {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);
@@ -232,6 +232,11 @@ export function displaySchema(structType: StructType): HTMLElement {
                 ])
             ]);
         }
+
+        if (field.dataType instanceof OptionalType) {
+            return displayField(new StructField(field.name + "?", field.dataType.element));
+        }
+        
         const typeName = field.dataType.typeName();
         const attrs = {"data-fieldType": typeName} as any;
         return tag("li", ['object-field'], attrs, [
