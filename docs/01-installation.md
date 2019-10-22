@@ -36,10 +36,10 @@ cd polynote
   [Python's installation instructions](https://wiki.python.org/moin/BeginnersGuide/Download){:target="_blank"} for
   instructions on installing these packages.
   
-  You'll also need to install some Python dependencies `jep`, `jedi`, and `pyspark` (if using Spark). For example,
+  You'll also need to install some Python dependencies `jep`, `jedi`, `virtualenv` and `pyspark` (if using Spark). For example,
   
   ```
-  pip3 install jep jedi pyspark
+  pip3 install jep jedi pyspark virtualenv
   ``` 
 - *Spark support*: In order to use Spark with kernel isolation, you'll need to [install Apache Spark&trade;](https://spark.apache.org/downloads.html).
   Polynote will use the `spark-submit` command in order to start isolated kernels.
