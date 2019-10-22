@@ -1,6 +1,9 @@
 # UNRELEASED
 
-*
+* Fix issue with nondeterministic queueing order
+* Cross build for Scala 2.12
+* Fix some race conditions in Scala compiler
+
 
 # 0.2.6 (October 18, 2019)
 

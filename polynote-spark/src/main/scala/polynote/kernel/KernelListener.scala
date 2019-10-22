@@ -6,12 +6,12 @@ import java.util.function.{IntBinaryOperator, ToIntFunction}
 import scala.collection.JavaConverters._
 import org.apache.spark.scheduler.{JobFailed, JobSucceeded, SparkListener, SparkListenerJobEnd, SparkListenerJobStart, SparkListenerStageCompleted, SparkListenerStageSubmitted, SparkListenerTaskEnd, SparkListenerTaskStart, StageInfo}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.thief.DAGSchedulerThief
+import polynote.kernel.logging.Logging
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.{Runtime, UIO, ZIO}
 
-class KernelListener(taskManager: TaskManager.Service, session: SparkSession, runtime: Runtime[Blocking with Clock]) extends SparkListener {
+class KernelListener(taskManager: TaskManager.Service, session: SparkSession, runtime: Runtime[Blocking with Clock with Logging]) extends SparkListener {
 
   private val jobUpdaters = new ConcurrentHashMap[Int, (TaskInfo => TaskInfo) => Unit]()
   private val stageUpdaters = new ConcurrentHashMap[Int, (TaskInfo => TaskInfo) => Unit]()
@@ -58,25 +58,13 @@ class KernelListener(taskManager: TaskManager.Service, session: SparkSession, ru
     }
   }
 
-  private def cancelJob(jobId: Int): UIO[Unit] = ZIO.effectTotal {
-    DAGSchedulerThief(session).foreach {
-      scheduler => try {
-        scheduler.cancelJob(jobId)
-      } catch {
-        case err: Throwable => // TODO: log? We have to catch it, probably don't want to die here...
-      }
-    }
-  }
+  private def cancelJob(jobId: Int): ZIO[Logging, Nothing, Unit] = ZIO.effect {
+    session.sparkContext.cancelJob(jobId)
+  }.catchAll(Logging.error("Unable to cancel job", _))
 
-  private def cancelStage(stageId: Int): UIO[Unit] = ZIO.effectTotal {
-    DAGSchedulerThief(session).foreach {
-      scheduler => try {
-        scheduler.cancelStage(stageId)
-      } catch {
-        case err: Throwable =>
-      }
-    }
-  }
+  private def cancelStage(stageId: Int): ZIO[Logging, Nothing, Unit] = ZIO.effect {
+    session.sparkContext.cancelStage(stageId)
+  }.catchAll(Logging.error("Unable to cancel stage", _))
 
   private def sparkJobTaskId(jobId: Int) = s"SparkJob$jobId"
   private def sparkStageTaskId(stageId: Int) = s"SparkStage$stageId"

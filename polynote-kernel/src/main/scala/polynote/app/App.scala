@@ -6,7 +6,6 @@ import polynote.kernel.logging.Logging
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
-import zio.internal.PlatformLive.ExecutorUtil
 import zio.internal.stacktracer.Tracer
 import zio.internal.stacktracer.impl.AkkaLineNumbersTracer
 import zio.internal.tracing.TracingConfig
@@ -24,7 +23,7 @@ trait App extends Runtime[Clock with System with Blocking with Logging] {
       unsafeRun(Environment.logging.error(cause.prettyPrint))
 
   val Platform: Platform = new Platform {
-    val executor: Executor = ExecutorUtil.makeDefault(2048)
+    val executor: Executor = Executor.makeDefault(2048)
 
     val tracing = Tracing(Tracer.globallyCached(new AkkaLineNumbersTracer), TracingConfig.enabled)
 

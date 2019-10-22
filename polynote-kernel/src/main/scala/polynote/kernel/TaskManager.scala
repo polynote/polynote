@@ -10,11 +10,12 @@ import cats.instances.list._
 import fs2.concurrent.SignallingRef
 import polynote.env.ops.Enrich
 import polynote.kernel.environment.{CurrentTask, Env}
+import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
 import polynote.messages.TinyString
 import zio.blocking.Blocking
 import zio.clock.Clock
-import zio.{Cause, Fiber, Promise, Semaphore, Task, TaskR, UIO, ZIO, ZQueue, ZSchedule}
+import zio.{Cause, Fiber, Promise, Queue, Semaphore, Task, TaskR, UIO, ZIO, ZSchedule}
 import zio.interop.catz._
 
 trait TaskManager {
@@ -75,7 +76,7 @@ object TaskManager {
       * Returns the [[Fiber]] which updates the task status. Interrupting this fiber results in the cancellation task
       * returned from cancelCallback being evaluated.
       */
-    def register(id: String, label: String = "", detail: String = "", parent: Option[String] = None, errorWith: DoneStatus = ErrorStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => UIO[Unit]): TaskR[Blocking with Clock, Fiber[Throwable, Unit]]
+    def register(id: String, label: String = "", detail: String = "", parent: Option[String] = None, errorWith: DoneStatus = ErrorStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => ZIO[Logging, Nothing, Unit]): TaskR[Blocking with Clock with Logging, Fiber[Throwable, Unit]]
 
     /**
       * Cancel all tasks. If a task has not yet begun running, it will simply be cancelled. If a task is already running,
@@ -162,7 +163,7 @@ object TaskManager {
           runImpl[R, A, R](id, label, detail, Some(parent), errorWith)(task)
       }
 
-    override def register(id: String, label: String = "", detail: String = "", parent: Option[String], errorWith: DoneStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => UIO[Unit]): TaskR[Blocking with Clock, Fiber[Throwable, Unit]] =
+    override def register(id: String, label: String = "", detail: String = "", parent: Option[String], errorWith: DoneStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => ZIO[Logging, Nothing, Unit]): TaskR[Blocking with Clock with Logging, Fiber[Throwable, Unit]] =
       for {
         statusRef   <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Running, progress = 0, parent = parent.map(TinyString(_))))
         updateTasks  = new LinkedBlockingQueue[TaskInfo => TaskInfo]()
@@ -204,7 +205,7 @@ object TaskManager {
     statusUpdates: Publish[Task, KernelStatusUpdate]
   ): Task[TaskManager.Service] = for {
     queueing <- Semaphore.make(1)
-    queue    <- ZQueue.unbounded[(Promise[Throwable, Unit], Promise[Throwable, Unit])]
+    queue    <- Queue.unbounded[(Promise[Throwable, Unit], Promise[Throwable, Unit])]
     run      <- queue.take.flatMap {
       case (ready, done) => ready.succeed(()) *> done.await
     }.forever.fork

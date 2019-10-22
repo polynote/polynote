@@ -15,10 +15,10 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.remote.SocketTransport.FramedSocket
 import polynote.messages._
-import scodec.Codec
+import scodec.{Codec, Decoder}
 import scodec.codecs.implicits._
 import scodec.bits.BitVector
-import scodec.stream.decode
+import scodec.stream.StreamDecoder
 import zio.Cause._
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
@@ -30,7 +30,6 @@ import zio.interop.catz._
 import scala.concurrent.TimeoutException
 import scala.concurrent.duration.{Duration, MINUTES, SECONDS}
 import scala.reflect.{ClassTag, classTag}
-
 import Update.notebookUpdateCodec
 
 trait Transport[ServerAddress] {
@@ -108,7 +107,7 @@ class SocketTransportServer private (
       Stream.eval(Logging.info("Connected. Decoding incoming messages")).drain ++
         channels.mainChannel.bitVectors
           .interruptWhen(closed.get.either)
-          .through(scodec.stream.decode.pipe[TaskB, RemoteResponse])
+          .through(StreamDecoder.many(Decoder[RemoteResponse]).toPipe[TaskB])
           .handleErrorWith {
             err => Stream.eval(Logging.error("Response stream terminated due to error", err)).drain
           } ++ Stream.eval(Logging.info("Response stream terminated")).drain
@@ -155,8 +154,8 @@ object SocketTransportServer {
 
 class SocketTransportClient private (channels: SocketTransport.Channels, closed: Deferred[Task, Unit]) extends TransportClient {
 
-  private val requestStream = channels.mainChannel.bitVectors.through(decode.pipe[TaskB, RemoteRequest])
-  private val updateStream = channels.notebookUpdatesChannel.bitVectors.through(decode.pipe[TaskB, NotebookUpdate])
+  private val requestStream = channels.mainChannel.bitVectors.through(StreamDecoder.many(Decoder[RemoteRequest]).toPipe[TaskB])
+  private val updateStream = channels.notebookUpdatesChannel.bitVectors.through(StreamDecoder.many(Decoder[NotebookUpdate]).toPipe[TaskB])
 
   def sendResponse(rep: RemoteResponse): TaskB[Unit] = for {
     bytes <- ZIO.fromEither(RemoteResponse.codec.encode(rep).toEither).mapError(err => new RuntimeException(err.message))

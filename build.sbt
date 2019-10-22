@@ -1,24 +1,26 @@
 name := "polynote"
 
-lazy val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
-lazy val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
-lazy val dist: TaskKey[File] = taskKey[File]("Building distribution...")
-lazy val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
-lazy val polynoteJars: TaskKey[Seq[(File, String)]] = taskKey("Polynote JARs")
+val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
+val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
+val dist: TaskKey[File] = taskKey[File]("Building distribution...")
+val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
+val polynoteJars: TaskKey[Seq[(File, String)]] = taskKey("Polynote JARs")
+val sparkVersion: SettingKey[String] = settingKey("Spark version")
 
 val versions = new {
   val http4s     = "0.20.6"
   val fs2        = "1.0.5"
-  val catsEffect = "1.3.1"
+  val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC2-6"
-  val circe      = "0.11.1"
-  val circeYaml  = "0.10.0"
-  val spark      = "2.1.3"
+  val zio        = "1.0.0-RC15"
+  val zioInterop = "2.0.0.0-RC6"
 }
 
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
 
 val commonSettings = Seq(
+  scalaVersion := "2.11.11",
+  crossScalaVersions := Seq("2.11.11", "2.12.10"),
   organization := "org.polynote",
   publishMavenStyle := true,
   homepage := Some(url("https://polynote.org")),
@@ -29,8 +31,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.2.6-SNAPSHOT",
-  scalaVersion := "2.11.11",
+  version := "0.2.7-SNAPSHOT",
   publishTo := sonatypePublishToBundle.value,
   developers := List(
     Developer(id = "jeremyrsmith", name = "Jeremy Smith", email = "", url = url("https://github.com/jeremyrsmith")),
@@ -44,7 +45,7 @@ val commonSettings = Seq(
   fork in Test := true,
   javaOptions in Test += s"-Djava.library.path=$nativeLibraryPath",
   libraryDependencies ++= Seq(
-    "org.scalatest" %% "scalatest" % "3.0.5" % "test",
+    "org.scalatest" %% "scalatest" % "3.0.8" % "test",
     "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
   ),
   assemblyMergeStrategy in assembly := {
@@ -56,11 +57,14 @@ val commonSettings = Seq(
       oldStrategy(x)
   },
   cancelable in Global := true,
-  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.7"),
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
   },
   test in assembly := {}
+)
+
+val crossBuildSettings = Seq(
 )
 
 lazy val `polynote-runtime` = project.settings(
@@ -72,7 +76,8 @@ lazy val `polynote-runtime` = project.settings(
     "black.ninia" % "jep" % "3.9.0",
     "com.chuusai" %% "shapeless" % "2.3.3",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
-  )
+  ),
+  crossBuildSettings
 ).enablePlugins(BuildInfoPlugin)
   .settings(
     buildInfoKeys := Seq[BuildInfoKey](
@@ -93,35 +98,36 @@ val `polynote-env` = project.settings(
   commonSettings,
   scalacOptions += "-language:experimental.macros",
   libraryDependencies ++= Seq(
-    "dev.zio" %% "zio-interop-cats" % "1.3.1.0-RC3" % "provided",
+    "dev.zio" %% "zio-interop-cats" % versions.zioInterop % "provided",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
-  )
+  ),
+  crossBuildSettings
 )
 
 val `polynote-kernel` = project.settings(
   commonSettings,
-  scalaVersion := "2.11.11",
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
     "org.typelevel" %% "cats-effect" % versions.catsEffect,
-    "dev.zio" %% "zio-interop-cats" % "1.3.1.0-RC3",
+    "dev.zio" %% "zio" % versions.zio,
+    "dev.zio" %% "zio-interop-cats" % versions.zioInterop,
     "co.fs2" %% "fs2-io" % versions.fs2,
-    "org.scodec" %% "scodec-core" % "1.10.3",
-    "org.scodec" %% "scodec-stream" % "1.2.0",
-    "com.lihaoyi" %% "fansi" % "0.2.6",
-    "io.circe" %% "circe-yaml" % versions.circeYaml,
-    "io.circe" %% "circe-generic" % versions.circe,
-    "io.circe" %% "circe-generic-extras" % versions.circe,
+    "org.scodec" %% "scodec-core" % "1.11.4",
+    "org.scodec" %% "scodec-stream" % "2.0.0",
     "io.get-coursier" %% "coursier" % versions.coursier,
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
-    "io.get-coursier" %% "coursier-cats-interop" % versions.coursier,
     "io.github.classgraph" % "classgraph" % "4.8.47",
     "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
     "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
+    "io.circe" %% "circe-yaml" % "0.10.0",
+    "io.circe" %% "circe-generic" % "0.11.1",
+    "io.circe" %% "circe-generic-extras" % "0.11.1",
+    "io.circe" %% "circe-parser" % "0.11.1",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
   publish := {},
+  crossBuildSettings,
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
@@ -134,35 +140,45 @@ val `polynote-server` = project.settings(
     "org.http4s" %% "http4s-blaze-server" % versions.http4s,
     "org.http4s" %% "http4s-blaze-client" % versions.http4s,
     "org.scodec" %% "scodec-core" % "1.10.3",
-    "io.circe" %% "circe-parser" % versions.circe,
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
   publish := {},
+  crossBuildSettings,
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "compile->compile;test->test")
 
+val sparkSettings = Seq(
+  sparkVersion := {
+    scalaVersion.value match {
+      case ver if ver startsWith "2.11" => "2.1.1"
+      case ver                          => "2.4.4"  // Spark 2.4 is first version to publish for scala 2.12
+    }
+  },
+  libraryDependencies ++= Seq(
+    "org.apache.spark" %% "spark-sql" % sparkVersion.value % "provided",
+    "org.apache.spark" %% "spark-repl" % sparkVersion.value % "provided",
+    "org.apache.spark" %% "spark-sql" % sparkVersion.value % "test",
+    "org.apache.spark" %% "spark-repl" % sparkVersion.value % "test"
+  )
+)
+
 lazy val `polynote-spark-runtime` = project.settings(
   commonSettings,
+  sparkSettings,
+  crossBuildSettings,
   libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.apache.spark" %% "spark-sql" % versions.spark % "provided",
-    "org.apache.spark" %% "spark-repl" % versions.spark % "provided",
-    "org.apache.spark" %% "spark-sql" % versions.spark % "test",
-    "org.apache.spark" %% "spark-repl" % versions.spark % "test"
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   )
 ) dependsOn `polynote-runtime`
 
 lazy val `polynote-spark` = project.settings(
   commonSettings,
+  sparkSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.scodec" %% "scodec-stream" % "1.2.0",
-    "org.apache.spark" %% "spark-sql" % versions.spark % "provided",
-    "org.apache.spark" %% "spark-repl" % versions.spark % "provided",
-    "org.apache.spark" %% "spark-sql" % versions.spark % "test",
-    "org.apache.spark" %% "spark-repl" % versions.spark % "test"
+    "org.scodec" %% "scodec-stream" % "1.2.0"
   ),
   publish := {},
   dependencyJars := {
@@ -180,6 +196,7 @@ lazy val `polynote-spark` = project.settings(
       runtimeAssembly -> "polynote/deps/polynote-runtime.jar",
       sparkRuntime    -> "polynote/deps/polynote-spark-runtime.jar")
   },
+  crossBuildSettings,
   assemblyOption in assembly := {
     val jars = (polynoteJars.value ++ dependencyJars.value).map(_._2.stripPrefix("polynote/")).mkString(":")
     (assemblyOption in assembly).value.copy(

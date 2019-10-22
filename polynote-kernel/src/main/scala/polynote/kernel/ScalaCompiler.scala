@@ -126,7 +126,7 @@ class ScalaCompiler private (
   def inferImplicits(types: List[Type]): TaskR[Blocking, List[Option[AnyRef]]] = {
     val (names, trees) = types.map {
       typ =>
-        val name = freshTermName("anon$")(currentFreshNameCreator)
+        val name = freshTermName("anon$")(globalFreshNameCreator)
         name.encodedName.toString -> q"val $name: ${TypeTree(typ)} = implicitly[${TypeTree(typ)}]"
     }.unzip
 
@@ -185,7 +185,7 @@ class ScalaCompiler private (
 
 
     // The name of the class (and its companion object, in case one is needed)
-    lazy val assignedTypeName: TypeName = freshTypeName(s"$name$$")(global.currentFreshNameCreator)
+    lazy val assignedTypeName: TypeName = freshTypeName(s"$name$$")(global.globalFreshNameCreator)
     lazy val assignedTermName: TermName = assignedTypeName.toTermName
 
     private lazy val priorCellNames = priorCells.map(_.assignedTypeName)

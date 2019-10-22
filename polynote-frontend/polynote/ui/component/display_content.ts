@@ -236,7 +236,7 @@ export function displaySchema(structType: StructType): HTMLElement {
         if (field.dataType instanceof OptionalType) {
             return displayField(new StructField(field.name + "?", field.dataType.element));
         }
-        
+
         const typeName = field.dataType.typeName();
         const attrs = {"data-fieldType": typeName} as any;
         return tag("li", ['object-field'], attrs, [
