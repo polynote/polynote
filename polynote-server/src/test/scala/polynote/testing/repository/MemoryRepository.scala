@@ -21,5 +21,7 @@ class MemoryRepository extends NotebookRepository[TaskB] {
   def listNotebooks(): UIO[List[String]] = ZIO.effectTotal(notebooks.keys.toList)
 
   def createNotebook(path: String, maybeUriOrContent: Option[Either[String, String]]): UIO[String] =
-    ZIO.effectTotal(notebooks.put(path, Notebook(path, ShortList.of(), None))).const(path)
+    ZIO.effectTotal(notebooks.put(path, Notebook(path, ShortList.of(), None))).as(path)
+
+  def initStorage(): TaskB[Unit] = ZIO.unit
 }

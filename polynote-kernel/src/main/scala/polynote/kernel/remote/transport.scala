@@ -23,7 +23,7 @@ import zio.Cause._
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Promise, Task, TaskR, ZIO, ZSchedule}
+import zio.{Promise, Task, RIO, ZIO, ZSchedule}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
 
@@ -33,7 +33,7 @@ import scala.reflect.{ClassTag, classTag}
 import Update.notebookUpdateCodec
 
 trait Transport[ServerAddress] {
-  def serve(): TaskR[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
+  def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
   def connect(address: ServerAddress): TaskB[TransportClient]
 }
 
@@ -184,7 +184,7 @@ class SocketTransport(
   forceServerAddress: Option[String] = None
 ) extends Transport[InetSocketAddress] {
 
-  private def openServerChannel: TaskR[Blocking, ServerSocketChannel] = effectBlocking {
+  private def openServerChannel: RIO[Blocking, ServerSocketChannel] = effectBlocking {
     ServerSocketChannel.open().bind(
       new InetSocketAddress(
         forceServerAddress.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress), 0))
@@ -203,7 +203,7 @@ class SocketTransport(
     case None    => ZIO.fail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.asScala}"))
   }
 
-  def serve(): TaskR[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[InetSocketAddress]] =
+  def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[InetSocketAddress]] =
     TaskManager.run("RemoteKernel", "Remote kernel", "Starting remote kernel") {
       for {
         socketServer  <- openServerChannel
@@ -246,17 +246,17 @@ object SocketTransport {
     def deployKernel(
       transport: SocketTransport,
       serverAddress: InetSocketAddress
-    ): TaskR[BaseEnv with GlobalEnv with CurrentNotebook, DeployedProcess]
+    ): RIO[BaseEnv with GlobalEnv with CurrentNotebook, DeployedProcess]
   }
 
   /**
     * An interface to the process created by [[Deploy]]
     */
   trait DeployedProcess {
-    def exitStatus: TaskR[BaseEnv, Option[Int]]
-    def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): TaskR[BaseEnv, Option[Int]]
-    def kill(): TaskR[BaseEnv, Unit]
-    def awaitOrKill(gracePeriodSeconds: Long): TaskR[BaseEnv, Unit] = awaitExit(gracePeriodSeconds, TimeUnit.SECONDS).flatMap {
+    def exitStatus: RIO[BaseEnv, Option[Int]]
+    def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): RIO[BaseEnv, Option[Int]]
+    def kill(): RIO[BaseEnv, Unit]
+    def awaitOrKill(gracePeriodSeconds: Long): RIO[BaseEnv, Unit] = awaitExit(gracePeriodSeconds, TimeUnit.SECONDS).flatMap {
       case Some(status) => ZIO.unit
       case None => kill() *> awaitExit(gracePeriodSeconds, TimeUnit.SECONDS).flatMap {
         case Some(status) => ZIO.unit
@@ -274,7 +274,7 @@ object SocketTransport {
     override def deployKernel(
       transport: SocketTransport,
       serverAddress: InetSocketAddress
-    ): TaskR[BaseEnv with GlobalEnv with CurrentNotebook, DeployedProcess] = deployCommand(serverAddress).flatMap {
+    ): RIO[BaseEnv with GlobalEnv with CurrentNotebook, DeployedProcess] = deployCommand(serverAddress).flatMap {
       command =>
         val displayCommand = command.map {
           str => if (str contains " ") s""""$str"""" else str
@@ -290,14 +290,14 @@ object SocketTransport {
 
   object DeploySubprocess {
     trait DeployCommand {
-      def apply(serverAddress: InetSocketAddress): TaskR[Config with CurrentNotebook, Seq[String]]
+      def apply(serverAddress: InetSocketAddress): RIO[Config with CurrentNotebook, Seq[String]]
     }
 
     /**
       * Deploy by starting a Java process that inherits classpath and environment variables from this process
       */
     class DeployJava[KernelFactory <: Kernel.Factory.Service : ClassTag] extends DeployCommand {
-      override def apply(serverAddress: InetSocketAddress): TaskR[Config with CurrentNotebook, Seq[String]] = ZIO {
+      override def apply(serverAddress: InetSocketAddress): RIO[Config with CurrentNotebook, Seq[String]] = ZIO {
         val java = Paths.get(System.getProperty("java.home"), "bin", "java").toString
         val javaArgs = sys.process.javaVmArguments.filterNot(_ startsWith "-agentlib")
         val classPath = System.getProperty("java.class.path")
@@ -311,13 +311,13 @@ object SocketTransport {
     }
 
     class Subprocess(process: Process) extends DeployedProcess {
-      override def exitStatus: TaskR[Blocking, Option[Int]] = for {
+      override def exitStatus: RIO[Blocking, Option[Int]] = for {
         alive <- effectBlocking(process.isAlive)
       } yield if (alive) None else Option(process.exitValue())
 
-      override def kill(): TaskR[Blocking, Unit] = effectBlocking(process.destroy())
+      override def kill(): RIO[Blocking, Unit] = effectBlocking(process.destroy())
 
-      override def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): TaskR[Blocking, Option[Int]] = effectBlocking {
+      override def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): RIO[Blocking, Option[Int]] = effectBlocking {
         if (process.waitFor(timeout, timeUnit)) {
           Some(process.exitValue())
         } else {

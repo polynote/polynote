@@ -7,7 +7,7 @@ import polynote.kernel.util.ResultOutputStream
 import polynote.kernel.{ExecutionStatus, Output, Result, ScalaCompiler, withContextClassLoader}
 import polynote.messages.CellID
 import polynote.runtime.KernelRuntime
-import zio.{Runtime, TaskR, UIO, ZIO}
+import zio.{Runtime, RIO, UIO, ZIO}
 import zio.blocking.Blocking
 import zio.internal.{ExecutionMetrics, Executor}
 
@@ -68,13 +68,13 @@ class CellIO(
 }
 
 object CellIO {
-  def apply(cellID: CellID): TaskR[PublishResult with PublishStatus with CurrentTask with Blocking with ScalaCompiler.Provider, Blocking with CurrentRuntime] =
+  def apply(cellID: CellID): RIO[PublishResult with PublishStatus with CurrentTask with Blocking with ScalaCompiler.Provider, Blocking with CurrentRuntime] =
     for {
       cl <- ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader)
       bs <- apply(cellID, cl)
     } yield bs
 
-  def apply(cellID: CellID, classLoader: ClassLoader): TaskR[PublishResult with PublishStatus with CurrentTask with Blocking, Blocking with CurrentRuntime] =
+  def apply(cellID: CellID, classLoader: ClassLoader): RIO[PublishResult with PublishStatus with CurrentTask with Blocking, Blocking with CurrentRuntime] =
     for {
       runtime <- ZIO.runtime[Any]
       env     <- ZIO.access[PublishResult with PublishStatus with CurrentTask with Blocking](identity)

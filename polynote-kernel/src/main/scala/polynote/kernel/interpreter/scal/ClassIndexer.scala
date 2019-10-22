@@ -9,7 +9,7 @@ import io.github.classgraph.ClassGraph
 import polynote.kernel.ScalaCompiler
 import polynote.kernel.util.pathOf
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Fiber, TaskR, UIO, ZIO}
+import zio.{Fiber, RIO, UIO, ZIO}
 
 import scala.collection.immutable.TreeMap
 

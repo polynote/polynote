@@ -11,7 +11,7 @@ import polynote.kernel.{Output, Result, ScalaCompiler}
 import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.kernel.logging.Logging
 import polynote.testing.kernel.MockEnv
-import zio.{TaskR, ZIO}
+import zio.{RIO, ZIO}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
@@ -56,7 +56,7 @@ trait InterpreterSpec extends ZIOSpec {
 
   case class InterpResult(state: State, env: MockEnv)
 
-  type ITask[A] = TaskR[Clock with Console with System with Random with Blocking with Logging, A]
+  type ITask[A] = RIO[Clock with Console with System with Random with Blocking with Logging, A]
 
   def interp(code: String): StateT[ITask, State, InterpResult] = StateT[ITask, State, InterpResult] {
     state => MockEnv(state.id).flatMap {

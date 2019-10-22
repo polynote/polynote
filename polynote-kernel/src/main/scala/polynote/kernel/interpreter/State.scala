@@ -2,7 +2,7 @@ package polynote.kernel.interpreter
 
 import polynote.kernel.ResultValue
 import polynote.messages.CellID
-import zio.{Task, TaskR, ZIO}
+import zio.{Task, RIO, ZIO}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -31,7 +31,7 @@ trait State {
   // TODO: make this protected, public API should prevent you from removing Root from the chain
   def withPrev(prev: State): State
   def updateValues(fn: ResultValue => ResultValue): State
-  def updateValuesM[R](fn: ResultValue => TaskR[R, ResultValue]): TaskR[R, State]
+  def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State]
 
   /**
     * Perform the side effect for each state, moving back through states in reverse chronological order
@@ -189,13 +189,13 @@ object State {
     override val values: List[ResultValue] = Nil
     override def withPrev(prev: State): Root.type = this
     override def updateValues(fn: ResultValue => ResultValue): State = this
-    override def updateValuesM[R](fn: ResultValue => TaskR[R, ResultValue]): TaskR[R, State] = ZIO.succeed(this)
+    override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] = ZIO.succeed(this)
   }
 
   final case class Id(id: CellID, prev: State, values: List[ResultValue]) extends State {
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
-    override def updateValuesM[R](fn: ResultValue => TaskR[R, ResultValue]): TaskR[R, State] =
+    override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =
       ZIO.sequence(values.map(fn)).map(values => copy(values = values))
   }
 

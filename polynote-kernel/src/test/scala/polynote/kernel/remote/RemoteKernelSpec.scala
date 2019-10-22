@@ -17,7 +17,7 @@ import polynote.testing.{Generators, ZIOSpec}
 import polynote.testing.kernel.{MockEnv, MockKernelEnv}
 import polynote.testing.kernel.remote.InProcessDeploy
 import scodec.bits.ByteVector
-import zio.{Ref, Task, TaskR, ZIO}
+import zio.{Ref, Task, RIO, ZIO}
 import zio.interop.catz._
 
 import scala.concurrent.TimeoutException
@@ -25,7 +25,7 @@ import scala.concurrent.TimeoutException
 class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterAll with BeforeAndAfterEach with MockFactory with GeneratorDrivenPropertyChecks {
   private val kernel        = mock[Kernel]
   private val kernelFactory = new Factory.LocalService {
-    def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(kernel)
+    def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(kernel)
   }
 
   private val env           = unsafeRun(MockKernelEnv(kernelFactory))
@@ -53,7 +53,7 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
 
       "queueCell" in {
         (kernel.queueCell _).expects(CellID(1)).returning {
-          PublishResult(Output("text/plain", "hello")).const(ZIO.unit)
+          PublishResult(Output("text/plain", "hello")).as(ZIO.unit)
         }
         unsafeRun(remoteKernel.queueCell(CellID(1)).provide(env).flatten)
         unsafeRun(env.publishResult.toList) shouldEqual List(Output("text/plain", "hello"))

@@ -7,7 +7,7 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, Cur
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages.Notebook
-import zio.{Task, TaskR, ZIO}
+import zio.{Task, RIO, ZIO}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.system.System
@@ -18,9 +18,9 @@ package object kernel {
   trait BaseEnvT extends Blocking with Clock with System with Logging
 
   // some type aliases jut to avoid env clutter
-  type TaskB[+A] = TaskR[BaseEnv, A]
-  type TaskC[+A] = TaskR[BaseEnv with GlobalEnv with CellEnv, A]
-  type TaskG[+A] = TaskR[BaseEnv with GlobalEnv, A]
+  type TaskB[+A] = RIO[BaseEnv, A]
+  type TaskC[+A] = RIO[BaseEnv with GlobalEnv with CellEnv, A]
+  type TaskG[+A] = RIO[BaseEnv with GlobalEnv, A]
 
   type GlobalEnv = Config with Interpreter.Factories with Kernel.Factory
   trait GlobalEnvT extends Config with Interpreter.Factories with Kernel.Factory
@@ -39,14 +39,14 @@ package object kernel {
   type InterpreterEnv = Blocking with PublishResult with PublishStatus with CurrentTask with CurrentRuntime
   trait InterpreterEnvT extends Blocking with PublishResult with PublishStatus with CurrentTask with CurrentRuntime
 
-  implicit class StreamOps[R, A](val stream: Stream[TaskR[R, ?], A]) {
+  implicit class StreamOps[R, A](val stream: Stream[RIO[R, ?], A]) {
 
     /**
       * Convenience method to terminate (rather than interrupt) a stream after a given predicate is met. In contrast to
       * [[Stream.interruptWhen]], this allows the stream to finish processing all elements up to and including the
       * element that satisfied the predicate, whereas interruptWhen ungracefully terminates it at once.
       */
-    def terminateAfter(fn: A => Boolean): Stream[TaskR[R, ?], A] = stream.flatMap {
+    def terminateAfter(fn: A => Boolean): Stream[RIO[R, ?], A] = stream.flatMap {
       case end if fn(end) => Stream.emits(List(Some(end), None))
       case notEnd         => Stream.emit(Some(notEnd))
     }.unNoneTerminate
@@ -105,11 +105,11 @@ package object kernel {
     def widen[A1 >: A]: ZIO[R, E, A1] = self
   }
 
-  final implicit class TaskRSyntax[R, A](val self: ZIO[R, Throwable, A]) extends AnyVal {
+  final implicit class RIOSyntax[R, A](val self: ZIO[R, Throwable, A]) extends AnyVal {
     def withFilter(predicate: A => Boolean): ZIO[R, Throwable, A] = self.filterOrFail(predicate)(new MatchError("Predicate is not satisfied"))
   }
 
-  def withContextClassLoaderIO[A](cl: ClassLoader)(thunk: => A): TaskR[Blocking, A] =
+  def withContextClassLoaderIO[A](cl: ClassLoader)(thunk: => A): RIO[Blocking, A] =
     zio.blocking.effectBlocking(withContextClassLoader(cl)(thunk))
 
   def withContextClassLoader[A](cl: ClassLoader)(thunk: => A): A = {

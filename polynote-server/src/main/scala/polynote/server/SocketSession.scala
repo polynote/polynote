@@ -20,14 +20,14 @@ import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages._
-import zio.{Promise, Task, TaskR, ZIO}
+import zio.{Promise, Task, RIO, ZIO}
 
 import scala.collection.immutable.SortedMap
 import scala.concurrent.duration.{Duration, SECONDS}
 
 class SocketSession(
   handler: SessionHandler
-)(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
+)(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]) {
 
   private def toFrame(message: Message): Task[Binary] = {
     Message.encode[Task](message).map(bits => Binary(bits.toByteVector))
@@ -78,22 +78,22 @@ class SessionHandler(
   subscribed: RefMap[String, KernelSubscriber],
   closed: Promise[Throwable, Unit],
   streamingHandles: StreamingHandles with BaseEnv
-)(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]) {
+)(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]) {
 
-  def accept(message: Message): TaskR[BaseEnv with GlobalEnv with PublishMessage, Unit] =
+  def accept(message: Message): RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] =
     handler.applyOrElse(message, unhandled)
 
   def awaitClosed: ZIO[Any, Nothing, Either[Throwable, Unit]] = closed.await.either
 
-  private def subscribe(path: String): TaskR[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribed.getOrCreate(path) {
+  private def subscribe(path: String): RIO[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribed.getOrCreate(path) {
     notebookManager.open(path).flatMap {
       kernelPublisher => kernelPublisher.subscribe()
     }
   }
 
-  private def unhandled(msg: Message): TaskR[BaseEnv, Unit] = Logging.warn(s"Unhandled message type ${msg.getClass.getName}")
+  private def unhandled(msg: Message): RIO[BaseEnv, Unit] = Logging.warn(s"Unhandled message type ${msg.getClass.getName}")
 
-  private val handler: PartialFunction[Message, TaskR[BaseEnv with GlobalEnv with PublishMessage, Unit]] = {
+  private val handler: PartialFunction[Message, RIO[BaseEnv with GlobalEnv with PublishMessage, Unit]] = {
     case ListNotebooks(_) =>
       notebookManager.list().flatMap {
         notebooks => PublishMessage(ListNotebooks(notebooks.map(ShortString.apply)))
@@ -220,7 +220,7 @@ class SessionHandler(
 }
 
 object SocketSession {
-  def apply()(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[TaskR[PublishMessage, ?]]): TaskR[BaseEnv with NotebookManager, SocketSession] = for {
+  def apply()(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]): RIO[BaseEnv with NotebookManager, SocketSession] = for {
     notebookManager  <- NotebookManager.access
     subscribed       <- RefMap.empty[String, KernelSubscriber]
     closed           <- Promise.make[Throwable, Unit]

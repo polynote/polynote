@@ -8,7 +8,7 @@ import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.{Output, Result, ResultValue, ScalaCompiler, TaskInfo}
 import polynote.testing.{InterpreterSpec, ValueMap, ZIOSpec}
 import polynote.messages.CellID
-import zio.{TaskR, ZIO}
+import zio.{RIO, ZIO}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console

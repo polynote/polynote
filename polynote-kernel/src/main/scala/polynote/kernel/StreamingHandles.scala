@@ -7,7 +7,7 @@ import polynote.kernel.logging.Logging
 import polynote.messages.ByteVector32
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.bits.ByteVector
-import zio.{Semaphore, Task, TaskR, ZIO}
+import zio.{Semaphore, Task, RIO, ZIO}
 import zio.blocking.effectBlocking
 
 trait StreamingHandles {
@@ -94,15 +94,15 @@ object StreamingHandles {
 
   def make(sessionID: Int): TaskB[StreamingHandles] = Service.make().map(of(_, sessionID))
 
-  def access: TaskR[StreamingHandles, StreamingHandles.Service] = ZIO.access[StreamingHandles](_.streamingHandles)
+  def access: RIO[StreamingHandles, StreamingHandles.Service] = ZIO.access[StreamingHandles](_.streamingHandles)
 
-  def getStreamData(handleId: Int, count: Int): TaskR[BaseEnv with StreamingHandles, Array[ByteVector32]] =
+  def getStreamData(handleId: Int, count: Int): RIO[BaseEnv with StreamingHandles, Array[ByteVector32]] =
     access.flatMap(_.getStreamData(handleId, count))
 
-  def modifyStream(handleId: Int, ops: List[TableOp]): TaskR[BaseEnv with StreamingHandles, Option[StreamingDataRepr]] =
+  def modifyStream(handleId: Int, ops: List[TableOp]): RIO[BaseEnv with StreamingHandles, Option[StreamingDataRepr]] =
     access.flatMap(_.modifyStream(handleId, ops))
 
-  def releaseStreamHandle(handleId: Int): TaskR[BaseEnv with StreamingHandles, Unit] =
+  def releaseStreamHandle(handleId: Int): RIO[BaseEnv with StreamingHandles, Unit] =
     access.flatMap(_.releaseStreamHandle(handleId))
 
 }

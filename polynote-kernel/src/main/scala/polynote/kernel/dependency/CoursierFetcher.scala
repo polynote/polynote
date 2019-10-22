@@ -30,21 +30,21 @@ import polynote.kernel.environment.{CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
 import polynote.messages.NotebookConfig
 import zio.blocking.{Blocking, effectBlocking, blocking}
-import zio.{Task, TaskR, ZIO, ZManaged}
+import zio.{Task, RIO, ZIO, ZManaged}
 import zio.interop.catz._
 
 import scala.concurrent.ExecutionContext
 import scala.tools.nsc.interpreter.InputStream
 
 object CoursierFetcher {
-  type ArtifactTask[A] = TaskR[CurrentTask, A]
-  type OuterTask[A] = TaskR[TaskManager with CurrentTask, A]
-  //type ArtifactTask[A] = TaskR[CurrentTask, A]
+  type ArtifactTask[A] = RIO[CurrentTask, A]
+  type OuterTask[A] = RIO[TaskManager with CurrentTask, A]
+  //type ArtifactTask[A] = RIO[CurrentTask, A]
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val cache = FileCache[ArtifactTask]()
 
-  def fetch(language: String): TaskR[CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
+  def fetch(language: String): RIO[CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
       config       <- CurrentNotebook.config
       dependencies  = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
@@ -78,7 +78,7 @@ object CoursierFetcher {
     dependencies: List[String],
     exclusions: List[String],
     repositories: List[Repository]
-  ): TaskR[CurrentTask, Resolution] = ZIO {
+  ): RIO[CurrentTask, Resolution] = ZIO {
     val coursierExclude = exclusions.map { exclusionStr =>
       exclusionStr.split(":") match {
         case Array(org, name) => (Organization(org), ModuleName(name))
@@ -142,7 +142,7 @@ object CoursierFetcher {
     def countingFetcher(fetcher: ResolutionProcess.Fetch[ArtifactTask]): ResolutionProcess.Fetch[ArtifactTask] = {
       modules: Seq[(Module, String)] =>
         addMoreModules(modules.size) *> fetcher(modules).flatMap {
-          md => resolveModules(md.size).const(md)
+          md => resolveModules(md.size).as(md)
         }
     }
 
@@ -160,7 +160,7 @@ object CoursierFetcher {
   private def download(
     resolution: Resolution,
     maxIterations: Int = 100
-  ): TaskR[TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Any].flatMap {
+  ): RIO[TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Any].flatMap {
     runtime =>
       Artifacts(new TaskManagedCache(cache, runtime.Platform.executor.asEC)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
         artifactResult =>
@@ -171,7 +171,7 @@ object CoursierFetcher {
       }
   }
 
-  private def downloadUris(uris: List[URI]): TaskR[TaskManager with CurrentTask with Blocking, List[(Boolean, String, File)]] = {
+  private def downloadUris(uris: List[URI]): RIO[TaskManager with CurrentTask with Blocking, List[(Boolean, String, File)]] = {
     ZIO.collectAllPar {
       uris.map {
         uri => for {
@@ -183,7 +183,7 @@ object CoursierFetcher {
     }
   }
 
-  protected def fetchUrl(uri: URI, localFile: File, chunkSize: Int = 8192): TaskR[Blocking with CurrentTask, File] = {
+  protected def fetchUrl(uri: URI, localFile: File, chunkSize: Int = 8192): RIO[Blocking with CurrentTask, File] = {
     def downloadToFile(file: DownloadableFile, cacheFile: File) = for {
       blockingEnv <- ZIO.access[Blocking](identity)
       task        <- CurrentTask.access
@@ -197,7 +197,7 @@ object CoursierFetcher {
           fs2IS.chunks
             .mapAccumulate(0)((n, c) => (n + c.size, c))
             .evalMap {
-              case (i, chunk) => task.update(_.progress(i.toDouble / size)).const(chunk)
+              case (i, chunk) => task.update(_.progress(i.toDouble / size)).as(chunk)
             }
             .flatMap(fs2.Stream.chunk)
             .through(fs2OS)
@@ -211,7 +211,7 @@ object CoursierFetcher {
       file        <- ZIO.fromOption(DownloadableFileProvider.getFile(uri)).mapError(_ => new Exception(s"Unable to find provider for uri $uri"))
       inputAsFile  = Paths.get(uri.getPath).toFile
       exists      <- effectBlocking(inputAsFile.exists())
-      download    <- if (exists) ZIO.succeed(inputAsFile) else downloadToFile(file, localFile).const(localFile)
+      download    <- if (exists) ZIO.succeed(inputAsFile) else downloadToFile(file, localFile).as(localFile)
     } yield download
 
   }
@@ -238,15 +238,15 @@ object CoursierFetcher {
   }
 
   // coursier doesn't have instances for ZIO built in
-  implicit def zioSync[R]: Sync[TaskR[R, ?]] = new Sync[TaskR[R, ?]] {
-    def delay[A](a: => A): TaskR[R, A] = ZIO.effect(a)
-    def handle[A](a: TaskR[R, A])(f: PartialFunction[Throwable, A]): TaskR[R, A] = a.catchSome(f andThen ZIO.succeed)
-    def fromAttempt[A](a: Either[Throwable, A]): TaskR[R, A] = ZIO.fromEither(a)
-    def gather[A](elems: Seq[TaskR[R, A]]): TaskR[R, Seq[A]] = Traverse[List].sequence[TaskR[R, ?], A](elems.toList)
-    def point[A](a: A): TaskR[R, A] = ZIO.succeed(a)
-    def bind[A, B](elem: TaskR[R, A])(f: A => TaskR[R, B]): TaskR[R, B] = elem.flatMap(f)
+  implicit def zioSync[R]: Sync[RIO[R, ?]] = new Sync[RIO[R, ?]] {
+    def delay[A](a: => A): RIO[R, A] = ZIO.effect(a)
+    def handle[A](a: RIO[R, A])(f: PartialFunction[Throwable, A]): RIO[R, A] = a.catchSome(f andThen ZIO.succeed)
+    def fromAttempt[A](a: Either[Throwable, A]): RIO[R, A] = ZIO.fromEither(a)
+    def gather[A](elems: Seq[RIO[R, A]]): RIO[R, Seq[A]] = Traverse[List].sequence[RIO[R, ?], A](elems.toList)
+    def point[A](a: A): RIO[R, A] = ZIO.succeed(a)
+    def bind[A, B](elem: RIO[R, A])(f: A => RIO[R, B]): RIO[R, B] = elem.flatMap(f)
 
-    def schedule[A](pool: ExecutorService)(f: => A): TaskR[R, A] = ZIO.effect(f).on {
+    def schedule[A](pool: ExecutorService)(f: => A): RIO[R, A] = ZIO.effect(f).on {
       pool match {
         case pool: ExecutionContext => pool
         case pool => ExecutionContext.fromExecutorService(pool)
@@ -269,7 +269,7 @@ object CoursierFetcher {
       EitherT(TaskManager.runSubtask(name, name, artifact.url)(logged(_.file(artifact).run)))
     }
 
-    def logged[A](fn: FileCache[ArtifactTask] => ArtifactTask[A]): TaskR[CurrentTask, A] = for {
+    def logged[A](fn: FileCache[ArtifactTask] => ArtifactTask[A]): RIO[CurrentTask, A] = for {
       logger <- TaskManagedCache.logger
       result <- fn(underlying.withLogger(logger))
     } yield result

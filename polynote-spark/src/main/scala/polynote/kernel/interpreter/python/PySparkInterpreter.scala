@@ -7,14 +7,14 @@ import polynote.kernel.{BaseEnv, GlobalEnv, ScalaCompiler, TaskManager}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.interpreter.Interpreter
 import py4j.GatewayServer
-import zio.{Task, TaskR, ZIO}
+import zio.{Task, RIO, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 
 object PySparkInterpreter {
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
-    def apply(): TaskR[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = for {
+    def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = for {
       venv        <- VirtualEnvFetcher.fetch()
       gatewayRef   = new AtomicReference[GatewayServer]()
       interpreter <- PythonInterpreter(venv, "py4j" :: "pyspark" :: PythonInterpreter.sharedModules, getPy4JError(gatewayRef))
@@ -38,7 +38,7 @@ object PySparkInterpreter {
       }
   }
 
-  private def setupPySpark(interp: PythonInterpreter, gatewayRef: AtomicReference[GatewayServer]): TaskR[Blocking with TaskManager, Unit] =
+  private def setupPySpark(interp: PythonInterpreter, gatewayRef: AtomicReference[GatewayServer]): RIO[Blocking with TaskManager, Unit] =
     TaskManager.run("PySpark", "Initializing PySpark") {
       for {
         spark   <- ZIO(SparkSession.builder().getOrCreate())

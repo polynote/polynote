@@ -17,7 +17,7 @@ import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyLis
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Runtime, Task, TaskR, UIO, ZIO}
+import zio.{Runtime, Task, RIO, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
@@ -78,7 +78,7 @@ class PythonInterpreter private[python] (
     }
   }
 
-  def run(code: String, state: State): TaskR[InterpreterEnv, State] = for {
+  def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
     parsed    <- parse(code, s"Cell${state.id}")
     compiled  <- compile(parsed)
     locals    <- eval[PyObject]("{}")
@@ -165,7 +165,7 @@ class PythonInterpreter private[python] (
     }
   }
 
-  def init(state: State): TaskR[InterpreterEnv, State] = for {
+  def init(state: State): RIO[InterpreterEnv, State] = for {
     _       <- exec(setup)
     _       <- exec(matplotlib)
     globals <- getValue("globals().copy()")
@@ -296,7 +296,7 @@ class PythonInterpreter private[python] (
       |    print("No matplotlib support:", e, file=sys.stderr)
       |""".stripMargin
 
-  protected def injectGlobals(globals: PyObject): TaskR[CurrentRuntime, Unit] = CurrentRuntime.access.flatMap {
+  protected def injectGlobals(globals: PyObject): RIO[CurrentRuntime, Unit] = CurrentRuntime.access.flatMap {
     runtime =>
       jep {
         jep =>
@@ -348,7 +348,7 @@ class PythonInterpreter private[python] (
       compile.callAs(classOf[PyObject], parsed)
   }
 
-  protected def run(compiled: PyObject, globals: PyObject, locals: PyObject, state: State): TaskR[CurrentRuntime, State] =
+  protected def run(compiled: PyObject, globals: PyObject, locals: PyObject, state: State): RIO[CurrentRuntime, State] =
     CurrentRuntime.access.flatMap {
       kernelRuntime => jep {
         jep =>
@@ -415,7 +415,7 @@ class PythonInterpreter private[python] (
   case class PythonState(id: CellID, prev: State, values: List[ResultValue], globalsDict: PyObject) extends State {
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
-    override def updateValuesM[R](fn: ResultValue => TaskR[R, ResultValue]): TaskR[R, State] =
+    override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =
       ZIO.sequence(values.map(fn)).map(values => copy(values = values))
   }
 }
@@ -472,7 +472,7 @@ object PythonInterpreter {
   // TODO: pull this from configuration?
   private[python] def sharedModules: List[String] = List("numpy", "google")
 
-  private[python] def mkJep(venv: Option[Path], sharedModules: List[String]): TaskR[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
+  private[python] def mkJep(venv: Option[Path], sharedModules: List[String]): RIO[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
     classLoader => ZIO {
       val conf = new JepConfig()
         .addSharedModules(sharedModules: _*)
@@ -495,7 +495,7 @@ object PythonInterpreter {
     venv: Option[Path],
     sharedModules: List[String] = PythonInterpreter.sharedModules,
     py4jError: String => Option[Throwable] = _ => None
-  ): TaskR[ScalaCompiler.Provider, PythonInterpreter] = {
+  ): RIO[ScalaCompiler.Provider, PythonInterpreter] = {
     val jepThread = new AtomicReference[Thread](null)
     for {
       compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
@@ -509,7 +509,7 @@ object PythonInterpreter {
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
-    def apply(): TaskR[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = for {
+    def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = for {
       venv   <- VirtualEnvFetcher.fetch()
       interp <- PythonInterpreter(venv)
     } yield interp
@@ -555,13 +555,13 @@ object VirtualEnvFetcher {
     repositories: List[config.RepositoryConfig],
     dependencies: List[String],
     exclusions: List[String]
-  ): TaskR[TaskManager with Blocking with CurrentTask, Unit] = {
+  ): RIO[TaskManager with Blocking with CurrentTask, Unit] = {
 
     val options: List[String] = repositories.collect {
       case pip(url) => Seq("--extra-index-url", url)
     }.flatten
 
-    def pip(action: String, dep: String, extraOptions: List[String] = Nil): TaskR[Blocking, Unit] = {
+    def pip(action: String, dep: String, extraOptions: List[String] = Nil): RIO[Blocking, Unit] = {
       val baseCmd = List(s"$venv/bin/pip", action)
       val cmd = baseCmd ::: options ::: extraOptions ::: dep :: Nil
       effectBlocking(cmd.!)

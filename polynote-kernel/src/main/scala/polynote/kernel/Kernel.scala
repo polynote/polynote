@@ -4,7 +4,7 @@ import polynote.buildinfo.BuildInfo
 import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates}
 import polynote.messages.{ByteVector32, CellID, HandleType}
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Task, TaskR, ZIO}
+import zio.{Task, RIO, ZIO}
 
 trait Kernel {
   /**
@@ -13,7 +13,7 @@ trait Kernel {
     */
   def queueCell(id: CellID): TaskC[Task[Unit]]
 
-  def cancelAll(): TaskR[BaseEnv with TaskManager, Unit] = TaskManager.access.flatMap(_.cancelAll())
+  def cancelAll(): RIO[BaseEnv with TaskManager, Unit] = TaskManager.access.flatMap(_.cancelAll())
 
   /**
     * Provide completions for the given position in the given cell
@@ -57,7 +57,7 @@ trait Kernel {
     * @return An array of up to `count` [[scodec.bits.ByteVector]] elements, in which each element represents one encoded
     *         element from the given handle of the given type
     */
-  def getHandleData(handleType: HandleType, handle: Int, count: Int): TaskR[BaseEnv with StreamingHandles, Array[ByteVector32]]
+  def getHandleData(handleType: HandleType, handle: Int, count: Int): RIO[BaseEnv with StreamingHandles, Array[ByteVector32]]
 
   /**
     * Create a new [[StreamingDataRepr]] handle by performing [[TableOp]] operations on the given streaming handle. The
@@ -68,12 +68,12 @@ trait Kernel {
     *         modification, returns None. If the modifications are invalid or unsupported by the the stream, it may either
     *         raise an error or return None.
     */
-  def modifyStream(handleId: Int, ops: List[TableOp]): TaskR[BaseEnv with StreamingHandles, Option[StreamingDataRepr]]
+  def modifyStream(handleId: Int, ops: List[TableOp]): RIO[BaseEnv with StreamingHandles, Option[StreamingDataRepr]]
 
   /**
     * Release a handle. No further data will be available using [[getHandleData()]].
     */
-  def releaseHandle(handleType: HandleType, handleId: Int): TaskR[BaseEnv with StreamingHandles, Unit]
+  def releaseHandle(handleType: HandleType, handleId: Int): RIO[BaseEnv with StreamingHandles, Unit]
 }
 
 object Kernel {
@@ -83,22 +83,22 @@ object Kernel {
 
   object Factory {
     trait Service {
-      def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel]
+      def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel]
     }
 
     trait LocalService extends Service {
-      override def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel]
+      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel]
     }
 
     def of(factory: Service): Factory = new Factory {
       val kernelFactory: Service = factory
     }
 
-    def choose(choose: TaskR[BaseEnv with GlobalEnv with CellEnv, Service]): Service = new Service {
-      override def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = choose.flatMap(_.apply())
+    def choose(choose: RIO[BaseEnv with GlobalEnv with CellEnv, Service]): Service = new Service {
+      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = choose.flatMap(_.apply())
     }
 
-    def access: TaskR[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.kernelFactory)
+    def access: RIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.kernelFactory)
   }
 
   case object InterpreterNotStarted extends Throwable
