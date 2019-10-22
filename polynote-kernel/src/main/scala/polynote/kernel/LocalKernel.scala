@@ -19,7 +19,7 @@ import polynote.kernel.util.RefMap
 import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
 import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr, ValueRepr}
 import scodec.bits.ByteVector
-import zio.{Task, TaskR, ZIO}
+import zio.{Task, RIO, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.interop.catz._
@@ -36,11 +36,11 @@ class LocalKernel private[kernel] (
 
   def currentTime: ZIO[Clock, Nothing, Long] = ZIO.accessM[Clock](_.clock.currentTime(TimeUnit.MILLISECONDS))
 
-  override def queueCell(id: CellID): TaskR[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] =
+  override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] =
     TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
       currentTime.flatMap {
         startTime =>
-          def publishEndTime: TaskR[PublishResult with Clock, Unit] =
+          def publishEndTime: RIO[PublishResult with Clock, Unit] =
             currentTime.flatMap(endTime => PublishResult(ExecutionInfo(startTime, Some(endTime))))
 
           val run = for {
@@ -90,21 +90,21 @@ class LocalKernel private[kernel] (
     }
   }
 
-  override def completionsAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, List[Completion]] = {
+  override def completionsAt(id: CellID, pos: Int): RIO[BaseEnv with GlobalEnv with CellEnv, List[Completion]] = {
     for {
       (cell, interp, state) <- cellInterpreter(id, forceStart = true)
       completions           <- interp.completionsAt(cell.content.toString, pos, state)
     } yield completions
   }.catchAll(_ => ZIO.succeed(Nil))
 
-  override def parametersAt(id: CellID, pos: Int): TaskR[BaseEnv with GlobalEnv with CellEnv, Option[Signatures]] = {
+  override def parametersAt(id: CellID, pos: Int): RIO[BaseEnv with GlobalEnv with CellEnv, Option[Signatures]] = {
     for {
       (cell, interp, state) <- cellInterpreter(id, forceStart = true)
       signatures            <- interp.parametersAt(cell.content.toString, pos, state).mapError(_ => ())
     } yield signatures
   }.catchAll(_ => ZIO.succeed(None))
 
-  override def init(): TaskR[BaseEnv with GlobalEnv with CellEnv, Unit] = TaskManager.run("Predef", "Predef") {
+  override def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = TaskManager.run("Predef", "Predef") {
     for {
       publishStatus <- PublishStatus.access
       busyUpdater   <- busyState.discrete.terminateAfter(!_.alive).through(publishStatus.publish).compile.drain.fork
@@ -115,7 +115,7 @@ class LocalKernel private[kernel] (
   }
 
 
-  override def getHandleData(handleType: HandleType, handleId: Int, count: Int): TaskR[BaseEnv with StreamingHandles, Array[ByteVector32]] =
+  override def getHandleData(handleType: HandleType, handleId: Int, count: Int): RIO[BaseEnv with StreamingHandles, Array[ByteVector32]] =
     handleType match {
       case Lazy =>
         for {
@@ -131,16 +131,16 @@ class LocalKernel private[kernel] (
       case Streaming => StreamingHandles.getStreamData(handleId, count)
     }
 
-  override def modifyStream(handleId: Int, ops: List[TableOp]): TaskR[BaseEnv with StreamingHandles, Option[StreamingDataRepr]] =
+  override def modifyStream(handleId: Int, ops: List[TableOp]): RIO[BaseEnv with StreamingHandles, Option[StreamingDataRepr]] =
     StreamingHandles.modifyStream(handleId, ops)
 
-  override def releaseHandle(handleType: HandleType, handleId: Int): TaskR[BaseEnv with StreamingHandles, Unit] = handleType match {
+  override def releaseHandle(handleType: HandleType, handleId: Int): RIO[BaseEnv with StreamingHandles, Unit] = handleType match {
     case Lazy => ZIO(LazyDataRepr.releaseHandle(handleId))
     case Updating => ZIO(UpdatingDataRepr.releaseHandle(handleId))
     case Streaming => StreamingHandles.releaseStreamHandle(handleId)
   }
 
-  private def initScala(): TaskR[BaseEnv with GlobalEnv with CellEnv with CurrentTask, State] = for {
+  private def initScala(): RIO[BaseEnv with GlobalEnv with CellEnv with CurrentTask, State] = for {
     scalaInterp   <- interpreters.get("scala").orDie.get.mapError(_ => new IllegalStateException("No scala interpreter"))
     initialState  <- interpreterState.get
     predefEnv     <- InterpreterEnvironment.fromKernel(initialState.id)
@@ -182,7 +182,7 @@ class LocalKernel private[kernel] (
     result => Option(result)
   }.catchAll(_ => ZIO.succeed(None)).get  // TODO: need a real OptionT
 
-  private def getOrLaunch(language: String, at: CellID): TaskR[BaseEnv with GlobalEnv with InterpreterEnv with CurrentNotebook with TaskManager with Interpreter.Factories with Config, Interpreter] =
+  private def getOrLaunch(language: String, at: CellID): RIO[BaseEnv with GlobalEnv with InterpreterEnv with CurrentNotebook with TaskManager with Interpreter.Factories with Config, Interpreter] =
     interpreters.getOrCreate(language) {
       Interpreter.availableFactories(language)
         .flatMap(facs => chooseInterpreterFactory(facs).mapError(_ => new UnsupportedOperationException(s"No available interpreter for $language")))
@@ -206,7 +206,7 @@ class LocalKernel private[kernel] (
   /**
     * Finds reprs of each value in the state, and returns a new state with the values updated to include the reprs
     */
-  private def updateValues(state: State): TaskR[Blocking with Logging, State] = {
+  private def updateValues(state: State): RIO[Blocking with Logging, State] = {
     import scalaCompiler.global, global.{appliedType, typeOf}
     val (names, types) = state.values.map {v =>
       v.name -> appliedType(typeOf[ReprsOf[Any]].typeConstructor, v.scalaType.asInstanceOf[global.Type])
@@ -217,7 +217,7 @@ class LocalKernel private[kernel] (
           case (name, Some(instance)) => name -> instance.asInstanceOf[ReprsOf[Any]]
         }.toMap
 
-        def updateValue(value: ResultValue): TaskR[Blocking with Logging, ResultValue] = {
+        def updateValue(value: ResultValue): RIO[Blocking with Logging, ResultValue] = {
           def stringRepr = StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
           if (value.value != null) {
             ZIO.effectTotal(instanceMap.get(value.name)).flatMap {
@@ -245,7 +245,7 @@ class LocalKernel private[kernel] (
 
 class LocalKernelFactory extends Kernel.Factory.LocalService {
 
-  def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
+  def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps    <- CoursierFetcher.fetch("scala")
     (main, transitive) = scalaDeps.partition(_._1)
     compiler     <- ScalaCompiler.provider(main.map(_._3), transitive.map(_._3))

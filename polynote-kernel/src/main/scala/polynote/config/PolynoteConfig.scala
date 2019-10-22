@@ -92,7 +92,7 @@ object PolynoteConfig {
     val default = parseFile(new File(defaultConfig)).catchAll {
       err =>
         Logging.error(s"Unable to parse default config file $defaultConfig", err)
-          .const(Json.fromJsonObject(JsonObject.empty))
+          .as(Json.fromJsonObject(JsonObject.empty))
     }
 
     val configIO = for {
@@ -107,7 +107,7 @@ object PolynoteConfig {
         case _: MatchError =>
           ZIO.succeed(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
         case e: FileNotFoundException =>
-          Logging.error(s"Configuration file $file not found; using default configuration", e).const(PolynoteConfig())
+          Logging.error(s"Configuration file $file not found; using default configuration", e).as(PolynoteConfig())
         case err: Throwable => ZIO.fail(err)
       }
   }

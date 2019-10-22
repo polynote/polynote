@@ -11,7 +11,7 @@ import cats.instances.list._
 import polynote.messages.CellID
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, InterpreterEnvironment}
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Task, TaskR, ZIO}
+import zio.{Task, RIO, ZIO}
 
 trait Interpreter {
 
@@ -23,7 +23,7 @@ trait Interpreter {
     *              initially have empty values. Its `prev` will point to the [[State]] returned by the closes prior
     *              executed cell, or to [[State.Root]] if there is no such cell.
     */
-  def run(code: String, state: State): TaskR[InterpreterEnv, State]
+  def run(code: String, state: State): RIO[InterpreterEnv, State]
 
   /**
     * Ask for completions (if applicable) at the given position in the given code string.
@@ -52,7 +52,7 @@ trait Interpreter {
     * @param state A [[State]] which is the current state of the notebook execution.
     * @return An initial state for this interpreter
     */
-  def init(state: State): TaskR[InterpreterEnv, State]
+  def init(state: State): RIO[InterpreterEnv, State]
 
   /**
     * Shut down this interpreter, releasing its resources and ending any internally managed tasks or processes
@@ -70,7 +70,7 @@ object Interpreter {
     */
   trait Factory {
     def languageName: String
-    def apply(): TaskR[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter]
+    def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter]
     def requireSpark: Boolean = false
     def priority: Int = 0
   }
@@ -79,7 +79,7 @@ object Interpreter {
     val interpreterFactories: Map[String, List[Interpreter.Factory]]
   }
 
-  def availableFactories(language: String): TaskR[Factories, List[Interpreter.Factory]] = for {
+  def availableFactories(language: String): RIO[Factories, List[Interpreter.Factory]] = for {
     allFactories <- ZIO.access[Factories](_.interpreterFactories)
     factories    <- ZIO.fromOption(allFactories.get(language)).mapError(_ => new IllegalArgumentException(s"No interpreter for $language"))
   } yield factories
@@ -91,7 +91,7 @@ trait Loader {
 }
 
 object Loader {
-  def load: TaskR[Blocking, Map[String, List[Interpreter.Factory]]] = effectBlocking(ServiceLoader.load(classOf[Loader]).iterator.asScala.toList).map {
+  def load: RIO[Blocking, Map[String, List[Interpreter.Factory]]] = effectBlocking(ServiceLoader.load(classOf[Loader]).iterator.asScala.toList).map {
     loaders =>
       loaders.map(_.factories.mapValues(List(_))).foldLeft(Map.empty[String, List[Interpreter.Factory]])(_ |+| _).mapValues(_.sortBy(f => (-f.priority, !f.getClass.getName.startsWith("polynote"), f.getClass.getName)))
   }

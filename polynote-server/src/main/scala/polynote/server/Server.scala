@@ -10,7 +10,7 @@ import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, interpreter}
-import zio.{Cause, Runtime, Task, TaskR, ZIO, system}
+import zio.{Cause, Runtime, Task, RIO, ZIO, system}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
 import zio.random.Random
@@ -85,7 +85,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
 
-  def httpApp(watchUI: Boolean): TaskR[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = for {
+  def httpApp(watchUI: Boolean): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = for {
     env <- ZIO.access[BaseEnv with GlobalEnv with NotebookManager](identity)
   } yield HttpRoutes.of[Task] {
     case GET -> Root / "ws" => SocketSession().flatMap(_.toResponse).provide(env)

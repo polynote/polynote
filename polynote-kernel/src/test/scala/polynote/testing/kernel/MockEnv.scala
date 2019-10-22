@@ -15,7 +15,7 @@ import polynote.testing.MockPublish
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.interop.catz._
-import zio.{Runtime, Task, TaskR, ZIO}
+import zio.{Runtime, Task, RIO, ZIO}
 
 case class MockEnv(
   baseEnv: BaseEnv,
@@ -34,7 +34,7 @@ case class MockEnv(
 }
 
 object MockEnv {
-  def apply(cellID: Int): TaskR[BaseEnv, MockEnv] = for {
+  def apply(cellID: Int): RIO[BaseEnv, MockEnv] = for {
     env <- ZIO.access[BaseEnv](identity)
     runtime <- ZIO.runtime[Any]
     currentTask <- SignallingRef[Task, TaskInfo](TaskInfo(s"Cell$cellID"))
@@ -62,7 +62,7 @@ case class MockKernelEnv(
 }
 
 object MockKernelEnv {
-  def apply(kernelFactory: Factory.Service, sessionId: Int): TaskR[BaseEnv, MockKernelEnv] = for {
+  def apply(kernelFactory: Factory.Service, sessionId: Int): RIO[BaseEnv, MockKernelEnv] = for {
     baseEnv         <- ZIO.access[BaseEnv](identity)
     currentNotebook <- SignallingRef[Task, (Int, Notebook)](0 -> Notebook("empty", ShortList(Nil), None))
     updateTopic     <- Topic[Task, Option[NotebookUpdate]](None)
@@ -71,5 +71,5 @@ object MockKernelEnv {
     handles         <- StreamingHandles.make(sessionId)
   } yield new MockKernelEnv(baseEnv, kernelFactory, new MockPublish, publishUpdates, Map.empty, taskManager, updateTopic, currentNotebook, handles.streamingHandles, handles.sessionID)
 
-  def apply(kernelFactory: Factory.Service): TaskR[BaseEnv, MockKernelEnv] = apply(kernelFactory, 0)
+  def apply(kernelFactory: Factory.Service): RIO[BaseEnv, MockKernelEnv] = apply(kernelFactory, 0)
 }

@@ -23,7 +23,7 @@ import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Task, TaskR, ZIO}
+import zio.{Task, RIO, ZIO}
 import zio.interop.catz._
 import zio.system.{env, property}
 
@@ -97,7 +97,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     settings
   }
 
-  def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
+  def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps        <- CoursierFetcher.fetch("scala")
     (main, transitive) = scalaDeps.partition(_._1)
     sparkRuntimeJar   = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
@@ -114,7 +114,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     interpState      <- Ref[Task].of[State](State.predef(State.Root, State.Root))
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState)
 
-  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader): TaskR[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
+  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
 
     // TODO: config option for using downloaded deps vs. giving the urls
     //       for now we'll just give Spark the urls to the deps
@@ -125,7 +125,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       * notebook's class loader. This is necessary so that classes defined by the notebook (and dependencies) can be
       * found by Spark's serialization machinery.
       */
-    def mkExecutor(): TaskR[Blocking, Executor] = effectBlocking {
+    def mkExecutor(): RIO[Blocking, Executor] = effectBlocking {
       val threadFactory = new ThreadFactory {
         def newThread(r: Runnable): Thread = {
           val thread = new Thread(r)
@@ -141,7 +141,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
 
     def mkSpark(
       sparkConfig: Map[String, String]
-    ): TaskR[Blocking with Config with Logging, SparkSession] = ZIO {
+    ): RIO[Blocking with Config with Logging, SparkSession] = ZIO {
       val outputPath = org.apache.spark.repl.Main.outputDir.toPath
       val conf = org.apache.spark.repl.Main.conf
 
@@ -177,7 +177,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       existingJars.diff(jars).toList.map(addJar).sequence.unit
     }
 
-    def attachListener(session: SparkSession): TaskR[BaseEnv with TaskManager, Unit] = for {
+    def attachListener(session: SparkSession): RIO[BaseEnv with TaskManager, Unit] = for {
       taskManager <- TaskManager.access
       zioRuntime  <- ZIO.runtime[Blocking with Clock with Logging]
       _           <- ZIO(session.sparkContext.addSparkListener(new KernelListener(taskManager, session, zioRuntime)))

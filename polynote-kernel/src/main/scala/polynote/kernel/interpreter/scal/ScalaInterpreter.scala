@@ -8,7 +8,7 @@ import scala.reflect.internal.util.NoPosition
 import scala.tools.nsc.interactive.Global
 import polynote.messages.CellID
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Task, TaskR, ZIO}
+import zio.{Task, RIO, ZIO}
 import ScalaInterpreter.{addPositionUpdates, captureLastExpression}
 import polynote.kernel.environment.CurrentRuntime
 
@@ -23,7 +23,7 @@ class ScalaInterpreter private[scal] (
   // Interpreter interface methods //
   ///////////////////////////////////
 
-  override def run(code: String, state: State): TaskR[InterpreterEnv, State] = for {
+  override def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
     collectedState <- injectState(collectState(state))
     valDefs         = collectedState.values.mapValues(_._1).values.toList
     cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", code, collectedState.prevCells, valDefs, collectedState.imports)
@@ -49,7 +49,7 @@ class ScalaInterpreter private[scal] (
     hints          <- completer.paramHints(cellCode, pos + 1)
   } yield hints
 
-  override def init(state: State): TaskR[InterpreterEnv, State] = ZIO.succeed(state)
+  override def init(state: State): RIO[InterpreterEnv, State] = ZIO.succeed(state)
 
   override def shutdown(): Task[Unit] = ZIO.unit
 
@@ -61,7 +61,7 @@ class ScalaInterpreter private[scal] (
     * Overrideable method to inject some pre-defined state (values and imports) into the initial cell. The base implementation
     * injects the `kernel` value, making it available to the notebook. Override to inject more imports or values.
     */
-  protected def injectState(collectedState: CollectedState): TaskR[CurrentRuntime, CollectedState] =
+  protected def injectState(collectedState: CollectedState): RIO[CurrentRuntime, CollectedState] =
     ZIO.access[CurrentRuntime](_.currentRuntime).map {
       kernelRuntime =>
         collectedState.copy(values = collectedState.values + (runtimeValDef.name.toString -> (runtimeValDef, kernelRuntime: Any)))
@@ -192,7 +192,7 @@ class ScalaInterpreter private[scal] (
   case class ScalaCellState(id: CellID, prev: State, values: List[ResultValue], cellCode: CellCode, instance: AnyRef) extends State {
     override def withPrev(prev: State): ScalaCellState = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
-    override def updateValuesM[R](fn: ResultValue => TaskR[R, ResultValue]): TaskR[R, State] =
+    override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =
       ZIO.sequence(values.map(fn)).map(values => copy(values = values))
   }
 
@@ -200,7 +200,7 @@ class ScalaInterpreter private[scal] (
 
 object ScalaInterpreter {
 
-  def apply(): TaskR[Blocking with ScalaCompiler.Provider, ScalaInterpreter] = for {
+  def apply(): RIO[Blocking with ScalaCompiler.Provider, ScalaInterpreter] = for {
     compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
     index    <- ClassIndexer.default
   } yield new ScalaInterpreter(compiler, index)
@@ -247,7 +247,7 @@ object ScalaInterpreter {
 
   trait Factory extends Interpreter.Factory {
     val languageName = "Scala"
-    def apply(): TaskR[Blocking with ScalaCompiler.Provider, ScalaInterpreter]
+    def apply(): RIO[Blocking with ScalaCompiler.Provider, ScalaInterpreter]
   }
 
   /**
@@ -255,6 +255,6 @@ object ScalaInterpreter {
     * because the JVM dependencies must already be fetched when the kernel is booted.
     */
   object Factory extends Factory {
-    override def apply(): TaskR[Blocking with ScalaCompiler.Provider, ScalaInterpreter] = ScalaInterpreter()
+    override def apply(): RIO[Blocking with ScalaCompiler.Provider, ScalaInterpreter] = ScalaInterpreter()
   }
 }

@@ -61,6 +61,7 @@ val commonSettings = Seq(
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
   },
+  scalacOptions += "-deprecation",
   test in assembly := {}
 )
 

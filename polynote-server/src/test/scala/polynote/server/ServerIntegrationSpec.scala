@@ -11,7 +11,7 @@ import polynote.kernel.util.RefMap
 import polynote.testing.ZIOSpec
 import polynote.testing.kernel.{MockEnv, MockKernelEnv}
 import polynote.testing.repository.MemoryRepository
-import zio.{Promise, TaskR, ZIO}
+import zio.{Promise, RIO, ZIO}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
 
@@ -25,7 +25,7 @@ class ServerIntegrationSpec extends FeatureSpec with ZIOSpec with GivenWhenThen 
   private val notebookManager = unsafeRun(NotebookManager.Service(repository))
   private val kernel          = mock[Kernel]
   private val kernelFactory   = new Factory.Service {
-    def apply(): TaskR[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(kernel)
+    def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(kernel)
   }
 
   private val nextSessionId = new AtomicInteger(0)

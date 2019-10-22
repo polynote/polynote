@@ -8,7 +8,7 @@ import polynote.kernel.environment.PublishMessage
 import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate}
 import KernelPublisher.{GlobalVersion, SubscriberId}
-import zio.{Fiber, Promise, Task, TaskR, ZIO}
+import zio.{Fiber, Promise, Task, RIO, ZIO}
 import zio.interop.catz._
 
 
@@ -31,7 +31,7 @@ object KernelSubscriber {
   def apply(
     id: SubscriberId,
     publisher: KernelPublisher
-  ): TaskR[PublishMessage, KernelSubscriber] = {
+  ): RIO[PublishMessage, KernelSubscriber] = {
 
     def rebaseUpdate(update: NotebookUpdate, globalVersion: GlobalVersion, localVersion: Int) =
       publisher.versionBuffer.getRange(update.globalVersion, globalVersion)

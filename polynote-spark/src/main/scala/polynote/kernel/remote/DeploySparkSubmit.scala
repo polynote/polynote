@@ -9,7 +9,7 @@ import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployCommand
 import polynote.kernel.util.pathOf
 import polynote.runtime.KernelRuntime
 import polynote.runtime.spark.reprs.SparkReprsOf
-import zio.TaskR
+import zio.RIO
 
 object DeploySparkSubmit extends DeployCommand {
   def parseQuotedArgs(str: String): List[String] = str.split('"').toList.sliding(2, 2).toList.flatMap {
@@ -57,7 +57,7 @@ object DeploySparkSubmit extends DeployCommand {
       sparkArgs ++ Seq(jarLocation) ++ serverArgs
   }
 
-  override def apply(serverAddress: InetSocketAddress): TaskR[Config with CurrentNotebook, Seq[String]] = for {
+  override def apply(serverAddress: InetSocketAddress): RIO[Config with CurrentNotebook, Seq[String]] = for {
     config   <- Config.access
     nbConfig <- CurrentNotebook.config
   } yield build(
