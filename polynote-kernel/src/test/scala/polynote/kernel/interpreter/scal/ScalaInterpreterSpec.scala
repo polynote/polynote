@@ -143,6 +143,19 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
   }
 
   "cases from previous scala interpreter" - {
+    "allow values to be overridden" in {
+      val code = Seq(
+        "val a: Int = 100",
+        "val a: Int = 200",
+        "val b = a"
+      )
+      assertOutput(code) {
+        case (vars, output) =>
+          vars("a") shouldEqual 200
+          vars("b") shouldEqual 200
+      }
+    }
+
     "be able to display html using the kernel runtime reference" in {
       val code = """kernel.display.html("hi")"""
       assertOutput(code) {

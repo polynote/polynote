@@ -1,27 +1,26 @@
 name := "polynote"
 
-lazy val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
-lazy val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
-lazy val dist: TaskKey[File] = taskKey[File]("Building distribution...")
-lazy val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
-lazy val polynoteJars: TaskKey[Seq[(File, String)]] = taskKey("Polynote JARs")
-lazy val sparkVersion: SettingKey[String] = settingKey("Spark version")
+val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
+val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
+val dist: TaskKey[File] = taskKey[File]("Building distribution...")
+val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
+val polynoteJars: TaskKey[Seq[(File, String)]] = taskKey("Polynote JARs")
+val sparkVersion: SettingKey[String] = settingKey("Spark version")
 
 val versions = new {
   val http4s     = "0.20.6"
   val fs2        = "1.0.5"
   val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC2-6"
-  val spark      = "2.1.3"
   val zio        = "1.0.0-RC15"
   val zioInterop = "2.0.0.0-RC6"
 }
 
-
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
 
-
 val commonSettings = Seq(
+  scalaVersion := "2.12.10",
+  crossScalaVersions := Seq("2.11.11", "2.12.10"),
   organization := "org.polynote",
   publishMavenStyle := true,
   homepage := Some(url("https://polynote.org")),
@@ -33,7 +32,6 @@ val commonSettings = Seq(
     )
   ),
   version := "0.2.5-SNAPSHOT",
-  scalaVersion := "2.11.11",
   publishTo := sonatypePublishToBundle.value,
   developers := List(
     Developer(id = "jeremyrsmith", name = "Jeremy Smith", email = "", url = url("https://github.com/jeremyrsmith")),
@@ -63,17 +61,10 @@ val commonSettings = Seq(
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
   },
-  sparkVersion := {
-    scalaVersion.value match {
-      case ver if ver startsWith "2.11" => "2.1.1"
-      case ver                          => "2.4.4"  // Spark 2.4 is first version to publish for scala 2.12
-    }
-  },
   test in assembly := {}
 )
 
 val crossBuildSettings = Seq(
-  crossScalaVersions := Seq("2.11.11", "2.12.10")
 )
 
 lazy val `polynote-runtime` = project.settings(
@@ -115,7 +106,6 @@ val `polynote-env` = project.settings(
 
 val `polynote-kernel` = project.settings(
   commonSettings,
-  scalaVersion := "2.11.11",
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
@@ -130,24 +120,12 @@ val `polynote-kernel` = project.settings(
     "io.github.classgraph" % "classgraph" % "4.8.47",
     "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
     "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
+    "io.circe" %% "circe-yaml" % "0.10.0",
+    "io.circe" %% "circe-generic" % "0.11.1",
+    "io.circe" %% "circe-generic-extras" % "0.11.1",
+    "io.circe" %% "circe-parser" % "0.11.1",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
-  libraryDependencies ++= {
-    scalaVersion.value match {
-      case ver if ver startsWith "2.11" =>
-        Seq(
-          "io.circe" %% "circe-yaml" % "0.10.0",
-          "io.circe" %% "circe-generic" % "0.11.1",
-          "io.circe" %% "circe-generic-extras" % "0.11.1",
-          "io.circe" %% "circe-parser" % "0.11.1")
-      case ver =>
-        Seq(
-          "io.circe" %% "circe-yaml" % "0.11.0-M1",
-          "io.circe" %% "circe-generic" % "0.12.2",
-          "io.circe" %% "circe-generic-extras" % "0.12.2",
-          "io.circe" %% "circe-parser" % "0.12.2")
-    }
-  },
   publish := {},
   crossBuildSettings,
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
@@ -171,27 +149,36 @@ val `polynote-server` = project.settings(
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "compile->compile;test->test")
 
-lazy val `polynote-spark-runtime` = project.settings(
-  commonSettings,
-  crossBuildSettings,
+val sparkSettings = Seq(
+  sparkVersion := {
+    scalaVersion.value match {
+      case ver if ver startsWith "2.11" => "2.1.1"
+      case ver                          => "2.4.4"  // Spark 2.4 is first version to publish for scala 2.12
+    }
+  },
   libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.apache.spark" %% "spark-sql" % sparkVersion.value % "provided",
     "org.apache.spark" %% "spark-repl" % sparkVersion.value % "provided",
     "org.apache.spark" %% "spark-sql" % sparkVersion.value % "test",
     "org.apache.spark" %% "spark-repl" % sparkVersion.value % "test"
   )
+)
+
+lazy val `polynote-spark-runtime` = project.settings(
+  commonSettings,
+  sparkSettings,
+  crossBuildSettings,
+  libraryDependencies ++= Seq(
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
+  )
 ) dependsOn `polynote-runtime`
 
 lazy val `polynote-spark` = project.settings(
   commonSettings,
+  sparkSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.scodec" %% "scodec-stream" % "1.2.0",
-    "org.apache.spark" %% "spark-sql" % sparkVersion.value % "provided",
-    "org.apache.spark" %% "spark-repl" % sparkVersion.value % "provided",
-    "org.apache.spark" %% "spark-sql" % sparkVersion.value % "test",
-    "org.apache.spark" %% "spark-repl" % sparkVersion.value % "test"
+    "org.scodec" %% "scodec-stream" % "1.2.0"
   ),
   publish := {},
   dependencyJars := {
