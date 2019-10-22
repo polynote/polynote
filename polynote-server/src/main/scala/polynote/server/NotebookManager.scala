@@ -35,9 +35,10 @@ object NotebookManager {
 
   object Service {
 
-    def apply(repository: NotebookRepository[TaskR[BaseEnv, ?]]): TaskR[BaseEnv, Service] = RefMap.empty[String, KernelPublisher].map {
-      openNotebooks => new Impl(openNotebooks, repository)
-    }
+    def apply(repository: NotebookRepository[TaskR[BaseEnv, ?]]): TaskR[BaseEnv, Service] =
+      repository.initStorage() *> RefMap.empty[String, KernelPublisher].map {
+        openNotebooks => new Impl(openNotebooks, repository)
+      }
 
     private class Impl(
       openNotebooks: RefMap[String, KernelPublisher],

@@ -17,16 +17,37 @@ import scala.concurrent.ExecutionContext
 
 trait NotebookRepository[F[_]] {
 
+  /**
+    * @return Whether a notebook exists at the specified path
+    */
   def notebookExists(path: String): F[Boolean]
 
+  /**
+    * @return The notebook at the specified path
+    */
   def loadNotebook(path: String): F[Notebook]
 
+  /**
+    * Save the given notebook to the specified path
+    */
   def saveNotebook(path: String, cells: Notebook): F[Unit]
 
+  /**
+    * @return A list of notebook paths that exist in this repository
+    */
   def listNotebooks(): F[List[String]]
 
   // TODO: imports shouldn't happen on the server anymore... second arg should be Option[Notebook]
+  /**
+    * Create a notebook at the given path, optionally importing from the given URI (on the left) or the given content
+    * string (on the right).
+    */
   def createNotebook(path: String, maybeUriOrContent: Option[Either[String, String]]): F[String]
+
+  /**
+    * Initialize the storage for this repository (i.e. create directory if it doesn't exist)
+    */
+  def initStorage(): F[Unit]
 }
 
 abstract class FileBasedRepository[F[_]](implicit F: ConcurrentEffect[F], contextShift: ContextShift[F]) extends NotebookRepository[F] {
@@ -136,6 +157,12 @@ abstract class FileBasedRepository[F[_]](implicit F: ConcurrentEffect[F], contex
         }
         createOrImport.map(_ => extPath)
       }
+    }
+  }
+
+  def initStorage(): F[Unit] = F.delay {
+    if (!Files.exists(path)) {
+      Files.createDirectories(path)
     }
   }
 }
