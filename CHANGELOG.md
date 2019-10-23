@@ -1,8 +1,15 @@
-# UNRELEASED
+# UNRELEASED 
 
-* Fix issue with nondeterministic queueing order
+* 
+
+# 0.2.7 (October 23, 2019)
+
 * Cross build for Scala 2.12
+* Support for LaTeX MIME type output
 * Fix some race conditions in Scala compiler
+* Fix issue with nondeterministic queueing order
+* Fix bug when notebook folder doesn't exist (Polynote now creates a notebook directory for you)
+* Fix an issue where failed dependency downloads could cause notebook to be unresponsive until a restart
 
 
 # 0.2.6 (October 18, 2019)
