@@ -115,7 +115,7 @@ val `polynote-kernel` = project.settings(
     "dev.zio" %% "zio-interop-cats" % versions.zioInterop,
     "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.11.4",
-    "org.scodec" %% "scodec-stream" % "2.0.0",
+    "org.scodec" %% "scodec-stream" % "1.2.0",
     "io.get-coursier" %% "coursier" % versions.coursier,
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
     "io.github.classgraph" % "classgraph" % "4.8.47",
