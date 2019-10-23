@@ -1,9 +1,10 @@
 package polynote.runtime
 package test
 
-import org.scalacheck.{Arbitrary, Gen}, Arbitrary.arbitrary
-import org.scalatest.prop.GeneratorDrivenPropertyChecks
+import org.scalacheck.{Arbitrary, Gen}
+import Arbitrary.arbitrary
 import org.scalatest.{FreeSpec, Matchers}
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 
 import scala.reflect.runtime.universe.TypeTag
 
@@ -11,7 +12,7 @@ import scala.reflect.runtime.universe.TypeTag
   * Exercises some DataReprs to make sure they don't crash. Doesn't do any validations, though, because we don't have
   * the decoding side in Scala land. TODO: an integration test with the JS code to make sure they get decoded correctly too
   */
-class DataReprsTest extends FreeSpec with Matchers with GeneratorDrivenPropertyChecks {
+class DataReprsTest extends FreeSpec with Matchers with ScalaCheckDrivenPropertyChecks {
 
   implicit val arbString: Arbitrary[String] = Arbitrary(Gen.listOf(arbitrary[Char]).map(_.mkString))
 

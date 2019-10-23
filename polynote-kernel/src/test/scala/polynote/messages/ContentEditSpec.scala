@@ -1,12 +1,12 @@
 package polynote.messages
 
 import org.scalacheck.{Arbitrary, Shrink}
-import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{FreeSpec, Matchers}
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 import polynote.data.Rope
 import polynote.testing.Generators
 
-class ContentEditSpec extends FreeSpec with Matchers with GeneratorDrivenPropertyChecks {
+class ContentEditSpec extends FreeSpec with Matchers with ScalaCheckDrivenPropertyChecks {
 
   case class EditScenario(initial: Rope, edit: ContentEdit, edits: ContentEdits)
 

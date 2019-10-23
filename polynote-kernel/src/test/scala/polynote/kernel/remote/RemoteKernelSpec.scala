@@ -4,8 +4,8 @@ package remote
 import java.util.concurrent.TimeUnit
 
 import org.scalamock.scalatest.MockFactory
-import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FreeSpec, Matchers}
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.environment.{NotebookUpdates, PublishResult, PublishStatus}
 import polynote.kernel.{BaseEnv, CellEnv, Completion, CompletionType, GlobalEnv, Kernel, KernelBusyState, KernelInfo, Output, ParameterHint, ParameterHints, ResultValue, Signatures, TaskInfo, UpdatedTasks}
@@ -17,12 +17,12 @@ import polynote.testing.{Generators, ZIOSpec}
 import polynote.testing.kernel.{MockEnv, MockKernelEnv}
 import polynote.testing.kernel.remote.InProcessDeploy
 import scodec.bits.ByteVector
-import zio.{Ref, Task, RIO, ZIO}
+import zio.{RIO, Ref, Task, ZIO}
 import zio.interop.catz._
 
 import scala.concurrent.TimeoutException
 
-class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterAll with BeforeAndAfterEach with MockFactory with GeneratorDrivenPropertyChecks {
+class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterAll with BeforeAndAfterEach with MockFactory with ScalaCheckDrivenPropertyChecks {
   private val kernel        = mock[Kernel]
   private val kernelFactory = new Factory.LocalService {
     def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(kernel)
