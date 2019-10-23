@@ -14,7 +14,7 @@ import zio.interop.catz._
 
 class KernelSubscriber private[server] (
   id: SubscriberId,
-  closed: Promise[Throwable, Unit],
+  val closed: Promise[Throwable, Unit],
   process: Fiber[Throwable, Unit],
   val publisher: KernelPublisher,
   val lastLocalVersion: AtomicInteger,
