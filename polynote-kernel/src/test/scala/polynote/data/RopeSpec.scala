@@ -2,9 +2,9 @@ package polynote.data
 
 import org.scalacheck.Gen
 import org.scalatest._
-import org.scalatest.prop.PropertyChecks
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 
-class RopeSpec extends FlatSpec with Matchers with PropertyChecks {
+class RopeSpec extends FlatSpec with Matchers with ScalaCheckPropertyChecks {
 
   val r = new scala.util.Random(System.nanoTime())
   val aLongString: String = r.nextString(Rope.thresh * 10)

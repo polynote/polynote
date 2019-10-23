@@ -476,7 +476,6 @@ object PythonInterpreter {
     classLoader => ZIO {
       val conf = new JepConfig()
         .addSharedModules(sharedModules: _*)
-        .setInteractive(false)
         .setClassLoader(classLoader)
         .setClassEnquirer(new NamingConventionClassEnquirer(true).addTopLevelPackageName("polynote"))
       val interp = new SubInterpreter(conf)
