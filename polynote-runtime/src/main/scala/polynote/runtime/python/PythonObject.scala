@@ -103,7 +103,7 @@ object PythonObject {
 
       val htmlRepr = if (obj.hasAttribute("_repr_html_")) attemptRepr("text/html", obj._repr_html_().as[String]) else None
       val textRepr = if (obj.hasAttribute("__repr__")) attemptRepr("text/plain", obj.__repr__().as[String]) else None
-      val latexRepr = if (obj.hasAttribute("_repr_latex_")) attemptRepr("application/latex", obj._repr_latex_().as[String]) else None
+      val latexRepr = if (obj.hasAttribute("_repr_latex_")) attemptRepr("application/x-latex", obj._repr_latex_().as[String]) else None
 
       List(htmlRepr, textRepr, latexRepr).flatten.toArray
     }

@@ -1,6 +1,7 @@
 "use strict";
 
 import * as monaco from "monaco-editor";
+import * as katex from "katex";
 import {Content, details, div, span, tag, TagElement} from "../util/tags";
 import {ArrayType, DataType, MapType, OptionalType, StructField, StructType} from "../../data/data_type";
 
@@ -27,6 +28,10 @@ export function displayContent(contentType: string, content: string | DocumentFr
             result = Promise.resolve(span(['plaintext'], [document.createTextNode(content)]));
         }
 
+    } else if (mimeType === "application/x-latex" || mimeType === "application/latex") {
+        const node = div([], []);
+        katex.render(content, node, { displayMode: true, throwOnError: false });
+        result = Promise.resolve(node);
     } else if (mimeType.startsWith("image/")) {
         const img = document.createElement('img');
         img.setAttribute('src', `data:${mimeType};base64,${content}`);
