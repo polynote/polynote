@@ -35,7 +35,7 @@ class KernelPublisher private (
   kernelStarting: Semaphore,
   queueingCell: Semaphore,
   kernelFactory: Kernel.Factory.Service,
-  closed: Promise[Throwable, Unit]
+  val closed: Promise[Throwable, Unit]
 ) {
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
@@ -90,12 +90,17 @@ class KernelPublisher private (
     case None => kernelStarting.withPermit {
       kernelRef.get.flatMap {
         case Some(kernel) => ZIO.succeed(kernel)
-        case None => for {
-          kernel <- createKernel()
-          _      <- kernel.init().provideSomeM(Env.enrichM[BaseEnv with GlobalEnv](cellEnv(-1)))
-          _      <- kernelRef.set(Some(kernel))
-          _      <- kernel.info() >>= publishStatus.publish1
-        } yield kernel
+        case None =>
+          val initKernel = for {
+              kernel <- createKernel()
+              _      <- kernel.init().provideSomeM(Env.enrichM[BaseEnv with GlobalEnv](cellEnv(-1)))
+              _      <- kernelRef.set(Some(kernel))
+              _      <- kernel.info() >>= publishStatus.publish1
+            } yield kernel
+
+          initKernel.tapError {
+            err => closed.succeed(())
+          }
       }
     }
   }

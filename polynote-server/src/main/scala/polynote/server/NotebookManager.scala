@@ -52,6 +52,7 @@ object NotebookManager {
           writer    <- publisher.notebooksTimed(Duration(1, TimeUnit.SECONDS))
               .evalMap(notebook => repository.saveNotebook(notebook.path, notebook))
               .compile.drain.fork
+          onClose   <- publisher.closed.await.flatMap(_ => openNotebooks.remove(path)).fork
         } yield publisher
       }
 

@@ -86,9 +86,12 @@ class SessionHandler(
   def awaitClosed: ZIO[Any, Nothing, Either[Throwable, Unit]] = closed.await.either
 
   private def subscribe(path: String): RIO[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribed.getOrCreate(path) {
-    notebookManager.open(path).flatMap {
-      kernelPublisher => kernelPublisher.subscribe()
-    }
+    for {
+      kernelPublisher <- notebookManager.open(path)
+      subscriber      <- kernelPublisher.subscribe()
+      _               <- subscriber.closed.await.flatMap(_ => subscribed.remove(path)).fork
+      _               <- kernelPublisher.closed.await.flatMap(_ => subscriber.close()).fork
+    } yield subscriber
   }
 
   private def unhandled(msg: Message): RIO[BaseEnv, Unit] = Logging.warn(s"Unhandled message type ${msg.getClass.getName}")
