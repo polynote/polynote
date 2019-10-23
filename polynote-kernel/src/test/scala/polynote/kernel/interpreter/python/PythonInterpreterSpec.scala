@@ -276,7 +276,7 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           PythonObject.defaultReprs(test).toList should contain theSameElementsAs List(
             MIMERepr("text/plain", "Plaintext string"),
             MIMERepr("text/html", "<h1>HTML string</h1>"),
-            MIMERepr("application/latex", "latex{string}")
+            MIMERepr("application/x-latex", "latex{string}")
           )
       }
     }
