@@ -216,10 +216,14 @@ lazy val `polynote-spark` = project.settings(
 lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`).settings(
   dist := {
     val jars = (polynoteJars in `polynote-spark`).value ++ (dependencyJars in `polynote-spark`).value
-    val mainJar = (assembly in `polynote-spark`).value
-    //val outFile = crossTarget.value / "polynote-dist.zip"
-    val tarFile = crossTarget.value / "polynote-dist.tar"
-    val outFile = crossTarget.value / "polynote-dist.tar.gz"
+
+    val versionTag = scalaBinaryVersion.value match {
+      case "2.11" => ""
+      case ver    => s"-$ver"
+    }
+
+    val tarFile = crossTarget.value / s"polynote-dist$versionTag.tar"
+    val outFile = crossTarget.value / s"polynote-dist$versionTag.tar.gz"
 
     if (tarFile.exists())
       tarFile.delete()
