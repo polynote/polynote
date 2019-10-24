@@ -1,0 +1,5 @@
+#!/bin/bash
+
+printf '%s' "${POLYNOTE_CONFIG}" > config.yml
+
+exec "$@"
