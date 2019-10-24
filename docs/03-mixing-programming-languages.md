@@ -80,7 +80,7 @@ pythonDF = DataFrame(scalaDF, sqlContext) # sqlContext is provided by Polynote
 pandaDF = pythonDF.toPandas()
 ```
 
-#### Access a case class members in Python
+#### Access Scala case class members in Python
 
 Given some case class: 
 
@@ -98,5 +98,40 @@ otherParamInPython = foo.otherParam()
 
 #### Plotting some Scala data with Matplotlib
 
-TODO
+We'll be modifying the [matplotlib scatterplot example](https://matplotlib.org/examples/lines_bars_and_markers/scatter_with_legend.html)
+and generate the data in Scala.
 
+Here's the data generation.
+
+```scala
+val colors = Array("red", "green", "blue")
+val n = 750
+val flattenedLength = colors.length * n * 2 // 2 for x and y
+val data = (0 until flattenedLength).map(_ => Math.random()).toArray // converted to Array for Python interop
+```
+
+And here's how to plot it with Python
+```python
+import matplotlib.pyplot as plt
+from numpy.random import rand
+
+fig, ax = plt.subplots()
+
+for color in colors:
+    # since data is just a 1-D array we need to split it up to fit the matplotlib example
+    x = data[:n]
+    data = data[n:]
+    y = data[:n]
+    data = data[n:]
+
+    scale = 200.0 * rand(n)
+    ax.scatter(x, y, c=color, s=scale, label=color,
+               alpha=0.3, edgecolors='none')
+
+ax.legend()
+ax.grid(True)
+
+plt.show()
+```
+
+The resulting plot should look similar to the one on the Matplotlib web page. 
