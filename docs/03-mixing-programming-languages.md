@@ -1,3 +1,8 @@
+---
+title: Mixing programming languages
+layout: docs
+---
+
 ## Mixing programming languages
 
 One of Polynote's most interesting features is its support for polyglot notebooks, where cells within the same notebook 
