@@ -5,9 +5,7 @@ can be written in different languages. For example, a notebook could do some dat
 and then plot that data in Python with Matplotlib. 
 
 We find that this lets us do some pretty neat things, but it does have some limitations and caveats, and plenty of edge-cases
-left to be worked out! 
-
-Let's dive into how Polynote's polyglot support actually works!
+left to be worked out. 
 
 ### Execution state in Polynote
 
