@@ -65,9 +65,6 @@ val commonSettings = Seq(
   test in assembly := {}
 )
 
-val crossBuildSettings = Seq(
-)
-
 lazy val `polynote-runtime` = project.settings(
   commonSettings,
   scalacOptions ++= Seq(
@@ -77,8 +74,7 @@ lazy val `polynote-runtime` = project.settings(
     "black.ninia" % "jep" % "3.9.0",
     "com.chuusai" %% "shapeless" % "2.3.3",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
-  ),
-  crossBuildSettings
+  )
 ).enablePlugins(BuildInfoPlugin)
   .settings(
     buildInfoKeys := Seq[BuildInfoKey](
@@ -101,8 +97,7 @@ val `polynote-env` = project.settings(
   libraryDependencies ++= Seq(
     "dev.zio" %% "zio-interop-cats" % versions.zioInterop % "provided",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
-  ),
-  crossBuildSettings
+  )
 )
 
 val `polynote-kernel` = project.settings(
@@ -128,7 +123,6 @@ val `polynote-kernel` = project.settings(
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
   publish := {},
-  crossBuildSettings,
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
@@ -146,7 +140,6 @@ val `polynote-server` = project.settings(
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
   publish := {},
-  crossBuildSettings,
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "compile->compile;test->test")
 
@@ -168,7 +161,6 @@ val sparkSettings = Seq(
 lazy val `polynote-spark-runtime` = project.settings(
   commonSettings,
   sparkSettings,
-  crossBuildSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   )
@@ -189,17 +181,13 @@ lazy val `polynote-spark` = project.settings(
     }
   },
   polynoteJars := {
-    val sparkAssembly    = (assemblyOutputPath in assembly).value
     val runtimeAssembly  = (assembly in `polynote-runtime`).value
     val sparkRuntime     = (assembly in `polynote-spark-runtime`).value
     List(
-      sparkAssembly   -> "polynote/polynote.jar",
       runtimeAssembly -> "polynote/deps/polynote-runtime.jar",
       sparkRuntime    -> "polynote/deps/polynote-spark-runtime.jar")
   },
-  crossBuildSettings,
   assemblyOption in assembly := {
-    val jars = (polynoteJars.value ++ dependencyJars.value).map(_._2.stripPrefix("polynote/")).mkString(":")
     (assemblyOption in assembly).value.copy(
       includeScala = false,
       prependShellScript = Some(
@@ -213,54 +201,57 @@ lazy val `polynote-spark` = project.settings(
   `polynote-runtime` % "provided",
   `polynote-runtime` % "test")
 
-lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`).settings(
-  dist := {
-    val jars = (polynoteJars in `polynote-spark`).value ++ (dependencyJars in `polynote-spark`).value
+lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`)
+    .settings(
+      commonSettings,
+      dist := {
+        val jars = ((assembly in (`polynote-spark`, Compile)).value -> "polynote/polynote.jar") +:
+          ((polynoteJars in (`polynote-spark`, Compile)).value ++ (dependencyJars in (`polynote-spark`, Compile)).value)
 
-    val versionTag = scalaBinaryVersion.value match {
-      case "2.11" => ""
-      case ver    => s"-$ver"
-    }
+        val versionTag = scalaBinaryVersion.value match {
+          case "2.11" => ""
+          case ver    => s"-$ver"
+        }
 
-    val tarFile = crossTarget.value / s"polynote-dist$versionTag.tar"
-    val outFile = crossTarget.value / s"polynote-dist$versionTag.tar.gz"
+        val tarFile = crossTarget.value / s"polynote-dist$versionTag.tar"
+        val outFile = crossTarget.value / s"polynote-dist$versionTag.tar.gz"
 
-    if (tarFile.exists())
-      tarFile.delete()
+        if (tarFile.exists())
+          tarFile.delete()
 
-    if(outFile.exists())
-      outFile.delete()
+        if(outFile.exists())
+          outFile.delete()
 
-    val files = jars ++ List(
-      (file(".") / "config-template.yml") -> "polynote/config-template.yml",
-      (file(".") / "scripts" / "polynote") -> "polynote/polynote",
-      (file(".") / "scripts" / "plugin") -> "polynote/plugin",
-      (file(".") / "scripts" / "polynote.py") -> "polynote/polynote.py")
+        val files = jars ++ List(
+          (file(".") / "config-template.yml") -> "polynote/config-template.yml",
+          (file(".") / "scripts" / "polynote") -> "polynote/polynote",
+          (file(".") / "scripts" / "plugin") -> "polynote/plugin",
+          (file(".") / "scripts" / "polynote.py") -> "polynote/polynote.py")
 
-    // build a .tar.gz by invoking command-line tools. Sorry, Windows.
-    val targetDir = crossTarget.value / "polynote"
-    targetDir.mkdirs()
+        // build a .tar.gz by invoking command-line tools. Sorry, Windows.
+        val targetDir = crossTarget.value / "polynote"
+        targetDir.mkdirs()
 
-    val resolvedFiles = files.map {
-      case (srcFile, targetPath) => srcFile -> (crossTarget.value / targetPath)
-    }
+        val resolvedFiles = files.map {
+          case (srcFile, targetPath) => srcFile -> (crossTarget.value / targetPath)
+        }
 
-    IO.copy(resolvedFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
+        IO.copy(resolvedFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
 
-    val rootPath = crossTarget.value.toPath
-    def relative(file: File): String = rootPath.relativize(file.toPath).toString
+        val rootPath = crossTarget.value.toPath
+        def relative(file: File): String = rootPath.relativize(file.toPath).toString
 
-    import sys.process.stringSeqToProcess
-    Seq("tar", "-cf", tarFile.toString, "-C", crossTarget.value.toString, "polynote").!
-    Seq("gzip", "-S", ".gz", tarFile.toString).!
+        import sys.process.stringSeqToProcess
+        Seq("tar", "-cf", tarFile.toString, "-C", crossTarget.value.toString, "polynote").!
+        Seq("gzip", "-S", ".gz", tarFile.toString).!
 
 
-//    // simpler than all the above, but doesn't preserve executable status
-//    IO.zip(
-//      files,
-//      outFile)
+        //    // simpler than all the above, but doesn't preserve executable status
+        //    IO.zip(
+        //      files,
+        //      outFile)
 
-    outFile
-  },
-  commonSettings
-)
+        outFile
+      }
+    )
+
