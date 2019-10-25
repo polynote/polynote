@@ -15,7 +15,7 @@ jobs:
               uses: defold/repository-dispatch@1.1.4,
               with: {
                 repo: 'polynote/polynote.github.io',
-                token: '${{ secrets.TOKEN }}',
+                token: '${{ secrets.GITHUB_TOKEN }}',
                 action: 'update-docs'
               }
             }]
