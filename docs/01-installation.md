@@ -33,6 +33,8 @@ cd polynote
   other platforms and browsers soon. Feel free to try it on your platform, and be sure to let us know about any issues
   you encounter by filing a bug report.
   
+- At the moment Polynote requires Java 8.
+  
 - *Spark support*: In order to use Spark with kernel isolation, you'll need to [install Apache Spark&trade;](https://spark.apache.org/downloads.html).
   If you'll be using Spark with Polynote, please make sure you read this [note about Spark and Polynote](02-basic-usage.md#Using-Spark-with-Polynote) for more information. 
   - Polynote will use the `spark-submit` command in order to start isolated kernels, so it needs the `spark-submit` command 
