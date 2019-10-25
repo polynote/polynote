@@ -1,0 +1,20 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v1
+    - name: Docs
+      run: |
+        git clone https://github.com/polynote/polynote.github.io.git
+        cp $GITHUB_WORKSPACE/docs/*.md polynote.github.io/docs/
+        git commit -am "automated docs update"
+        git push origin master
