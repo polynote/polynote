@@ -70,7 +70,7 @@ cd polynote
   
 
 ## Configure
-To change any of the default configuration, you'll need to copy the included `config-template.yaml` file to `config.yaml`.
+To change any of the default configuration, you'll need to copy the included `config-template.yml` file to `config.yml`.
 
 ## Run
 To start the server, run the included bash script:
