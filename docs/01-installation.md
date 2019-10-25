@@ -5,6 +5,7 @@ layout: docs
 
 # Installing Polynote
 
+
 > ## Warning!
 > Polynote is a web-based programming notebook tool. Like other notebook tools, a large part of its usefulness relies on
 > **arbitrary remote code execution.**
