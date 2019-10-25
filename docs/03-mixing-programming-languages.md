@@ -36,9 +36,6 @@ such as plotting data generated in Scala with `matplotlib`, or using Scala-gener
 `scikit-learn`. We've found that the interop between Python and Scala can be very powerful even if its limited to these 
 simple cases. 
 
-We don't expect (or intend) that more complex usage involving many handoffs between Scala and Python will work well. Though, 
-if do you get something interesting to work we'd be more than happy to hear about it. 
-
 Here are a few important points to keep in mind when sharing between Python and Scala:
 
 * Jep handles the conversion from Scala -> Python. 
