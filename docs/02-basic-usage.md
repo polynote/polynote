@@ -82,8 +82,6 @@ In Polynote, the input state of a cell is defined completely by which cells are 
 enforce *reproducibility* in a notebook; it is far more likely that you'll be able to re-run the notebook from top to
 bottom if later cells can't affect earlier cells.
 
-Next, read about [mixing programming languages](03-mixing-programming-languages.md).
-
 ## Using Spark with Polynote 
 
 Polynote has deep integration with [Apache Spark](https://spark.apache.org). However, it can also run without Spark support enabled. 
@@ -94,3 +92,5 @@ have any Spark configuration parameters in the notebook config. So the fastest w
 something like `spark.master: local[*]` to your notebook configuration, like so: 
 
 ![spark-master-config](images/spark-master-config.png)
+
+Next, read about [mixing programming languages](03-mixing-programming-languages.md).
