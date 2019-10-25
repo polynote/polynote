@@ -9,16 +9,13 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v1
-    - name: Docs
-      run: |
-        git clone https://github.com/polynote/polynote.github.io.git
-        cd polynote.github.io/
-        cp $GITHUB_WORKSPACE/docs/*.md docs/
-        git config --global user.email "polynote-ci@polynote.org"
-        git config --global user.name "Polynote CI"
-        git remote add origin-docs https://${{ secrets.GITHUB_TOKEN }}@github.com/polynote/polynote.github.io.git
-        git commit -am "automated docs update"
-        git push origin-docs master
+
+    steps: [{
+              name: 'Trigger docs repo update',
+              uses: defold/repository-dispatch@1.1.4,
+              with: {
+                repo: 'polynote/polynote.github.io',
+                token: '${{ secrets.TOKEN }}',
+                action: 'update-docs'
+              }
+            }]
