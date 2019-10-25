@@ -15,7 +15,8 @@ jobs:
     - name: Docs
       run: |
         git clone https://github.com/polynote/polynote.github.io.git
-        cp $GITHUB_WORKSPACE/docs/*.md polynote.github.io/docs/
+        cd polynote.github.io/
+        cp $GITHUB_WORKSPACE/docs/*.md docs/
         git config --global user.email "polynote-ci@polynote.org"
         git config --global user.name "Polynote CI"
         git remote add origin-docs https://${{ secrets.GITHUB_TOKEN }}@github.com/polynote/polynote.github.io.git
