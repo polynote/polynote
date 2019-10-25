@@ -22,6 +22,6 @@ jobs:
     - name: Add archive to release
       uses: softprops/action-gh-release@v1
       with:
-        files: [target/scala-2.11/polynote-dist-2.11.tar.gz, target/scala-2.12/polynote-dist-2.12.tar.gz]
+        files: [target/scala-2.11/polynote-dist.tar.gz, target/scala-2.12/polynote-dist-2.12.tar.gz]
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
