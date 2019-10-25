@@ -16,6 +16,7 @@ jobs:
               with: {
                 repo: 'polynote/polynote.github.io',
                 token: '${{ secrets.GITHUB_TOKEN }}',
+                user: 'jonathanindig',
                 action: 'update-docs'
               }
             }]
