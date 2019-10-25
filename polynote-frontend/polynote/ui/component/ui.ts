@@ -121,7 +121,9 @@ export class MainUI extends UIMessageTarget {
 
         SocketSession.get.addEventListener('open', evt => {
            this.browseUI.setDisabled(false);
-           this.toolbarUI.setDisabled(false);
+           if (this.tabUI.getCurrentTab().name !== 'home') {
+               this.toolbarUI.setDisabled(false);
+           }
            this.disabled = false;
         });
 
@@ -150,11 +152,15 @@ export class MainUI extends UIMessageTarget {
 
                 const currentNotebook = this.tabUI.getTab(name).content.notebook.cellsUI;
                 CurrentNotebook.set(currentNotebook.notebookUI);
-                currentNotebook.notebookUI.cellUI.forceLayout()
+                currentNotebook.notebookUI.cellUI.forceLayout();
+                if (SocketSession.get.isOpen) {
+                    this.toolbarUI.setDisabled(false);
+                }
             } else if (type === 'home') {
                 const title = 'Polynote';
                 window.history.pushState({notebook: name}, title, '/');
-                document.title = title
+                document.title = title;
+                this.toolbarUI.setDisabled(true);
             }
         });
 
@@ -217,6 +223,7 @@ export class MainUI extends UIMessageTarget {
             notebook: this.welcomeUI.el,
             kernel: welcomeKernelUI.el
         }, 'home');
+        this.tabUI.activateTab(this.tabUI.getTab('home'));
     }
 
     loadNotebook(path: string) {

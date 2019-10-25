@@ -145,4 +145,8 @@ export class TabUI extends UIMessageTarget {
     getTab(name: string) {
         return this.tabs[name];
     }
+
+    getCurrentTab(): Tab {
+        return this.currentTab;
+    }
 }
