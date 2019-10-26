@@ -384,7 +384,7 @@ class PythonInterpreter private[python] (
                       case "bool" => (typeOf[Boolean], valueAs(classOf[java.lang.Boolean]).booleanValue())
                       case "function" | "builtin_function_or_method" | "type" =>
                         (typeOf[PythonFunction], new PythonFunction(valueAs(classOf[PyCallable]), runner))
-                      case "PyJObject" | "PyJCallable" | "PyJAutoCloseable" =>
+                      case "PyJObject" | "PyJCallable" | "PyJAutoCloseable" | "PyJArray" => // TODO: can we get better type information from `PyJArray`?
                         val jValue = valueAs(classOf[Object])
                         val typ = runtime.unsafeRun(compiler.reflect(jValue)).symbol.info
                         (typ, jValue)
