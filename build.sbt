@@ -201,6 +201,27 @@ lazy val `polynote-spark` = project.settings(
   `polynote-runtime` % "provided",
   `polynote-runtime` % "test")
 
+val `polynote-embedded` = project.settings(
+  commonSettings,
+  sparkSettings,
+  libraryDependencies ++= Seq(
+    "dev.zio" %% "zio-interop-cats" % versions.zioInterop % "compile",
+    "org.apache.spark" %% "spark-sql" % sparkVersion.value % "compile",
+    "org.apache.spark" %% "spark-repl" % sparkVersion.value % "compile",
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "compile",
+    "org.scala-lang" % "scala-reflect" % scalaVersion.value % "compile"
+  ),
+  excludeDependencies ++= Seq(
+    ExclusionRule("org.slf4j", "slf4j-simple")
+  )
+) dependsOn (
+  `polynote-spark`,
+  `polynote-spark-runtime`,
+  `polynote-server`,
+  `polynote-kernel`,
+  `polynote-runtime`
+)
+
 lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`)
     .settings(
       commonSettings,
