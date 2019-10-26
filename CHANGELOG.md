@@ -8,17 +8,17 @@
 * Support for LaTeX MIME type output
 * Fix some race conditions in Scala compiler
 * Fix issue with nondeterministic queueing order
-* Fix bug when notebook folder doesn't exist (Polynote now creates a notebook directory for you)
+* Fix bug when notebook folder doesn't exist (Polynote now creates a notebook directory )
 * Fix an issue where failed dependency downloads could cause notebook to be unresponsive until a restart
 
 
 # 0.2.6 (October 18, 2019)
 
-* Fix regression causing missing ExecutionInfo
+* Fix regression causing missing Execution Info
 * Fix regression causing the python interpreter shutdown to crash the kernel
 * Fix regression causing symbol table to be stale after page reload
 * Fix regression causing inserted cells not to be focused
-* Remove spellcheck on code cells that would sometimes come up
+* Remove spellcheck on code cells that would sometimes come up during the work
 * Always add a StringRepr. 
 * Some minor cleanup of UI events
 * Update fonts to address a bug in Firefox (https://bugzilla.mozilla.org/show_bug.cgi?id=1589156)

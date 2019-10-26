@@ -21,5 +21,5 @@ Current notebook solutions, like Jupyter and Zeppelin, are lacking in some funda
 - *Runtime insight* – Polynote tries to keep you informed of what's going on at runtime:
     - The tasks area shows you what the kernel is doing at any given time.
     - The symbol table shows you what variables and functions you've defined, so you don't have to scroll around to remind yourself.
-    - Compile failures and runtime exceptions are highlighted in the editor (for supported languages), so you can see exactly what's going wrong?
+    - Compile failures and runtime exceptions are highlighted in the editor (for supported languages), so you can see exactly what's going wrong in the error prompt?
 
