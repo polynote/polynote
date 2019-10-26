@@ -127,8 +127,8 @@ trait State {
     if (predicate(this)) {
       return this
     }
-    var s = this
-    while (s != Root && !predicate(s.prev)) {
+    var s = this.prev
+    while (s != Root && !predicate(s)) {
       s = s.prev
     }
     s
