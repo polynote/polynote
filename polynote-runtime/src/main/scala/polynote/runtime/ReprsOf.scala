@@ -136,6 +136,7 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
     def iterator: Iterator[ByteBuffer] = transform(data).iterator.map(b => DataEncoder.writeSized[B](b)(enc))
 
     private trait Aggregator[T] {
+      def reset(): Unit
       def accumulate(value: B): Unit
       def summarize(): T
       def encoder: DataEncoder[T]
@@ -146,6 +147,11 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       private val values = new Array[Double](data.size)
       private var index = 0
       private var mean = 0.0
+
+      override def reset(): Unit = {
+        index = 0
+        mean = 0.0
+      }
 
       override def accumulate(value: B): Unit = {
         val x = getter(value)
@@ -176,6 +182,7 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
 
     private class SumAggregator(name: String, getter: B => Double) extends Aggregator[Double] {
       private var sum = 0.0
+      override def reset(): Unit = sum = 0.0
       override def accumulate(value: B): Unit = sum += getter(value)
       override def summarize(): Double = sum
       val encoder: DataEncoder[Double] = DataEncoder.double
@@ -184,6 +191,7 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
 
     private class CountAggregator(name: String) extends Aggregator[Long] {
       private var count = 0L
+      override def reset(): Unit = count = 0L 
       override def accumulate(value: B): Unit = count += 1
       override def summarize(): Long = count
       val encoder: DataEncoder[Long] = DataEncoder.long
@@ -194,6 +202,12 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       private var count = 0
       private var mean = 0.0
       private var sumSquaredDiffs = 0.0
+
+      override def reset(): Unit = {
+        count = 0
+        mean = 0.0
+        sumSquaredDiffs = 0.0
+      }
 
       override def accumulate(value: B): Unit = {
         val x = getter(value)
@@ -240,15 +254,18 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
               case (col, aggName) => aggregate(col, aggName)
             }
 
-            val groupTransform = (bs: Seq[B]) => bs.groupBy(b => getters.map(_.apply(b))).toSeq.map {
-              case (groupCols, group) =>
-                group.foreach {
-                  b => aggregators.foreach {
-                    agg => agg.accumulate(b)
+            val groupTransform = (bs: Seq[B]) => {
+              aggregators.foreach(_.reset()) // FIXME: The aggregations are being recomputed more than once
+              bs.groupBy(b => getters.map(_.apply(b))).toSeq.map {
+                case (groupCols, group) =>
+                  group.foreach {
+                    b => aggregators.foreach {
+                      agg => agg.accumulate(b)
+                    }
                   }
-                }
-                val aggregates = aggregators.map(_.summarize())
-                (groupCols ::: aggregates).toArray
+                  val aggregates = aggregators.map(_.summarize())
+                  (groupCols ::: aggregates).toArray
+              }
             }
 
             val groupedType = StructType(
