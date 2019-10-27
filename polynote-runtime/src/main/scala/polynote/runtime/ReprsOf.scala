@@ -189,12 +189,13 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       val resultName: String = s"sum($name)"
     }
 
-    private class CountAggregator(name: String) extends Aggregator[Long] {
+    // FIXME: This should be an Aggregator[Long], but for some reason that's not working
+    private class CountAggregator(name: String) extends Aggregator[Double] { 
       private var count = 0L
       override def reset(): Unit = count = 0L 
       override def accumulate(value: B): Unit = count += 1
-      override def summarize(): Long = count
-      val encoder: DataEncoder[Long] = DataEncoder.long
+      override def summarize(): Double = count.toDouble
+      val encoder: DataEncoder[Double] = DataEncoder.double
       val resultName: String = s"count($name)"
     }
 
