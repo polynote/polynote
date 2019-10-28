@@ -4,17 +4,6 @@
 #    cp ./config-template.yml ./config.yml
 #
 # Now, uncomment the section of the config that you'd like to change.
-# Make sure to uncomment the top-level keys as well! For example, to set the host and port, change
-#
-#    #listen:
-#    #  host: 127.0.0.1
-#    #  port: 8192
-#
-# to
-#
-#    listen:
-#      host: 127.0.0.1
-#      port: 8192
 #
 ########################################################################################################################
 
