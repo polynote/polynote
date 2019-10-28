@@ -1,27 +1,49 @@
 package polynote.server
 
-import java.io.File
+import java.io.{BufferedReader, File, FileInputStream, InputStreamReader}
+import java.nio.CharBuffer
+import java.nio.charset.StandardCharsets
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
-import org.http4s.{HttpApp, HttpRoutes, Request, Response, StaticFile}
+import org.http4s.{Charset, Headers, HttpApp, HttpRoutes, MediaType, Request, Response, StaticFile}
 import org.http4s.blaze.pipeline.Command.EOF
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeServerBuilder
+import org.http4s.headers.`Content-Type`
+import org.http4s.Status.{BadRequest, Unauthorized}
+import org.http4s.util.CaseInsensitiveString
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, interpreter}
-import zio.{Cause, Runtime, Task, RIO, ZIO, system}
+import zio.{Cause, IO, RIO, Runtime, Task, UIO, ZIO, system}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
 import zio.random.Random
+import zio.blocking.effectBlocking
 
 import scala.annotation.tailrec
+import scala.collection.mutable.ArrayBuffer
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App with Http4sDsl[Task] {
 
   private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
 
-  private val indexFile = "/index.html"
+  private def indexFileContent(key: UUID, watchUI: Boolean) = {
+    val is = ZIO {
+      if (watchUI) {
+        java.nio.file.Files.newInputStream(
+          new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/index.html"))
+      } else {
+        getClass.getClassLoader.getResourceAsStream("index.html")
+      }
+    }
+
+    is.bracket(is => ZIO(is.close()).orDie) {
+      is => effectBlocking(scala.io.Source.fromInputStream(is, "UTF-8").mkString.replace("$WS_KEY", key.toString))
+    }
+  }
 
   private val securityWarning =
     """Polynote allows arbitrary remote code execution, which is necessary for a notebook tool to function.
@@ -48,20 +70,22 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   }
 
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
-    args     <- ZIO.fromEither(Server.parseArgs(args)).orDie
-    _        <- Logging.info(s"Loading configuration from ${args.configFile}")
-    config   <- PolynoteConfig.load(args.configFile).orDie
-    port      = config.listen.port
-    address   = config.listen.host
-    host      = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
-    url       = s"http://$host:$port"
-    interps  <- interpreter.Loader.load.orDie
-    globalEnv = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps, kernelFactory))
-    manager  <- NotebookManager().provide(globalEnv).orDie
-    socketEnv = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
-    app      <- httpApp(args.watchUI).provide(socketEnv).orDie
-    _        <- Logging.warn(securityWarning)
-    exit     <- BlazeServerBuilder[Task]
+    args      <- ZIO.fromEither(Server.parseArgs(args)).orDie
+    _         <- Logging.info(s"Loading configuration from ${args.configFile}")
+    config    <- PolynoteConfig.load(args.configFile).orDie
+    port       = config.listen.port
+    address    = config.listen.host
+    wsKey      = config.security.websocketKey.getOrElse(UUID.randomUUID())
+    host       = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
+    url        = s"http://$host:$port"
+    indexHtml <- indexFileContent(wsKey, args.watchUI).orDie
+    interps   <- interpreter.Loader.load.orDie
+    globalEnv  = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps, kernelFactory))
+    manager   <- NotebookManager().provide(globalEnv).orDie
+    socketEnv  = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
+    app       <- httpApp(args.watchUI, wsKey, indexHtml).provide(socketEnv).orDie
+    _         <- Logging.warn(securityWarning)
+    exit      <- BlazeServerBuilder[Task]
       .withBanner(
         raw"""
              |
@@ -104,20 +128,38 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   }
 
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
+  object KeyMatcher extends QueryParamDecoderMatcher[String]("key")
 
-  def httpApp(watchUI: Boolean): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = for {
-    env <- ZIO.access[BaseEnv with GlobalEnv with NotebookManager](identity)
-  } yield HttpRoutes.of[Task] {
-    case GET -> Root / "ws" => SocketSession().flatMap(_.toResponse).provide(env)
-    case req @ GET -> Root  => serveFile(indexFile, req, watchUI)
-    case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) =>
-      downloadFile(path.toList.mkString("/"), req, env.polynoteConfig)
-    case req @ GET -> "notebook" /: _ => serveFile(indexFile, req, watchUI)
-    case req @ GET -> (Root / "polynote-assembly.jar") =>
-      StaticFile.fromFile[Task](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), blockingEC).getOrElseF(NotFound())
-    case req @ GET -> path  =>
-      serveFile(path.toString, req, watchUI)
-  }.mapF(_.getOrElseF(NotFound()))
+  def httpApp(watchUI: Boolean, wsKey: UUID, indexHtml: String): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
+    val indexResponse = ZIO {
+      Response(
+        headers = Headers.of(`Content-Type`(MediaType.text.html, Charset.`UTF-8`)),
+        body = fs2.Stream.emits[Task, Byte](indexHtml.getBytes(StandardCharsets.UTF_8))
+      )
+    }
+
+    def checkKey(providedKey: String): IO[UIO[Response[Task]], Unit] = {
+      for {
+        parsedKey   <- ZIO(UUID.fromString(providedKey)).mapError(_ => Response[Task](status = BadRequest))
+        _           <- if (parsedKey == wsKey) ZIO.unit else {
+          ZIO.fail(Response[Task](status = Unauthorized)) <* Logging.warn(s"Access attempt with no key")
+        }
+      } yield ()
+    }.mapError {
+      response => ZIO.sleep(zio.duration.Duration(500, TimeUnit.MILLISECONDS)).as(response).provide(Environment)
+    }.provide(Environment)
+
+    for {
+      env <- ZIO.access[BaseEnv with GlobalEnv with NotebookManager](identity)
+    } yield HttpRoutes.of[Task] {
+      case req @ GET -> Root / "ws" :? KeyMatcher(key)                      => checkKey(key).foldM(_.absorb, _ => SocketSession().flatMap(_.toResponse).provide(env))
+      case req @ GET -> Root                                                => indexResponse
+      case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req, env.polynoteConfig)
+      case req @ GET -> "notebook" /: _                                     => indexResponse
+      case req @ GET -> (Root / "polynote-assembly.jar")                    => StaticFile.fromFile[Task](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), blockingEC).getOrElseF(NotFound())
+      case req @ GET -> path                                                => serveFile(path.toString, req, watchUI)
+    }.mapF(_.getOrElseF(NotFound()))
+  }
 
 }
 

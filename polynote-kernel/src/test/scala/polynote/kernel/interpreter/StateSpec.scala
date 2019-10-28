@@ -47,4 +47,17 @@ class StateSpec extends FreeSpec with Matchers {
 
   }
 
+  "rewindUntil" - {
+    "find the first state in the chain where the predicate holds" in {
+      val one = State.id(1)
+      val state = State.id(
+        3,
+        State.id(
+          2,
+          one))
+
+      state.rewindUntil(_.id < 3).id shouldEqual 2
+      state.rewindUntil(_.id < 2) shouldEqual one
+    }
+  }
 }
