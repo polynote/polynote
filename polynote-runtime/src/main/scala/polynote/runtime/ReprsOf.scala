@@ -210,7 +210,7 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
     private def aggregate(col: String, aggName: String): Aggregator[_] = {
       def numericEncoder = enc.field(col) match {
         case Some((getter, colEnc)) if colEnc.numeric.nonEmpty =>
-          val numeric = colEnc.numeric.get.asInstanceOf[Any => Double]
+          val numeric = (colEnc.numeric.get.toDouble(_)).asInstanceOf[Any => Double]
           getter andThen numeric
         case Some(_) => throw new IllegalArgumentException(s"Field $col is not numeric; cannot compute $aggName")
         case None => throw new IllegalArgumentException(s"No field $col in struct")
