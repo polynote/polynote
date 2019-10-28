@@ -222,7 +222,15 @@ class PythonInterpreter private[python] (
       |        return { 'error': KernelReport(Pos(cell, pos, pos, pos), err.msg, 2) }
       |
       |def __polynote_compile__(parsed):
-      |    return list(map(lambda node: compile(ast.Module([node]), '<ast>', 'exec'), parsed.body))
+      |    # Python 3.8 compat, see https://github.com/ipython/ipython/pull/11593/files#diff-1c766d4a0b1ea9ed8b2d14058b8234ab
+      |    if sys.version_info > (3,8):
+      |        from ast import Module
+      |    else :
+      |        # mock the new API, ignore second argument
+      |        # see https://github.com/ipython/ipython/issues/11590
+      |        from ast import Module as OriginalModule
+      |        Module = lambda nodelist, type_ignores: OriginalModule(nodelist)
+      |    return list(map(lambda node: compile(Module([node], []), '<ast>', 'exec'), parsed.body))
       |
       |def __polynote_run__(compiled, _globals, _locals, kernel):
       |    try:
