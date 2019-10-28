@@ -19,7 +19,11 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
 
   protected def callPosArgs(callable: PyCallable, args: Seq[AnyRef]): PythonObject = {
     runner.run {
-      callable.callAs(classOf[PyObject], args.map(unwrapArg): _*)
+      if (args.nonEmpty) {
+        callable.callAs(classOf[PyObject], args.map(unwrapArg): _*)
+      } else {
+        callable.callAs(classOf[PyObject])
+      }
     } match {
       case pc: PyCallable => new PythonFunction(pc, runner)
       case po => new PythonObject(po, runner)

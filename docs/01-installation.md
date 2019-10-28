@@ -33,7 +33,7 @@ cd polynote
   other platforms and browsers soon. Feel free to try it on your platform, and be sure to let us know about any issues
   you encounter by filing a bug report.
   
-  Please note that *Java 8* is currently required due to our dependency on Spark.
+  Polynote has been successfully tested on both Java 8 and Java 11.
   
 - *Spark support*: In order to use Spark with kernel isolation, you'll need to [install Apache Spark&trade;](https://spark.apache.org/downloads.html).
   If you'll be using Spark with Polynote, please make sure you read this [note about Spark and Polynote](02-basic-usage.md#Using-Spark-with-Polynote) for more information. 
@@ -41,19 +41,20 @@ cd polynote
     to be working properly and available on the `PATH` of the environment you used to launch the server.
       - On a Mac with [Homebrew](https://brew.sh), you can install Spark locally with `brew install apache-spark`.
       - On Linux, untar Spark wherever you like and configure your environment to have `SPARK_HOME` pointing to the Spark location. 
-        Then add `$SPARK_HOME/bin` to your `PATH`. You'll also need Java 8 and `JAVA_HOME` properly configured. 
+        Then add `$SPARK_HOME/bin` to your `PATH`. You'll also need a JDK installed and `JAVA_HOME` properly configured. 
         Here is an example setup for Polynote on Debian. Note that distributions differ, so you may need to modify these 
         instructions for your local setup.
-        - Make sure Java 8 is installed: `apt-get install openjdk-8-jdk`
-        - Download and untar polynote somewhere (e.g., `/home/user/polynote`)
-        - Download and untar spark somewhere (e.g., `/home/user/spark`)
-        - Set `JAVA_HOME`: `export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64/`
-        - Set `SPARK_HOME` to the untarred spark dir (e.g., `export SPARK_HOME=/home/user/spark/`)
+        - Start with an `apt-get update`
+        - Install Java (this installs Java 11 for me on Debian buster): `apt-get install default-jdk`
+        - download polynote, `tar -zxvpf polynote-dist.tar.gz`
+        - download spark, `tar -zxvf spark-2.4.4-bin-hadoop2.7.tgz`
+        - Set `JAVA_HOME`: `export JAVA_HOME=/usr/lib/jvm/default-java/`
+        - Set `SPARK_HOME`: ``export SPARK_HOME=`pwd`/spark-2.4.4-bin-hadoop2.7/``
         - Set `PATH`: `export PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"`
-        - Check if Spark is correctly set up by running `spark-submit`: you should see usage information. 
+        - Check if Spark is correctly set up by running `spark-submit`, you should see usage information. 
         - Do the Python setup as described below. You might need to install `build-essential` if jep installation fails. 
-        - Run Polynote!
-      
+        - [Run Polynote!](#Run)
+     
 - *Python support*: In order to execute Python code, you'll need to have Python 3 and pip3 installed. Refer to
   [Python's installation instructions](https://wiki.python.org/moin/BeginnersGuide/Download){:target="_blank"} for
   instructions on installing these packages.
@@ -70,13 +71,14 @@ cd polynote
   
 
 ## Configure
-To change any of the default configuration, you'll need to copy the included `config-template.yml` file to `config.yml`.
+To change any of the default configuration, you'll need to copy the included [`config-template.yml`](https://github.com/polynote/polynote/blob/master/config-template.yml)
+file to `config.yml`, and uncomment the sections you'd like to change. Check out the template itself for more information.
 
 ## Run
-To start the server, run the included bash script:
+To start the server, run the included python script:
 
 ```
-./polynote
+./polynote.py
 ```
 
 ## Next

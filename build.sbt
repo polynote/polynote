@@ -208,6 +208,8 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynot
         val jars = ((assembly in (`polynote-spark`, Compile)).value -> "polynote/polynote.jar") +:
           ((polynoteJars in (`polynote-spark`, Compile)).value ++ (dependencyJars in (`polynote-spark`, Compile)).value)
 
+        val examples = IO.listFiles(file(".") / "docs" / "examples").map(f => (f, s"polynote/notebooks/examples/${f.getName}"))
+
         val versionTag = scalaBinaryVersion.value match {
           case "2.11" => ""
           case ver    => s"-$ver"
@@ -222,7 +224,7 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynot
         if(outFile.exists())
           outFile.delete()
 
-        val files = jars ++ List(
+        val files = jars ++ examples ++ List(
           (file(".") / "config-template.yml") -> "polynote/config-template.yml",
           (file(".") / "scripts" / "polynote") -> "polynote/polynote",
           (file(".") / "scripts" / "plugin") -> "polynote/plugin",
