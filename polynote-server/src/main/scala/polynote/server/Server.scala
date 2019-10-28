@@ -35,6 +35,9 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       |- Even running Polynote inside a container doesn't guarantee safety, as there will always be
       |  privilege escalation and container escape vulnerabilities which an attacker could leverage.
       |
+      |Please be diligent about checking for new releases, as they could contain fixes for critical security
+      |flaws.
+      |
       |Please be mindful of the security issues that Polynote causes; consult your company's security team
       |before running Polynote. You are solely responsible for any breach, loss, or damage caused by running
       |this software insecurely.""".stripMargin
