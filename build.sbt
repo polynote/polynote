@@ -191,7 +191,7 @@ lazy val `polynote-spark` = project.settings(
     (assemblyOption in assembly).value.copy(
       includeScala = false,
       prependShellScript = Some(
-        IO.read(file(".") / "scripts/polynote").lines.toSeq
+        IO.read(file(".") / "scripts/polynote").linesIterator.toSeq
       ))
   }
 ) dependsOn (
