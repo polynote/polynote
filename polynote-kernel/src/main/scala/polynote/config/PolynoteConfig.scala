@@ -1,6 +1,7 @@
 package polynote.config
 
 import java.io.{File, FileNotFoundException, FileReader}
+import java.util.UUID
 
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
@@ -59,6 +60,15 @@ object Behavior {
   implicit val decoder: Decoder[Behavior] = deriveDecoder
 }
 
+final case class Security(
+  websocketKey: Option[UUID] = None
+)
+
+object Security {
+  implicit val encoder: ObjectEncoder[Security] = deriveEncoder
+  implicit val decoder: Decoder[Security] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   storage: Storage = Storage(),
@@ -66,7 +76,8 @@ final case class PolynoteConfig(
   exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,
   spark: Map[String, String] = Map.empty,
-  behavior: Behavior = Behavior()
+  behavior: Behavior = Behavior(),
+  security: Security = Security()
 )
 
 
