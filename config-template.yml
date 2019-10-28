@@ -1,7 +1,30 @@
-# The host and port can be set by uncommenting and editing the following lines:
+######### Polynote Configuration Template ##############################################################################
+# To use, copy this template and name it `config.yml`
+#
+#    cp ./config-template.yml ./config.yml
+#
+# Now, uncomment the section of the config that you'd like to change.
+#
+########################################################################################################################
+
+########## Server-level Configuration ################################
+###
+### These configurations are applied immediately when Polynote starts.
+###
+######################################################################
+
+###############################################################################
+# The host and port can be set by uncommenting and editing the following lines.
+###############################################################################
+
 #listen:
-#  host: 0.0.0.0
+#  host: 127.0.0.1
 #  port: 8192
+
+
+############################################################################################
+# Storage-related configuration. Locations are all relative to Polynote's working directory.
+############################################################################################
 
 #storage:
 #  # The location Polynote looks for your notebooks in
@@ -9,7 +32,27 @@
 #  # The location Polynote puts various caches, such as virtual environments created for your notebooks.
 #  cache: tmp
 
-# Default repositories can be specified. Uncommenting the following lines would add four default repositories which are inherited by new notebooks.
+##########################################################
+# Configure the way Polynote runs Kernels and Interpreters
+##########################################################
+
+#behavior:
+#  dependency_isolation: false
+#  kernel_isolation: always
+
+########## Notebook Creation Configuration #######################################################
+###
+### These configurations are applied to *new notebooks* only.
+### When a *new notebook* is created, its Notebook Configuration is copied from this configuration.
+### They do *not* affect existing notebooks.
+###
+###################################################################################################
+
+############################################################################################
+# Default repositories. Uncommenting the following lines would add four default repositories
+# which are inherited by new notebooks.
+############################################################################################
+
 #repositories:
 #  - ivy:
 #      base: https://my-artifacts.org/artifacts/
@@ -24,7 +67,11 @@
 #      base: http://oss.sonatype.org/content/repositories/snapshots
 #      changing: true
 
-# Default dependencies can be specified. Uncommenting the following lines would add some default dependencies which are inherited by new notebooks.
+############################################################################################
+# Default dependencies. Uncommenting the following lines would add some default dependencies
+# which are inherited by new notebooks.
+############################################################################################
+
 #dependencies:
 #  scala:
 #    - org.typelevel:cats-core_2.11:1.6.0
@@ -33,10 +80,30 @@
 #    - requests
 #    - urllib3==1.25.3
 
+########################################################################################
+# Default exclusions. Uncommenting the following lines would add some default exclusions
+# which are inherited by new notebooks.
+########################################################################################
+
 #exclusions:
 #  - com.google.guava:guava  # spark, update your guava already!!!
 
-# Spark config params can be set by uncommenting and editing the following lines:
+########## Notebook Runtime Configuration #########################################################################
+###
+### These configurations are applied to *all notebooks*.
+### When a *new notebook* is created, its Notebook Configuration is copied from this configuration.
+###
+### When an existing notebook is *run*, these configurations are applied at runtime. Values present in the Notebook
+### Configuration take precedence over values here. The Notebook Configuration is *not* modified.
+###
+### **Note** that this means they can affect reproducibility of your notebooks when you share them with others!
+###
+###################################################################################################################
+
+#################################################################################
+# Spark config params can be set by uncommenting and editing the following lines.
+#################################################################################
+
 #spark:
 #  spark.driver.userClasspathFirst: true
 #  spark.executor.userClasspathFirst: true
