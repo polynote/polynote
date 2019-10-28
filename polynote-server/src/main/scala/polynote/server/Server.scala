@@ -45,6 +45,25 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     }
   }
 
+  private val securityWarning =
+    """Polynote allows arbitrary remote code execution, which is necessary for a notebook tool to function.
+      |While we'll try to improve safety by adding security measures, it will never be completely safe to
+      |run Polynote on your personal computer. For example:
+      |
+      |- It's possible that other websites you visit could use Polynote as an attack vector. Browsing the web
+      |  while running Polynote is unsafe.
+      |- It's possible that remote attackers could use Polynote as an attack vector. Running Polynote on a
+      |  computer that's accessible from the internet is unsafe.
+      |- Even running Polynote inside a container doesn't guarantee safety, as there will always be
+      |  privilege escalation and container escape vulnerabilities which an attacker could leverage.
+      |
+      |Please be diligent about checking for new releases, as they could contain fixes for critical security
+      |flaws.
+      |
+      |Please be mindful of the security issues that Polynote causes; consult your company's security team
+      |before running Polynote. You are solely responsible for any breach, loss, or damage caused by running
+      |this software insecurely.""".stripMargin
+
   override def reportFailure(cause: Cause[_]): Unit = cause.failures.distinct match {
     case List(EOF) => ()  // unable to otherwise silence this error that happens whenever websocket is closed by client
     case other     => super.reportFailure(cause)
@@ -65,6 +84,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     manager   <- NotebookManager().provide(globalEnv).orDie
     socketEnv  = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
     app       <- httpApp(args.watchUI, wsKey, indexHtml).provide(socketEnv).orDie
+    _         <- Logging.warn(securityWarning)
     exit      <- BlazeServerBuilder[Task]
       .withBanner(
         raw"""
