@@ -45,7 +45,7 @@ object DataEncoder extends DataEncoder0 {
   implicit val double: DataEncoder[Double] = numericInstance(DoubleType)(_ writeDouble _)
   implicit val string: DataEncoder[String] = sizedInstance[String](StringType, str => if (str == null) 4 else str.getBytes(StandardCharsets.UTF_8).length + 4) {
     (out, str) =>
-      if (out == null) {
+      if (str == null) {
         out.writeInt(-1)
       } else {
         val bytes = str.getBytes(StandardCharsets.UTF_8)
