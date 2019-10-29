@@ -104,6 +104,44 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
     }
   }
 
+  "package cells" - {
+    "imports classes" in {
+      val test = for {
+        _ <- interp("package foo\nclass Foo(a: Int, b: String) { def bar = a + b.length }")
+        _ <- interp("""val a = new Foo(10, "hi")""")
+        _ <- interp("val b = a.bar")
+      } yield ()
+
+      val (finalState, _) = test.run(cellState).runIO()
+      val scopeMap = finalState.scope.map(r => r.name.toString -> r.value).toMap
+      scopeMap("b") shouldEqual 12
+    }
+
+    "imports objects" in {
+      val test = for {
+        _ <- interp("package fooObj\nobject Foo { def wizzle = 20 }")
+        _ <- interp("val a = Foo.wizzle")
+      } yield ()
+
+      val (finalState, _) = test.run(cellState).runIO()
+      val scopeMap = finalState.scope.map(r => r.name.toString -> r.value).toMap
+      scopeMap("a") shouldEqual 20
+    }
+
+    "case classes (class with companion)" in {
+      val test = for {
+        _ <- interp("package fooCaseClass\ncase class Foo(a: Int, b: Int)")
+        _ <- interp("val a = Foo(10, 20)")
+        _ <- interp("val c = classOf[Foo]")
+        _ <- interp("val b = a.b")
+      } yield ()
+
+      val (finalState, _) = test.run(cellState).runIO()
+      val scopeMap = finalState.scope.map(r => r.name.toString -> r.value).toMap
+      scopeMap("b") shouldEqual 20
+    }
+  }
+
   /**
     * This test takes a while, so it's disabled by default. The purpose is to make sure that the cell encoding
     * doesn't fail at the typer stage before the constructor arguments are pruned, because there's at least one

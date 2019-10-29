@@ -91,13 +91,19 @@ class ScalaCompiler private (
 
   def compileCell(
     cellCode: CellCode
-  ): RIO[Blocking, Class[_]] =
+  ): RIO[Blocking, Option[Class[_]]] =
     for {
       compiled  <- cellCode.compile()
       className  = s"${packageName.encodedName.toString}.${cellCode.assignedTypeName.encodedName.toString}"
       cl        <- classLoader
-      cls       <- zio.blocking.effectBlocking(Class.forName(className, false, cl).asInstanceOf[Class[AnyRef]])
+      loadClass  = zio.blocking.effectBlocking(Option(Class.forName(className, false, cl).asInstanceOf[Class[AnyRef]]))
+      cls       <- if (cellCode.cellClassSymbol.nonEmpty) loadClass else ZIO.succeed(None)
     } yield cls
+
+  private def parse(unit: CompilationUnit, strictParse: Boolean, packageCell: Boolean) = {
+    def parseList(): List[Tree] = if (packageCell) List(newUnitParser(unit).parse()) else newUnitParser(unit).parseStats()
+    if (strictParse) ZIO(reporter.attempt(parseList())).absolve else ZIO(parseList())
+  }
 
   def cellCode(
     name: String,
@@ -109,16 +115,19 @@ class ScalaCompiler private (
   ): Task[CellCode] = for {
     sourceFile  <- ZIO(newSourceFile(code, name))
     compileUnit <- ZIO(new global.RichCompilationUnit(sourceFile))
-    parsed      <- if (strictParse) ZIO(reporter.attempt(newUnitParser(compileUnit).parseStats())).absolve else ZIO(newUnitParser(compileUnit).parseStats())
+    parsed      <- parse(compileUnit, strictParse, code.trim().startsWith("package"))
   } yield {
     val definedTerms = parsed.collect {
       case tree: DefTree if tree.name.isTermName => tree.name.decoded
     }.toSet
 
-    val allowedInputs = inputs.filterNot(definedTerms contains _.name.decoded)
+    val (allowedPriorCells, allowedInputs) = parsed match {
+      case PackageDef(_, _) :: Nil => (Nil, Nil)
+      case _ => (priorCells, inputs.filterNot(definedTerms contains _.name.decoded))
+    }
 
     CellCode(
-      name, parsed, priorCells, allowedInputs, inheritedImports, compileUnit, sourceFile
+      name, parsed, allowedPriorCells, allowedInputs, inheritedImports, compileUnit, sourceFile
     )
   }
 
@@ -143,14 +152,16 @@ class ScalaCompiler private (
 
     // first we'll try to get all of them at once.
     compileCell(CellCode(cellName, trees)).flatMap {
-      cls => (construct >>= getFields(names)).provide(cls)
+      case Some(cls) => (construct >>= getFields(names)).provide(cls)
+      case None => ZIO.fail(new IllegalStateException("Compiler provided no class for implicit results"))
     }.catchAll {
       err =>
         // if that doesn't compile (i.e. some implicits are missing) we'll try to compile each individually
         trees.zip(names).map {
           case (tree, name) =>
             compileCell(CellCode(cellName, List(tree))).flatMap {
-              cls => (construct >>= getField(name)).provide(cls)
+              case Some(cls) => (construct >>= getField(name)).provide(cls)
+              case None => ZIO.fail(new IllegalStateException("Compiler provided no class for implicit results"))
             }.catchAllCause {
               cause =>
                 // TODO: log it?
@@ -192,8 +203,11 @@ class ScalaCompiler private (
 
     // create constructor parameters to hold instances of prior cells; these are needed to access path-dependent types
     // for any classes, traits, type aliases, etc defined by previous cells
-    lazy val priorCellInputs: List[ValDef] = priorCells.map {
-      cell => ValDef(Modifiers(), TermName(s"_input${cell.assignedTypeName.decodedName.toString}"), TypeTree(cell.cellInstType).setType(cell.cellInstType), EmptyTree)
+    lazy val priorCellInputs: List[ValDef] = priorCells.flatMap {
+      cell =>
+        cell.cellInstType.toList.map {
+          cellInstType => ValDef(Modifiers(), TermName(s"_input${cell.assignedTypeName.decodedName.toString}"), TypeTree(cellInstType).setType(cellInstType), EmptyTree)
+        }
     }
 
     lazy val typedInputs: List[ValDef] = inputs
@@ -247,8 +261,8 @@ class ScalaCompiler private (
       // it works at runtime because the dummy value (as a *term*) is never actually referenced.
       val mySym = cellClassSymbol
       val myType = cellClassType
-      val dependentTypeMapping = priorCellInputs.zip(priorCells).map {
-        case (input, cell) => input.name.toString -> cell.cellInstType
+      val dependentTypeMapping = priorCellInputs.zip(priorCells).flatMap {
+        case (input, cell) => cell.cellInstType.toList.map(input.name.toString -> _)
       }.toMap
 
       def transformType(typ: Type): Type = typ match {
@@ -256,12 +270,12 @@ class ScalaCompiler private (
           typeRef(transformType(pre), sym, Nil)
         case TypeRef(pre, sym, args) =>
           typeRef(transformType(pre), sym, args.mapConserve(transformType))
-        case SingleType(pre, sym) if pre.typeSymbol == mySym && (dependentTypeMapping contains sym.name.toString) =>
+        case SingleType(pre, sym) if mySym.contains(pre.typeSymbol) && (dependentTypeMapping contains sym.name.toString) =>
           global.internal.singleType(dependentTypeMapping(sym.name.toString), sym)
         case SingleType(pre, sym) =>
           global.internal.singleType(transformType(pre), sym)
-        case `myType` =>
-          cellInstType
+        case typ if myType contains typ =>
+          cellInstType.getOrElse(typ)
         case _ =>
           typ
       }
@@ -321,21 +335,29 @@ class ScalaCompiler private (
 
     // Wrap the code in a class within the given package. Constructing the class runs the code.
     // The constructor parameters are
-    private lazy val wrapped: PackageDef = atPos(wrappedPos) {
-      q"""
-        package $packageName {
-          $wrappedClass
-          $companion
-        }
-      """
+    private lazy val wrapped: PackageDef = compiledCode match {
+      case (pkg @ PackageDef(_, stats)) :: Nil => atPos(wrappedPos)(pkg.copy(stats = copyAndReset(inheritedImports.externalImports) ::: stats))
+      case code => atPos(wrappedPos) {
+        q"""
+          package $packageName {
+            $wrappedClass
+            $companion
+          }
+        """
+      }
     }
 
     // the type representing this cell's class. It may be null or NoType if invoked before compile is done!
-    lazy val cellClassType: Type = exitingTyper(wrappedClass.symbol.info)
-    lazy val cellClassSymbol: ClassSymbol = exitingTyper(wrappedClass.symbol.asClass)
-    lazy val cellCompanionSymbol: ModuleSymbol = exitingTyper(companion.symbol.asModule)
-    lazy val cellInstSymbol: Symbol = exitingTyper(cellCompanionSymbol.info.member(TermName("instance")).accessedOrSelf)
-    lazy val cellInstType: Type = exitingTyper(cellCompanionSymbol.info.member(TypeName("Inst")).info.dealias)
+    private def ifNotPackage[T](t: => T): Option[T] = code match {
+      case PackageDef(_, _) :: Nil => None
+      case _ => Option(t)
+    }
+
+    lazy val cellClassType: Option[Type] = ifNotPackage(exitingTyper(wrappedClass.symbol.info))
+    lazy val cellClassSymbol: Option[ClassSymbol] = ifNotPackage(exitingTyper(wrappedClass.symbol.asClass))
+    lazy val cellCompanionSymbol: Option[ModuleSymbol] = ifNotPackage(exitingTyper(companion.symbol.asModule))
+    lazy val cellInstSymbol: Option[Symbol] = cellCompanionSymbol.map(sym => exitingTyper(sym.info.member(TermName("instance")).accessedOrSelf))
+    lazy val cellInstType: Option[Type] = cellCompanionSymbol.map(sym => exitingTyper(sym.info.member(TypeName("Inst")).info.dealias))
 
     // Note – you mustn't typecheck and then compile the same instance; those trees are done for. Instead, make a copy
     // of this CellCode and typecheck that if you need info about the typed trees without compiling all the way
@@ -380,7 +402,7 @@ class ScalaCompiler private (
     }
 
     // compute which prior cells are actually used – due to referencing a type or method from that cell
-    private def usedPriorCells: List[CellCode] = {
+    private def usedPriorCells: List[CellCode] = cellClassSymbol.map { cellClassSymbol =>
       val inputCellSymbols = cellClassSymbol.primaryConstructor.paramss.head.toSet
       val inputCellSymbolNames = inputCellSymbols.map(_.name)
       val used = new mutable.HashSet[Name]()
@@ -424,36 +446,54 @@ class ScalaCompiler private (
       }.map(_._1)
 
       results
-    }
+    }.getOrElse(Nil)
 
-    def splitImports(): Imports = {
-      val priorCellSymbols = priorCells.map(_.cellClassSymbol)
-      val imports = compiledCode.zip(code).collect {
-        case (i: Import, orig: Import) => (i, orig)
-      }
-      val (local, external) = imports.partition {
-        case (Import(expr, names), _) =>
-          (expr.symbol.ownerChain contains cellClassSymbol) || expr.symbol.ownerChain.intersect(priorCellSymbols).nonEmpty
-      }
+    def splitImports(): Imports = code match {
+      case (pkg @ PackageDef(pkgId, stats)) :: Nil =>
+        // TODO: should things you import from inside a package cell be imported elsewhere? Or should it be isolated?
+        val selectors = stats.collect {
+          case defTree: DefTree => defTree.name
+        }.zipWithIndex.map {
+          case (name, index) => ImportSelector(name.toTermName, index, name.toTermName, index)
+        }
 
-      Imports(local.map(_._2.duplicate), external.map(_._2.duplicate))
+        if (selectors.nonEmpty) {
+          Imports(Nil, List(Import(copyAndReset(pkgId), selectors)))
+        } else {
+          Imports(Nil, Nil)
+        }
+      case _ =>
+        val priorCellSymbols = priorCells.flatMap(_.cellClassSymbol)
+        val imports = compiledCode.zip(code).collect {
+          case (i: Import, orig: Import) => (i, orig)
+        }
+        val (local, external) = imports.partition {
+          case (Import(expr, names), _) =>
+            (expr.symbol.ownerChain contains cellClassSymbol.getOrElse(NoSymbol)) || expr.symbol.ownerChain.intersect(priorCellSymbols).nonEmpty
+        }
+        Imports(local.map(_._2.duplicate), external.map(_._2.duplicate))
     }
 
     /**
       * Make a new [[CellCode]] that uses a minimal subset of inputs and prior cells.
       * After invoking, this [[CellCode]] will not be compilable – bin it!
       */
-    def pruneInputs(): Task[CellCode] = for {
-      typedTree  <- ZIO(reporter.attempt(typed)).lock(compilerThread).absolve
-      usedNames  <- ZIO(usedInputs).lock(compilerThread)
-      usedDeps   <- ZIO(usedPriorCells)
-      usedNameSet = usedNames.map(_.decodedName.toString).toSet
-    } yield copy(priorCells = usedDeps, inputs = inputs.filter(usedNameSet contains _.name.decodedName.toString))
+    def pruneInputs(): Task[CellCode] = if (inputs.nonEmpty || priorCells.nonEmpty) {
+      for {
+        typedTree  <- ZIO(reporter.attempt(typed)).lock(compilerThread).absolve
+        usedNames  <- ZIO(usedInputs).lock(compilerThread)
+        usedDeps   <- ZIO(usedPriorCells)
+        usedNameSet = usedNames.map(_.decodedName.toString).toSet
+      } yield copy(priorCells = usedDeps, inputs = inputs.filter(usedNameSet contains _.name.decodedName.toString))
+    } else ZIO.succeed(copy(priorCells = Nil, inputs = Nil))
 
     /**
       * Transform the code statements using the given function.
       */
-    def transformCode(fn: List[Tree] => List[Tree]): CellCode = copy(code = fn(code))
+    def transformStats(fn: List[Tree] => List[Tree]): CellCode = code match {
+      case PackageDef(_, _) :: Nil => this
+      case code                    => copy(code = fn(code))
+    }
   }
 
   case class Imports(
