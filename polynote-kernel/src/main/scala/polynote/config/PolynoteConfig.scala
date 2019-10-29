@@ -61,7 +61,7 @@ object Behavior {
 }
 
 final case class Security(
-  websocketKey: Option[UUID] = None
+  websocketKey: Option[String] = None
 )
 
 object Security {

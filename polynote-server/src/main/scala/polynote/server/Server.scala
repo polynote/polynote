@@ -6,31 +6,28 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+import fs2.Chunk
 import org.http4s.{Charset, Headers, HttpApp, HttpRoutes, MediaType, Request, Response, StaticFile}
 import org.http4s.blaze.pipeline.Command.EOF
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.headers.`Content-Type`
-import org.http4s.Status.{BadRequest, Unauthorized}
-import org.http4s.util.CaseInsensitiveString
+import org.http4s.headers.{`Content-Length`, `Content-Type`}
 import polynote.config.PolynoteConfig
-import polynote.kernel.environment.{Config, Env}
+import polynote.kernel.environment.Env
 import polynote.kernel.logging.Logging
-import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, interpreter}
-import zio.{Cause, IO, RIO, Runtime, Task, UIO, ZIO, system}
+import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
+import zio.{Cause, RIO, Task, ZIO}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
-import zio.random.Random
 import zio.blocking.effectBlocking
 
 import scala.annotation.tailrec
-import scala.collection.mutable.ArrayBuffer
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App with Http4sDsl[Task] {
 
   private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
 
-  private def indexFileContent(key: UUID, watchUI: Boolean) = {
+  private def indexFileContent(key: String, watchUI: Boolean) = {
     val is = ZIO {
       if (watchUI) {
         java.nio.file.Files.newInputStream(
@@ -64,9 +61,9 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       |before running Polynote. You are solely responsible for any breach, loss, or damage caused by running
       |this software insecurely.""".stripMargin
 
-  override def reportFailure(cause: Cause[_]): Unit = cause.failures.distinct match {
-    case List(EOF) => ()  // unable to otherwise silence this error that happens whenever websocket is closed by client
-    case other     => super.reportFailure(cause)
+  override def reportFailure(cause: Cause[_]): Unit = cause.failures.distinct.filterNot(_ == EOF) match {
+    case Nil => ()  // unable to otherwise silence this error that happens whenever websocket is closed by client
+    case _   => super.reportFailure(cause)
   }
 
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
@@ -75,7 +72,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     config    <- PolynoteConfig.load(args.configFile).orDie
     port       = config.listen.port
     address    = config.listen.host
-    wsKey      = config.security.websocketKey.getOrElse(UUID.randomUUID())
+    wsKey      = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
     host       = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url        = s"http://$host:$port"
     indexHtml <- indexFileContent(wsKey, args.watchUI).orDie
@@ -98,6 +95,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
              |                __/ |
              |               |___/
              |
+             |Server running at $url
              |""".stripMargin.lines.toList
       )
       .bindHttp(port, address)
@@ -108,10 +106,10 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
 
   private def staticFile(location: String, req: Request[Task]): Task[Response[Task]] =
-    Environment.blocking.blockingExecutor.flatMap(ec => StaticFile.fromString[Task](location, ec.asEC, Some(req)).getOrElseF(NotFound().provide(Environment)))
+    StaticFile.fromString[Task](location, blockingEC, Some(req)).getOrElseF(NotFound())
 
   private def staticResource(path: String, req: Request[Task]): Task[Response[Task]] =
-    Environment.blocking.blockingExecutor.flatMap(ec => StaticFile.fromResource(path, ec.asEC, Some(req)).getOrElseF(NotFound().provide(Environment)))
+    StaticFile.fromResource(path, blockingEC, Some(req)).getOrElseF(NotFound())
 
   def serveFile(path: String, req: Request[Task], watchUI: Boolean): Task[Response[Task]] = {
     if (watchUI) {
@@ -130,29 +128,20 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
   object KeyMatcher extends QueryParamDecoderMatcher[String]("key")
 
-  def httpApp(watchUI: Boolean, wsKey: UUID, indexHtml: String): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
+  def httpApp(watchUI: Boolean, wsKey: String, indexHtml: String): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
+    val indexBytes = indexHtml.getBytes(StandardCharsets.UTF_8)
     val indexResponse = ZIO {
-      Response(
-        headers = Headers.of(`Content-Type`(MediaType.text.html, Charset.`UTF-8`)),
-        body = fs2.Stream.emits[Task, Byte](indexHtml.getBytes(StandardCharsets.UTF_8))
+      Response[Task](
+        headers = Headers.of(`Content-Type`(MediaType.text.html, Charset.`UTF-8`), `Content-Length`.unsafeFromLong(indexBytes.length)),
+        body = fs2.Stream.chunk(Chunk.bytes(indexBytes))
       )
     }
-
-    def checkKey(providedKey: String): IO[UIO[Response[Task]], Unit] = {
-      for {
-        parsedKey   <- ZIO(UUID.fromString(providedKey)).mapError(_ => Response[Task](status = BadRequest))
-        _           <- if (parsedKey == wsKey) ZIO.unit else {
-          ZIO.fail(Response[Task](status = Unauthorized)) <* Logging.warn(s"Access attempt with no key")
-        }
-      } yield ()
-    }.mapError {
-      response => ZIO.sleep(zio.duration.Duration(500, TimeUnit.MILLISECONDS)).as(response).provide(Environment)
-    }.provide(Environment)
 
     for {
       env <- ZIO.access[BaseEnv with GlobalEnv with NotebookManager](identity)
     } yield HttpRoutes.of[Task] {
-      case req @ GET -> Root / "ws" :? KeyMatcher(key)                      => checkKey(key).foldM(_.absorb, _ => SocketSession().flatMap(_.toResponse).provide(env))
+      case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => SocketSession().flatMap(_.toResponse).provide(env)
+      case GET -> Root / "ws"                                               => Forbidden()
       case req @ GET -> Root                                                => indexResponse
       case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req, env.polynoteConfig)
       case req @ GET -> "notebook" /: _                                     => indexResponse
