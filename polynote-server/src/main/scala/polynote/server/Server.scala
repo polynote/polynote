@@ -6,11 +6,12 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+import fs2.Chunk
 import org.http4s.{Charset, Headers, HttpApp, HttpRoutes, MediaType, Request, Response, StaticFile}
 import org.http4s.blaze.pipeline.Command.EOF
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.headers.`Content-Type`
+import org.http4s.headers.{`Content-Length`, `Content-Type`}
 import org.http4s.Status.{BadRequest, Unauthorized}
 import org.http4s.util.CaseInsensitiveString
 import polynote.config.PolynoteConfig
@@ -131,10 +132,11 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   object KeyMatcher extends QueryParamDecoderMatcher[String]("key")
 
   def httpApp(watchUI: Boolean, wsKey: UUID, indexHtml: String): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
+    val indexBytes = indexHtml.getBytes(StandardCharsets.UTF_8)
     val indexResponse = ZIO {
-      Response(
-        headers = Headers.of(`Content-Type`(MediaType.text.html, Charset.`UTF-8`)),
-        body = fs2.Stream.emits[Task, Byte](indexHtml.getBytes(StandardCharsets.UTF_8))
+      Response[Task](
+        headers = Headers.of(`Content-Type`(MediaType.text.html, Charset.`UTF-8`), `Content-Length`.unsafeFromLong(indexBytes.length)),
+        body = fs2.Stream.chunk(Chunk.bytes(indexBytes))
       )
     }
 
