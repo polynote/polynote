@@ -2,6 +2,25 @@
 
 * 
 
+# 0.2.9 (October 29, 2019)
+
+* *New Python Runscript* which should hopefully help people who have been having trouble linking with Jep
+* *Improved Security* by adding a unique websocket key generated on server start, reducing the chance of attacks on 
+  the local websocket by malicious users 
+* *Support for `package` definitions in Scala Cells*: users can now define package cells that are independent from other 
+  notebook cells, useful for solving serialization issues and other problems. 
+* Update Scala to `2.11.12` fixing the error people were having on JDK 9+
+* Fix a bug with numeric aggregations (thanks @JD557 !)
+* Fix a bug causing compatibility issues on newer JVMs (thanks @diesalbla)
+* Fix a bug causing missing state when new interpreters are started in the middle of a notebook session
+* Fix compatibility with Python 3.8
+* No longer shadowing Scala SparkSession variable `spark` in Python cells. PySpark users should use the `pysparksession` 
+  variable to access Pyspark's SparkSession. This is a temporary solution until we have a better one in place. 
+
+# 0.2.8 (October 23, 2019)
+
+* Fixes a dependency clash which was causing `NoSuchMethodError` and similar.
+
 # 0.2.7 (October 23, 2019)
 
 * Cross build for Scala 2.12
