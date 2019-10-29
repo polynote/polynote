@@ -336,7 +336,7 @@ class ScalaCompiler private (
     // Wrap the code in a class within the given package. Constructing the class runs the code.
     // The constructor parameters are
     private lazy val wrapped: PackageDef = compiledCode match {
-      case (pkg @ PackageDef(_, stats)) :: Nil => atPos(wrappedPos)(pkg.copy(stats = copyAndReset(inheritedImports.externalImports) ::: stats))
+      case (pkg @ PackageDef(_, stats)) :: Nil => atPos(wrappedPos)(pkg)
       case code => atPos(wrappedPos) {
         q"""
           package $packageName {
