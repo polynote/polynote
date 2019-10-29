@@ -61,9 +61,9 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       |before running Polynote. You are solely responsible for any breach, loss, or damage caused by running
       |this software insecurely.""".stripMargin
 
-  override def reportFailure(cause: Cause[_]): Unit = cause.failures.distinct match {
-    case List(EOF) => ()  // unable to otherwise silence this error that happens whenever websocket is closed by client
-    case other     => super.reportFailure(cause)
+  override def reportFailure(cause: Cause[_]): Unit = cause.failures.distinct.filterNot(_ == EOF) match {
+    case Nil => ()  // unable to otherwise silence this error that happens whenever websocket is closed by client
+    case _   => super.reportFailure(cause)
   }
 
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
