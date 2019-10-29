@@ -356,8 +356,8 @@ class ScalaCompiler private (
     lazy val cellClassType: Option[Type] = ifNotPackage(exitingTyper(wrappedClass.symbol.info))
     lazy val cellClassSymbol: Option[ClassSymbol] = ifNotPackage(exitingTyper(wrappedClass.symbol.asClass))
     lazy val cellCompanionSymbol: Option[ModuleSymbol] = ifNotPackage(exitingTyper(companion.symbol.asModule))
-    lazy val cellInstSymbol: Option[Symbol] = cellCompanionSymbol.map(_.info.member(TermName("instance")).accessedOrSelf)
-    lazy val cellInstType: Option[Type] = cellCompanionSymbol.map(_.info.member(TypeName("Inst")).info.dealias)
+    lazy val cellInstSymbol: Option[Symbol] = cellCompanionSymbol.map(sym => exitingTyper(sym.info.member(TermName("instance")).accessedOrSelf))
+    lazy val cellInstType: Option[Type] = cellCompanionSymbol.map(sym => exitingTyper(sym.info.member(TypeName("Inst")).info.dealias))
 
     // Note – you mustn't typecheck and then compile the same instance; those trees are done for. Instead, make a copy
     // of this CellCode and typecheck that if you need info about the typed trees without compiling all the way
