@@ -2,6 +2,14 @@
 
 * 
 
+# 0.2.10 (October 30, 2019)
+
+* Fix an NPE when trying to encode a null string
+* Fix issue with package cells not working at all when Spark is enabled
+* Self-host some external resources (font-awesome icons and katex)
+* Fix critical issue in plot aggregations for collections-of-case-classes
+* Attempt to fit initial plot size into available area in plot editor (fixes axes being cut off when window is too small)
+
 # 0.2.9 (October 29, 2019)
 
 * *New Python Runscript* which should hopefully help people who have been having trouble linking with Jep
