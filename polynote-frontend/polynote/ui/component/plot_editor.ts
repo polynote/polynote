@@ -152,23 +152,23 @@ export class PlotEditor extends EventTarget {
                     span([],'⨉'),
                     this.plotHeightInput = textbox(['plot-height'], 'Height', "480").change(evt => this.plotOutput.style.height = parseInt((evt.target as TagElement<"input">).value, 10) + 'px')
                 ]),
-                h4(['dimension-title'], ['Dimensions', iconButton(['add', 'add-measure'], 'Add dimension', '', 'Add').click(_ => this.showAddDimension())]),
+                h4(['dimension-title'], ['Dimensions', iconButton(['add', 'add-measure'], 'Add dimension', 'plus-circle', 'Add').click(_ => this.showAddDimension())]),
                 div(['dimension-list'], this.listDimensions()),
-                h4(['measure-title'], ['Measures', iconButton(['add', 'add-measure'], 'Add measure', '', 'Add').click(_ => this.showAddMeasure())]),
+                h4(['measure-title'], ['Measures', iconButton(['add', 'add-measure'], 'Add measure', 'plus-circle', 'Add').click(_ => this.showAddMeasure())]),
                 div(['measure-list'], this.listMeasures()),
                 h4(['numeric-field-title'], ['Fields']),
                 div(['numeric-field-list'], this.listNumerics()),
                 div(['control-buttons'], [
                     this.saveButton = button(['save'], {}, [
-                        span(['fas'], ''),
+                        span(['fas'], 'plus-square'),
                         'Save'
                     ]).click(_ => this.savePlot()),
                     this.runButton = button(['plot'], {}, [
-                        span(['fas'], ''),
+                        span(['fas'], 'play'),
                         'Plot'
                     ]).click(_ => this.runPlot()),
                     this.cancelButton = button(['cancel'], {}, [
-                        span(['fas'], ""),
+                        span(['fas'], "stop"),
                         'Cancel'
                     ]).click(_ => this.abortPlot())
                 ])
@@ -378,7 +378,7 @@ export class PlotEditor extends EventTarget {
             const label = span(
                 ['measure'], [
                     `${selector.value}(${field.name})`,
-                    iconButton(['remove'], 'Remove', '', 'X').click(_ => {
+                    iconButton(['remove'], 'Remove', 'times-circle', 'X').click(_ => {
                         const idx = this.yMeasures.indexOf(measureConfig);
                         this.yMeasures.splice(idx, 1);
                         label.parentNode!.removeChild(label);

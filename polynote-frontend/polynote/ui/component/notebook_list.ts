@@ -31,11 +31,11 @@ export class NotebookListUI extends UIMessageTarget {
                 h2([], [
                     'Notebooks',
                     span(['buttons'], [
-                        iconButton(['import-notebook'], 'Import a notebook', '', 'Import').click(evt => {
+                        iconButton(['import-notebook'], 'Import a notebook', 'file-import', 'Import').click(evt => {
                             evt.stopPropagation();
                             this.publish(new ImportNotebook());
                         }),
-                        iconButton(['create-notebook'], 'Create new notebook', '', 'New').click(evt => {
+                        iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                             evt.stopPropagation();
                             this.publish(new CreateNotebook());
                         })

@@ -29,9 +29,9 @@ export class KernelUI extends UIMessageTarget {
                 this.status = span(['status'], ['●']),
                 'Kernel',
                 showStatus ? span(['buttons'], [
-                    iconButton(['connect'], 'Connect to server', '', 'Connect').click(evt => this.connect(evt)),
-                    iconButton(['start'], 'Start kernel', '', 'Start').click(evt => this.startKernel(evt)),
-                    iconButton(['kill'], 'Kill kernel', '', 'Kill').click(evt => this.killKernel(evt))
+                    iconButton(['connect'], 'Connect to server', 'plug', 'Connect').click(evt => this.connect(evt)),
+                    iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
+                    iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(evt => this.killKernel(evt))
                 ]) : undefined
             ]).click(evt => this.collapse()),
             div(['ui-panel-content'], [

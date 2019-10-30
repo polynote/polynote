@@ -1,6 +1,6 @@
 import {UIMessageTarget} from "../util/ui_event";
 import {NotebookConfigUI} from "./nb_config";
-import {div, span, TagElement} from "../util/tags";
+import {div, icon, span, TagElement} from "../util/tags";
 import {Cell, CellContainer, CodeCell, isCellContainer, TextCell} from "./cell";
 import {TaskInfo, TaskStatus} from "../../data/messages";
 import {storage} from "../util/storage";
@@ -237,7 +237,7 @@ export class NotebookCellsUI extends UIMessageTarget {
             const nextCell = this.getCellAfter(cellToDelete);
 
             const undoEl = div(['undo-delete'], [
-                span(['close-button', 'fa'], ['']).click(evt => {
+                icon(['close-button'], 'times', 'close icon').click(evt => {
                     undoEl.parentNode!.removeChild(undoEl);
 
                     // don't actually get rid of the cell from the UI while we still might undo it.

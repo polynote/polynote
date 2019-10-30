@@ -184,15 +184,15 @@ export class About extends FullScreenModal {
                             span(['status'], [state]),
                         ]);
                         const actionsEl = div([], [
-                            iconButton(['start'], 'Start kernel', '', 'Start').click(() => {
+                            iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
                                 this.publish(new KernelCommand(status.path, 'kill'));
                                 getKernelStatuses();
                             }),
-                            iconButton(['kill'], 'Kill kernel', '', 'Kill').click(() => {
+                            iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
                                 this.publish(new KernelCommand(status.path, 'start'));
                                 getKernelStatuses();
                             }),
-                            iconButton(['open'], 'Open notebook', '', 'Open').click(() => {
+                            iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
                                 this.publish(new LoadNotebook(status.path));
                                 this.hide();
                             })
