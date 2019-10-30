@@ -99,6 +99,24 @@ export function span(classes: string[], content: Content) {
     return tag('span', classes, undefined, content);
 }
 
+export function img(classes: string[], src: string, alt: string) {
+    return tag('img', classes, {src, alt}, []);
+}
+
+export function icon(classes: string[], iconName: string, alt?: string) {
+    return span(classes, img(['icon'], `/style/icons/fa/${iconName}.svg`, alt || iconName))
+}
+
+// This is supposed to create an inline SVG so we can style it with CSS. I'm not sure why it doesn't work though...
+// export function icon(classes: string[], iconName: string, alt: string) {
+//     const use = document.createElement("use");
+//     const svgLoc = `/style/icons/fa/${iconName}.svg`;
+//     use.setAttribute('href', svgLoc);
+//     const svg = document.createElement("svg");
+//     svg.appendChild(use);
+//     return span(classes, svg);
+// }
+
 export function div(classes: string[], content: Content) {
     return tag('div', classes, undefined, content);
 }
@@ -110,12 +128,9 @@ export function button(classes: string[], attributes: Record<string, string>, co
     return tag('button', classes, attributes, content);
 }
 
-export function iconButton(classes: string[], title: string, icon: string, alt: string): TagElement<"button"> {
+export function iconButton(classes: string[], title: string, iconName: string, alt: string): TagElement<"button"> {
     classes.push('icon-button');
-    return button(classes, {title: title}, [
-        span(['icon', 'fas'], [icon]),
-        span(['alt'], [alt])
-    ]);
+    return button(classes, {title: title}, icon([], iconName, alt));
 }
 
 export function textbox(classes: string[], placeholder: string, value: string = "") {
@@ -162,7 +177,7 @@ export function dropdown(classes: string[], options: Record<string, string>, val
 export function fakeSelectElem(classes: string[], buttons: TagElement<"button">[]) {
     classes.push("dropdown");
     return div(classes, [
-        div(['marker', 'fas'], [""]),
+        icon(['marker'], 'angle-down'),
     ].concat(buttons));
 }
 

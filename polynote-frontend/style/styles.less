@@ -337,6 +337,9 @@ body {
         background-position: 90% 90%;
         font-size: inherit;
         padding: .5em 1ch;
+        &.toggle-output img {
+          vertical-align: middle;
+        }
       }
 
       .run-cell {
@@ -2546,14 +2549,14 @@ button {
         font-size: inherit;
       }
 
-      button.plot .fas {
+      button.plot .icon {
         color: green;
         margin-right: 2pt;
       }
 
       button.cancel {
         display: none;
-        .fas {
+        .icon {
           color: red;
           margin-right: 2pt;
         }
@@ -3013,4 +3016,8 @@ button {
   to {
     background-color: rgba(253, 246, 227, 0.0);
   }
+}
+
+img.icon {
+  height: 1em;
 }

@@ -15,7 +15,7 @@ export class HomeUI extends UIMessageTarget {
           
           <p>
             To get started, open a notebook by clicking on it in the Notebooks panel, or create a new notebook by
-             clicking the Create Notebook (<span class="create-notebook icon fas"></span>) button.
+             clicking the Create Notebook (<span class="create-notebook icon fas"><img class="icon" src="/style/icons/fa/plus-circle.svg"/></span>) button.
           </p>
           
           <h3>Recent notebooks</h3>

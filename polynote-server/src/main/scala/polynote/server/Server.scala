@@ -19,7 +19,7 @@ import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
 import zio.{Cause, RIO, Task, ZIO}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
-import zio.blocking.effectBlocking
+import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
 
@@ -39,7 +39,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
     is.bracket(is => ZIO(is.close()).orDie) {
       is => effectBlocking(scala.io.Source.fromInputStream(is, "UTF-8").mkString.replace("$WS_KEY", key.toString))
-    }
+    }.orDie
   }
 
   private val securityWarning =
@@ -75,12 +75,11 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     wsKey      = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
     host       = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url        = s"http://$host:$port"
-    indexHtml <- indexFileContent(wsKey, args.watchUI).orDie
     interps   <- interpreter.Loader.load.orDie
     globalEnv  = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps, kernelFactory))
     manager   <- NotebookManager().provide(globalEnv).orDie
     socketEnv  = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
-    app       <- httpApp(args.watchUI, wsKey, indexHtml).provide(socketEnv).orDie
+    app       <- httpApp(args.watchUI, wsKey, indexFileContent(wsKey, args.watchUI)).provide(socketEnv).orDie
     _         <- Logging.warn(securityWarning)
     exit      <- BlazeServerBuilder[Task]
       .withBanner(
@@ -128,13 +127,14 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
   object KeyMatcher extends QueryParamDecoderMatcher[String]("key")
 
-  def httpApp(watchUI: Boolean, wsKey: String, indexHtml: String): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
-    val indexBytes = indexHtml.getBytes(StandardCharsets.UTF_8)
-    val indexResponse = ZIO {
-      Response[Task](
-        headers = Headers.of(`Content-Type`(MediaType.text.html, Charset.`UTF-8`), `Content-Length`.unsafeFromLong(indexBytes.length)),
-        body = fs2.Stream.chunk(Chunk.bytes(indexBytes))
-      )
+  def httpApp(watchUI: Boolean, wsKey: String, getIndex: ZIO[Blocking, Nothing, String]): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
+    val indexResponse = getIndex.map {
+      index =>
+        val indexBytes = index.getBytes(StandardCharsets.UTF_8)
+        Response[Task](
+          headers = Headers.of(`Content-Type`(MediaType.text.html, Charset.`UTF-8`), `Content-Length`.unsafeFromLong(indexBytes.length)),
+          body = fs2.Stream.chunk(Chunk.bytes(indexBytes))
+        )
     }
 
     for {
@@ -142,9 +142,9 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     } yield HttpRoutes.of[Task] {
       case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => SocketSession().flatMap(_.toResponse).provide(env)
       case GET -> Root / "ws"                                               => Forbidden()
-      case req @ GET -> Root                                                => indexResponse
+      case req @ GET -> Root                                                => indexResponse.provide(env)
       case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req, env.polynoteConfig)
-      case req @ GET -> "notebook" /: _                                     => indexResponse
+      case req @ GET -> "notebook" /: _                                     => indexResponse.provide(env)
       case req @ GET -> (Root / "polynote-assembly.jar")                    => StaticFile.fromFile[Task](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), blockingEC).getOrElseF(NotFound())
       case req @ GET -> path                                                => serveFile(path.toString, req, watchUI)
     }.mapF(_.getOrElseF(NotFound()))

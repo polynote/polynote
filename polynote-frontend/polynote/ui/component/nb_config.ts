@@ -258,12 +258,12 @@ class NotebookConfigHandler extends UIMessageTarget {
                 dep: textbox(['dependency'], 'Dependency coordinate, URL, pip package', previous.data.dep).change(evt => {
                     dep.data.dep = dep.elements.dep.value
                 }),
-                remove: iconButton(['remove'], 'Remove', '', 'Remove').click(evt => {
+                remove: iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
                     this.dependencyContainer.removeChild(dep.row);
                     this.dependencies = this.dependencies.filter(d => d !== dep);
                     if (this.dependencies.length === 0) this.addDep(defaultDep)
                 }),
-                add: iconButton(['add'], 'Add', '', 'Add').click(evt => {
+                add: iconButton(['add'], 'Add', 'plus-circle', 'Add').click(evt => {
                     this.addDep(dep)
                 }),
             },
@@ -304,12 +304,12 @@ class NotebookConfigHandler extends UIMessageTarget {
                 metadata: textbox(['resolver-metadata-pattern', 'ivy'], 'Metadata pattern (blank for default)', previous.data.metadata).change(() => {
                     res.data.metadata = res.elements.metadata.value
                 }),
-                remove: iconButton(['remove'], 'Remove', '', 'Remove').click(evt => {
+                remove: iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
                     this.resolverContainer.removeChild(res.row);
                     this.resolvers = this.resolvers.filter(r => r !== res);
                     if (this.resolvers.length === 0) this.addRes(defaultRes)
                 }),
-                add: iconButton(['add'], 'Add', '', 'Add').click(evt => {
+                add: iconButton(['add'], 'Add', 'plus-circle', 'Add').click(evt => {
                     this.addRes(res)
                 }),
             },
@@ -338,12 +338,12 @@ class NotebookConfigHandler extends UIMessageTarget {
                 excl: textbox(['exclusion'], 'Exclusion organization:name', previous.data.exclusion).change(() => {
                     excl.data.exclusion = excl.elements.excl.value
                 }),
-                remove: iconButton(['remove'], 'Remove', '', 'Remove').click(evt => {
+                remove: iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
                     this.exclusionContainer.removeChild(excl.row);
                     this.exclusions = this.exclusions.filter(e => e !== excl);
                     if (this.exclusions.length === 0) this.addExcl(defaultExcl)
                 }),
-                add: iconButton(['add'], 'Add', '', 'Add').click(evt => {
+                add: iconButton(['add'], 'Add', 'plus-circle', 'Add').click(evt => {
                     this.addExcl(excl)
                 }),
             },
@@ -373,12 +373,12 @@ class NotebookConfigHandler extends UIMessageTarget {
                 val: textbox(['spark-config-val'], 'val', previous.data.val).change(() => {
                     conf.data.val = conf.elements.val.value
                 }),
-                remove: iconButton(['remove'], 'Remove', '', 'Remove').click(evt => {
+                remove: iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
                     this.sparkConfigContainer.removeChild(conf.row);
                     this.sparkConfigs = this.sparkConfigs.filter(c => c !== conf);
                     if (this.sparkConfigs.length === 0) this.addSparkConf(defaultSparkConf)
                 }),
-                add: iconButton(['add'], 'Add', '', 'Add').click(evt => {
+                add: iconButton(['add'], 'Add', 'plus-circle', 'Add').click(evt => {
                     this.addSparkConf(conf)
                 }),
             },

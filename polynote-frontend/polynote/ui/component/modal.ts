@@ -39,7 +39,7 @@ export class Modal extends UIMessageTarget {
                 this.titleBar = div(['modal-titlebar'], [
                     this.titleContent = div(['modal-titlebar-content'], title),
                     div(['modal-titlebar-controls'], [
-                        iconButton(['modal-close'], 'Close', '', 'Close').click(evt => this.hide())
+                        iconButton(['modal-close'], 'Close', 'times-circle', 'Close').click(evt => this.hide())
                     ])
                 ]),
                 this.content = div(['modal-content'], [content])

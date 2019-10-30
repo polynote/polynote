@@ -49,15 +49,15 @@ export class TableView {
                 rows: []
             }),
             this.paginator = div(['paginator'], [
-                this.prevButton = iconButton([], 'Previous page', '', '<< Prev').disable().click(evt => this.pagePrev()),
-                this.nextButton = iconButton([], 'Next page', '', 'Next >>').click(evt => this.pageNext())
+                this.prevButton = iconButton([], 'Previous page', 'step-backward', '<< Prev').disable().click(evt => this.pagePrev()),
+                this.nextButton = iconButton([], 'Next page', 'step-forward', 'Next >>').click(evt => this.pageNext())
             ])
         ]);
 
         this.table.tBodies.item(0)!.appendChild(
             tag('tr', ['initial-msg'], {}, [
                 tag('td', [],  {'colSpan': this.fields.length + ''},[
-                    'Click "next page" (', span(['fas', 'icon'], ''), ') to load data.', tag('br'),
+                    'Click "next page" (', span(['fas', 'icon'], 'step-forward'), ') to load data.', tag('br'),
                     'This will force evaluation of lazy data.'
                 ])])
         );

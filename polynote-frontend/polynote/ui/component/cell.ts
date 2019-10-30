@@ -66,7 +66,7 @@ export abstract class Cell extends UIMessageTarget {
         const containerEl = div(['cell-container', language], [
             this.cellInput = div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
-                    iconButton(['run-cell'], 'Run this cell (only)', '', 'Run').click((evt) => {
+                    iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
                         CurrentNotebook.get.runCells(this.id);
                     }),
                     //iconButton(['run-cell', 'refresh'], 'Run this cell and all dependent cells', '', 'Run and refresh')
@@ -359,7 +359,7 @@ export class CodeCell extends Cell {
         this.cellInputTools.appendChild(
             div(['options'], [
                 button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
-                iconButton(['toggle-output'], 'Show/Hide Output', '', 'Show/Hide Output').click(evt => this.toggleOutput())
+                iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput())
             ])
         );
 
@@ -761,7 +761,7 @@ export class CodeCell extends Cell {
                 let inspectIcon: TagElement<"button">[] = [];
                 if (result.reprs.length > 1) {
                     inspectIcon = [
-                        iconButton(['inspect'], 'Inspect', '', 'Inspect').click(
+                        iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
                             evt => {
                                 ValueInspector.get().setParent(this);
                                 ValueInspector.get().inspect(result, this.path)

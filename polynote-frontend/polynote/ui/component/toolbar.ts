@@ -83,13 +83,13 @@ class NotebookToolbarUI extends UIMessageTarget {
         super(parent);
         this.el = toolbarElem("notebook", [
             [
-                iconButton(["run-cell", "run-all"], "Run all cells", "", "Run all")
+                iconButton(["run-cell", "run-all"], "Run all cells", "forward", "Run all")
                     .click(() => CurrentNotebook.get.runAllCells()),
-                iconButton(["branch"], "Create branch", "", "Branch").disable().withKey('alwaysDisabled', true),
-                iconButton(["download"], "Download", "", "Download").click(() => this.publish(new DownloadNotebook(CurrentNotebook.get.path))),
-                iconButton(["clear"], "Clear notebook output", "", "Clear").click(() => this.publish(new ClearOutput(CurrentNotebook.get.path)))
+                iconButton(["branch"], "Create branch", "code-branch", "Branch").disable().withKey('alwaysDisabled', true),
+                iconButton(["download"], "Download", "download", "Download").click(() => this.publish(new DownloadNotebook(CurrentNotebook.get.path))),
+                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.publish(new ClearOutput(CurrentNotebook.get.path)))
             ], [
-                iconButton(["schedule-notebook"], "Schedule notebook", "", "Schedule").disable().withKey('alwaysDisabled', true),
+                iconButton(["schedule-notebook"], "Schedule notebook", "clock", "Schedule").disable().withKey('alwaysDisabled', true),
             ]
         ]);
     }
@@ -108,13 +108,13 @@ class CellToolbarUI extends UIMessageTarget {
                     button(["selected"], {value: "text"}, ["Text"])
                 ])
             ], [
-                iconButton(["insert-cell-above"], "Insert cell above current", "", "Insert above")
+                iconButton(["insert-cell-above"], "Insert cell above current", "arrow-up", "Insert above")
                     .click(() => CurrentNotebook.get.insertCell('above')),
-                iconButton(["insert-cell-below"], "Insert cell below current", "", "Insert below")
+                iconButton(["insert-cell-below"], "Insert cell below current", "arrow-down", "Insert below")
                     .click(() => CurrentNotebook.get.insertCell('below')),
-                iconButton(["delete-cell"], "Delete current cell", "", "Delete")
+                iconButton(["delete-cell"], "Delete current cell", "trash-alt", "Delete")
                     .click(() => CurrentNotebook.get.deleteCell())
-                // iconButton(['undo'], 'Undo', '', 'Undo')
+                // iconButton(['undo'], 'Undo', 'undo-alt', 'Undo')
                 //     .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
             ]
         ]);
@@ -146,11 +146,11 @@ class CodeToolbarUI extends UIMessageTarget {
         super(parent);
         this.el = toolbarElem("code", [
             [
-                iconButton(["run-cell"], "Run this cell (only)", "", "Run")
+                iconButton(["run-cell"], "Run this cell (only)", "play", "Run")
                     .click(() => CurrentNotebook.get.runCurrentCell()),
-                iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "", "Run to cursor")
+                iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "fast-forward", "Run to cursor")
                     .click(() => CurrentNotebook.get.runToCursor()),
-                iconButton(["stop-cell"], "Stop/cancel this cell", "", "Cancel")
+                iconButton(["stop-cell"], "Stop/cancel this cell", "stop", "Cancel")
                     .click(() => this.publish(new CancelTasks(CurrentNotebook.get.path))),
             ]
         ]);
@@ -195,11 +195,11 @@ class TextToolbarUI extends UIMessageTarget {
             ], {
             classes: ["font"],
             elems: [
-                commandButton("bold", "Bold", "", "Bold"),
-                commandButton("italic", "Italic", "", "Italic"),
-                commandButton("underline", "underline", "", "underline"),
-                commandButton("strikethrough", "Strikethrough", "", "Strikethrough"),
-                this.codeButton = iconButton(["code"], "Inline code", "", "Code")
+                commandButton("bold", "Bold", "bold", "Bold"),
+                commandButton("italic", "Italic", "italic", "Italic"),
+                commandButton("underline", "underline", "underline", "underline"),
+                commandButton("strikethrough", "Strikethrough", "strikethrough", "Strikethrough"),
+                this.codeButton = iconButton(["code"], "Inline code", "code", "Code")
                     .click(() => {
                         const selection = document.getSelection();
                         if (selection && selection.anchorNode &&
@@ -227,15 +227,15 @@ class TextToolbarUI extends UIMessageTarget {
             ]}, {
             classes: ["lists"],
             elems: [
-                commandButton("insertUnorderedList", "Bulleted list", "", "Bulleted list"),
-                commandButton("insertOrderedList", "Numbered list", "", "Numbered list"),
-                commandButton("indent", "Indent", "", "Indent"),
-                commandButton("outdent", "Outdent", "", "Outdent"),
+                commandButton("insertUnorderedList", "Bulleted list", "list-ul", "Bulleted list"),
+                commandButton("insertOrderedList", "Numbered list", "list-ol", "Numbered list"),
+                commandButton("indent", "Indent", "indent", "Indent"),
+                commandButton("outdent", "Outdent", "outdent", "Outdent"),
             ]}, {
             classes: ["objects"],
             elems: [
-                iconButton(["image"], "Insert image", "", "Image").disable().withKey('alwaysDisabled', true),
-                this.equationButton = iconButton(["equation"], "Insert/edit equation", "𝝨", "Equation")
+                iconButton(["image"], "Insert image", "image", "Image").disable().withKey('alwaysDisabled', true),
+                this.equationButton = button(["equation"], {title: "Insert/edit equation"}, "𝝨")
                     .click(() => LaTeXEditor.forSelection()!.show())
                     .withKey('getState', () => {
                         const selection = document.getSelection()!;
@@ -249,7 +249,7 @@ class TextToolbarUI extends UIMessageTarget {
                         }
                         return false;
                     }) as CommandButton,
-                iconButton(["table"], "Insert data table", "", "Table").disable().withKey('alwaysDisabled', true),
+                iconButton(["table"], "Insert data table", "table", "Table").disable().withKey('alwaysDisabled', true),
             ]}
         ]);
 
@@ -284,9 +284,9 @@ class SettingsToolbarUI extends UIMessageTarget {
     constructor(parent?: UIMessageTarget) {
         super(parent);
         this.el = toolbarElem("about", [[
-            iconButton(["preferences"], "View UI Preferences", "", "Preferences")
+            iconButton(["preferences"], "View UI Preferences", "cogs", "Preferences")
                 .click(() => this.publish(new ViewAbout("Preferences"))),
-            iconButton(["help"], "help", "", "Help")
+            iconButton(["help"], "help", "question", "Help")
                 .click(() => this.publish(new ViewAbout("Hotkeys"))),
         ]]);
 

@@ -1,5 +1,5 @@
 // TODO: Shouldn't it extend UIEventTarget?
-import {div, span, TagElement} from "../util/tags";
+import {div, icon, img, span, TagElement} from "../util/tags";
 import {NoActiveTab, TabActivated, TabRemoved, UIMessage, UIMessageTarget} from "../util/ui_event";
 import {storage} from "../util/storage";
 
@@ -41,7 +41,7 @@ export class TabUI extends UIMessageTarget {
         const tabEl = Object.assign(
             div(['tab'], [
                 title,
-                span(['close-button', 'fa'], ['']).click(evt => this.removeTab(tab))
+                icon(['close-button'], 'times', 'close icon').click(evt => this.removeTab(tab))
             ]).attr('title', name),
             { tab: tab });
 
