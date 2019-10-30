@@ -68,12 +68,15 @@ export class ValueInspector extends FullScreenModal {
         return tabsPromise.then(tabs => {
             if (Object.keys(tabs).length) {
                 const nav = new TabNav(tabs);
-                if (jumpTo && tabs[jumpTo]) {
-                    nav.showItem(jumpTo);
-                }
                 this.content.appendChild(nav.el);
                 this.setTitle(`Inspect: ${resultValue.name}`);
                 this.show();
+
+                if (jumpTo && tabs[jumpTo]) {
+                    nav.showItem(jumpTo);
+                } else {
+                    Object.values(tabs).shift().dispatchEvent(new CustomEvent('TabDisplayed'))
+                }
             }
         })
     }

@@ -193,6 +193,17 @@ export class PlotEditor extends EventTarget {
 
         this.container = div(['plot-editor-container'], [this.el]);
 
+        this.container.addEventListener("TabDisplayed" as any, evt => {
+           const maxWidth = this.plotArea.offsetWidth * 0.8;
+           const maxHeight = this.plotArea.offsetHeight * 0.8;
+           const width = Math.min((+this.plotWidthInput.value), maxWidth).toFixed(0);
+           const height = Math.min((+this.plotHeightInput.value), maxHeight).toFixed(0);
+           this.plotHeightInput.value = height;
+           this.plotWidthInput.value = width;
+           this.plotOutput.style.width = `${width}px`;
+           this.plotOutput.style.height = `${height}px`;
+        });
+
         this.saveButton.style.display = 'none';
 
         this.plotOutput.style.width = '960px';
