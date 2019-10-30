@@ -54,6 +54,9 @@ export class TabNav extends UIMessageTarget {
         }
 
         this.content.appendChild(tabContent);
+        if (this.content.offsetWidth) {
+            tabContent.dispatchEvent(new CustomEvent("TabDisplayed"));
+        }
 
         this.selectedItem = name;
     }
