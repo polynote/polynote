@@ -12,7 +12,7 @@ import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame.Binary
-import polynote.buildinfo.BuildInfo
+import polynote.buildinfo.SafeBuildInfo
 import polynote.kernel
 import polynote.kernel.util.{Publish, RefMap}
 import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, Kernel, StreamOps, StreamingHandles, TaskG, UpdatedTasks}
@@ -68,8 +68,8 @@ class SocketSession(
     ZIO.access[Interpreter.Factories](_.interpreterFactories).map {
       factories => ServerHandshake(
         (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
-        serverVersion = BuildInfo.version,
-        serverCommit = BuildInfo.commit)
+        serverVersion = SafeBuildInfo.version,
+        serverCommit = SafeBuildInfo.commit)
     }
 }
 

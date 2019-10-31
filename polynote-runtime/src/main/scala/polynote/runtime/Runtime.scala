@@ -2,7 +2,7 @@ package polynote.runtime
 
 import java.util.concurrent.ConcurrentHashMap
 
-import polynote.buildinfo.BuildInfo
+import polynote.buildinfo.SafeBuildInfo
 
 // TODO: can we make this a class instantiated per-kernel? Currently we rely on the ClassLoader to prevent cross-contamination
 object Runtime extends Serializable {
@@ -44,6 +44,6 @@ object Runtime extends Serializable {
 
   def currentRuntime: Runtime.type = this
 
-  def version: String = BuildInfo.version
-  def commit: String = BuildInfo.commit
+  def version: String = SafeBuildInfo.version
+  def commit: String = SafeBuildInfo.commit
 }

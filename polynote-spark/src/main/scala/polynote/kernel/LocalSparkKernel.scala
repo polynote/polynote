@@ -10,7 +10,7 @@ import cats.syntax.traverse._
 import fs2.concurrent.SignallingRef
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
-import polynote.buildinfo.BuildInfo
+import polynote.buildinfo.SafeBuildInfo
 import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env, InterpreterEnvironment}
@@ -157,7 +157,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       conf
         .setJars(jars)
         .set("spark.repl.class.outputDir", outputPath.toString)
-        .setAppName(s"Polynote ${BuildInfo.version} session")
+        .setAppName(s"Polynote ${SafeBuildInfo.version} session")
 
       org.apache.spark.repl.Main.createSparkSession()
     }

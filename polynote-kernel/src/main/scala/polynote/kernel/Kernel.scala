@@ -1,10 +1,10 @@
 package polynote.kernel
 
-import polynote.buildinfo.BuildInfo
-import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates}
+import polynote.buildinfo.SafeBuildInfo
+import polynote.kernel.environment.NotebookUpdates
 import polynote.messages.{ByteVector32, CellID, HandleType}
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Task, RIO, ZIO}
+import zio.{RIO, Task, ZIO}
 
 trait Kernel {
   /**
@@ -44,8 +44,8 @@ trait Kernel {
     * Provide free-form key/value HTML information about the kernel
     */
   def info(): TaskG[KernelInfo] = ZIO.succeed(KernelInfo(
-    "Polynote Version:" -> s"""<span id="version">${BuildInfo.version}</span>""",
-    "Build Commit:"     -> s"""<span id="commit">${BuildInfo.commit}</span>"""
+    "Polynote Version:" -> s"""<span id="version">${SafeBuildInfo.version}</span>""",
+    "Build Commit:"     -> s"""<span id="commit">${SafeBuildInfo.commit}</span>"""
   ))
 
   /**
