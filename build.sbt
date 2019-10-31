@@ -125,7 +125,6 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-parser" % "0.11.1",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
-  publish := {},
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
@@ -142,7 +141,6 @@ val `polynote-server` = project.settings(
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
-  publish := {},
   unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "compile->compile;test->test")
 
@@ -176,7 +174,6 @@ lazy val `polynote-spark` = project.settings(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scodec" %% "scodec-stream" % "1.2.0"
   ),
-  publish := {},
   dependencyJars := {
     (dependencyClasspath in (`polynote-kernel`, Compile)).value.collect {
       case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") =>
