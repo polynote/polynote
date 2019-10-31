@@ -27,6 +27,6 @@ if not(deps_path.exists()):
 
 deps = Path(polynote_dir).joinpath("deps").glob("*.jar")
 classpath = "polynote.jar:" + ":".join([ str(d) for d in deps ])
-cmd = f"java -cp polynote.jar:{classpath} -Djava.library.path={jep_path} polynote.Main"
+cmd = f"java -cp polynote.jar:{classpath} -Djava.library.path={jep_path} polynote.Main {' '.join(sys.argv[1:])}"
 print(cmd)
 os.system(cmd)

@@ -10,20 +10,39 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v1
-    - uses: actions/setup-node@v1
-    - name: Create archive
-      run: |
-        cd $GITHUB_WORKSPACE/polynote-frontend
-        npm install
-        npm run dist
-        cd $GITHUB_WORKSPACE
-        sbt +dist
-    - name: Add archive to release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/scala-2.11/polynote-dist.tar.gz
-          target/scala-2.12/polynote-dist-2.12.tar.gz
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
+      - uses: actions/checkout@v1
+      - uses: actions/setup-node@v1
+      - name: Create archive
+        run: |
+          cd $GITHUB_WORKSPACE/polynote-frontend
+          npm install
+          npm run dist
+          cd $GITHUB_WORKSPACE
+          sbt +dist
+      - name: Add archive to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/scala-2.11/polynote-dist.tar.gz
+            target/scala-2.12/polynote-dist-2.12.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Publish to DockerHub
+        run: |
+          echo "${DOCKER_PASSWORD}" | docker login -u ${DOCKER_USERNAME} --password-stdin
+          export POLYNOTE_VERSION=${GITHUB_REF#refs/tags/}
+          export SCALA_VERSION="2.11"
+          docker build --build-arg POLYNOTE_VERSION --build-arg SCALA_VERSION -t polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION} docker/base/
+          docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}
+          docker build --build-arg POLYNOTE_VERSION --build-arg SCALA_VERSION -t polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4 docker/spark-2.4
+          docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4
+          docker tag polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4 polynote/polynote:latest
+          docker push polynote/polynote:latest
+          export SCALA_VERSION="2.12"
+          docker build --build-arg POLYNOTE_VERSION --build-arg SCALA_VERSION -t polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION} docker/base/
+          docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}
+          docker build --build-arg POLYNOTE_VERSION --build-arg SCALA_VERSION -t polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4 docker/spark-2.4
+          docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
