@@ -194,6 +194,9 @@ class PythonInterpreter private[python] (
       |from polynote.kernel import Pos
       |from polynote.kernel import KernelReport
       |
+      |if not hasattr(sys, 'argv') or len(sys.argv) == 0:
+      |    sys.argv  = ['']
+      |
       |class LastExprAssigner(ast.NodeTransformer):
       |
       |    # keep track of last line of initial tree passed in
