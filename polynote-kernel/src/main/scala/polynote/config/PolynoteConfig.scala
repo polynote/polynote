@@ -69,6 +69,15 @@ object Security {
   implicit val decoder: Decoder[Security] = deriveDecoder
 }
 
+final case class UI(
+  baseUri: String = "/"
+)
+
+object UI {
+  implicit val encoder: ObjectEncoder[UI] = deriveEncoder
+  implicit val decoder: Decoder[UI] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   storage: Storage = Storage(),
@@ -77,7 +86,8 @@ final case class PolynoteConfig(
   dependencies: Map[String, List[String]] = Map.empty,
   spark: Map[String, String] = Map.empty,
   behavior: Behavior = Behavior(),
-  security: Security = Security()
+  security: Security = Security(),
+  ui: UI = UI()
 )
 
 
