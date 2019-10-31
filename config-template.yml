@@ -107,3 +107,15 @@
 #spark:
 #  spark.driver.userClasspathFirst: true
 #  spark.executor.userClasspathFirst: true
+
+########## Front-end Configuration ################################################################################
+###
+### These configurations affect the behavior of the front-end. You can modify the behavior by uncommenting the
+### following lines and editing the properties.
+###
+###################################################################################################################
+
+#ui:
+#  # The URI relative to the server host where Polynote is mounted. You can edit this if mounting Polynote at a
+#  # different location behind a reverse proxy. This value is placed in the <base> tag.
+#  base_uri: /

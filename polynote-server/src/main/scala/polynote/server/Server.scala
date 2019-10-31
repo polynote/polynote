@@ -27,7 +27,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
   private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
 
-  private def indexFileContent(key: String, watchUI: Boolean) = {
+  private def indexFileContent(key: String, config: PolynoteConfig, watchUI: Boolean) = {
     val is = ZIO {
       if (watchUI) {
         java.nio.file.Files.newInputStream(
@@ -37,9 +37,16 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       }
     }
 
-    is.bracket(is => ZIO(is.close()).orDie) {
-      is => effectBlocking(scala.io.Source.fromInputStream(is, "UTF-8").mkString.replace("$WS_KEY", key.toString))
+    val content = is.bracket(is => ZIO(is.close()).orDie) {
+      is => effectBlocking(scala.io.Source.fromInputStream(is, "UTF-8").mkString
+        .replace("$WS_KEY", key.toString)
+        .replace("$BASE_URI", config.ui.baseUri))
     }.orDie
+
+    content match {
+      case content if watchUI => ZIO.succeed(content)
+      case content            => content.memoize
+    }
   }
 
   private val securityWarning =
@@ -79,7 +86,8 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     globalEnv  = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps, kernelFactory))
     manager   <- NotebookManager().provide(globalEnv).orDie
     socketEnv  = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
-    app       <- httpApp(args.watchUI, wsKey, indexFileContent(wsKey, args.watchUI)).provide(socketEnv).orDie
+    loadIndex <- indexFileContent(wsKey, config, args.watchUI)
+    app       <- httpApp(args.watchUI, wsKey, loadIndex).provide(socketEnv).orDie
     _         <- Logging.warn(securityWarning)
     exit      <- BlazeServerBuilder[Task]
       .withBanner(

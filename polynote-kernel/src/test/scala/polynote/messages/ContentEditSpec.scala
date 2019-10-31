@@ -217,12 +217,13 @@ class ContentEditSpec extends FreeSpec with Matchers with ScalaCheckDrivenProper
 
       "rebase of single edits is symmetric" in forAll(Generators.genEdit(30), Generators.genEdit(30)) {
         (a, b) =>
+          whenever(a != b) {
+            val aOntoB = ContentEdit.rebase(a, b)
+            val bOntoA = ContentEdit.rebase(b, a)
 
-          val aOntoB = ContentEdit.rebase(a, b)
-          val bOntoA = ContentEdit.rebase(b, a)
-
-          aOntoB._1 shouldEqual bOntoA._2
-          bOntoA._1 shouldEqual aOntoB._2
+            aOntoB._1 shouldEqual bOntoA._2
+            bOntoA._1 shouldEqual aOntoB._2
+          }
       }
 
       "content is the same no matter what order edits are applied" in forAll(genEditScenario, MinSuccessful(500)) {
