@@ -2,6 +2,13 @@
 
 * 
 
+# 0.2.11 (October 31, 2019)
+    
+* Happy Halloween! This spoooooky release includes some minor bugfixes!
+* Remove scala from the runtime assembly jars
+* Set Python's sys.argv to prevent some libraries from complaining
+* Configurable base URI, useful when behind a proxy
+
 # 0.2.10 (October 30, 2019)
 
 * Fix an NPE when trying to encode a null string
