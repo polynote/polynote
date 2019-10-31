@@ -56,6 +56,9 @@ val commonSettings = Seq(
       val oldStrategy = (assemblyMergeStrategy in assembly).value
       oldStrategy(x)
   },
+  assemblyOption in assembly := {
+    (assemblyOption in assembly).value.copy(includeScala = false)
+  },
   cancelable in Global := true,
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
   buildUI := {
