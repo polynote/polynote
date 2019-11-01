@@ -1,6 +1,6 @@
 # Official Docker Images
 
-Polynote publishes official Docker images upone every release. Most users are recommended to use the `latest` tag by 
+Polynote publishes official Docker images upon every release. Most users are recommended to use the `latest` tag by 
 running `docker pull polynote/polynote:latest`. 
 
 ## Published Tags
@@ -45,7 +45,7 @@ listen:
 Ok, now we are ready to run the Docker container! Use the following command: 
 
 ```
-docker run --rm -it -e PYSPARK_ALLOW_INSECURE_GATEWAY=1 -p 127.0.0.1:8192:8192 -v `pwd`:/opt/config -v `pwd`/notebooks:/opt/polynote/notebooks/notebooks polynote/polynote:latest --config /opt/config/config.yml
+docker run --rm -it -e PYSPARK_ALLOW_INSECURE_GATEWAY=1 -p 127.0.0.1:8192:8192 -p 127.0.0.1:4040-4050:4040-4050 -v `pwd`:/opt/config -v `pwd`/notebooks:/opt/polynote/notebooks/notebooks polynote/polynote:latest --config /opt/config/config.yml
 ```
 
 Let's go over what this command does. 
