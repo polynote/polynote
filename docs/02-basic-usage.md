@@ -9,11 +9,11 @@ After starting Polynote and opening the application in your browser, you'll see 
 
 ![images/fresh-home-screen.png](images/fresh-home-screen.png)
 
-On the left is the list of notebook files. Since you don't have any notebook files yet, it's blank. You can import
+On the left is the list of notebook files. If you have just installed Polynote, the only notebooks you will have access to are our examples. Feel free to browse these notebooks for your future reference. You can also import
 existing Jupyter notebooks into Polynote – simply drag-and-drop the notebook file from your computer onto the Notebooks
 panel.
 
-For now, let's just create a new notebook. Click the "New notebook" icon as the home screen instructs, and enter a name
+For now, though, let's just create a new notebook. Click the "New notebook" icon as the home screen instructs, and enter a name
 (such as "First Notebook"). Click "OK". The new notebook appears in the Notebooks pane, and is opened in a Polynote
 tab. The new notebook contains a single text cell. Click on that and you'll see the text editing toolbar appear:
 
