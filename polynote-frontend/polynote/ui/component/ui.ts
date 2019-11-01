@@ -31,7 +31,7 @@ import {SplitView} from "./split_view";
 import {KernelUI} from "./kernel_ui";
 import {NotebookUI} from "./notebook";
 import {TabUI} from "./tab";
-import {NotebookListUI} from "./notebook_list";
+import {CreateNotebookDialog, NotebookListUI} from "./notebook_list";
 import {HomeUI} from "./home";
 import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
@@ -81,7 +81,7 @@ export class MainUI extends UIMessageTarget {
             }
         });
         // TODO: remove listeners on children.
-        this.subscribe(CreateNotebook, () => this.createNotebook());
+        this.subscribe(CreateNotebook, (path) => this.createNotebook(path));
         this.subscribe(ImportNotebook, (name, content) => this.importNotebook(name, content));
         this.subscribe(UIToggle, (which, force) => {
             if (which === "NotebookList") {
@@ -253,17 +253,21 @@ export class MainUI extends UIMessageTarget {
         })
     }
 
-    createNotebook() {
+    createNotebook(path?: string) {
         const handler = SocketSession.get.addMessageListener(messages.CreateNotebook, (actualPath) => {
             SocketSession.get.removeMessageListener(handler);
             this.browseUI.addItem(actualPath);
             this.loadNotebook(actualPath);
         });
 
-        const notebookPath = prompt("Enter the name of the new notebook (no need for an extension)");
-        if (notebookPath) {
-            SocketSession.get.send(new messages.CreateNotebook(notebookPath))
-        }
+        CreateNotebookDialog.prompt(path).then(
+            notebookPath => {
+                if (notebookPath) {
+                    SocketSession.get.send(new messages.CreateNotebook(notebookPath))
+                }
+            }
+        ).catch(() => null)
+
     }
 
     importNotebook(name?: string, content?: string) {

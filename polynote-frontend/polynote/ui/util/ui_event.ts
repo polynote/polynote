@@ -154,9 +154,23 @@ export class ImportNotebook extends UIMessage {
 }
 
 export class CreateNotebook extends UIMessage {
-    constructor() { super() }
+    constructor(readonly path?: string) { super() }
     static unapply(inst: CreateNotebook): ConstructorParameters<typeof CreateNotebook> {
-        return [];
+        return [inst.path];
+    }
+}
+
+export class RenameNotebook extends UIMessage {
+    constructor(readonly path: string) { super() }
+    static unapply(inst: RenameNotebook): ConstructorParameters<typeof RenameNotebook> {
+        return [inst.path];
+    }
+}
+
+export class DeleteNotebook extends UIMessage {
+    constructor(readonly path: string) { super() }
+    static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
+        return [inst.path];
     }
 }
 
@@ -209,3 +223,9 @@ export class ViewAbout extends UIMessage {
     }
 }
 
+export class ModalClosed extends UIMessage {
+    constructor() { super() }
+    static unapply(inst: ModalClosed): ConstructorParameters<typeof ModalClosed> {
+        return [];
+    }
+}

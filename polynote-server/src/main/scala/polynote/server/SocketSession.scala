@@ -37,8 +37,8 @@ class SocketSession(
     input     <- Queue.unbounded[Task, WebSocketFrame]
     output    <- Queue.unbounded[Task, WebSocketFrame]
     processor <- process(input, output)
-    fiber     <- processor.interruptWhen(handler.awaitClosed).compile.drain.fork
-    keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.fork
+    fiber     <- processor.interruptWhen(handler.awaitClosed).compile.drain.ignore.fork
+    keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.ignore.fork
     response  <- WebSocketBuilder[Task].build(
       output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]),
       input.enqueue,

@@ -14,9 +14,21 @@ export type MessageListener = [typeof Message, ListenerCallback, boolean?];
 
 const mainEl = document.getElementById('Main');
 const socketKey = mainEl ? mainEl.getAttribute('data-ws-key') : null;
+window.addEventListener("beforeunload", evt => {
+    const sess = SocketSession.tryGet;
+    if (sess && sess.isOpen) {
+        sess.close();
+    }
+});
 
 export class SocketSession extends EventTarget {
     private static inst: SocketSession;
+
+    static get tryGet(): SocketSession | null {
+        if (SocketSession.inst)
+            return SocketSession.inst;
+        return null;
+    }
 
     static get get() {
         if (!SocketSession.inst) {

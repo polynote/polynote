@@ -1,6 +1,7 @@
 name := "polynote"
 
 val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
+val distUI: TaskKey[Unit] = taskKey[Unit]("Building UI for distribution...")
 val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
 val dist: TaskKey[File] = taskKey[File]("Building distribution...")
 val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
@@ -63,6 +64,10 @@ val commonSettings = Seq(
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
+  },
+  distUI := {
+    sys.process.Process(Seq("npm", "run", "clean"), new java.io.File("./polynote-frontend/")) ! streams.value.log
+    sys.process.Process(Seq("npm", "run", "dist"), new java.io.File("./polynote-frontend/")) ! streams.value.log
   },
   scalacOptions += "-deprecation",
   test in assembly := {}
@@ -141,7 +146,11 @@ val `polynote-server` = project.settings(
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
-  unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
+  unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist",
+  packageBin := {
+    val _ = distUI.value
+    (packageBin in Compile).value
+  }
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "compile->compile;test->test")
 
 val sparkSettings = Seq(
