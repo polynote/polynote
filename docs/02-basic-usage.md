@@ -9,7 +9,7 @@ After starting Polynote and opening the application in your browser, you'll see 
 
 ![images/fresh-home-screen.png](images/fresh-home-screen.png)
 
-On the left is the list of notebook files. If you have just installed polynote, the only notebooks you will have access to are our examples. Feel free to browse these notebooks for your future reference. You can also import
+On the left is the list of notebook files. If you have just installed Polynote, the only notebooks you will have access to are our examples. Feel free to browse these notebooks for your future reference. You can also import
 existing Jupyter notebooks into Polynote – simply drag-and-drop the notebook file from your computer onto the Notebooks
 panel.
 
