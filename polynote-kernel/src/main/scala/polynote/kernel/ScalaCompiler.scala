@@ -552,7 +552,7 @@ object ScalaCompiler {
     config => ZIO {
       if (config.behavior.dependencyIsolation) {
         new LimitedSharingClassLoader(
-          "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j)\\.",
+          config.shared.getSharedString,
           dependencyClasspath.map(_.toURI.toURL),
           getClass.getClassLoader)
       } else {

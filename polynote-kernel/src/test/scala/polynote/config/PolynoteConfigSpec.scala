@@ -86,4 +86,20 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     )
 
   }
+
+  it should "Parse Shared Classes" in {
+    val yamlStr =
+      """
+        |shared:
+        |  classes:
+        |    - com.esotericsoftware.kryo
+        |    - org.myclass
+      """.stripMargin
+
+    val parsed = yaml.parser.parse(yamlStr).flatMap(_.as[PolynoteConfig])
+
+    parsed.right.value.shared shouldEqual Shared(List("com.esotericsoftware.kryo", "org.myclass"))
+    parsed.right.value.shared.getSharedString shouldEqual
+      "^(com.esotericsoftware.kryo|org.myclass|scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j)\\."
+  }
 }
