@@ -24,4 +24,17 @@ class MemoryRepository extends NotebookRepository[TaskB] {
     ZIO.effectTotal(notebooks.put(path, Notebook(path, ShortList.of(), None))).as(path)
 
   def initStorage(): TaskB[Unit] = ZIO.unit
+
+  def renameNotebook(path: String, newPath: String): TaskB[String] = ZIO.effectTotal(notebooks.get(path)).get.mapError(_ => new FileNotFoundException(path)).flatMap {
+    notebook => ZIO.effectTotal {
+      notebooks.remove(path)
+      notebooks.put(newPath, notebook)
+      newPath
+    }
+  }
+
+  def deleteNotebook(path: String): TaskB[Unit] = ZIO.effectTotal(notebooks.get(path)).flatMap {
+    case None    => ZIO.fail(new FileNotFoundException(path))
+    case Some(_) => ZIO.effectTotal(notebooks.remove(path)).unit
+  }
 }

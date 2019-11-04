@@ -7,15 +7,18 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 import fs2.Chunk
+import fs2.concurrent.Topic
 import org.http4s.{Charset, Headers, HttpApp, HttpRoutes, MediaType, Request, Response, StaticFile}
 import org.http4s.blaze.pipeline.Command.EOF
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeServerBuilder
 import org.http4s.headers.{`Content-Length`, `Content-Type`}
+import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.Env
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
+import polynote.messages.Message
 import zio.{Cause, RIO, Task, ZIO}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
@@ -74,22 +77,23 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   }
 
   override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
-    args      <- ZIO.fromEither(Server.parseArgs(args)).orDie
-    _         <- Logging.info(s"Loading configuration from ${args.configFile}")
-    config    <- PolynoteConfig.load(args.configFile).orDie
-    port       = config.listen.port
-    address    = config.listen.host
-    wsKey      = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
-    host       = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
-    url        = s"http://$host:$port"
-    interps   <- interpreter.Loader.load.orDie
-    globalEnv  = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps, kernelFactory))
-    manager   <- NotebookManager().provide(globalEnv).orDie
-    socketEnv  = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
-    loadIndex <- indexFileContent(wsKey, config, args.watchUI)
-    app       <- httpApp(args.watchUI, wsKey, loadIndex).provide(socketEnv).orDie
-    _         <- Logging.warn(securityWarning)
-    exit      <- BlazeServerBuilder[Task]
+    args         <- ZIO.fromEither(Server.parseArgs(args)).orDie
+    _            <- Logging.info(s"Loading configuration from ${args.configFile}")
+    config       <- PolynoteConfig.load(args.configFile).orDie
+    port          = config.listen.port
+    address       = config.listen.host
+    wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
+    host          = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
+    url           = s"http://$host:$port"
+    interps      <- interpreter.Loader.load.orDie
+    globalEnv     = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps, kernelFactory))
+    broadcastAll <- Topic[Task, Option[Message]](None).orDie
+    manager      <- NotebookManager(broadcastAll).provide(globalEnv).orDie
+    socketEnv     = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
+    loadIndex    <- indexFileContent(wsKey, config, args.watchUI)
+    app          <- httpApp(args.watchUI, wsKey, loadIndex, broadcastAll).provide(socketEnv).orDie
+    _            <- Logging.warn(securityWarning)
+    exit         <- BlazeServerBuilder[Task]
       .withBanner(
         raw"""
              |
@@ -135,7 +139,12 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
   object KeyMatcher extends QueryParamDecoderMatcher[String]("key")
 
-  def httpApp(watchUI: Boolean, wsKey: String, getIndex: ZIO[Blocking, Nothing, String]): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
+  def httpApp(
+    watchUI: Boolean,
+    wsKey: String,
+    getIndex: ZIO[Blocking, Nothing, String],
+    broadcastAll: Topic[Task, Option[Message]]
+  ): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
     val indexResponse = getIndex.map {
       index =>
         val indexBytes = index.getBytes(StandardCharsets.UTF_8)
@@ -148,7 +157,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     for {
       env <- ZIO.access[BaseEnv with GlobalEnv with NotebookManager](identity)
     } yield HttpRoutes.of[Task] {
-      case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => SocketSession().flatMap(_.toResponse).provide(env)
+      case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => SocketSession(broadcastAll).flatMap(_.toResponse).provide(env)
       case GET -> Root / "ws"                                               => Forbidden()
       case req @ GET -> Root                                                => indexResponse.provide(env)
       case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req, env.polynoteConfig)

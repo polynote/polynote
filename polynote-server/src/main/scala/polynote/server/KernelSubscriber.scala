@@ -21,7 +21,7 @@ class KernelSubscriber private[server] (
   val lastGlobalVersion: AtomicInteger
 ) {
 
-  def close(): Task[Unit] = closed.succeed(()).unit *> process.join
+  def close(): Task[Unit] = closed.succeed(()).unit *> process.interrupt.unit
   def update(update: NotebookUpdate): Task[Unit] = publisher.update(id, update) *> ZIO(lastLocalVersion.set(update.localVersion)) *> ZIO(lastGlobalVersion.set(update.globalVersion))
   def notebook(): Task[Notebook] = publisher.latestVersion.map(_._2)
 }

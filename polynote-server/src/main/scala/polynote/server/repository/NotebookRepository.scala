@@ -1,11 +1,13 @@
 package polynote.server.repository
 
+import java.io.FileNotFoundException
 import java.nio.charset.StandardCharsets
-import java.nio.file.{FileVisitOption, Files, Path}
+import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
 
 import cats.effect.{ConcurrentEffect, ContextShift, IO, Sync}
 import cats.syntax.flatMap._
 import cats.syntax.functor._
+import cats.syntax.apply._
 import io.circe.Printer
 import org.http4s.client.blaze._
 import polynote.config.PolynoteConfig
@@ -43,6 +45,10 @@ trait NotebookRepository[F[_]] {
     * string (on the right).
     */
   def createNotebook(path: String, maybeUriOrContent: Option[Either[String, String]]): F[String]
+
+  def renameNotebook(path: String, newPath: String): F[String]
+
+  def deleteNotebook(path: String): F[Unit]
 
   /**
     * Initialize the storage for this repository (i.e. create directory if it doesn't exist)
@@ -157,6 +163,34 @@ abstract class FileBasedRepository[F[_]](implicit F: ConcurrentEffect[F], contex
         }
         createOrImport.map(_ => extPath)
       }
+    }
+  }
+
+  def renameNotebook(oldPath: String, newPath: String): F[String] = {
+    val ext = s".$defaultExtension"
+    val withExt = newPath.replaceFirst("""^/+""", "").stripSuffix(ext) + ext
+
+    if (relativeDepth(withExt) > maxDepth) {
+      F.raiseError(new IllegalArgumentException(s"Input path ($newPath) too deep, maxDepth is $maxDepth"))
+    } else {
+      (notebookExists(oldPath), notebookExists(withExt)).mapN(_ -> _).flatMap {
+        case (false, _)    => F.raiseError(new FileNotFoundException(s"File $oldPath doesn't exist"))
+        case (_, true)     => F.raiseError(new FileAlreadyExistsException(s"File $withExt already exists"))
+        case (true, false) =>
+          val absOldPath = pathOf(oldPath)
+          val absNewPath = pathOf(withExt)
+          F.delay {
+            Files.move(absOldPath, absNewPath)
+          }.as(withExt)
+      }
+    }
+  }
+
+  // TODO: should probably have a "trash" or something instead – a way of recovering a file from accidental deletion?
+  def deleteNotebook(path: String): F[Unit] = {
+    notebookExists(path).flatMap {
+      case false => F.raiseError(new FileNotFoundException(s"File $path does't exist"))
+      case true  => F.delay(Files.delete(pathOf(path)))
     }
   }
 

@@ -61,6 +61,19 @@ export class LoadNotebook extends Message {
     }
 }
 
+export class CloseNotebook extends Message {
+    static codec = combined(shortStr).to(CloseNotebook);
+    static get msgTypeId() { return 27; }
+    static unapply(inst: CloseNotebook): ConstructorParameters<typeof CloseNotebook> {
+        return [inst.path];
+    }
+
+    constructor(readonly path: string) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 
 export class NotebookCells extends Message {
     static codec =
@@ -456,6 +469,34 @@ export class CreateNotebook extends Message {
     }
 }
 
+export class RenameNotebook extends Message {
+    static codec = combined(shortStr, shortStr).to(RenameNotebook);
+    static get msgTypeId() { return 25; }
+    static unapply(inst: RenameNotebook): ConstructorParameters<typeof RenameNotebook> {
+        return [inst.path, inst.newPath];
+    }
+    constructor(readonly path: string, readonly newPath: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    isResponse(other: Message): boolean {
+        return (other instanceof RenameNotebook) && other.path === this.path;
+    }
+}
+
+export class DeleteNotebook extends Message {
+    static codec = combined(shortStr).to(DeleteNotebook);
+    static get msgTypeId() { return 26; }
+    static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
+        return [inst.path];
+    }
+    constructor(readonly path: string) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 export class DeleteCell extends NotebookUpdate {
     static codec = combined(shortStr, uint32, uint32, int16).to(DeleteCell);
     static get msgTypeId() { return 15; }
@@ -679,6 +720,9 @@ Message.codecs = [
     SetCellOutput,   // 22
     NotebookVersion, // 23
     RunningKernels,  // 24
+    RenameNotebook,  // 25
+    DeleteNotebook,  // 26
+    CloseNotebook,   // 27
 ];
 
 

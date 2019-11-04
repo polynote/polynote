@@ -107,6 +107,19 @@ export function icon(classes: string[], iconName: string, alt?: string) {
     return span(classes, img(['icon'], `/style/icons/fa/${iconName}.svg`, alt || iconName))
 }
 
+export function a(classes: string[], href: string, contentOrPreventNavigate: Content | boolean, contentWhenPreventNavigate?: Content) {
+    const preventNavigate = typeof(contentOrPreventNavigate) === "boolean" ? contentOrPreventNavigate : false;
+    const content = typeof(contentOrPreventNavigate) === "boolean" ? contentWhenPreventNavigate : contentOrPreventNavigate;
+    const a = tag("a", classes, {href}, content);
+    if (preventNavigate) {
+        a.addEventListener("click", evt => {
+            evt.preventDefault();
+            return false;
+        });
+    }
+    return a;
+}
+
 // This is supposed to create an inline SVG so we can style it with CSS. I'm not sure why it doesn't work though...
 // export function icon(classes: string[], iconName: string, alt: string) {
 //     const use = document.createElement("use");
@@ -138,6 +151,13 @@ export function textbox(classes: string[], placeholder: string, value: string = 
     if (value) {
         input.value = value;
     }
+    input.addEventListener('keydown', (evt: KeyboardEvent) => {
+        if (evt.key === 'Escape' || evt.key == 'Cancel') {
+            input.dispatchEvent(new CustomEvent('Cancel', { detail: { key: evt.key, event: evt }}));
+        } else if (evt.key === 'Enter' || evt.key === 'Accept') {
+            input.dispatchEvent(new CustomEvent('Accept', { detail: { key: evt.key, event: evt}}));
+        }
+    });
     return input;
 }
 

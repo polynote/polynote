@@ -7,7 +7,7 @@ import cats.effect.{Concurrent, Timer}
 import cats.syntax.traverse._
 import cats.instances.list._
 import fs2.{Pipe, Stream}
-import fs2.concurrent.Queue
+import fs2.concurrent.{Queue, Topic}
 import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
@@ -20,13 +20,14 @@ import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages._
-import zio.{Promise, Task, RIO, ZIO}
+import zio.{Promise, RIO, Task, ZIO}
 
 import scala.collection.immutable.SortedMap
 import scala.concurrent.duration.{Duration, SECONDS}
 
 class SocketSession(
-  handler: SessionHandler
+  handler: SessionHandler,
+  broadcastAll: Topic[Task, Option[Message]]
 )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]) {
 
   private def toFrame(message: Message): Task[Binary] = {
@@ -39,10 +40,12 @@ class SocketSession(
     processor <- process(input, output)
     fiber     <- processor.interruptWhen(handler.awaitClosed).compile.drain.ignore.fork
     keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.ignore.fork
+    allOutputs = Stream.emits(Seq(output.dequeue, broadcastAll.subscribe(128).unNone.evalMap(toFrame))).parJoinUnbounded
+    logging   <- ZIO.access[Logging](identity)
     response  <- WebSocketBuilder[Task].build(
-      output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]),
+      allOutputs.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]) ++ Stream.eval(handler.close()).drain,
       input.enqueue,
-      onClose = keepalive.interrupt *> fiber.interrupt.unit)
+      onClose = keepalive.interrupt *> fiber.interrupt.unit *> handler.close())
   } yield response
 
   private def process(
@@ -84,11 +87,13 @@ class SessionHandler(
     handler.applyOrElse(message, unhandled)
 
   def awaitClosed: ZIO[Any, Nothing, Either[Throwable, Unit]] = closed.await.either
+  def close(): Task[Unit] = closed.succeed(()).unit
 
   private def subscribe(path: String): RIO[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribed.getOrCreate(path) {
     for {
       kernelPublisher <- notebookManager.open(path)
       subscriber      <- kernelPublisher.subscribe()
+      _               <- closed.await.flatMap(_ => subscriber.close()).fork
       _               <- subscriber.closed.await.flatMap(_ => subscribed.remove(path)).fork
       _               <- kernelPublisher.closed.await.flatMap(_ => subscriber.close()).fork
     } yield subscriber
@@ -122,10 +127,20 @@ class SessionHandler(
           } yield ()
       }
 
-    case CreateNotebook(path, maybeUriOrContent) =>
-      notebookManager.create(path, maybeUriOrContent).flatMap {
-        realPath => PublishMessage(CreateNotebook(ShortString(realPath)))
+    case CloseNotebook(path) =>
+      subscribed.get(path).flatMap {
+        case None             => ZIO.unit
+        case Some(subscriber) => subscriber.close()
       }
+
+    case CreateNotebook(path, maybeUriOrContent) =>
+      notebookManager.create(path, maybeUriOrContent).unit
+
+    case RenameNotebook(path, newPath) =>
+      notebookManager.rename(path, newPath).unit
+
+    case DeleteNotebook(path) =>
+      notebookManager.delete(path)
 
     case upConfig @ UpdateConfig(path, _, _, config) => for {
       subscriber <- subscribe(path)
@@ -223,13 +238,15 @@ class SessionHandler(
 }
 
 object SocketSession {
-  def apply()(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]): RIO[BaseEnv with NotebookManager, SocketSession] = for {
+  def apply(
+    broadcastAll: Topic[Task, Option[Message]]
+  )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]): RIO[BaseEnv with NotebookManager, SocketSession] = for {
     notebookManager  <- NotebookManager.access
     subscribed       <- RefMap.empty[String, KernelSubscriber]
     closed           <- Promise.make[Throwable, Unit]
     sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
     streamingHandles <- Env.enrichM[BaseEnv](StreamingHandles.make(sessionId))
-  } yield new SocketSession(new SessionHandler(notebookManager, subscribed, closed, streamingHandles))
+  } yield new SocketSession(new SessionHandler(notebookManager, subscribed, closed, streamingHandles), broadcastAll)
 
   private val sessionId = new AtomicInteger(0)
 }

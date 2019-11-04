@@ -17,7 +17,7 @@ import {
     ServerVersion,
     RunningKernels,
     KernelCommand,
-    LoadNotebook, CellsLoaded
+    LoadNotebook, CellsLoaded, RenameNotebook, DeleteNotebook, TabRemoved
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -31,7 +31,7 @@ import {SplitView} from "./split_view";
 import {KernelUI} from "./kernel_ui";
 import {NotebookUI} from "./notebook";
 import {TabUI} from "./tab";
-import {CreateNotebookDialog, NotebookListUI} from "./notebook_list";
+import {CreateNotebookDialog, RenameNotebookDialog, NotebookListUI} from "./notebook_list";
 import {HomeUI} from "./home";
 import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
@@ -82,6 +82,8 @@ export class MainUI extends UIMessageTarget {
         });
         // TODO: remove listeners on children.
         this.subscribe(CreateNotebook, (path) => this.createNotebook(path));
+        this.subscribe(RenameNotebook, path => this.renameNotebook(path));
+        this.subscribe(DeleteNotebook, path => this.deleteNotebook(path));
         this.subscribe(ImportNotebook, (name, content) => this.importNotebook(name, content));
         this.subscribe(UIToggle, (which, force) => {
             if (which === "NotebookList") {
@@ -112,6 +114,18 @@ export class MainUI extends UIMessageTarget {
             this.currentServerVersion = serverVersion;
             this.currentServerCommit = serverCommit;
         });
+
+        SocketSession.get.addMessageListener(
+            messages.RenameNotebook,
+            (oldPath, newPath) => this.browseUI.renameItem(oldPath, newPath));
+
+        SocketSession.get.addMessageListener(
+            messages.DeleteNotebook,
+            path => this.browseUI.removeItem(path));
+
+        SocketSession.get.addMessageListener(
+            messages.CreateNotebook,
+            actualPath => this.browseUI.addItem(actualPath));
 
         SocketSession.get.addEventListener('close', evt => {
            this.browseUI.setDisabled(true);
@@ -162,6 +176,10 @@ export class MainUI extends UIMessageTarget {
                 document.title = title;
                 this.toolbarUI.setDisabled(true);
             }
+        });
+
+        this.subscribe(TabRemoved, path => {
+            SocketSession.get.send(new messages.CloseNotebook(path))
         });
 
         window.addEventListener('hashchange', evt => {
@@ -254,20 +272,32 @@ export class MainUI extends UIMessageTarget {
     }
 
     createNotebook(path?: string) {
-        const handler = SocketSession.get.addMessageListener(messages.CreateNotebook, (actualPath) => {
-            SocketSession.get.removeMessageListener(handler);
-            this.browseUI.addItem(actualPath);
-            this.loadNotebook(actualPath);
-        });
-
         CreateNotebookDialog.prompt(path).then(
             notebookPath => {
                 if (notebookPath) {
-                    SocketSession.get.send(new messages.CreateNotebook(notebookPath))
+                    SocketSession.get.listenOnceFor(messages.CreateNotebook, actualPath => {
+                        if (actualPath.substring(0, notebookPath.length) === notebookPath) {
+                            this.loadNotebook(actualPath);
+                        }
+                    });
+                    SocketSession.get.send(new messages.CreateNotebook(notebookPath));
                 }
             }
         ).catch(() => null)
+    }
 
+    renameNotebook(path: string) {
+        // Existing listener will hear broadcast and update UI
+        RenameNotebookDialog.prompt(path)
+            .then(newPath => SocketSession.get.send(new messages.RenameNotebook(path, newPath)))
+    }
+
+    deleteNotebook(path: string) {
+        // Existing listener will hear broadcast and update UI
+        // TODO: this should probably get its own dialog too, for consistency
+        if (confirm(`Permanently delete ${path}?`)) {
+            SocketSession.get.send(new messages.DeleteNotebook(path))
+        }
     }
 
     importNotebook(name?: string, content?: string) {
