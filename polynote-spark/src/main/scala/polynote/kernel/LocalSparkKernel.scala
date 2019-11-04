@@ -153,11 +153,14 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       if (conf.get("spark.master") == "local[*]") {
         conf.set("spark.driver.host", "127.0.0.1")
       }
+      
+      if (conf.get("spark.app.name", null) == null) {
+        conf.setAppName(s"Polynote ${BuildInfo.version} session")
+      }
 
       conf
         .setJars(jars)
         .set("spark.repl.class.outputDir", outputPath.toString)
-        .setAppName(s"Polynote ${BuildInfo.version} session")
 
       org.apache.spark.repl.Main.createSparkSession()
     }
