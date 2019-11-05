@@ -154,9 +154,23 @@ export class ImportNotebook extends UIMessage {
 }
 
 export class CreateNotebook extends UIMessage {
-    constructor() { super() }
+    constructor(readonly path?: string) { super() }
     static unapply(inst: CreateNotebook): ConstructorParameters<typeof CreateNotebook> {
-        return [];
+        return [inst.path];
+    }
+}
+
+export class RenameNotebook extends UIMessage {
+    constructor(readonly path: string) { super() }
+    static unapply(inst: RenameNotebook): ConstructorParameters<typeof RenameNotebook> {
+        return [inst.path];
+    }
+}
+
+export class DeleteNotebook extends UIMessage {
+    constructor(readonly path: string) { super() }
+    static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
+        return [inst.path];
     }
 }
 
@@ -178,6 +192,13 @@ export class TabActivated extends UIMessage {
     constructor(readonly tabName: string, readonly tabType: string) { super() }
     static unapply(inst: TabActivated): ConstructorParameters<typeof TabActivated> {
         return [inst.tabName, inst.tabType]
+    }
+}
+
+export class TabRenamed extends UIMessage {
+    constructor(readonly tabName: string, readonly newName: string, readonly tabType: string, readonly isCurrent: boolean) { super() }
+    static unapply(inst: TabRenamed): ConstructorParameters<typeof TabRenamed> {
+        return [inst.tabName, inst.newName, inst.tabType, inst.isCurrent]
     }
 }
 
@@ -209,3 +230,9 @@ export class ViewAbout extends UIMessage {
     }
 }
 
+export class ModalClosed extends UIMessage {
+    constructor() { super() }
+    static unapply(inst: ModalClosed): ConstructorParameters<typeof ModalClosed> {
+        return [];
+    }
+}

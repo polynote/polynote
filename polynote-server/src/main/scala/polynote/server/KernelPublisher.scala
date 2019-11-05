@@ -7,18 +7,19 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import cats.effect.concurrent.Ref
 import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
-import polynote.kernel.util.Publish
+import polynote.kernel.util.{Publish, RefMap}
 import Publish.{PublishEnqueue, PublishTopic}
 import polynote.config.PolynoteConfig
 import polynote.env.ops._
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
-import polynote.messages.{CellID, CellResult, KernelStatus, Message, Notebook, NotebookUpdate, ShortList, ShortString}
+import polynote.messages.{CellID, CellResult, KernelStatus, Message, Notebook, NotebookUpdate, RenameNotebook, ShortList, ShortString}
 import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelStatusUpdate, Result, ScalaCompiler, Signatures, TaskB, TaskManager}
 import polynote.util.VersionBuffer
-import zio.{Fiber, Promise, Semaphore, Task, RIO, UIO, ZIO}
+import zio.{Fiber, Promise, RIO, Semaphore, Task, UIO, ZIO}
 import zio.interop.catz._
 import KernelPublisher.{GlobalVersion, SubscriberId}
+import polynote.kernel.logging.Logging
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -29,13 +30,16 @@ class KernelPublisher private (
   val broadcastUpdates: Topic[Task, Option[(SubscriberId, NotebookUpdate)]],
   val status: Topic[Task, KernelStatusUpdate],
   val cellResults: Topic[Task, Option[CellResult]],
+  val broadcastAll: Topic[Task, Option[Message]],
   val taskManager: TaskManager.Service,
   updater: Fiber[Throwable, Unit],
   kernelRef: Ref[Task, Option[Kernel]],
   kernelStarting: Semaphore,
   queueingCell: Semaphore,
+  subscribing: Semaphore,
   kernelFactory: Kernel.Factory.Service,
-  val closed: Promise[Throwable, Unit]
+  val closed: Promise[Throwable, Unit],
+  subscribers: RefMap[Int, KernelSubscriber]
 ) {
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
@@ -158,10 +162,31 @@ class KernelPublisher private (
     } yield ()
   }.ignore
 
-  def subscribe(): RIO[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = for {
-    subscriberId       <- ZIO.effectTotal(nextSubscriberId.getAndIncrement())
-    subscriber         <- KernelSubscriber(subscriberId, this)
-  } yield subscriber
+  def subscribe(): RIO[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribing.withPermit {
+    for {
+      isClosed           <- closed.isDone
+      _                  <- if (isClosed) ZIO.fail(PublisherClosed) else ZIO.unit
+      subscriberId       <- ZIO.effectTotal(nextSubscriberId.getAndIncrement())
+      subscriber         <- KernelSubscriber(subscriberId, this)
+      _                  <- subscribers.put(subscriberId, subscriber)
+      _                  <- subscriber.closed.await.flatMap(_ => removeSubscriber(subscriberId)).fork
+    } yield subscriber
+  }
+
+  private def removeSubscriber(id: Int) = for {
+    subscriber <- subscribers.get(id).get.mapError(_ => new NoSuchElementException(s"Subscriber $id does not exist"))
+    isDone     <- subscriber.closed.isDone
+    _          <- if (isDone) ZIO.unit else ZIO.fail(new IllegalStateException(s"Attempting to remove subscriber $id, which is not closed."))
+    _          <- subscribers.remove(id)
+    allClosed  <- subscribers.isEmpty
+    kernel     <- kernelRef.get
+    _          <- if (allClosed && kernel.isEmpty) close() else ZIO.unit
+  } yield ()
+
+  def rename(newPath: String): Task[Unit] = for {
+    oldPath <- versionedNotebook.get.map(_._2.path)
+    _       <- versionedNotebook.update(vn => vn._1 -> vn._2.copy(path = newPath))
+  } yield ()
 
   def close(): Task[Unit] = closed.succeed(()).as(()) *> taskManager.shutdown()
 
@@ -203,10 +228,13 @@ object KernelPublisher {
     broadcastUpdates <- Topic[Task, Option[(SubscriberId, NotebookUpdate)]](None)
     broadcastStatus  <- Topic[Task, KernelStatusUpdate](KernelBusyState(busy = false, alive = false))
     broadcastResults <- Topic[Task, Option[CellResult]](None)
+    broadcastMessage <- Topic[Task, Option[Message]](None)
     taskManager      <- TaskManager(broadcastStatus)
     versionBuffer     = new VersionBuffer[NotebookUpdate]
     kernelStarting   <- Semaphore.make(1)
     queueingCell     <- Semaphore.make(1)
+    subscribing      <- Semaphore.make(1)
+    subscribers      <- RefMap.empty[Int, KernelSubscriber]
     kernel           <- Ref[Task].of[Option[Kernel]](None)
     subscriberVersions = new ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)]()
     updater          <- updates.dequeue.unNoneTerminate
@@ -219,12 +247,17 @@ object KernelPublisher {
     broadcastUpdates,
     broadcastStatus,
     broadcastResults,
+    broadcastMessage,
     taskManager,
     updater,
     kernel,
     kernelStarting,
     queueingCell,
+    subscribing,
     kernelFactory,
-    closed
+    closed,
+    subscribers
   )
 }
+
+case object PublisherClosed extends Throwable

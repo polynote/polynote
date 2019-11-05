@@ -1,6 +1,7 @@
 name := "polynote"
 
 val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
+val distUI: TaskKey[Unit] = taskKey[Unit]("Building UI for distribution...")
 val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
 val dist: TaskKey[File] = taskKey[File]("Building distribution...")
 val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
@@ -64,6 +65,10 @@ val commonSettings = Seq(
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
   },
+  distUI := {
+    sys.process.Process(Seq("npm", "run", "clean"), new java.io.File("./polynote-frontend/")) ! streams.value.log
+    sys.process.Process(Seq("npm", "run", "dist"), new java.io.File("./polynote-frontend/")) ! streams.value.log
+  },
   scalacOptions += "-deprecation",
   test in assembly := {}
 )
@@ -125,7 +130,6 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-parser" % "0.11.1",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
-  publish := {},
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
@@ -142,8 +146,11 @@ val `polynote-server` = project.settings(
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
-  publish := {},
-  unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist"
+  unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist",
+  packageBin := {
+    val _ = distUI.value
+    (packageBin in Compile).value
+  }
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "compile->compile;test->test")
 
 val sparkSettings = Seq(
@@ -176,7 +183,6 @@ lazy val `polynote-spark` = project.settings(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scodec" %% "scodec-stream" % "1.2.0"
   ),
-  publish := {},
   dependencyJars := {
     (dependencyClasspath in (`polynote-kernel`, Compile)).value.collect {
       case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") =>

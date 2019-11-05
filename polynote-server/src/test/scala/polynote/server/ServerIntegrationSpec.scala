@@ -2,16 +2,18 @@ package polynote.server
 
 import java.util.concurrent.atomic.AtomicInteger
 
+import fs2.concurrent.Topic
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FeatureSpec, GivenWhenThen}
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.environment.NotebookUpdates
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel}
 import polynote.kernel.util.RefMap
+import polynote.messages.Message
 import polynote.testing.ZIOSpec
 import polynote.testing.kernel.{MockEnv, MockKernelEnv}
 import polynote.testing.repository.MemoryRepository
-import zio.{Promise, RIO, ZIO}
+import zio.{Promise, RIO, Task, ZIO}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
 
@@ -21,8 +23,9 @@ import zio.interop.catz.implicits._
 class ServerIntegrationSpec extends FeatureSpec with ZIOSpec with GivenWhenThen with MockFactory {
 
   // set up fixture
+  private val broadcastAll    = unsafeRun(Topic[Task, Option[Message]](None))
   private val repository      = new MemoryRepository
-  private val notebookManager = unsafeRun(NotebookManager.Service(repository))
+  private val notebookManager = unsafeRun(NotebookManager.Service(repository, broadcastAll))
   private val kernel          = mock[Kernel]
   private val kernelFactory   = new Factory.Service {
     def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(kernel)
@@ -30,7 +33,7 @@ class ServerIntegrationSpec extends FeatureSpec with ZIOSpec with GivenWhenThen 
 
   private val nextSessionId = new AtomicInteger(0)
 
-  class Client() {
+  class Client(broadcastAll: Topic[Task, Option[Message]]) {
     val sessionId: Int = nextSessionId.getAndIncrement()
     val env: MockKernelEnv = unsafeRun(MockKernelEnv(kernelFactory, sessionId))
     val handler = new SessionHandler(notebookManager, unsafeRun(RefMap.empty), unsafeRun(Promise.make), env)
