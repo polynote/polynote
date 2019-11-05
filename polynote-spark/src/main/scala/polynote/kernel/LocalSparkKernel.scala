@@ -157,7 +157,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       conf
         .setJars(jars)
         .set("spark.repl.class.outputDir", outputPath.toString)
-        .setAppName(s"Polynote ${BuildInfo.version} session")
+        .setIfMissing("spark.app.name", s"Polynote ${BuildInfo.version} session")
 
       org.apache.spark.repl.Main.createSparkSession()
     }
