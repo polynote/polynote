@@ -1,6 +1,6 @@
 // TODO: Shouldn't it extend UIEventTarget?
 import {div, icon, img, span, TagElement} from "../util/tags";
-import {NoActiveTab, TabActivated, TabRemoved, UIMessage, UIMessageTarget} from "../util/ui_event";
+import {NoActiveTab, TabActivated, TabRemoved, TabRenamed, UIMessage, UIMessageTarget} from "../util/ui_event";
 import {storage} from "../util/storage";
 
 interface Tab {
@@ -144,6 +144,21 @@ export class TabUI extends UIMessageTarget {
 
     getTab(name: string) {
         return this.tabs[name];
+    }
+
+    renameTab(oldName: string, newName: string, newTitle?: string) {
+        const tab = this.tabs[oldName];
+        const title = newTitle || newName;
+        if (tab) {
+            tab.name = newName;
+            tab.title.innerHTML = '';
+            tab.title.appendChild(document.createTextNode(title));
+            delete this.tabs[oldName];
+            this.tabEls[newName] = this.tabEls[oldName];
+            delete this.tabEls[oldName];
+            this.tabs[newName] = tab;
+            this.publish(new TabRenamed(oldName, newName, tab.type, tab === this.currentTab))
+        }
     }
 
     getCurrentTab(): Tab {

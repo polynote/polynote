@@ -17,7 +17,7 @@ import {
     ServerVersion,
     RunningKernels,
     KernelCommand,
-    LoadNotebook, CellsLoaded, RenameNotebook, DeleteNotebook, TabRemoved
+    LoadNotebook, CellsLoaded, RenameNotebook, DeleteNotebook, TabRemoved, TabRenamed
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -117,7 +117,7 @@ export class MainUI extends UIMessageTarget {
 
         SocketSession.get.addMessageListener(
             messages.RenameNotebook,
-            (oldPath, newPath) => this.browseUI.renameItem(oldPath, newPath));
+            (oldPath, newPath) => this.onNotebookRenamed(oldPath, newPath));
 
         SocketSession.get.addMessageListener(
             messages.DeleteNotebook,
@@ -175,6 +175,14 @@ export class MainUI extends UIMessageTarget {
                 window.history.pushState({notebook: name}, title, '/');
                 document.title = title;
                 this.toolbarUI.setDisabled(true);
+            }
+        });
+
+        this.subscribe(TabRenamed, (oldName, newName, type, isCurrent) => {
+            if (isCurrent) {
+                const tabPath = `/notebook/${newName}`;
+                const href = window.location.hash ? `${tabPath}#${window.location.hash.replace(/^#/, '')}` : tabPath;
+                window.history.replaceState({notebook: newName}, `${newName.split(/\//g).pop()} | Polynote`, href);
             }
         });
 
@@ -290,6 +298,11 @@ export class MainUI extends UIMessageTarget {
         // Existing listener will hear broadcast and update UI
         RenameNotebookDialog.prompt(path)
             .then(newPath => SocketSession.get.send(new messages.RenameNotebook(path, newPath)))
+    }
+
+    onNotebookRenamed(oldPath: string, newPath: string) {
+        this.browseUI.renameItem(oldPath, newPath);
+        this.tabUI.renameTab(oldPath, newPath, newPath.split(/\//g).pop());
     }
 
     deleteNotebook(path: string) {

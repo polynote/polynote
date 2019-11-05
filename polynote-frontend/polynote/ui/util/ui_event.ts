@@ -195,6 +195,13 @@ export class TabActivated extends UIMessage {
     }
 }
 
+export class TabRenamed extends UIMessage {
+    constructor(readonly tabName: string, readonly newName: string, readonly tabType: string, readonly isCurrent: boolean) { super() }
+    static unapply(inst: TabRenamed): ConstructorParameters<typeof TabRenamed> {
+        return [inst.tabName, inst.newName, inst.tabType, inst.isCurrent]
+    }
+}
+
 export class DownloadNotebook extends UIMessage {
     constructor(readonly path: string) { super() }
     static unapply(inst: DownloadNotebook): ConstructorParameters<typeof DownloadNotebook> {
