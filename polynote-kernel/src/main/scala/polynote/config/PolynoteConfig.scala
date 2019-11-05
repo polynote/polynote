@@ -5,6 +5,7 @@ import java.util.UUID
 
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
+import io.circe.syntax._
 import io.circe._
 import polynote.kernel.TaskB
 import polynote.kernel.logging.Logging
@@ -23,11 +24,25 @@ object Listen {
   implicit val decoder: Decoder[Listen] = deriveDecoder
 }
 
-final case class Storage(dir: String = "notebooks", cache: String = "tmp")
+final case class Mount(src: String)
+
+object Mount {
+  implicit val encoder: ObjectEncoder[Mount] = deriveEncoder
+  implicit val decoder: Decoder[Mount] = deriveDecoder[Mount]
+}
+
+final case class Storage(cache: String = "tmp", mounts: List[Mount] = List(Mount("notebooks")))
 
 object Storage {
   implicit val encoder: ObjectEncoder[Storage] = deriveEncoder
-  implicit val decoder: Decoder[Storage] = deriveDecoder
+  implicit val decoder: Decoder[Storage] = deriveDecoder[Storage].prepare {
+    cursor =>
+      // convert old "dir" key into a new "mounts" entry
+      cursor.downField("dir").focus.flatMap(_.asString).map {
+        dir =>
+          cursor.withFocus(_.deepMerge(JsonObject.fromMap(Map("mounts" -> Json.fromValues(List(Mount.encoder(Mount(dir)))))).asJson))
+      }.getOrElse(cursor)
+  }
 }
 
 sealed trait KernelIsolation

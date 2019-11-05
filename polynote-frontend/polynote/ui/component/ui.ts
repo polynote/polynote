@@ -313,26 +313,12 @@ export class MainUI extends UIMessageTarget {
         }
     }
 
-    importNotebook(name?: string, content?: string) {
-        const handler = SocketSession.get.addMessageListener(messages.CreateNotebook, (actualPath) => {
-            SocketSession.get.removeMessageListener(handler);
+    importNotebook(name: string, content: string) {
+        SocketSession.get.listenOnceFor(messages.CreateNotebook, (actualPath) => {
             this.browseUI.addItem(actualPath);
             this.loadNotebook(actualPath);
         });
-
-        if (name && content) { // the evt has all we need
-            SocketSession.get.send(new messages.CreateNotebook(name, Either.right(content)));
-        } else {
-            const userInput = prompt("Enter the full URL of another Polynote instance.");
-            const notebookURL = userInput && new URL(userInput);
-
-            if (notebookURL && notebookURL.protocol.startsWith("http")) {
-                const nbFile = decodeURI(notebookURL.pathname.split("/").pop()!);
-                notebookURL.search = "download=true";
-                notebookURL.hash = "";
-                SocketSession.get.send(new messages.CreateNotebook(nbFile, Either.left(notebookURL.href)));
-            }
-        }
+        SocketSession.get.send(new messages.CreateNotebook(name, content));
     }
 
     handleHashChange() {

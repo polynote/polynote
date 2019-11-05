@@ -1,15 +1,14 @@
 import {
-    ImportNotebook,
-    UIMessage,
-    UIMessageTarget,
     CreateNotebook,
-    RenameNotebook,
     DeleteNotebook,
+    ImportNotebook,
+    ModalClosed,
+    RenameNotebook,
     TriggerItem,
-    UIToggle,
-    ModalClosed
+    UIMessageTarget,
+    UIToggle
 } from "../util/ui_event";
-import {button, div, h2, iconButton, span, a, tag, TagElement, textbox} from "../util/tags";
+import {a, button, div, h2, iconButton, span, tag, TagElement, textbox} from "../util/tags";
 import {storage} from "../util/storage";
 import {Modal} from "./modal";
 
@@ -208,10 +207,6 @@ export class NotebookListUI extends UIMessageTarget {
                 h2([], [
                     'Notebooks',
                     span(['buttons'], [
-                        iconButton(['import-notebook'], 'Import a notebook', 'file-import', 'Import').click(evt => {
-                            evt.stopPropagation();
-                            this.publish(new ImportNotebook());
-                        }),
                         iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                             evt.stopPropagation();
                             this.publish(new CreateNotebook());

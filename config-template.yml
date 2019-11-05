@@ -27,8 +27,12 @@
 ############################################################################################
 
 #storage:
-#  # The location Polynote looks for your notebooks in
-#  dir: notebooks
+#  # Where Polynote looks for notebooks. You can specify multiple mounts. The first mount is used as the
+#  # default mount point in case of ambiguity.
+#  mounts:
+#    - src: notebooks
+#    - src: examples
+#    - src: myteam/ournotebooks/
 #  # The location Polynote puts various caches, such as virtual environments created for your notebooks.
 #  cache: tmp
 

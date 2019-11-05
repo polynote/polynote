@@ -1,23 +1,22 @@
 package polynote.server
 
 import java.io.File
-import java.nio.file.{AccessDeniedException, FileAlreadyExistsException}
+import java.nio.file.{AccessDeniedException, FileAlreadyExistsException, Path}
 import java.util.concurrent.TimeUnit
 
 import cats.effect.ConcurrentEffect
-import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, LocalKernel}
 import polynote.kernel.util.RefMap
 import polynote.messages.{CreateNotebook, DeleteNotebook, Message, Notebook, NotebookUpdate, RenameNotebook, ShortString}
-import polynote.server.repository.NotebookRepository
+import polynote.server.repository.{MountAwareRepository, NotebookRepository}
 import polynote.server.repository.ipynb.IPythonNotebookRepository
-import zio.blocking.Blocking
 import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
 import zio.interop.catz._
-import KernelPublisher.SubscriberId
 import fs2.concurrent.Topic
+import polynote.config.PolynoteConfig
 import polynote.kernel.logging.Logging
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 
 trait NotebookManager {
@@ -30,17 +29,18 @@ object NotebookManager {
 
   trait Service {
     def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]
+    def location(path: String): RIO[BaseEnv with GlobalEnv, String]
     def list(): RIO[BaseEnv with GlobalEnv, List[String]]
     def listRunning(): RIO[BaseEnv with GlobalEnv, List[String]]
     def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState]
-    def create(path: String, maybeUriOrContent: Option[Either[String, String]]): RIO[BaseEnv with GlobalEnv, String]
+    def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String]
     def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
     def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit]
   }
 
   object Service {
 
-    def apply(repository: NotebookRepository[RIO[BaseEnv, ?]], broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv, Service] =
+    def apply(repository: NotebookRepository, broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, Service] =
       repository.initStorage() *> RefMap.empty[String, (KernelPublisher, NotebookWriter)].map {
         openNotebooks => new Impl(openNotebooks, repository, broadcastAll)
       }
@@ -51,12 +51,12 @@ object NotebookManager {
 
     private class Impl(
       openNotebooks: RefMap[String, (KernelPublisher, NotebookWriter)],
-      repository: NotebookRepository[RIO[BaseEnv, ?]],
+      repository: NotebookRepository,
       broadcastAll: Topic[Task, Option[Message]]
     ) extends Service {
 
       // write the notebook every 1 second, if it's changed.
-      private def startWriter(publisher: KernelPublisher): ZIO[BaseEnv, Nothing, NotebookWriter] = for {
+      private def startWriter(publisher: KernelPublisher): ZIO[BaseEnv with GlobalEnv, Nothing, NotebookWriter] = for {
         shutdownSignal <- Promise.make[Throwable, Unit]
         fiber          <- publisher.notebooksTimed(Duration(1, TimeUnit.SECONDS))
           .evalMap(notebook => repository.saveNotebook(notebook.path, notebook))
@@ -79,12 +79,14 @@ object NotebookManager {
         }
       }
 
-      override def list(): RIO[BaseEnv, List[String]] = repository.listNotebooks()
+      override def location(path: String): RIO[BaseEnv with GlobalEnv, String] = repository.notebookLoc(path)
+
+      override def list(): RIO[BaseEnv with GlobalEnv, List[String]] = repository.listNotebooks()
 
       override def listRunning(): RIO[BaseEnv, List[String]] = openNotebooks.keys
 
-      override def create(path: String, maybeUriOrContent: Option[Either[String, String]]): RIO[BaseEnv, String] =
-        repository.createNotebook(path, maybeUriOrContent).flatMap {
+      override def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] =
+        repository.createNotebook(path, maybeContent).flatMap {
           actualPath => (broadcastAll.publish1(Some(CreateNotebook(ShortString(actualPath)))) *> broadcastAll.publish1(None)).as(actualPath)
         }
 
@@ -118,14 +120,14 @@ object NotebookManager {
     }
   }
 
-  def apply(broadcastAll: Topic[Task, Option[Message]])(implicit ev: ConcurrentEffect[RIO[BaseEnv, ?]]): RIO[BaseEnv with GlobalEnv, NotebookManager] = for {
-    config    <- Config.access
-    blocking  <- ZIO.accessM[Blocking](_.blocking.blockingExecutor)
-    repository = new IPythonNotebookRepository[RIO[BaseEnv, ?]](
-      new File(System.getProperty("user.dir")).toPath.resolve(config.storage.dir),
-      config,
-      executionContext = blocking.asEC
-    )
+  def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, NotebookManager] = for {
+    repoMap   <- RefMap.empty[String, NotebookRepository]
+    repository = new MountAwareRepository(repoMap, (mountPath: Path, config: PolynoteConfig, ec: ExecutionContext) => {
+      new IPythonNotebookRepository(
+        new File(System.getProperty("user.dir")).toPath.resolve(mountPath),
+        config,
+        executionContext = ec)
+    })
     service   <- Service(repository, broadcastAll)
   } yield new NotebookManager {
     val notebookManager: Service = service

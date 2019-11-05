@@ -7,8 +7,9 @@ RUN apt update -y && \
     pip3 install jep jedi virtualenv
 
 # First, create the distribution with `sbt dist`
-# Then this from the dist target directory (e.g., `target/scala-2.11`) using `-f ../../docker/dev/Dockerfile` to select this file.
+# Then build this from the dist target directory (e.g., `target/scala-2.11`) using `-f ../../docker/dev/Dockerfile` to select this file.
 # for example (don't forget the dot at the end!):
+#   cd target/scala-2.11/
 #   docker build -t polynote:dev -f ../../docker/dev/Dockerfile .
 COPY polynote-dist.tar.gz .
 RUN tar xfzp polynote-dist.tar.gz && \
