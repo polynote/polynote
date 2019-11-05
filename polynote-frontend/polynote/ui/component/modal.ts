@@ -1,6 +1,6 @@
 "use strict";
 
-import {UIMessage, UIMessageTarget} from "../util/ui_event"
+import {ModalClosed, UIMessage, UIMessageTarget} from "../util/ui_event"
 import {div, button, iconButton, TagElement} from "../util/tags"
 
 interface ModalOptions {
@@ -59,6 +59,7 @@ export class Modal extends UIMessageTarget {
     hide() {
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
+            this.publish(new ModalClosed());
         }
     }
 }

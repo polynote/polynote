@@ -17,7 +17,7 @@ object PySparkInterpreter {
     def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = for {
       venv        <- VirtualEnvFetcher.fetch()
       gatewayRef   = new AtomicReference[GatewayServer]()
-      interpreter <- PythonInterpreter(venv, "py4j" :: "pyspark" :: PythonInterpreter.sharedModules, getPy4JError(gatewayRef))
+      interpreter <- PythonInterpreter(venv, getPy4JError(gatewayRef))
       _           <- setupPySpark(interpreter, gatewayRef)
     } yield interpreter
 

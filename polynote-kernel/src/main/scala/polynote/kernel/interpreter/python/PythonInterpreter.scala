@@ -8,7 +8,7 @@ import java.util.concurrent.{Executors, LinkedBlockingQueue, ThreadFactory}
 import cats.syntax.traverse._
 import cats.instances.list._
 import jep.python.{PyCallable, PyObject}
-import jep.{Jep, JepConfig, JepException, NamingConventionClassEnquirer, SharedInterpreter, SubInterpreter}
+import jep.{Jep, JepConfig, JepException, MainInterpreter, NamingConventionClassEnquirer, SharedInterpreter, SubInterpreter}
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
@@ -17,7 +17,7 @@ import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyLis
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Runtime, Task, RIO, UIO, ZIO}
+import zio.{RIO, Runtime, Task, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
@@ -480,16 +480,19 @@ object PythonInterpreter {
     }
   }
 
-  // TODO: pull this from configuration?
-  private[python] def sharedModules: List[String] = List("numpy", "google")
-
-  private[python] def mkJep(venv: Option[Path], sharedModules: List[String]): RIO[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
+  private[python] def mkJep(venv: Option[Path]): RIO[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
     classLoader => ZIO {
       val conf = new JepConfig()
-        .addSharedModules(sharedModules: _*)
         .setClassLoader(classLoader)
         .setClassEnquirer(new NamingConventionClassEnquirer(true).addTopLevelPackageName("polynote"))
-      val interp = new SubInterpreter(conf)
+
+      try {
+        SharedInterpreter.setConfig(conf)
+      } catch  {
+        case e: JepException => // we can only set the SharedInterpreter config once, but there's no way to tell if we've already set it :\
+      }
+
+      val interp = new SharedInterpreter()
       venv.foreach(path => interp.exec(s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"})"""))
       interp
     }
@@ -503,14 +506,13 @@ object PythonInterpreter {
 
   def apply(
     venv: Option[Path],
-    sharedModules: List[String] = PythonInterpreter.sharedModules,
     py4jError: String => Option[Throwable] = _ => None
   ): RIO[ScalaCompiler.Provider, PythonInterpreter] = {
     val jepThread = new AtomicReference[Thread](null)
     for {
       compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
       executor <- compiler.classLoader >>= jepExecutor(jepThread)
-      jep      <- mkJep(venv, sharedModules).lock(executor)
+      jep      <- mkJep(venv).lock(executor)
       blocking  = mkJepBlocking(executor)
       api      <- effectBlocking(new PythonAPI(jep)).lock(executor).provide(blocking)
       runtime  <- ZIO.runtime[Any]
