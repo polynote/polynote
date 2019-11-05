@@ -519,6 +519,18 @@ object ScalaCompiler {
       }
     }
 
+  /**
+    * @param dependencyClasspath List of class path entries for direct dependencies. Classes from these entries will be
+    *                            prioritized by auto-import/classpath-based completions in participating JVM languages.
+    * @param transitiveClasspath List of class path entries for transitive dependencies. These are still loaded in the
+    *                            notebook class loader, but they don't get higher priority for autocomplete.
+    * @param otherClasspath      List of class path entries which the compiler needs to know about, but which aren't
+    *                            going to be loaded by the dependency class loader (and thus will be loaded by the boot
+    *                            class loader). This basically means Spark and its ilk.
+    * @param modifySettings      A function which will receive the base compiler [[Settings]], and can return modified
+    *                            settings which will be used to construct the compiler.
+    * @return A [[ScalaCompiler]] instance
+    */
   def apply(
     dependencyClasspath: List[File],
     transitiveClasspath: List[File],
@@ -549,6 +561,9 @@ object ScalaCompiler {
     }
   }
 
+  /**
+    * Like [[apply]], but returns the [[ScalaCompiler]] instance already wrapped in a [[Provider]].
+    */
   def provider(
     dependencyClasspath: List[File],
     transitiveClasspath: List[File],
