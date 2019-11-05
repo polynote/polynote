@@ -32,7 +32,7 @@ trait InterpreterSpec extends ZIOSpec {
   lazy val outDir: AbstractFile = new VirtualDirectory("(memory)", None)
   settings.outputDirs.setSingleOutput(outDir)
 
-  lazy val classLoader: AbstractFileClassLoader = unsafeRun(ScalaCompiler.makeClassLoader(settings).provide(Config.of(PolynoteConfig())))
+  lazy val classLoader: AbstractFileClassLoader = unsafeRun(ScalaCompiler.makeClassLoader(settings, Nil).provide(Config.of(PolynoteConfig())))
   lazy val compiler: ScalaCompiler = ScalaCompiler(settings, ZIO.succeed(classLoader)).runIO()
 
   def interpreter: Interpreter

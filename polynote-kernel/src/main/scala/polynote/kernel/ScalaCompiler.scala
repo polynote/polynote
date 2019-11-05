@@ -511,7 +511,7 @@ object ScalaCompiler {
   def settings: ZIO[Provider, Nothing, Settings]       = access.map(_.global.settings)
   def dependencies: ZIO[Provider, Nothing, List[File]] = access.map(_.dependencies)
 
-  def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader], notebookPackage: String = "$notebook"): Task[ScalaCompiler] =
+  private[polynote] def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader], notebookPackage: String = "$notebook"): Task[ScalaCompiler] =
     classLoader.memoize.flatMap {
       classLoader => ZIO {
         val global = new Global(settings, KernelReporter(settings))
@@ -521,43 +521,43 @@ object ScalaCompiler {
 
   def apply(
     dependencyClasspath: List[File],
+    transitiveClasspath: List[File],
     otherClasspath: List[File],
     modifySettings: Settings => Settings
   ): RIO[Config with System, ScalaCompiler] = for {
-    settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencyClasspath ++ otherClasspath)))
+    settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencyClasspath ++ transitiveClasspath ++ otherClasspath)))
     global            <- ZIO(new Global(settings, KernelReporter(settings)))
     notebookPackage    = "$notebook"
-    classLoader       <- makeClassLoader(settings).memoize
+    classLoader       <- makeClassLoader(settings, dependencyClasspath ++ transitiveClasspath).memoize
   } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencyClasspath, otherClasspath)
 
-  def makeClassLoader(settings: Settings): RIO[Config, AbstractFileClassLoader] = for {
-    dependencyClassLoader <- makeDependencyClassLoader(settings)
+  def makeClassLoader(settings: Settings, dependencyClasspath: List[File]): RIO[Config, AbstractFileClassLoader] = for {
+    dependencyClassLoader <- makeDependencyClassLoader(settings, dependencyClasspath)
     compilerOutput        <- ZIO.fromOption(settings.outputDirs.getSingleOutput).mapError(_ => new IllegalArgumentException("Compiler must have a single output directory"))
   } yield new AbstractFileClassLoader(compilerOutput, dependencyClassLoader)
 
-  def makeDependencyClassLoader(settings: Settings): RIO[Config, URLClassLoader] = Config.access.flatMap {
+  def makeDependencyClassLoader(settings: Settings, dependencyClasspath: List[File]): RIO[Config, URLClassLoader] = Config.access.flatMap {
     config => ZIO {
-      val dependencyClassPath = settings.classpath.value.split(File.pathSeparator).toSeq.map(new File(_).toURI.toURL)
-
       if (config.behavior.dependencyIsolation) {
         new LimitedSharingClassLoader(
           "^(scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j)\\.",
-          dependencyClassPath,
+          dependencyClasspath.map(_.toURI.toURL),
           getClass.getClassLoader)
       } else {
-        new URLClassLoader(dependencyClassPath, getClass.getClassLoader)
+        new URLClassLoader(dependencyClasspath.map(_.toURI.toURL), getClass.getClassLoader)
       }
     }
   }
 
   def provider(
     dependencyClasspath: List[File],
+    transitiveClasspath: List[File],
     otherClasspath: List[File],
     modifySettings: Settings => Settings
-  ): RIO[Config with System, ScalaCompiler.Provider] = apply(dependencyClasspath, otherClasspath, modifySettings).map(Provider.of)
+  ): RIO[Config with System, ScalaCompiler.Provider] = apply(dependencyClasspath, transitiveClasspath, otherClasspath, modifySettings).map(Provider.of)
 
-  def provider(dependencyClasspath: List[File], otherClasspath: List[File]): RIO[Config with System, ScalaCompiler.Provider] =
-    provider(dependencyClasspath, otherClasspath, identity[Settings])
+  def provider(dependencyClasspath: List[File], transitiveClasspath: List[File], otherClasspath: List[File]): RIO[Config with System, ScalaCompiler.Provider] =
+    provider(dependencyClasspath, transitiveClasspath, otherClasspath, identity[Settings])
 
   private def pathAsFile(url: URL): File = url match {
     case url if url.getProtocol == "file" => new File(url.getPath)

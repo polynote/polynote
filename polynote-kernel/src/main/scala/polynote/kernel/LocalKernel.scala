@@ -248,7 +248,7 @@ class LocalKernelFactory extends Kernel.Factory.LocalService {
   def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps    <- CoursierFetcher.fetch("scala")
     (main, transitive) = scalaDeps.partition(_._1)
-    compiler     <- ScalaCompiler.provider(main.map(_._3), transitive.map(_._3))
+    compiler     <- ScalaCompiler.provider(main.map(_._3), transitive.map(_._3), Nil)
     busyState    <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters <- RefMap.empty[String, Interpreter]
     _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provideSomeM(Env.enrich[Blocking](compiler)))
