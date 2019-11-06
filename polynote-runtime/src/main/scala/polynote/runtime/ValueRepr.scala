@@ -34,6 +34,8 @@ final case class LazyDataRepr private[polynote](handle: Int, dataType: DataType,
   def release(): Unit = {
     LazyDataRepr.handles.remove(handle)
   }
+
+  override def finalize(): Unit = release()
 }
 
 object LazyDataRepr {
@@ -68,14 +70,7 @@ object LazyDataRepr {
     val handleId = nextHandle.getAndIncrement()
     val handle = mkHandle(handleId)
     handles.put(handleId, handle)
-    val repr = LazyDataRepr(handleId, handle.dataType, knownSize)
-
-    // if the repr object gets GC'ed, we can let the handle go as well
-    Cleaner.create(repr, new Runnable {
-      def run(): Unit = handles.remove(handleId)
-    })
-
-    repr
+    LazyDataRepr(handleId, handle.dataType, knownSize)
   }
 
   def apply(dataType: DataType, value: => ByteBuffer, knownSize: Option[Int]): LazyDataRepr = fromHandle(knownSize, new DefaultHandle(_, dataType, value))
@@ -97,6 +92,8 @@ final case class UpdatingDataRepr private[polynote](handle: Int, dataType: DataT
       throw new IllegalStateException("Attempt to update a data handle which is already closed")
 
   def release(): Unit = UpdatingDataRepr.getHandle(handle).foreach(_.release())
+
+  override def finalize(): Unit = release()
 }
 
 object UpdatingDataRepr {
@@ -164,19 +161,7 @@ object UpdatingDataRepr {
     val handle = new Handle(handleId, dataType)
     handles.put(handleId, handle)
 
-    val repr = UpdatingDataRepr(handleId, dataType)
-
-    Cleaner.create(repr, new Runnable {
-      def run(): Unit = {
-        val handle = handles.get(handleId)
-        if (handle != null) {
-          handles.remove(handleId)
-          handle.release()
-        }
-      }
-    })
-
-    repr
+    UpdatingDataRepr(handleId, dataType)
   }
 
 
@@ -225,6 +210,8 @@ object StreamingDataRepr {
     }
 
     def modify(ops: List[TableOp]): Either[Throwable, Int => Handle]
+
+    override def finalize(): Unit = release()
   }
 
   private[polynote] class DefaultHandle(
@@ -259,23 +246,7 @@ object StreamingDataRepr {
     val handle = mkHandle(handleId)
     handles.put(handleId, handle)
 
-    val repr = StreamingDataRepr(handleId, handle.dataType, handle.knownSize)
-
-    Cleaner.create(repr, new Runnable {
-      def run(): Unit = {
-        val handle = handles.get(handleId)
-        if (handle != null) {
-          try handle.release() catch {
-            case err: Throwable =>
-              System.err.println("Error cleaning streaming handle")
-              err.printStackTrace()
-          }
-          handles.remove(handleId)
-        }
-      }
-    })
-
-    repr
+    StreamingDataRepr(handleId, handle.dataType, handle.knownSize)
   }
 
 }
