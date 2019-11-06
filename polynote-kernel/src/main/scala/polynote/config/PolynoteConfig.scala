@@ -52,8 +52,13 @@ object KernelIsolation {
 
 final case class Behavior(
   dependencyIsolation: Boolean = true,
-  kernelIsolation: KernelIsolation = KernelIsolation.Always
-)
+  kernelIsolation: KernelIsolation = KernelIsolation.Always,
+  sharedPackages: List[String] = Nil
+) {
+  private final val defaultShares = "scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j"
+
+  def getSharedString: String = "^(" + (sharedPackages :+ defaultShares).mkString("|") + ")\\."
+}
 
 object Behavior {
   implicit val encoder: ObjectEncoder[Behavior] = deriveEncoder
@@ -78,30 +83,6 @@ object UI {
   implicit val decoder: Decoder[UI] = deriveDecoder
 }
 
-/**
-  * Fix polynote/polynote#613
-  *
-  * Allows to add classes to the default set of classes used by LimitedSharingClassLoader
-  *
-  * shared:
-  *   - org.your.class.one
-  *   - org.your.class.two
-  *
-  * @param classes
-  */
-final case class Shared(classes: List[String] = Nil) {
-
-  private val defaultShares = "scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j"
-
-  def getSharedString: String = "^(" + (classes :+ defaultShares).mkString("|") + ")\\."
-
-}
-
-object Shared {
-  implicit val encoder: ObjectEncoder[Shared] = deriveEncoder
-  implicit val decoder: Decoder[Shared] = deriveDecoder
-}
-
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   storage: Storage = Storage(),
@@ -111,8 +92,7 @@ final case class PolynoteConfig(
   spark: Map[String, String] = Map.empty,
   behavior: Behavior = Behavior(),
   security: Security = Security(),
-  ui: UI = UI(),
-  shared: Shared = Shared()
+  ui: UI = UI()
 )
 
 

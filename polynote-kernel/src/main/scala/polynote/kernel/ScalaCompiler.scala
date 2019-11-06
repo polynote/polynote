@@ -552,7 +552,7 @@ object ScalaCompiler {
     config => ZIO {
       if (config.behavior.dependencyIsolation) {
         new LimitedSharingClassLoader(
-          config.shared.getSharedString,
+          config.behavior.getSharedString,
           dependencyClasspath.map(_.toURI.toURL),
           getClass.getClassLoader)
       } else {

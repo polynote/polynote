@@ -39,6 +39,8 @@
 #behavior:
 #  dependency_isolation: false
 #  kernel_isolation: always
+#  shared_packages:
+#    - com.esoteric.kryo
 
 ########## Notebook Creation Configuration #######################################################
 ###
