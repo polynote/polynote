@@ -52,8 +52,13 @@ object KernelIsolation {
 
 final case class Behavior(
   dependencyIsolation: Boolean = true,
-  kernelIsolation: KernelIsolation = KernelIsolation.Always
-)
+  kernelIsolation: KernelIsolation = KernelIsolation.Always,
+  sharedPackages: List[String] = Nil
+) {
+  private final val defaultShares = "scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j"
+
+  def getSharedString: String = "^(" + (sharedPackages :+ defaultShares).mkString("|") + ")\\."
+}
 
 object Behavior {
   implicit val encoder: ObjectEncoder[Behavior] = deriveEncoder
