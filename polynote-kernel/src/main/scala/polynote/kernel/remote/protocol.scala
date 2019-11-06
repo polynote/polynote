@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 import polynote.config.PolynoteConfig
-import polynote.kernel.{Completion, KernelBusyState, KernelInfo, KernelStatusUpdate, Result, ResultValue, Signatures}
+import polynote.kernel.{Completion, KernelBusyState, KernelInfo, KernelStatusUpdate, Result, ResultValue, RuntimeError, Signatures}
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.codecs.{Discriminated, Discriminator, byte}
@@ -161,6 +161,14 @@ object ModifyStreamResponse extends RemoteResponseCompanion[ModifyStreamResponse
 
 final case class KernelInfoResponse(reqId: Int, info: KernelInfo) extends RemoteRequestResponse
 object KernelInfoResponse extends RemoteResponseCompanion[KernelInfoResponse](13)
+
+final case class ErrorResponse(reqId: Int, err: Throwable) extends RemoteRequestResponse
+object ErrorResponse extends RemoteResponseCompanion[ErrorResponse](14) {
+  implicit val codec: Codec[ErrorResponse] = (codecs.int32 ~ RuntimeError.throwableWithCausesCodec).xmap(
+    t => ErrorResponse(t._1, t._2),
+    e => (e.reqId -> e.err)
+  )
+}
 
 object RemoteResponse {
   implicit val discriminated: Discriminated[RemoteResponse, Byte] = Discriminated(byte)

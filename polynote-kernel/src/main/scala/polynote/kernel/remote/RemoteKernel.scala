@@ -44,9 +44,13 @@ class RemoteKernel[ServerAddress](
   private case class RequestHandler[R, T](handler: PartialFunction[RemoteRequestResponse, RIO[R, T]], promise: Promise[Throwable, T], env: R) {
     def run(rep: RemoteRequestResponse): UIO[Unit] = handler match {
       case handler if handler isDefinedAt rep => handler(rep).provide(env).to(promise).ignore.unit
-      case _ => ZIO.unit
+      case _ => rep match {
+        case ErrorResponse(_, err) => promise.fail(err).unit
+        case _                     => ZIO.unit
+      }
     }
   }
+
   private val waiting = new ConcurrentHashMap[Int, RequestHandler[_, _]]()
 
   private def wait[R, T](reqId: Int)(fn: PartialFunction[RemoteRequestResponse, RIO[R, T]]): RIO[R, Task[T]] = for {
@@ -64,7 +68,7 @@ class RemoteKernel[ServerAddress](
         env     <- ZIO.access[R](identity)
         _       <- ZIO(waiting.put(req.reqId, RequestHandler(fn, promise, env)))
         _       <- transport.sendRequest(req)
-        result  <- promise.await
+        result  <- promise.await.onError(cause => Logging.error("Error from remote kernel", cause))
       } yield result
     case true => ZIO.fail(new ClosedChannelException())
   }
@@ -230,6 +234,8 @@ class RemoteKernelClient(
       }
 
       response.provide(env.withReqId(req.reqId))
+  }.catchAll {
+    err => ZIO.succeed(ErrorResponse(req.reqId, err))
   }
 
   private def streamingHandles(sessionId: Int): RIO[BaseEnv, BaseEnv with StreamingHandles] =
