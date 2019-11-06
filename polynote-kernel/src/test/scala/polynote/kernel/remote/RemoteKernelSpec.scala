@@ -7,6 +7,7 @@ import org.scalamock.scalatest.MockFactory
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FreeSpec, Matchers}
 import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 import polynote.kernel.Kernel.Factory
+import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel.environment.{NotebookUpdates, PublishResult, PublishStatus}
 import polynote.kernel.{BaseEnv, CellEnv, Completion, CompletionType, GlobalEnv, Kernel, KernelBusyState, KernelInfo, Output, ParameterHint, ParameterHints, ResultValue, Signatures, TaskInfo, UpdatedTasks}
 import polynote.kernel.logging.Logging
@@ -131,6 +132,14 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
             }
 
             unsafeRun(clientRef.get.flatMap(_.notebookRef.set(unsafeRun(env.currentNotebook.get))))
+        }
+      }
+
+      "handles errors" in {
+        (kernel.info _).expects().returning(ZIO.fail(new RuntimeException("Simulated error")))
+        a[RecoveredException] should be thrownBy {
+          // unsafeRun throws a fiber failure; this way will throw the actual error
+          unsafeRunSync(remoteKernel.info().provide(env)).fold(err => throw err.squash, identity)
         }
       }
 
