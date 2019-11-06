@@ -1,16 +1,29 @@
 package polynote.kernel.interpreter.python
 
+import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicReference
 
+import org.apache.commons.lang3.RandomStringUtils
 import org.apache.spark.sql.SparkSession
 import polynote.kernel.{BaseEnv, GlobalEnv, ScalaCompiler, TaskManager}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.interpreter.Interpreter
 import py4j.GatewayServer
-import zio.{Task, RIO, ZIO}
+import py4j.GatewayServer.GatewayServerBuilder
+import zio.{RIO, Task, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 
 object PySparkInterpreter {
+
+  private lazy val py4jToken: String = RandomStringUtils.randomAlphanumeric(256)
+
+  private lazy val gwBuilder: GatewayServerBuilder = new GatewayServerBuilder()
+    .authToken(py4jToken)
+    .javaPort(0)
+    .callbackClient(0, InetAddress.getByName(GatewayServer.DEFAULT_ADDRESS))
+    .connectTimeout(GatewayServer.DEFAULT_CONNECT_TIMEOUT)
+    .readTimeout(GatewayServer.DEFAULT_READ_TIMEOUT)
+    .customCommands(null)
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
@@ -73,13 +86,7 @@ object PySparkInterpreter {
   }
 
   private def startPySparkGateway(spark: SparkSession) = effectBlocking {
-    val gateway = new GatewayServer(
-      spark,
-      0,
-      0,
-      GatewayServer.DEFAULT_CONNECT_TIMEOUT,
-      GatewayServer.DEFAULT_READ_TIMEOUT,
-      null)
+    val gateway = gwBuilder.entryPoint(spark).build()
 
     gateway.start(true)
 
@@ -98,8 +105,8 @@ object PySparkInterpreter {
         s"""gateway = JavaGateway(
            |  auto_field = True,
            |  auto_convert = True,
-           |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True),
-           |  callback_server_parameters = CallbackServerParameters(port = 0))""".stripMargin)
+           |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True, auth_token = "$py4jToken"),
+           |  callback_server_parameters = CallbackServerParameters(port = 0, auth_token = "$py4jToken"))""".stripMargin)
 
       // Register shutdown handlers so pyspark exits cleanly. We need to make sure that all threads are closed before stopping jep.
       jep.eval("import atexit")
