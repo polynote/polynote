@@ -20,15 +20,15 @@ Are you using the official Docker distribution? If so, please provide your `dock
 
 Otherwise, please provide the following information:
 - Polynote Version: 
-  - Example: 0.2.12
+   - Example: 0.2.12
 - Operating System: 
- - Example: Mac OS Mojave 10.14.6
+  - Example: Mac OS Mojave 10.14.6
 - JVM Version:
- - Example: 1.8.0_212
+  - Example: 1.8.0_212
 - Python Version:
- - Example: 2.7.15
+  - Example: 2.7.15
 - How you installed Polynote: 
- - Example: I installed Polynote on my local machine by following [these instructions](https://polynote.org/docs/01-installation.html).
+  - Example: I downloaded this release https://github.com/polynote/polynote/releases/download/0.2.12/polynote-dist.tar.gz and then followed [these instructions](https://polynote.org/docs/01-installation.html).
 - The command you are using to start Polynote:
   - Example: `./polynote.py`
 - Any other details that might be useful, such as whether you are running Polynote as a service, using a custom script, etc.  
