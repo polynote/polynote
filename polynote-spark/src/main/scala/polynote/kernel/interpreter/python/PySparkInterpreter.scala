@@ -17,13 +17,18 @@ object PySparkInterpreter {
 
   private lazy val py4jToken: String = RandomStringUtils.randomAlphanumeric(256)
 
-  private lazy val gwBuilder: GatewayServerBuilder = new GatewayServerBuilder()
-    .authToken(py4jToken)
-    .javaPort(0)
-    .callbackClient(0, InetAddress.getByName(GatewayServer.DEFAULT_ADDRESS))
-    .connectTimeout(GatewayServer.DEFAULT_CONNECT_TIMEOUT)
-    .readTimeout(GatewayServer.DEFAULT_READ_TIMEOUT)
-    .customCommands(null)
+  private lazy val gwBuilder: GatewayServerBuilder = {
+    val builder = new GatewayServerBuilder()
+      .javaPort(0)
+      .callbackClient(0, InetAddress.getByName(GatewayServer.DEFAULT_ADDRESS))
+      .connectTimeout(GatewayServer.DEFAULT_CONNECT_TIMEOUT)
+      .readTimeout(GatewayServer.DEFAULT_READ_TIMEOUT)
+      .customCommands(null)
+
+    try builder.authToken(py4jToken) catch {
+      case err: Throwable => builder
+    }
+  }
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
@@ -101,12 +106,22 @@ object PySparkInterpreter {
     jep =>
       val javaPort = gateway.getListeningPort
 
-      jep.eval(
-        s"""gateway = JavaGateway(
-           |  auto_field = True,
-           |  auto_convert = True,
-           |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True, auth_token = "$py4jToken"),
-           |  callback_server_parameters = CallbackServerParameters(port = 0, auth_token = "$py4jToken"))""".stripMargin)
+      try {
+        jep.eval(
+          s"""gateway = JavaGateway(
+             |  auto_field = True,
+             |  auto_convert = True,
+             |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True, auth_token = "$py4jToken"),
+             |  callback_server_parameters = CallbackServerParameters(port = 0, auth_token = "$py4jToken"))""".stripMargin)
+      } catch {
+        case err: Throwable =>
+          jep.eval(
+            s"""gateway = JavaGateway(
+               |  auto_field = True,
+               |  auto_convert = True,
+               |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True),
+               |  callback_server_parameters = CallbackServerParameters(port = 0))""".stripMargin)
+      }
 
       // Register shutdown handlers so pyspark exits cleanly. We need to make sure that all threads are closed before stopping jep.
       jep.eval("import atexit")
