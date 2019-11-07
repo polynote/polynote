@@ -1,6 +1,7 @@
 package polynote.server
 
 import java.io.File
+import java.net.URI
 import java.nio.file.{AccessDeniedException, FileAlreadyExistsException, Path}
 import java.util.concurrent.TimeUnit
 
@@ -29,7 +30,7 @@ object NotebookManager {
 
   trait Service {
     def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]
-    def location(path: String): RIO[BaseEnv with GlobalEnv, String]
+    def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]]
     def list(): RIO[BaseEnv with GlobalEnv, List[String]]
     def listRunning(): RIO[BaseEnv with GlobalEnv, List[String]]
     def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState]
@@ -79,7 +80,7 @@ object NotebookManager {
         }
       }
 
-      override def location(path: String): RIO[BaseEnv with GlobalEnv, String] = repository.notebookLoc(path)
+      override def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = repository.notebookURI(path)
 
       override def list(): RIO[BaseEnv with GlobalEnv, List[String]] = repository.listNotebooks()
 

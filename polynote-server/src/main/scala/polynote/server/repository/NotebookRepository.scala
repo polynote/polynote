@@ -1,6 +1,7 @@
 package polynote.server.repository
 
 import java.io.{File, FileNotFoundException}
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
 
@@ -27,9 +28,9 @@ trait NotebookRepository {
   def notebookExists(path: String): RIO[BaseEnv with GlobalEnv, Boolean]
 
   /**
-    * @return The location of the notebook on disk (absolute path)
+    * @return The location of the notebook (must be absolute)
     */
-  def notebookLoc(path: String): RIO[BaseEnv with GlobalEnv, String]
+  def notebookURI(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]]
 
   /**
     * @return The notebook at the specified path
@@ -119,10 +120,10 @@ class MountAwareRepository (
     (repo, relativePath, _) => repo.notebookExists(relativePath)
   }
 
-  // Because notebookLoc is an absolute path we don't modify it here (in other cases)
-  override def notebookLoc(originalPath: String): RIO[BaseEnv with GlobalEnv, String] = delegate(originalPath) {
+  // Because notebookURI is absolute path we don't need to modify it here
+  override def notebookURI(originalPath: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = delegate(originalPath) {
     (repo, relativePath, _) =>
-      repo.notebookLoc(relativePath)
+      repo.notebookURI(relativePath)
   }
 
   override def loadNotebook(originalPath: String): RIO[BaseEnv with GlobalEnv, Notebook] = delegate(originalPath) {
@@ -245,9 +246,16 @@ abstract class FileBasedRepository extends NotebookRepository {
     ZIO(repoPath.toFile.exists())
   }
 
-  def notebookLoc(path: String): RIO[BaseEnv with GlobalEnv, String] = {
+  def notebookURI(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = {
     val repoPath = this.path.resolve(path)
-    ZIO(repoPath.toAbsolutePath.toString)
+    notebookExists(path).map {
+      exists =>
+        if (exists) {
+          Option(repoPath.toAbsolutePath.toUri)
+        } else {
+          None
+        }
+    }
   }
 
   val EndsWithNum = """^(.*)(\d+)$""".r

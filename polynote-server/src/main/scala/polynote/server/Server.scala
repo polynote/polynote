@@ -1,6 +1,6 @@
 package polynote.server
 
-import java.io.{BufferedReader, File, FileInputStream, InputStreamReader}
+import java.io.{BufferedReader, File, FileInputStream, FileNotFoundException, InputStreamReader}
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -134,7 +134,8 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
   def downloadFile(path: String, req: Request[Task]): ZIO[BaseEnv with GlobalEnv with NotebookManager, Throwable, Response[Task]] = for {
     notebookManager <- ZIO.access[NotebookManager](_.notebookManager)
-    nbLoc           <- notebookManager.location(path)
+    nbURI           <- notebookManager.location(path).someOrFail(new FileNotFoundException(s"Unable to find notebook with path: $path"))
+    nbLoc            = new File(nbURI).toString // eventually we'll have to deal with other schemes heret
     result          <- staticFile(nbLoc, req).onError(err => Logging.error("Error downloading file", err))
   } yield result
 

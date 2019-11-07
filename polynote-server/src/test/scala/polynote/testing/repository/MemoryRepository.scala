@@ -1,6 +1,7 @@
 package polynote.testing.repository
 
 import java.io.FileNotFoundException
+import java.net.URI
 
 import polynote.kernel.TaskB
 import polynote.messages._
@@ -14,7 +15,7 @@ class MemoryRepository extends NotebookRepository {
 
   def notebookExists(path: String): UIO[Boolean] = ZIO.effectTotal(notebooks contains path)
 
-  def notebookLoc(path: String): UIO[String] = ZIO.effectTotal(if (notebooks contains path) path else "")
+  def notebookURI(path: String): UIO[Option[URI]] = ZIO.effectTotal(if (notebooks contains path) Option(new URI(s"memory://$path")) else None)
 
   def loadNotebook(path: String): Task[Notebook] = ZIO.effectTotal(notebooks.get(path)).get.mapError(err => new FileNotFoundException(path))
 
