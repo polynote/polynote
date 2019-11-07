@@ -27,12 +27,17 @@
 ############################################################################################
 
 #storage:
-#  # Where Polynote looks for notebooks. You can specify multiple mounts. The first mount is used as the
-#  # default mount point in case of ambiguity.
+#  # The base directory Polynote should use when looking for notebooks. This location can be absolute or
+#  # relative to Polynote's working directory.
+#  dir: notebooks
+#  # These are additional mount points. Folders specified here will be 'mounted' into the base directory
+#  # and visible by their keys - so `foo: dir: bar` will show a folder `foo` in the UI that shows the contents of the
+#  # file system under `bar/`
 #  mounts:
-#    - src: notebooks
-#    - src: examples
-#    - src: myteam/ournotebooks/
+#    examples:
+#      dir: examples
+#    team_notebooks:
+#      dir: /shared/notebooks
 #  # The location Polynote puts various caches, such as virtual environments created for your notebooks.
 #  cache: tmp
 

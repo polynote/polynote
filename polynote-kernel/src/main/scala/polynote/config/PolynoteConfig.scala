@@ -12,8 +12,6 @@ import polynote.kernel.logging.Logging
 import zio.ZIO
 import zio.blocking.effectBlocking
 
-import scala.collection.parallel.Task
-
 final case class Listen(
   port: Int = 8192,
   host: String = "127.0.0.1"
@@ -24,25 +22,18 @@ object Listen {
   implicit val decoder: Decoder[Listen] = deriveDecoder
 }
 
-final case class Mount(src: String)
+final case class Mount(dir: String, mounts: Map[String, Mount] = Map.empty)
 
 object Mount {
   implicit val encoder: ObjectEncoder[Mount] = deriveEncoder
   implicit val decoder: Decoder[Mount] = deriveDecoder[Mount]
 }
 
-final case class Storage(cache: String = "tmp", mounts: List[Mount] = List(Mount("notebooks")))
+final case class Storage(cache: String = "tmp", dir: String = "notebooks", mounts: Map[String, Mount] = Map.empty)
 
 object Storage {
   implicit val encoder: ObjectEncoder[Storage] = deriveEncoder
-  implicit val decoder: Decoder[Storage] = deriveDecoder[Storage].prepare {
-    cursor =>
-      // convert old "dir" key into a new "mounts" entry
-      cursor.downField("dir").focus.flatMap(_.asString).map {
-        dir =>
-          cursor.withFocus(_.deepMerge(JsonObject.fromMap(Map("mounts" -> Json.fromValues(List(Mount.encoder(Mount(dir)))))).asJson))
-      }.getOrElse(cursor)
-  }
+  implicit val decoder: Decoder[Storage] = deriveDecoder[Storage]
 }
 
 sealed trait KernelIsolation

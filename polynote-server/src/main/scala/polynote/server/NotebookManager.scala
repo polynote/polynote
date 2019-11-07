@@ -9,13 +9,16 @@ import cats.effect.ConcurrentEffect
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, LocalKernel}
 import polynote.kernel.util.RefMap
 import polynote.messages.{CreateNotebook, DeleteNotebook, Message, Notebook, NotebookUpdate, RenameNotebook, ShortString}
-import polynote.server.repository.{MountAwareRepository, NotebookRepository}
+import polynote.server.repository.{NotebookRepository, TreeRepository}
 import polynote.server.repository.ipynb.IPythonNotebookRepository
 import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
 import zio.interop.catz._
+import cats.implicits._
 import fs2.concurrent.Topic
-import polynote.config.PolynoteConfig
+import polynote.config.{Mount, PolynoteConfig}
+import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
+import zio.blocking.Blocking
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
@@ -121,14 +124,23 @@ object NotebookManager {
     }
   }
 
+  private def makeTreeRepository(dir: String, mounts: Map[String, Mount], config: PolynoteConfig, ec: ExecutionContext): TreeRepository = {
+    val repoMap = mounts.mapValues {
+      mount =>
+        makeTreeRepository(mount.dir, mount.mounts, config, ec)
+    }
+    val rootRepo = new IPythonNotebookRepository(
+      new File(System.getProperty("user.dir")).toPath.resolve(dir),
+      config,
+      executionContext = ec)
+
+    new TreeRepository(rootRepo, repoMap)
+  }
+
   def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, NotebookManager] = for {
-    repoMap   <- RefMap.empty[String, NotebookRepository]
-    repository = new MountAwareRepository(repoMap, (mountPath: Path, config: PolynoteConfig, ec: ExecutionContext) => {
-      new IPythonNotebookRepository(
-        new File(System.getProperty("user.dir")).toPath.resolve(mountPath),
-        config,
-        executionContext = ec)
-    })
+    config    <- Config.access
+    blocking  <- ZIO.accessM[Blocking](_.blocking.blockingExecutor)
+    repository = makeTreeRepository(config.storage.dir, config.storage.mounts, config, blocking.asEC)
     service   <- Service(repository, broadcastAll)
   } yield new NotebookManager {
     val notebookManager: Service = service

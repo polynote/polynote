@@ -3,7 +3,7 @@ package polynote.server.repository
 import java.io.{File, FileNotFoundException}
 import java.net.URI
 import java.nio.charset.StandardCharsets
-import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path}
+import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path, Paths}
 
 import cats.implicits._
 import io.circe.Printer
@@ -65,55 +65,32 @@ trait NotebookRepository {
 }
 
 /**
-  * Notebook Repository that understands Storage Mounts [[polynote.config.Mount]].
+  * Notebook Repository that delegates to child Repositories that correspond to Storage Mounts [[polynote.config.Mount]].
   *
-  * Multiplexes multiple Repositories - one for each mount point - based on the notebooks path prefix.
-  *
-  * @param repos:  Map of mount point -> repository
-  * @param mkRepo: How to create a new repository that will handle a specific mount point.
+  * @param root:  The repository for this node in the tree
+  * @param repos: Map of mount points -> repositories for children of this node
   */
-class MountAwareRepository (
-  repos: RefMap[String, NotebookRepository],
-  mkRepo: (Path, PolynoteConfig, ExecutionContext) => NotebookRepository
+class TreeRepository (
+  root: NotebookRepository,
+  repos: Map[String, NotebookRepository]
 ) extends NotebookRepository {
 
-  val baseMount: RIO[Config, Mount] = for {
-    config <- Config.access
-  } yield config.storage.mounts.head
+  /**
+    * Helper for picking the proper Repository to use for the given notebook path.
+    *
+    * @param notebookPath: The path to the notebook
+    * @param f:            Function for `(NotebookRepository, relativePath: String, maybeBasePath: Option[String) => RIO[Env, T]`.
+    *                      The presence of `maybeBasePath` reflects whether the path has been relativized (in case callers need to de-relativize any results)
+    */
+  private def delegate[T](notebookPath: String)(f: (NotebookRepository, String, Option[String]) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
+    val originalPath = Paths.get(notebookPath)
+    val basePath = originalPath.getName(0)
+    val base = basePath.toString
 
-  def mountFromPath(notebookPath: String): RIO[BaseEnv with GlobalEnv, Mount] = for {
-    config <- Config.access
-    mount  <- ZIO.fromOption(config.storage.mounts.find(mount => notebookPath.startsWith(mount.src)))
-//        .mapError(_ => new FileNotFoundException(s"Unable to find mount for $notebookPath, available mounts: ${config.storage.mounts}"))
-      .catchAll(_ => baseMount) // if it's unprefixed, we default to the base mount.
-  } yield mount
+    val repoForPath = repos.getOrElse(base, root)
 
-  def getOrCreateRepo(notebookPath: String): RIO[BaseEnv with GlobalEnv, (NotebookRepository, Mount)] = {
-    for {
-      config <- Config.access
-      mount  <- mountFromPath(notebookPath)
-      repo   <- repos.getOrCreate(mount.src) {
-        for {
-          blocking <- ZIO.accessM[Blocking](_.blocking.blockingExecutor)
-          r        = mkRepo(new File(sys.props("user.dir")).toPath.resolve(mount.src), config, blocking.asEC)
-          _        <- r.initStorage()
-        } yield r
-      }
-    } yield (repo, mount)
-  }
-
-  private def relativize(mount: Mount, path: String) = {
-    val mountPath = new File(mount.src).toPath
-    val nbPath = new File(path).toPath
-    if (nbPath.startsWith(mountPath)) mountPath.relativize(nbPath).toString else path
-  }
-
-  private def delegate[T](originalPath: String)(f: (NotebookRepository, String, Mount) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
-    getOrCreateRepo(originalPath).flatMap {
-      case (repo, mount) =>
-        val relativePath = relativize(mount, originalPath)
-        f(repo, relativePath, mount)
-    }
+    val (relativePath, maybeBasePath) = if (repos.contains(base)) (basePath.relativize(originalPath).toString, Option(base)) else (notebookPath, None)
+    f(repoForPath, relativePath.toString, maybeBasePath)
   }
 
   override def notebookExists(originalPath: String): RIO[BaseEnv with GlobalEnv, Boolean] = delegate(originalPath) {
@@ -127,11 +104,10 @@ class MountAwareRepository (
   }
 
   override def loadNotebook(originalPath: String): RIO[BaseEnv with GlobalEnv, Notebook] = delegate(originalPath) {
-    (repo, relativePath, mount) =>
+    (repo, relativePath, base) =>
      for {
        nb <- repo.loadNotebook(relativePath)
-       baseMount <- baseMount
-     } yield if (mount == baseMount) nb else nb.copy(path = s"${mount.src}/${nb.path}")
+     } yield base.map(b => nb.copy(path = Paths.get(b, nb.path).toString)).getOrElse(nb)
   }
 
   override def saveNotebook(originalPath: String, cells: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = delegate(originalPath) {
@@ -140,61 +116,41 @@ class MountAwareRepository (
 
   override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
     for {
-      config    <- Config.access
-      mounts    <- config.storage.mounts.map(_.src).map(getOrCreateRepo).sequence
-      baseMount <- baseMount
-      notebooks <- mounts.map {
-        case (repo, mount) =>
-          if (mount == baseMount) {
-            repo.listNotebooks()
-          } else {
-            repo.listNotebooks().map(_.map(nbPath => s"${mount.src}/$nbPath"))
-          }
-      }.sequence
-    } yield notebooks.flatten
+      rootNBs <- root.listNotebooks()
+      mountNbs <- repos.map {
+        case (base, repo) => repo.listNotebooks().map(_.map(nbPath => Paths.get(base, nbPath).toString))
+      }.toList.sequence
+    } yield rootNBs ++ mountNbs.flatten
   }
 
   override def createNotebook(originalPath: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] = delegate(originalPath) {
-    (repo, relativePath, mount) =>
+    (repo, relativePath, base) =>
         for {
           nbPath <- repo.createNotebook(relativePath, maybeContent)
-          baseMount <- baseMount
-        } yield if (mount == baseMount) nbPath else s"${mount.src}/${nbPath}"
-  //      repo.createNotebook(relativePath, maybeContent).map(nbPath => s"${mount.src}/$nbPath")
+        } yield base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath)
   }
 
-  override def renameNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = {
-    def rename(oldMount: Mount, newMount: Mount): RIO[BaseEnv with GlobalEnv, String] = {
-      if (oldMount.src == newMount.src) { // same repo, just use the default rename
-        getOrCreateRepo(path).flatMap {
-          case (repo, mount) =>
-            val oldRelPath = relativize(mount, path)
-            val newRelPath = relativize(mount, newPath)
-            for {
-              renamed <- repo.renameNotebook(oldRelPath, newRelPath)
-              baseMount <- baseMount
-            } yield if (mount == baseMount) renamed else s"${mount.src}/$renamed"
+  override def renameNotebook(srcPath: String, destPath: String): RIO[BaseEnv with GlobalEnv, String] = {
+    val originalPath = Paths.get(srcPath)
+    val originalBase = originalPath.getName(0)
+
+    val newPath = Paths.get(destPath)
+    val newBase = newPath.getName(0)
+
+    if (originalBase == newBase) {
+      for {
+        (renamed, base) <- delegate(originalPath.toString) {
+          (repo, relativePath, base) =>
+            repo.renameNotebook(relativePath, newBase.relativize(newPath).toString).map(_ -> base)
         }
-      } else { // different repos, so we need to do more stuff
-        for {
-          (oldRepo, _) <- getOrCreateRepo(path)
-          oldPath      = relativize(oldMount, path)
-          oldNB        <- oldRepo.loadNotebook(oldPath)
-          (newRepo, _) <- getOrCreateRepo(newPath)
-          newRelPath   = relativize(newMount, newPath)
-          _            <- newRepo.saveNotebook(newRelPath, oldNB)
-          _            <- oldRepo.deleteNotebook(oldPath) // only delete old after the new one was successfully saved
-          baseMount    <- baseMount
-        } yield if (newMount == baseMount) newRelPath else s"${newMount.src}/$newRelPath"
-      }
+      } yield base.map(b => Paths.get(b, renamed).toString).getOrElse(renamed)
+    } else {
+      for {
+        (srcNb, srcBase) <- delegate(srcPath)((repo, relPath, base) => repo.loadNotebook(relPath).map(_ -> base))
+        (destBase, dest)    <- delegate(destPath)((repo, relPath, base) => repo.saveNotebook(relPath, srcNb).map(_ => base -> relPath))
+        _                <- delegate(srcPath)((repo, relPath, _) => repo.deleteNotebook(relPath))
+      } yield destBase.map(base => Paths.get(base, dest).toString).getOrElse(dest)
     }
-
-
-    for {
-      oldMount  <- mountFromPath(path)
-      newMount  <- mountFromPath(newPath)
-      result    <- rename(oldMount, newMount)
-    } yield result
   }
 
   override def deleteNotebook(originalPath: String): RIO[BaseEnv with GlobalEnv, Unit] = delegate(originalPath) {
@@ -202,8 +158,8 @@ class MountAwareRepository (
   }
 
   override def initStorage(): RIO[BaseEnv with GlobalEnv, Unit] = for {
-    config <- Config.access
-    _      <- config.storage.mounts.map(_.src).map(getOrCreateRepo).sequence
+    _ <- root.initStorage()
+    _ <- repos.values.map(_.initStorage()).toList.sequence
   } yield ()
 }
 

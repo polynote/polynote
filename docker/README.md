@@ -40,9 +40,10 @@ listen:
   host: 0.0.0.0
 
 storage:
+  dir: /opt/notebooks
   mounts:
-    - src: /opt/notebooks
-    - src: examples
+    examples:
+      dir: examples
 ```
 
 > The `listen` directive tells Polynote to listen on all interfaces inside the Docker container. 

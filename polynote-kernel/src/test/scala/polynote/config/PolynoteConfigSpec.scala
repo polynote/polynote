@@ -29,10 +29,10 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |
         |storage:
         |  cache: tmp
+        |  dir: notebooks
         |  mounts:
-        |    - src: notebooks
-        |    - src: examples
-        |      name: Polynote Examples
+        |    examples:
+        |      dir: examples
         |
         |# Default repositories can be specified. Uncommenting the following lines would add four default repositories which are inherited by new notebooks.
         |repositories:
@@ -72,7 +72,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         host = "1.1.1.1",
         port = 8193
       ),
-      Storage("tmp", List(Mount("notebooks"), Mount("examples"))),
+      Storage("tmp", dir = "notebooks", Map("examples" -> Mount("examples"))),
       List(
         ivy("https://my-artifacts.org/artifacts/"),
         ivy(
@@ -105,18 +105,5 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     parsed.right.value.behavior.sharedPackages shouldEqual List("com.esotericsoftware.kryo", "org.myclass")
     parsed.right.value.behavior.getSharedString shouldEqual
       "^(com.esotericsoftware.kryo|org.myclass|scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j)\\."
-  }
-
-  it should "convert old Storage configs to the new format" in {
-    val oldStorageConfig =
-      """
-        |storage:
-        | cache: tmp
-        | dir: foo
-        |
-        |""".stripMargin
-
-    val config = yaml.parser.parse(oldStorageConfig).flatMap(_.as[PolynoteConfig]).right.value
-    config shouldEqual PolynoteConfig(storage=Storage("tmp", List(Mount("foo"))))
   }
 }
