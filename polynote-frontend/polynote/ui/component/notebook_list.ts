@@ -454,7 +454,6 @@ export class CreateNotebookDialog extends Modal {
     private dialogContent: TagElement<"div">;
     private onComplete: (path: string) => void;
     private onCancel: () => void;
-    private path?: string;
 
     private static INSTANCE: CreateNotebookDialog;
 
@@ -463,7 +462,6 @@ export class CreateNotebookDialog extends Modal {
             CreateNotebookDialog.INSTANCE = new CreateNotebookDialog();
         }
         const inst = CreateNotebookDialog.INSTANCE;
-        inst.path = path;
         return new Promise((complete, cancel) => {
             inst.onComplete = complete;
             inst.onCancel = cancel;
@@ -501,12 +499,11 @@ export class CreateNotebookDialog extends Modal {
     }
 
     complete() {
-        const path = this.path ? [this.path, this.pathInput.value].join('/') : this.pathInput.value;
         const onComplete = this.onComplete;
         this.onCancel = () => null;
         this.onComplete = _ => null;
         this.hide();
-        onComplete(path);
+        onComplete(this.pathInput.value);
     }
 }
 

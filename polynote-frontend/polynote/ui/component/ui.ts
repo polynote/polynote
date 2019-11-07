@@ -121,7 +121,7 @@ export class MainUI extends UIMessageTarget {
 
         SocketSession.get.addMessageListener(
             messages.DeleteNotebook,
-            path => this.browseUI.removeItem(path));
+            path => this.onNotebookDeleted(path));
 
         SocketSession.get.addMessageListener(
             messages.CreateNotebook,
@@ -302,7 +302,18 @@ export class MainUI extends UIMessageTarget {
 
     onNotebookRenamed(oldPath: string, newPath: string) {
         this.browseUI.renameItem(oldPath, newPath);
-        this.tabUI.renameTab(oldPath, newPath, newPath.split(/\//g).pop());
+        const newName =  newPath.split(/\//g).pop();
+        this.tabUI.renameTab(oldPath, newPath, newName);
+
+        storage.update<{name: string, path: string}[]>('recentNotebooks', recentNotebooks => {
+            return recentNotebooks.map(nb => {
+                if (nb.path === oldPath) {
+                    nb.name = newName || newPath;
+                    nb.path = newPath;
+                    return nb
+                } else return nb
+            });
+        })
     }
 
     deleteNotebook(path: string) {
@@ -311,6 +322,15 @@ export class MainUI extends UIMessageTarget {
         if (confirm(`Permanently delete ${path}?`)) {
             SocketSession.get.send(new messages.DeleteNotebook(path))
         }
+    }
+
+    onNotebookDeleted(path: string) {
+        this.browseUI.removeItem(path);
+
+        // remove from recent notebooks
+        storage.update<{name: string, path: string}[]>('recentNotebooks', recentNotebooks => {
+            return recentNotebooks.filter(nb => nb.path !== path)
+        })
     }
 
     importNotebook(name: string, content: string) {
