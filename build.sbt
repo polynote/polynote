@@ -128,6 +128,7 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-generic" % "0.11.1",
     "io.circe" %% "circe-generic-extras" % "0.11.1",
     "io.circe" %% "circe-parser" % "0.11.1",
+    "net.sf.py4j" % "py4j" % "0.10.7",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
