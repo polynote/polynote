@@ -26,16 +26,7 @@ class PySparkInterpreter(
   runtime: Runtime[Any],
   pyApi: PythonInterpreter.PythonAPI,
   venvPath: Option[Path]
-) extends PythonInterpreter(
-  compiler,
-  jepInstance,
-  jepExecutor,
-  jepThread,
-  jepBlockingService,
-  runtime,
-  pyApi,
-  venvPath
-) {
+) extends PythonInterpreter(compiler, jepInstance, jepExecutor, jepThread, jepBlockingService, runtime, pyApi, venvPath) {
 
   val gatewayRef = new AtomicReference[GatewayServer]()
 
