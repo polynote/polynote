@@ -57,12 +57,11 @@ storage:
 Ok, now we are ready to run the Docker container! Use the following command: 
 
 ```
-docker run --rm -it -e PYSPARK_ALLOW_INSECURE_GATEWAY=1 -p 127.0.0.1:8192:8192 -p 127.0.0.1:4040-4050:4040-4050 -v `pwd`:/opt/config -v `pwd`/notebooks:/opt/notebooks polynote/polynote:latest --config /opt/config/config.yml
+docker run --rm -it -p 127.0.0.1:8192:8192 -p 127.0.0.1:4040-4050:4040-4050 -v `pwd`:/opt/config -v `pwd`/notebooks:/opt/notebooks polynote/polynote:latest --config /opt/config/config.yml
 ```
 
 Let's go over what this command does. 
 
-- `-e PYSPARK_ALLOW_INSECURE_GATEWAY=1` Unfortunately this is needed due to [this bug](https://github.com/polynote/polynote/issues/602). 
 - `-p 127.0.0.1:8192:8192` This binds `127.0.0.1:8192` on the host machine to port `8192` inside the container.
 - `-p 127.0.0.1:4040-4050:4040-4050` This binds a range of ports on the host machine so you can see the Spark UI. 
 - ``-v `pwd`:/opt/config`` This mounts the current directory (the one you just created) into the container at `/opt/config`

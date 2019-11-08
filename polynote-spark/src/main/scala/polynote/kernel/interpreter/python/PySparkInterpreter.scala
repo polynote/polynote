@@ -18,16 +18,12 @@ object PySparkInterpreter {
   private lazy val py4jToken: String = RandomStringUtils.randomAlphanumeric(256)
 
   private lazy val gwBuilder: GatewayServerBuilder = {
-    val builder = new GatewayServerBuilder()
+    new GatewayServerBuilder()
       .javaPort(0)
       .callbackClient(0, InetAddress.getByName(GatewayServer.DEFAULT_ADDRESS))
       .connectTimeout(GatewayServer.DEFAULT_CONNECT_TIMEOUT)
       .readTimeout(GatewayServer.DEFAULT_READ_TIMEOUT)
       .customCommands(null)
-
-    try builder.authToken(py4jToken) catch {
-      case err: Throwable => builder
-    }
   }
 
   object Factory extends Interpreter.Factory {
@@ -63,10 +59,12 @@ object PySparkInterpreter {
         _       <- CurrentTask.update(_.progress(0.2))
         _       <- pySparkImports(interp, spark)
         _       <- CurrentTask.update(_.progress(0.3))
-        gateway <- startPySparkGateway(spark)
+        doAuth  <- shouldAuthenticate(interp)
+        _       <- CurrentTask.update(_.progress(0.4))
+        gateway <- startPySparkGateway(spark, doAuth)
         _       <- CurrentTask.update(_.progress(0.7))
         _       <- ZIO(gatewayRef.set(gateway))
-        _       <- registerGateway(interp, gateway)
+        _       <- registerGateway(interp, gateway, doAuth)
         _       <- CurrentTask.update(_.progress(0.9))
       } yield ()
     }
@@ -90,8 +88,34 @@ object PySparkInterpreter {
     }
   }
 
-  private def startPySparkGateway(spark: SparkSession) = effectBlocking {
-    val gateway = gwBuilder.entryPoint(spark).build()
+  /**
+    * Whether or not to authenticate, based on the py4j version available.
+    * We can get rid of this when we drop support for Spark 2.1
+    */
+  private def shouldAuthenticate(interp: PythonInterpreter) = for {
+    py4jVersion <- interp.jep {
+      jep =>
+        jep.eval("import py4j")
+        jep.getValue("py4j.__version__", classOf[String])
+    }
+  } yield {
+    val Version = "(\\d+).(\\d+).(\\d+)".r
+
+    py4jVersion match {
+      case Version(_, _, patch) if patch.toInt >= 7 => true
+      case _ => false
+    }
+  }
+
+  private def startPySparkGateway(spark: SparkSession, doAuth: Boolean) = effectBlocking {
+    val builder = if (doAuth) {
+        // use try here just to be extra careful
+        try gwBuilder.authToken(py4jToken) catch {
+          case err: Throwable => gwBuilder
+        }
+    } else gwBuilder
+
+    val gateway = builder.entryPoint(spark).build()
 
     gateway.start(true)
 
@@ -102,25 +126,24 @@ object PySparkInterpreter {
     gateway
   }
 
-  private def registerGateway(interpreter: PythonInterpreter, gateway: GatewayServer) = interpreter.jep {
+  private def registerGateway(interpreter: PythonInterpreter, gateway: GatewayServer, doAuth: Boolean) = interpreter.jep {
     jep =>
       val javaPort = gateway.getListeningPort
 
-      try {
+      if (doAuth) {
         jep.eval(
           s"""gateway = JavaGateway(
              |  auto_field = True,
              |  auto_convert = True,
              |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True, auth_token = "$py4jToken"),
              |  callback_server_parameters = CallbackServerParameters(port = 0, auth_token = "$py4jToken"))""".stripMargin)
-      } catch {
-        case err: Throwable =>
-          jep.eval(
-            s"""gateway = JavaGateway(
-               |  auto_field = True,
-               |  auto_convert = True,
-               |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True),
-               |  callback_server_parameters = CallbackServerParameters(port = 0))""".stripMargin)
+      } else {
+        jep.eval(
+          s"""gateway = JavaGateway(
+             |  auto_field = True,
+             |  auto_convert = True,
+             |  gateway_parameters = GatewayParameters(port = $javaPort, auto_convert = True),
+             |  callback_server_parameters = CallbackServerParameters(port = 0))""".stripMargin)
       }
 
       // Register shutdown handlers so pyspark exits cleanly. We need to make sure that all threads are closed before stopping jep.
