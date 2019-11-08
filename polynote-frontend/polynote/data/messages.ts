@@ -457,13 +457,13 @@ export class ListNotebooks extends Message {
 }
 
 export class CreateNotebook extends Message {
-    static codec = combined(shortStr, optional(either(shortStr, str as Codec<string>))).to(CreateNotebook);
+    static codec = combined(shortStr, optional(str)).to(CreateNotebook);
     static get msgTypeId() { return 14; }
     static unapply(inst: CreateNotebook): ConstructorParameters<typeof CreateNotebook> {
-        return [inst.path, inst.uriOrContents];
+        return [inst.path, inst.content];
     }
 
-    constructor(readonly path: string, readonly uriOrContents?: Left<string> | Right<string>) {
+    constructor(readonly path: string, readonly content?: string) {
         super();
         Object.freeze(this);
     }

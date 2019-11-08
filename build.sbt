@@ -218,7 +218,7 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynot
         val jars = ((assembly in (`polynote-spark`, Compile)).value -> "polynote/polynote.jar") +:
           ((polynoteJars in (`polynote-spark`, Compile)).value ++ (dependencyJars in (`polynote-spark`, Compile)).value)
 
-        val examples = IO.listFiles(file(".") / "docs" / "examples").map(f => (f, s"polynote/notebooks/examples/${f.getName}"))
+        val examples = IO.listFiles(file(".") / "docs" / "examples").map(f => (f, s"polynote/examples/${f.getName}"))
 
         val versionTag = scalaBinaryVersion.value match {
           case "2.11" => ""

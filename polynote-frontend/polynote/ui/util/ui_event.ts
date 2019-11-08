@@ -147,7 +147,7 @@ export class CellsLoaded extends UIMessage {
 }
 
 export class ImportNotebook extends UIMessage {
-    constructor(readonly name?: string, readonly content?: string) { super(); }
+    constructor(readonly name: string, readonly content: string) { super(); }
     static unapply(inst: ImportNotebook): ConstructorParameters<typeof ImportNotebook> {
         return [inst.name, inst.content]
     }

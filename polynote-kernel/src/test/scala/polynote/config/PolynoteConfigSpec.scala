@@ -28,7 +28,11 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |  port: 8193
         |
         |storage:
-        |  dir: foo
+        |  cache: tmp
+        |  dir: notebooks
+        |  mounts:
+        |    examples:
+        |      dir: examples
         |
         |# Default repositories can be specified. Uncommenting the following lines would add four default repositories which are inherited by new notebooks.
         |repositories:
@@ -68,7 +72,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         host = "1.1.1.1",
         port = 8193
       ),
-      Storage("foo"),
+      Storage("tmp", dir = "notebooks", Map("examples" -> Mount("examples"))),
       List(
         ivy("https://my-artifacts.org/artifacts/"),
         ivy(
