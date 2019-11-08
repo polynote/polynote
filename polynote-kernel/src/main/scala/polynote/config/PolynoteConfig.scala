@@ -113,7 +113,11 @@ object PolynoteConfig {
   private def parseFile(file: File): TaskB[Json] =
     effectBlocking(file.exists()).flatMap {
       case true => effectBlocking(new FileReader(file)).bracketAuto {
-        reader => ZIO.fromEither(yaml.parser.parse(reader))
+        reader => ZIO.fromEither(yaml.parser.parse(reader)).map {
+          json =>
+            // if the config is empty, its Json value is "false"... (reliable sources indicate this is part of the yaml spec)
+            if (json.isBoolean) Json.fromJsonObject(JsonObject.empty) else json
+        }
       }
       case false => ZIO.succeed(Json.fromJsonObject(JsonObject.empty))
     }
