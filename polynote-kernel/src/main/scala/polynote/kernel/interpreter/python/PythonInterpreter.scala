@@ -34,8 +34,7 @@ class PythonInterpreter private[python] (
   jepBlockingService: Blocking,
   runtime: Runtime[Any],
   pyApi: PythonInterpreter.PythonAPI,
-  venvPath: Option[Path],
-  py4jError: String => Option[Throwable]
+  venvPath: Option[Path]
 ) extends Interpreter {
   import pyApi._
 
@@ -252,6 +251,7 @@ class PythonInterpreter private[python] (
       |            trace.add(StackTraceElement(frame.filename.split("/")[-1], frame.name, frame.filename, frame.lineno))
       |        result = { 'stack_trace': trace, 'message': getattr(err_val, 'message', str(err_val)), 'class': typ.__name__  }
       |
+      |        # TODO: it's a little ugly that we need to handle py4j stuff here :(
       |        if typ.__name__ == 'Py4JJavaError':
       |            result['py4j_error'] = err.java_exception._target_id
       |
@@ -412,7 +412,7 @@ class PythonInterpreter private[python] (
               PythonState(state.id, state.prev, resultValues.toList, globals)
 
             case trace =>
-              val cause = Option(get.callAs(classOf[String], "py4j_error")).flatMap(py4jError)
+              val cause = errorCause(get)
               val message = get.callAs(classOf[String], "message")
               val typ = get.callAs(classOf[String], "class")
               val els = trace.asScala.map(_.asInstanceOf[StackTraceElement]).toArray
@@ -422,6 +422,8 @@ class PythonInterpreter private[python] (
           }
       }
     }
+
+  protected def errorCause(get: PyCallable): Option[Throwable] = None
 
   case class PythonState(id: CellID, prev: State, values: List[ResultValue], globalsDict: PyObject) extends State {
     override def withPrev(prev: State): State = copy(prev = prev)
@@ -504,10 +506,7 @@ object PythonInterpreter {
     }
   }
 
-  def apply(
-    venv: Option[Path],
-    py4jError: String => Option[Throwable] = _ => None
-  ): RIO[ScalaCompiler.Provider, PythonInterpreter] = {
+  def interpreterDependencies(venv: Option[Path]): ZIO[ScalaCompiler.Provider, Throwable, (ScalaCompiler, Jep, Executor, AtomicReference[Thread], Blocking, Runtime[Any], PythonAPI)] = {
     val jepThread = new AtomicReference[Thread](null)
     for {
       compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
@@ -516,7 +515,13 @@ object PythonInterpreter {
       blocking  = mkJepBlocking(executor)
       api      <- effectBlocking(new PythonAPI(jep)).lock(executor).provide(blocking)
       runtime  <- ZIO.runtime[Any]
-    } yield new PythonInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api, venv, py4jError)
+    } yield (compiler, jep, executor, jepThread, blocking, runtime, api)
+  }
+
+  def apply(venv: Option[Path]): RIO[ScalaCompiler.Provider, PythonInterpreter] = {
+    for {
+      (compiler, jep, executor, jepThread, blocking, runtime, api) <- interpreterDependencies(venv)
+    } yield new PythonInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api, venv)
   }
 
   object Factory extends Interpreter.Factory {
