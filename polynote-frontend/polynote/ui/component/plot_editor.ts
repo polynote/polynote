@@ -17,16 +17,16 @@ import {
 import {FakeSelect} from "./fake_select";
 import {fakeSelectElem, span, textbox} from "../util/tags";
 import {SocketSession} from "../../comms";
-import {GroupAgg, ModifyStream, ReleaseHandle, TableOp} from "../../data/messages";
+import {GroupAgg, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {DataStream, StreamingDataRepr} from "../../data/value_repr";
 import embed, {Result as VegaResult} from "vega-embed";
-import {UIMessageTarget} from "../util/ui_event";
 import {Cell, CodeCell} from "./cell";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {ClientResult, Output} from "../../data/result";
 import {CellMetadata} from "../../data/data";
 import {CurrentNotebook} from "./current_notebook";
+import {EventTarget} from "event-target-shim"
 
 
 function isDimension(dataType: DataType): boolean {
