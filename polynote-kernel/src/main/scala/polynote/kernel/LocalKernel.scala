@@ -16,10 +16,10 @@ import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.kernel.interpreter.scal.ScalaInterpreter
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.RefMap
-import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
+import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, ShortList, Streaming, TinyString, Updating, truncateTinyString}
 import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr, ValueRepr}
 import scodec.bits.ByteVector
-import zio.{Task, RIO, ZIO}
+import zio.{RIO, Task, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.interop.catz._
@@ -62,6 +62,8 @@ class LocalKernel private[kernel] (
             _             <- publishEndTime
             _             <- updateState(resultState)
             _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
+            deps           = cellDependencies(resultState)
+            _             <- if (deps.nonEmpty) PublishResult(CellDependencies(deps)) else ZIO.unit
             _             <- busyState.update(_.setIdle)
           } yield ()
 
@@ -75,6 +77,11 @@ class LocalKernel private[kernel] (
           }
       }
     }
+
+  private def cellDependencies(resultState: State): ShortList[(CellID, TinyString)] = {
+    val used = resultState.usedValues.getOrElse(Nil).toSet
+    ShortList(resultState.scope.filter(rv => used contains rv.name).map(rv => rv.sourceCell -> TinyString(rv.name)))
+  }
 
   private def latestPredef(state: State) = state.rewindWhile(_.id >= 0) match {
     case s if s.id < 0 => s

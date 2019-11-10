@@ -81,7 +81,7 @@ class PythonInterpreter private[python] (
   def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
     parsed    <- parse(code, s"Cell${state.id}")
     compiled  <- compile(parsed)
-    locals    <- eval[PyObject]("{}")
+    locals    <- eval[PyObject]("TracingDict()")
     globals   <- populateGlobals(state)
     _         <- injectGlobals(globals)
     resState  <- run(compiled, globals, locals, state)
@@ -158,9 +158,7 @@ class PythonInterpreter private[python] (
           )
           Some(Signatures(List(hints), 0, index.byteValue()))
         } catch {
-          case err: Throwable =>
-            println(err)
-            None
+          case err: Throwable => None
         }
     }
   }
@@ -196,6 +194,15 @@ class PythonInterpreter private[python] (
       |
       |if not hasattr(sys, 'argv') or len(sys.argv) == 0:
       |    sys.argv  = ['']
+      |
+      |class TracingDict(dict):
+      |    def __init__(self, **kwargs):
+      |        self.accessed = set()
+      |        super(TracingDict, self).__init__(self, **kwargs)
+      |
+      |    def __getitem__(self, key):
+      |        self.accessed.add(key)
+      |        return super(TracingDict, self).__getitem__(key)
       |
       |class LastExprAssigner(ast.NodeTransformer):
       |
@@ -324,7 +331,7 @@ class PythonInterpreter private[python] (
     jep =>
       val prevStates = state.takeUntil(_.isInstanceOf[PythonState]).reverse
       val (globalsDict, rest) = prevStates match {
-        case PythonState(_, _, _, globalsDict) :: rest => (globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject]), rest)
+        case PythonState(_, _, _, globalsDict, _) :: rest => (globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject]), rest)
         case others => (jep.getValue("{}", classOf[PyObject]), others)
       }
 
@@ -376,6 +383,7 @@ class PythonInterpreter private[python] (
 
               val localsItems = dictToItemsList(locals)
               val getLocal = localsItems.getAttr("__getitem__", classOf[PyCallable])
+              val accessed = scalaList[String](locals.getAttr("accessed", classOf[PyObject])).toList.intersect(state.scope.map(_.name.toString))
               val numLocals = len(localsItems)
               val resultValues = (0 until numLocals).map { i =>
                 val item = getLocal.callAs(classOf[PyObject], Int.box(i))
@@ -409,7 +417,7 @@ class PythonInterpreter private[python] (
                   } else None
                 } else None
               }.toList.flatten
-              PythonState(state.id, state.prev, resultValues.toList, globals)
+              PythonState(state.id, state.prev, resultValues.toList, globals, Some(accessed))
 
             case trace =>
               val cause = Option(get.callAs(classOf[String], "py4j_error")).flatMap(py4jError)
@@ -423,7 +431,7 @@ class PythonInterpreter private[python] (
       }
     }
 
-  case class PythonState(id: CellID, prev: State, values: List[ResultValue], globalsDict: PyObject) extends State {
+  case class PythonState(id: CellID, prev: State, values: List[ResultValue], globalsDict: PyObject, usedValues: Option[List[String]] = None) extends State {
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =
@@ -454,6 +462,7 @@ object PythonInterpreter {
     def qualifiedTypeName(obj: PyObject): String = qualifiedTypeFn.callAs(classOf[String], obj)
     def len(obj: PyObject): Int = lenFn.callAs(classOf[java.lang.Number], obj).intValue()
     def list(obj: PyObject): PyObject = listFn.callAs(classOf[PyObject], obj)
+    def scalaList[T : ClassTag](obj: PyObject): List[T] = listFn.callAs(classOf[java.util.List[T]], obj).asScala.toList
     def dictToItemsList(obj: PyObject): PyObject = dictToItemsListFn.callAs(classOf[PyObject], obj)
     def hasAttr(obj: PyObject, name: String): Boolean = hasAttrFn.callAs(classOf[java.lang.Boolean], obj, name).booleanValue()
   }

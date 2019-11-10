@@ -113,6 +113,7 @@ class MarkdownNotebookRepository(
     case ClearResults() => ""
     case ResultValue(_, _, _, _, _, _, _) => "" // TODO
     case ExecutionInfo(_, _) => "" // TODO
+    case CellDependencies(_) => ""
   }
 
   private def htmlToResult(html: scala.xml.Elem, id: String): Option[Result] = html.attribute("class").map(_.head.text).flatMap {

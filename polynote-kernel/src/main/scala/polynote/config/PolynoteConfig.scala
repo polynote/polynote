@@ -98,7 +98,7 @@ final case class PolynoteConfig(
 
 object PolynoteConfig {
   implicit val encoder: ObjectEncoder[PolynoteConfig] = deriveEncoder
-  implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder[PolynoteConfig]
+  implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder[PolynoteConfig] or Decoder.decodeBoolean.map(_ => PolynoteConfig())
 
   private val defaultConfig = "default.yml" // we expect this to be in the directory Polynote was launched from.
 

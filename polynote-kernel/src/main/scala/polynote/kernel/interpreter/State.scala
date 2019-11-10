@@ -28,6 +28,11 @@ trait State {
     */
   def values: List[ResultValue]
 
+  /**
+    * The names of the scope values consumed by the code that created this state, if known
+    */
+  def usedValues: Option[List[String]]
+
   // TODO: make this protected, public API should prevent you from removing Root from the chain
   def withPrev(prev: State): State
   def updateValues(fn: ResultValue => ResultValue): State
@@ -187,12 +192,13 @@ object State {
     override val id: CellID = Short.MinValue
     override val prev: State = this
     override val values: List[ResultValue] = Nil
+    override val usedValues: Option[List[String]] = None
     override def withPrev(prev: State): Root.type = this
     override def updateValues(fn: ResultValue => ResultValue): State = this
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] = ZIO.succeed(this)
   }
 
-  final case class Id(id: CellID, prev: State, values: List[ResultValue]) extends State {
+  final case class Id(id: CellID, prev: State, values: List[ResultValue], usedValues: Option[List[String]] = None) extends State {
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =

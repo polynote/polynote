@@ -2,7 +2,7 @@
 
 import {
     Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, optional,
-    str, shortStr, tinyStr, uint8, uint16, int32, ior, CodecContainer
+    str, shortStr, tinyStr, uint8, uint16, int32, ior, CodecContainer, Pair
 } from './codec'
 
 import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr, LazyDataRepr} from './value_repr'
@@ -326,6 +326,18 @@ export class ExecutionInfo extends Result {
     }
 }
 
+export class CellDependencies extends Result {
+    static codec = combined(arrayCodec(int16, Pair.codec(int16, tinyStr))).to(CellDependencies)
+    static get msgTypeId() { return 6 }
+    static unapply(inst: CellDependencies): ConstructorParameters<typeof CellDependencies> {
+        return [inst.dependencies];
+    }
+    constructor(readonly dependencies: Pair<number, string>[]) {
+        super(dependencies);
+        Object.freeze(this);
+    }
+}
+
 Result.codecs = [
   Output,           // 0
   CompileErrors,    // 1
@@ -333,6 +345,7 @@ Result.codecs = [
   ClearResults,     // 3
   ResultValue,      // 4
   ExecutionInfo,    // 5
+  CellDependencies, // 6
 ];
 
 Result.codec = discriminated(

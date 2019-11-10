@@ -5,7 +5,7 @@ import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
 import {Cell, CodeCell, TextCell} from "./cell";
 import match from "../../util/match";
-import { ClearResults, ClientResult, Output, Result, ResultValue } from "../../data/result";
+import {CellDependencies, ClearResults, ClientResult, Output, Result, ResultValue} from "../../data/result";
 import {DataRepr, DataStream, StreamingDataRepr} from "../../data/value_repr";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
@@ -23,6 +23,7 @@ export class NotebookUI extends UIMessageTarget {
     readonly cellUI: NotebookCellsUI;
     readonly kernelUI: KernelUI;
     private cellResults: Record<number, Record<string, ResultValue>>;
+    private cellDependencies: Record<number, Record<string, number>> = {};
     private globalVersion: number;
     private localVersion: number;
     private editBuffer: EditBuffer;
@@ -219,7 +220,12 @@ export class NotebookUI extends UIMessageTarget {
                 if (id >=0 && !cell) throw new Error(`Cell Id ${id} does not exist in the current notebook`);
 
                 this.updateCellResults(result, id);
-                if (cell instanceof CodeCell) cell.addResult(result)
+                if (cell instanceof CodeCell) {
+                    cell.addResult(result);
+                    if (result instanceof ResultValue) {
+                        this.updateStaleCells();
+                    }
+                }
             }
         });
 
@@ -259,6 +265,46 @@ export class NotebookUI extends UIMessageTarget {
         }
     }
 
+    // recompute which cells are stale, using the current cell dependency graph
+    // currently only computes direct stale dependencies; should it be transitive?
+    updateStaleCells() {
+        const codeCells = this.cellUI.getCells().filter(cell => cell instanceof CodeCell);
+        const indexedCells: Record<number, Cell> = {};
+        for (const cell of codeCells) {
+            indexedCells[cell.id] = cell;
+        }
+
+        const currentScope: Record<string, number> = {};
+        codeCells.forEach(cell => {
+            if (!(cell instanceof CodeCell)) {
+                return;
+            }
+            const results = this.cellResults[cell.id];
+            const inputs = this.cellDependencies[cell.id];
+            const cellTS = cell.metadata && cell.metadata.executionInfo && (cell.metadata.executionInfo.endTs || cell.metadata.executionInfo.startTs) || -1;
+            if (inputs) {
+                for (const name in inputs) {
+                    if (inputs.hasOwnProperty(name)) {
+                        const inputCellId = inputs[name];
+                        const inputCell = indexedCells[inputCellId];
+                        const inputCellTS = inputCell && inputCell.metadata && inputCell.metadata.executionInfo && inputCell.metadata.executionInfo.startTs;
+                        const outdated =
+                            (currentScope[name] !== inputCellId) ||  // a different cell has the scope for that variable
+                            (!inputCellTS || inputCellTS > cellTS);  // cell was re-run after this cell which depends on it
+
+                        cell.setOutdated(outdated);
+                    }
+                }
+            }
+
+            for (const name in results) {
+                if (results.hasOwnProperty(name)) {
+                    currentScope[name] = cell.id;
+                }
+            }
+        })
+    }
+
     updateCellResults(result: Result, id: number) {
         if (result instanceof ClearResults) {
             this.cellResults[id] = {};
@@ -269,6 +315,12 @@ export class NotebookUI extends UIMessageTarget {
                 this.cellResults[id] = {};
             }
             this.cellResults[id][result.name] = result;
+        } else if (result instanceof CellDependencies) {
+            const deps: Record<string, number> = {};
+            result.dependencies.forEach(pair => {
+                deps[pair.second] = pair.first;
+            });
+            this.cellDependencies[id] = deps;
         }
     }
 
@@ -352,6 +404,7 @@ export class NotebookUI extends UIMessageTarget {
                                 result.toOutput().then(output => SocketSession.get.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
                             }
                         });
+                        this.updateStaleCells();
                     };
 
                     const prevCellId = serverRunCells[serverRunCells.length -1] // check whether we need to wait for a soon-to-be queued up cell
@@ -428,8 +481,9 @@ export class NotebookUI extends UIMessageTarget {
                         cell.addResult(result);
                     }
                     this.updateCellResults(result, cellInfo.id);
-                })
+                });
             }
+            this.updateStaleCells();
         }
         this.mainUI.publish(new CellsLoaded());
     }

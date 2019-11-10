@@ -296,6 +296,10 @@ body {
   border-left-width: @cell-left-border-width;
   position: relative;
 
+  &.outdated {
+    border-color: gold;
+  }
+
   &.selected, &.active {
     border-radius: 6px;
     border: 1px solid @ui-selected;
