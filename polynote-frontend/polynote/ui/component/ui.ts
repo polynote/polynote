@@ -149,7 +149,7 @@ export class MainUI extends UIMessageTarget {
 
         this.subscribe(TabActivated, (name, type) => {
             if (type === 'notebook') {
-                const tabPath = `/notebook/${name}`;
+                const tabUrl = new URL(`notebook/${name}`, document.baseURI);
 
                 const href = window.location.href;
                 const hash = window.location.hash;
@@ -157,11 +157,11 @@ export class MainUI extends UIMessageTarget {
                 document.title = title; // looks like chrome ignores history title so we need to be explicit here.
 
                  // handle hashes and ensure scrolling works
-                if (hash && window.location.pathname === tabPath) {
+                if (hash && window.location.href === tabUrl.href) {
                     window.history.pushState({notebook: name}, title, href);
                     this.handleHashChange()
                 } else {
-                    window.history.pushState({notebook: name}, title, tabPath);
+                    window.history.pushState({notebook: name}, title, tabUrl.href);
                 }
 
                 const currentNotebook = this.tabUI.getTab(name).content.notebook.cellsUI;
@@ -172,7 +172,7 @@ export class MainUI extends UIMessageTarget {
                 }
             } else if (type === 'home') {
                 const title = 'Polynote';
-                window.history.pushState({notebook: name}, title, '/');
+                window.history.pushState({notebook: name}, title, document.baseURI);
                 document.title = title;
                 this.toolbarUI.setDisabled(true);
             }
@@ -180,8 +180,8 @@ export class MainUI extends UIMessageTarget {
 
         this.subscribe(TabRenamed, (oldName, newName, type, isCurrent) => {
             if (isCurrent) {
-                const tabPath = `/notebook/${newName}`;
-                const href = window.location.hash ? `${tabPath}#${window.location.hash.replace(/^#/, '')}` : tabPath;
+                const tabUrl = new URL(`notebook/${name}`, document.baseURI);
+                const href = window.location.hash ? `${tabUrl.href}#${window.location.hash.replace(/^#/, '')}` : tabUrl.href;
                 window.history.replaceState({notebook: newName}, `${newName.split(/\//g).pop()} | Polynote`, href);
             }
         });

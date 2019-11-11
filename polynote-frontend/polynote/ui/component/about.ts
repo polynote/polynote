@@ -23,7 +23,7 @@ export class About extends FullScreenModal {
     aboutMain() {
         const el = div(["about-display"], [
             div([], [
-                tag('img', [], {src: "/style/polynote.svg", alt:"Polynote"}, []),
+                tag('img', [], {src: "style/polynote.svg", alt:"Polynote"}, []),
                 h2([], ["About this Polynote Server"])
             ])
         ]);

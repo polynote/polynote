@@ -46,8 +46,9 @@ export class SocketSession extends EventTarget {
     }
 
     mkSocket() {
-        const schema = location.protocol === 'https:' ? 'wss://' : 'ws://';
-        this.socket = new WebSocket(schema + document.location.host + '/ws?key=' + socketKey);
+        const wsUrl = new URL(`ws?key=${socketKey}`, document.baseURI);
+        wsUrl.protocol = wsUrl.protocol === "https:" ? 'wss:' : 'ws';
+        this.socket = new WebSocket(wsUrl.href);
         this.socket.binaryType = 'arraybuffer';
         this.listeners = {
             message: this.receive.bind(this),
