@@ -66,7 +66,6 @@ Let's go over what this command does.
 - `-p 127.0.0.1:4040-4050:4040-4050` This binds a range of ports on the host machine so you can see the Spark UI. 
 - ``-v `pwd`/config.yml:/opt/config/config.yml`` This mounts the config file in the current directory (the one you just created) into the container at `/opt/config/config.yml`
 - ``-v `pwd`/notebooks:/opt/polynote/notebooks/saved`` This mounts the `./notebooks` directory on the host into the container at `/opt/polynote/notebooks/saved`, so that any notebooks you create are saved back to the host, and the example notebooks inside of `/opt/polynote/notebooks/` are still visible to you.
-ENV HOME /home/${USER}
 - `polynote/polynote:latest` pulls the latest Polynote image
 - `--config /opt/config/config.yml` tells Polynote to use the `config.yml` file you created earlier. 
 
