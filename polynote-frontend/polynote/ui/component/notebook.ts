@@ -308,6 +308,7 @@ export class NotebookUI extends UIMessageTarget {
     updateCellResults(result: Result, id: number) {
         if (result instanceof ClearResults) {
             this.cellResults[id] = {};
+            this.cellDependencies[id] = {};
         } else if (result instanceof ResultValue) {
             this.kernelUI.symbols.addSymbol(result);
 

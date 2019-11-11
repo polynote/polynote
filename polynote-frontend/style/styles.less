@@ -331,7 +331,7 @@ body {
       display: grid;
       font-size: 11pt;
       grid-template-areas: "button label lang options exec-info";
-      grid-template-columns: min-content 10ch min-content 2fr 1fr;
+      grid-template-columns: min-content 11ch min-content 1fr min-content;
       grid-template-rows: min-content;
       border-bottom: 1px solid @ui-border;
 
@@ -361,7 +361,7 @@ body {
         font-size: inherit;
         grid-area: label;
         padding: .5em 1ch;
-
+        white-space: nowrap;
         &:before {
           content: 'In(';
         }
@@ -380,6 +380,7 @@ body {
         grid-area: options;
         text-align: left;
         padding-left: 1em;
+        white-space: nowrap;
 
         .toggle-code {
           font-weight: 900;
@@ -397,7 +398,7 @@ body {
         line-height: 11pt;
         display: none;
         grid-area: exec-info;
-
+        white-space: nowrap;
         &.output {
           display: block;
         }
