@@ -97,7 +97,7 @@ docker build -t polynote-local --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION ba
 
 Choose an existing base image and turn into one that runs without root privileges, with a safe-user (disabled password) named `polly`:
 
-```
+```sh
 # change to any of the base images listed in docker/README.md
 export BASE_IMAGE=polynote/polynote:latest
 docker build -t polynote-local --build-arg BASE_IMAGE safe
