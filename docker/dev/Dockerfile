@@ -25,6 +25,23 @@ ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
 
 RUN pip3 install pyspark==2.4.4
 
+# to wrap up, we create (safe)user
+ENV UID 1000
+ENV NB_USER polly
+
+RUN adduser --disabled-password \
+    --gecos "Default user" \
+    --uid ${UID} \
+    ${NB_USER}
+
+# allow user access to the WORKDIR
+RUN chown -R ${NB_USER}:${NB_USER} /opt/
+
+# start image as (safe)user
+USER ${NB_USER}
+
+# expose the (internal) port that polynote runs on
 EXPOSE 8192
 
+# start polynote on container run
 ENTRYPOINT ["./polynote/polynote.py"]
