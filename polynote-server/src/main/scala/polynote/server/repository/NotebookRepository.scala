@@ -128,26 +128,26 @@ class TreeRepository (
         } yield base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath)
   }
 
-  override def renameNotebook(srcPath: String, destPath: String): RIO[BaseEnv with GlobalEnv, String] = {
-    val originalPath = Paths.get(srcPath)
-    val originalBase = originalPath.getName(0)
+  override def renameNotebook(src: String, dest: String): RIO[BaseEnv with GlobalEnv, String] = {
+    val srcPath = Paths.get(src)
+    val srcBase = srcPath.getName(0)
 
-    val newPath = Paths.get(destPath)
-    val newBase = newPath.getName(0)
+    val destPath = Paths.get(dest)
+    val destBase = destPath.getName(0)
 
-    if (originalBase == newBase) {
+    if (srcBase == destBase) {
       for {
-        (renamed, base) <- delegate(originalPath.toString) {
-          (repo, relativePath, base) =>
-            repo.renameNotebook(relativePath, newBase.relativize(newPath).toString).map(_ -> base)
+        (renamed, base) <- delegate(srcPath.toString) {
+          (repo, repoRelativePathStr, base) =>
+            repo.renameNotebook(repoRelativePathStr, base.fold(dest)(repoBase => Paths.get(repoBase).relativize(destPath).toString)).map(_ -> base)
         }
       } yield base.map(b => Paths.get(b, renamed).toString).getOrElse(renamed)
     } else {
       for {
-        (srcNb, srcBase) <- delegate(srcPath)((repo, relPath, base) => repo.loadNotebook(relPath).map(_ -> base))
-        (destBase, dest)    <- delegate(destPath)((repo, relPath, base) => repo.saveNotebook(relPath, srcNb).map(_ => base -> relPath))
-        _                <- delegate(srcPath)((repo, relPath, _) => repo.deleteNotebook(relPath))
-      } yield destBase.map(base => Paths.get(base, dest).toString).getOrElse(dest)
+        srcNb                <- delegate(src)((repo, repoRelativePathStr, base) => repo.loadNotebook(repoRelativePathStr))
+        (destRepoBase, dest) <- delegate(dest)((repo, repoRelativePathStr, base) => repo.saveNotebook(repoRelativePathStr, srcNb).map(_ => base -> repoRelativePathStr))
+        _                    <- delegate(src)((repo, repoRelativePathStr, _) => repo.deleteNotebook(repoRelativePathStr))
+      } yield destRepoBase.map(base => Paths.get(base, dest).toString).getOrElse(dest)
     }
   }
 
