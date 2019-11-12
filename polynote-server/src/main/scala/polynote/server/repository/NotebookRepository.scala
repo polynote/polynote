@@ -7,14 +7,12 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path, 
 
 import cats.implicits._
 import io.circe.Printer
-import polynote.config.{Mount, PolynoteConfig}
-import polynote.kernel.environment.{Config, Env}
+import polynote.config.PolynoteConfig
 import polynote.kernel.{BaseEnv, GlobalEnv}
-import polynote.kernel.util.RefMap
 import polynote.messages._
 import polynote.server.repository.ipynb.ZeppelinNotebook
-import zio.{RIO, Task, ZIO}
-import zio.blocking.Blocking
+import zio.{RIO, ZIO}
+import zio.blocking.effectBlocking
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
@@ -265,10 +263,10 @@ abstract class FileBasedRepository extends NotebookRepository {
               import io.circe.syntax._
               for {
                 parsed <- ZIO.fromEither(parse(content))
-                  zep <- ZIO.fromEither(parsed.as[ZeppelinNotebook])
-                  jup = zep.toJupyterNotebook
-                  jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
-                  io <- writeString(extPath, jupStr)
+                zep <- ZIO.fromEither(parsed.as[ZeppelinNotebook])
+                jup = zep.toJupyterNotebook
+                jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
+                io <- writeString(extPath, jupStr)
               } yield io
             } else {
               writeString(extPath, content)
@@ -292,7 +290,7 @@ abstract class FileBasedRepository extends NotebookRepository {
         case (true, false) =>
           val absOldPath = pathOf(oldPath)
           val absNewPath = pathOf(withExt)
-          ZIO {
+          effectBlocking {
             val dir = absNewPath.getParent.toFile
             if (!dir.exists()) {
               dir.mkdirs()
@@ -307,7 +305,7 @@ abstract class FileBasedRepository extends NotebookRepository {
   def deleteNotebook(path: String): RIO[BaseEnv with GlobalEnv, Unit] = {
     notebookExists(path).flatMap {
       case false => ZIO.fail(new FileNotFoundException(s"File $path does't exist"))
-      case true  => ZIO(Files.delete(pathOf(path)))
+      case true  => effectBlocking(Files.delete(pathOf(path)))
     }
   }
 
