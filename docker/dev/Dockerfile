@@ -9,6 +9,7 @@ RUN apt update -y && \
 # First, create the distribution with `sbt dist`
 # Then build this from the dist target directory (e.g., `target/scala-2.11`) using `-f ../../docker/dev/Dockerfile` to select this file.
 # for example (don't forget the dot at the end!):
+#   sbt dist
 #   cd target/scala-2.11/
 #   docker build -t polynote:dev -f ../../docker/dev/Dockerfile .
 COPY polynote-dist.tar.gz .

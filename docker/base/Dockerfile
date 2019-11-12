@@ -16,6 +16,23 @@ RUN if test "${SCALA_VERSION}" = "2.12"; then export DIST_TAR="polynote-dist-2.1
     echo "DIST_TAR=$DIST_TAR" && \
     rm $DIST_TAR
 
+# to wrap up, we create (safe)user
+ENV UID 1000
+ENV NB_USER polly
+
+RUN adduser --disabled-password \
+    --gecos "Default user" \
+    --uid ${UID} \
+    ${NB_USER}
+
+# allow user access to the WORKDIR
+RUN chown -R ${NB_USER}:${NB_USER} /opt/
+
+# start image as (safe)user
+USER ${NB_USER}
+
+# expose the (internal) port that polynote runs on
 EXPOSE 8192
 
+# start polynote on container run
 ENTRYPOINT ["./polynote/polynote.py"]

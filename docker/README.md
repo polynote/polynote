@@ -49,15 +49,17 @@ storage:
 > The `listen` directive tells Polynote to listen on all interfaces inside the Docker container. 
 > While this is probably fine for trying it out, it's not fit for production settings. 
 >
-> The `storage` directive specifies `/opt/notebooks` as the primary notebook location. It also tells Polynote to 
-> mount the examples directory that is present in the Docker distribution as a secondary mount, allowing you to see the
-> examples and try them out! 
-> Note that changes to the examples might not be persisted onto the host if you follow the instructions below.
+> The `storage` directive specifies `/opt/notebooks` as the primary notebook location. 
+> This is the location that is visible in the file-explorer on the left in Polynote. 
+> The Polynote installation comes with some example files, which we mount into `/opt/notebooks`, 
+> allowing you to see the examples and try them out without having to make copies.
+> Note that changes to the examples will not be persisted onto the host if you follow the instructions given.
+> Only files in the `notebooks` folder visible in the sidebar will persist.
 
-Ok, now we are ready to run the Docker container! Use the following command: 
+We are now ready to run the Docker container! Use the following command: 
 
 ```
-docker run --rm -it -p 127.0.0.1:8192:8192 -p 127.0.0.1:4040-4050:4040-4050 -v `pwd`/config.yml:/opt/config/config.yml -v `pwd`/notebooks:/opt/polynote/notebooks/saved polynote/polynote:latest --config /opt/config/config.yml
+docker run --rm -it -p 127.0.0.1:8192:8192 -p 127.0.0.1:4040-4050:4040-4050 -v `pwd`/config.yml:/opt/config/config.yml -v `pwd`/notebooks:/opt/notebooks/ polynote/polynote:latest --config /opt/config/config.yml
 ```
 
 Let's go over what this command does. 
@@ -65,11 +67,12 @@ Let's go over what this command does.
 - `-p 127.0.0.1:8192:8192` This binds `127.0.0.1:8192` on the host machine to port `8192` inside the container.
 - `-p 127.0.0.1:4040-4050:4040-4050` This binds a range of ports on the host machine so you can see the Spark UI. 
 - ``-v `pwd`/config.yml:/opt/config/config.yml`` This mounts the config file in the current directory (the one you just created) into the container at `/opt/config/config.yml`
-- ``-v `pwd`/notebooks:/opt/polynote/notebooks/saved`` This mounts the `./notebooks` directory on the host into the container at `/opt/polynote/notebooks/saved`, so that any notebooks you create are saved back to the host, and the example notebooks inside of `/opt/polynote/notebooks/` are still visible to you.
+- ``-v `pwd`/notebooks:/opt/notebooks`` This mounts the `./notebooks` directory on the host into the container at `/opt/notebooks/`, so that any notebooks you create are saved back to the host, and the example notebooks inside of `examples/` are still visible to you.
 - `polynote/polynote:latest` pulls the latest Polynote image
 - `--config /opt/config/config.yml` tells Polynote to use the `config.yml` file you created earlier. 
 
-Great! Now just open up Chrome and navigate over to http://localhost:8192/ and you'll see the Polynote UI! You'll see the example folder show up on the left. 
+Great! Now just open up Chrome and navigate over to http://localhost:8192/ and you'll see the Polynote UI!
+You'll see the example folder show up on the left. 
 Open it up and run some of the examples! :smile: 
 
 > Note: Changes you make to the example notebooks won't persist, since they aren't mounted to the host.
@@ -77,6 +80,8 @@ Open it up and run some of the examples! :smile:
 Try making a new notebook by clicking the new notebook button and typing "my first notebook" into the dialog box. You should see it show up in the notebooks tree!
 
 Now, if you open up a new terminal window and run `ls -l ~/polynote-docker/notebooks`, you should see `my first notebook.ipynb` on your host machine!
+
+> Note: the Docker image will be run as a non-root user named `polly`, which has no password enabled for extra security. 
 
 
 # Building the Image
@@ -90,15 +95,17 @@ We tag these images with the name `polynote-local`.
 ```sh
 # change version to match desired target
 export POLYNOTE_VERSION=0.2.13
-docker build -t polynote-local --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION base
+docker build -t polynote-local:latest --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION base
 ```
 
-## Safe image
+## Dev image
 
-Choose an existing base image and turn into one that runs without root privileges, with a safe-user (disabled password) named `polly`:
+First we run `sbt dist` from the root of this repository to create `target/scala-2.11/` and the `.tar` file inside.
+We then go to this new directory and build from within there:
 
 ```sh
-# change to any of the base images listed in docker/README.md
-export BASE_IMAGE=polynote/polynote:latest
-docker build -t polynote-local --build-arg BASE_IMAGE safe
+sbt dist
+cd target/scala-2.11/
+docker build -t polynote-local:dev -f ../../docker/dev/Dockerfile .
 ```
+
