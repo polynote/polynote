@@ -26,10 +26,10 @@ SocketSession.get;
 const mainUI = new MainUI();
 const mainEl = document.getElementById('Main');
 mainEl && mainEl.appendChild(mainUI.el);
-const path = unescape(window.location.pathname);
-
-if (path.startsWith('/notebook/')) {
-  mainUI.loadNotebook(path.replace(/^\/notebook\//, ''));
+const path = unescape(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
+const notebookBase = 'notebook/';
+if (path.startsWith(notebookBase)) {
+  mainUI.loadNotebook(path.substring(notebookBase.length));
 } else {
   mainUI.showWelcome();
 }
