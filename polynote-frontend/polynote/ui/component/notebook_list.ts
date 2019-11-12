@@ -1,15 +1,14 @@
 import {
-    ImportNotebook,
-    UIMessage,
-    UIMessageTarget,
     CreateNotebook,
-    RenameNotebook,
     DeleteNotebook,
+    ImportNotebook,
+    ModalClosed,
+    RenameNotebook,
     TriggerItem,
-    UIToggle,
-    ModalClosed
+    UIMessageTarget,
+    UIToggle
 } from "../util/ui_event";
-import {button, div, h2, iconButton, span, a, tag, TagElement, textbox} from "../util/tags";
+import {a, button, div, h2, iconButton, span, tag, TagElement, textbox} from "../util/tags";
 import {storage} from "../util/storage";
 import {Modal} from "./modal";
 
@@ -208,10 +207,6 @@ export class NotebookListUI extends UIMessageTarget {
                 h2([], [
                     'Notebooks',
                     span(['buttons'], [
-                        iconButton(['import-notebook'], 'Import a notebook', 'file-import', 'Import').click(evt => {
-                            evt.stopPropagation();
-                            this.publish(new ImportNotebook());
-                        }),
                         iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                             evt.stopPropagation();
                             this.publish(new CreateNotebook());
@@ -459,7 +454,6 @@ export class CreateNotebookDialog extends Modal {
     private dialogContent: TagElement<"div">;
     private onComplete: (path: string) => void;
     private onCancel: () => void;
-    private path?: string;
 
     private static INSTANCE: CreateNotebookDialog;
 
@@ -468,7 +462,6 @@ export class CreateNotebookDialog extends Modal {
             CreateNotebookDialog.INSTANCE = new CreateNotebookDialog();
         }
         const inst = CreateNotebookDialog.INSTANCE;
-        inst.path = path;
         return new Promise((complete, cancel) => {
             inst.onComplete = complete;
             inst.onCancel = cancel;
@@ -506,12 +499,11 @@ export class CreateNotebookDialog extends Modal {
     }
 
     complete() {
-        const path = this.path ? [this.path, this.pathInput.value].join('/') : this.pathInput.value;
         const onComplete = this.onComplete;
         this.onCancel = () => null;
         this.onComplete = _ => null;
         this.hide();
-        onComplete(path);
+        onComplete(this.pathInput.value);
     }
 }
 

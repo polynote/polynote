@@ -15,6 +15,7 @@ import polynote.config.PolynoteConfig
 import polynote.data.Rope
 import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
+import zio.{RIO, ZIO}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
@@ -28,7 +29,7 @@ class MarkdownNotebookRepository(
   val chunkSize: Int = 8192,
   val executionContext: ExecutionContext = ExecutionContext.global)(implicit
   val contextShift: ContextShift[IO]
-) extends FileBasedRepository[IO] {
+) extends FileBasedRepository {
 
   private lazy val parser = Parser.builder().extensions(List(YamlFrontMatterExtension.create()).asJava).build()
   private lazy val printer = Printer.spaces2.copy(dropNullKeys = true)
@@ -163,12 +164,12 @@ class MarkdownNotebookRepository(
 
   override def validNotebook(file: Path): Boolean = file.endsWith(".md")
 
-  def loadNotebook(path: String): IO[Notebook] = for {
+  def loadNotebook(path: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
     str     <- loadString(path)
-    parsed  <- IO(parser.parse(str))
+    parsed  <- ZIO(parser.parse(str))
   } yield collectCells(path, parsed)
 
-  def saveNotebook(path: String, cells: Notebook): IO[Unit] = {
+  def saveNotebook(path: String, cells: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = {
     val str =
       cells.config.map(_.asJson).map(printer.pretty).map(yml => s"---\n$yml\n---\n\n").mkString + cells.cells.map(cellToMarkdown).mkString("\n\n").stripPrefix("\n").stripPrefix("\n")
     writeString(path, str)

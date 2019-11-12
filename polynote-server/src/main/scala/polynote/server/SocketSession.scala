@@ -16,7 +16,7 @@ import polynote.buildinfo.BuildInfo
 import polynote.kernel
 import polynote.kernel.util.{Publish, RefMap}
 import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, Kernel, StreamOps, StreamingHandles, TaskG, UpdatedTasks}
-import polynote.kernel.environment.{Env, PublishMessage}
+import polynote.kernel.environment.{Config, Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages._
@@ -133,8 +133,8 @@ class SessionHandler(
         case Some(subscriber) => subscriber.close()
       }
 
-    case CreateNotebook(path, maybeUriOrContent) =>
-      notebookManager.create(path, maybeUriOrContent).unit
+    case CreateNotebook(path, maybeContent) =>
+      notebookManager.create(path, maybeContent).unit
 
     case RenameNotebook(path, newPath) =>
       notebookManager.rename(path, newPath).unit

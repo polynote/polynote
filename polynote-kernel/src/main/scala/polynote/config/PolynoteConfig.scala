@@ -5,13 +5,12 @@ import java.util.UUID
 
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
+import io.circe.syntax._
 import io.circe._
 import polynote.kernel.TaskB
 import polynote.kernel.logging.Logging
 import zio.ZIO
 import zio.blocking.effectBlocking
-
-import scala.collection.parallel.Task
 
 final case class Listen(
   port: Int = 8192,
@@ -23,11 +22,18 @@ object Listen {
   implicit val decoder: Decoder[Listen] = deriveDecoder
 }
 
-final case class Storage(dir: String = "notebooks", cache: String = "tmp")
+final case class Mount(dir: String, mounts: Map[String, Mount] = Map.empty)
+
+object Mount {
+  implicit val encoder: ObjectEncoder[Mount] = deriveEncoder
+  implicit val decoder: Decoder[Mount] = deriveDecoder[Mount]
+}
+
+final case class Storage(cache: String = "tmp", dir: String = "notebooks", mounts: Map[String, Mount] = Map.empty)
 
 object Storage {
   implicit val encoder: ObjectEncoder[Storage] = deriveEncoder
-  implicit val decoder: Decoder[Storage] = deriveDecoder
+  implicit val decoder: Decoder[Storage] = deriveDecoder[Storage]
 }
 
 sealed trait KernelIsolation
@@ -107,7 +113,11 @@ object PolynoteConfig {
   private def parseFile(file: File): TaskB[Json] =
     effectBlocking(file.exists()).flatMap {
       case true => effectBlocking(new FileReader(file)).bracketAuto {
-        reader => ZIO.fromEither(yaml.parser.parse(reader))
+        reader => ZIO.fromEither(yaml.parser.parse(reader)).map {
+          json =>
+            // if the config is empty, its Json value is "false"... (reliable sources indicate this is part of the yaml spec)
+            if (json.isBoolean) Json.fromJsonObject(JsonObject.empty) else json
+        }
       }
       case false => ZIO.succeed(Json.fromJsonObject(JsonObject.empty))
     }

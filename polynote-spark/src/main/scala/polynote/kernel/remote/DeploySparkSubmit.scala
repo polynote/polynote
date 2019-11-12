@@ -3,6 +3,7 @@ package polynote.kernel.remote
 import java.io.File
 import java.net.InetSocketAddress
 
+import polynote.buildinfo.BuildInfo
 import polynote.kernel.{Kernel, LocalSparkKernelFactory, ScalaCompiler, remote}
 import polynote.kernel.environment.{Config, CurrentNotebook}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployCommand
@@ -49,7 +50,9 @@ object DeploySparkSubmit extends DeployCommand {
 
     val additionalJars = pathOf(classOf[SparkReprsOf[_]]) :: pathOf(classOf[KernelRuntime]) :: Nil
 
-    Seq("spark-submit", "--class", mainClass) ++
+    val appName = sparkConfig.getOrElse("spark.app.name", s"Polynote ${BuildInfo.version} session")
+
+    Seq("spark-submit", "--class", mainClass, "--name", appName) ++
       Seq("--driver-java-options", allDriverOptions) ++
       sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
       (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++

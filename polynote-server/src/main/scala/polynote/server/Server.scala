@@ -1,6 +1,6 @@
 package polynote.server
 
-import java.io.{BufferedReader, File, FileInputStream, InputStreamReader}
+import java.io.{BufferedReader, File, FileInputStream, FileNotFoundException, InputStreamReader}
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -15,7 +15,7 @@ import org.http4s.server.blaze.BlazeServerBuilder
 import org.http4s.headers.{`Content-Length`, `Content-Type`}
 import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
-import polynote.kernel.environment.Env
+import polynote.kernel.environment.{Config, Env}
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
 import polynote.messages.Message
@@ -80,6 +80,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     args         <- ZIO.fromEither(Server.parseArgs(args)).orDie
     _            <- Logging.info(s"Loading configuration from ${args.configFile}")
     config       <- PolynoteConfig.load(args.configFile).orDie
+    _            <- Logging.info(s"Loaded configuration: $config")
     port          = config.listen.port
     address       = config.listen.host
     wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
@@ -131,10 +132,12 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     }
   }
 
-  def downloadFile(path: String, req: Request[Task], config: PolynoteConfig): Task[Response[Task]] = {
-    val nbLoc = new File(System.getProperty("user.dir")).toPath.resolve(s"${config.storage.dir}/$path").toString
-    staticFile(nbLoc, req)
-  }
+  def downloadFile(path: String, req: Request[Task]): ZIO[BaseEnv with GlobalEnv with NotebookManager, Throwable, Response[Task]] = for {
+    notebookManager <- ZIO.access[NotebookManager](_.notebookManager)
+    nbURI           <- notebookManager.location(path).someOrFail(new FileNotFoundException(s"Unable to find notebook with path: $path"))
+    nbLoc            = new File(nbURI).toString // eventually we'll have to deal with other schemes heret
+    result          <- staticFile(nbLoc, req).onError(err => Logging.error("Error downloading file", err))
+  } yield result
 
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
   object KeyMatcher extends QueryParamDecoderMatcher[String]("key")
@@ -160,7 +163,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => SocketSession(broadcastAll).flatMap(_.toResponse).provide(env)
       case GET -> Root / "ws"                                               => Forbidden()
       case req @ GET -> Root                                                => indexResponse.provide(env)
-      case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req, env.polynoteConfig)
+      case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req).provide(env)
       case req @ GET -> "notebook" /: _                                     => indexResponse.provide(env)
       case req @ GET -> (Root / "polynote-assembly.jar")                    => StaticFile.fromFile[Task](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), blockingEC).getOrElseF(NotFound())
       case req @ GET -> path                                                => serveFile(path.toString, req, watchUI)

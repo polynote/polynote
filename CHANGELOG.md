@@ -2,6 +2,23 @@
 
 * 
 
+# 0.2.13 (Nov 7, 2019)
+
+* Improve remote kernel error handling
+* Make LimitedSharingClassLoader configurable (thanks @ghoto !)
+* Remove `sun.misc.Cleaner` which is messes up JDK9+
+* Resolve insecure py4j gateway issue (thanks again, @ghoto !)
+* Fix bug in handling empty configs
+* Add ability to specify multiple storage mounts
+
+# 0.2.12 (Nov 5, 2019)
+
+* Updated notebook list UI, with ability to rename and delete notebooks (right click), navigate with keyboard, etc
+* Fixed classloading bug causing e.g. #588
+* Don't override spark.app.name if it's set in the spark config
+* Fix bug causing issues importing shared modules installed inside virtual environments
+* Publish snapshot artifacts of all modules to sonatype
+
 # 0.2.11 (October 31, 2019)
     
 * Happy Halloween! This spoooooky release includes some minor bugfixes!

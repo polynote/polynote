@@ -166,9 +166,9 @@ class PythonInterpreter private[python] (
   }
 
   def init(state: State): RIO[InterpreterEnv, State] = for {
+    globals <- getValue("globals().copy()")
     _       <- exec(setup)
     _       <- exec(matplotlib)
-    globals <- getValue("globals().copy()")
     scope   <- populateGlobals(state)
     _       <- jep { _ =>
       val update = globals.getAttr("update", classOf[PyCallable])

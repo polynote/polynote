@@ -268,7 +268,7 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
 final case class ListNotebooks(paths: List[ShortString]) extends Message
 object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 
-final case class CreateNotebook(path: ShortString, externalURI: Option[Either[ShortString, String]] = None) extends Message
+final case class CreateNotebook(path: ShortString, maybeContent: Option[String] = None) extends Message
 object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
 final case class RenameNotebook(path: ShortString, newPath: ShortString) extends Message

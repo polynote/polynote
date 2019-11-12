@@ -25,14 +25,13 @@ export class KernelInfoUI {
     }
 
     toggleCollapse() {
-        if (this.toggleEl.classList.contains('collapsed')) {
-            this.toggleEl.classList.remove('collapsed');
+        const collapsed = 'collapsed';
+        if (this.toggleEl.classList.contains(collapsed)) {
+            this.toggleEl.classList.remove(collapsed);
             this.infoEl.style.display = '';
-            (this.el.querySelector(".title") as HTMLElement).style.display = '';
         } else {
-            this.toggleEl.classList.add('collapsed');
-            this.infoEl.style.display = "none";
-            (this.el.querySelector(".title") as HTMLElement).style.display = "none";
+            this.toggleEl.classList.add(collapsed);
+            this.infoEl.style.display = 'none';
         }
     }
 

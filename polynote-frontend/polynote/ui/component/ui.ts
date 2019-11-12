@@ -121,7 +121,7 @@ export class MainUI extends UIMessageTarget {
 
         SocketSession.get.addMessageListener(
             messages.DeleteNotebook,
-            path => this.browseUI.removeItem(path));
+            path => this.onNotebookDeleted(path));
 
         SocketSession.get.addMessageListener(
             messages.CreateNotebook,
@@ -302,7 +302,18 @@ export class MainUI extends UIMessageTarget {
 
     onNotebookRenamed(oldPath: string, newPath: string) {
         this.browseUI.renameItem(oldPath, newPath);
-        this.tabUI.renameTab(oldPath, newPath, newPath.split(/\//g).pop());
+        const newName =  newPath.split(/\//g).pop();
+        this.tabUI.renameTab(oldPath, newPath, newName);
+
+        storage.update<{name: string, path: string}[]>('recentNotebooks', recentNotebooks => {
+            return recentNotebooks.map(nb => {
+                if (nb.path === oldPath) {
+                    nb.name = newName || newPath;
+                    nb.path = newPath;
+                    return nb
+                } else return nb
+            });
+        })
     }
 
     deleteNotebook(path: string) {
@@ -313,26 +324,21 @@ export class MainUI extends UIMessageTarget {
         }
     }
 
-    importNotebook(name?: string, content?: string) {
-        const handler = SocketSession.get.addMessageListener(messages.CreateNotebook, (actualPath) => {
-            SocketSession.get.removeMessageListener(handler);
+    onNotebookDeleted(path: string) {
+        this.browseUI.removeItem(path);
+
+        // remove from recent notebooks
+        storage.update<{name: string, path: string}[]>('recentNotebooks', recentNotebooks => {
+            return recentNotebooks.filter(nb => nb.path !== path)
+        })
+    }
+
+    importNotebook(name: string, content: string) {
+        SocketSession.get.listenOnceFor(messages.CreateNotebook, (actualPath) => {
             this.browseUI.addItem(actualPath);
             this.loadNotebook(actualPath);
         });
-
-        if (name && content) { // the evt has all we need
-            SocketSession.get.send(new messages.CreateNotebook(name, Either.right(content)));
-        } else {
-            const userInput = prompt("Enter the full URL of another Polynote instance.");
-            const notebookURL = userInput && new URL(userInput);
-
-            if (notebookURL && notebookURL.protocol.startsWith("http")) {
-                const nbFile = decodeURI(notebookURL.pathname.split("/").pop()!);
-                notebookURL.search = "download=true";
-                notebookURL.hash = "";
-                SocketSession.get.send(new messages.CreateNotebook(nbFile, Either.left(notebookURL.href)));
-            }
-        }
+        SocketSession.get.send(new messages.CreateNotebook(name, content));
     }
 
     handleHashChange() {
