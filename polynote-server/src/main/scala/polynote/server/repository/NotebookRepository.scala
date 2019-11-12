@@ -180,6 +180,10 @@ abstract class FileBasedRepository[F[_]](implicit F: ConcurrentEffect[F], contex
           val absOldPath = pathOf(oldPath)
           val absNewPath = pathOf(withExt)
           F.delay {
+            val dir = absNewPath.getParent.toFile
+            if (!dir.exists()) {
+              dir.mkdirs()
+            }
             Files.move(absOldPath, absNewPath)
           }.as(withExt)
       }
