@@ -7,14 +7,12 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path, 
 
 import cats.implicits._
 import io.circe.Printer
-import polynote.config.{Mount, PolynoteConfig}
-import polynote.kernel.environment.{Config, Env}
+import polynote.config.PolynoteConfig
 import polynote.kernel.{BaseEnv, GlobalEnv}
-import polynote.kernel.util.RefMap
 import polynote.messages._
 import polynote.server.repository.ipynb.ZeppelinNotebook
-import zio.{RIO, Task, ZIO}
-import zio.blocking.Blocking
+import zio.{RIO, ZIO}
+import zio.blocking.effectBlocking
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
@@ -130,26 +128,26 @@ class TreeRepository (
         } yield base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath)
   }
 
-  override def renameNotebook(srcPath: String, destPath: String): RIO[BaseEnv with GlobalEnv, String] = {
-    val originalPath = Paths.get(srcPath)
-    val originalBase = originalPath.getName(0)
+  override def renameNotebook(src: String, dest: String): RIO[BaseEnv with GlobalEnv, String] = {
+    val srcPath = Paths.get(src)
+    val srcBase = srcPath.getName(0)
 
-    val newPath = Paths.get(destPath)
-    val newBase = newPath.getName(0)
+    val destPath = Paths.get(dest)
+    val destBase = destPath.getName(0)
 
-    if (originalBase == newBase) {
+    if (srcBase == destBase) {
       for {
-        (renamed, base) <- delegate(originalPath.toString) {
-          (repo, relativePath, base) =>
-            repo.renameNotebook(relativePath, newBase.relativize(newPath).toString).map(_ -> base)
+        (renamed, base) <- delegate(srcPath.toString) {
+          (repo, repoRelativePathStr, base) =>
+            repo.renameNotebook(repoRelativePathStr, base.fold(dest)(repoBase => Paths.get(repoBase).relativize(destPath).toString)).map(_ -> base)
         }
       } yield base.map(b => Paths.get(b, renamed).toString).getOrElse(renamed)
     } else {
       for {
-        (srcNb, srcBase) <- delegate(srcPath)((repo, relPath, base) => repo.loadNotebook(relPath).map(_ -> base))
-        (destBase, dest)    <- delegate(destPath)((repo, relPath, base) => repo.saveNotebook(relPath, srcNb).map(_ => base -> relPath))
-        _                <- delegate(srcPath)((repo, relPath, _) => repo.deleteNotebook(relPath))
-      } yield destBase.map(base => Paths.get(base, dest).toString).getOrElse(dest)
+        srcNb                <- delegate(src)((repo, repoRelativePathStr, base) => repo.loadNotebook(repoRelativePathStr))
+        (destRepoBase, dest) <- delegate(dest)((repo, repoRelativePathStr, base) => repo.saveNotebook(repoRelativePathStr, srcNb).map(_ => base -> repoRelativePathStr))
+        _                    <- delegate(src)((repo, repoRelativePathStr, _) => repo.deleteNotebook(repoRelativePathStr))
+      } yield destRepoBase.map(base => Paths.get(base, dest).toString).getOrElse(dest)
     }
   }
 
@@ -265,10 +263,10 @@ abstract class FileBasedRepository extends NotebookRepository {
               import io.circe.syntax._
               for {
                 parsed <- ZIO.fromEither(parse(content))
-                  zep <- ZIO.fromEither(parsed.as[ZeppelinNotebook])
-                  jup = zep.toJupyterNotebook
-                  jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
-                  io <- writeString(extPath, jupStr)
+                zep <- ZIO.fromEither(parsed.as[ZeppelinNotebook])
+                jup = zep.toJupyterNotebook
+                jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
+                io <- writeString(extPath, jupStr)
               } yield io
             } else {
               writeString(extPath, content)
@@ -292,7 +290,11 @@ abstract class FileBasedRepository extends NotebookRepository {
         case (true, false) =>
           val absOldPath = pathOf(oldPath)
           val absNewPath = pathOf(withExt)
-          ZIO {
+          effectBlocking {
+            val dir = absNewPath.getParent.toFile
+            if (!dir.exists()) {
+              dir.mkdirs()
+            }
             Files.move(absOldPath, absNewPath)
           }.as(withExt)
       }
@@ -303,7 +305,7 @@ abstract class FileBasedRepository extends NotebookRepository {
   def deleteNotebook(path: String): RIO[BaseEnv with GlobalEnv, Unit] = {
     notebookExists(path).flatMap {
       case false => ZIO.fail(new FileNotFoundException(s"File $path does't exist"))
-      case true  => ZIO(Files.delete(pathOf(path)))
+      case true  => effectBlocking(Files.delete(pathOf(path)))
     }
   }
 

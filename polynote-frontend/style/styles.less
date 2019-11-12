@@ -2136,14 +2136,41 @@ button {
     list-style: none;
     line-height: 22px;
     vertical-align: middle;
+
     li {
       user-select: none;
       cursor: pointer;
       padding: 0 1em 0 0;
       position: relative;
+
       ul {
         margin-left: 24px;
         display: none;
+
+        li {
+          border-left: 1px solid @ui-border-dark;
+        }
+
+        li::before {
+          position: absolute;
+          top: 10px;
+          height: 0;
+          width: 10px;
+          border-bottom: 1px solid @ui-border-dark;
+          content: '';
+        }
+
+        li:last-child {
+          border-left: none;
+        }
+
+        li:last-child::before {
+          top: 0;
+          height: 10px;
+          border-left: 1px solid @ui-border-dark;
+          content: '';
+        }
+
       }
 
       span, a {
@@ -2162,7 +2189,6 @@ button {
 
     li.leaf a:focus span {
       background-color: @ui-selected;
-      outline: 1px dotted black;
       color: white;
     }
 
@@ -2219,24 +2245,6 @@ button {
       .expander {
         background-image: url(icons/bullet_toggle_minus.png);
       }
-    }
-
-    li.branch.expanded::before {
-      position: absolute;
-      left: 24px;
-      top: 8px;
-      bottom: 8px;
-      content: ' ';
-      border-left: 1px dotted black;
-    }
-
-    li.branch.expanded > ul > li::before {
-      content: ' ';
-      position: absolute;
-      left: 0;
-      top: 13px;
-      width: 16px;
-      border-bottom: 1px dotted black;
     }
   }
 }
