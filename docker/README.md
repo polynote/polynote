@@ -118,5 +118,5 @@ docker build -t polynote-local:dev -f ../../docker/dev/Dockerfile .
 
 ```sh
 export POLYNOTE_VERSION=0.2.13
-docker build -t polynote-local:latest --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION spark-2.4
+docker build -t polynote-local:spark24 --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION spark-2.4
 ```
