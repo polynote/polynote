@@ -1,7 +1,7 @@
 'use strict';
 
 
-import {div, button, iconButton, h4, TagElement} from '../util/tags'
+import {div, button, iconButton, h4, TagElement, icon} from '../util/tags'
 import {
     BoolType,
     ByteType, DataType,
@@ -160,15 +160,15 @@ export class PlotEditor extends EventTarget {
                 div(['numeric-field-list'], this.listNumerics()),
                 div(['control-buttons'], [
                     this.saveButton = button(['save'], {}, [
-                        span(['fas'], 'plus-square'),
+                        icon([], 'plus-square', 'save'),
                         'Save'
                     ]).click(_ => this.savePlot()),
                     this.runButton = button(['plot'], {}, [
-                        span(['fas'], 'play'),
+                        icon([], 'play', 'play'),
                         'Plot'
                     ]).click(_ => this.runPlot()),
                     this.cancelButton = button(['cancel'], {}, [
-                        span(['fas'], "stop"),
+                        icon([], 'stop', 'cancel'),
                         'Cancel'
                     ]).click(_ => this.abortPlot())
                 ])
