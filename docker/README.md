@@ -54,7 +54,7 @@ storage:
 > The Polynote installation comes with some example files, which we mount into `/opt/notebooks`, 
 > allowing you to see the examples and try them out without having to make copies.
 > Note that changes to the examples will not be persisted onto the host if you follow the instructions given.
-> Only files in the `notebooks` folder visible in the sidebar will persist.
+> Only files outside the `examples` folder visible in the sidebar will persist (in your local `notebooks` folder).
 
 We are now ready to run the Docker container! Use the following command: 
 
