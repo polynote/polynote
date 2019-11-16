@@ -5,6 +5,8 @@ import io.circe.syntax._
 import io.circe.generic.semiauto._
 import polynote.server.repository.ipynb.JupyterOutput.{DisplayData, Error, ExecuteResult}
 
+import scala.collection.immutable.StringOps
+
 // Conversion for Zeppelin notebooks. Lossy, only supports decoding.
 
 final case class ZeppelinNotebook(
@@ -120,7 +122,7 @@ final case class ZeppelinOutput(
     case INCOMPLETE => None
     case ERROR =>
 
-      val iter = data.lines
+      val iter = new StringOps(data).lines
       val firstException = iter.next().split(":")
 
       Option(Error(
@@ -133,7 +135,7 @@ final case class ZeppelinOutput(
   }
 
   def zepTableHTML(zepData: String): String = {
-    val itr = zepData.lines
+    val itr = new StringOps(zepData).lines
     val header = itr.next().split("\t")
     val headerHTML = header.mkString("<th>", "</th><th>", "</th>")
     val rowsHTML = itr.toSeq.map(_.split("\t").mkString("<td>", "</td><td>", "</td>")).mkString("<tr>", "</tr><tr>", "</tr>")

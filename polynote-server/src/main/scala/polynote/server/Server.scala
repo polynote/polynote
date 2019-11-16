@@ -25,6 +25,7 @@ import zio.interop.catz.implicits._
 import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
+import scala.collection.immutable.StringOps
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App with Http4sDsl[Task] {
 
@@ -96,7 +97,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     _            <- Logging.warn(securityWarning)
     exit         <- BlazeServerBuilder[Task]
       .withBanner(
-        raw"""
+        new StringOps(raw"""
              |
              |  _____      _                   _
              | |  __ \    | |                 | |
@@ -108,7 +109,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
              |               |___/
              |
              |Server running at $url
-             |""".stripMargin.lines.toList
+             |""".stripMargin).lines.toList
       )
       .bindHttp(port, address)
       .withWebSockets(true)
