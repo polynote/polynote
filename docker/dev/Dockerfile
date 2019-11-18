@@ -9,6 +9,7 @@ RUN apt update -y && \
 # First, create the distribution with `sbt dist`
 # Then build this from the dist target directory (e.g., `target/scala-2.11`) using `-f ../../docker/dev/Dockerfile` to select this file.
 # for example (don't forget the dot at the end!):
+#   sbt dist
 #   cd target/scala-2.11/
 #   docker build -t polynote:dev -f ../../docker/dev/Dockerfile .
 COPY polynote-dist.tar.gz .
@@ -24,6 +25,23 @@ ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
 
 RUN pip3 install pyspark==2.4.4
 
+# to wrap up, we create (safe)user
+ENV UID 1000
+ENV NB_USER polly
+
+RUN adduser --disabled-password \
+    --gecos "Default user" \
+    --uid ${UID} \
+    ${NB_USER}
+
+# allow user access to the WORKDIR
+RUN chown -R ${NB_USER}:${NB_USER} /opt/
+
+# start image as (safe)user
+USER ${NB_USER}
+
+# expose the (internal) port that polynote runs on
 EXPOSE 8192
 
+# start polynote on container run
 ENTRYPOINT ["./polynote/polynote.py"]
