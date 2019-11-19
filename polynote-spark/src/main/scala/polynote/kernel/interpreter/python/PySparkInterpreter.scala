@@ -59,8 +59,17 @@ class PySparkInterpreter(
 
     s"""
        |import os
+       |import sys
        |if "PYSPARK_PYTHON" not in os.environ:
        |    $setPySpark
+       |
+       |# grab the pyspark included in the spark distribution, if available.
+       |spark_home = os.environ.get("SPARK_HOME")
+       |if spark_home:
+       |    sys.path.insert(1, os.path.join(spark_home, "python"))
+       |    import glob
+       |    py4j_path = glob.glob(os.path.join(spark_home, 'python', 'lib', 'py4j-*.zip'))[0]  # we want to use the py4j distributed with pyspark
+       |    sys.path.insert(1, py4j_path)
        |
        |from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters, CallbackServerParameters
        |from pyspark.conf import SparkConf
