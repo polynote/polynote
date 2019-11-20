@@ -79,8 +79,9 @@ class PythonInterpreter private[python] (
   }
 
   def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
-    parsed    <- parse(code, s"Cell${state.id}")
-    compiled  <- compile(parsed)
+    cell      <- ZIO.succeed(s"Cell${state.id}")
+    parsed    <- parse(code, cell)
+    compiled  <- compile(parsed, cell)
     locals    <- eval[PyObject]("{}")
     globals   <- populateGlobals(state)
     _         <- injectGlobals(globals)
@@ -224,7 +225,7 @@ class PythonInterpreter private[python] (
       |        pos = pos + err.offset
       |        return { 'error': KernelReport(Pos(cell, pos, pos, pos), err.msg, 2) }
       |
-      |def __polynote_compile__(parsed):
+      |def __polynote_compile__(parsed, cell):
       |    # Python 3.8 compat, see https://github.com/ipython/ipython/pull/11593/files#diff-1c766d4a0b1ea9ed8b2d14058b8234ab
       |    if sys.version_info > (3,8):
       |        from ast import Module
@@ -232,8 +233,8 @@ class PythonInterpreter private[python] (
       |        # mock the new API, ignore second argument
       |        # see https://github.com/ipython/ipython/issues/11590
       |        from ast import Module as OriginalModule
-      |        Module = lambda nodelist, type_ignores: OriginalModule(nodelist)
-      |    return list(map(lambda node: compile(Module([node], []), '<ast>', 'exec'), parsed.body))
+      |        Module = lambda nodelist, ignored: OriginalModule(nodelist)
+      |    return list(map(lambda node: compile(Module([node], []), cell, 'exec'), parsed.body))
       |
       |def __polynote_run__(compiled, _globals, _locals, kernel):
       |    try:
@@ -353,10 +354,10 @@ class PythonInterpreter private[python] (
       }
   }
 
-  protected def compile(parsed: PyObject): Task[PyObject] = jep {
+  protected def compile(parsed: PyObject, cell: String): Task[PyObject] = jep {
     jep =>
       val compile = jep.getValue("__polynote_compile__", classOf[PyCallable])
-      compile.callAs(classOf[PyObject], parsed)
+      compile.callAs(classOf[PyObject], parsed, cell)
   }
 
   protected def run(compiled: PyObject, globals: PyObject, locals: PyObject, state: State): RIO[CurrentRuntime, State] =
@@ -395,7 +396,10 @@ class PythonInterpreter private[python] (
                       case "bool" => (typeOf[Boolean], valueAs(classOf[java.lang.Boolean]).booleanValue())
                       case "function" | "builtin_function_or_method" | "type" =>
                         (typeOf[PythonFunction], new PythonFunction(valueAs(classOf[PyCallable]), runner))
-                      case "PyJObject" | "PyJCallable" | "PyJAutoCloseable" | "PyJArray" => // TODO: can we get better type information from `PyJArray`?
+
+                      // TODO: can we get better type information from `PyJArray`?
+                      // Types that start with "PyJ*" are actually Java values wrapped by jep for use in Python
+                      case other if other.startsWith("PyJ") =>
                         val jValue = valueAs(classOf[Object])
                         val typ = runtime.unsafeRun(compiler.reflect(jValue)).symbol.info
                         (typ, jValue)
@@ -415,7 +419,7 @@ class PythonInterpreter private[python] (
               val cause = Option(get.callAs(classOf[String], "py4j_error")).flatMap(py4jError)
               val message = get.callAs(classOf[String], "message")
               val typ = get.callAs(classOf[String], "class")
-              val els = trace.asScala.map(_.asInstanceOf[StackTraceElement]).toArray
+              val els = trace.asScala.map(_.asInstanceOf[StackTraceElement]).reverse.toArray // python stack traces are backwards from java!
               val err = cause.fold(new RuntimeException(s"$typ: $message"))(new RuntimeException(s"$typ: $message", _))
               err.setStackTrace(els)
               throw err
