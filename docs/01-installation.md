@@ -62,10 +62,8 @@ cd polynote
   You'll also need to install some Python dependencies `jep`, `jedi`, `virtualenv`:
   
   ```
-  pip3 install jep jedi pyspark virtualenv
+  pip3 install jep jedi virtualenv
   ``` 
-  
-  For PySpark support you'll want to install `pyspark` as well. 
   
   Additionally, you will probably want to install `numpy` and `pandas`. 
   
