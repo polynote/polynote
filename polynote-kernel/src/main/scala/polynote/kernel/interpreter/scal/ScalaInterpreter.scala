@@ -33,7 +33,7 @@ class ScalaInterpreter private[scal] (
     cls            <- scalaCompiler.compileCell(cellCode)
     resultInstance <- cls.map(cls => runClass(cls, cellCode, inputs, state).map(Some(_))).getOrElse(ZIO.succeed(None))
     resultValues   <- resultInstance.map(resultInstance => getResultValues(state.id, cellCode, resultInstance)).getOrElse(ZIO.succeed(Nil))
-  } yield ScalaCellState(state.id, state.prev, resultValues, cellCode, resultInstance)
+  } yield ScalaCellState(state.id, state.prev, resultValues, cellCode, resultInstance, Some(inputNames))
 
   override def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = for {
     collectedState   <- injectState(collectState(state)).provide(CurrentRuntime.NoCurrentRuntime)
@@ -105,7 +105,7 @@ class ScalaInterpreter private[scal] (
     * the constructor arguments which the code requires.
     */
   private def collectState(state: State): CollectedState = state.prev.collect {
-    case ScalaCellState(_, _, values, cellCode, _) =>
+    case ScalaCellState(_, _, values, cellCode, _, _) =>
       val valuesMap = values.map(v => v.name -> v.value).toMap
       val inputs = cellCode.typedOutputs.map(_.duplicate.setPos(NoPosition))
         .flatMap {
@@ -132,7 +132,7 @@ class ScalaInterpreter private[scal] (
 
   private def collectPrevInstances(code: CellCode, state: State): List[AnyRef] = {
     val allInstances = state.prev.collect {
-      case ScalaCellState(_, _, _, cellCode, Some(inst)) => cellCode.cellClassSymbol -> inst
+      case ScalaCellState(_, _, _, cellCode, Some(inst), _) => cellCode.cellClassSymbol -> inst
     }.toMap
 
     val usedInstances = code.priorCells.map {
@@ -189,7 +189,7 @@ class ScalaInterpreter private[scal] (
     * A [[State]] implementation for Scala cells. It tracks the CellCode and the instance of the cell class, which
     * we'll need to pass into future cells if they use types, classes, etc from this cell.
     */
-  case class ScalaCellState(id: CellID, prev: State, values: List[ResultValue], cellCode: CellCode, instance: Option[AnyRef]) extends State {
+  case class ScalaCellState(id: CellID, prev: State, values: List[ResultValue], cellCode: CellCode, instance: Option[AnyRef], usedValues: Option[List[String]] = None) extends State {
     override def withPrev(prev: State): ScalaCellState = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =

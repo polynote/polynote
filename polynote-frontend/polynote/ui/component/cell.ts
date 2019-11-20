@@ -476,6 +476,14 @@ export class CodeCell extends Cell {
         }
     }
 
+    setOutdated(outdated: boolean): void {
+        if (outdated) {
+            this.container.classList.add('outdated');
+        } else {
+            this.container.classList.remove('outdated');
+        }
+    }
+
     toggleCode() {
         const prevMetadata = this.metadata || new CellMetadata();
         this.setMetadata(prevMetadata.copy({hideSource: !prevMetadata.hideSource}));
@@ -820,6 +828,12 @@ export class CodeCell extends Cell {
         window.clearInterval(this.execDurationUpdater);
         delete this.execDurationUpdater;
 
+        if (!this.metadata) {
+            this.setMetadata(new CellMetadata(false, false, false, result));
+        } else {
+            this.setMetadata(this.metadata.copy({executionInfo: result}));
+        }
+
         // populate display
         this.execInfoEl.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
         this.execInfoEl.appendChild(span(['exec-duration'], [prettyDuration(duration)]));
@@ -836,20 +850,17 @@ export class CodeCell extends Cell {
     }
 
     setStatus(status: "running" | "queued" | "error" | "complete") {
+        this.container.classList.remove('running', 'queued', 'error', 'outdated');
         switch(status) {
             case "complete":
-                this.container.classList.remove('running', 'queued', 'error');
                 break;
             case "error":
-                this.container.classList.remove('queued', 'running');
                 this.container.classList.add('error');
                 break;
             case "queued":
-                this.container.classList.remove('running', 'error');
                 this.container.classList.add('queued');
                 break;
             case "running":
-                this.container.classList.remove('queued', 'error');
                 this.container.classList.add('running');
                 break;
         }

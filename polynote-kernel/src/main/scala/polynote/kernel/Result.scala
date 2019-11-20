@@ -10,7 +10,7 @@ import scodec.codecs.implicits._
 import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
-import polynote.messages.{CellID, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
+import polynote.messages.{CellID, ShortList, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
 import polynote.runtime.ValueRepr
 import scodec.bits.BitVector
 
@@ -143,7 +143,6 @@ object ErrorResult {
 
 
 final case class ClearResults() extends Result
-
 object ClearResults extends ResultCompanion[ClearResults](3)
 
 
@@ -180,6 +179,8 @@ object ExecutionInfo extends ResultCompanion[ExecutionInfo](5) {
   implicit val decoder: Decoder[ExecutionInfo] = deriveDecoder[ExecutionInfo]
 }
 
+final case class CellDependencies(dependencies: ShortList[(CellID, TinyString)]) extends Result
+object CellDependencies extends ResultCompanion[CellDependencies](6)
 
 sealed trait Result
 

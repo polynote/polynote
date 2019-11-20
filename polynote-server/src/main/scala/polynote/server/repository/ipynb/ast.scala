@@ -155,6 +155,7 @@ object JupyterOutput {
 
     case ResultValue(_, _, _, _, _, _, _) => Nil
     case ExecutionInfo(_, _) => Nil
+    case CellDependencies(_) => Nil
   }
 }
 
