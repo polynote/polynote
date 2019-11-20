@@ -15,7 +15,7 @@ jobs:
         architecture: 'x64'
     - name: Build
       run: |
-        pip install virtualenv ipython nbconvert jedi numpy scipy pyspark==2.1.2 jep==3.9.0
+        pip install virtualenv ipython nbconvert jedi numpy scipy jep==3.9.0
         jep_site_packages_path=`pip show jep | grep "^Location:" | cut -d ':' -f 2 | cut -d ' ' -f 2`
         jep_path=${jep_site_packages_path}/jep
         jep_lib_path=`realpath ${jep_site_packages_path}/../../`
