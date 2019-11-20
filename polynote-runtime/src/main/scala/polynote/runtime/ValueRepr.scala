@@ -6,7 +6,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 import polynote.runtime
-import sun.misc.Cleaner
 
 /**
   * A plain text representation of a value

@@ -6,6 +6,7 @@ import polynote.env.ops.Location
 import polynote.kernel.logging
 import zio.blocking.Blocking
 import zio.{UIO, ZIO}
+import scala.collection.immutable.StringOps
 
 trait Logging {
   val logging: Logging.Service
@@ -34,7 +35,7 @@ object Logging {
 
       override def error(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
         out.synchronized {
-          val lines = msg.lines
+          val lines = new StringOps(msg).lines
           out.print(Red)
           out.print(errorPrefix)
           out.println(lines.next())
@@ -77,7 +78,7 @@ object Logging {
               out.print(indent)
               out.println(el)
           }
-          err.prettyPrint.lines.foreach {
+          new StringOps(err.prettyPrint).lines.foreach {
             line =>
               out.print(indent)
               out.print(line)
@@ -88,7 +89,7 @@ object Logging {
 
       override def warn(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
         out.synchronized {
-          val lines = msg.lines
+          val lines = new StringOps(msg).lines
           val firstLine = lines.next()
           out.print(warnPrefix)
           out.println(firstLine)
@@ -102,7 +103,7 @@ object Logging {
 
       override def info(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
         out.synchronized {
-          val lines = msg.lines
+          val lines = new StringOps(msg).lines
           val firstLine = lines.next()
           out.print(infoPrefix)
           out.println(firstLine)
