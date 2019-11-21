@@ -180,6 +180,15 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
     ValueMap(results.state.scope) shouldEqual (0 to 257).map(i => s"foo$i" -> i).toMap
   }
 
+  "lazy vals don't crash" in {
+    val test = for {
+      _ <- interp("lazy val x = 10")
+      _ <- interp("val y = x * 2")
+    } yield ()
+    val (finalState, _) = test.run(cellState).runIO()
+    ValueMap(finalState.scope)("y") shouldEqual 20
+  }
+
   "cases from previous scala interpreter" - {
     "allow values to be overridden" in {
       val code = Seq(
