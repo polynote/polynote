@@ -107,7 +107,7 @@ class ScalaInterpreter private[scal] (
   private def collectState(state: State): CollectedState = state.prev.collect {
     case ScalaCellState(_, _, values, cellCode, _) =>
       val valuesMap = values.map(v => v.name -> v.value).toMap
-      val inputs = cellCode.typedOutputs.map(_.duplicate.setPos(NoPosition))
+      val inputs = cellCode.typedOutputs.map(cleanInput)
         .flatMap {
           v =>
             val (nameString, input) = v.name.decodedName.toString match {
@@ -129,6 +129,12 @@ class ScalaInterpreter private[scal] (
       val nextImports = cellCode.map(_.splitImports()).getOrElse(Imports(Nil, Nil))
       CollectedState(inputs ++ nextInputs, nextImports ++ imports, cellCode.map(_ :: priorCells).getOrElse(priorCells))
   }
+
+  /**
+    * Ensure an input [[ValDef]] is suitable as a constructor parameter
+    */
+  private def cleanInput(input: ValDef): ValDef =
+    input.copy(mods = input.mods &~ global.Flag.LAZY).duplicate.setPos(NoPosition)
 
   private def collectPrevInstances(code: CellCode, state: State): List[AnyRef] = {
     val allInstances = state.prev.collect {
