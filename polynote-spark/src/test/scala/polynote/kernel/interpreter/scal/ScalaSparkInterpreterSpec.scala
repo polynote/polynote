@@ -149,12 +149,14 @@ class ScalaSparkInterpreterSpec extends FreeSpec with InterpreterSpec with Match
     "work with lazy vals and vars" in {
       val code = Seq(
         "var a = 100",
-        "lazy val b = a"
+        "lazy val b = a",
+        "val c = a + b"
       )
       assertOutput(code) {
         case (vars, output) =>
           vars("a") shouldEqual 100
           vars("b") shouldEqual 100
+          vars("c") shouldEqual 200
       }
     }
 
