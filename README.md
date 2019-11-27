@@ -1,6 +1,6 @@
 # polynote
 [![Gitter chat](https://badges.gitter.im/polynote/polynote.svg)](https://gitter.im/polynote/polynote)
-[![Build status](https://github.com/polynote/polynote/workflows/Build/badge.svg)](https://github.com/polynote/polynote/workflows/Build)
+[![Build status](https://github.com/polynote/polynote/workflows/Build/badge.svg)](https://github.com/polynote/polynote/actions?query=workflow%3ABuild)
 
 Polynote is an experimental polyglot notebook environment. Currently, it supports Scala and Python (with or without Spark),
 SQL, and Vega.
