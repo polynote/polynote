@@ -29,17 +29,18 @@ import scala.collection.immutable.StringOps
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App with Http4sDsl[Task] {
 
+  private lazy val watchUIPath = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/index.html")
+
   private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
 
   private def indexFileContent(key: String, config: PolynoteConfig, watchUI: Boolean) = {
     val is = ZIO {
       if (watchUI) {
-        java.nio.file.Files.newInputStream(
-          new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/index.html"))
+        Some(java.nio.file.Files.newInputStream(watchUIPath))
       } else {
-        getClass.getClassLoader.getResourceAsStream("index.html")
+        Option(getClass.getClassLoader.getResourceAsStream("index.html"))
       }
-    }
+    }.someOrFail(new RuntimeException("Failed to load polynote frontend"))
 
     val content = is.bracket(is => ZIO(is.close()).orDie) {
       is => effectBlocking(scala.io.Source.fromInputStream(is, "UTF-8").mkString
