@@ -212,6 +212,8 @@ export class PlotEditor extends EventTarget {
         this.plotTypeSelector.addListener(() => this.onPlotTypeChange());
 
         this.el.addEventListener('dragstart', evt => {
+           // Firefox only allows dragging elements with a set DataTransfer
+           evt && evt.dataTransfer && evt.dataTransfer.setData('dummy', 'dummy');
            this.draggingEl = evt.target as MeasureEl;
         });
 
