@@ -1,6 +1,9 @@
 package polynote.testing
 
+import polynote.config.PolynoteConfig
+import polynote.env.ops.Enrich
 import polynote.kernel.ResultValue
+import polynote.kernel.environment.{Config, Env}
 import polynote.kernel.logging.Logging
 import zio.blocking.Blocking
 import zio.clock.Clock
@@ -19,8 +22,16 @@ trait ZIOSpec extends Runtime[Clock with Console with System with Random with Bl
   // TODO: should test platform behave differently? Isolate per suite?
   val Platform: Platform = PlatformLive.Default
 
+  implicit class ConfigIORunOps[A](val self: ZIO[Environment with Config, Throwable, A]) {
+    def runIO(config: PolynoteConfig): A = self.provideSomeM(Env.enrich[Environment](Config.of(config))).runIO()
+  }
 
-  implicit class IORunOps[A](val self: ZIO[Clock with Console with System with Random with Blocking with Logging, Throwable, A]) {
+  implicit class EnvIORunOps[R1, R2, A](val self: ZIO[Environment with R1 with R2, Throwable, A]) {
+    def runIO(env1: R1, env2: R2)(implicit enrich1: Enrich[Environment, R1], enrich2: Enrich[Environment with R1, R2]): A =
+      self.provideSome[Environment](env => enrich2(enrich1(env, env1), env2)).runIO()
+  }
+
+  implicit class IORunOps[A](val self: ZIO[Environment, Throwable, A]) {
     def runIO(): A = unsafeRunSync(self).getOrElse {
       c => throw c.squash
     }

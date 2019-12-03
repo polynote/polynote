@@ -13,7 +13,7 @@ import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
 import zio.internal.Executor
 import zio.interop.catz._
-import zio.{Task, RIO, UIO, ZIO}
+import zio.{RIO, Task, UIO, URIO, ZIO}
 
 //////////////////////////////////////////////////////////////////////
 // Environment modules to mix for various layers of the application //
@@ -27,7 +27,7 @@ trait Config {
 }
 
 object Config {
-  def access: RIO[Config, PolynoteConfig] = ZIO.access[Config](_.polynoteConfig)
+  def access: URIO[Config, PolynoteConfig] = ZIO.access[Config](_.polynoteConfig)
   def of(config: PolynoteConfig): Config = new Config {
     val polynoteConfig: PolynoteConfig = config
   }
@@ -236,6 +236,36 @@ object InterpreterEnvironment {
   * Some utilities for enrichment of environment
   */
 object Env {
+
+
+  def addM[RO]: AddMPartial[RO] = addMPartialInst.asInstanceOf[AddMPartial[RO]]
+
+  class AddMPartial[RO] {
+    def apply[RA, E, RB](rbTask: ZIO[RA, E, RB]): AddM[RO, RA, RB, E] = new AddM(rbTask)
+  }
+  private val addMPartialInst: AddMPartial[Any] = new AddMPartial[Any]
+
+  class AddM[RO, -RA, RB, +E](val rbTask: ZIO[RA, E, RB]) extends AnyVal {
+    def flatMap[E1 >: E, A](
+      zio: RB => ZIO[RO with RB, E1, A])(
+      implicit enricher: Enrich[RO, RB]
+    ): ZIO[RO with RA, E1, A] =
+      rbTask.flatMap(rb => Env.enrich[RO][RB](rb)).flatMap(r => zio(r).provide(r))
+  }
+
+  def add[RO]: AddPartial[RO] = addPartialInstance.asInstanceOf[AddPartial[RO]]
+  class AddPartial[RO] {
+    def apply[R](r: R): Add[RO, R] = new Add[RO, R](r)
+  }
+  private val addPartialInstance: AddPartial[Any] = new AddPartial[Any]
+
+  class Add[RO, R](val r: R) extends AnyVal {
+    def flatMap[E, A](
+      zio: R => ZIO[RO with R, E, A])(
+      implicit enricher: Enrich[RO, R]
+    ): ZIO[RO, E, A] = zio(r).provideSome[RO](ro => enricher(ro, r))
+  }
+
 
   def enrichWith[A, B](a: A, b: B)(implicit enrich: Enrich[A, B]): A with B = enrich(a, b)
 

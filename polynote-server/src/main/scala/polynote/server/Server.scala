@@ -8,6 +8,8 @@ import java.util.concurrent.TimeUnit
 
 import fs2.Chunk
 import fs2.concurrent.Topic
+import cats.instances.option._
+import cats.syntax.traverse._
 import org.http4s.{Charset, Headers, HttpApp, HttpRoutes, MediaType, Request, Response, StaticFile}
 import org.http4s.blaze.pipeline.Command.EOF
 import org.http4s.dsl.Http4sDsl
@@ -19,6 +21,7 @@ import polynote.kernel.environment.{Config, Env}
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
 import polynote.messages.Message
+import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
 import zio.{Cause, RIO, Task, ZIO}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
@@ -26,6 +29,7 @@ import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.StringOps
+import Server.Routes
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App with Http4sDsl[Task] {
 
@@ -88,12 +92,12 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     host          = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url           = s"http://$host:$port"
     interps      <- interpreter.Loader.load.orDie
-    globalEnv     = Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(config, interps, kernelFactory))
     broadcastAll <- Topic[Task, Option[Message]](None).orDie
-    manager      <- NotebookManager(broadcastAll).provide(globalEnv).orDie
-    socketEnv     = Env.enrichWith[BaseEnv with GlobalEnv, NotebookManager](globalEnv, manager)
+    _            <- Env.addM[BaseEnv](ZIO.succeed(GlobalEnv(config, interps, kernelFactory)))
+    _            <- Env.addM[BaseEnv with GlobalEnv](NotebookManager(broadcastAll).orDie)
     loadIndex    <- indexFileContent(wsKey, config, args.watchUI)
-    app          <- httpApp(args.watchUI, wsKey, loadIndex, broadcastAll).provide(socketEnv).orDie
+    _            <- Env.addM[BaseEnv with GlobalEnv with NotebookManager](IdentityProvider.load.orDie)
+    app          <- httpApp(args.watchUI, wsKey, loadIndex, broadcastAll).orDie
     _            <- Logging.warn(securityWarning)
     exit         <- BlazeServerBuilder[Task]
       .withBanner(
@@ -116,7 +120,6 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       .withHttpApp(app)
       .serve.compile.last.orDie
   } yield exit.map(_.code).getOrElse(0)
-
 
   private def staticFile(location: String, req: Request[Task]): Task[Response[Task]] =
     StaticFile.fromString[Task](location, blockingEC, Some(req)).getOrElseF(NotFound())
@@ -143,12 +146,14 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
   object KeyMatcher extends QueryParamDecoderMatcher[String]("key")
 
+  type RequestEnv = BaseEnv with GlobalEnv with NotebookManager with IdentityProvider
+
   def httpApp(
     watchUI: Boolean,
     wsKey: String,
     getIndex: ZIO[Blocking, Nothing, String],
     broadcastAll: Topic[Task, Option[Message]]
-  ): RIO[BaseEnv with GlobalEnv with NotebookManager, HttpApp[Task]] = {
+  ): RIO[RequestEnv, HttpApp[Task]] = {
     val indexResponse = getIndex.map {
       index =>
         val indexBytes = index.getBytes(StandardCharsets.UTF_8)
@@ -159,21 +164,30 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     }
 
     for {
-      env <- ZIO.access[BaseEnv with GlobalEnv with NotebookManager](identity)
+      env        <- ZIO.access[RequestEnv](identity)
+      authRoutes <- IdentityProvider.authRoutes
+      authorize  <- IdentityProvider.authorize[RequestEnv]
     } yield HttpRoutes.of[Task] {
-      case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => SocketSession(broadcastAll).flatMap(_.toResponse).provide(env)
-      case GET -> Root / "ws"                                               => Forbidden()
-      case req @ GET -> Root                                                => indexResponse.provide(env)
-      case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req).provide(env)
-      case req @ GET -> "notebook" /: _                                     => indexResponse.provide(env)
-      case req @ GET -> (Root / "polynote-assembly.jar")                    => StaticFile.fromFile[Task](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), blockingEC).getOrElseF(NotFound())
-      case req @ GET -> path                                                => serveFile(path.toString, req, watchUI)
+
+      val defaultRoutes: Routes = {
+        case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => authorize(req, SocketSession(broadcastAll).flatMap(_.toResponse)).provide(env)
+        case GET -> Root / "ws"                                               => Forbidden()
+        case req @ GET -> Root                                                => indexResponse.provide(env)
+        case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req).provide(env)
+        case req @ GET -> "notebook" /: _                                     => indexResponse.provide(env)
+        case req @ GET -> (Root / "polynote-assembly.jar")                    => StaticFile.fromFile[Task](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), blockingEC).getOrElseF(NotFound())
+      }
+
+      (defaultRoutes orElse authRoutes).andThen(_.provide(env)) orElse {
+        case req @ GET -> path => serveFile(path.toString, req, watchUI)
+      }
     }.mapF(_.getOrElseF(NotFound()))
   }
 
 }
 
 object Server {
+  type Routes = PartialFunction[Request[Task], RIO[BaseEnv with Config, Response[Task]]]
   case class Args(
     configFile: File = new File("config.yml"),
     watchUI: Boolean = false
