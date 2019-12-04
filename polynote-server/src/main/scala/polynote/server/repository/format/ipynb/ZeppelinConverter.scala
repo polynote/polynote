@@ -30,18 +30,6 @@ class ZeppelinToIpynbFormat extends IPythonFormat {
       content.toNotebook(s"$noExtPath.ipynb") // Note the extension being overridden to ipynb here.
     }
   }
-
-  private def addInitialConfig(jupyterNB: JupyterNotebook): RIO[BaseEnv with GlobalEnv, JupyterNotebook] = {
-    Config.access.map { config =>
-      jupyterNB.updateAsNotebook {
-        nb =>
-          if (nb.config.isEmpty) {
-            nb.copy(config = Option(NotebookConfig.empty.copy(sparkConfig = Option(config.spark))))
-          }
-          nb
-      }
-    }
-  }
 }
 
 

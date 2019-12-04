@@ -238,14 +238,7 @@ final case class JupyterNotebook(
   nbformat: Int = 4,
   nbformat_minor: Int = 0,
   cells: List[JupyterCell]
-) {
-
-  def updateAsNotebook(f: NotebookContent => NotebookContent): JupyterNotebook = {
-    val nb = JupyterNotebook.toNotebook(this)
-    val newNb = f(nb)
-    JupyterNotebook.fromNotebook(newNb)
-  }
-}
+)
 
 object JupyterNotebook {
   implicit val encoder: Encoder[JupyterNotebook] = deriveEncoder[JupyterNotebook]
