@@ -91,7 +91,8 @@ trait Loader {
 }
 
 object Loader {
-  def load: RIO[Blocking, Map[String, List[Interpreter.Factory]]] = effectBlocking(ServiceLoader.load(classOf[Loader]).iterator.asScala.toList).map {
+  private lazy val unsafeLoad = ServiceLoader.load(classOf[Loader]).iterator.asScala.toList
+  def load: RIO[Blocking, Map[String, List[Interpreter.Factory]]] = effectBlocking(unsafeLoad).map {
     loaders =>
       loaders.map(_.factories.mapValues(List(_))).foldLeft(Map.empty[String, List[Interpreter.Factory]])(_ |+| _).mapValues(_.sortBy(f => (-f.priority, !f.getClass.getName.startsWith("polynote"), f.getClass.getName)))
   }

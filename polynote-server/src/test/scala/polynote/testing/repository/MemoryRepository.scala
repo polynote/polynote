@@ -19,7 +19,7 @@ class MemoryRepository extends NotebookRepository {
 
   def loadNotebook(path: String): Task[Notebook] = ZIO.effectTotal(notebooks.get(path)).get.mapError(err => new FileNotFoundException(path))
 
-  def saveNotebook(path: String, cells: Notebook): UIO[Unit] = ZIO.effectTotal(notebooks.put(path, cells))
+  def saveNotebook(nb: Notebook): UIO[Unit] = ZIO.effectTotal(notebooks.put(nb.path, nb))
 
   def listNotebooks(): UIO[List[String]] = ZIO.effectTotal(notebooks.keys.toList)
 

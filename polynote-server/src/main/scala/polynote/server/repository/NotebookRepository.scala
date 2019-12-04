@@ -8,9 +8,11 @@ import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path, 
 import cats.implicits._
 import io.circe.Printer
 import polynote.config.PolynoteConfig
+import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages._
-import polynote.server.repository.ipynb.ZeppelinNotebook
+import polynote.server.repository.format.NotebookFormat
+import polynote.server.repository.format.ipynb.{JupyterNotebook, ZeppelinNotebook}
 import zio.{RIO, ZIO}
 import zio.blocking.effectBlocking
 import zio.interop.catz._
@@ -38,7 +40,7 @@ trait NotebookRepository {
   /**
     * Save the given notebook to the specified path
     */
-  def saveNotebook(path: String, cells: Notebook): RIO[BaseEnv with GlobalEnv, Unit]
+  def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit]
 
   /**
     * @return A list of notebook paths that exist in this repository
@@ -108,8 +110,8 @@ class TreeRepository (
      } yield base.map(b => nb.copy(path = Paths.get(b, nb.path).toString)).getOrElse(nb)
   }
 
-  override def saveNotebook(originalPath: String, cells: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = delegate(originalPath) {
-    (repo, relativePath, _) => repo.saveNotebook(relativePath, cells)
+  override def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = delegate(nb.path) {
+    (repo, relativePath, _) => repo.saveNotebook(nb.copy(path=relativePath))
   }
 
   override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
@@ -145,7 +147,7 @@ class TreeRepository (
     } else {
       for {
         srcNb                <- delegate(src)((repo, repoRelativePathStr, base) => repo.loadNotebook(repoRelativePathStr))
-        (destRepoBase, dest) <- delegate(dest)((repo, repoRelativePathStr, base) => repo.saveNotebook(repoRelativePathStr, srcNb).map(_ => base -> repoRelativePathStr))
+        (destRepoBase, dest) <- delegate(dest)((repo, repoRelativePathStr, base) => repo.saveNotebook(srcNb.copy(path=repoRelativePathStr)).map(_ => base -> repoRelativePathStr))
         _                    <- delegate(src)((repo, repoRelativePathStr, _) => repo.deleteNotebook(repoRelativePathStr))
       } yield destRepoBase.map(base => Paths.get(base, dest).toString).getOrElse(dest)
     }
@@ -161,17 +163,24 @@ class TreeRepository (
   } yield ()
 }
 
-abstract class FileBasedRepository extends NotebookRepository {
-  def path: Path
-  def chunkSize: Int
-  def executionContext: ExecutionContext
-  def config: PolynoteConfig
-
+class FileBasedRepository(
+  val path: Path,
+  val chunkSize: Int = 8192,
+  val maxDepth: Int = 4,
+  val defaultExtension: String = "ipynb"
+) extends NotebookRepository {
   protected def pathOf(relativePath: String): Path = path.resolve(relativePath)
 
   protected def loadString(path: String): RIO[BaseEnv with GlobalEnv, String] = for {
-    content <- readBytes(Files.newInputStream(pathOf(path)), chunkSize, executionContext)
+    content <- readBytes(Files.newInputStream(pathOf(path)), chunkSize)
   } yield new String(content.toArray, StandardCharsets.UTF_8)
+
+  override def loadNotebook(path: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
+    fmt     <- NotebookFormat.getFormat(Paths.get(path))
+    content <- loadString(path)
+    (noExtPath, _) = extractExtension(path)
+    nb      <- fmt.decodeNotebook(noExtPath, content)
+  } yield nb
 
   def writeString(relativePath: String, content: String): RIO[BaseEnv with GlobalEnv, Unit] = ZIO {
     val nbPath = pathOf(relativePath)
@@ -183,17 +192,20 @@ abstract class FileBasedRepository extends NotebookRepository {
     Files.write(pathOf(relativePath), content.getBytes(StandardCharsets.UTF_8))
   }.map(_ => ())
 
-  protected def defaultExtension: String
+  override def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = for {
+    fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))
+    rawString <- fmt.encodeNotebook(NotebookContent(nb.cells, nb.config))
+    _         <- writeString(nb.path, rawString)
+  } yield ()
 
-  protected def validNotebook(path: Path): Boolean = path.toString.endsWith(s".$defaultExtension")
-  protected def maxDepth: Int = 4
-
-  def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] =
-    ZIO(Files.walk(path, maxDepth, FileVisitOption.FOLLOW_LINKS).iterator().asScala.drop(1).filter(validNotebook).toList).map {
-      paths => paths.map {
-        path => this.path.relativize(path).toString
-      }
+  def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
+    for {
+      files <- effectBlocking(Files.walk(path, maxDepth, FileVisitOption.FOLLOW_LINKS).iterator().asScala.drop(1).toList)
+      isSupported <- NotebookFormat.isSupported
+    } yield files.filter(isSupported).map {
+      path => this.path.relativize(path).toString
     }
+  }
 
   def notebookExists(path: String): RIO[BaseEnv with GlobalEnv, Boolean] = {
     val repoPath = this.path.resolve(path)
@@ -214,14 +226,15 @@ abstract class FileBasedRepository extends NotebookRepository {
 
   val EndsWithNum = """^(.*)(\d+)$""".r
 
-  def findUniqueName(path: String, ext: String): RIO[BaseEnv with GlobalEnv, String] = {
-    notebookExists(path + ext).flatMap {
+  def findUniqueName(path: String): RIO[BaseEnv with GlobalEnv, String] = {
+    val (noExtPath, ext) = extractExtension(path)
+    notebookExists(path).flatMap {
       case true =>
-        path match {
+        noExtPath match {
           case EndsWithNum(base, num) =>
-            findUniqueName(s"$base${num.toInt + 1}", ext)
+            findUniqueName(s"$base${num.toInt + 1}.$ext")
           case _ =>
-            findUniqueName(s"${path}2", ext) // start at two because the first one is implicitly #1? Or is that weird?
+            findUniqueName(s"${noExtPath}2.$ext") // start at two because the first one is implicitly #1? Or is that weird?
         }
       case false =>
         ZIO.succeed(path)
@@ -236,44 +249,38 @@ abstract class FileBasedRepository extends NotebookRepository {
     fullPath.dropWhile(elem => nbPath.contains(elem)).length
   }
 
-  def emptyNotebook(path: String, title: String): Notebook = Notebook(
-    ShortString(path),
-    ShortList(
-      NotebookCell(0, "text", s"# $title\n\nThis is a text cell. Start editing!") :: Nil
-    ),
-    Some(NotebookConfig.fromPolynoteConfig(config))
-  )
+  def emptyNotebook(path: String, title: String): RIO[BaseEnv with GlobalEnv, Notebook] = Config.access.map {
+    config =>
+      Notebook(
+        path,
+        ShortList.of(NotebookCell(0, "text", s"# $title\n\nThis is a text cell. Start editing!")),
+        Some(NotebookConfig.fromPolynoteConfig(config)))
+  }
+
+  private def extractExtension(path: String) = {
+    path.lastIndexOf('.') match {
+      case -1 => (path, defaultExtension)  // Adds the default extension if none is found.
+      case idx =>
+        (path.substring(0, idx), path.substring(idx + 1))
+    }
+  }
 
   def createNotebook(relativePath: String, maybeContent: Option[String] = None): RIO[BaseEnv with GlobalEnv, String] = {
-    val ext = s".$defaultExtension"
-    val noExtPath = relativePath.replaceFirst("""^/+""", "").stripSuffix(ext)
+    val (noExtPath, ext) = extractExtension(relativePath.replaceFirst("""^/+""", ""))
+    val path = s"$noExtPath.$ext"
 
-    if (relativeDepth(relativePath) > maxDepth) {
-      ZIO.fail(new IllegalArgumentException(s"Input path ($relativePath) too deep, maxDepth is $maxDepth"))
+    if (relativeDepth(path) > maxDepth) {
+      ZIO.fail(new IllegalArgumentException(s"Input path ($path) too deep, maxDepth is $maxDepth"))
     } else {
-      findUniqueName(noExtPath, ext).flatMap { name =>
-        val extPath = name + ext
-        val createOrImport = maybeContent match {
-          case None =>
-            val defaultTitle = name.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
-            saveNotebook(extPath, emptyNotebook(extPath, defaultTitle))
-          case Some(content) =>
-            if (relativePath.endsWith(".json")) { // assume zeppelin
-              import io.circe.parser.parse
-              import io.circe.syntax._
-              for {
-                parsed <- ZIO.fromEither(parse(content))
-                zep <- ZIO.fromEither(parsed.as[ZeppelinNotebook])
-                jup = zep.toJupyterNotebook
-                jupStr = Printer.spaces2.copy(dropNullValues = true).pretty(jup.asJson)
-                io <- writeString(extPath, jupStr)
-              } yield io
-            } else {
-              writeString(extPath, content)
-            }
+      for {
+        fmt     <- NotebookFormat.getFormat(Paths.get(path))
+        nb      <- maybeContent.map(content => fmt.decodeNotebook(noExtPath, content)).getOrElse {
+          val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
+          emptyNotebook(path, defaultTitle)
         }
-        createOrImport.map(_ => extPath)
-      }
+        name    <- findUniqueName(nb.path)
+        _       <- saveNotebook(nb.copy(path = name))
+      } yield name
     }
   }
 

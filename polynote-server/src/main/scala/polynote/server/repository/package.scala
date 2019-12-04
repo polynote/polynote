@@ -4,15 +4,14 @@ import java.io.InputStream
 
 import fs2.Chunk
 import polynote.kernel.BaseEnv
+import polynote.messages.{Notebook, NotebookCell, NotebookConfig, ShortList}
 import zio.{RIO, Task, ZIO}
 import zio.blocking.effectBlocking
 import zio.interop.catz._
 
-import scala.concurrent.ExecutionContext
-
 package object repository {
 
-  def readBytes(is: => InputStream, chunkSize: Int, executionContext: ExecutionContext): RIO[BaseEnv, Chunk.Bytes] = {
+  def readBytes(is: => InputStream, chunkSize: Int): RIO[BaseEnv, Chunk.Bytes] = {
     for {
       env    <- ZIO.environment[BaseEnv]
       ec     <- env.blocking.blockingExecutor.map(_.asEC)
@@ -20,4 +19,7 @@ package object repository {
     } yield chunks
   }
 
+  final case class NotebookContent(cells: List[NotebookCell], config: Option[NotebookConfig]) {
+    def toNotebook(path: String) = Notebook(path, ShortList(cells), config)
+  }
 }

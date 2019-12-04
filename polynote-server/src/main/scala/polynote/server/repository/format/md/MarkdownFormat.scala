@@ -1,40 +1,28 @@
-package polynote.server.repository
+package polynote.server.repository.format.md
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.Path
-
-import cats.effect.{ContextShift, IO}
 import cats.syntax.either._
 import com.vladsch.flexmark.ast._
 import com.vladsch.flexmark.ext.yaml.front.matter.{YamlFrontMatterBlock, YamlFrontMatterExtension}
 import com.vladsch.flexmark.parser.Parser
-import polynote.messages._
 import io.circe.syntax._
 import io.circe.yaml.Printer
-import polynote.config.PolynoteConfig
 import polynote.data.Rope
 import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
+import polynote.messages._
+import polynote.server.repository.NotebookContent
+import polynote.server.repository.format.NotebookFormat
 import zio.{RIO, ZIO}
 
-import scala.annotation.tailrec
-import scala.collection.immutable.Queue
 import scala.collection.JavaConverters._
-import scala.concurrent.ExecutionContext
 
 
-class MarkdownNotebookRepository(
-  val path: Path,
-  val config: PolynoteConfig,
-  val chunkSize: Int = 8192,
-  val executionContext: ExecutionContext = ExecutionContext.global)(implicit
-  val contextShift: ContextShift[IO]
-) extends FileBasedRepository {
+class MarkdownFormat extends NotebookFormat {
 
   private lazy val parser = Parser.builder().extensions(List(YamlFrontMatterExtension.create()).asJava).build()
   private lazy val printer = Printer.spaces2.copy(dropNullKeys = true)
 
-  override protected val defaultExtension: String = "md"
+  override val extension: String = "md"
 
   private def textCell(content: String, i: Int) =
     NotebookCell(i, TinyString("text"), Rope(content), ShortList(Nil))
@@ -42,8 +30,8 @@ class MarkdownNotebookRepository(
   private def codeCell(node: FencedCodeBlock, i: Int) =
     NotebookCell(i, TinyString(node.getInfo.normalizeEOL()), Rope(node.getContentChars.normalizeEOL()), ShortList(Nil))
 
-  private def collectCells(path: String, document: Document): Notebook =
-    document.getChildren.iterator().asScala.foldLeft((0, 0, Notebook(ShortString(path), ShortList(Nil), None))) {
+  private def collectCells(document: Document): NotebookContent =
+    document.getChildren.iterator().asScala.foldLeft((0, 0, NotebookContent(ShortList(Nil), None))) {
       case ((start, end, nb), node) => node match {
         case node: YamlFrontMatterBlock =>
           val content = node.getContentChars.normalizeEOL().stripPrefix("---\n").stripSuffix("\n---")
@@ -75,7 +63,7 @@ class MarkdownNotebookRepository(
       }
     } match {
       case (start, end, nb) if start == end => nb
-      case (start, end, nb) => nb.addCell(textCell(document.getChars.subSequence(start, end).normalizeEOL(), nb.cells.size))
+      case (start, end, nb) => nb.copy(cells = nb.cells :+ textCell(document.getChars.subSequence(start, end).normalizeEOL(), nb.cells.size))
     }
 
   // To embed results, we actually wrap them in a div so we can recover some metadata about them.
@@ -162,16 +150,11 @@ class MarkdownNotebookRepository(
          |```$outputs""".stripMargin
   }
 
-  override def validNotebook(file: Path): Boolean = file.endsWith(".md")
+  override def decodeNotebook(noExtPath: String, rawContent: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
+    parsed  <- ZIO(parser.parse(rawContent))
+  } yield collectCells(parsed).toNotebook(s"$noExtPath.$extension")
 
-  def loadNotebook(path: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
-    str     <- loadString(path)
-    parsed  <- ZIO(parser.parse(str))
-  } yield collectCells(path, parsed)
-
-  def saveNotebook(path: String, cells: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = {
-    val str =
-      cells.config.map(_.asJson).map(printer.pretty).map(yml => s"---\n$yml\n---\n\n").mkString + cells.cells.map(cellToMarkdown).mkString("\n\n").stripPrefix("\n").stripPrefix("\n")
-    writeString(path, str)
+  override def encodeNotebook(nb: NotebookContent): RIO[BaseEnv with GlobalEnv, String] = ZIO.succeed {
+      nb.config.map(_.asJson).map(printer.pretty).map(yml => s"---\n$yml\n---\n\n").mkString + nb.cells.map(cellToMarkdown).mkString("\n\n").stripPrefix("\n").stripPrefix("\n")
   }
 }

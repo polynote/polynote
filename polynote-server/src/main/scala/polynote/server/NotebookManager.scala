@@ -9,8 +9,8 @@ import cats.effect.ConcurrentEffect
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, LocalKernel}
 import polynote.kernel.util.RefMap
 import polynote.messages.{CreateNotebook, DeleteNotebook, Message, Notebook, NotebookUpdate, RenameNotebook, ShortString}
-import polynote.server.repository.{NotebookRepository, TreeRepository}
-import polynote.server.repository.ipynb.IPythonNotebookRepository
+import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
+import polynote.server.repository.format.ipynb.IPythonFormat
 import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
 import zio.interop.catz._
 import cats.implicits._
@@ -63,7 +63,7 @@ object NotebookManager {
       private def startWriter(publisher: KernelPublisher): ZIO[BaseEnv with GlobalEnv, Nothing, NotebookWriter] = for {
         shutdownSignal <- Promise.make[Throwable, Unit]
         fiber          <- publisher.notebooksTimed(Duration(1, TimeUnit.SECONDS))
-          .evalMap(notebook => repository.saveNotebook(notebook.path, notebook))
+          .evalMap(notebook => repository.saveNotebook(notebook))
           .interruptWhen(shutdownSignal.await.either)
           .interruptWhen(publisher.closed.await.either)
           .compile.drain.fork
@@ -129,10 +129,7 @@ object NotebookManager {
       mount =>
         makeTreeRepository(mount.dir, mount.mounts, config, ec)
     }
-    val rootRepo = new IPythonNotebookRepository(
-      new File(System.getProperty("user.dir")).toPath.resolve(dir),
-      config,
-      executionContext = ec)
+    val rootRepo = new FileBasedRepository(new File(System.getProperty("user.dir")).toPath.resolve(dir))
 
     new TreeRepository(rootRepo, repoMap)
   }

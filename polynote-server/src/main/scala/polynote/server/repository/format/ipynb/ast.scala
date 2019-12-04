@@ -1,4 +1,4 @@
-package polynote.server.repository.ipynb
+package polynote.server.repository.format.ipynb
 
 import cats.data.Ior
 import cats.instances.either._
@@ -13,6 +13,7 @@ import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel._
 import polynote.messages._
 import polynote.runtime.{MIMERepr, StringRepr}
+import polynote.server.repository.NotebookContent
 
 sealed trait JupyterCellType
 
@@ -237,19 +238,26 @@ final case class JupyterNotebook(
   nbformat: Int = 4,
   nbformat_minor: Int = 0,
   cells: List[JupyterCell]
-)
+) {
+
+  def updateAsNotebook(f: NotebookContent => NotebookContent): JupyterNotebook = {
+    val nb = JupyterNotebook.toNotebook(this)
+    val newNb = f(nb)
+    JupyterNotebook.fromNotebook(newNb)
+  }
+}
 
 object JupyterNotebook {
   implicit val encoder: Encoder[JupyterNotebook] = deriveEncoder[JupyterNotebook]
   implicit val decoder: Decoder[JupyterNotebook] = deriveDecoder[JupyterNotebook]
 
-  def toNotebook(path: String, notebook: JupyterNotebook): Notebook = {
+  def toNotebook(notebook: JupyterNotebook): NotebookContent = {
     val config = notebook.metadata.flatMap(_("config")).flatMap(_.as[NotebookConfig].right.toOption)
     val cells = ShortList(notebook.cells.zipWithIndex.map((JupyterCell.toNotebookCell _).tupled))
-    Notebook(ShortString(path), cells, config)
+    NotebookContent(cells, config)
   }
 
-  def fromNotebook(notebook: Notebook): JupyterNotebook = {
+  def fromNotebook(notebook: NotebookContent): JupyterNotebook = {
     val meta = JsonObject("config" -> notebook.config.map(_.asJson).getOrElse(Json.Null))
     val cells = notebook.cells.map(JupyterCell.fromNotebookCell)
     JupyterNotebook(metadata = Some(meta), cells = cells)
