@@ -16,7 +16,7 @@ import zio.interop.catz._
 
 class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
 
-  private def providerConfig(allowAnonymous: Boolean) = HeaderIdentityProvider.Config(
+  private def createProvider(allowAnonymous: Boolean) = HeaderIdentityProvider(
     "X-User-Name",
     Map(
       "bob" -> Set(PermissionType.ReadNotebook, PermissionType.ModifyNotebook),
@@ -27,7 +27,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
 
   private def authConfig(allowAnonymous: Boolean) = PolynoteConfig(security = Security(auth = Some(AuthProvider(
     provider = "header",
-    config = providerConfig(allowAnonymous).asJsonObject))))
+    config = createProvider(allowAnonymous).asJsonObject))))
 
   def loadFrom(config: PolynoteConfig): Option[IdentityProvider.Service] = config.security.auth.map(IdentityProvider.find).sequence.runIO(config)
 
@@ -103,7 +103,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
 
     "checks permissions" - {
       import Permission._
-      val provider = new HeaderIdentityProvider(providerConfig(true))
+      val provider = createProvider(true)
       def check(name: Option[String], permission: Permission): Unit =
         IdentityProvider.checkPermission(permission)
           .provideSomeM(Env.enrich[Environment with Config with IdentityProvider](UserIdentity.of(name.map(BasicIdentity.apply))))

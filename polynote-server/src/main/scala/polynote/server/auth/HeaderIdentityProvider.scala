@@ -8,49 +8,40 @@ import polynote.kernel.environment.Config
 import zio.{RIO, Task, ZIO}
 import polynote.config.circeConfig
 
-class HeaderIdentityProvider(val config: HeaderIdentityProvider.Config) extends IdentityProvider.Service {
-  override def authRoutes: Option[PartialFunction[Request[Task], RIO[BaseEnv with Config, Response[Task]]]] = None
+case class HeaderIdentityProvider(
+  header: String,
+  permissions: Map[String, Set[PermissionType]] = Map("*" -> PermissionType.All),
+  allowAnonymous: Boolean = false
+) extends IdentityProvider.Service {
+  override def authRoutes: Option[PartialFunction[Request[Task], RIO[BaseEnv, Response[Task]]]] = None
 
-  override def checkAuth(req: Request[Task]): ZIO[BaseEnv with Config, Response[Task], Option[Identity]] =
-    req.headers.get(CaseInsensitiveString(config.header)) match {
+  override def checkAuth(req: Request[Task]): ZIO[BaseEnv, Response[Task], Option[Identity]] =
+    req.headers.get(CaseInsensitiveString(header)) match {
       case Some(Header(_, name))         => ZIO.succeed(Some(BasicIdentity(name)))
-      case None if config.allowAnonymous => ZIO.succeed(None)
+      case None if allowAnonymous => ZIO.succeed(None)
       case None                          => ZIO.fail(Response[Task](status = org.http4s.Status.Forbidden))
     }
 
   override def checkPermission(
     ident: Option[Identity],
     permission: Permission
-  ): ZIO[BaseEnv with Config, Permission.PermissionDenied, Unit] = {
+  ): ZIO[BaseEnv, Permission.PermissionDenied, Unit] = {
     val matchedUser = ident.map(_.name).getOrElse("*")
-    val permissions = config.permissions.getOrElse(matchedUser, Set.empty)
-    if (permissions contains permission.permissionType)
+    val resolvedPermissions = permissions.getOrElse(matchedUser, Set.empty)
+    if (resolvedPermissions contains permission.permissionType)
       ZIO.unit
     else
       ZIO.fail(Permission.PermissionDenied(permission, s"$matchedUser does not have ${permission.permissionType.encoded} access"))
   }
-
-  override def equals(obj: Any): Boolean = obj match {
-    case that: HeaderIdentityProvider => that.config == config
-    case _ => false
-  }
 }
 
 object HeaderIdentityProvider {
-  case class Config(
-    header: String,
-    permissions: Map[String, Set[PermissionType]] = Map("*" -> PermissionType.All),
-    allowAnonymous: Boolean = false
-  )
-
-  object Config {
-    implicit val encoder: ObjectEncoder[Config] = deriveEncoder
-    implicit val decoder: Decoder[Config] = deriveDecoder
-  }
+  implicit val encoder: ObjectEncoder[HeaderIdentityProvider] = deriveEncoder
+  implicit val decoder: Decoder[HeaderIdentityProvider] = deriveDecoder
 
   class Loader extends ProviderLoader {
     override val providerKey: String = "header"
     override def provider(config: JsonObject): RIO[BaseEnv with environment.Config, HeaderIdentityProvider] =
-      ZIO.fromEither(Json.fromJsonObject(config).as[Config]).map(new HeaderIdentityProvider(_))
+      ZIO.fromEither(Json.fromJsonObject(config).as[HeaderIdentityProvider])
   }
 }
