@@ -84,14 +84,23 @@ class TreeRepository (
     */
   private def delegate[T](notebookPath: String)(f: (NotebookRepository, String, Option[String]) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
     val originalPath = Paths.get(notebookPath)
-    val basePath = originalPath.getName(0)
-    val base = basePath.toString
+    val basePath = extractBase(originalPath)
 
-    val repoForPath = repos.getOrElse(base, root)
+    val (repoForPath, relativePath, maybeBasePath) = basePath.flatMap(base => repos.get(base.toString).map(_ -> base)) match {
+      case Some((repo, base)) =>
+          (repo, base.relativize(originalPath).toString, Option(base.toString))
+      case None =>
+        (root, notebookPath, None)
+    }
 
-    val (relativePath, maybeBasePath) = if (repos.contains(base)) (basePath.relativize(originalPath).toString, Option(base)) else (notebookPath, None)
-    f(repoForPath, relativePath.toString, maybeBasePath)
+    f(repoForPath, relativePath, maybeBasePath)
   }
+
+  /**
+    * Extract the "base" of the path
+    * @return Whether this path starts with a "base" directory that might be a mount point
+    */
+  private def extractBase(path: Path): Option[Path] = Option(path.getParent).map(_.getName(0))
 
   override def notebookExists(originalPath: String): RIO[BaseEnv with GlobalEnv, Boolean] = delegate(originalPath) {
     (repo, relativePath, _) => repo.notebookExists(relativePath)
@@ -132,10 +141,10 @@ class TreeRepository (
 
   override def renameNotebook(src: String, dest: String): RIO[BaseEnv with GlobalEnv, String] = {
     val srcPath = Paths.get(src)
-    val srcBase = srcPath.getName(0)
+    val srcBase = extractBase(srcPath)
 
     val destPath = Paths.get(dest)
-    val destBase = destPath.getName(0)
+    val destBase = extractBase(srcPath)
 
     if (srcBase == destBase) {
       for {
