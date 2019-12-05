@@ -93,7 +93,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     url           = s"http://$host:$port"
     interps      <- interpreter.Loader.load.orDie
     broadcastAll <- Topic[Task, Option[Message]](None).orDie
-    _            <- Env.addM[BaseEnv](ZIO.succeed(GlobalEnv(config, interps, kernelFactory)))
+    _            <- Env.add[BaseEnv](GlobalEnv(config, interps, kernelFactory))
     _            <- Env.addM[BaseEnv with GlobalEnv](NotebookManager(broadcastAll).orDie)
     loadIndex    <- indexFileContent(wsKey, config, args.watchUI)
     _            <- Env.addM[BaseEnv with GlobalEnv with NotebookManager](IdentityProvider.load.orDie)

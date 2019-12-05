@@ -237,7 +237,33 @@ object InterpreterEnvironment {
   */
 object Env {
 
-
+  /**
+    * Add a new type to the environment inside a for-comprehension. This variant is for an environment that's constructed
+    * effectfully.
+    *
+    * This method takes the "current" environment type, and enriches it with the given value. The remainder of the
+    * for-comprehension can then access that environment. For example, instead of this:
+    *
+    * for {
+    *   someValue <- computeThing
+    *   myEnv1    <- Env.enrichM[Env1 with Env2](CreateMyEnv(someValue))
+    *   thing1    <- doThing1.provide(myEnv1)
+    *   thing2    <- doThing2.provide(myEnv1)
+    *   // etc
+    * } yield thing2
+    *
+    * You can do this:
+    *
+    * for {
+    *   someValue <- computeThing
+    *   _         <- Env.addM[Env1 with Env2](CreateMyEnv(someValue))
+    *   thing1    <- doThing1
+    *   thing2    <- doThing2
+    * } yield thing2
+    *
+    * The MyEnv environment is automatically provided to the continuation after Env.addM, so it doesn't have to be
+    * named and explicitly provided everywhere.
+    */
   def addM[RO]: AddMPartial[RO] = addMPartialInst.asInstanceOf[AddMPartial[RO]]
 
   class AddMPartial[RO] {
@@ -253,7 +279,35 @@ object Env {
       rbTask.flatMap(rb => Env.enrich[RO][RB](rb)).flatMap(r => zio(r).provide(r))
   }
 
+  /**
+    * Add a new type to the environment inside a for-comprehension. This variant is for an environment that's constructed
+    * directly.
+    *
+    * This method takes the "current" environment type, and enriches it with the given value. The remainder of the
+    * for-comprehension can then access that environment. For example, instead of this:
+    *
+    * for {
+    *   someValue <- computeThing
+    *   myEnv1    <- Env.enrich[Env1 with Env2](CreateMyEnv(someValue))
+    *   thing1    <- doThing1.provide(myEnv1)
+    *   thing2    <- doThing2.provide(myEnv1)
+    *   // etc
+    * } yield thing2
+    *
+    * You can do this:
+    *
+    * for {
+    *   someValue <- computeThing
+    *   _         <- Env.add[Env1 with Env2](CreateMyEnv(someValue))
+    *   thing1    <- doThing1
+    *   thing2    <- doThing2
+    * } yield thing2
+    *
+    * The MyEnv environment is automatically provided to the continuation after Env.add, so it doesn't have to be
+    * named and explicitly provided everywhere.
+    */
   def add[RO]: AddPartial[RO] = addPartialInstance.asInstanceOf[AddPartial[RO]]
+
   class AddPartial[RO] {
     def apply[R](r: R): Add[RO, R] = new Add[RO, R](r)
   }
@@ -267,14 +321,43 @@ object Env {
   }
 
 
+  /**
+    * Enrich A with B, resulting in a value that is both A and B. This is intended for ZIO environments, and as such,
+    * A and B must be traits. It's a good practice for each of these traits to have exactly one abstract method which
+    * provides that environment's aspect.
+    *
+    * The returned value will implement A and B, delegating all of A's methods to the given A and all of B's methods to
+    * the given B. If A already extends B, the methods of B will be replaced to delegate to the given instance of B.
+    *
+    * @see [[Enrich]] for the macro implementation.
+    */
   def enrichWith[A, B](a: A, b: B)(implicit enrich: Enrich[A, B]): A with B = enrich(a, b)
 
+  /**
+    * A partially applied enrichment. Provide as a type parameter the type that will be pulled from the ZIO environment
+    * and enriched, and as a value parameter the value that will be added (its type can typically be inferred).
+    *
+    * Example:
+    *     val zio: ZIO[Thing1 with Thing2 with Thing3, Nothing, Int] = ???
+    *     val thing3: Thing3 = ???
+    *     zio.provideSomeM(Env.enrich[Thing1 with Thing2](thing3)) // result: ZIO[Thing1 with Thing2, Nothing, Int]
+    */
   def enrich[A]: Enricher[A] = new Enricher()
 
   class Enricher[A] {
     def apply[B](b: B)(implicit enrich: Enrich[A, B]): ZIO[A, Nothing, A with B] = ZIO.access[A](identity).map(enrichWith[A, B](_, b))
   }
 
+  /**
+    * A partially applied enrichment. Provide as a type parameter the type that will be pulled from the ZIO environment
+    * and enriched, and as a value parameter an effect that will produce the value that will be added (its type can
+    * typically be inferred).
+    *
+    * Example:
+    *     val zio: ZIO[Thing1 with Thing2 with Thing3, Nothing, Int] = ???
+    *     val thing3: ZIO[Thing1, Nothing, Thing3] = ???
+    *     zio.provideSomeM(Env.enrichM[Thing1 with Thing2](thing3)) // result: ZIO[Thing1 with Thing2, Nothing, Int]
+    */
   def enrichM[A]: MEnricher[A] = new MEnricher
 
   class MEnricher[A]() {
