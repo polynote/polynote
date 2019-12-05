@@ -113,11 +113,16 @@
 
 #################################################################################
 # Spark config params can be set by uncommenting and editing the following lines.
+#
+# To set additional arguments to `spark-submit`, you can use the `sparkSubmitArgs` key. 
+#
 #################################################################################
 
 #spark:
+#  sparkSubmitArgs: "--some --arguments"
 #  spark.driver.userClasspathFirst: true
 #  spark.executor.userClasspathFirst: true
+
 
 ########## Front-end Configuration ################################################################################
 ###
