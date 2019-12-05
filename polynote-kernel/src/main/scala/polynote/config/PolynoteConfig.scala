@@ -71,8 +71,16 @@ object Behavior {
   implicit val decoder: Decoder[Behavior] = deriveDecoder
 }
 
+final case class AuthProvider(provider: String, config: JsonObject)
+
+object AuthProvider {
+  implicit val encoder: ObjectEncoder[AuthProvider] = deriveEncoder
+  implicit val decoder: Decoder[AuthProvider] = deriveDecoder
+}
+
 final case class Security(
-  websocketKey: Option[String] = None
+  websocketKey: Option[String] = None,
+  auth: Option[AuthProvider] = None
 )
 
 object Security {
