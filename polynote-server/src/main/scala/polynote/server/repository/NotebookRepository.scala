@@ -82,25 +82,29 @@ class TreeRepository (
     * @param f:            Function for `(NotebookRepository, relativePath: String, maybeBasePath: Option[String) => RIO[Env, T]`.
     *                      The presence of `maybeBasePath` reflects whether the path has been relativized (in case callers need to de-relativize any results)
     */
-  private def delegate[T](notebookPath: String)(f: (NotebookRepository, String, Option[String]) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
-    val originalPath = Paths.get(notebookPath)
-    val basePath = extractBase(originalPath)
+  private[repository] def delegate[T](notebookPath: String)(f: (NotebookRepository, String, Option[String]) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
+    val (originalPath, basePath) = extractPath(Paths.get(notebookPath))
 
     val (repoForPath, relativePath, maybeBasePath) = basePath.flatMap(base => repos.get(base.toString).map(_ -> base)) match {
       case Some((repo, base)) =>
           (repo, base.relativize(originalPath).toString, Option(base.toString))
       case None =>
-        (root, notebookPath, None)
+        (root, originalPath.toString, None)
     }
 
     f(repoForPath, relativePath, maybeBasePath)
   }
 
   /**
-    * Extract the "base" of the path
-    * @return Whether this path starts with a "base" directory that might be a mount point
+    * Relativizes the path and extracts the base path (the top-most path member in this path)
+    *
+    * @return the path, relativized if necessary, and the basePath
     */
-  private def extractBase(path: Path): Option[Path] = Option(path.getParent).map(_.getName(0))
+  private def extractPath(path: Path): (Path, Option[Path]) = {
+    val forceRelativePath = path.subpath(0, path.getNameCount)  // root doesn't count with subpaths, so this trick forces the path to be relative
+
+    (forceRelativePath, Option(forceRelativePath.getParent).map(_.getName(0)))
+  }
 
   override def notebookExists(originalPath: String): RIO[BaseEnv with GlobalEnv, Boolean] = delegate(originalPath) {
     (repo, relativePath, _) => repo.notebookExists(relativePath)
@@ -140,17 +144,15 @@ class TreeRepository (
   }
 
   override def renameNotebook(src: String, dest: String): RIO[BaseEnv with GlobalEnv, String] = {
-    val srcPath = Paths.get(src)
-    val srcBase = extractBase(srcPath)
+    val (srcPath, srcBase) = extractPath(Paths.get(src))
 
-    val destPath = Paths.get(dest)
-    val destBase = extractBase(srcPath)
+    val (destPath, destBase) = extractPath(Paths.get(dest))
 
     if (srcBase == destBase) {
       for {
         (renamed, base) <- delegate(srcPath.toString) {
           (repo, repoRelativePathStr, base) =>
-            repo.renameNotebook(repoRelativePathStr, base.fold(dest)(repoBase => Paths.get(repoBase).relativize(destPath).toString)).map(_ -> base)
+            repo.renameNotebook(repoRelativePathStr, base.fold(destPath.toString)(repoBase => Paths.get(repoBase).relativize(destPath).toString)).map(_ -> base)
         }
       } yield base.map(b => Paths.get(b, renamed).toString).getOrElse(renamed)
     } else {

@@ -26,9 +26,14 @@ trait ZIOSpec extends Runtime[Clock with Console with System with Random with Bl
     def runIO(config: PolynoteConfig): A = self.provideSomeM(Env.enrich[Environment](Config.of(config))).runIO()
   }
 
-  implicit class EnvIORunOps[R1, R2, A](val self: ZIO[Environment with R1 with R2, Throwable, A]) {
+  implicit class TwoEnvIORunOps[R1, R2, A](val self: ZIO[Environment with R1 with R2, Throwable, A]) {
     def runIO(env1: R1, env2: R2)(implicit enrich1: Enrich[Environment, R1], enrich2: Enrich[Environment with R1, R2]): A =
       self.provideSome[Environment](env => enrich2(enrich1(env, env1), env2)).runIO()
+  }
+
+  implicit class EnvIORunOps[R, A](val self: ZIO[Environment with R, Throwable, A]) {
+    def runIO(env1: R)(implicit enrich1: Enrich[Environment, R]): A =
+      self.provideSome[Environment](env => enrich1(env, env1)).runIO()
   }
 
   implicit class IORunOps[A](val self: ZIO[Environment, Throwable, A]) {
