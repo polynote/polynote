@@ -89,9 +89,9 @@ object CoursierFetcher {
     lazy val coursierDeps = dependencies.map {
       moduleStr =>
         val (org, name, typ, config, classifier, ver) = moduleStr.split(':') match {
-          case Array(org, name, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier.empty, ver)
-          case Array(org, name, classifier, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.default, Classifier(classifier), ver)
-          case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.default, Classifier(classifier), ver)
+          case Array(org, name, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.empty, Classifier.empty, ver)
+          case Array(org, name, classifier, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.empty, Classifier(classifier), ver)
+          case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.empty, Classifier(classifier), ver)
           case Array(org, name, typ, config, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration(config), Classifier(classifier), ver)
           case _ => throw new Exception(s"Unable to parse dependency '$moduleStr'")
         }
@@ -145,8 +145,6 @@ object CoursierFetcher {
           md => resolveModules(md.size).as(md)
         }
     }
-
-
 
     Resolve(cache)
       .addDependencies(coursierDeps: _*)
