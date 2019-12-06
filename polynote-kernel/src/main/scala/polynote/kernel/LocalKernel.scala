@@ -19,9 +19,10 @@ import polynote.kernel.util.RefMap
 import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
 import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr, ValueRepr}
 import scodec.bits.ByteVector
-import zio.{Task, RIO, ZIO}
+import zio.{RIO, Task, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
+import zio.duration.Duration
 import zio.interop.catz._
 
 
@@ -58,7 +59,7 @@ class LocalKernel private[kernel] (
             initialState   = State.id(id, prevState)                                                                    // run the cell while capturing outputs
             resultState   <- (interpreter.run(cell.content.toString, initialState) >>= updateValues)
               .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
-              .provideSomeM(Env.enrichM[Logging](interpEnv.mkExecutor(scalaCompiler.classLoader).widen[InterpreterEnv]))
+              .provideSomeM(Env.enrichM[Logging with Clock](interpEnv.mkExecutor(scalaCompiler.classLoader).widen[InterpreterEnv]))
             _             <- publishEndTime
             _             <- updateState(resultState)
             _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
@@ -206,13 +207,22 @@ class LocalKernel private[kernel] (
   /**
     * Finds reprs of each value in the state, and returns a new state with the values updated to include the reprs
     */
-  private def updateValues(state: State): RIO[Blocking with Logging, State] = {
+  private def updateValues(state: State): RIO[Blocking with Logging with Clock, State] = {
     import scalaCompiler.global, global.{appliedType, typeOf}
     val (names, types) = state.values.map {v =>
       v.name -> appliedType(typeOf[ReprsOf[Any]].typeConstructor, v.scalaType.asInstanceOf[global.Type])
     }.toMap.toList.unzip
-    scalaCompiler.inferImplicits(types).flatMap {
-      instances =>
+    scalaCompiler.inferImplicits(types).timeout(Duration(3, TimeUnit.SECONDS)).flatMap {
+      case None =>
+        state.updateValuesM {
+          resultValue =>
+            val fallback = ZIO.succeed(resultValue)
+            ZIO(resultValue.copy(reprs = List(StringRepr(resultValue.value.toString))))
+              .orElse(fallback)
+              .timeout(Duration(200, TimeUnit.MILLISECONDS)).get
+              .orElse(fallback)
+        }
+      case Some(instances) =>
         val instanceMap = names.zip(instances).collect {
           case (name, Some(instance)) => name -> instance.asInstanceOf[ReprsOf[Any]]
         }.toMap
