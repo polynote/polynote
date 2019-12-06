@@ -11,6 +11,7 @@ import {CancelTasks, GroupAgg, HandleData, Message, ModifyStream, QuantileBin, S
 import {MessageListener, SocketSession} from "../comms";
 import {DataType, DoubleType, LongType, NumericTypes, StructField, StructType} from "./data_type";
 import {Either, Left, Right} from "./types";
+import {EventTarget} from "event-target-shim"
 
 export abstract class ValueRepr extends CodecContainer {
     static codec: Codec<ValueRepr>;
