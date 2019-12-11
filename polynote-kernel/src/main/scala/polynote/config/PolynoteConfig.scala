@@ -97,6 +97,36 @@ object UI {
   implicit val decoder: Decoder[UI] = deriveDecoder
 }
 
+sealed trait Credentials
+object Credentials {
+  final case class ivy(
+    base: String,
+    username: String,
+    password: String
+  ) extends Credentials {
+    override def toString = s"ivy($base,$username,<REDACTED>)"
+  }
+  object ivy {
+    implicit val encoder: ObjectEncoder[maven] = deriveEncoder
+    implicit val decoder: Decoder[maven] = deriveDecoder
+  }
+
+  final case class maven(
+    base: String,
+    username: String,
+    password: String
+  ) extends Credentials {
+    override def toString = s"maven($base,$username,<REDACTED>)"
+  }
+  object maven {
+    implicit val encoder: ObjectEncoder[maven] = deriveEncoder
+    implicit val decoder: Decoder[maven] = deriveDecoder
+  }
+
+  implicit val encoder: ObjectEncoder[Credentials] = deriveEncoder
+  implicit val decoder: Decoder[Credentials] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   storage: Storage = Storage(),
@@ -106,7 +136,8 @@ final case class PolynoteConfig(
   spark: Map[String, String] = Map.empty,
   behavior: Behavior = Behavior(),
   security: Security = Security(),
-  ui: UI = UI()
+  ui: UI = UI(),
+  credentials: List[Credentials] = Nil
 )
 
 

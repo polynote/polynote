@@ -24,9 +24,9 @@ import coursier.error.ResolutionError
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
 import coursier.util.{EitherT, Sync}
-import polynote.config.{RepositoryConfig, ivy, maven}
+import polynote.config.{Credentials => CredentialsConfig, RepositoryConfig, ivy, maven}
 import polynote.kernel.{TaskInfo, TaskManager, UpdatedTasks}
-import polynote.kernel.environment.{CurrentNotebook, CurrentTask, Env}
+import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
 import polynote.messages.NotebookConfig
 import zio.blocking.{Blocking, effectBlocking, blocking}
@@ -35,6 +35,8 @@ import zio.interop.catz._
 
 import scala.concurrent.ExecutionContext
 import scala.tools.nsc.interpreter.InputStream
+import coursier.credentials.Credentials
+import coursier.core.Authentication
 
 object CoursierFetcher {
   type ArtifactTask[A] = RIO[CurrentTask, A]
@@ -44,30 +46,59 @@ object CoursierFetcher {
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val cache = FileCache[ArtifactTask]()
 
-  def fetch(language: String): RIO[CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
+  def fetch(language: String): RIO[Config with CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
-      config       <- CurrentNotebook.config
-      dependencies  = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
-      (deps, uris)  = splitDependencies(dependencies)
-      repoConfigs   = config.repositories.map(_.toList).getOrElse(Nil)
-      exclusions    = config.exclusions.map(_.toList).getOrElse(Nil)
-      repositories <- ZIO.fromEither(repositories(repoConfigs))
-      resolution   <- resolution(deps, exclusions, repositories)
-      _            <- CurrentTask.update(_.copy(detail = "Downloading dependencies...", progress = 0))
-      downloadDeps <- download(resolution).fork
-      downloadUris <- downloadUris(uris).fork
-      downloaded   <- downloadDeps.join.map2(downloadUris.join)(_ ++ _)
+      polynoteConfig <- Config.access
+      config         <- CurrentNotebook.config
+      dependencies    = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
+      (deps, uris)    = splitDependencies(dependencies)
+      repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
+      exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
+      repositories   <- ZIO.fromEither(repositories(repoConfigs, polynoteConfig.credentials))
+      resolution     <- resolution(deps, exclusions, repositories)
+      _              <- CurrentTask.update(_.copy(detail = "Downloading dependencies...", progress = 0))
+      downloadDeps   <- download(resolution).fork
+      downloadUris   <- downloadUris(uris).fork
+      downloaded     <- downloadDeps.join.map2(downloadUris.join)(_ ++ _)
     } yield downloaded
   }
 
-  private def repositories(repositories: List[RepositoryConfig]): Either[Throwable, List[Repository]] = repositories.collect {
+  private def credentialsForRepository(repositoryType: String, baseUri: String, credentials: List[CredentialsConfig]): Option[Authentication] =
+    repositoryType match {
+      case "ivy" => 
+        credentials
+          .collect { case c: CredentialsConfig.ivy => c }
+          .filter(c => baseUri.startsWith(c.base))
+          .sortBy(c => c.base.size)
+          .lastOption
+          .map(c => Authentication(c.username, c.password))
+      case "maven" => 
+        credentials
+          .collect { case c: CredentialsConfig.maven => c }
+          .filter(c => baseUri.startsWith(c.base))
+          .sortBy(c => c.base.size)
+          .lastOption
+          .map(c => Authentication(c.username, c.password))
+      case _ => None
+    }
+
+  private def repositories(repositories: List[RepositoryConfig], credentials: List[CredentialsConfig]): Either[Throwable, List[Repository]] = repositories.collect {
     case repo @ ivy(base, _, _, changing) =>
       val baseUri = base.stripSuffix("/") + "/"
       val artifactPattern = s"$baseUri${repo.artifactPattern}"
       val metadataPattern = s"$baseUri${repo.metadataPattern}"
-      Validated.fromEither(IvyRepository.parse(artifactPattern, Some(metadataPattern), changing = changing)).toValidatedNel
+      Validated.fromEither(IvyRepository.parse(
+        artifactPattern,
+        Some(metadataPattern),
+        changing = changing,
+        authentication = credentialsForRepository("ivy", base.stripSuffix("/"), credentials)
+      )).toValidatedNel
     case maven(base, changing) =>
-      val repo = MavenRepository(base, changing = changing)
+      val repo = MavenRepository(
+        base,
+        changing = changing,
+        authentication = credentialsForRepository("maven", base.stripSuffix("/"), credentials)
+      )
       Validated.validNel(repo)
   }.sequence[ValidatedNel[String, ?], Repository].leftMap {
     errs => new RuntimeException(s"Errors parsing repositories:\n- ${errs.toList.mkString("\n- ")}")
