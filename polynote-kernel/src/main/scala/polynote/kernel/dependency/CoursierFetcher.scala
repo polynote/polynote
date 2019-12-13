@@ -63,24 +63,20 @@ object CoursierFetcher {
     } yield downloaded
   }
 
-  private def credentialsForRepository(repositoryType: String, baseUri: String, credentials: List[CredentialsConfig]): Option[Authentication] =
-    repositoryType match {
-      case "ivy" => 
-        credentials
-          .collect { case c: CredentialsConfig.ivy => c }
-          .filter(c => baseUri.startsWith(c.base))
-          .sortBy(c => c.base.size)
-          .lastOption
-          .map(c => Authentication(c.username, c.password))
-      case "maven" => 
-        credentials
-          .collect { case c: CredentialsConfig.maven => c }
-          .filter(c => baseUri.startsWith(c.base))
-          .sortBy(c => c.base.size)
-          .lastOption
-          .map(c => Authentication(c.username, c.password))
-      case _ => None
-    }
+  private def credentialsForIvyRepository(baseUri: String, credentials: List[CredentialsConfig]): Option[Authentication] =
+    credentials
+      .collect { case c: CredentialsConfig.ivy => c }
+      .filter(c => baseUri.startsWith(c.base))
+      .sortBy(c => c.base.size)
+      .lastOption
+      .map(c => Authentication(c.username, c.password))
+  private def credentialsForMavenRepository(baseUri: String, credentials: List[CredentialsConfig]): Option[Authentication] =
+    credentials
+      .collect { case c: CredentialsConfig.maven => c }
+      .filter(c => baseUri.startsWith(c.base))
+      .sortBy(c => c.base.size)
+      .lastOption
+      .map(c => Authentication(c.username, c.password))
 
   private def repositories(repositories: List[RepositoryConfig], credentials: List[CredentialsConfig]): Either[Throwable, List[Repository]] = repositories.collect {
     case repo @ ivy(base, _, _, changing) =>
@@ -91,13 +87,13 @@ object CoursierFetcher {
         artifactPattern,
         Some(metadataPattern),
         changing = changing,
-        authentication = credentialsForRepository("ivy", base.stripSuffix("/"), credentials)
+        authentication = credentialsForIvyRepository(base.stripSuffix("/"), credentials)
       )).toValidatedNel
     case maven(base, changing) =>
       val repo = MavenRepository(
         base,
         changing = changing,
-        authentication = credentialsForRepository("maven", base.stripSuffix("/"), credentials)
+        authentication = credentialsForMavenRepository(base.stripSuffix("/"), credentials)
       )
       Validated.validNel(repo)
   }.sequence[ValidatedNel[String, ?], Repository].leftMap {
