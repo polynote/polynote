@@ -43,7 +43,7 @@ class RemoteKernel[ServerAddress](
 
   private case class RequestHandler[R, T](handler: PartialFunction[RemoteRequestResponse, RIO[R, T]], promise: Promise[Throwable, T], env: R) {
     def run(rep: RemoteRequestResponse): UIO[Unit] = handler match {
-      case handler if handler isDefinedAt rep => handler(rep).provide(env).to(promise).ignore.unit
+      case handler if handler isDefinedAt rep => handler(rep).provide(env).to(promise).unit
       case _ => rep match {
         case ErrorResponse(_, err) => promise.fail(err).unit
         case _                     => ZIO.unit
