@@ -97,30 +97,14 @@ object UI {
   implicit val decoder: Decoder[UI] = deriveDecoder
 }
 
-sealed trait Credentials
+case class Credentials(
+  coursier: Option[Credentials.Coursier] = None
+)
 object Credentials {
-  final case class ivy(
-    base: String,
-    username: String,
-    password: String
-  ) extends Credentials {
-    override def toString = s"ivy($base,$username,<REDACTED>)"
-  }
-  object ivy {
-    implicit val encoder: ObjectEncoder[maven] = deriveEncoder
-    implicit val decoder: Decoder[maven] = deriveDecoder
-  }
-
-  final case class maven(
-    base: String,
-    username: String,
-    password: String
-  ) extends Credentials {
-    override def toString = s"maven($base,$username,<REDACTED>)"
-  }
-  object maven {
-    implicit val encoder: ObjectEncoder[maven] = deriveEncoder
-    implicit val decoder: Decoder[maven] = deriveDecoder
+  final case class Coursier(path: String)
+  object Coursier {
+    implicit val encoder: ObjectEncoder[Coursier] = deriveEncoder
+    implicit val decoder: Decoder[Coursier] = deriveDecoder
   }
 
   implicit val encoder: ObjectEncoder[Credentials] = deriveEncoder
@@ -137,7 +121,7 @@ final case class PolynoteConfig(
   behavior: Behavior = Behavior(),
   security: Security = Security(),
   ui: UI = UI(),
-  credentials: List[Credentials] = Nil
+  credentials: Credentials = Credentials()
 )
 
 

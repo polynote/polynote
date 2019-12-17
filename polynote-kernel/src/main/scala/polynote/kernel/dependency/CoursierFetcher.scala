@@ -30,12 +30,12 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
 import polynote.messages.NotebookConfig
 import zio.blocking.{Blocking, effectBlocking, blocking}
-import zio.{Task, RIO, ZIO, ZManaged}
+import zio.{Task, RIO, UIO, ZIO, ZManaged}
 import zio.interop.catz._
 
 import scala.concurrent.ExecutionContext
 import scala.tools.nsc.interpreter.InputStream
-import coursier.credentials.Credentials
+import coursier.credentials.{Credentials => CoursierCredentials, DirectCredentials}
 import coursier.core.Authentication
 
 object CoursierFetcher {
@@ -44,7 +44,7 @@ object CoursierFetcher {
   //type ArtifactTask[A] = RIO[CurrentTask, A]
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
-  private val cache = FileCache[ArtifactTask]()
+  private val baseCache = FileCache[ArtifactTask]()
 
   def fetch(language: String): RIO[Config with CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
@@ -54,31 +54,23 @@ object CoursierFetcher {
       (deps, uris)    = splitDependencies(dependencies)
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
-      repositories   <- ZIO.fromEither(repositories(repoConfigs, polynoteConfig.credentials))
-      resolution     <- resolution(deps, exclusions, repositories)
+      credentials    <- loadCredentials(polynoteConfig.credentials)
+      repositories   <- ZIO.fromEither(repositories(repoConfigs, credentials))
+      cache           = baseCache.addCredentials(credentials: _*)
+      resolution     <- resolution(deps, exclusions, repositories, cache)
       _              <- CurrentTask.update(_.copy(detail = "Downloading dependencies...", progress = 0))
-      downloadDeps   <- download(resolution).fork
+      downloadDeps   <- download(resolution, cache).fork
       downloadUris   <- downloadUris(uris).fork
       downloaded     <- downloadDeps.join.map2(downloadUris.join)(_ ++ _)
     } yield downloaded
   }
 
-  private def credentialsForIvyRepository(baseUri: String, credentials: List[CredentialsConfig]): Option[Authentication] =
-    credentials
-      .collect { case c: CredentialsConfig.ivy => c }
-      .filter(c => baseUri.startsWith(c.base))
-      .sortBy(c => c.base.size)
-      .lastOption
-      .map(c => Authentication(c.username, c.password))
-  private def credentialsForMavenRepository(baseUri: String, credentials: List[CredentialsConfig]): Option[Authentication] =
-    credentials
-      .collect { case c: CredentialsConfig.maven => c }
-      .filter(c => baseUri.startsWith(c.base))
-      .sortBy(c => c.base.size)
-      .lastOption
-      .map(c => Authentication(c.username, c.password))
+  private def loadCredentials(credentials: CredentialsConfig): Task[List[DirectCredentials]] = credentials.coursier match {
+    case Some(CredentialsConfig.Coursier(path)) => Task(CoursierCredentials(new File(path)).get().toList)
+    case None => UIO(Nil)
+  }
 
-  private def repositories(repositories: List[RepositoryConfig], credentials: List[CredentialsConfig]): Either[Throwable, List[Repository]] = repositories.collect {
+  private def repositories(repositories: List[RepositoryConfig], credentials: List[DirectCredentials]): Either[Throwable, List[Repository]] = repositories.collect {
     case repo @ ivy(base, _, _, changing) =>
       val baseUri = base.stripSuffix("/") + "/"
       val artifactPattern = s"$baseUri${repo.artifactPattern}"
@@ -86,14 +78,12 @@ object CoursierFetcher {
       Validated.fromEither(IvyRepository.parse(
         artifactPattern,
         Some(metadataPattern),
-        changing = changing,
-        authentication = credentialsForIvyRepository(base.stripSuffix("/"), credentials)
+        changing = changing
       )).toValidatedNel
     case maven(base, changing) =>
       val repo = MavenRepository(
         base,
-        changing = changing,
-        authentication = credentialsForMavenRepository(base.stripSuffix("/"), credentials)
+        changing = changing
       )
       Validated.validNel(repo)
   }.sequence[ValidatedNel[String, ?], Repository].leftMap {
@@ -104,7 +94,8 @@ object CoursierFetcher {
   private def resolution(
     dependencies: List[String],
     exclusions: List[String],
-    repositories: List[Repository]
+    repositories: List[Repository],
+    cache: FileCache[ArtifactTask]
   ): RIO[CurrentTask, Resolution] = ZIO {
     val coursierExclude = exclusions.map { exclusionStr =>
       exclusionStr.split(":") match {
@@ -184,6 +175,7 @@ object CoursierFetcher {
 
   private def download(
     resolution: Resolution,
+    cache: FileCache[ArtifactTask],
     maxIterations: Int = 100
   ): RIO[TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Any].flatMap {
     runtime =>

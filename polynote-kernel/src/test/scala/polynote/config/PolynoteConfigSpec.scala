@@ -66,18 +66,8 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |# Credentials. This list contains the list of credentials used to access the repositories
         |
         |credentials:
-        |  - ivy:
-        |      base: https://my-artifacts.org/artifacts/
-        |      username: user1
-        |      password: password0
-        |  - ivy:
-        |      base: https://my-custom-ivy-repo.org/artifacts/
-        |      username: user1
-        |      password: password0
-        |  - maven:
-        |      base: http://central.maven.org/maven2/
-        |      username: user1
-        |      password: password0
+        |  coursier:
+        |    path: ~/.config/coursier/credentials.properties
       """.stripMargin
 
     val parsed = yaml.parser.parse(yamlStr).flatMap(_.as[PolynoteConfig])
@@ -102,22 +92,8 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
       List("org.typelevel", "com.mycompany"),
       Map("scala" -> List("org.typelevel:cats-core_2.11:1.6.0", "com.mycompany:my-library:jar:all:1.0.0")),
       Map("spark.driver.userClasspathFirst" -> "true", "spark.executor.userClasspathFirst" -> "true"),
-      credentials = List(
-        Credentials.ivy(
-          "https://my-artifacts.org/artifacts/",
-          "user1",
-          "password0"
-        ),
-        Credentials.ivy(
-          "https://my-custom-ivy-repo.org/artifacts/",
-          "user1",
-          "password0"
-        ),
-        Credentials.maven(
-          "http://central.maven.org/maven2/",
-          "user1",
-          "password0"
-        )
+      credentials = Credentials(
+        coursier = Some(Credentials.Coursier("~/.config/coursier/credentials.properties"))
       )
     )
 

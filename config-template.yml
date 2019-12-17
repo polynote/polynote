@@ -141,15 +141,5 @@
 ############################################################################################
 
 #credentials:
-#  - ivy:
-#      base: https://my-artifacts.org/artifacts/
-#      username: user1
-#      password: password0
-#  - ivy:
-#      base: https://my-custom-ivy-repo.org/artifacts/
-#      username: user1
-#      password: password0
-#  - maven:
-#      base: http://central.maven.org/maven2/
-#      username: user1
-#      password: password0
+#  coursier:
+#    path: ~/.config/coursier/credentials.properties
