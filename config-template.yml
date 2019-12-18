@@ -135,3 +135,11 @@
 #  # The URI relative to the server host where Polynote is mounted. You can edit this if mounting Polynote at a
 #  # different location behind a reverse proxy. This value is placed in the <base> tag.
 #  base_uri: /
+
+############################################################################################
+# Credentials. This list contains the list of credentials used to access the repositories
+############################################################################################
+
+#credentials:
+#  coursier:
+#    path: ~/.config/coursier/credentials.properties

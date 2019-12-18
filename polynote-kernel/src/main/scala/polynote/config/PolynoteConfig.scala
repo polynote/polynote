@@ -97,6 +97,20 @@ object UI {
   implicit val decoder: Decoder[UI] = deriveDecoder
 }
 
+case class Credentials(
+  coursier: Option[Credentials.Coursier] = None
+)
+object Credentials {
+  final case class Coursier(path: String)
+  object Coursier {
+    implicit val encoder: ObjectEncoder[Coursier] = deriveEncoder
+    implicit val decoder: Decoder[Coursier] = deriveDecoder
+  }
+
+  implicit val encoder: ObjectEncoder[Credentials] = deriveEncoder
+  implicit val decoder: Decoder[Credentials] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   storage: Storage = Storage(),
@@ -106,7 +120,8 @@ final case class PolynoteConfig(
   spark: Map[String, String] = Map.empty,
   behavior: Behavior = Behavior(),
   security: Security = Security(),
-  ui: UI = UI()
+  ui: UI = UI(),
+  credentials: Credentials = Credentials()
 )
 
 

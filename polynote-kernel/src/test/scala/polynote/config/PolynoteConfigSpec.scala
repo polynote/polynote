@@ -63,6 +63,11 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |  spark.driver.userClasspathFirst: true
         |  spark.executor.userClasspathFirst: true
         |
+        |# Credentials. This list contains the list of credentials used to access the repositories
+        |
+        |credentials:
+        |  coursier:
+        |    path: ~/.config/coursier/credentials.properties
       """.stripMargin
 
     val parsed = yaml.parser.parse(yamlStr).flatMap(_.as[PolynoteConfig])
@@ -86,7 +91,10 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
       ),
       List("org.typelevel", "com.mycompany"),
       Map("scala" -> List("org.typelevel:cats-core_2.11:1.6.0", "com.mycompany:my-library:jar:all:1.0.0")),
-      Map("spark.driver.userClasspathFirst" -> "true", "spark.executor.userClasspathFirst" -> "true")
+      Map("spark.driver.userClasspathFirst" -> "true", "spark.executor.userClasspathFirst" -> "true"),
+      credentials = Credentials(
+        coursier = Some(Credentials.Coursier("~/.config/coursier/credentials.properties"))
+      )
     )
 
   }
