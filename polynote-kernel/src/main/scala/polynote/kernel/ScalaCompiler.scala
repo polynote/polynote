@@ -453,9 +453,9 @@ class ScalaCompiler private (
         // TODO: should things you import from inside a package cell be imported elsewhere? Or should it be isolated?
         val selectors = stats.collect {
           case defTree: DefTree => defTree.name
-        }.zipWithIndex.map {
+        }.groupBy(_.toString).values.map(_.maxBy(_.isTermName)).zipWithIndex.map {
           case (name, index) => ImportSelector(name.toTermName, index, name.toTermName, index)
-        }
+        }.toList
 
         if (selectors.nonEmpty) {
           Imports(Nil, List(Import(copyAndReset(pkgId), selectors)))
