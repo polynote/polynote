@@ -23,7 +23,7 @@ import zio.Cause._
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Promise, Task, RIO, ZIO, ZSchedule}
+import zio.{Cause, Promise, RIO, Task, ZIO, ZSchedule}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
 
@@ -31,6 +31,8 @@ import scala.concurrent.TimeoutException
 import scala.concurrent.duration.{Duration, MINUTES, SECONDS}
 import scala.reflect.{ClassTag, classTag}
 import Update.notebookUpdateCodec
+import cats.arrow.FunctionK
+import cats.~>
 
 trait Transport[ServerAddress] {
   def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
@@ -93,7 +95,7 @@ class SocketTransportServer private (
 
   override def sendRequest(req: RemoteRequest): TaskB[Unit] = for {
     msg     <- ZIO.fromEither(RemoteRequest.codec.encode(req).toEither).mapError(err => new RuntimeException(err.message))
-    _       <- channels.mainChannel.write(msg)
+    _       <- channels.mainChannel.write(msg).onError(cause => Logging.error(s"Remote kernel failed to send request (it will probably die now)", cause))
   } yield ()
 
   private val updateCodec = Codec[NotebookUpdate]
@@ -154,12 +156,22 @@ object SocketTransportServer {
 
 class SocketTransportClient private (channels: SocketTransport.Channels, closed: Deferred[Task, Unit]) extends TransportClient {
 
-  private val requestStream = channels.mainChannel.bitVectors.through(decode.pipe[TaskB, RemoteRequest])
-  private val updateStream = channels.notebookUpdatesChannel.bitVectors.through(decode.pipe[TaskB, NotebookUpdate])
+  def logError(fn: Cause[Throwable] => ZIO[Logging, Nothing, Unit]): TaskB ~> TaskB = new ~>[TaskB, TaskB] {
+    override def apply[A](fa: TaskB[A]): TaskB[A] = fa.onError(fn)
+  }
+
+  private val requestStream = channels.mainChannel.bitVectors
+    .translate(logError(Logging.error("Remote kernel client's request stream had an networking error (it will probably die now)", _)))
+    .through(decode.pipe[TaskB, RemoteRequest])
+
+  private val updateStream = channels.notebookUpdatesChannel.bitVectors
+    .translate(logError(Logging.error("Remote kernel client's update stream had an networking error (it will probably die now)", _)))
+    .through(decode.pipe[TaskB, NotebookUpdate])
 
   def sendResponse(rep: RemoteResponse): TaskB[Unit] = for {
     bytes <- ZIO.fromEither(RemoteResponse.codec.encode(rep).toEither).mapError(err => new RuntimeException(err.message))
     _     <- channels.mainChannel.write(bytes)
+      .onError(Logging.error(s"Remote kernel client had an error sending a response (it will probably die now)", _))
   } yield ()
 
   override val requests: Stream[TaskB, RemoteRequest] = requestStream.terminateAfter(_.isInstanceOf[ShutdownRequest])
@@ -366,7 +378,7 @@ object SocketTransport {
       }
     }
 
-    def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).catchSome {
+    def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).uninterruptible.catchSome {
       case err: AsynchronousCloseException => Logging.info("Remote peer closed connection") *> ZIO.succeed(None)
     }.onError {
       err => Logging.error(s"Connection error ${err.getClass.getName}", err)
@@ -386,7 +398,7 @@ object SocketTransport {
           socketChannel.write(byteBuffer)
         }
       }
-    }
+    }.uninterruptible
 
     def close(): TaskB[Unit] = ZIO(outgoingLengthBuffer.synchronized(socketChannel.close()))
 
