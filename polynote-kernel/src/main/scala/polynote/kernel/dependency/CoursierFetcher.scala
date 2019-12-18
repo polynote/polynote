@@ -28,9 +28,10 @@ import polynote.config.{Credentials => CredentialsConfig, RepositoryConfig, ivy,
 import polynote.kernel.{TaskInfo, TaskManager, UpdatedTasks}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
+import polynote.kernel.logging.Logging
 import polynote.messages.NotebookConfig
 import zio.blocking.{Blocking, effectBlocking, blocking}
-import zio.{Task, RIO, UIO, ZIO, ZManaged}
+import zio.{Task, RIO, UIO, URIO, ZIO, ZManaged}
 import zio.interop.catz._
 
 import scala.concurrent.ExecutionContext
@@ -46,7 +47,7 @@ object CoursierFetcher {
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val baseCache = FileCache[ArtifactTask]()
 
-  def fetch(language: String): RIO[Config with CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
+  def fetch(language: String): RIO[Logging with Config with CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
@@ -65,8 +66,14 @@ object CoursierFetcher {
     } yield downloaded
   }
 
-  private def loadCredentials(credentials: CredentialsConfig): Task[List[DirectCredentials]] = credentials.coursier match {
-    case Some(CredentialsConfig.Coursier(path)) => Task(CoursierCredentials(new File(path)).get().toList)
+  private def loadCredentials(credentials: CredentialsConfig): URIO[Logging, List[DirectCredentials]] = credentials.coursier match {
+    case Some(CredentialsConfig.Coursier(path)) =>
+      Task(CoursierCredentials(new File(path), optional = false).get().toList)
+        .catchAllCause(cause => for {
+            log <- Logging.access
+            _   <- log.error("Failed to load credentials", cause)
+          } yield Nil
+        )
     case None => UIO(Nil)
   }
 
