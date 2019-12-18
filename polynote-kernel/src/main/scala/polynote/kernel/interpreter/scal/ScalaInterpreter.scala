@@ -127,7 +127,7 @@ class ScalaInterpreter private[scal] (
   }.foldRight(CollectedState()) {
     case ((nextInputs, cellCode), CollectedState(inputs, imports, priorCells)) =>
       val nextImports = cellCode.map(_.splitImports()).getOrElse(Imports(Nil, Nil))
-      CollectedState(inputs ++ nextInputs, nextImports ++ imports, cellCode.map(_ :: priorCells).getOrElse(priorCells))
+      CollectedState(inputs ++ nextInputs, imports ++ nextImports, cellCode.map(_ :: priorCells).getOrElse(priorCells))
   }
 
   /**

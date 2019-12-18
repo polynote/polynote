@@ -189,7 +189,7 @@ class TextToolbarUI extends UIMessageTarget {
                     button([], {value: "h3"}, ["Heading 3"]),
                     button([], {value: "h4"}, ["Heading 4"]),
                     button([], {value: "blockquote"}, ["Quote"]),
-                ])/*.attr("command", "formatBlock")*/.click(evt => {
+                ]).click(evt => {
                     document.execCommand("formatBlock", false, `<${(evt.target as HTMLButtonElement).value}>`)
                 })
             ], {
@@ -273,6 +273,11 @@ class TextToolbarUI extends UIMessageTarget {
             } else {
                 button.classList.remove('active');
             }
+        }
+        const blockType = document.queryCommandValue('formatBlock').toLocaleLowerCase();
+        const blockTypeIndex = this.blockTypeSelector.options.findIndex(el => el.value.toLowerCase() === blockType);
+        if (blockTypeIndex !== -1) {
+            this.blockTypeSelector.selectedIndex = blockTypeIndex;
         }
     }
 
