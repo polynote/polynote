@@ -1,6 +1,20 @@
-# UNRELEASED 
+# 0.2.14 (Dec 18, 2019)
 
-* 
+* `<base>` tag can now be configured and works properly
+* Renaming notebooks works properly
+* Fixed plot editor buttons
+* Improved docker build (thanks @mathematicalmichael and @JD557)
+* Removed `pysparksession` (`spark` now works properly in pyspark)
+* More improvements to python interpreter (stack traces, red squigglies, etc)
+* Compiles against JDK11 (thanks @aborg0)
+* Lazy vals don't cause errors (but still aren't really lazy)
+* Identity provider framework and header-based authentication
+* Timeout when searching for `ReprsOf`
+* Fix resolution of some ivy/maven artifacts (thanks @JD557)
+* Fix drag-and-drop events in Firefox (thanks @JD557)
+* Support Safari (thanks @calmarj)
+* Support ivy/maven credentials as coursier credentials.properties (thanks @JD557)
+* Misc bugfixes improvements to remote kernel reliability
 
 # 0.2.13 (Nov 7, 2019)
 
