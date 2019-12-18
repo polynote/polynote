@@ -69,11 +69,7 @@ object CoursierFetcher {
   private def loadCredentials(credentials: CredentialsConfig): URIO[Logging, List[DirectCredentials]] = credentials.coursier match {
     case Some(CredentialsConfig.Coursier(path)) =>
       Task(CoursierCredentials(new File(path), optional = false).get().toList)
-        .catchAllCause(cause => for {
-            log <- Logging.access
-            _   <- log.error("Failed to load credentials", cause)
-          } yield Nil
-        )
+        .catchAll(err => Logging.error("Failed to load credentials", err).as(Nil))
     case None => UIO(Nil)
   }
 
