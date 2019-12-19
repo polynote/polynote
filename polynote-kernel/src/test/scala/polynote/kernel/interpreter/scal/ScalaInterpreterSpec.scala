@@ -140,6 +140,22 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
       val scopeMap = finalState.scope.map(r => r.name.toString -> r.value).toMap
       scopeMap("b") shouldEqual 20
     }
+
+    "class with explicit companion" in {
+      val test = for {
+        _ <- interp(
+          """package explicitCompanion
+            |sealed abstract class TestClass { def m = 10 }
+            |object TestClass extends TestClass""".stripMargin)
+        _ <- interp("val result = TestClass.m")
+        _ <- interp("val cls = classOf[TestClass]")
+      } yield ()
+
+      val (finalState, _) = test.run(cellState).runIO()
+      val scopeMap = finalState.scope.map(r => r.name.toString -> r.value).toMap
+      scopeMap("result") shouldEqual 10
+      scopeMap("cls").asInstanceOf[Class[_]].getSimpleName shouldEqual "TestClass"
+    }
   }
 
   /**
