@@ -30,14 +30,13 @@ class PySparkInterpreter(
 
   val gatewayRef = new AtomicReference[GatewayServer]()
 
-  override protected def injectGlobals(globals: PyObject): RIO[CurrentRuntime, Unit] = jep {
-    jep =>
-      val setItem = globals.getAttr("__setitem__", classOf[PyCallable])
+  override protected def injectGlobals(globals: PyObject): RIO[CurrentRuntime, Unit] = super.injectGlobals(globals) *> jep {
+      jep =>
+        val setItem = globals.getAttr("__setitem__", classOf[PyCallable])
 
-      val pySparkSession = jep.getValue("spark", classOf[PyObject])
-      setItem.call("spark", pySparkSession)
+        val pySparkSession = jep.getValue("spark", classOf[PyObject])
+        setItem.call("spark", pySparkSession)
 
-      super.injectGlobals(globals)
   }
 
   override def init(state: State): RIO[InterpreterEnv, State] =  for {
