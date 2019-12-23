@@ -5,7 +5,7 @@ import cats.data.StateT
 import cats.syntax.traverse._
 import cats.instances.list._
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.kernel.{Output, Result, ResultValue, ScalaCompiler, TaskInfo}
+import polynote.kernel.{CompletionType, Output, Result, ResultValue, ScalaCompiler, TaskInfo}
 import polynote.testing.{InterpreterSpec, ValueMap, ZIOSpec}
 import polynote.messages.CellID
 import zio.{RIO, ZIO}
@@ -323,6 +323,65 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
         (vars, output) =>
           vars.toSeq should contain theSameElementsAs List("foo" -> 1, "bar" -> "one")
       }
+    }
+
+  }
+
+  "completions" - {
+    def completionsMap(code: String, pos: Int, state: State = cellState) =
+      interpreter.completionsAt(code, pos, state).runIO().groupBy(_.name.toString)
+
+    "complete class defined in cell" in {
+      val code = """class Foo() {
+                   |  def someMethod(): Int = 22
+                   |}
+                   |
+                   |val test = new Foo()
+                   |test.""".stripMargin
+      val completions = completionsMap(code, code.length)
+      val List(someMethod) = completions("someMethod")
+      someMethod.completionType shouldEqual CompletionType.Method
+      someMethod.resultType shouldEqual "Int"
+    }
+
+    "inside apply trees" - {
+      "one level deep" in {
+        val code =
+          """class Foo() { def someMethod(): Int = 22 }
+            |val test = new Foo()
+            |val result = println(test.)
+            |""".stripMargin
+        val completions = completionsMap(code, code.indexOf("test.") + "test.".length)
+        val List(someMethod) = completions("someMethod")
+        someMethod.completionType shouldEqual CompletionType.Method
+        someMethod.resultType shouldEqual "Int"
+      }
+    }
+
+    "imported method" in {
+      val state = interp1("import scala.math.log10").state
+      val completions = completionsMap("l", 1, State.id(2, state))
+      val List(log10) = completions("log10")
+      log10.completionType shouldEqual CompletionType.Method
+      log10.resultType shouldEqual "Double"
+    }
+
+    "extension methods" in {
+      val state = interp1("import scala.collection.JavaConverters._").state
+      val code = "List(1, 2, 3).asJ"
+      val completions = completionsMap(code, code.length, State.id(2, state))
+      val List(asJava) = completions("asJava")
+      asJava.completionType shouldEqual CompletionType.Method
+      asJava.resultType shouldEqual "List[Int]"
+    }
+
+    "value from previous cell" in {
+      val state = interp1("val shouldBeVisible = 10").state
+      val code = "val butIsIt = sh"
+      val completions = completionsMap(code, code.length, State.id(2, state))
+      val List(shouldBeVisible) = completions("shouldBeVisible")
+      shouldBeVisible.completionType shouldEqual CompletionType.Term
+      shouldBeVisible.resultType shouldEqual "Int"
     }
 
   }

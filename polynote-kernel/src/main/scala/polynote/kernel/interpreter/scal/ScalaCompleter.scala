@@ -3,11 +3,14 @@ package polynote.kernel.interpreter.scal
 import polynote.kernel.{Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
 import polynote.messages.{ShortString, TinyList, TinyString}
 import cats.syntax.either._
-import zio.{Fiber, Task, UIO, ZIO}
-import ZIO.effect
+import zio.{Fiber, RIO, Task, UIO, URIO, ZIO}
+import ZIO.{effect, effectTotal}
+import polynote.kernel.ScalaCompiler.OriginalPos
+import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
+import scala.collection.mutable
 import scala.reflect.internal.util.Position
 import scala.util.control.NonFatal
 
@@ -18,87 +21,46 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 
   import compiler.global._
 
-  def completions(cellCode: compiler.CellCode, pos: Int): UIO[List[Completion]] = {
+  def completions(cellCode: compiler.CellCode, pos: Int): URIO[Blocking, List[Completion]] = {
     val position = Position.offset(cellCode.sourceFile, pos)
+    //lazy val importInfos = (cellCode.wrappedImports ++ cellCode.compiledImports).map(new analyzer.ImportInfo(_, 1))
     def symToCompletion(sym: Symbol, inType: Type) = {
       val name = sym.name.decodedName.toString.trim // term names seem to get an extra space at the end?
-      val typ  = sym.typeSignatureIn(inType)
+      val typ  = sym.typeSignatureIn(inType).resultType
       val tParams = sym.typeParams.map(_.name.decodedName.toString)
       val vParams = TinyList(sym.paramss.map(_.map{p => (p.name.decodedName.toString: TinyString, compiler.unsafeFormatType(p.infoIn(typ)): ShortString)}: TinyList[(TinyString, ShortString)]))
       Completion(name, tParams, vParams, compiler.unsafeFormatType(typ), completionType(sym))
     }
 
-    def scopeToCompletions(scope: Scope, name: Name, inType: Type): List[Completion] = {
-      val isError = name.decoded == "<error>"
-      val matchingSymbols = scope.filter(isVisibleSymbol).collect {
-        case sym if isError || name.isEmpty || sym.name.startsWith(name) => sym.accessedOrSelf
-      }.toList
-
-      matchingSymbols.sortBy(_.name).map(symToCompletion(_, inType))
+    def memberToCompletion(result: Member) = {
+      symToCompletion(result.sym, result.tpe).copy(resultType = compiler.unsafeFormatType(result.tpe.resultType))
     }
 
     def completeSelect(tree: Select) = tree match {
-      case Select(qual, name) if qual.tpe != null =>
-        // start with completions from the qualifier's type
-        val scope = qual.tpe.members.cloneScope
+      case sel@Select(qual, name) if qual.tpe != null =>
+        val isErrorOrEmpty = name.decoded == "<error>" || name.isEmpty
+        effectBlocking {
 
-        // bring in completions from implicit enrichments
-        val context = locateContext(tree.pos).getOrElse(NoContext)
-        val ownerTpe = qual.tpe match {
-          case MethodType(List(), rtpe) => rtpe
-          case _ => qual.tpe
-        }
+          val context = locateContext(position).getOrElse(NoContext)
+          val fromCompiler = typeCompletions(context, sel)
 
-        val enrichSelected = if (ownerTpe != null) {
-          effect(new analyzer.ImplicitSearch(qual, definitions.functionType(List(ownerTpe), definitions.AnyTpe), isView = true, context0 = context).allImplicits).map {
-            allImplicits =>
-              allImplicits.foreach {
-                result =>
-                  val members = result.tree.tpe.finalResultType.members
-                  members.foreach(scope.enterIfNew)
-              }
+          fromCompiler.results.filter {
+            result => result.accessible && (isErrorOrEmpty || result.sym.name.startsWith(name))
           }
-        } else ZIO.unit
-
-        enrichSelected.map {
-          _ => scopeToCompletions(scope, name, ownerTpe)
+        }.map {
+          results =>
+            results.map(memberToCompletion).distinct
         }
 
-      case _ => ZIO.succeed(Nil)
+      case _ =>
+        ZIO.succeed(Nil)
     }
 
-    def completeIdent(tree: Ident) = tree match {
-      case Ident(name) =>
-        val nameString = name.toString
-        val context = locateContext(tree.pos).getOrElse(NoContext)
-
-        val imports = context.imports.flatMap {
-          importInfo => importInfo.allImportedSymbols.filter(sym => !sym.isImplicit && sym.isPublic && sym.name.startsWith(name) && !sym.name.startsWith("deprecated"))
-        }
-
-        index.findMatches(nameString).flatMap {
-          fromClasspath =>
-            ZIO {
-              val cellScope = context.owner.info.decls.filter(isVisibleSymbol).filter(_.name.startsWith(name)).toList.map(_.accessedOrSelf).distinct
-
-              // somehow we're not getting the imported stuff in the context
-              val prevCellScopes = if (context.owner.isClass) {
-                context.owner.asClass.primaryConstructor.paramLists.headOption.toList.flatten.collect {
-                  case sym if sym.name.startsWith("_input") => sym.info.nonPrivateDecls.collect {
-                    case decl if (decl.isClass || decl.isMethod || decl.isType) && decl.name.startsWith(name) => decl
-                  }
-                }.flatten
-              } else Nil
-
-              val indexCompletions = fromClasspath.filterKeys(name => !imports.exists(_.nameString == name)).toList.flatMap {
-                case (simpleName, qualifiedNames) => qualifiedNames.map {
-                  case (priority, qualifiedName) => priority -> Completion(simpleName, Nil, Nil, qualifiedName, CompletionType.ClassType, Some(qualifiedName))
-                }
-              }.sortBy(_._1).take(10).map(_._2)
-              (cellScope ++ prevCellScopes ++ imports).map(symToCompletion(_, NoType)) ++ indexCompletions
-            }
-        }
-    }
+    def completeIdent(tree: Ident) =
+      effectBlocking(compiler.global.completionsAt(position)).map {
+        result =>
+          result.matchingResults().map(memberToCompletion).distinct
+      }
 
     def completeImport(tree: Import) = tree match {
       case Import(qual, names) if qual.tpe != null =>
@@ -132,7 +94,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
         }
     }
 
-    def completeTree(tree: Tree): Task[List[Completion]] = tree match {
+    @tailrec def completeTree(tree: Tree): RIO[Blocking, List[Completion]] = tree match {
       case tree@Select(qual, _) if qual != null       => completeSelect(tree)
       case tree@Ident(_)                              => completeIdent(tree)
       case tree@Import(qual, _) if !qual.isErrorTyped => completeImport(tree)
@@ -144,7 +106,8 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
         ZIO.succeed(Nil)
     }
 
-    effect(deepestSubtreeEndingAt(cellCode.typed, pos)).flatMap(completeTree).catchAll {
+
+    (effectBlocking(cellCode.typed) *> effectBlocking(locateTree(position)).flatMap(completeTree)).catchAll {
       case NonFatal(err) => ZIO.succeed(Nil)
     }
   }
@@ -176,7 +139,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
             pl => pl.map {
               param => ParameterHint(
                 TinyString(param.name.decodedName.toString),
-                TinyString(param.typeSignatureIn(a.tpe).finalResultType.toString),
+                TinyString(param.typeSignatureIn(fun.tpe).finalResultType.toString),
                 None  // TODO
               )
             }
@@ -222,26 +185,125 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
   private def isVisibleSymbol(sym: Symbol) =
     sym.isPublic && !sym.isSynthetic && !sym.isConstructor && !sym.isOmittablePrefix && !sym.name.decodedName.containsChar('$')
 
-  private def deepestSubtreeEndingAt(topTree: Tree, offset: Int): Tree = {
-    var deepest: Tree = topTree
-    val traverser: Traverser = new Traverser {
-      private var depth = 0
-      private var deepestDepth = -1
-      override def traverse(tree: compiler.global.Tree): Unit = {
-        if (tree.pos != null && tree.pos.isDefined && !tree.pos.isTransparent && (tree.pos.source eq topTree.pos.source) && tree.pos.end == offset && depth >= deepestDepth) {
-          deepest = tree
-          deepestDepth = depth
+  private def deepestSubtreeEndingAt(stats: List[Tree], pos: Position): Option[Tree] = {
+    val candidate = stats.filterNot(tree => tree.pos == null || !tree.pos.isDefined || tree.pos.isTransparent || !tree.pos.properlyIncludes(pos))
+      .headOption
+
+    candidate.flatMap {
+      baseTree => baseTree.collect {
+        case tree if tree.pos != null && tree.pos.isDefined && tree.pos.end == pos.point =>
+          val a = tree.attachments.get[OriginalPos]
+          tree
+      }.lastOption
+    }
+  }
+
+  // the compiler's completionsAt method has a bug; it causes an exception if the name is empty
+  // (e.g. `foo.`) which is a pretty common case. So there will be a fair amount of copypasta here,
+  // as the component methods we'd need are all private. This bit is copied from interactive.Global#typeMembers
+  private def typeMembers(context: Context, tree: Tree) = {
+
+    // had to copypasta this class as well, since it's private.
+    class Members[M <: Member] extends mutable.LinkedHashMap[Name, Set[M]] {
+      import scala.reflect.internal.Flags._
+      override def default(key: Name) = Set()
+
+      private def matching(sym: Symbol, symtpe: Type, ms: Set[M]): Option[M] = ms.find { m =>
+        (m.sym.name == sym.name) && (m.sym.isType || (m.tpe matches symtpe))
+      }
+
+      private def keepSecond(m: M, sym: Symbol, implicitlyAdded: Boolean): Boolean =
+        m.sym.hasFlag(ACCESSOR | PARAMACCESSOR) &&
+          !sym.hasFlag(ACCESSOR | PARAMACCESSOR) &&
+          (!implicitlyAdded || m.implicitlyAdded)
+
+      def add(sym: Symbol, pre: Type, implicitlyAdded: Boolean)(toMember: (Symbol, Type) => M) {
+        if ((sym.isGetter || sym.isSetter) && sym.accessed != NoSymbol) {
+          add(sym.accessed, pre, implicitlyAdded)(toMember)
+        } else if (!sym.name.decodedName.containsName("$") && !sym.isError && !sym.isArtifact && sym.hasRawInfo) {
+          val symtpe = pre.memberType(sym) onTypeError ErrorType
+          matching(sym, symtpe, this(sym.name)) match {
+            case Some(m) =>
+              if (keepSecond(m, sym, implicitlyAdded)) {
+                //print(" -+ "+sym.name)
+                this(sym.name) = this(sym.name) - m + toMember(sym, symtpe)
+              }
+            case None =>
+              //print(" + "+sym.name)
+              this(sym.name) = this(sym.name) + toMember(sym, symtpe)
+          }
         }
-        depth += 1
-        super.traverse(tree)
-        depth -= 1
+      }
+
+      def addNonShadowed(other: Members[M]): Unit = {
+        for ((name, ms) <- other)
+          if (ms.nonEmpty && this(name).isEmpty) this(name) = ms
+      }
+
+      def allMembers: List[M] = values.toList.flatten
+    }
+
+    val superAccess = tree.isInstanceOf[Super]
+    val members = new Members[TypeMember]
+    def addTypeMember(sym: Symbol, pre: Type, inherited: Boolean, viaView: Symbol): Unit = {
+      val implicitlyAdded = viaView != NoSymbol
+      members.add(sym, pre, implicitlyAdded) { (s, st) =>
+        val result = new TypeMember(s, st,
+          context.isAccessible(if (s.hasGetter) s.getterIn(s.owner) else s, pre, superAccess && !implicitlyAdded),
+          inherited,
+          viaView)
+        result.prefix = pre
+        result
+
       }
     }
-    traverser.traverse(topTree)
-    deepest match {
-      case ValDef(_, _, _, rhs) => rhs
-      case tree => tree
+
+    import analyzer.{SearchResult, ImplicitSearch}
+    import definitions.{functionType, AnyTpe}
+    /** Create a function application of a given view function to `tree` and typechecked it.
+      */
+    def viewApply(view: SearchResult): Tree = {
+      assert(view.tree != EmptyTree)
+      analyzer.newTyper(context.makeImplicit(reportAmbiguousErrors = false))
+        .typed(Apply(view.tree, List(tree)) setPos tree.pos)
+        .onTypeError(EmptyTree)
     }
+
+    val pre = stabilizedType(tree)
+
+    val ownerTpe = tree.tpe match {
+      case ImportType(expr) => expr.tpe
+      case null => pre
+      case MethodType(List(), rtpe) => rtpe
+      case _ => tree.tpe
+    }
+
+    //print("add members")
+    for (sym <- ownerTpe.members)
+      addTypeMember(sym, pre, sym.owner != ownerTpe.typeSymbol, NoSymbol)
+    members.allMembers #:: {
+      //print("\nadd enrichment")
+      val applicableViews: List[SearchResult] =
+        if (ownerTpe.isErroneous) List()
+        else new ImplicitSearch(
+          tree, functionType(List(ownerTpe), AnyTpe), isView = true,
+          context0 = context.makeImplicit(reportAmbiguousErrors = false)).allImplicits
+      for (view <- applicableViews) {
+        val vtree = viewApply(view)
+        val vpre = stabilizedType(vtree)
+        for (sym <- vtree.tpe.members if sym.isTerm) {
+          addTypeMember(sym, vpre, inherited = false, view.tree.symbol)
+        }
+      }
+      //println()
+      Stream(members.allMembers)
+    }
+  }
+
+  // copied from inner method typeCompletions in interactive.Global#completionsAt. But without fatal bug.
+  private def typeCompletions(context: Context, tree: Select) = {
+    val allTypeMembers = typeMembers(context, tree.qualifier).toList.flatten
+    CompletionResult.TypeMembers(0, tree.qualifier, tree, allTypeMembers, tree.name)
   }
 
   private def applyTreeAt(tree: Tree, offset: Int): Option[Apply] = tree.collect {
@@ -271,9 +333,10 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
       CompletionType.Module
     else if (sym.isClass)
       CompletionType.ClassType
-    else if (sym.isVariable)
+    else if (sym.isVariable || sym.isVal)
       CompletionType.Term
-    else CompletionType.Unknown
+    else
+      CompletionType.Unknown
 
 }
 

@@ -21,6 +21,8 @@ import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 
+import ScalaCompiler.OriginalPos
+
 class ScalaCompiler private (
   val global: Global,
   val notebookPackage: String,
@@ -66,6 +68,13 @@ class ScalaCompiler private (
           s"(${args.dropRight(1).mkString(",")}) => ${args.last}"
         case args => s"$typName[${args.mkString(", ")}]"
       }
+  }
+
+  private object saveOriginalPos extends Traverser {
+    override def traverse(tree: Tree): Unit = {
+      tree.updateAttachment(OriginalPos(tree.pos))
+      super.traverse(tree)
+    }
   }
 
   private[kernel] def unsafeFormatType(typ: Type): String = formatTypeInternal(typ)
@@ -178,7 +187,14 @@ class ScalaCompiler private (
     List(treeBuilder.scalaDot(typeNames.AnyRef)), noSelfType, stats
   )
 
-  private def template(stats: Tree*): Template = template(stats.toList)
+  // the default implementation of atPos does some additional junk that messes up things (and isn't threadsafe or nesting-safe)
+  private def atPos[T <: Tree](pos: Position)(tree: T): T = {
+    if (tree.pos == null || !tree.pos.isDefined) {
+      tree.setPos(pos)
+    }
+    tree.children.foreach(atPos(pos))
+    tree
+  }
 
   case class CellCode private[ScalaCompiler] (
     name: String,
@@ -189,10 +205,19 @@ class ScalaCompiler private (
     compilationUnit: RichCompilationUnit = new global.RichCompilationUnit(NoSourceFile),
     sourceFile: SourceFile = NoSourceFile
   ) {
+
     // this copy of the code will be mutated by compile
-    lazy val compiledCode: List[Tree] = code.map {
-      stat => stat.duplicate.setPos(stat.pos)
-    }
+    lazy val compiledCode: List[Tree] = code.foldLeft(List.empty[Tree]) {
+      (accum, stat) =>
+        val copied = duplicateAndKeepPositions(stat)
+        if (copied.pos != null && copied.pos.isDefined) {
+          saveOriginalPos.traverse(copied)
+        } else {
+          val pos = accum.headOption.map(_.pos.focusEnd.makeTransparent).getOrElse(beforePos.makeTransparent)
+          atPos(pos)(copied)
+        }
+        copied :: accum
+    }.reverse
 
 
     // The name of the class (and its companion object, in case one is needed)
@@ -216,7 +241,13 @@ class ScalaCompiler private (
     lazy val (implicitInputs: List[ValDef], nonImplicitInputs: List[ValDef]) = typedInputs.partition(_.mods.isImplicit)
 
     // a position to encompass the whole synthetic tree
-    private lazy val wrappedPos = Position.transparent(sourceFile, 0, 0, sourceFile.length + 1)
+    private val end = math.max(0, sourceFile.length - 1)
+    private lazy val wrappedPos = Position.range(sourceFile, 0, 0, end)
+
+    // positions for imports mustn't be transparent, or they won't be added to context
+    // so we should try to place everything at opaque positions
+    private lazy val beforePos = Position.range(sourceFile, 0, 0, 0)
+    private lazy val afterPos = Position.range(sourceFile, end, end, end)
 
     // create imports for all types and methods defined by previous cells
     lazy val priorCellImports: List[Import] = priorCells.zip(priorCellInputs).foldLeft(Map.empty[String, (TermName, Name)]) {
@@ -235,7 +266,7 @@ class ScalaCompiler private (
 
     // what output values does this code define?
     lazy val outputs: List[ValDef] = code.collect {
-      case valDef: ValDef if valDef.mods.isPublic => valDef.duplicate
+      case valDef: ValDef if valDef.mods.isPublic => duplicateAndKeepPositions(valDef).asInstanceOf[ValDef]
     }
 
     lazy val typedOutputs: List[ValDef] = {
@@ -291,13 +322,12 @@ class ScalaCompiler private (
       }
     }
 
-    lazy val typedMethods: List[MethodSymbol] = compiledCode.collect {
-      case method: DefDef if method.mods.isPublic && method.symbol != NoSymbol && method.symbol != null && method.symbol.isMethod =>
-        method.symbol.asMethod
-    }
-
     // what things does this code import?
     lazy val imports: List[Import] = code.collect {
+      case i: Import => i.duplicate
+    }
+
+    lazy val compiledImports: List[Import] = compiledCode.collect {
       case i: Import => i.duplicate
     }
 
@@ -309,28 +339,48 @@ class ScalaCompiler private (
       case DefDef(mods, name, _, _, _, _) if mods.isPublic => name
     }.distinct
 
+    lazy val wrappedImports = copyAndReset(inheritedImports.externalImports) ++ copyAndReset(inheritedImports.localImports)
+
     // The code all wrapped up in a class definition, with constructor arguments for the given prior cells and inputs
     private lazy val wrappedClass: ClassDef = {
-      val priorCellParamList = copyAndReset(priorCellInputs)
-      val nonImplicitParamList = copyAndReset(nonImplicitInputs)
-      val implicitParamList = copyAndReset(implicitInputs)
-      q"""
-        final class $assignedTypeName(..$priorCellParamList)(..$nonImplicitParamList)(..$implicitParamList) extends scala.Serializable {
-          ..${priorCellImports}
-          ..${copyAndReset(inheritedImports.externalImports)}
-          ..${copyAndReset(inheritedImports.localImports)}
-          ..${compiledCode}
-        }
-      """
+      val transparentBefore = beforePos.makeTransparent
+
+      def toParam(param: ValDef) = atPos(transparentBefore)(param.copy(mods = param.mods | Flag.PARAMACCESSOR))
+      val priorCellParamList = copyAndReset(priorCellInputs).map(toParam)
+      val nonImplicitParamList = copyAndReset(nonImplicitInputs).map(toParam)
+      val implicitParamList = copyAndReset(implicitInputs).map(toParam)
+
+      // have to do this manually rather than with a quasiquote; latter messes up positions
+      val cls = gen.mkClassDef(
+        Modifiers(),
+        assignedTypeName,
+        Nil,
+        gen.mkTemplate(
+          List(atPos(transparentBefore)(gen.scalaDot(tpnme.Serializable))),
+          noSelfType.setPos(transparentBefore),
+          Modifiers(),
+          List(priorCellParamList, nonImplicitParamList, implicitParamList).filter(_.nonEmpty),
+          (priorCellImports ++ wrappedImports).map(atPos(beforePos.makeTransparent)) ++ compiledCode,
+          wrappedPos
+        )).setPos(wrappedPos)
+
+      /*
+        // equivalent tree:
+          q"""final class $assignedTypeName(..$priorCellParamList)(..$nonImplicitParamList)(..$implicitParamList) extends ${atPos(transparentBefore)(gen.scalaDot(tpnme.Serializable))} {
+            ..${priorCellImports.map(atPos(beforePos))}
+            ..${wrappedImports.map(atPos(beforePos))}
+            ..${compiledCode}
+          }""".setPos(wrappedPos)
+       */
+
+      cls
     }
 
     private lazy val companion: ModuleDef = {
-      q"""
-         object $assignedTermName extends {
+      q"""object $assignedTermName extends {
            final val instance: $assignedTypeName = null
            type Inst = instance.type
-         }
-       """
+         }"""
     }
 
     // Wrap the code in a class within the given package. Constructing the class runs the code.
@@ -338,12 +388,10 @@ class ScalaCompiler private (
     private lazy val wrapped: PackageDef = compiledCode match {
       case (pkg @ PackageDef(_, stats)) :: Nil => atPos(wrappedPos)(pkg)
       case code => atPos(wrappedPos) {
-        q"""
-          package $packageName {
+        q"""package ${atPos(beforePos)(Ident(packageName))} {
             $wrappedClass
-            $companion
-          }
-        """
+            ${atPos(afterPos)(companion)}
+          }"""
       }
     }
 
@@ -364,6 +412,7 @@ class ScalaCompiler private (
     private[kernel] lazy val typed = {
       val run = new Run()
       compilationUnit.body = wrapped
+      compilationUnit.lastBody = wrapped
       unitOfFile.put(sourceFile.file, compilationUnit)
       global.globalPhase = run.namerPhase // make sure globalPhase matches run phase
       run.namerPhase.asInstanceOf[global.GlobalPhase].apply(compilationUnit)
@@ -619,4 +668,6 @@ object ScalaCompiler {
     }
   }
 
+  // Attachment for saving the original position of a tree (before the typer)
+  case class OriginalPos(pos: Position)
 }
