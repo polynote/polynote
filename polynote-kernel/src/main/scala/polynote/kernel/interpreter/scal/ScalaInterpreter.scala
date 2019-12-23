@@ -4,11 +4,11 @@ package scal
 
 import java.lang.reflect.{Constructor, InvocationTargetException}
 
-import scala.reflect.internal.util.NoPosition
+import scala.reflect.internal.util.{NoPosition, Position}
 import scala.tools.nsc.interactive.Global
 import polynote.messages.CellID
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Task, RIO, ZIO}
+import zio.{RIO, Task, ZIO}
 import ScalaInterpreter.{addPositionUpdates, captureLastExpression}
 import polynote.kernel.environment.CurrentRuntime
 
@@ -35,18 +35,18 @@ class ScalaInterpreter private[scal] (
     resultValues   <- resultInstance.map(resultInstance => getResultValues(state.id, cellCode, resultInstance)).getOrElse(ZIO.succeed(Nil))
   } yield ScalaCellState(state.id, state.prev, resultValues, cellCode, resultInstance)
 
-  override def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = for {
+  override def completionsAt(code: String, pos: Int, state: State): RIO[Blocking, List[Completion]] = for {
     collectedState   <- injectState(collectState(state)).provide(CurrentRuntime.NoCurrentRuntime)
     valDefs           = collectedState.values.mapValues(_._1).values.toList
-    cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n${code.substring(0, math.min(pos, code.length))}", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
-    completions      <- completer.completions(cellCode, pos + 1)
+    cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n\n${code.substring(0, math.min(pos, code.length))}  ", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
+    completions      <- completer.completions(cellCode, pos + 2)
   } yield completions
 
-  override def parametersAt(code: String, pos: Int, state: State): Task[Option[Signatures]] = for {
+  override def parametersAt(code: String, pos: Int, state: State): RIO[Blocking, Option[Signatures]] = for {
     collectedState <- injectState(collectState(state)).provide(CurrentRuntime.NoCurrentRuntime)
     valDefs         = collectedState.values.mapValues(_._1).values.toList
-    cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n$code", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
-    hints          <- completer.paramHints(cellCode, pos + 1)
+    cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n\n$code  ", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
+    hints          <- completer.paramHints(cellCode, pos + 2)
   } yield hints
 
   override def init(state: State): RIO[InterpreterEnv, State] = ZIO.succeed(state)
@@ -228,15 +228,19 @@ object ScalaInterpreter {
   def addPositionUpdates(global: Global)(trees: List[global.Tree]): List[global.Tree] = {
     import global._
     val numTrees = trees.size
+    if (numTrees == 0) return Nil
+    val lastTree = trees.last
     trees.zipWithIndex.flatMap {
       case (tree, index) =>
         val treeProgress = Literal(Constant(index.toDouble / numTrees))
         val lineStr = s"Line ${tree.pos.line}"
+        val sPos = tree.pos.makeTransparent
         // code to notify kernel of progress in the cell
-        def setProgress(detail: String) = q"""kernel.setProgress($treeProgress, ${Literal(Constant(detail))})"""
+        def setProgress(detail: String) =
+          atPos(sPos)(q"""kernel.setProgress($treeProgress, ${Literal(Constant(detail))})""")
         def setPos(mark: Tree) =
           if(mark.pos.isRange)
-            Some(q"""kernel.setExecutionStatus(${Literal(Constant(mark.pos.start))}, ${Literal(Constant(mark.pos.end))})""")
+            Some(atPos(sPos)(q"""kernel.setExecutionStatus(${Literal(Constant(mark.pos.start))}, ${Literal(Constant(mark.pos.end))})"""))
           else None
 
         def wrapWithProgress(name: String, tree: Tree): List[Tree] =
@@ -248,7 +252,7 @@ object ScalaInterpreter {
           case tree: global.Import => List(tree)
           case tree => wrapWithProgress(lineStr, tree)
         }
-    } :+ q"kernel.clearExecutionStatus()"
+    } :+ atPos(lastTree.pos.makeTransparent)(q"kernel.clearExecutionStatus()")
   }
 
   trait Factory extends Interpreter.Factory {

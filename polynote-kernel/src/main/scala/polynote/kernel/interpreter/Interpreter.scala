@@ -34,7 +34,7 @@ trait Interpreter {
     *              initially have empty values. Its `prev` will point to the [[State]] returned by the closes prior
     *              executed cell, or to [[State.Root]] if there is no such cell.
     */
-  def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]]
+  def completionsAt(code: String, pos: Int, state: State): RIO[Blocking, List[Completion]]
 
   /**
     * Ask for parameter hints (if applicable) at the given position in the given code string.
@@ -45,7 +45,7 @@ trait Interpreter {
     *              initially have empty values. Its `prev` will point to the [[State]] returned by the closes prior
     *              executed cell, or to [[State.Root]] if there is no such cell.
     */
-  def parametersAt(code: String, pos: Int, state: State): Task[Option[Signatures]]
+  def parametersAt(code: String, pos: Int, state: State): RIO[Blocking, Option[Signatures]]
 
   /**
     * Initialize the interpreter, running any predef code and setting up an initial state.
