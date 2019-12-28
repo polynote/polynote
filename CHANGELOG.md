@@ -1,3 +1,7 @@
+# 0.2.15
+* Improved completions for Scala
+* Fixed regression in python+spark interpreter where `kernel` (and thus matplotlib) isn't available.
+
 # 0.2.14 (Dec 18, 2019)
 
 * `<base>` tag can now be configured and works properly
