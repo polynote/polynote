@@ -192,7 +192,7 @@ class ScalaCompiler private (
     if (tree.pos == null || !tree.pos.isDefined) {
       tree.setPos(pos)
     }
-    tree.children.foreach(atPos(pos))
+    tree.children.foreach(atPos(tree.pos))
     tree
   }
 

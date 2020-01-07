@@ -159,12 +159,13 @@ export class DataStream extends EventTarget {
     private _onError: (reason?: any) => void = _ => {};
     private nextPromise?: {resolve: <T>(value?: T | PromiseLike<T>) => void, reject: (reason?: any) => void}; // holds a Promise's `resolve` and `reject` inputs.
     private setupPromise?: Promise<Message | void>;
-    constructor(readonly path: string, private repr: StreamingDataRepr, mods?: TableOp[]) {
+    private repr: StreamingDataRepr;
+    constructor(readonly path: string, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
         super();
         this.path = path;
-        this.repr = repr;
         this.mods = mods || [];
-        this.dataType = repr.dataType;
+        this.repr = originalRepr;
+        this.dataType = originalRepr.dataType;
         this.dataType = this.finalDataType();
     }
 
@@ -192,6 +193,10 @@ export class DataStream extends EventTarget {
 
     kill() {
         this.terminated = true;
+        if (this.repr.handle != this.originalRepr.handle) {
+            SocketSession.get.send(new messages.ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, this.repr.handle))
+        }
+
         if (this.listener) {
             this.removeEventListener('DataBatch', this.listener);
         }
@@ -222,7 +227,7 @@ export class DataStream extends EventTarget {
         });
 
         const mod = new GroupAgg(groupCols, aggPairs);
-        return new DataStream(this.path, this.repr, [...this.mods, mod]);
+        return new DataStream(this.path, this.originalRepr, [...this.mods, mod]);
     }
 
     bin(col: string, binCount: number, err?: number) {
@@ -233,13 +238,13 @@ export class DataStream extends EventTarget {
         if (NumericTypes.indexOf(field.dataType) < 0) {
             throw new Error(`Field ${col} must be a numeric type to use bin()`);
         }
-        return new DataStream(this.path, this.repr, [...this.mods, new QuantileBin(col, binCount, err)]);
+        return new DataStream(this.path, this.originalRepr, [...this.mods, new QuantileBin(col, binCount, err)]);
     }
 
     select(...cols: string[]) {
         const fields = cols.map(col => this.requireField(col));
         const mod = new Select(cols);
-        return new DataStream(this.path, this.repr, [...this.mods, mod]);
+        return new DataStream(this.path, this.originalRepr, [...this.mods, mod]);
     }
 
     onError(fn: (cause: any) => void) {
@@ -313,13 +318,14 @@ export class DataStream extends EventTarget {
                 if (path === this.path && handleType === StreamingDataRepr.handleTypeId && handleId === this.repr.handle) {
                     const succeed = (data: ArrayBuffer[]) => {
                         const batch = decodeValues(data);
-                        this.dispatchEvent(new DataBatch(batch));
                         if (this.nextPromise) {
                             this.nextPromise.resolve(batch);
                             this.nextPromise = undefined;
                         }
 
-                        if (batch.length < count) {
+                        this.terminated = batch.length < count;
+                        this.dispatchEvent(new DataBatch(batch));
+                        if (this.terminated) {
                             this.kill();
                         }
                     };
@@ -332,13 +338,9 @@ export class DataStream extends EventTarget {
         }
 
         if (!this.setupPromise) {
-            if (this.mods && this.mods.length > 0) {
-                this.setupPromise = SocketSession.get.request(new ModifyStream(this.path, this.repr.handle, this.mods)).then(mod => {
-                    if (mod.newRepr) this.repr = mod.newRepr
-                });
-            } else {
-                this.setupPromise = Promise.resolve();
-            }
+            this.setupPromise = SocketSession.get.request(new ModifyStream(this.path, this.repr.handle, this.mods)).then(mod => {
+                if (mod.newRepr) this.repr = mod.newRepr
+            });
         }
 
         return this.setupPromise;
