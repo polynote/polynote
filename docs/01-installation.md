@@ -36,7 +36,7 @@ cd polynote
   Polynote has been successfully tested on both Java 8 and Java 11.
   
 - *Spark support*: In order to use Spark with kernel isolation, you'll need to [install Apache Spark&trade;](https://spark.apache.org/downloads.html).
-  If you'll be using Spark with Polynote, please make sure you read this [note about Spark and Polynote](02-basic-usage.md#Using-Spark-with-Polynote) for more information. 
+  If you'll be using Spark with Polynote, please make sure you read this [note about Spark and Polynote](02-basic-usage.md#using-spark-with-polynote) for more information. 
   - Polynote will use the `spark-submit` command in order to start isolated kernels, so it needs the `spark-submit` command 
     to be working properly and available on the `PATH` of the environment you used to launch the server.
       - On a Mac with [Homebrew](https://brew.sh), you can install Spark locally with `brew install apache-spark`.
