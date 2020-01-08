@@ -2,7 +2,7 @@ package polynote.server.repository
 
 import java.io.FileNotFoundException
 import java.net.URI
-import java.nio.file.{FileAlreadyExistsException, Files, Path, Paths}
+import java.nio.file.{FileAlreadyExistsException, Path, Paths}
 
 import cats.implicits._
 import polynote.kernel.environment.Config
@@ -10,11 +10,8 @@ import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages._
 import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem}
-import zio.blocking.effectBlocking
 import zio.interop.catz._
 import zio.{RIO, ZIO}
-
-import scala.collection.JavaConverters._
 
 trait NotebookRepository {
 

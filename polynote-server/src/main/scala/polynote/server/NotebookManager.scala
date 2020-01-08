@@ -2,23 +2,20 @@ package polynote.server
 
 import java.io.File
 import java.net.URI
-import java.nio.file.{AccessDeniedException, FileAlreadyExistsException, Path}
+import java.nio.file.{AccessDeniedException, FileAlreadyExistsException}
 import java.util.concurrent.TimeUnit
 
-import cats.effect.ConcurrentEffect
-import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, LocalKernel}
-import polynote.kernel.util.RefMap
-import polynote.messages.{CreateNotebook, DeleteNotebook, Message, Notebook, NotebookUpdate, RenameNotebook, ShortString}
-import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
-import polynote.server.repository.format.ipynb.IPythonFormat
-import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
-import zio.interop.catz._
-import cats.implicits._
 import fs2.concurrent.Topic
 import polynote.config.{Mount, PolynoteConfig}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
+import polynote.kernel.util.RefMap
+import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState}
+import polynote.messages.{CreateNotebook, DeleteNotebook, Message, RenameNotebook, ShortString}
+import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
 import zio.blocking.Blocking
+import zio.interop.catz._
+import zio.{Fiber, Promise, RIO, Task, ZIO}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration

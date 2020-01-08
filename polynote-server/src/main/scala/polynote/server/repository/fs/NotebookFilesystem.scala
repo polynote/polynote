@@ -1,13 +1,9 @@
 package polynote.server.repository.fs
 
-import java.io.InputStream
-import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path}
+import java.nio.file.Path
 
-import fs2.Chunk
 import polynote.kernel.BaseEnv
-import zio.blocking.effectBlocking
-import zio.{RIO, Task, ZIO}
+import zio.RIO
 
 /**
   * Encapsulates useful Notebook-related FS stuff.

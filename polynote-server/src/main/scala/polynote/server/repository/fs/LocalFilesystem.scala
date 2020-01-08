@@ -5,10 +5,9 @@ import java.nio.file.{FileVisitOption, Files, Path}
 
 import fs2.Chunk
 import polynote.kernel.BaseEnv
-import zio.{RIO, Task, ZIO}
-import zio.blocking.Blocking
 import zio.blocking.effectBlocking
 import zio.interop.catz._
+import zio.{RIO, Task, ZIO}
 
 import scala.collection.JavaConverters._
 
