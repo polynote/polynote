@@ -1,24 +1,20 @@
 package polynote.server.repository
 
-import java.io.{File, FileNotFoundException}
+import java.io.FileNotFoundException
 import java.net.URI
-import java.nio.charset.StandardCharsets
-import java.nio.file.{FileAlreadyExistsException, FileVisitOption, Files, Path, Paths}
+import java.nio.file.{FileAlreadyExistsException, Files, Path, Paths}
 
 import cats.implicits._
-import io.circe.Printer
-import polynote.config.PolynoteConfig
 import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages._
 import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.format.ipynb.{JupyterNotebook, ZeppelinNotebook}
-import zio.{RIO, ZIO}
+import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem}
 import zio.blocking.effectBlocking
 import zio.interop.catz._
+import zio.{RIO, ZIO}
 
 import scala.collection.JavaConverters._
-import scala.concurrent.ExecutionContext
 
 trait NotebookRepository {
 
@@ -177,51 +173,34 @@ class TreeRepository (
 class FileBasedRepository(
   val path: Path,
   val chunkSize: Int = 8192,
-  val maxDepth: Int = 4,
-  val defaultExtension: String = "ipynb"
+  val defaultExtension: String = "ipynb",
+  val fs: NotebookFilesystem = new LocalFilesystem() // TODO: once we support other FS (like S3) we'll want this to be configurable
 ) extends NotebookRepository {
   protected def pathOf(relativePath: String): Path = path.resolve(relativePath)
 
-  protected def loadString(path: String): RIO[BaseEnv with GlobalEnv, String] = for {
-    content <- readBytes(Files.newInputStream(pathOf(path)), chunkSize)
-  } yield new String(content.toArray, StandardCharsets.UTF_8)
-
   override def loadNotebook(path: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
-    fmt     <- NotebookFormat.getFormat(Paths.get(path))
-    content <- loadString(path)
+    fmt     <- NotebookFormat.getFormat(pathOf(path))
+    content <- fs.readPathAsString(pathOf(path))
     (noExtPath, _) = extractExtension(path)
     nb      <- fmt.decodeNotebook(noExtPath, content)
   } yield nb
 
-  def writeString(relativePath: String, content: String): RIO[BaseEnv with GlobalEnv, Unit] = ZIO {
-    val nbPath = pathOf(relativePath)
-
-    if (nbPath.getParent != this.path) {
-      Files.createDirectories(nbPath.getParent)
-    }
-
-    Files.write(pathOf(relativePath), content.getBytes(StandardCharsets.UTF_8))
-  }.map(_ => ())
-
   override def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = for {
     fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))
     rawString <- fmt.encodeNotebook(NotebookContent(nb.cells, nb.config))
-    _         <- writeString(nb.path, rawString)
+    _         <- fs.writeStringToPath(pathOf(nb.path), rawString)
   } yield ()
 
   def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
     for {
-      files <- effectBlocking(Files.walk(path, maxDepth, FileVisitOption.FOLLOW_LINKS).iterator().asScala.drop(1).toList)
+      files <- fs.list(path)
       isSupported <- NotebookFormat.isSupported
-    } yield files.filter(isSupported).map {
-      path => this.path.relativize(path).toString
+    } yield files.filter(isSupported).map { relativePath =>
+      path.relativize(relativePath).toString
     }
   }
 
-  def notebookExists(path: String): RIO[BaseEnv with GlobalEnv, Boolean] = {
-    val repoPath = this.path.resolve(path)
-    ZIO(repoPath.toFile.exists())
-  }
+  def notebookExists(path: String): RIO[BaseEnv with GlobalEnv, Boolean] = fs.exists(pathOf(path))
 
   def notebookURI(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = {
     val repoPath = this.path.resolve(path)
@@ -252,14 +231,6 @@ class FileBasedRepository(
     }
   }
 
-  def relativeDepth(relativePath: String): Int = {
-
-    val fullPath = pathOf(relativePath).iterator().asScala
-    val nbPath = path.iterator().asScala
-
-    fullPath.dropWhile(elem => nbPath.contains(elem)).length
-  }
-
   def emptyNotebook(path: String, title: String): RIO[BaseEnv with GlobalEnv, Notebook] = Config.access.map {
     config =>
       Notebook(
@@ -280,56 +251,35 @@ class FileBasedRepository(
     val (noExtPath, ext) = extractExtension(relativePath.replaceFirst("""^/+""", ""))
     val path = s"$noExtPath.$ext"
 
-    if (relativeDepth(path) > maxDepth) {
-      ZIO.fail(new IllegalArgumentException(s"Input path ($path) too deep, maxDepth is $maxDepth"))
-    } else {
-      for {
-        fmt     <- NotebookFormat.getFormat(Paths.get(path))
-        nb      <- maybeContent.map(content => fmt.decodeNotebook(noExtPath, content)).getOrElse {
-          val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
-          emptyNotebook(path, defaultTitle)
-        }
-        name    <- findUniqueName(nb.path)
-        _       <- saveNotebook(nb.copy(path = name))
-      } yield name
-    }
+    for {
+      _       <- fs.validate(Paths.get(relativePath))
+      fmt     <- NotebookFormat.getFormat(Paths.get(path))
+      nb      <- maybeContent.map(content => fmt.decodeNotebook(noExtPath, content)).getOrElse {
+        val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
+        emptyNotebook(path, defaultTitle)
+      }
+      name    <- findUniqueName(nb.path)
+      _       <- saveNotebook(nb.copy(path = name))
+    } yield name
   }
 
   def renameNotebook(oldPath: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = {
     val ext = s".$defaultExtension"
     val withExt = newPath.replaceFirst("""^/+""", "").stripSuffix(ext) + ext
 
-    if (relativeDepth(withExt) > maxDepth) {
-      ZIO.fail(new IllegalArgumentException(s"Input path ($newPath) too deep, maxDepth is $maxDepth"))
-    } else {
-      (notebookExists(oldPath), notebookExists(withExt)).mapN(_ -> _).flatMap {
-        case (false, _)    => ZIO.fail(new FileNotFoundException(s"File $oldPath doesn't exist"))
-        case (_, true)     => ZIO.fail(new FileAlreadyExistsException(s"File $withExt already exists"))
-        case (true, false) =>
-          val absOldPath = pathOf(oldPath)
-          val absNewPath = pathOf(withExt)
-          effectBlocking {
-            val dir = absNewPath.getParent.toFile
-            if (!dir.exists()) {
-              dir.mkdirs()
-            }
-            Files.move(absOldPath, absNewPath)
-          }.as(withExt)
-      }
+    fs.validate(Paths.get(withExt)) *> (notebookExists(oldPath), notebookExists(withExt)).mapN(_ -> _).flatMap {
+      case (false, _)    => ZIO.fail(new FileNotFoundException(s"File $oldPath doesn't exist"))
+      case (_, true)     => ZIO.fail(new FileAlreadyExistsException(s"File $withExt already exists"))
+      case (true, false) =>
+        val absOldPath = pathOf(oldPath)
+        val absNewPath = pathOf(withExt)
+
+        fs.move(absOldPath, absNewPath).as(withExt)
     }
   }
 
   // TODO: should probably have a "trash" or something instead – a way of recovering a file from accidental deletion?
-  def deleteNotebook(path: String): RIO[BaseEnv with GlobalEnv, Unit] = {
-    notebookExists(path).flatMap {
-      case false => ZIO.fail(new FileNotFoundException(s"File $path does't exist"))
-      case true  => effectBlocking(Files.delete(pathOf(path)))
-    }
-  }
+  def deleteNotebook(path: String): RIO[BaseEnv with GlobalEnv, Unit] = fs.delete(pathOf(path))
 
-  def initStorage(): RIO[BaseEnv with GlobalEnv, Unit] = ZIO {
-    if (!Files.exists(path)) {
-      Files.createDirectories(path)
-    }
-  }
+  def initStorage(): RIO[BaseEnv with GlobalEnv, Unit] = fs.init(path)
 }
