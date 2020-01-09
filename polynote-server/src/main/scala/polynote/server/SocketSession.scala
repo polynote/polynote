@@ -29,7 +29,7 @@ import scala.concurrent.duration.{Duration, SECONDS}
 class SocketSession(
   handler: SessionHandler,
   broadcastAll: Topic[Task, Option[Message]]
-)(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]) {
+)(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]) {
 
   private def toFrame(message: Message): Task[Binary] = {
     Message.encode[Task](message).map(bits => Binary(bits.toByteVector))
@@ -75,6 +75,17 @@ class SocketSession(
         serverVersion = BuildInfo.version,
         serverCommit = BuildInfo.commit)
     }
+}
+
+trait SocketHandler[Env] {
+
+  def handler: PartialFunction[Message, RIO[Env, Unit]]
+
+  def unhandled(msg: Message): RIO[BaseEnv, Unit] = Logging.warn(s"Unhandled message type ${msg.getClass.getName}")
+
+  def accept(message: Message): RIO[Env, Unit] =
+    handler.applyOrElse(message, unhandled)
+
 }
 
 class SessionHandler(
@@ -253,7 +264,7 @@ class SessionHandler(
 object SocketSession {
   def apply(
     broadcastAll: Topic[Task, Option[Message]]
-  )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev3: Concurrent[Task], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]): RIO[BaseEnv with NotebookManager, SocketSession] = for {
+  )(implicit ev: MonadError[Task, Throwable], ev2: Concurrent[TaskG], ev4: Timer[Task], ev5: Applicative[RIO[PublishMessage, ?]]): RIO[BaseEnv with NotebookManager, SocketSession] = for {
     notebookManager  <- NotebookManager.access
     subscribed       <- RefMap.empty[String, KernelSubscriber]
     closed           <- Promise.make[Throwable, Unit]
@@ -262,5 +273,5 @@ object SocketSession {
     handler           = new SessionHandler(notebookManager, subscribed, closed, streamingHandles)
   } yield new SocketSession(handler, broadcastAll)
 
-  private val sessionId = new AtomicInteger(0)
+  private[server] val sessionId = new AtomicInteger(0)
 }

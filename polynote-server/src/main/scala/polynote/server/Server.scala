@@ -174,6 +174,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
         case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => authorize(req, SocketSession(broadcastAll).flatMap(_.toResponse)).provide(env)
         case GET -> Root / "ws"                                               => Forbidden()
         case req @ GET -> Root                                                => indexResponse.provide(env)
+        case req @ GET -> "notebook" /: "ws" /: path :? KeyMatcher(`wsKey`)   => authorize(req, NotebookSession(path.toString).flatMap(_.toResponse)).provide(env)
         case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req).provide(env)
         case req @ GET -> "notebook" /: _                                     => indexResponse.provide(env)
         case req @ GET -> (Root / "polynote-assembly.jar")                    => StaticFile.fromFile[Task](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), blockingEC).getOrElseF(NotFound())
