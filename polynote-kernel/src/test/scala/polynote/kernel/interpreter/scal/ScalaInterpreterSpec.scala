@@ -35,10 +35,26 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
     ValueMap(result.state.values) shouldEqual Map("foo" -> 22)
   }
 
-  "capture standard output" in {
-    val result = interp1("""println("hello")""")
+  "capture standard output" - {
+    "single-line string" in {
+      val result = interp1("""println("hello")""")
+      stdOut(result.env.publishResult.toList.runIO()) shouldEqual "hello\n"
+    }
 
-    stdOut(result.env.publishResult.toList.runIO()) shouldEqual "hello\n"
+    "multi-line string" in {
+      val result = interp1(
+        s"""println(">>>Multi-line string")
+          |println(${"\"\"\""}A: 1
+          |    |B: 2
+          |    |C: 3${"\"\"\""}.stripMargin)
+          |""".stripMargin)
+      stdOut(result.env.publishResult.toList.runIO()) shouldEqual
+        """>>>Multi-line string
+          |A: 1
+          |B: 2
+          |C: 3
+          |""".stripMargin
+    }
   }
 
   "bring values from previous cells" in {
