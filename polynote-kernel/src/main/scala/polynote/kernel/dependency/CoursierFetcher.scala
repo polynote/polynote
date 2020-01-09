@@ -3,36 +3,36 @@ package polynote.kernel.dependency
 import java.io.{File, FileOutputStream}
 import java.net.URI
 import java.nio.file.{Files, Path, Paths}
-import java.util.concurrent.{ConcurrentHashMap, ExecutorService}
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
-import cats.{Applicative, Traverse}
+import cats.Traverse
 import cats.data.{Validated, ValidatedNel}
 import cats.effect.concurrent.Ref
 import cats.effect.LiftIO
-import cats.syntax.alternative._
-import cats.syntax.apply._
-import cats.syntax.either._
-import cats.syntax.traverse._
 import cats.instances.either._
 import cats.instances.list._
+import cats.syntax.alternative._
+import cats.syntax.apply._
+import cats.syntax.traverse._
 import coursier.cache.{ArtifactError, Cache, CacheLogger, FileCache}
-import coursier.core.Repository.Fetch
-import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Repository, Resolution, Resolve}
-import coursier.core.{Artifact, Classifier, Configuration, Exclusions, Repository, Resolution, ResolutionProcess, Type}
+import coursier.core._
 import coursier.error.ResolutionError
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
 import coursier.util.{EitherT, Sync}
+import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
 import polynote.config.{Credentials => CredentialsConfig, RepositoryConfig, ivy, maven}
-import polynote.kernel.{TaskInfo, TaskManager, UpdatedTasks}
-import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
+import polynote.kernel.TaskManager
+import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
+import zio.blocking.{Blocking, blocking, effectBlocking}
 import polynote.kernel.logging.Logging
 import polynote.messages.NotebookConfig
 import zio.blocking.{Blocking, effectBlocking, blocking}
 import zio.{Task, RIO, UIO, URIO, ZIO, ZManaged}
 import zio.interop.catz._
+import zio.{RIO, Task, ZIO, ZManaged}
 
 import scala.concurrent.ExecutionContext
 import scala.tools.nsc.interpreter.InputStream
@@ -52,7 +52,8 @@ object CoursierFetcher {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
       dependencies    = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
-      (deps, uris)    = splitDependencies(dependencies)
+      splitRes     <- splitDependencies(dependencies)
+      (deps, uris)  = splitRes
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
       credentials    <- loadCredentials(polynoteConfig.credentials)
@@ -228,7 +229,7 @@ object CoursierFetcher {
     } yield ()
 
     for {
-      file        <- ZIO.fromOption(DownloadableFileProvider.getFile(uri)).mapError(_ => new Exception(s"Unable to find provider for uri $uri"))
+      file        <- DownloadableFileProvider.getFile(uri)
       inputAsFile  = Paths.get(uri.getPath).toFile
       exists      <- effectBlocking(inputAsFile.exists())
       download    <- if (exists) ZIO.succeed(inputAsFile) else downloadToFile(file, localFile).as(localFile)
@@ -236,21 +237,18 @@ object CoursierFetcher {
 
   }
 
-  private def splitDependencies(deps: List[String]): (List[String], List[URI]) = {
-    val (dependencies, uriList) = deps.map { dep =>
-
-      val asURI = new URI(dep)
-
+  private def splitDependencies(deps: List[String]): RIO[Blocking, (List[String], List[URI])] = deps.map { dep =>
+    val asURI = new URI(dep)
+    for {
+      supported <- DownloadableFileProvider.isSupported(asURI)
+    } yield {
       Either.cond(
-        // Do we support this protocol (if any?)
-        DownloadableFileProvider.isSupported(asURI),
-        asURI,
-        dep // an unsupported protocol might be a dependency
+        test = supported,
+        right = asURI,
+        left = dep // an unsupported protocol might be a dependency coordinate (like the `foo` in `foo:bar_2.11:1.2.3`)
       )
-    }.separate
-
-    (dependencies, uriList)
-  }
+    }
+  }.sequence.map(_.separate)
 
   protected def cacheLocation(uri: URI): Path = {
     val pathParts = Seq(uri.getScheme, uri.getAuthority, uri.getPath).flatMap(Option(_)) // URI methods sometimes return `null`, great.

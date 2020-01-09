@@ -6,6 +6,8 @@ import java.util.ServiceLoader
 
 import scala.collection.JavaConverters._
 import cats.effect.IO
+import zio.{RIO, ZIO}
+import zio.blocking.{Blocking, effectBlocking}
 
 trait DownloadableFile {
   def openStream: IO[InputStream]
@@ -27,16 +29,22 @@ trait DownloadableFileProvider {
 }
 
 object DownloadableFileProvider {
-  val providers: List[DownloadableFileProvider] = ServiceLoader.load(classOf[DownloadableFileProvider]).iterator.asScala.toList
+  private lazy val unsafeLoad = ServiceLoader.load(classOf[DownloadableFileProvider]).iterator.asScala.toList
 
-  def isSupported(uri: URI): Boolean = Option(uri.getScheme).exists(providers.flatMap(_.protocols).contains)
+  def isSupported(uri: URI): RIO[Blocking, Boolean] = effectBlocking(unsafeLoad).map { providers =>
+    Option(uri.getScheme).exists(providers.flatMap(_.protocols).contains)
+  }
 
-  def getFile(uri: URI): Option[DownloadableFile] =
-    for {
-      scheme <- Option(uri.getScheme)
-      provider <- providers.find(_.protocols.contains(scheme))
-      file <- provider.getFile(uri)
-    } yield file
+  def getFile(uri: URI): ZIO[Blocking, Throwable, DownloadableFile] = {
+    effectBlocking(unsafeLoad).map {
+      providers =>
+        for {
+          scheme <- Option(uri.getScheme)
+          provider <- providers.find(_.protocols.contains(scheme))
+          file <- provider.getFile(uri)
+        } yield file
+    }.someOrFail(new Exception(s"Unable to find provider for uri $uri"))
+  }
 }
 
 class HttpFileProvider extends DownloadableFileProvider {

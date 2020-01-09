@@ -2,23 +2,20 @@ package polynote.server
 
 import java.io.File
 import java.net.URI
-import java.nio.file.{AccessDeniedException, FileAlreadyExistsException, Path}
+import java.nio.file.{AccessDeniedException, FileAlreadyExistsException}
 import java.util.concurrent.TimeUnit
 
-import cats.effect.ConcurrentEffect
-import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, LocalKernel}
-import polynote.kernel.util.RefMap
-import polynote.messages.{CreateNotebook, DeleteNotebook, Message, Notebook, NotebookUpdate, RenameNotebook, ShortString}
-import polynote.server.repository.{NotebookRepository, TreeRepository}
-import polynote.server.repository.ipynb.IPythonNotebookRepository
-import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
-import zio.interop.catz._
-import cats.implicits._
 import fs2.concurrent.Topic
 import polynote.config.{Mount, PolynoteConfig}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
+import polynote.kernel.util.RefMap
+import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState}
+import polynote.messages.{CreateNotebook, DeleteNotebook, Message, RenameNotebook, ShortString}
+import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
 import zio.blocking.Blocking
+import zio.interop.catz._
+import zio.{Fiber, Promise, RIO, Task, ZIO}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
@@ -63,7 +60,7 @@ object NotebookManager {
       private def startWriter(publisher: KernelPublisher): ZIO[BaseEnv with GlobalEnv, Nothing, NotebookWriter] = for {
         shutdownSignal <- Promise.make[Throwable, Unit]
         fiber          <- publisher.notebooksTimed(Duration(1, TimeUnit.SECONDS))
-          .evalMap(notebook => repository.saveNotebook(notebook.path, notebook))
+          .evalMap(notebook => repository.saveNotebook(notebook))
           .interruptWhen(shutdownSignal.await.either)
           .interruptWhen(publisher.closed.await.either)
           .compile.drain.fork
@@ -129,10 +126,7 @@ object NotebookManager {
       mount =>
         makeTreeRepository(mount.dir, mount.mounts, config, ec)
     }
-    val rootRepo = new IPythonNotebookRepository(
-      new File(System.getProperty("user.dir")).toPath.resolve(dir),
-      config,
-      executionContext = ec)
+    val rootRepo = new FileBasedRepository(new File(System.getProperty("user.dir")).toPath.resolve(dir))
 
     new TreeRepository(rootRepo, repoMap)
   }
