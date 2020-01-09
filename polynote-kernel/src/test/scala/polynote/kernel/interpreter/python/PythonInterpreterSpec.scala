@@ -246,6 +246,19 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
       }
     }
 
+    "python version is" in {
+
+      assertOutput(
+        """
+          |import sys
+          |print(sys.version)
+          |sys.version""".stripMargin) {
+        case (vars, output) =>
+          println(output)
+      }
+    }
+
+
     "completions" in {
       val completions = interpreter.completionsAt("dela", 4, State.id(1)).runIO()
       completions shouldEqual List(Completion("delattr", Nil, TinyList(List(TinyList(List(("obj", ""), ("name", ""))))), "", CompletionType.Method))
