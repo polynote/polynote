@@ -335,7 +335,6 @@ export class MainUI extends UIMessageTarget {
 
     importNotebook(name: string, content: string) {
         SocketSession.get.listenOnceFor(messages.CreateNotebook, (actualPath) => {
-            this.browseUI.addItem(actualPath);
             this.loadNotebook(actualPath);
         });
         SocketSession.get.send(new messages.CreateNotebook(name, content));
