@@ -258,6 +258,21 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
       }
     }
 
+    "jedi completions" in {
+
+      assertOutput(
+        """
+          |import jedi
+          |comp = jedi.Interpreter("dela", [globals()]).completions()[0]
+          |param = comp.params[0].name
+          |print(param)
+          |""".stripMargin) {
+        case (vars, output) =>
+          println(vars)
+          println(output)
+      }
+    }
+
 
     "completions" in {
       val completions = interpreter.completionsAt("dela", 4, State.id(1)).runIO()
