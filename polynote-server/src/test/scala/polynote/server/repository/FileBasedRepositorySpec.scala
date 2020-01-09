@@ -106,10 +106,10 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
         ("foo100.ipynb", "foo101.ipynb"),
         ("foo100.ipynb", "foo102.ipynb"),
         ("foo.ipynb", "foo4.ipynb"),
-        ("bar.ipynb", "bar.ipynb"),
         ("bar1.ipynb", "bar1.ipynb"),
-        ("bar1.ipynb", "bar2.ipynb")
-      )
+        ("bar1.ipynb", "bar2.ipynb"),
+        ("bar1.ipynb", "bar3.ipynb")
+      ) ++ (1 to 100).map(i => "notebook1.ipynb" -> s"notebook$i.ipynb")
 
       namesAndResults.foreach {
         case (name, result) =>

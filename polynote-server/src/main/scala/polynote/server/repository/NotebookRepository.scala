@@ -211,7 +211,7 @@ class FileBasedRepository(
     }
   }
 
-  val EndsWithNum = """^(.*)(\d+)$""".r
+  val EndsWithNum = """^(.*?)(\d+)$""".r
 
   def findUniqueName(path: String): RIO[BaseEnv with GlobalEnv, String] = {
     val (noExtPath, ext) = extractExtension(path)
