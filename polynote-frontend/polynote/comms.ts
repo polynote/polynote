@@ -100,9 +100,13 @@ export class SocketSession extends EventTarget {
                 this.dispatchEvent(new PolynoteMessageEvent(msg)); // this is how `request` works.
 
                 for (const handler of this.messageListeners) {
-                    if (msg instanceof handler[0]) { // check not redundant even though IntelliJ complains.
-                        const result = handler[1].apply(null, handler[0].unapply(msg));
-                        if (handler[2] && result === false) {
+                    const msgType = handler[0];
+                    const listenerCB = handler[1];
+                    const removeWhenFalse = handler[2];
+
+                    if (msg instanceof msgType) { // check not redundant even though IntelliJ complains.
+                        const result = listenerCB.apply(null, msgType.unapply(msg));
+                        if (removeWhenFalse && (result === false || result === undefined)) {
                             this.removeMessageListener(handler);
                         }
                     }
