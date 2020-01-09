@@ -68,11 +68,13 @@ trait State {
     */
   def takeUntil(fn: State => Boolean): List[State] = {
     var state = this
-    val result = ListBuffer(state)
+    val result = new ListBuffer[State]
     while (!(state eq Root) && !fn(state)) {
-      state = state.prev
       result += state
+      state = state.prev
     }
+    if (fn(state) && !(state eq Root)) result += state
+
     result.toList
   }
 
@@ -143,15 +145,6 @@ trait State {
   def insert(after: CellID, state: State): State = if (after == id || this == Root) {
     state.withPrev(this)
   } else withPrev(prev.insert(after, state))
-
-  /**
-    * Replace the state with the same ID as the given state with the given state
-    */
-  def replace(state: State): State = if (state.id == id) {
-    state.withPrev(prev)
-  } else if (this != Root) {
-    withPrev(prev.replace(state))
-  } else this
 
   /**
     * Replace the state with the same ID as the given state with the given state. If a state with the given state's

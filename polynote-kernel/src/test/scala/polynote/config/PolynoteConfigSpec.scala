@@ -114,4 +114,24 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     parsed.right.value.behavior.getSharedString shouldEqual
       "^(com.esotericsoftware.kryo|org.myclass|scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j)\\."
   }
+
+  it should "handle empty configurations" in {
+    val yamlStr = ""
+
+    val parsed = PolynoteConfig.parse(yamlStr)
+    val defaultConfig = PolynoteConfig()
+    parsed.right.value shouldEqual defaultConfig
+  }
+
+  it should "handle comment-only configurations" in {
+    val yamlStr =
+      """
+        |# some yaml comment
+        |# another comment
+        |""".stripMargin
+
+    val parsed = PolynoteConfig.parse(yamlStr)
+    val defaultConfig = PolynoteConfig()
+    parsed.right.value shouldEqual defaultConfig
+  }
 }
