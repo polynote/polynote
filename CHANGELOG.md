@@ -1,4 +1,14 @@
-# 0.2.15
+# 0.2.16 (Jan 9, 2020)
+
+* Fixed some plotting and streaming data bugs 
+* Better completions 
+* Refactor the way notebook files are encoded/decoded and stored. Also fixes some issues in Zeppelin notebook import. 
+* Address `serialize-javascript` vulnerability
+* New hotkey, `Shift+F10`, to run all cells (thanks @kuckjwi0928) 
+* Additional bugfixes and improvements
+
+# 0.2.15 (Dec 28, 2019)
+
 * Improved completions for Scala
 * Fixed regression in python+spark interpreter where `kernel` (and thus matplotlib) isn't available.
 
