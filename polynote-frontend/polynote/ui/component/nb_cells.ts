@@ -18,12 +18,10 @@ export class NotebookCellsUI extends UIMessageTarget {
     readonly configUI: NotebookConfigUI;
     readonly el: NotebookCellsEl;
     resizeTimeout: number;
-    readonly notebookUI: NotebookUI;
     private configEl: TagElement<"div">;
 
-    constructor(parent: NotebookUI, readonly path: string) {
-        super(parent);
-        this.notebookUI = parent; // TODO: get rid of this
+    constructor(readonly notebook: NotebookUI, readonly path: string) {
+        super(notebook);
         this.disabled = false;
         this.configUI = new NotebookConfigUI((conf: NotebookConfig) => CurrentNotebook.get.updateConfig(conf)).setParent(this);
         this.el = Object.assign(
@@ -191,9 +189,9 @@ export class NotebookCellsUI extends UIMessageTarget {
         const newCellId = this.getMaxCellId() + 1;
         const mkCell = (oldCell?: Cell) => {
             if (oldCell instanceof CodeCell) {
-                return new CodeCell(newCellId, '', oldCell.language, this.path)
+                return new CodeCell(newCellId, '', oldCell.language, this.notebook)
             } else {
-                return new CodeCell(newCellId, '', 'scala', this.path) // default new cells are scala cells
+                return new CodeCell(newCellId, '', 'scala', this.notebook) // default new cells are scala cells
             }
         };
 
@@ -249,8 +247,8 @@ export class NotebookCellsUI extends UIMessageTarget {
                     span(['undo-link'], ['Undo']).click(evt => {
                         const mkCell = (nextCellId: number) => {
                             return cellToDelete.language !== "text"
-                                ? new CodeCell(nextCellId, cellToDelete.content, cellToDelete.language, this.path)
-                                : new TextCell(nextCellId, cellToDelete.content, this.path);
+                                ? new CodeCell(nextCellId, cellToDelete.content, cellToDelete.language, this.notebook)
+                                : new TextCell(nextCellId, cellToDelete.content, this.notebook);
                         };
 
                         const prevCell = this.getCellBeforeEl(undoEl);
@@ -324,7 +322,7 @@ export class NotebookCellsUI extends UIMessageTarget {
         if (currentCell instanceof TextCell && language !== 'text') {
             // replace text cell with a code cell
             const textContent = currentCell.container.innerText.trim(); // innerText has just the plain text without any HTML formatting
-            const newCell = new CodeCell(currentCell.id, currentCell.content, language, this.path, currentCell.metadata);
+            const newCell = new CodeCell(currentCell.id, currentCell.content, language, this.notebook, currentCell.metadata);
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);
@@ -337,7 +335,7 @@ export class NotebookCellsUI extends UIMessageTarget {
             newCell.focus();
         } else if (currentCell instanceof CodeCell && language === 'text') {
             // replace code cell with a text cell
-            const newCell = new TextCell(currentCell.id, currentCell.content, this.path, currentCell.metadata);
+            const newCell = new TextCell(currentCell.id, currentCell.content, this.notebook, currentCell.metadata);
             this.el.replaceChild(newCell.container, currentCell.container);
             currentCell.dispose();
             this.setupCell(newCell);

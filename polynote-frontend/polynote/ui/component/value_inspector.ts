@@ -11,6 +11,7 @@ import {PlotEditor} from "./plot_editor";
 import {TableView} from "./table_view";
 import {TabNav} from "./tab_nav";
 import {DataReader} from "../../data/codec";
+import {NotebookUI} from "./notebook";
 
 
 export class ValueInspector extends FullScreenModal {
@@ -28,7 +29,7 @@ export class ValueInspector extends FullScreenModal {
         );
     }
 
-    inspect(resultValue: ResultValue, notebookPath: string, jumpTo?: string) {
+    inspect(resultValue: ResultValue, notebook: NotebookUI, jumpTo?: string) {
         this.content.innerHTML = "";
         let tabsPromise = Promise.resolve({} as Record<string, TagElement<any>>);
 
@@ -54,8 +55,8 @@ export class ValueInspector extends FullScreenModal {
                         if (dataType instanceof StructType) {
                             tabs['Schema'] = displaySchema(dataType);
                             try {
-                                tabs['Plot data'] = new PlotEditor(repr, notebookPath, resultValue.name, resultValue.sourceCell, () => this.hide()).container;
-                                tabs['View data'] = new TableView(repr, notebookPath).el;
+                                tabs['Plot data'] = new PlotEditor(repr, notebook, resultValue.name, resultValue.sourceCell, () => this.hide()).container;
+                                tabs['View data'] = new TableView(repr, notebook).el;
                             } catch(err) {
                                 console.log(err);
                             }

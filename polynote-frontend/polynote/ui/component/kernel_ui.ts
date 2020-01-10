@@ -8,42 +8,53 @@ import {TaskInfo, TaskStatus} from "../../data/messages";
 import {errorDisplay} from "./cell";
 import {storage} from "../util/storage";
 import {SocketSession} from "../../comms";
+import {NotebookUI} from "./notebook";
+import {ResultValue} from "../../data/result";
 
 export class KernelUI extends UIMessageTarget {
     private info: KernelInfoUI;
     readonly tasks: KernelTasksUI;
-    readonly symbols: KernelSymbolsUI;
+    readonly symbols?: KernelSymbolsUI;
     readonly el: TagElement<"div">;
     private statusEl: TagElement<"h2">;
     private status: TagElement<"span">;
+    private socket: SocketSession;
+    private path: string;
 
     // TODO: instead of passing path in, can it be enriched by a parent?
-    constructor(eventParent: UIMessageTarget, readonly path: string, showInfo = true, showSymbols = true, showTasks = true, showStatus = true) {
-        super(eventParent);
+    constructor(private notebook?: NotebookUI) {
+        super(notebook);
         this.info = new KernelInfoUI();
-        this.symbols = new KernelSymbolsUI(path).setParent(this);
+        if (notebook) {
+            this.symbols = new KernelSymbolsUI(notebook).setParent(this);
+            this.path = notebook.path;
+            this.socket = notebook.socket;
+        } else {
+            this.socket = SocketSession.global; // TODO: the welcome screen uses a KernelUI to be able to show errors, make a dedicated thing for that and remove this (make notebook non-optional)
+            this.path = "/";
+        }
         this.tasks = new KernelTasksUI();
-        this.path = path;
+
         this.el = div(['kernel-ui', 'ui-panel'], [
             this.statusEl = h2(['kernel-status'], [
                 this.status = span(['status'], ['●']),
                 'Kernel',
-                showStatus ? span(['buttons'], [
+                notebook ? span(['buttons'], [
                     iconButton(['connect'], 'Connect to server', 'plug', 'Connect').click(evt => this.connect(evt)),
                     iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
                     iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(evt => this.killKernel(evt))
                 ]) : undefined
             ]).click(evt => this.collapse()),
             div(['ui-panel-content'], [
-                showInfo ? this.info.el : undefined,
-                showSymbols ? this.symbols.el : undefined,
-                showTasks ? this.tasks.el : undefined
+                notebook ? this.info.el : undefined,
+                notebook && this.symbols ? this.symbols.el : undefined,
+                notebook ? this.tasks.el : undefined
             ])
         ]);
 
-        SocketSession.get.addEventListener('close', () => this.setKernelState('disconnected'));
+        this.socket.addEventListener('close', () => this.setKernelState('disconnected'));
 
-        SocketSession.get.addMessageListener(messages.Error, (code, err) => {
+        this.socket.addMessageListener(messages.Error, (code, err) => {
             console.log("Kernel error:", err);
 
             const {el, messageStr, cellLine} = errorDisplay(err, this.path);
@@ -56,7 +67,7 @@ export class KernelUI extends UIMessageTarget {
             this.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
 
             // clean up (assuming that running another cell means users are done with this error)
-            SocketSession.get.listenOnceFor(messages.CellResult, () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100));
+            this.socket.listenOnceFor(messages.CellResult, () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100));
         });
 
         // Check storage to see whether this should be collapsed
@@ -64,6 +75,16 @@ export class KernelUI extends UIMessageTarget {
         if (prefs && prefs.collapsed) {
             this.collapse(true);
         }
+    }
+
+    presentSymbols(id: number, ids: number[]) {
+        if (this.symbols)
+            this.symbols.presentFor(id, ids);
+    }
+
+    addSymbol(resultValue: ResultValue) {
+        if (this.symbols)
+            this.symbols.addSymbol(resultValue)
     }
 
     updateInfo(info: Record<string, string>) {
@@ -84,8 +105,8 @@ export class KernelUI extends UIMessageTarget {
 
     connect(evt: Event) {
         evt.stopPropagation();
-        if (SocketSession.get.isClosed) {
-            SocketSession.get.reconnect(true);
+        if (this.socket.isClosed) {
+            this.socket.reconnect(true);
         }
     }
 

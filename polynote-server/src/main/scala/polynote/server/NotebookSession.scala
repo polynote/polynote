@@ -9,7 +9,7 @@ import fs2.concurrent.Queue
 import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
-import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, StreamOps, StreamingHandles}
+import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, StreamOps, StreamingHandles, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
@@ -35,6 +35,7 @@ class NotebookSession(
   def close(): UIO[Unit] = closed.succeed(()).unit
 
   lazy val toResponse: ZIO[SessionEnv, Throwable, Response[Task]] = for {
+    _         <- sendNotebookInfo()
     processor <- process(input, output)
     fiber     <- processor.interruptWhen(closed.await.either).compile.drain.ignore.fork
     keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.ignore.fork
@@ -58,6 +59,24 @@ class NotebookSession(
             }.provide(env).fork.unit
       }
     }
+  }
+
+  private def sendNotebookInfo() = {
+    def publishRunningKernelState(publisher: KernelPublisher) = for {
+      kernel <- publisher.kernel
+        _      <- kernel.values().flatMap(_.filter(_.sourceCell < 0).map(rv => PublishMessage(CellResult(path, rv.sourceCell, rv))).sequence)
+        _      <- kernel.info().map(KernelStatus("", _)) >>= PublishMessage.apply
+    } yield ()
+
+    for {
+      notebook <- subscriber.notebook()
+        _        <- PublishMessage(notebook)
+        status   <- subscriber.publisher.kernelStatus()
+        _        <- PublishMessage(KernelStatus("", status))
+        _        <- if (status.alive) publishRunningKernelState(subscriber.publisher) else ZIO.unit
+        tasks    <- subscriber.publisher.taskManager.list
+        _        <- PublishMessage(KernelStatus("", UpdatedTasks(tasks)))
+    } yield ()
   }
 
   val handleMessage: PartialFunction[Message, RIO[SessionEnv with PublishMessage, Unit]] = {

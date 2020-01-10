@@ -19,6 +19,8 @@ import * as Tinycon from "tinycon";
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 
+const notebooks: Record<string, NotebookUI> = {};
+
 export class NotebookUI extends UIMessageTarget {
     readonly cellUI: NotebookCellsUI;
     readonly kernelUI: KernelUI;
@@ -29,12 +31,39 @@ export class NotebookUI extends UIMessageTarget {
     private cellStatusListeners: ((cellId: number, status: number) => void)[] = [];
     private queuedCells: number[] = [];
     private runningCell?: number;
+    readonly socket: SocketSession;
+
+    static getOrCreate(eventParent: UIMessageTarget, path: string, mainUI: MainUI) {
+        if (notebooks[path])
+            return notebooks[path];
+
+        const nb = new NotebookUI(eventParent, path, mainUI);
+        notebooks[path] = nb;
+        return nb;
+    }
+
+    static getInstance(path: string): NotebookUI | undefined {
+        return notebooks[path];
+    }
+
+    static disableAll() {
+        for (const path in Object.keys(notebooks)) {
+            notebooks[path].cellUI.setDisabled(true);
+        }
+    }
+
+    static enableAll() {
+        for (const path in Object.keys(notebooks)) {
+            notebooks[path].cellUI.setDisabled(false);
+        }
+    }
 
     // TODO: remove mainUI reference
-    constructor(eventParent: UIMessageTarget, readonly path: string, readonly mainUI: MainUI) {
+    private constructor(eventParent: UIMessageTarget, readonly path: string, readonly mainUI: MainUI) {
         super(eventParent);
+        this.socket = SocketSession.fromRelativeURL(`ws/${path}`);
         let cellUI = new NotebookCellsUI(this, path);
-        let kernelUI = new KernelUI(this, path);
+        let kernelUI = new KernelUI(this);
         this.cellUI = cellUI;
         this.kernelUI = kernelUI;
 
@@ -85,22 +114,22 @@ export class NotebookUI extends UIMessageTarget {
 
             // update the symbol table to reflect what's visible from this cell
             const ids = this.cellUI.getCodeCellIdsBefore(id);
-            this.kernelUI.symbols.presentFor(id, ids);
+            this.kernelUI.presentSymbols(id, ids);
         });
 
         this.subscribe(ReprDataRequest, (reqHandleType, reqHandleId, reqCount, reqOnComplete, reqOnFail) => {
-            SocketSession.get.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
+            this.socket.listenOnceFor(messages.HandleData, (path, handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
                 if (path === this.path && handleType === reqHandleType && handleId === reqHandleId) {
                     Either.fold(data, err => reqOnFail(err), bufs => reqOnComplete(bufs));
                     return false;
                 } else return true;
             });
-            SocketSession.get.send(new messages.HandleData(path, reqHandleType, reqHandleId, reqCount, Either.right([])));
+            this.socket.send(new messages.HandleData(path, reqHandleType, reqHandleId, reqCount, Either.right([])));
         });
 
-        SocketSession.get.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
+        this.socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
-        SocketSession.get.addMessageListener(messages.KernelStatus, (path, update) => {
+        this.socket.addMessageListener(messages.KernelStatus, (path, update) => {
             if (path === this.path) {
                 switch(update.constructor) {
                     case messages.UpdatedTasks:
@@ -122,7 +151,7 @@ export class NotebookUI extends UIMessageTarget {
             }
         });
 
-        SocketSession.get.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
+        this.socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
             if (update.path === this.path) {
                 if (update.globalVersion >= this.globalVersion) {
                     this.globalVersion = update.globalVersion;
@@ -149,8 +178,8 @@ export class NotebookUI extends UIMessageTarget {
                         .when(messages.InsertCell, (p: string, g: number, l: number, cell: NotebookCell, after: number) => {
                             const prev = this.cellUI.getCell(after);
                             const newCell = (prev && prev.language && prev.language !== "text")
-                                ? new CodeCell(cell.id, cell.content, cell.language, this.path)
-                                : new TextCell(cell.id, cell.content, this.path);
+                                ? new CodeCell(cell.id, cell.content, cell.language, this)
+                                : new TextCell(cell.id, cell.content, this);
 
                             this.cellUI.insertCellBelow(prev && prev.container, () => newCell)
                         })
@@ -183,44 +212,41 @@ export class NotebookUI extends UIMessageTarget {
         });
 
 
-        // TODO: this doesn't seem like the best place for this reconnection logic.
         // when the socket is disconnected, we're going to try reconnecting when the window gets focus.
         const reconnectOnWindowFocus = () => {
-            if (SocketSession.get.isClosed) {
-                SocketSession.get.reconnect(true);
+            if (this.socket.isClosed) {
+                this.socket.reconnect(true);
             }
             // TODO: replace with `socket.request`
-            SocketSession.get.listenOnceFor(messages.NotebookVersion, (path, serverGlobalVersion) => {
+            this.socket.listenOnceFor(messages.NotebookVersion, (path, serverGlobalVersion) => {
                 if (this.globalVersion !== serverGlobalVersion) {
                     // looks like there's been a change while we were disconnected, so reload.
                     document.location.reload();
                 }
             });
-            SocketSession.get.send(new messages.NotebookVersion(path, this.globalVersion))
+            this.socket.send(new messages.NotebookVersion(path, this.globalVersion))
         };
 
-        SocketSession.get.addEventListener('close', evt => {
+        this.socket.addEventListener('close', evt => {
             this.cellUI.setDisabled(true);
             window.addEventListener('focus', reconnectOnWindowFocus);
         });
 
-        SocketSession.get.addEventListener('open', evt => {
+        this.socket.addEventListener('open', evt => {
             window.removeEventListener('focus', reconnectOnWindowFocus);
-            SocketSession.get.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false)));
+            this.socket.send(new messages.KernelStatus(path, new messages.KernelBusyState(false, false)));
             this.cellUI.setDisabled(false);
         });
 
-        SocketSession.get.addMessageListener(messages.CellResult, (path, id, result) => {
-            if (path === this.path) {
-                const cell = this.cellUI.getCell(id);
+        this.socket.addMessageListener(messages.CellResult, (path, id, result) => {
+            const cell = this.cellUI.getCell(id);
 
-                // Cell ids less than 0 refer to the Predef and other server-side things we can safely ignore.
-                // However, Cell Ids >=0 are expected to exist in the current notebook, so we throw if we can't find 'em
-                if (id >=0 && !cell) throw new Error(`Cell Id ${id} does not exist in the current notebook`);
+            // Cell ids less than 0 refer to the Predef and other server-side things we can safely ignore.
+            // However, Cell Ids >=0 are expected to exist in the current notebook, so we throw if we can't find 'em
+            if (id >=0 && !cell) throw new Error(`Cell Id ${id} does not exist in the current notebook`);
 
-                this.updateCellResults(result, id);
-                if (cell instanceof CodeCell) cell.addResult(result)
-            }
+            this.updateCellResults(result, id);
+            if (cell instanceof CodeCell) cell.addResult(result)
         });
 
         // update list of currently running cells
@@ -247,6 +273,11 @@ export class NotebookUI extends UIMessageTarget {
         })
     }
 
+    close() {
+        this.socket.close();
+        delete notebooks[this.path];
+    }
+
     handleTaskUpdate(task: TaskInfo) {
         this.kernelUI.updateTask(task);
         // TODO: this is a quick-and-dirty running cell indicator. Should do this in a way that doesn't use the task updates
@@ -263,7 +294,7 @@ export class NotebookUI extends UIMessageTarget {
         if (result instanceof ClearResults) {
             this.cellResults[id] = {};
         } else if (result instanceof ResultValue) {
-            this.kernelUI.symbols.addSymbol(result);
+            this.kernelUI.addSymbol(result);
 
             if (!this.cellResults[id]) {
                 this.cellResults[id] = {};
@@ -289,7 +320,7 @@ export class NotebookUI extends UIMessageTarget {
                 } else {
                     const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
                     if (streamingRepr) {
-                        bestValue = new DataStream(this.path, streamingRepr as StreamingDataRepr);
+                        bestValue = new DataStream(this.socket, streamingRepr as StreamingDataRepr);
                     }
                 }
                 cellContext[key] = bestValue;
@@ -349,7 +380,7 @@ export class NotebookUI extends UIMessageTarget {
                             cell.addResult(result);
                             if (result instanceof ClientResult) {
                                 // notify the server of the MIME representation
-                                result.toOutput().then(output => SocketSession.get.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
+                                result.toOutput().then(output => this.socket.send(new messages.SetCellOutput(this.path, this.globalVersion, this.localVersion++, id, output)));
                             }
                         });
                     };
@@ -385,7 +416,7 @@ export class NotebookUI extends UIMessageTarget {
                 }
             }
         });
-        SocketSession.get.send(new messages.RunCell(this.path, serverRunCells));
+        this.socket.send(new messages.RunCell(this.path, serverRunCells));
     }
 
     onCellLanguageSelected(setLanguage: string, id?: number) {
@@ -394,7 +425,7 @@ export class NotebookUI extends UIMessageTarget {
         if (id && cell) {
             if (cell.language !== setLanguage) {
                 this.cellUI.setCellLanguage(cell, setLanguage);
-                SocketSession.get.send(new messages.SetCellLanguage(this.path, this.globalVersion, this.localVersion++, id, setLanguage));
+                this.socket.send(new messages.SetCellLanguage(this.path, this.globalVersion, this.localVersion++, id, setLanguage));
             }
         }
 
@@ -409,16 +440,16 @@ export class NotebookUI extends UIMessageTarget {
                 this.cellUI.configUI.setConfig(NotebookConfig.default);
             }
             // TODO: move all of this logic out.
-            SocketSession.get.removeMessageListener([messages.NotebookCells, this.onCellsLoaded]);
+            this.socket.removeMessageListener([messages.NotebookCells, this.onCellsLoaded]);
             for (const cellInfo of cells) {
                 let cell: Cell;
                 switch (cellInfo.language) {
                     case 'text':
                     case 'markdown':
-                        cell = new TextCell(cellInfo.id, cellInfo.content, path, cellInfo.metadata);
+                        cell = new TextCell(cellInfo.id, cellInfo.content, this, cellInfo.metadata);
                         break;
                     default:
-                        cell = new CodeCell(cellInfo.id, cellInfo.content, cellInfo.language, path, cellInfo.metadata);
+                        cell = new CodeCell(cellInfo.id, cellInfo.content, cellInfo.language, this, cellInfo.metadata);
                 }
 
                 // inserts cells at the end
@@ -454,7 +485,7 @@ export class NotebookUI extends UIMessageTarget {
 
         const prevCell = this.cellUI.getCellBefore(insertedCell);
         const update = new messages.InsertCell(this.path, this.globalVersion, ++this.localVersion, notebookCell, prevCell ? prevCell.id : -1);
-        SocketSession.get.send(update);
+        this.socket.send(update);
         this.editBuffer.push(this.localVersion, update);
 
         if (postInsertCb) {
@@ -469,7 +500,7 @@ export class NotebookUI extends UIMessageTarget {
         if (deleteCellId !== undefined) {
             this.cellUI.deleteCell(deleteCellId, () => {
                 const update = new messages.DeleteCell(this.path, this.globalVersion, ++this.localVersion, deleteCellId);
-                SocketSession.get.send(update);
+                this.socket.send(update);
                 this.editBuffer.push(this.localVersion, update);
 
             });
@@ -500,14 +531,14 @@ export class NotebookUI extends UIMessageTarget {
 
     handleContentChange(cellId: number, edits: ContentEdit[], metadata?: CellMetadata) {
         const update = new messages.UpdateCell(this.path, this.globalVersion, ++this.localVersion, cellId, edits, metadata);
-        SocketSession.get.send(update);
+        this.socket.send(update);
         this.editBuffer.push(this.localVersion, update);
     }
 
     completionRequest(id: number, pos: number, resolve: (completions: CompletionList) => void, reject: () => void) {
         const receiveCompletions = (notebook: string, cell: number, receivedPos: number, completions: CompletionCandidate[]) => {
             if (notebook === this.path && cell === id && pos === receivedPos) {
-                SocketSession.get.removeMessageListener([messages.CompletionsAt, receiveCompletions]);
+                this.socket.removeMessageListener([messages.CompletionsAt, receiveCompletions]);
                 const len = completions.length;
                 const indexStrLen = ("" + len).length;
                 const completionResults = completions.map((candidate, index) => {
@@ -543,15 +574,15 @@ export class NotebookUI extends UIMessageTarget {
             }
         };
 
-        SocketSession.get.addMessageListener(messages.CompletionsAt, receiveCompletions);
-        SocketSession.get.send(new messages.CompletionsAt(this.path, id, pos, []));
+        this.socket.addMessageListener(messages.CompletionsAt, receiveCompletions);
+        this.socket.send(new messages.CompletionsAt(this.path, id, pos, []));
     }
 
     paramHintRequest(id: number, pos: number, resolve: (completions?: SignatureHelp) => void, reject: () => void) {
 
         const receiveHints = (notebook: string, cell: number, receivedPos: number, signatures?: Signatures) => {
             if (notebook === this.path && cell === id && pos === receivedPos) {
-                SocketSession.get.removeMessageListener([messages.ParametersAt, receiveHints]);
+                this.socket.removeMessageListener([messages.ParametersAt, receiveHints]);
                 if (signatures) {
                     resolve({
                         activeParameter: signatures.activeParameter,
@@ -575,14 +606,14 @@ export class NotebookUI extends UIMessageTarget {
             }
         };
 
-        SocketSession.get.addMessageListener(messages.ParametersAt, receiveHints);
-        SocketSession.get.send(new messages.ParametersAt(this.path, id, pos))
+        this.socket.addMessageListener(messages.ParametersAt, receiveHints);
+        this.socket.send(new messages.ParametersAt(this.path, id, pos))
     }
 
     updateConfig(conf: NotebookConfig) {
         const update = new messages.UpdateConfig(this.path, this.globalVersion, ++this.localVersion, conf);
         this.editBuffer.push(this.localVersion, update);
         this.kernelUI.tasks.clear(); // old tasks no longer relevant with new config.
-        SocketSession.get.send(update);
+        this.socket.send(update);
     }
 }

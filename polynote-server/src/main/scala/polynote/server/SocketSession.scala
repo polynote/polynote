@@ -123,26 +123,6 @@ class SessionHandler(
         notebooks => PublishMessage(ListNotebooks(notebooks.map(ShortString.apply)))
       }
 
-    case LoadNotebook(path) =>
-      def publishRunningKernelState(publisher: KernelPublisher) = for {
-        kernel <- publisher.kernel
-        _      <- kernel.values().flatMap(_.filter(_.sourceCell < 0).map(rv => PublishMessage(CellResult(path, rv.sourceCell, rv))).sequence)
-        _      <- kernel.info().map(KernelStatus(path, _)) >>= PublishMessage.apply
-      } yield ()
-
-      subscribe(path).flatMap {
-        subscriber =>
-          for {
-            notebook <- subscriber.notebook()
-            _        <- PublishMessage(notebook)
-            status   <- subscriber.publisher.kernelStatus()
-            _        <- PublishMessage(KernelStatus(path, status))
-            _        <- if (status.alive) publishRunningKernelState(subscriber.publisher) else ZIO.unit
-            tasks    <- subscriber.publisher.taskManager.list
-            _        <- PublishMessage(KernelStatus(path, UpdatedTasks(tasks)))
-          } yield ()
-      }
-
     case CloseNotebook(path) =>
       subscribed.get(path).flatMap {
         case None             => ZIO.unit

@@ -16,7 +16,6 @@ import {
 } from "../../data/data_type";
 import {FakeSelect} from "./fake_select";
 import {fakeSelectElem, span, textbox} from "../util/tags";
-import {SocketSession} from "../../comms";
 import {GroupAgg, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {DataStream, StreamingDataRepr} from "../../data/value_repr";
@@ -25,8 +24,8 @@ import {Cell, CodeCell} from "./cell";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {ClientResult, Output} from "../../data/result";
 import {CellMetadata} from "../../data/data";
-import {CurrentNotebook} from "./current_notebook";
 import {EventTarget} from "event-target-shim"
+import {NotebookUI} from "./notebook";
 
 
 function isDimension(dataType: DataType): boolean {
@@ -122,11 +121,11 @@ export class PlotEditor extends EventTarget {
     private spec: any;
     private plot: VegaResult;
 
-    constructor(readonly repr: StreamingDataRepr, readonly path: string, readonly name: string, readonly sourceCell: number, readonly plotSavedCb?: () => void) {
+    constructor(readonly repr: StreamingDataRepr, private notebook: NotebookUI, readonly name: string, readonly sourceCell: number, readonly plotSavedCb?: () => void) {
         super();
         this.fields = repr.dataType.fields;
 
-        if (!SocketSession.get.isOpen) {
+        if (!this.notebook.socket.isOpen) {
             this.container = div(['plot-editor-container', 'disconnected'], [
                 "Not connected to server – must be connected in order to plot."
             ]);
@@ -438,7 +437,7 @@ export class PlotEditor extends EventTarget {
             throw new Error("Plot can't be run when a previous plot stream is already running");
         }
 
-        const stream = this.currentStream = new DataStream(this.path, this.repr, this.getTableOps()).batch(500);
+        const stream = this.currentStream = new DataStream(this.notebook.socket, this.repr, this.getTableOps()).batch(500);
 
         // TODO: multiple Ys
         // TODO: encode color
@@ -509,9 +508,9 @@ export class PlotEditor extends EventTarget {
             } // others TODO
         });
         content = content.replace('"$DATA_STREAM$"', streamSpec);
-        const mkCell = (cellId: number) => new CodeCell(cellId, `(${content})`, 'vega', this.path, new CellMetadata(false, true, false));
+        const mkCell = (cellId: number) => new CodeCell(cellId, `(${content})`, 'vega', this.notebook, new CellMetadata(false, true, false));
         VegaClientResult.plotToOutput(this.plot).then(output => {
-            CurrentNotebook.get.insertCell("below", this.sourceCell, mkCell, [output], (cell: CodeCell) => {
+            this.notebook.insertCell("below", this.sourceCell, mkCell, [output], (cell: CodeCell) => {
                 cell.displayResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
             });
 

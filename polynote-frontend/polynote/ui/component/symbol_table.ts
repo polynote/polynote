@@ -2,6 +2,7 @@ import {UIMessageTarget} from "../util/ui_event";
 import {div, h3, span, table, TableElement, TableRowElement, TagElement} from "../util/tags";
 import {ValueInspector} from "./value_inspector";
 import {ResultValue} from "../../data/result";
+import {NotebookUI} from "./notebook";
 
 interface ResultRow extends TableRowElement {
     resultValue: ResultValue
@@ -21,7 +22,7 @@ export class KernelSymbolsUI extends UIMessageTarget {
     private presentedCell: number;
     private visibleCells: number[];
 
-    constructor(readonly path: string) {
+    constructor(readonly notebook: NotebookUI) {
         super();
         this.symbols = {};
         this.presentedCell = 0;
@@ -52,7 +53,7 @@ export class KernelSymbolsUI extends UIMessageTarget {
         }, whichBody) as ResultRow;
         tr.onclick = (evt) => {
             ValueInspector.get().setParent(this);
-            ValueInspector.get().inspect(tr.resultValue, this.path);
+            ValueInspector.get().inspect(tr.resultValue, this.notebook);
         };
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;

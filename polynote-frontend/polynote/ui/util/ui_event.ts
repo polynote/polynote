@@ -25,10 +25,10 @@ type UIMessageListener = [typeof UIMessage, UIMessageListenerCallback<any>, bool
 export class UIMessageTarget {
     private listeners: UIMessageListener[] = [];
 
-    constructor(private parent?: UIMessageTarget) {}
+    constructor(private uiParent?: UIMessageTarget) {}
 
     setParent(parent: UIMessageTarget) {
-        this.parent = parent;
+        this.uiParent = parent;
         return this;
     }
 
@@ -56,8 +56,8 @@ export class UIMessageTarget {
                 }
             }
         }
-        if (this.parent instanceof UIMessageTarget) {
-            this.parent.publish(event.copy())
+        if (this.uiParent instanceof UIMessageTarget) {
+            this.uiParent.publish(event.copy())
         }
     }
 }

@@ -15,41 +15,56 @@ export type MessageListener = [typeof Message, ListenerCallback, boolean?];
 
 const mainEl = document.getElementById('Main');
 const socketKey = mainEl ? mainEl.getAttribute('data-ws-key') : null;
-window.addEventListener("beforeunload", evt => {
-    const sess = SocketSession.tryGet;
-    if (sess && sess.isOpen) {
-        sess.close();
+
+const openSessions: Record<string, SocketSession> = {};
+
+function wsUrl(url: URL) {
+    url = new URL(url.href);
+    if (!url.searchParams.get("key") && socketKey) {
+        url.searchParams.append("key", socketKey)
     }
-});
+    url.protocol = url.protocol === "https:" || url.protocol == "wss" ? 'wss:' : 'ws';
+    return url;
+}
+
+function closeAll() {
+    for (const url in Object.keys(openSessions)) {
+        const sess = openSessions[url];
+        sess.close();
+        delete openSessions[url];
+    }
+}
+
+window.addEventListener("beforeunload", closeAll);
 
 export class SocketSession extends EventTarget {
     private static inst: SocketSession;
 
-    static get tryGet(): SocketSession | null {
-        if (SocketSession.inst)
-            return SocketSession.inst;
-        return null;
-    }
-
-    static get get() {
+    static get global() {
         if (!SocketSession.inst) {
-            SocketSession.inst = new SocketSession()
+            SocketSession.inst = SocketSession.fromRelativeURL("ws")
         }
         return SocketSession.inst
     }
 
-    socket: WebSocket;
+    static fromRelativeURL(relativeURL: string): SocketSession {
+        const url = wsUrl(new URL(relativeURL, document.baseURI));
+        if (openSessions[url.href]) {
+            return openSessions[url.href];
+        }
+        return new SocketSession(url)
+    }
+
+    private socket?: WebSocket;
     listeners: any;
 
-    private constructor(public queue: Message[] = [], public messageListeners: MessageListener[] = []) {
+    private constructor(readonly url: URL, public queue: Message[] = [], public messageListeners: MessageListener[] = []) {
         super();
         this.mkSocket();
     }
 
     mkSocket() {
-        const wsUrl = new URL(`ws?key=${socketKey}`, document.baseURI);
-        wsUrl.protocol = wsUrl.protocol === "https:" ? 'wss:' : 'ws';
-        this.socket = new WebSocket(wsUrl.href);
+        this.socket = new WebSocket(this.url.href);
         this.socket.binaryType = 'arraybuffer';
         this.listeners = {
             message: this.receive.bind(this),
@@ -72,8 +87,8 @@ export class SocketSession extends EventTarget {
         this.dispatchEvent(new CustomEvent('open'));
     }
 
-    get isOpen() {
-        return this.socket && this.socket.readyState === WebSocket.OPEN;
+    get isOpen(): boolean {
+        return !!this.socket && this.socket.readyState === WebSocket.OPEN;
     }
 
     get isConnecting() {
@@ -85,7 +100,7 @@ export class SocketSession extends EventTarget {
     }
 
     send(msg: Message) {
-        if (this.isOpen) {
+        if (this.socket && this.isOpen) {
             const buf = Message.encode(msg);
             this.socket.send(buf);
         } else {
@@ -150,16 +165,19 @@ export class SocketSession extends EventTarget {
     }
 
     close() {
-        if (this.socket.readyState < WebSocket.CLOSING) {
-            this.socket.close();
-        }
-        for (const l in this.listeners) {
-            if (this.listeners.hasOwnProperty(l)) {
-                this.socket.removeEventListener(l, this.listeners[l]);
+        if (this.socket) {
+            if (this.socket.readyState < WebSocket.CLOSING) {
+                this.socket.close();
             }
+            for (const l in this.listeners) {
+                if (this.listeners.hasOwnProperty(l)) {
+                    this.socket.removeEventListener(l, this.listeners[l]);
+                }
+            }
+            this.listeners = {};
+            this.socket = undefined;
+            this.dispatchEvent(new CustomEvent('close'));
         }
-        this.listeners = {};
-        this.dispatchEvent(new CustomEvent('close'));
     }
 
     reconnect(onlyIfClosed: boolean) {
