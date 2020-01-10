@@ -247,6 +247,7 @@ class PythonInterpreter private[python] (
       |        import traceback
       |        typ, err_val, tb = sys.exc_info()
       |
+      |        # TODO: capture exception cause using __context__
       |        trace = ArrayList()
       |        for frame in traceback.extract_tb(tb):
       |            trace.add(StackTraceElement(frame.filename.split("/")[-1], frame.name, frame.filename, frame.lineno))
@@ -364,7 +365,6 @@ class PythonInterpreter private[python] (
     CurrentRuntime.access.flatMap {
       kernelRuntime => jep {
         jep =>
-
           val run = jep.getValue("__polynote_run__", classOf[PyCallable])
           val result = run.callAs(classOf[PyObject], compiled, globals, locals, kernelRuntime)
           val get = result.getAttr("get", classOf[PyCallable])
@@ -522,6 +522,13 @@ object PythonInterpreter {
     } yield (compiler, jep, executor, jepThread, blocking, runtime, api)
   }
 
+  def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, PythonInterpreter] = {
+    for {
+      venv    <- VirtualEnvFetcher.fetch()
+      interp  <- PythonInterpreter(venv)
+    } yield interp
+  }
+
   def apply(venv: Option[Path]): RIO[ScalaCompiler.Provider, PythonInterpreter] = {
     for {
       (compiler, jep, executor, jepThread, blocking, runtime, api) <- interpreterDependencies(venv)
@@ -530,10 +537,7 @@ object PythonInterpreter {
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
-    def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = for {
-      venv   <- VirtualEnvFetcher.fetch()
-      interp <- PythonInterpreter(venv)
-    } yield interp
+    def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = PythonInterpreter()
   }
 
 }
