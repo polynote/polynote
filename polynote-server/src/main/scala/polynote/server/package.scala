@@ -26,5 +26,5 @@ package object server {
   def toFrame(message: Message): Task[Binary] = {
     Message.encode[Task](message).map(bits => Binary(bits.toByteVector))
   }
-  
+
 }

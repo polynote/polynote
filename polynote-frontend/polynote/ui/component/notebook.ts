@@ -155,7 +155,7 @@ export class NotebookUI extends UIMessageTarget {
                 this.localVersion++;
 
                 match(update)
-                    .when(messages.UpdateCell, (p: string, g: number, l: number, id: number, edits: ContentEdit[], metadata?: CellMetadata) => {
+                    .when(messages.UpdateCell, (g: number, l: number, id: number, edits: ContentEdit[], metadata?: CellMetadata) => {
                         const cell = this.cellUI.getCell(id);
                         if (cell) {
                             cell.applyEdits(edits);
@@ -165,7 +165,7 @@ export class NotebookUI extends UIMessageTarget {
                             }
                         }
                     })
-                    .when(messages.InsertCell, (p: string, g: number, l: number, cell: NotebookCell, after: number) => {
+                    .when(messages.InsertCell, (g: number, l: number, cell: NotebookCell, after: number) => {
                         const prev = this.cellUI.getCell(after);
                         const newCell = (prev && prev.language && prev.language !== "text")
                             ? new CodeCell(cell.id, cell.content, cell.language, this)
@@ -173,9 +173,9 @@ export class NotebookUI extends UIMessageTarget {
 
                         this.cellUI.insertCellBelow(prev && prev.container, () => newCell)
                     })
-                    .when(messages.DeleteCell, (p: string, g: number, l: number, id: number) => this.cellUI.deleteCell(id))
-                    .when(messages.UpdateConfig, (p: string, g: number, l: number, config: NotebookConfig) => this.cellUI.configUI.setConfig(config))
-                    .when(messages.SetCellLanguage, (p: string, g: number, l: number, id, language: string) => {
+                    .when(messages.DeleteCell, (g: number, l: number, id: number) => this.cellUI.deleteCell(id))
+                    .when(messages.UpdateConfig, (g: number, l: number, config: NotebookConfig) => this.cellUI.configUI.setConfig(config))
+                    .when(messages.SetCellLanguage, (g: number, l: number, id, language: string) => {
                         const cell = this.cellUI.getCell(id);
                         if (cell) {
                             this.cellUI.setCellLanguage(cell, language)
@@ -183,7 +183,7 @@ export class NotebookUI extends UIMessageTarget {
                             throw new Error(`Cell ${id} does not exist in the current notebook`)
                         }
                     })
-                    .when(messages.SetCellOutput, (p: string, g: number, l: number, id, output?: Output) => {
+                    .when(messages.SetCellOutput, (g: number, l: number, id, output?: Output) => {
                         const cell = this.cellUI.getCell(id);
                         if (cell instanceof CodeCell) {
                             cell.clearResult();
