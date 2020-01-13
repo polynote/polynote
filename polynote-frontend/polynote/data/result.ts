@@ -5,13 +5,14 @@ import {
     str, shortStr, tinyStr, uint8, uint16, int32, ior, CodecContainer
 } from './codec'
 
-import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr, LazyDataRepr} from './value_repr'
+import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr, LazyDataRepr, DataStream} from './value_repr'
 import {int16, int64} from "./codec";
 import {Cell, CodeCell} from "../ui/component/cell";
 import {displayData, displaySchema} from "../ui/component/display_content";
 import {div, h4, iconButton, span} from "../ui/util/tags";
 import * as monaco from "monaco-editor";
 import {ValueInspector} from "../ui/component/value_inspector";
+import {StructType} from "./data_type";
 
 export class Result extends CodecContainer {
     static codec: Codec<Result>;
@@ -240,30 +241,37 @@ export class ResultValue extends Result {
 
         index = this.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
         if (index >= 0) {
-            // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
-            return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
-                const streamingRepr = this.reprs[index] as StreamingDataRepr;
-                const frag = document.createDocumentFragment();
-                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-                resultType.innerHTML = typeHTML;
-                // Why do they put a <br> in there?
-                [...resultType.getElementsByTagName("br")].forEach(br => {if (br && br.parentNode) br.parentNode.removeChild(br)});
-                const el = div([], [
-                    h4(['result-name-and-type'], [
-                        span(['result-name'], [this.name]), ': ', resultType,
-                        iconButton(['view-data'], 'View data', 'table', '[View]')
-                            .click(_ => valueInspector.inspect(this, cell.notebook, 'View data')),
-                        iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
-                            .click(_ => {
-                                valueInspector.setParent(cell);
-                                valueInspector.inspect(this, cell.notebook, 'Plot data');
-                            })
-                    ]),
-                    displaySchema(streamingRepr.dataType)
-                ]);
-                frag.appendChild(el);
-                return ["text/html", frag];
-            })
+            const repr = this.reprs[index] as StreamingDataRepr;
+            if (repr.dataType instanceof StructType) {
+                // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
+                return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
+                    const streamingRepr = this.reprs[index] as StreamingDataRepr;
+                    const frag = document.createDocumentFragment();
+                    const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                    resultType.innerHTML = typeHTML;
+                    // Why do they put a <br> in there?
+                    [...resultType.getElementsByTagName("br")].forEach(br => {
+                        if (br && br.parentNode) br.parentNode.removeChild(br)
+                    });
+                    const el = div([], [
+                        h4(['result-name-and-type'], [
+                            span(['result-name'], [this.name]), ': ', resultType,
+                            iconButton(['view-data'], 'View data', 'table', '[View]')
+                                .click(_ => valueInspector.inspect(this, cell.notebook, 'View data')),
+                            iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
+                                .click(_ => {
+                                    valueInspector.setParent(cell);
+                                    valueInspector.inspect(this, cell.notebook, 'Plot data');
+                                })
+                        ]),
+                        displaySchema(streamingRepr.dataType)
+                    ]);
+                    frag.appendChild(el);
+                    return ["text/html", frag];
+                })
+            } else if (repr.knownSize && repr.knownSize > 0) {
+                // TODO: get a batch of data?
+            }
         }
 
         index = this.reprs.findIndex(repr => repr instanceof DataRepr);

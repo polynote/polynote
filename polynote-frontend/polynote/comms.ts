@@ -2,6 +2,8 @@
 
 import { Message } from './data/messages'
 import {EventTarget} from 'event-target-shim'
+import {remove} from "vega-lite/build/src/compositemark";
+import {Extractable} from "./util/match";
 
 export class PolynoteMessageEvent<T extends Message> extends CustomEvent<any> {
     constructor(readonly message: T) {
@@ -132,7 +134,7 @@ export class SocketSession extends EventTarget {
         }
     }
 
-    addMessageListener(msgType: typeof Message, fn: ListenerCallback, removeWhenFalse: boolean = false) {
+    addMessageListener<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (...args: ConstructorParameters<typeof msgType>) => void, removeWhenFalse: boolean = false) {
         const handler: MessageListener = [msgType, fn, removeWhenFalse];
         this.messageListeners.push(handler);
         return handler;
@@ -145,7 +147,7 @@ export class SocketSession extends EventTarget {
         }
     }
 
-    listenOnceFor(msgType: typeof Message, fn: ListenerCallback) {
+    listenOnceFor<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (...args: ConstructorParameters<typeof msgType>) => void) {
         return this.addMessageListener(msgType, fn, true);
     }
 

@@ -61,19 +61,6 @@ export class LoadNotebook extends Message {
     }
 }
 
-export class CloseNotebook extends Message {
-    static codec = combined(shortStr).to(CloseNotebook);
-    static get msgTypeId() { return 27; }
-    static unapply(inst: CloseNotebook): ConstructorParameters<typeof CloseNotebook> {
-        return [inst.path];
-    }
-
-    constructor(readonly path: string) {
-        super();
-        Object.freeze(this);
-    }
-}
-
 
 export class NotebookCells extends Message {
     static codec =
@@ -92,28 +79,28 @@ export class NotebookCells extends Message {
 
 
 export class RunCell extends Message {
-    static codec = combined(shortStr, arrayCodec(uint16, uint16)).to(RunCell);
+    static codec = combined(arrayCodec(uint16, uint16)).to(RunCell);
     static get msgTypeId() { return 3; }
 
     static unapply(inst: RunCell): ConstructorParameters<typeof RunCell> {
-        return [inst.notebook, inst.ids];
+        return [inst.ids];
     }
 
-    constructor(readonly notebook: string, readonly ids: number[]) {
+    constructor(readonly ids: number[]) {
         super();
         Object.freeze(this);
     }
 }
 
 export class CellResult extends Message {
-    static codec = combined(shortStr, int16, Result.codec).to(CellResult);
+    static codec = combined(int16, Result.codec).to(CellResult);
     static get msgTypeId() { return 4; }
 
     static unapply(inst: CellResult): ConstructorParameters<typeof CellResult> {
-        return [inst.notebook, inst.id, inst.result]
+        return [inst.id, inst.result]
     }
 
-    constructor(readonly notebook: string, readonly id: number, readonly result: Result) {
+    constructor(readonly id: number, readonly result: Result) {
         super();
         Object.freeze(this);
     }
@@ -121,7 +108,6 @@ export class CellResult extends Message {
 
 
 export class NotebookUpdate extends Message {
-    readonly path: string;
     readonly globalVersion: number;
     readonly localVersion: number;
 
@@ -142,9 +128,9 @@ export class NotebookUpdate extends Message {
         }
 
         if (a instanceof InsertCell && b instanceof InsertCell && a.after === b.after) {
-            return new InsertCell(a.path, a.globalVersion, a.localVersion, b.cell, a.after);
+            return new InsertCell(a.globalVersion, a.localVersion, b.cell, a.after);
         } else if (a instanceof UpdateCell && b instanceof UpdateCell && a.id === b.id) {
-            return new UpdateCell(a.path, a.globalVersion, a.localVersion, a.id, ContentEdit.rebaseEdits(a.edits, b.edits), a.metadata || b.metadata);
+            return new UpdateCell(a.globalVersion, a.localVersion, a.id, ContentEdit.rebaseEdits(a.edits, b.edits), a.metadata || b.metadata);
         } else {
             return a;
         }
@@ -154,14 +140,14 @@ export class NotebookUpdate extends Message {
 
 export class UpdateCell extends NotebookUpdate {
     static codec =
-        combined(shortStr, uint32, uint32, int16, arrayCodec(uint16, ContentEdit.codec), optional(CellMetadata.codec)).to(UpdateCell);
+        combined(uint32, uint32, int16, arrayCodec(uint16, ContentEdit.codec), optional(CellMetadata.codec)).to(UpdateCell);
     static get msgTypeId() { return 5; }
 
     static unapply(inst: UpdateCell): ConstructorParameters<typeof UpdateCell> {
-        return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.edits, inst.metadata];
+        return [inst.globalVersion, inst.localVersion, inst.id, inst.edits, inst.metadata];
     }
 
-    constructor(readonly path: string, readonly globalVersion: number, readonly localVersion: number, readonly id: number,
+    constructor(readonly globalVersion: number, readonly localVersion: number, readonly id: number,
                 readonly edits: ContentEdit[], readonly metadata?: CellMetadata) {
         super();
         Object.freeze(this);
@@ -169,14 +155,14 @@ export class UpdateCell extends NotebookUpdate {
 }
 
 export class InsertCell extends NotebookUpdate {
-    static codec = combined(shortStr, uint32, uint32, NotebookCell.codec, int16).to(InsertCell);
+    static codec = combined(uint32, uint32, NotebookCell.codec, int16).to(InsertCell);
     static get msgTypeId() { return 6; }
 
     static unapply(inst: InsertCell): ConstructorParameters<typeof InsertCell> {
-        return [inst.path, inst.globalVersion, inst.localVersion, inst.cell, inst.after];
+        return [inst.globalVersion, inst.localVersion, inst.cell, inst.after];
     }
 
-    constructor(readonly path: string, readonly globalVersion: number, readonly localVersion: number,
+    constructor(readonly globalVersion: number, readonly localVersion: number,
                 readonly cell: NotebookCell, readonly after: number) {
         super();
         Object.freeze(this);
@@ -208,15 +194,15 @@ export class CompletionCandidate {
 
 
 export class CompletionsAt extends Message {
-    static codec = combined(shortStr, int16, int32, arrayCodec(uint16, CompletionCandidate.codec)).to(CompletionsAt);
+    static codec = combined(int16, int32, arrayCodec(uint16, CompletionCandidate.codec)).to(CompletionsAt);
 
     static get msgTypeId() { return 7; }
 
     static unapply(inst: CompletionsAt): ConstructorParameters<typeof CompletionsAt> {
-        return [inst.notebook, inst.id, inst.pos, inst.completions];
+        return [inst.id, inst.pos, inst.completions];
     }
 
-    constructor(readonly notebook: string, readonly id: number, readonly pos: number, readonly completions: CompletionCandidate[]) {
+    constructor(readonly id: number, readonly pos: number, readonly completions: CompletionCandidate[]) {
         super();
         Object.freeze(this);
     }
@@ -256,14 +242,14 @@ export class Signatures {
 }
 
 export class ParametersAt extends Message {
-    static codec = combined(shortStr, int16, int32, optional(Signatures.codec)).to(ParametersAt);
+    static codec = combined(int16, int32, optional(Signatures.codec)).to(ParametersAt);
     static get msgTypeId() { return 8; }
 
     static unapply(inst: ParametersAt): ConstructorParameters<typeof ParametersAt> {
-        return [inst.notebook, inst.id, inst.pos, inst.signatures];
+        return [inst.id, inst.pos, inst.signatures];
     }
 
-    constructor(readonly notebook: string, readonly id: number, readonly pos: number, readonly signatures?: Signatures) {
+    constructor(readonly id: number, readonly pos: number, readonly signatures?: Signatures) {
         super();
         Object.freeze(this);
     }
@@ -386,39 +372,39 @@ KernelStatusUpdate.codec = discriminated(
 );
 
 export class KernelStatus extends Message {
-    static codec = combined(shortStr, KernelStatusUpdate.codec).to(KernelStatus);
+    static codec = combined(KernelStatusUpdate.codec).to(KernelStatus);
     static get msgTypeId() { return 9; }
     static unapply(inst: KernelStatus): ConstructorParameters<typeof KernelStatus> {
-        return [inst.path, inst.update];
+        return [inst.update];
     }
 
-    constructor(readonly path: string, readonly update: KernelStatusUpdate) {
+    constructor(readonly update: KernelStatusUpdate) {
         super();
         Object.freeze(this);
     }
 }
 
 export class UpdateConfig extends NotebookUpdate {
-    static codec = combined(shortStr, uint32, uint32, NotebookConfig.codec).to(UpdateConfig);
+    static codec = combined(uint32, uint32, NotebookConfig.codec).to(UpdateConfig);
     static get msgTypeId() { return 10; }
     static unapply(inst: UpdateConfig): ConstructorParameters<typeof UpdateConfig> {
-        return [inst.path, inst.globalVersion, inst.localVersion, inst.config];
+        return [inst.globalVersion, inst.localVersion, inst.config];
     }
 
-    constructor(readonly path: string, readonly globalVersion: number, readonly localVersion: number, readonly config: NotebookConfig) {
+    constructor(readonly globalVersion: number, readonly localVersion: number, readonly config: NotebookConfig) {
         super();
         Object.freeze(this);
     }
 }
 
 export class SetCellLanguage extends NotebookUpdate {
-    static codec = combined(shortStr, uint32, uint32, int16, tinyStr).to(SetCellLanguage);
+    static codec = combined(uint32, uint32, int16, tinyStr).to(SetCellLanguage);
     static get msgTypeId() { return 11; }
     static unapply(inst: SetCellLanguage): ConstructorParameters<typeof SetCellLanguage> {
-        return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.language];
+        return [inst.globalVersion, inst.localVersion, inst.id, inst.language];
     }
 
-    constructor(readonly path: string, readonly globalVersion: number, readonly localVersion: number,
+    constructor(readonly globalVersion: number, readonly localVersion: number,
                 readonly id: number, readonly language: string) {
         super();
         Object.freeze(this);
@@ -426,13 +412,13 @@ export class SetCellLanguage extends NotebookUpdate {
 }
 
 export class StartKernel extends Message {
-    static codec = combined(shortStr, uint8).to(StartKernel);
+    static codec = combined(uint8).to(StartKernel);
     static get msgTypeId() { return 12; }
     static unapply(inst: StartKernel): ConstructorParameters<typeof StartKernel> {
-        return [inst.path, inst.level];
+        return [inst.level];
     }
 
-    constructor(readonly path: string, readonly level: number) {
+    constructor(readonly level: number) {
         super();
         Object.freeze(this);
     }
@@ -498,13 +484,13 @@ export class DeleteNotebook extends Message {
 }
 
 export class DeleteCell extends NotebookUpdate {
-    static codec = combined(shortStr, uint32, uint32, int16).to(DeleteCell);
+    static codec = combined(uint32, uint32, int16).to(DeleteCell);
     static get msgTypeId() { return 15; }
     static unapply(inst: DeleteCell): ConstructorParameters<typeof DeleteCell> {
-        return [inst.path, inst.globalVersion, inst.localVersion, inst.id];
+        return [inst.globalVersion, inst.localVersion, inst.id];
     }
 
-    constructor(readonly path: string, readonly globalVersion: number, readonly localVersion: number, readonly id: number) {
+    constructor(readonly globalVersion: number, readonly localVersion: number, readonly id: number) {
         super();
         Object.freeze(this);
     }
@@ -528,13 +514,13 @@ export class ServerHandshake extends Message {
 
 
 export class HandleData extends Message {
-    static codec = combined(shortStr, uint8, int32, int32, either(Error.codec, arrayCodec(int32, bufferCodec))).to(HandleData);
+    static codec = combined(uint8, int32, int32, either(Error.codec, arrayCodec(int32, bufferCodec))).to(HandleData);
     static get msgTypeId() { return 17; }
     static unapply(inst: HandleData): ConstructorParameters<typeof HandleData>{
-        return [inst.path, inst.handleType, inst.handle, inst.count, inst.data];
+        return [inst.handleType, inst.handle, inst.count, inst.data];
     }
 
-    constructor(readonly path: string, readonly handleType: number, readonly handle: number, readonly count: number,
+    constructor(readonly handleType: number, readonly handle: number, readonly count: number,
                 readonly data: Left<Error> | Right<ArrayBuffer[]>) {
         super();
         Object.freeze(this);
@@ -598,18 +584,18 @@ TableOp.codecs = [
 TableOp.codec = discriminated(uint8, msgTypeId => TableOp.codecs[msgTypeId].codec, msg => (msg.constructor as typeof Message).msgTypeId);
 
 export class ModifyStream extends Message {
-    static codec = combined(shortStr, int32, arrayCodec(uint8, TableOp.codec), optional(StreamingDataRepr.codec)).to(ModifyStream);
+    static codec = combined(int32, arrayCodec(uint8, TableOp.codec), optional(StreamingDataRepr.codec)).to(ModifyStream);
     static get msgTypeId() { return 19; }
     static unapply(inst: ModifyStream): ConstructorParameters<typeof ModifyStream> {
-        return [inst.path, inst.fromHandle, inst.ops, inst.newRepr];
+        return [inst.fromHandle, inst.ops, inst.newRepr];
     }
-    constructor(readonly path: string, readonly fromHandle: number, readonly ops: TableOp[], readonly newRepr?: StreamingDataRepr) {
+    constructor(readonly fromHandle: number, readonly ops: TableOp[], readonly newRepr?: StreamingDataRepr) {
         super();
         Object.freeze(this);
     }
 
     isResponse(other: Message): boolean {
-        if (!(other instanceof ModifyStream) || other.path !== this.path || other.fromHandle !== this.fromHandle)
+        if (!(other instanceof ModifyStream) || other.fromHandle !== this.fromHandle)
             return false;
 
         return isEqual(this.ops, other.ops);
@@ -617,46 +603,45 @@ export class ModifyStream extends Message {
 }
 
 export class ReleaseHandle extends Message {
-    static codec = combined(shortStr, uint8, int32).to(ReleaseHandle);
+    static codec = combined(uint8, int32).to(ReleaseHandle);
     static get msgTypeId() { return 20; }
     static unapply(inst: ReleaseHandle): ConstructorParameters<typeof ReleaseHandle> {
-        return [inst.path, inst.handleType, inst.handleId];
+        return [inst.handleType, inst.handleId];
     }
-    constructor(readonly path: string, readonly handleType: number, readonly handleId: number) {
+    constructor(readonly handleType: number, readonly handleId: number) {
         super();
         Object.freeze(this);
     }
 
     isResponse(other: Message): boolean {
         return other instanceof ReleaseHandle &&
-            other.path === this.path &&
             other.handleType === this.handleType &&
             other.handleId === this.handleId;
     }
 }
 
 export class ClearOutput extends Message {
-    static codec = combined(shortStr).to(ClearOutput);
+    static codec = combined().to(ClearOutput);
     static get msgTypeId() { return 21; }
 
     static unapply(inst: ClearOutput): ConstructorParameters<typeof ClearOutput> {
-        return [inst.path];
+        return [];
     }
 
-    constructor(readonly path: string) {
+    constructor() {
         super();
         Object.freeze(this);
     }
 }
 
 export class SetCellOutput extends NotebookUpdate {
-    static codec = combined(shortStr, uint32, uint32, int16, optional(Output.codec)).to(SetCellOutput);
+    static codec = combined(uint32, uint32, int16, optional(Output.codec)).to(SetCellOutput);
     static get msgTypeId() { return 22; }
     static unapply(inst: SetCellOutput): ConstructorParameters<typeof SetCellOutput> {
-        return [inst.path, inst.globalVersion, inst.localVersion, inst.id, inst.output]
+        return [inst.globalVersion, inst.localVersion, inst.id, inst.output]
     }
 
-    constructor(readonly path: string, readonly globalVersion: number, readonly localVersion: number, readonly id: number, readonly output?: Output) {
+    constructor(readonly globalVersion: number, readonly localVersion: number, readonly id: number, readonly output?: Output) {
         super();
         Object.freeze(this);
     }
@@ -677,14 +662,14 @@ export class NotebookVersion extends Message {
 }
 
 export class RunningKernels extends Message {
-    static codec = combined(arrayCodec(uint8, KernelStatus.codec)).to(RunningKernels);
+    static codec = combined(arrayCodec(uint8, Pair.codec(shortStr, KernelBusyState.codec))).to(RunningKernels);
     static get msgTypeId() { return 24; }
 
     static unapply(inst: RunningKernels): ConstructorParameters<typeof RunningKernels> {
         return [inst.kernelStatuses];
     }
 
-    constructor(readonly kernelStatuses: KernelStatus[]) {
+    constructor(readonly kernelStatuses: Pair<string, KernelBusyState>[]) {
         super();
         Object.freeze(this);
     }
@@ -722,7 +707,6 @@ Message.codecs = [
     RunningKernels,  // 24
     RenameNotebook,  // 25
     DeleteNotebook,  // 26
-    CloseNotebook,   // 27
 ];
 
 

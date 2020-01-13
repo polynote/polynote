@@ -37,6 +37,7 @@ import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
 import {CurrentNotebook} from "./current_notebook";
 import {NotebookCellsUI} from "./nb_cells";
+import {KernelBusyState} from "../../data/messages";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
@@ -52,8 +53,8 @@ export class MainUI extends UIMessageTarget {
     readonly tabUI: TabUI;
     private browseUI: NotebookListUI;
     private disabled: boolean;
-    private currentServerCommit?: number;
-    private currentServerVersion: number;
+    private currentServerCommit?: string;
+    private currentServerVersion: string;
     private about?: About;
     private welcomeUI?: HomeUI;
 
@@ -221,7 +222,7 @@ export class MainUI extends UIMessageTarget {
         });
 
         this.subscribe(ClearOutput, path => {
-            CurrentNotebook.get.socket.send(new messages.ClearOutput(path))
+            CurrentNotebook.get.socket.send(new messages.ClearOutput())
         });
 
         this.subscribe(UIMessageRequest, (msg, cb) => {
@@ -229,17 +230,21 @@ export class MainUI extends UIMessageTarget {
                 cb(this.currentServerVersion, this.currentServerCommit)
             } else if (msg.prototype === RunningKernels.prototype) {
                 SocketSession.global.request(new messages.RunningKernels([])).then((msg) => {
-                    cb(msg.kernelStatuses)
+                    const statuses: Record<string, KernelBusyState> = {};
+                    for (const kv of msg.kernelStatuses) {
+                        statuses[kv.first] = kv.second;
+                    }
+                    cb(statuses);
                 })
             }
         });
 
         this.subscribe(KernelCommand, (path, command) => {
             if (command === "start") {
-                CurrentNotebook.get.socket.send(new messages.StartKernel(path, messages.StartKernel.NoRestart));
+                CurrentNotebook.get.socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
             } else if (command === "kill") {
                 if (confirm("Kill running kernel? State will be lost.")) {
-                    CurrentNotebook.get.socket.send(new messages.StartKernel(path, messages.StartKernel.Kill));
+                    CurrentNotebook.get.socket.send(new messages.StartKernel(messages.StartKernel.Kill));
                 }
             }
         });

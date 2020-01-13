@@ -52,9 +52,6 @@ object Error extends MessageCompanion[Error](0) {
 final case class LoadNotebook(path: ShortString) extends Message
 object LoadNotebook extends MessageCompanion[LoadNotebook](1)
 
-final case class CloseNotebook(path: ShortString) extends Message
-object CloseNotebook extends MessageCompanion[CloseNotebook](27)
-
 final case class CellMetadata(
   disableRun: Boolean = false,
   hideSource: Boolean = false,
@@ -170,33 +167,32 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
 
 object Notebook extends MessageCompanion[Notebook](2)
 
-final case class RunCell(notebook: ShortString, ids: ShortList[CellID]) extends Message
+final case class RunCell(ids: ShortList[CellID]) extends Message
 object RunCell extends MessageCompanion[RunCell](3)
 
-final case class CellResult(notebook: ShortString, id: CellID, result: Result) extends Message
+final case class CellResult(id: CellID, result: Result) extends Message
 object CellResult extends MessageCompanion[CellResult](4)
 
 sealed trait NotebookUpdate extends Message {
   def globalVersion: Int
   def localVersion: Int
-  def notebook: ShortString
 
   def withVersions(global: Int, local: Int): NotebookUpdate = this match {
-    case u @ UpdateCell(_, _, _, _, _, _) => u.copy(globalVersion = global, localVersion = local)
-    case i @ InsertCell(_, _, _, _, _) => i.copy(globalVersion = global, localVersion = local)
-    case d @ DeleteCell(_, _, _, _)    => d.copy(globalVersion = global, localVersion = local)
-    case u @ UpdateConfig(_, _, _, _)  => u.copy(globalVersion = global, localVersion = local)
-    case l @ SetCellLanguage(_, _, _, _, _) => l.copy(globalVersion = global, localVersion = local)
-    case o @ SetCellOutput(_, _, _, _, _) => o.copy(globalVersion = global, localVersion = local)
+    case u @ UpdateCell(_, _, _, _, _) => u.copy(globalVersion = global, localVersion = local)
+    case i @ InsertCell(_, _, _, _) => i.copy(globalVersion = global, localVersion = local)
+    case d @ DeleteCell(_, _, _)    => d.copy(globalVersion = global, localVersion = local)
+    case u @ UpdateConfig(_, _, _)  => u.copy(globalVersion = global, localVersion = local)
+    case l @ SetCellLanguage(_, _, _, _) => l.copy(globalVersion = global, localVersion = local)
+    case o @ SetCellOutput(_, _, _, _) => o.copy(globalVersion = global, localVersion = local)
   }
 
   // transform this update so that it has the same effect when applied after the given update
   def rebase(prev: NotebookUpdate): NotebookUpdate = (this, prev) match {
-    case (i@InsertCell(_, _, _, cell1, after1), InsertCell(_, _, _, cell2, after2)) if after1 == after2 =>
+    case (i@InsertCell(_, _, cell1, after1), InsertCell(_, _, cell2, after2)) if after1 == after2 =>
       // we both tried to insert a cell after the same cell. Transform the first update so it inserts after the cell created by the second update.
       i.copy(after = cell2.id)
 
-    case (u@UpdateCell(_, _, _, id1, edits1, _), UpdateCell(_, _, _, id2, edits2, _)) if id1 == id2 =>
+    case (u@UpdateCell(_, _, id1, edits1, _), UpdateCell(_, _, id2, edits2, _)) if id1 == id2 =>
       // we both tried to edit the same cell. Transform first edits so they apply to the document state as it exists after the second edits are already applied.
 
       u.copy(edits = edits1.rebase(edits2))
@@ -207,15 +203,15 @@ sealed trait NotebookUpdate extends Message {
   }
 
   def applyTo(notebook: Notebook): Notebook = this match {
-    case InsertCell(_, _, _, cell, after) => notebook.insertCell(cell, after)
-    case DeleteCell(_, _, _, id)          => notebook.deleteCell(id)
-    case UpdateCell(_, _, _, id, edits, metadata) =>
+    case InsertCell(_, _, cell, after) => notebook.insertCell(cell, after)
+    case DeleteCell(_, _, id)          => notebook.deleteCell(id)
+    case UpdateCell(_, _, id, edits, metadata) =>
       metadata.foldLeft(notebook.editCell(id, edits, metadata)) {
         (nb, meta) => nb.setMetadata(id, meta)
       }
-    case UpdateConfig(_, _, _, config)    => notebook.copy(config = Some(config))
-    case SetCellLanguage(_, _, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
-    case SetCellOutput(_, _, _, id, output) => notebook.setResults(id, output.toList)
+    case UpdateConfig(_, _, config)    => notebook.copy(config = Some(config))
+    case SetCellLanguage(_, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
+    case SetCellOutput(_, _, id, output) => notebook.setResults(id, output.toList)
   }
 
 }
@@ -235,28 +231,28 @@ abstract class NotebookUpdateCompanion[T <: NotebookUpdate](msgTypeId: Byte) ext
   implicit final val updateDiscriminator: Discriminator[NotebookUpdate, T, Byte] = Discriminator(msgTypeId)
 }
 
-final case class UpdateCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, edits: ContentEdits, metadata: Option[CellMetadata]) extends Message with NotebookUpdate
+final case class UpdateCell(globalVersion: Int, localVersion: Int, id: CellID, edits: ContentEdits, metadata: Option[CellMetadata]) extends Message with NotebookUpdate
 object UpdateCell extends NotebookUpdateCompanion[UpdateCell](5)
 
-final case class InsertCell(notebook: ShortString, globalVersion: Int, localVersion: Int, cell: NotebookCell, after: CellID) extends Message with NotebookUpdate
+final case class InsertCell(globalVersion: Int, localVersion: Int, cell: NotebookCell, after: CellID) extends Message with NotebookUpdate
 object InsertCell extends NotebookUpdateCompanion[InsertCell](6)
 
-final case class CompletionsAt(notebook: ShortString, id: CellID, pos: Int, completions: ShortList[Completion]) extends Message
+final case class CompletionsAt(id: CellID, pos: Int, completions: ShortList[Completion]) extends Message
 object CompletionsAt extends MessageCompanion[CompletionsAt](7)
 
-final case class ParametersAt(notebook: ShortString, id: CellID, pos: Int, signatures: Option[Signatures]) extends Message
+final case class ParametersAt(id: CellID, pos: Int, signatures: Option[Signatures]) extends Message
 object ParametersAt extends MessageCompanion[ParametersAt](8)
 
-final case class KernelStatus(notebook: ShortString, update: KernelStatusUpdate) extends Message
+final case class KernelStatus(update: KernelStatusUpdate) extends Message
 object KernelStatus extends MessageCompanion[KernelStatus](9)
 
-final case class UpdateConfig(notebook: ShortString, globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate
+final case class UpdateConfig(globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate
 object UpdateConfig extends NotebookUpdateCompanion[UpdateConfig](10)
 
-final case class SetCellLanguage(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, language: TinyString) extends Message with NotebookUpdate
+final case class SetCellLanguage(globalVersion: Int, localVersion: Int, id: CellID, language: TinyString) extends Message with NotebookUpdate
 object SetCellLanguage extends NotebookUpdateCompanion[SetCellLanguage](11)
 
-final case class StartKernel(notebook: ShortString, level: Byte) extends Message
+final case class StartKernel(level: Byte) extends Message
 object StartKernel extends MessageCompanion[StartKernel](12) {
   // TODO: should probably make this an enum that codecs to a byte, but don't want to futz with that right now
   final val NoRestart = 0.toByte
@@ -277,10 +273,10 @@ object RenameNotebook extends MessageCompanion[RenameNotebook](25)
 final case class DeleteNotebook(path: ShortString) extends Message
 object DeleteNotebook extends MessageCompanion[DeleteNotebook](26)
 
-final case class DeleteCell(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate
+final case class DeleteCell(globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate
 object DeleteCell extends NotebookUpdateCompanion[DeleteCell](15)
 
-final case class SetCellOutput(notebook: ShortString, globalVersion: Int, localVersion: Int, id: CellID, output: Option[Output]) extends Message with NotebookUpdate
+final case class SetCellOutput(globalVersion: Int, localVersion: Int, id: CellID, output: Option[Output]) extends Message with NotebookUpdate
 object SetCellOutput extends NotebookUpdateCompanion[SetCellOutput](22)
 
 final case class ServerHandshake(
@@ -293,13 +289,13 @@ object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 final case class CancelTasks(path: ShortString) extends Message
 object CancelTasks extends MessageCompanion[CancelTasks](18)
 
-final case class ClearOutput(path: ShortString) extends Message
+final case class ClearOutput() extends Message
 object ClearOutput extends MessageCompanion[ClearOutput](21)
 
 final case class NotebookVersion(notebook: ShortString, globalVersion: Int) extends Message
 object NotebookVersion extends MessageCompanion[NotebookVersion](23)
 
-final case class RunningKernels(statuses: TinyList[KernelStatus]) extends Message
+final case class RunningKernels(statuses: TinyList[(ShortString, KernelBusyState)]) extends Message
 object RunningKernels extends MessageCompanion[RunningKernels](24)
 
 /*****************************************
@@ -321,7 +317,6 @@ object HandleType {
 
 
 final case class HandleData(
-  path: ShortString,
   handleType: HandleType,
   handle: Int,
   count: Int,
@@ -334,12 +329,12 @@ object HandleData extends MessageCompanion[HandleData](17)
  ** Specifically for streams of structs (i.e. tables)  **
  *******************************************************/
 
-final case class ModifyStream(path: ShortString, fromHandle: Int, ops: TinyList[TableOp], newRepr: Option[StreamingDataRepr]) extends Message
+final case class ModifyStream(fromHandle: Int, ops: TinyList[TableOp], newRepr: Option[StreamingDataRepr]) extends Message
 object ModifyStream extends MessageCompanion[ModifyStream](19) {
   import TableOpCodec.tableOpCodec
   import ValueReprCodec.streamingDataReprCodec
   implicit val codec: Codec[ModifyStream] = shapeless.cachedImplicit
 }
 
-final case class ReleaseHandle(path: ShortString, handleType: HandleType, handle: Int) extends Message
+final case class ReleaseHandle(handleType: HandleType, handle: Int) extends Message
 object ReleaseHandle extends MessageCompanion[ReleaseHandle](20)

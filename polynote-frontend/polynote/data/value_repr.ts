@@ -141,9 +141,6 @@ export const QuartilesType = new StructType([
     new StructField("max", DoubleType)
 ]);
 
-// TODO: remove path from messages
-const REMOVE_ME = "";
-
 /**
  * An API for streaming data out of a StreamingDataRepr
  * TODO: remove `socket` references!
@@ -196,7 +193,7 @@ export class DataStream extends EventTarget {
     kill() {
         this.terminated = true;
         if (this.repr.handle != this.originalRepr.handle) {
-            this.socket.send(new messages.ReleaseHandle(REMOVE_ME, StreamingDataRepr.handleTypeId, this.repr.handle))
+            this.socket.send(new messages.ReleaseHandle(StreamingDataRepr.handleTypeId, this.repr.handle))
         }
 
         if (this.listener) {
@@ -309,14 +306,14 @@ export class DataStream extends EventTarget {
     }
 
     private _requestNext() {
-        this.socket.send(new HandleData(REMOVE_ME, StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize, Either.right([])))
+        this.socket.send(new HandleData(StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize, Either.right([])))
     }
 
     private setupStream() {
         if (!this.socketListener) {
             const decodeValues = (data: ArrayBuffer[]) => data.map(buf => this.repr.dataType.decodeBuffer(new DataReader(buf)));
 
-            this.socketListener = this.socket.addMessageListener(HandleData, (path, handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
+            this.socketListener = this.socket.addMessageListener(HandleData, (handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
                 if (handleType === StreamingDataRepr.handleTypeId && handleId === this.repr.handle) {
                     const succeed = (data: ArrayBuffer[]) => {
                         const batch = decodeValues(data);
@@ -340,7 +337,7 @@ export class DataStream extends EventTarget {
         }
 
         if (!this.setupPromise) {
-            this.setupPromise = this.socket.request(new ModifyStream(REMOVE_ME, this.repr.handle, this.mods)).then(mod => {
+            this.setupPromise = this.socket.request(new ModifyStream(this.repr.handle, this.mods)).then(mod => {
                 if (mod.newRepr) this.repr = mod.newRepr
             });
         }

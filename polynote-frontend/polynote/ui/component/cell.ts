@@ -326,6 +326,10 @@ export class CodeCell extends Cell {
                     .endColumn -= 1
             }
         })],
+        // run all cells
+        [monaco.KeyMod.Shift | monaco.KeyCode.F10,
+            new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.runAllCells())
+                .withDesc("Run all cells.")],
         // run cell on enter
         [monaco.KeyMod.Shift | monaco.KeyCode.Enter,
             new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.runCells(cell.id))

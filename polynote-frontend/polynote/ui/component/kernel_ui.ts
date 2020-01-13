@@ -59,7 +59,7 @@ export class KernelUI extends UIMessageTarget {
 
             const {el, messageStr, cellLine} = errorDisplay(err, this.path);
 
-            const id = err.id;
+            const id = "KernelError";
             const message = div(["message"], [
                 para([], `${err.className}: ${err.message}`),
                 para([], el)
