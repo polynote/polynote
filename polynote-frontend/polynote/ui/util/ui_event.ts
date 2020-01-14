@@ -1,5 +1,5 @@
 import {Extractable} from "../../util/match";
-import {KernelStatus} from "../../data/messages";
+import {KernelBusyState, KernelStatus} from "../../data/messages";
 import {Cell} from "../component/cell";
 import {LazyDataRepr, StreamingDataRepr, UpdatingDataRepr} from "../../data/value_repr";
 
@@ -25,10 +25,10 @@ type UIMessageListener = [typeof UIMessage, UIMessageListenerCallback<any>, bool
 export class UIMessageTarget {
     private listeners: UIMessageListener[] = [];
 
-    constructor(private parent?: UIMessageTarget) {}
+    constructor(private uiParent?: UIMessageTarget) {}
 
     setParent(parent: UIMessageTarget) {
-        this.parent = parent;
+        this.uiParent = parent;
         return this;
     }
 
@@ -56,8 +56,8 @@ export class UIMessageTarget {
                 }
             }
         }
-        if (this.parent instanceof UIMessageTarget) {
-            this.parent.publish(event.copy())
+        if (this.uiParent instanceof UIMessageTarget) {
+            this.uiParent.publish(event.copy())
         }
     }
 }
@@ -79,7 +79,7 @@ export class ServerVersion extends UIMessage {
 }
 
 export class RunningKernels extends UIMessage {
-    constructor(readonly statuses: KernelStatus[]) { super() }
+    constructor(readonly statuses: Record<string, KernelBusyState>) { super() }
 
     static unapply(inst: RunningKernels): ConstructorParameters<typeof RunningKernels> {
         return [inst.statuses]

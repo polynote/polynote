@@ -27,6 +27,7 @@ trait NotebookManager {
 object NotebookManager {
 
   def access: RIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.notebookManager)
+  def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
 
   trait Service {
     def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]

@@ -4,11 +4,12 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import fs2.concurrent.Topic
 import fs2.Stream
-import polynote.kernel.environment.PublishMessage
+import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate}
 import KernelPublisher.{GlobalVersion, SubscriberId}
-import zio.{Fiber, Promise, Task, RIO, ZIO}
+import polynote.server.auth.{IdentityProvider, Permission, UserIdentity}
+import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
 import zio.interop.catz._
 
 
@@ -21,9 +22,12 @@ class KernelSubscriber private[server] (
   val lastGlobalVersion: AtomicInteger
 ) {
 
-  def close(): Task[Unit] = closed.succeed(()).unit *> process.interrupt.unit
+  def close(): UIO[Unit] = closed.succeed(()).unit *> process.interrupt.unit
   def update(update: NotebookUpdate): Task[Unit] = publisher.update(id, update) *> ZIO(lastLocalVersion.set(update.localVersion)) *> ZIO(lastGlobalVersion.set(update.globalVersion))
-  def notebook(): Task[Notebook] = publisher.latestVersion.map(_._2)
+  def notebook: Task[Notebook] = publisher.latestVersion.map(_._2)
+  def currentPath: Task[String] = notebook.map(_.path)
+  def checkPermission(permission: String => Permission): ZIO[SessionEnv, Throwable, Unit] =
+    currentPath.map(permission) >>= IdentityProvider.checkPermission
 }
 
 object KernelSubscriber {
@@ -58,7 +62,7 @@ object KernelSubscriber {
       publishMessage   <- PublishMessage.access
       updater          <- Stream.emits(Seq(
           foreignUpdates(lastLocalVersion, lastGlobalVersion),
-          publisher.status.subscribe(128).tail.map(KernelStatus(notebook.path, _)),
+          publisher.status.subscribe(128).tail.map(KernelStatus(_)),
           publisher.cellResults.subscribe(128).tail.unNone
         )).parJoinUnbounded.interruptWhen(closed.await.either).through(publishMessage.publish).compile.drain.fork
     } yield new KernelSubscriber(

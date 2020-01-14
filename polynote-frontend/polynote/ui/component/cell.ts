@@ -37,6 +37,7 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import {CurrentNotebook} from "./current_notebook";
 import SignatureHelpResult = languages.SignatureHelpResult;
+import {NotebookUI} from "./notebook";
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -59,7 +60,9 @@ export abstract class Cell extends UIMessageTarget {
     readonly resultTabs: TagElement<"div">;
     protected keyMap: Map<KeyCode, KeyAction>;
 
-    constructor(readonly id: number, public language: string, readonly path: string, public metadata?: CellMetadata) {
+    get path(): string { return this.notebook.path }
+
+    constructor(readonly id: number, public language: string, readonly notebook: NotebookUI, public metadata?: CellMetadata) {
         super();
         if (!language) throw {message: `Attempted to create cell ${id} with empty language!`};
 
@@ -338,8 +341,8 @@ export class CodeCell extends Cell {
                 .withDesc("Run this cell and insert a new cell below it.")]
     ]);
 
-    constructor(id: number, initContent: string, language: string, path: string, metadata?: CellMetadata) {
-        super(id, language, path, metadata);
+    constructor(id: number, initContent: string, language: string, notebook: NotebookUI, metadata?: CellMetadata) {
+        super(id, language, notebook, metadata);
         this.container.classList.add('code-cell');
 
         this.cellInputTools.appendChild(div(['cell-label'], [id + ""]));
@@ -768,7 +771,7 @@ export class CodeCell extends Cell {
                         iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
                             evt => {
                                 ValueInspector.get().setParent(this);
-                                ValueInspector.get().inspect(result, this.path)
+                                ValueInspector.get().inspect(result, this.notebook)
                             }
                         )
                     ]
@@ -1054,8 +1057,8 @@ export class TextCell extends Cell {
     readonly editor: RichTextEditor;
     private lastContent: string;
 
-    constructor(id: number, content: string, path: string, metadata?: CellMetadata) {
-        super(id, 'text', path, metadata);
+    constructor(id: number, content: string, notebook: NotebookUI, metadata?: CellMetadata) {
+        super(id, 'text', notebook, metadata);
         this.container.classList.add('text-cell');
         this.editorEl.classList.add('markdown-body');
         this.container.cell = this;

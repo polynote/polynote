@@ -177,29 +177,30 @@ export class About extends FullScreenModal {
                     addToTop: false
                 });
 
-                for (const status of statuses) {
-                    if (status.update instanceof KernelBusyState) {
-                        const state = (status.update.busy && 'busy') || (!status.update.alive && 'dead') || 'idle';
+                for (const path in statuses) {
+                    const status = statuses[path];
+                    if (status instanceof KernelBusyState) {
+                        const state = (status.busy && 'busy') || (!status.alive && 'dead') || 'idle';
                         const statusEl = span([], [
                             span(['status'], [state]),
                         ]);
                         const actionsEl = div([], [
                             iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
-                                this.publish(new KernelCommand(status.path, 'kill'));
+                                this.publish(new KernelCommand(path, 'kill'));
                                 getKernelStatuses();
                             }),
                             iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
-                                this.publish(new KernelCommand(status.path, 'start'));
+                                this.publish(new KernelCommand(path, 'start'));
                                 getKernelStatuses();
                             }),
                             iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
-                                this.publish(new LoadNotebook(status.path));
+                                this.publish(new LoadNotebook(path));
                                 this.hide();
                             })
                         ]);
 
                         const rowEl = tableEl.addRow({
-                            path: status.path,
+                            path: path,
                             status: statusEl,
                             actions: actionsEl
                         });
@@ -207,7 +208,7 @@ export class About extends FullScreenModal {
                     }
                 }
 
-                if (statuses.length > 0) content.replaceChild(tableEl, content.firstChild!);
+                if (Object.values(statuses).length > 0) content.replaceChild(tableEl, content.firstChild!);
             }));
         };
         getKernelStatuses();

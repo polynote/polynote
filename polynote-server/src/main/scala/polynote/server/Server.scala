@@ -23,16 +23,15 @@ import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
 import polynote.messages.Message
 import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
 import zio.{Cause, RIO, Task, ZIO}
-import zio.interop.catz._
-import zio.interop.catz.implicits._
 import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.StringOps
 import Server.Routes
+import cats.effect.ConcurrentEffect
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App with Http4sDsl[Task] {
-
+  private implicit val taskConcurrentEffect: ConcurrentEffect[Task] = zio.interop.catz.taskEffectInstance[Any]
   private lazy val watchUIPath = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/index.html")
 
   private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
@@ -172,6 +171,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
       val defaultRoutes: Routes = {
         case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => authorize(req, SocketSession(broadcastAll).flatMap(_.toResponse)).provide(env)
+        case req @ GET -> "ws" /: path :? KeyMatcher(`wsKey`)                 => authorize(req, NotebookSession(path.toList.mkString("/")).flatMap(_.toResponse)).provide(env)
         case GET -> Root / "ws"                                               => Forbidden()
         case req @ GET -> Root                                                => indexResponse.provide(env)
         case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req).provide(env)

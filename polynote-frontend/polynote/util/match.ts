@@ -8,17 +8,16 @@ export class MatchError {
     }
 }
 
-export interface Extractable<T> {
+export interface Extractable<T, Args> {
   new (...args: any[]): T;
-  unapply(t: T): any[]
+  unapply(t: T): Args
 }
 
 export class Matcher<T> {
     private result: any | null;
     constructor(readonly obj: T) {}
 
-    // TODO: is there any magic way to get types for `args`? We *know* the types - they're the result of the `type`'s unapply!
-    when<U extends T, Return>(type: Extractable<U>, fn: (...args: ConstructorParameters<Extractable<U>>) => any) {
+    when<U extends T, C extends Extractable<U, ConstructorParameters<C>>>(type: C, fn: (...args: ConstructorParameters<C>) => any) {
         if (this.result === undefined && this.obj instanceof type) {
             this.result = fn(...type.unapply(this.obj)) || null;
         }

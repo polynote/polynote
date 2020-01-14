@@ -43,12 +43,12 @@ class KernelPublisher private (
 ) {
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
-  private case class LocalCellEnv(notebookPath: ShortString, cellID: CellID, tapResults: Option[Result => Task[Unit]] = None) extends CellEnvT with NotebookUpdates {
+  private case class LocalCellEnv(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None) extends CellEnvT with NotebookUpdates {
     override val currentNotebook: Ref[Task, (GlobalVersion, Notebook)] = versionedNotebook
     override val taskManager: TaskManager.Service = KernelPublisher.this.taskManager
     override val publishStatus: Publish[Task, KernelStatusUpdate] = KernelPublisher.this.publishStatus
     override val publishResult: Publish[Task, Result] = {
-      val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(notebookPath, cellID, result)))
+      val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(cellID, result)))
       tapResults.fold(publish)(fn => publish.tap(fn))
     }
     override lazy val notebookUpdates: Stream[Task, NotebookUpdate] = broadcastUpdates.subscribe(128).unNone.map(_._2)
@@ -56,11 +56,11 @@ class KernelPublisher private (
 
   private def cellEnv(cellID: Int, tapResults: Option[Result => Task[Unit]] = None): Task[CellEnv] =
     versionedNotebook.get.map {
-      case (_, nb) => LocalCellEnv(nb.path, CellID(cellID), tapResults)
+      case (_, nb) => LocalCellEnv(CellID(cellID), tapResults)
     }
 
   private def kernelFactoryEnv: Task[CellEnv with NotebookUpdates] = versionedNotebook.get.map {
-    case (_, nb) => LocalCellEnv(nb.path, CellID(-1))
+    case (_, nb) => LocalCellEnv(CellID(-1))
   }
 
   private val nextSubscriberId = new AtomicInteger(0)

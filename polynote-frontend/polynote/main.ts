@@ -20,8 +20,8 @@ monaco.languages.setLanguageConfiguration('vega', vega.config);
 // use our theme
 monaco.editor.defineTheme('polynote', theme);
 
-// open the socket
-SocketSession.get;
+// open the global socket for control messages
+SocketSession.global;
 
 const mainUI = new MainUI();
 const mainEl = document.getElementById('Main');

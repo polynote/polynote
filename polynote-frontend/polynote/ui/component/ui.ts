@@ -36,6 +36,8 @@ import {HomeUI} from "./home";
 import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
 import {CurrentNotebook} from "./current_notebook";
+import {NotebookCellsUI} from "./nb_cells";
+import {KernelBusyState} from "../../data/messages";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
@@ -51,8 +53,8 @@ export class MainUI extends UIMessageTarget {
     readonly tabUI: TabUI;
     private browseUI: NotebookListUI;
     private disabled: boolean;
-    private currentServerCommit?: number;
-    private currentServerVersion: number;
+    private currentServerCommit?: string;
+    private currentServerVersion: string;
     private about?: About;
     private welcomeUI?: HomeUI;
 
@@ -94,10 +96,10 @@ export class MainUI extends UIMessageTarget {
         });
         this.browseUI.init();
 
-        SocketSession.get.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
-        SocketSession.get.send(new messages.ListNotebooks([]));
+        SocketSession.global.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
+        SocketSession.global.send(new messages.ListNotebooks([]));
 
-        SocketSession.get.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit) => {
+        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit) => {
             for (let interp of Object.keys(interpreters)) {
                 Interpreters[interp] = interpreters[interp];
             }
@@ -115,25 +117,25 @@ export class MainUI extends UIMessageTarget {
             this.currentServerCommit = serverCommit;
         });
 
-        SocketSession.get.addMessageListener(
+        SocketSession.global.addMessageListener(
             messages.RenameNotebook,
             (oldPath, newPath) => this.onNotebookRenamed(oldPath, newPath));
 
-        SocketSession.get.addMessageListener(
+        SocketSession.global.addMessageListener(
             messages.DeleteNotebook,
             path => this.onNotebookDeleted(path));
 
-        SocketSession.get.addMessageListener(
+        SocketSession.global.addMessageListener(
             messages.CreateNotebook,
             actualPath => this.browseUI.addItem(actualPath));
 
-        SocketSession.get.addEventListener('close', evt => {
+        SocketSession.global.addEventListener('close', evt => {
            this.browseUI.setDisabled(true);
            this.toolbarUI.setDisabled(true);
            this.disabled = true;
         });
 
-        SocketSession.get.addEventListener('open', evt => {
+        SocketSession.global.addEventListener('open', evt => {
            this.browseUI.setDisabled(false);
            if (this.tabUI.getCurrentTab().name !== 'home') {
                this.toolbarUI.setDisabled(false);
@@ -164,10 +166,10 @@ export class MainUI extends UIMessageTarget {
                     window.history.pushState({notebook: name}, title, tabUrl.href);
                 }
 
-                const currentNotebook = this.tabUI.getTab(name).content.notebook.cellsUI;
-                CurrentNotebook.set(currentNotebook.notebookUI);
-                currentNotebook.notebookUI.cellUI.forceLayout();
-                if (SocketSession.get.isOpen) {
+                const currentNotebook = this.tabUI.getTab(name).content.notebook.cellsUI as NotebookCellsUI;
+                CurrentNotebook.set(currentNotebook.notebook);
+                currentNotebook.notebook.cellUI.forceLayout();
+                if (SocketSession.global.isOpen) {
                     this.toolbarUI.setDisabled(false);
                 }
             } else if (type === 'home') {
@@ -187,7 +189,10 @@ export class MainUI extends UIMessageTarget {
         });
 
         this.subscribe(TabRemoved, path => {
-            SocketSession.get.send(new messages.CloseNotebook(path))
+            const nb = NotebookUI.getInstance(path);
+            if (nb) {
+                nb.close();
+            }
         });
 
         window.addEventListener('hashchange', evt => {
@@ -199,7 +204,10 @@ export class MainUI extends UIMessageTarget {
         });
 
         this.subscribe(CancelTasks, path => {
-           SocketSession.get.send(new messages.CancelTasks(path));
+           const current = CurrentNotebook.get;
+           if (current) {
+               current.socket.send(new messages.CancelTasks(path))
+           }
         });
 
         this.subscribe(ViewAbout, section => {
@@ -214,25 +222,29 @@ export class MainUI extends UIMessageTarget {
         });
 
         this.subscribe(ClearOutput, path => {
-            SocketSession.get.send(new messages.ClearOutput(path))
+            CurrentNotebook.get.socket.send(new messages.ClearOutput())
         });
 
         this.subscribe(UIMessageRequest, (msg, cb) => {
             if (msg.prototype === ServerVersion.prototype)  {
                 cb(this.currentServerVersion, this.currentServerCommit)
             } else if (msg.prototype === RunningKernels.prototype) {
-                SocketSession.get.request(new messages.RunningKernels([])).then((msg) => {
-                    cb(msg.kernelStatuses)
+                SocketSession.global.request(new messages.RunningKernels([])).then((msg) => {
+                    const statuses: Record<string, KernelBusyState> = {};
+                    for (const kv of msg.kernelStatuses) {
+                        statuses[kv.first] = kv.second;
+                    }
+                    cb(statuses);
                 })
             }
         });
 
         this.subscribe(KernelCommand, (path, command) => {
             if (command === "start") {
-                SocketSession.get.send(new messages.StartKernel(path, messages.StartKernel.NoRestart));
+                CurrentNotebook.get.socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
             } else if (command === "kill") {
                 if (confirm("Kill running kernel? State will be lost.")) {
-                    SocketSession.get.send(new messages.StartKernel(path, messages.StartKernel.Kill));
+                    CurrentNotebook.get.socket.send(new messages.StartKernel(messages.StartKernel.Kill));
                 }
             }
         });
@@ -244,7 +256,7 @@ export class MainUI extends UIMessageTarget {
         if (!this.welcomeUI) {
             this.welcomeUI = new HomeUI().setParent(this);
         }
-        const welcomeKernelUI = new KernelUI(this, '/', /*showInfo*/ false, /*showSymbols*/ false, /*showTasks*/ true, /*showStatus*/ false);
+        const welcomeKernelUI = new KernelUI();
         this.tabUI.addTab('home', span([], 'Home'), {
             notebook: this.welcomeUI.el,
             kernel: welcomeKernelUI.el
@@ -256,8 +268,7 @@ export class MainUI extends UIMessageTarget {
         const notebookTab = this.tabUI.getTab(path);
 
         if (!notebookTab) {
-            const notebookUI = new NotebookUI(this, path, this); // TODO: remove these `this`
-            SocketSession.get.send(new messages.LoadNotebook(path));
+            const notebookUI = NotebookUI.getOrCreate(this, path, this); // TODO: remove these `this`
             const tab = this.tabUI.addTab(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), {
                 notebook: notebookUI.cellUI.el,
                 kernel: notebookUI.kernelUI.el
@@ -283,12 +294,12 @@ export class MainUI extends UIMessageTarget {
         CreateNotebookDialog.prompt(path).then(
             notebookPath => {
                 if (notebookPath) {
-                    SocketSession.get.listenOnceFor(messages.CreateNotebook, actualPath => {
+                    SocketSession.global.listenOnceFor(messages.CreateNotebook, actualPath => {
                         if (actualPath.substring(0, notebookPath.length) === notebookPath) {
                             this.loadNotebook(actualPath);
                         }
                     });
-                    SocketSession.get.send(new messages.CreateNotebook(notebookPath));
+                    SocketSession.global.send(new messages.CreateNotebook(notebookPath));
                 }
             }
         ).catch(() => null)
@@ -297,7 +308,7 @@ export class MainUI extends UIMessageTarget {
     renameNotebook(path: string) {
         // Existing listener will hear broadcast and update UI
         RenameNotebookDialog.prompt(path)
-            .then(newPath => SocketSession.get.send(new messages.RenameNotebook(path, newPath)))
+            .then(newPath => SocketSession.global.send(new messages.RenameNotebook(path, newPath)))
     }
 
     onNotebookRenamed(oldPath: string, newPath: string) {
@@ -320,7 +331,7 @@ export class MainUI extends UIMessageTarget {
         // Existing listener will hear broadcast and update UI
         // TODO: this should probably get its own dialog too, for consistency
         if (confirm(`Permanently delete ${path}?`)) {
-            SocketSession.get.send(new messages.DeleteNotebook(path))
+            SocketSession.global.send(new messages.DeleteNotebook(path))
         }
     }
 
@@ -334,10 +345,10 @@ export class MainUI extends UIMessageTarget {
     }
 
     importNotebook(name: string, content: string) {
-        SocketSession.get.listenOnceFor(messages.CreateNotebook, (actualPath) => {
+        SocketSession.global.listenOnceFor(messages.CreateNotebook, (actualPath) => {
             this.loadNotebook(actualPath);
         });
-        SocketSession.get.send(new messages.CreateNotebook(name, content));
+        SocketSession.global.send(new messages.CreateNotebook(name, content));
     }
 
     handleHashChange() {

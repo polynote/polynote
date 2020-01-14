@@ -55,20 +55,20 @@ object Generators {
 
   def genDeleteCell(notebook: Notebook, globalVersion: Int): Gen[DeleteCell] = notebook.cells.map(_.id) match {
     case Nil => Gen.fail
-    case one :: Nil => Gen.const(DeleteCell(notebook.path, globalVersion, 0, one))
+    case one :: Nil => Gen.const(DeleteCell(globalVersion, 0, one))
     case one :: two :: rest => Gen.oneOf(one, two, rest: _*).map {
-      cellId => DeleteCell(notebook.path, globalVersion, 0, cellId)
+      cellId => DeleteCell(globalVersion, 0, cellId)
     }
   }
 
   def genInsertCell(notebook: Notebook, globalVersion: Int): Gen[InsertCell] = notebook.cells.map(_.id) match {
-    case Nil => genCell(CellID(0)).flatMap(cell => Gen.const(InsertCell(notebook.path, globalVersion, 0, cell, CellID(-1))))
+    case Nil => genCell(CellID(0)).flatMap(cell => Gen.const(InsertCell(globalVersion, 0, cell, CellID(-1))))
     case ids@(first :: rest) =>
       val nextId = CellID(ids.max + 1)
       genCell(nextId).flatMap {
         cell => Gen.oneOf(
-          Gen.oneOf(ids).map(after => InsertCell(notebook.path, globalVersion, 0, cell, after)),
-          Gen.const(InsertCell(notebook.path, globalVersion, 0, cell, CellID(-1)))
+          Gen.oneOf(ids).map(after => InsertCell(globalVersion, 0, cell, after)),
+          Gen.const(InsertCell(globalVersion, 0, cell, CellID(-1)))
         )
       }
   }
@@ -77,7 +77,7 @@ object Generators {
     case Nil   => Gen.fail
     case cells => Gen.oneOf(cells).flatMap {
       cell => genEditsFor(cell.content).map {
-        case (edits, _) => UpdateCell(notebook.path, globalVersion, 0, cell.id, edits, None)
+        case (edits, _) => UpdateCell(globalVersion, 0, cell.id, edits, None)
       }
     }
   }

@@ -160,9 +160,8 @@ export class DataStream extends EventTarget {
     private nextPromise?: {resolve: <T>(value?: T | PromiseLike<T>) => void, reject: (reason?: any) => void}; // holds a Promise's `resolve` and `reject` inputs.
     private setupPromise?: Promise<Message | void>;
     private repr: StreamingDataRepr;
-    constructor(readonly path: string, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
+    constructor(private readonly socket: SocketSession, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
         super();
-        this.path = path;
         this.mods = mods || [];
         this.repr = originalRepr;
         this.dataType = originalRepr.dataType;
@@ -194,7 +193,7 @@ export class DataStream extends EventTarget {
     kill() {
         this.terminated = true;
         if (this.repr.handle != this.originalRepr.handle) {
-            SocketSession.get.send(new messages.ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, this.repr.handle))
+            this.socket.send(new messages.ReleaseHandle(StreamingDataRepr.handleTypeId, this.repr.handle))
         }
 
         if (this.listener) {
@@ -227,7 +226,7 @@ export class DataStream extends EventTarget {
         });
 
         const mod = new GroupAgg(groupCols, aggPairs);
-        return new DataStream(this.path, this.originalRepr, [...this.mods, mod]);
+        return new DataStream(this.socket, this.originalRepr, [...this.mods, mod]);
     }
 
     bin(col: string, binCount: number, err?: number) {
@@ -238,13 +237,13 @@ export class DataStream extends EventTarget {
         if (NumericTypes.indexOf(field.dataType) < 0) {
             throw new Error(`Field ${col} must be a numeric type to use bin()`);
         }
-        return new DataStream(this.path, this.originalRepr, [...this.mods, new QuantileBin(col, binCount, err)]);
+        return new DataStream(this.socket, this.originalRepr, [...this.mods, new QuantileBin(col, binCount, err)]);
     }
 
     select(...cols: string[]) {
         const fields = cols.map(col => this.requireField(col));
         const mod = new Select(cols);
-        return new DataStream(this.path, this.originalRepr, [...this.mods, mod]);
+        return new DataStream(this.socket, this.originalRepr, [...this.mods, mod]);
     }
 
     onError(fn: (cause: any) => void) {
@@ -281,7 +280,7 @@ export class DataStream extends EventTarget {
     }
 
     abort() {
-        SocketSession.get.send(new CancelTasks(this.path));
+        this.socket.send(new CancelTasks(""));
         this.kill();
     }
 
@@ -307,15 +306,15 @@ export class DataStream extends EventTarget {
     }
 
     private _requestNext() {
-        SocketSession.get.send(new HandleData(this.path, StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize, Either.right([])))
+        this.socket.send(new HandleData(StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize, Either.right([])))
     }
 
     private setupStream() {
         if (!this.socketListener) {
             const decodeValues = (data: ArrayBuffer[]) => data.map(buf => this.repr.dataType.decodeBuffer(new DataReader(buf)));
 
-            this.socketListener = SocketSession.get.addMessageListener(HandleData, (path, handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
-                if (path === this.path && handleType === StreamingDataRepr.handleTypeId && handleId === this.repr.handle) {
+            this.socketListener = this.socket.addMessageListener(HandleData, (handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
+                if (handleType === StreamingDataRepr.handleTypeId && handleId === this.repr.handle) {
                     const succeed = (data: ArrayBuffer[]) => {
                         const batch = decodeValues(data);
                         if (this.nextPromise) {
@@ -338,7 +337,7 @@ export class DataStream extends EventTarget {
         }
 
         if (!this.setupPromise) {
-            this.setupPromise = SocketSession.get.request(new ModifyStream(this.path, this.repr.handle, this.mods)).then(mod => {
+            this.setupPromise = this.socket.request(new ModifyStream(this.repr.handle, this.mods)).then(mod => {
                 if (mod.newRepr) this.repr = mod.newRepr
             });
         }

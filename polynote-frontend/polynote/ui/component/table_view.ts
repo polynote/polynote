@@ -4,6 +4,7 @@ import {DataStream, LazyDataRepr, StreamingDataRepr, UpdatingDataRepr} from "../
 import {div, iconButton, span, table, TableElement, tag, TagElement} from "../util/tags";
 import {StructType, ArrayType, StructField, DataType} from "../../data/data_type";
 import {SocketSession} from "../../comms";
+import {NotebookUI} from "./notebook";
 
 function renderData(dataType: DataType, data: any): HTMLElement {
     // TODO: nicer display
@@ -29,13 +30,13 @@ export class TableView {
     private rows: Record<string, any>[]; // TODO: anything better than `any` here?
     private currentPos: number;
 
-    constructor(readonly repr: StreamingDataRepr, readonly path: string) {
+    constructor(readonly repr: StreamingDataRepr, readonly notebook: NotebookUI) {
         const dataType = repr.dataType;
         this.fields = dataType.fields;
         const fieldClasses = dataType.fields.map(field => field.name);
         const fieldNames = dataType.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
 
-        if (!SocketSession.get.isOpen) {
+        if (!notebook.socket.isOpen) {
             this.el = div(['table-view', 'disconnected'], [
                 "Not connected to server – must be connected in order to view data."
             ]);
@@ -62,7 +63,7 @@ export class TableView {
                 ])])
         );
 
-        this.stream = new DataStream(path, repr).batch(20);
+        this.stream = new DataStream(notebook.socket, repr).batch(20);
         this.rows = [];
         this.currentPos = 0;
     }

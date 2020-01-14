@@ -257,11 +257,11 @@ export class ResultValue extends Result {
                         h4(['result-name-and-type'], [
                             span(['result-name'], [this.name]), ': ', resultType,
                             iconButton(['view-data'], 'View data', 'table', '[View]')
-                                .click(_ => valueInspector.inspect(this, cell.path, 'View data')),
+                                .click(_ => valueInspector.inspect(this, cell.notebook, 'View data')),
                             iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
                                 .click(_ => {
                                     valueInspector.setParent(cell);
-                                    valueInspector.inspect(this, cell.path, 'Plot data');
+                                    valueInspector.inspect(this, cell.notebook, 'Plot data');
                                 })
                         ]),
                         displaySchema(streamingRepr.dataType)
