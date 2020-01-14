@@ -1,3 +1,8 @@
+# 0.2.17 (Jan 14, 2020)
+
+* Create a websocket for every notebook
+* Fixes for configuring pyspark executable locations
+
 # 0.2.16 (Jan 9, 2020)
 
 * Fixed some plotting and streaming data bugs 
