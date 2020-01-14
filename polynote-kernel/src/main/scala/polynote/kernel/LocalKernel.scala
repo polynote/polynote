@@ -183,14 +183,14 @@ class LocalKernel private[kernel] (
     result => Option(result)
   }.catchAll(_ => ZIO.succeed(None)).get  // TODO: need a real OptionT
 
-  private def getOrLaunch(language: String, at: CellID): RIO[BaseEnv with GlobalEnv with InterpreterEnv with CurrentNotebook with TaskManager with Interpreter.Factories with Config, Interpreter] =
+  private def getOrLaunch(language: String, at: CellID): RIO[BaseEnv with GlobalEnv with InterpreterEnv with CurrentNotebook with TaskManager, Interpreter] =
     interpreters.getOrCreate(language) {
       Interpreter.availableFactories(language)
         .flatMap(facs => chooseInterpreterFactory(facs).mapError(_ => new UnsupportedOperationException(s"No available interpreter for $language")))
         .flatMap {
           factory => TaskManager.run(s"Launch$$$language", factory.languageName,s"Starting ${factory.languageName} interpreter") {
             for {
-              interpreter  <- factory().provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with Config with CurrentTask](compilerProvider))
+              interpreter  <- factory().provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with CurrentTask](compilerProvider))
               currentState <- interpreterState.get
               insertStateAt = currentState.rewindWhile(s => s.id != at && !(s eq Root))
               lastPredef    = currentState.lastPredef

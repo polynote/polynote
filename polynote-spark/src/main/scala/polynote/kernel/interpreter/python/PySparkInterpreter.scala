@@ -7,15 +7,19 @@ import java.util.concurrent.atomic.AtomicReference
 import jep.Jep
 import jep.python.{PyCallable, PyObject}
 import org.apache.commons.lang3.RandomStringUtils
+import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.sql.SparkSession
 import polynote.kernel.{BaseEnv, GlobalEnv, InterpreterEnv, ScalaCompiler, TaskManager}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.interpreter.{Interpreter, State}
+import polynote.kernel.util._
 import py4j.GatewayServer
 import py4j.GatewayServer.GatewayServerBuilder
 import zio.{RIO, Runtime, Task, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.internal.Executor
+
+import scala.util.Properties
 
 class PySparkInterpreter(
   compiler: ScalaCompiler,
@@ -41,7 +45,7 @@ class PySparkInterpreter(
 
   override def init(state: State): RIO[InterpreterEnv, State] =  for {
     spark   <- ZIO(SparkSession.builder().getOrCreate())
-    _       <- exec(pysparkImports(spark.sparkContext.isLocal))
+    _       <- exec(pysparkImports)
     doAuth  <- shouldAuthenticate
     gateway <- startPySparkGateway(spark, doAuth)
     _       <- ZIO(gatewayRef.set(gateway))
@@ -49,18 +53,44 @@ class PySparkInterpreter(
     res <- super.init(state)
   } yield res
 
-  protected def pysparkImports(sparkLocal: Boolean): String = {
-    val setPySpark = if (sparkLocal) {
-      """os.environ["PYSPARK_PYTHON"] = os.environ.get("PYSPARK_DRIVER_PYTHON", "python3")"""
-    } else {
-      """os.environ["PYSPARK_PYTHON"] = "python3" """
-    }
+  /**
+    * Handle setting up PySpark.
+    *
+    * First, we need to pick the python interpreter. Unfortunately this means we need to re-implement Spark's interpreter
+    * configuration logic, because that's only implemented inside SparkSubmit (and only when you use `pyspark-shell` actually).
+    *
+    * Here's the order we follow for the driver python executable (from [[org.apache.spark.launcher.SparkSubmitCommandBuilder]]):
+    *    1. conf spark.pyspark.driver.python
+    *    2. conf spark.pyspark.python
+    *    3. environment variable PYSPARK_DRIVER_PYTHON
+    *    4. environment variable PYSPARK_PYTHON
+    *
+    * For the executors we just omit the driver python - so it's just:
+    *    1. conf spark.pyspark.python
+    *    2. environment variable PYSPARK_PYTHON
+    *
+    * Additionally, to load pyspark itself we try to grab the its location from the Spark distribution.
+    * This ensures that all the versions match up.
+    *
+    * WARNING: Using pyspark from `pip install pyspark`, could break things - don't use it!
+    */
+  protected def pysparkImports: String = {
+    val sparkConf =  org.apache.spark.repl.Main.conf
+    val defaultPython = "python3"
+    val pythonDriverExecutable = sparkConf.get("spark.pyspark.driver.python",
+      sparkConf.get("spark.pyspark.python",
+        envOrProp("PYSPARK_DRIVER_PYTHON",
+          envOrProp("PYSPARK_PYTHON", defaultPython))))
+
+    val pythonExecutable = sparkConf.get("spark.pyspark.python",
+      envOrProp("PYSPARK_PYTHON", defaultPython))
 
     s"""
        |import os
        |import sys
-       |if "PYSPARK_PYTHON" not in os.environ:
-       |    $setPySpark
+       |
+       |os.environ["PYSPARK_PYTHON"] = "$pythonExecutable"
+       |os.environ["PYSPARK_DRIVER_PYTHON"] = "$pythonDriverExecutable"
        |
        |# grab the pyspark included in the spark distribution, if available.
        |spark_home = os.environ.get("SPARK_HOME")
@@ -83,6 +113,7 @@ class PySparkInterpreter(
     */
   private def shouldAuthenticate = jep {
     jep =>
+
       jep.eval("import py4j")
       val py4jVersion = jep.getValue("py4j.__version__", classOf[String])
 
@@ -200,6 +231,13 @@ class PySparkInterpreter(
 
 object PySparkInterpreter {
 
+  def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, PySparkInterpreter] = {
+    for {
+      venv    <- VirtualEnvFetcher.fetch()
+      interp  <- PySparkInterpreter(venv)
+    } yield interp
+  }
+
   def apply(venv: Option[Path]): RIO[ScalaCompiler.Provider, PySparkInterpreter] = {
     for {
       (compiler, jep, executor, jepThread, blocking, runtime, api) <- PythonInterpreter.interpreterDependencies(venv)
@@ -208,10 +246,7 @@ object PySparkInterpreter {
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
-    def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = for {
-      venv        <- VirtualEnvFetcher.fetch()
-      interpreter <- PySparkInterpreter(venv)
-    } yield interpreter
+    def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = PySparkInterpreter()
 
     override val requireSpark: Boolean = true
     override val priority: Int = 1

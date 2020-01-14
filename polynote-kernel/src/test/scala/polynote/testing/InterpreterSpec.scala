@@ -38,7 +38,7 @@ trait InterpreterSpec extends ZIOSpec {
   def interpreter: Interpreter
 
   lazy val initialState: State = unsafeRun(interpreter.init(State.Root).provideSomeM(MockEnv(State.Root.id + 1)))
-  lazy val cellState: State = State.id(1, initialState)
+  def cellState: State = State.id(1, initialState)
 
   def assertOutput(code: String)(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit =
     assertOutput(List(code))(assertion)

@@ -39,10 +39,7 @@ object ScalaSparkInterpreter {
   } yield new ScalaSparkInterpreter(compiler, index)
 
   object Factory extends ScalaInterpreter.Factory {
-    override def apply(): RIO[ScalaCompiler.Provider with Blocking, ScalaSparkInterpreter] = {
-      val res = ScalaSparkInterpreter()
-      res
-    }
+    override def apply(): RIO[ScalaCompiler.Provider with Blocking, ScalaSparkInterpreter] = ScalaSparkInterpreter()
     override val requireSpark: Boolean = true
     override val priority: Int = 1
   }
