@@ -21,7 +21,6 @@ export class KernelUI extends UIMessageTarget {
     private socket: SocketSession;
     private path: string;
 
-    // TODO: instead of passing path in, can it be enriched by a parent?
     constructor(private notebook?: NotebookUI) {
         super(notebook);
         this.info = new KernelInfoUI();
