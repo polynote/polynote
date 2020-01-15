@@ -68,6 +68,20 @@ class PySparkInterpreterSpec extends FreeSpec with InterpreterSpec with Matchers
       }
     }
 
+    "have access to the `kernel` instance" in {
+      initialize()
+      val code =
+        """
+          |k_class = str(kernel.getClass())
+          |kernel.display.text("hello world")
+          |""".stripMargin
+      assertOutput(code) {
+        case (vars, output) =>
+          vars("k_class").asInstanceOf[String] should not be (null)
+      }
+    }
+
+
     "should find the python executable from the config" - {
       "when defaults are used" in {
         initialize()
