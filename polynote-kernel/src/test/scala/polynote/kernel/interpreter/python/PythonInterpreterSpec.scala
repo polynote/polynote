@@ -304,6 +304,35 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           )
       }
     }
+
+    "capture error causes if present" in {
+      val code =
+        """
+          |class FooException(BaseException):
+          |    pass
+          |
+          |class BarException(BaseException):
+          |    pass
+          |
+          |try:
+          |    raise FooException("first")
+          |except:
+          |    try:
+          |        raise BarException("second")
+          |    except:
+          |        raise Exception("third")
+          |
+          |""".stripMargin
+      try {
+        assertOutput(code) { case _ => }
+      } catch {
+        case err: Throwable =>
+          err.getMessage shouldEqual "Exception: third"
+          err.getCause.getMessage shouldEqual "BarException: second"
+          err.getCause.getCause.getMessage shouldEqual "FooException: first"
+          err.getCause.getCause.getCause shouldEqual null
+      }
+    }
   }
 
   "PythonFunction" - {
