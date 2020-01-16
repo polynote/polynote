@@ -3,6 +3,7 @@ import java.io.File
 import java.nio.file.{FileSystems, Files}
 import java.util.concurrent.{Executors, ThreadFactory}
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.regex.Pattern
 
 import cats.effect.concurrent.Ref
 import cats.instances.list._
@@ -60,32 +61,51 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
 
   // all the JARs in Spark's classpath. I don't think this is actually needed.
   private def sparkDistClasspath = env("SPARK_DIST_CLASSPATH").orDie.get.flatMap {
-    cp => cp.split(File.pathSeparator).toList.map {
-      filename =>
-        val file = new File(filename)
-        file.getName match {
-          case "*" | "*.jar" =>
-            effectBlocking {
-              if (file.getParentFile.exists())
-                Files.newDirectoryStream(file.getParentFile.toPath, file.getName).iterator().asScala.toList.map(_.toFile)
-              else
-                Nil
-            }.orDie
-          case _ =>
-            effectBlocking(if (file.exists()) List(file) else Nil).orDie
-        }
-    }.sequence.map(_.flatten)
+    cp =>
+      Config.access.flatMap {
+        config =>
+          if (config.sparkDistClasspathFilter.nonEmpty) {
+            cp.split(File.pathSeparator).toList.map {
+              filepath =>
+                val file = new File(filepath)
+                file.getName match {
+                  case "*" | "*.jar" =>
+                    effectBlocking {
+                      if (file.getParentFile.exists())
+                        Files.newDirectoryStream(file.getParentFile.toPath, file.getName).iterator().asScala.toList.map(_.toFile)
+                      else
+                        Nil
+                    }.orDie
+                  case _ =>
+                    effectBlocking(if (file.exists()) List(file) else Nil).orDie
+                }
+            }.sequence.map(_.flatten).map {
+              expandedFiles =>
+                val reg = Pattern.compile(config.sparkDistClasspathFilter).asPredicate()
+                expandedFiles.filter(path => reg.test(path.getAbsolutePath) && path.getAbsolutePath.endsWith(".jar"))
+            }.tap {
+              extraJars =>
+                if (extraJars.nonEmpty) {
+                  Logging.info(s"Adding these paths from SPARK_DIST_CLASSPATH: $extraJars")
+                } else ZIO.unit
+            }
+          }
+          else ZIO.succeed(List.empty)
+      }
   }
 
   private def sparkClasspath = env("SPARK_HOME").orDie.get.flatMap {
     sparkHome =>
-      effectBlocking {
-        val homeFile = new File(sparkHome)
-        if (homeFile.exists()) {
-          val jarsPath = homeFile.toPath.resolve("jars")
-          Files.newDirectoryStream(jarsPath, "*.jar").iterator().asScala.toList.map(_.toFile)
-        } else Nil
-      }.orDie
+      for {
+        fromSparkDist <- sparkDistClasspath
+        fromSparkJars <- effectBlocking {
+          val homeFile = new File(sparkHome)
+          if (homeFile.exists()) {
+            val jarsPath = homeFile.toPath.resolve("jars")
+            Files.newDirectoryStream(jarsPath, "*.jar").iterator().asScala.toList.map(_.toFile)
+          } else Nil
+        }.orDie
+      } yield fromSparkDist ++ fromSparkJars
   }
 
   private def systemClasspath =

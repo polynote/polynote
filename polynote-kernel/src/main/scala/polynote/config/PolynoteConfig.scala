@@ -118,6 +118,7 @@ final case class PolynoteConfig(
   exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,
   spark: Map[String, String] = Map.empty,
+  sparkDistClasspathFilter: String = "",
   behavior: Behavior = Behavior(),
   security: Security = Security(),
   ui: UI = UI(),
