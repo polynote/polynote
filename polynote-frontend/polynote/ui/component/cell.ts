@@ -38,7 +38,7 @@ import {
     RuntimeError
 } from "../../data/result"
 import {RichTextEditor} from "./text_editor";
-import {SelectCell, UIMessageTarget} from "../util/ui_event"
+import {CellSelected, UIMessageTarget} from "../util/ui_event"
 import {Diff} from '../../util/diff'
 import {preferences} from "../util/storage";
 import {createVim} from "../util/vim";
@@ -144,7 +144,7 @@ export abstract class Cell extends UIMessageTarget {
                 this.setUrl();
             }
 
-            this.publish(new SelectCell(this));
+            this.publish(new CellSelected(this));
         }
     }
 
