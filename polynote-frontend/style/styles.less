@@ -1378,39 +1378,39 @@ body {
           content: 'at ';
         }
       }
-
-      .error-report {
-        /*background: url(icons/error.png) no-repeat 1em 1em;*/
-        background-color: #ffeef0;
-        border-radius: 4px;
-        border: 1px solid #cc0000;
-        padding: 1em;
-        margin: 1em 0;
-        .severity {
-          &:after {
-            content: ': '
-          }
-          font-weight: bold;
-        }
-
-        .message {
-          padding-right: 1em;
-        }
-
-        .error-link {
-          color: #005cc5;
-          text-decoration: underline;
-          cursor: pointer;
-        }
-      }
-
-      .error-report.Warning {
-        color: #8a6d3b;
-        background-color: #fcf8e3;
-        border-color: #faebcc;
-      }
     }
   }
+}
+
+.error-report {
+  /*background: url(icons/error.png) no-repeat 1em 1em;*/
+  background-color: #ffeef0;
+  border-radius: 4px;
+  border: 1px solid #cc0000;
+  padding: 1em;
+  margin: 1em 0;
+  .severity {
+    &:after {
+      content: ': '
+    }
+    font-weight: bold;
+  }
+
+  .message {
+    padding-right: 1em;
+  }
+
+  .error-link {
+    color: #005cc5;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+}
+
+.error-report.Warning {
+  color: #8a6d3b;
+  background-color: #fcf8e3;
+  border-color: #faebcc;
 }
 
 .vim-enabled.cell-container.code-cell .cell-input .cell-footer {

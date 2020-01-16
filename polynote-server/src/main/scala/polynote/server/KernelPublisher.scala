@@ -180,7 +180,9 @@ class KernelPublisher private (
     _          <- subscribers.remove(id)
     allClosed  <- subscribers.isEmpty
     kernel     <- kernelRef.get
-    _          <- if (allClosed && kernel.isEmpty) close() else ZIO.unit
+    _          <- if (allClosed && kernel.isEmpty) {
+      latestVersion.map(_._2.path).flatMap(path => Logging.info(s"Closing $path (idle with no more subscribers)")) *> close()
+    } else ZIO.unit
   } yield ()
 
   def rename(newPath: String): Task[Unit] = for {
@@ -188,7 +190,7 @@ class KernelPublisher private (
     _       <- versionedNotebook.update(vn => vn._1 -> vn._2.copy(path = newPath))
   } yield ()
 
-  def close(): Task[Unit] = closed.succeed(()).as(()) *> taskManager.shutdown()
+  def close(): Task[Unit] = closed.succeed(()).unit *> taskManager.shutdown()
 
   private def createKernel(): RIO[BaseEnv with GlobalEnv, Kernel] = kernelFactory()
     .provideSomeM(Env.enrichM[BaseEnv with GlobalEnv](kernelFactoryEnv))

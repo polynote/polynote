@@ -72,13 +72,20 @@ export class SocketSession extends EventTarget {
             message: this.receive.bind(this),
             open: this.opened.bind(this),
             close: this.close.bind(this),
-            error: (event: Event) => this.dispatchEvent(new CustomEvent('error', { detail: { cause: event }}))
+            error: (event: Event) => this.onError(event)
         };
 
         this.socket.addEventListener('message', this.listeners.message);
         this.socket.addEventListener('open', this.listeners.open);
         this.socket.addEventListener('close', this.listeners.close);
         this.socket.addEventListener('error', this.listeners.error);
+    }
+
+    onError(event: Event) {
+        if (this.socket) {
+            this.close();
+            this.dispatchEvent(new CustomEvent('error', {detail: {cause: event}}));
+        }
     }
 
 

@@ -1,8 +1,9 @@
 import {UIMessageTarget} from "../util/ui_event";
 import {NotebookConfigUI} from "./nb_config";
-import {div, icon, span, TagElement} from "../util/tags";
-import {Cell, CellContainer, CodeCell, isCellContainer, TextCell} from "./cell";
+import {blockquote, div, icon, span, TagElement} from "../util/tags";
+import {Cell, CellContainer, CodeCell, errorDisplay, isCellContainer, TextCell} from "./cell";
 import {TaskInfo, TaskStatus} from "../../data/messages";
+import * as messages from "../../data/messages";
 import {storage} from "../util/storage";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import * as monaco from "monaco-editor";
@@ -50,6 +51,11 @@ export class NotebookCellsUI extends UIMessageTarget {
         }
         this.disabled = disabled;
         this.forEachCell(cell => cell.setDisabled(disabled));
+    }
+
+    setLoadingFailure(error: messages.Error) {
+        this.el.innerHTML = "";
+        this.el.appendChild(blockquote(['error-report'], [errorDisplay(error.error, "").el]));
     }
 
     setStatus(id: number, status: TaskInfo) {
