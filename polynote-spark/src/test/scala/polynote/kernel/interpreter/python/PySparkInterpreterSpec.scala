@@ -3,7 +3,7 @@ package polynote.kernel.interpreter.python
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicReference
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.scalatest.{BeforeAndAfterEach, FreeSpec, Matchers}
 import polynote.kernel.ScalaCompiler
 import polynote.kernel.environment.Env
@@ -198,6 +198,21 @@ class PySparkInterpreterSpec extends FreeSpec with InterpreterSpec with Matchers
           precedenceTest(Seq(3), Map(
             "driverpy" -> "four",
             "py" -> "four"))
+        }
+      }
+
+      "should capture py4j exceptions" in {
+        initialize()
+        try {
+          assertOutput("spark.read.text(\"doesnotexist\")"){ case _ => }
+        } catch {
+          case err: Throwable =>
+            err shouldBe a[RuntimeException]
+            err.getMessage should include ("AnalysisException: 'Path does not exist:")
+            err.getCause shouldBe a[RuntimeException]
+            err.getCause.getMessage should include ("Py4JJavaError: An error occurred while calling")
+            err.getCause.getCause shouldBe a[AnalysisException]
+            err.getCause.getCause.getMessage should include ("Path does not exist:")
         }
       }
     }

@@ -214,18 +214,19 @@ class PySparkInterpreter(
   }
 
   override protected def errorCause(get: PyCallable): Option[Throwable] = {
-    Option(get.callAs(classOf[String], "py4j_error")).flatMap {
-      py4jObjectId =>
-        val obj = for {
-          gatewayServer <- Option(gatewayRef.get())
-          gateway       <- Option(gatewayServer.getGateway)
-          obj           <- Option(gateway.getObject(py4jObjectId))
-        } yield obj
-
-        obj.collect {
-          case err: Throwable => err
+    val err = get.callAs(classOf[PyObject], "err")
+    val errCls = get.callAs(classOf[String], "class")
+    if (errCls == "Py4JJavaError") {
+      for {
+        javaExc       <- Option(err.getAttr("java_exception", classOf[PyObject]))
+        py4jObjectId  <- Option(javaExc.getAttr("_target_id", classOf[String]))
+        gatewayServer <- Option(gatewayRef.get())
+        gateway       <- Option(gatewayServer.getGateway)
+        exc           <- Option(gateway.getObject(py4jObjectId)).collect {
+          case e: Throwable => e
         }
-    }
+      } yield exc
+    } else super.errorCause(get)
   }
 }
 

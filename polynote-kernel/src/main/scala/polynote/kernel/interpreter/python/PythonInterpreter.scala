@@ -245,20 +245,34 @@ class PythonInterpreter private[python] (
       |        return { 'globals': _globals, 'locals': _locals, 'types': types }
       |    except Exception as err:
       |        import traceback
-      |        typ, err_val, tb = sys.exc_info()
       |
-      |        # TODO: capture exception cause using __context__
-      |        trace = ArrayList()
-      |        for frame in traceback.extract_tb(tb):
-      |            trace.add(StackTraceElement(frame.filename.split("/")[-1], frame.name, frame.filename, frame.lineno))
-      |        result = { 'stack_trace': trace, 'message': getattr(err_val, 'message', str(err_val)), 'class': typ.__name__  }
+      |        def handle_exception(typ, err_val, tb):
+      |            trace = ArrayList()
+      |            for frame in traceback.extract_tb(tb):
+      |                trace.add(StackTraceElement(frame.filename.split("/")[-1], frame.name, frame.filename, frame.lineno))
+      |            result = {
+      |              'stack_trace': trace,
+      |              'message': getattr(err_val, 'message', str(err_val)),
+      |              'class': typ.__name__,
+      |              'err': err_val
+      |            }
       |
-      |        # TODO: it's a little ugly that we need to handle py4j stuff here :(
-      |        if typ.__name__ == 'Py4JJavaError':
-      |            result['py4j_error'] = err.java_exception._target_id
+      |            # Lifted from IPython.core.ultratb
+      |            def get_chained_exception(exception_value):
+      |                cause = getattr(exception_value, '__cause__', None)
+      |                if cause:
+      |                    return cause
+      |                if getattr(exception_value, '__suppress_context__', False):
+      |                    return None
+      |                return getattr(exception_value, '__context__', None)
       |
-      |        return result
+      |            cause = get_chained_exception(err_val)
+      |            if cause:
+      |                result['cause'] = handle_exception(type(cause), cause, cause.__traceback__)
       |
+      |            return result
+      |
+      |        return handle_exception(type(err), err, err.__traceback__)
       |""".stripMargin
 
   protected def matplotlib: String =
@@ -416,18 +430,30 @@ class PythonInterpreter private[python] (
               PythonState(state.id, state.prev, resultValues.toList, globals)
 
             case trace =>
-              val cause = errorCause(get)
-              val message = get.callAs(classOf[String], "message")
-              val typ = get.callAs(classOf[String], "class")
-              val els = trace.asScala.map(_.asInstanceOf[StackTraceElement]).reverse.toArray // python stack traces are backwards from java!
-              val err = cause.fold(new RuntimeException(s"$typ: $message"))(new RuntimeException(s"$typ: $message", _))
-              err.setStackTrace(els)
-              throw err
+              throw handlePyError(get, trace)
           }
       }
     }
 
-  protected def errorCause(get: PyCallable): Option[Throwable] = None
+  def handlePyError(get: PyCallable, trace: util.ArrayList[Object]): Throwable = {
+    val message = get.callAs(classOf[String], "message")
+    val typ = get.callAs(classOf[String], "class")
+    val cause = errorCause(get)
+    val err = cause.fold(new RuntimeException(s"$typ: $message"))(new RuntimeException(s"$typ: $message", _))
+    val stackTraceElements = trace.asScala.map(_.asInstanceOf[StackTraceElement]).reverse.toArray
+    err.setStackTrace(stackTraceElements)
+    err
+  }
+
+  protected def errorCause(get: PyCallable): Option[Throwable] =
+    Option(get.callAs(classOf[PyObject], "cause")).flatMap {
+      cause =>
+        val causeGet = cause.getAttr("get", classOf[PyCallable])
+        Option(causeGet.callAs(classOf[util.ArrayList[Object]], "stack_trace")).map {
+          elements =>
+            handlePyError(causeGet, elements)
+        }
+    }
 
   case class PythonState(id: CellID, prev: State, values: List[ResultValue], globalsDict: PyObject) extends State {
     override def withPrev(prev: State): State = copy(prev = prev)
