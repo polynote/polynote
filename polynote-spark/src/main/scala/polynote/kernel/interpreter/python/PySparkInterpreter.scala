@@ -115,14 +115,10 @@ class PySparkInterpreter(
     jep =>
 
       jep.eval("import py4j")
-      val py4jVersion = jep.getValue("py4j.__version__", classOf[String])
-
-      val Version = "(\\d+).(\\d+).(\\d+)".r
-
-      py4jVersion match {
-        case Version(_, _, patch) if patch.toInt >= 7 => true
-        case _ => false
-      }
+      jep.getValue(
+        "tuple(int(x) for x in py4j.__version__.split('.')[:3]) >= (0, 10, 7)",
+        classOf[java.lang.Boolean]
+      ).booleanValue
   }
 
   private lazy val py4jToken: String = RandomStringUtils.randomAlphanumeric(256)
