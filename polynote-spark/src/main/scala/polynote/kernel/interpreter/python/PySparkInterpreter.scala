@@ -115,8 +115,9 @@ class PySparkInterpreter(
     jep =>
 
       jep.eval("import py4j")
+      jep.eval("import pkg_resources")
       jep.getValue(
-        "tuple(int(x) for x in py4j.__version__.split('.')[:3]) >= (0, 10, 7)",
+        "pkg_resources.parse_version(py4j.__version__) >= pkg_resources.parse_version('0.10.7')",
         classOf[java.lang.Boolean]
       ).booleanValue
   }
