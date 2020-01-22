@@ -1659,6 +1659,10 @@ button.inspect.icon-button {
         }
       }
 
+      .close-button {
+        display: none;
+      }
+
       &.error {
         .progress {
           display: none;
@@ -1666,6 +1670,12 @@ button.inspect.icon-button {
 
         background-color: #ffeef0;
         border: 1px solid #cc0000;
+
+        .close-button {
+          display: block;
+          position: absolute;
+          right: 1em;
+        }
       }
 
       .child-tasks {
