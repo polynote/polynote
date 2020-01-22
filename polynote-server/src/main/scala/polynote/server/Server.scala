@@ -6,11 +6,11 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-import fs2.Chunk
+import fs2.{Chunk, Stream}
 import fs2.concurrent.Topic
 import cats.instances.option._
 import cats.syntax.traverse._
-import org.http4s.{Charset, Headers, HttpApp, HttpRoutes, MediaType, Request, Response, StaticFile}
+import org.http4s.{Charset, Headers, HttpApp, HttpRoutes, MediaType, Request, Response, StaticFile, Status}
 import org.http4s.blaze.pipeline.Command.EOF
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.blaze.BlazeServerBuilder
@@ -20,7 +20,7 @@ import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
-import polynote.messages.Message
+import polynote.messages.{Error, Message}
 import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
 import zio.{Cause, RIO, Task, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
@@ -29,6 +29,7 @@ import scala.annotation.tailrec
 import scala.collection.immutable.StringOps
 import Server.Routes
 import cats.effect.ConcurrentEffect
+import polynote.server.repository.format.FormatProviderNotFound
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App with Http4sDsl[Task] {
   private implicit val taskConcurrentEffect: ConcurrentEffect[Task] = zio.interop.catz.taskEffectInstance[Any]
@@ -163,6 +164,21 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
         )
     }
 
+    def toResponse(msg: Message, status: Status): Response[Task] =
+      Response(
+        status = status,
+        body = Stream.eval(Message.encode[Task](msg)).flatMap {
+          bitVector => Stream.chunk(Chunk.byteVector(bitVector.toByteVector))
+        }
+      ).withContentType(`Content-Type`(MediaType.application.`octet-stream`))
+
+    def notebookSession(path: String): RIO[SessionEnv with NotebookManager, Response[Task]] = {
+        NotebookSession(path).flatMap(_.toResponse) <* UserIdentity.access.flatMap(user => Logging.info(s"Beginning notebook session $path for user $user"))
+    }.catchAll {
+      case err: FileNotFoundException => ZIO.succeed(toResponse(Error(404, err), NotFound))
+      case err => ZIO.succeed(toResponse(Error(0, err), InternalServerError))
+    }
+
     for {
       env        <- ZIO.access[RequestEnv](identity)
       authRoutes <- IdentityProvider.authRoutes
@@ -171,7 +187,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
 
       val defaultRoutes: Routes = {
         case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => authorize(req, SocketSession(broadcastAll).flatMap(_.toResponse)).provide(env)
-        case req @ GET -> "ws" /: path :? KeyMatcher(`wsKey`)                 => authorize(req, NotebookSession(path.toList.mkString("/")).flatMap(_.toResponse)).provide(env)
+        case req @ GET -> "ws" /: path :? KeyMatcher(`wsKey`)                 => authorize(req, notebookSession(path.toList.mkString("/"))).provide(env)
         case GET -> Root / "ws"                                               => Forbidden()
         case req @ GET -> Root                                                => indexResponse.provide(env)
         case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req).provide(env)

@@ -15,8 +15,9 @@ import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
 import polynote.messages.{CancelTasks, CellID, CellResult, ClearOutput, CompletionsAt, Error, HandleData, KernelStatus, Message, ModifyStream, NotebookCell, NotebookUpdate, NotebookVersion, ParametersAt, ReleaseHandle, RunCell, ShortList, StartKernel, UpdateConfig}
 import polynote.server.SocketSession.sessionId
-import polynote.server.auth.Permission
+import polynote.server.auth.{Permission, UserIdentity}
 import zio.{Promise, RIO, Task, UIO, URIO, ZIO}
+import zio.syntax._
 
 import scala.concurrent.duration.{Duration, SECONDS}
 
@@ -30,18 +31,28 @@ class NotebookSession(
   publishMessage: PublishMessage
 ) {
 
-  def close(): UIO[Unit] = subscriber.close() *> closed.succeed(()).unit
+  def close(): URIO[SessionEnv, Unit] =
+        subscriber.close() *> closed.succeed(()).flatMap {
+          case true => (UserIdentity.access, subscriber.currentPath.orDie).map2 {
+              (user, path) => Logging.info(s"Closing notebook session $path for $user")
+            }.flatten
+          case false => ZIO.unit
+        }
 
   lazy val toResponse: ZIO[SessionEnv, Throwable, Response[Task]] = {
     for {
+      env       <- ZIO.environment[SessionEnv]
       _         <- sendNotebookInfo()
       processor <- process(input, output)
       fiber     <- processor.interruptWhen(closed.await.either).compile.drain.ignore.fork
-      keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.ignore.fork
+      keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
+        .interruptWhen(closed.await.either)
+        .through(output.enqueue)
+        .compile.drain.ignore.fork
       response  <- WebSocketBuilder[Task].build(
-        output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]) ++ Stream.eval(close()).drain,
+        output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]) ++ Stream.eval(close().provide(env)).drain,
         input.enqueue,
-        onClose = keepalive.interrupt *> fiber.interrupt.unit *> close())
+        onClose = keepalive.interrupt *> fiber.interrupt.unit *> close().provide(env))
     } yield response
   }.provideSomeM(Env.enrich[SessionEnv](publishMessage))
 

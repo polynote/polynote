@@ -40,7 +40,10 @@ class SocketSession(
     output    <- Queue.unbounded[Task, WebSocketFrame]
     processor <- process(input, output)
     fiber     <- processor.interruptWhen(handler.awaitClosed).compile.drain.ignore.fork
-    keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping()).through(output.enqueue).compile.drain.ignore.fork
+    keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
+      .interruptWhen(handler.awaitClosed)
+      .through(output.enqueue)
+      .compile.drain.ignore.fork
     allOutputs = Stream.emits(Seq(output.dequeue, broadcastAll.subscribe(128).unNone.evalMap(toFrame))).parJoinUnbounded
     logging   <- ZIO.access[Logging](identity)
     response  <- WebSocketBuilder[Task].build(

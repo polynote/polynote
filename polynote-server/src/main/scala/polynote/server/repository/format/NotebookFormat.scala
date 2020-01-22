@@ -38,7 +38,9 @@ object NotebookFormat {
 
   def getFormat(path: Path): RIO[Blocking, NotebookFormat] = for {
     providers <- load
-    fmt <- ZIO.succeed(providers.find(_.handlesExt(path)))
-      .someOrFail(new Exception(s"Unable to find notebook format provider for path $path. Available providers are ${providers.map(_.getClass)}"))
+    fmt       <- ZIO.succeed(providers.find(_.handlesExt(path))).someOrFail(FormatProviderNotFound(path, providers))
   } yield fmt
 }
+
+final case class FormatProviderNotFound(path: Path, providers: List[NotebookFormat])
+  extends Exception(s"Unable to find notebook format provider for path $path. Providers are available for ${providers.map(_.extension).mkString(", ")}")

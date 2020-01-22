@@ -5,13 +5,13 @@ import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
 import {Cell, CodeCell, TextCell} from "./cell";
 import match from "../../util/match";
-import { ClearResults, ClientResult, Output, Result, ResultValue } from "../../data/result";
+import {ClearResults, ClientResult, KernelError, Output, Result, ResultValue} from "../../data/result";
 import {DataRepr, DataStream, StreamingDataRepr} from "../../data/value_repr";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
 import {SocketSession} from "../../comms";
 import {MainUI} from "./ui";
-import {CompletionCandidate, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
+import {CompletionCandidate, Message, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
 import {languages, Range} from "monaco-editor";
 import {ContentEdit} from "../../data/content_edit";
 import {Either, Left, Right} from "../../data/types";
@@ -31,6 +31,7 @@ export class NotebookUI extends UIMessageTarget {
     private cellStatusListeners: ((cellId: number, status: number) => void)[] = [];
     private queuedCells: number[] = [];
     private runningCell?: number;
+    private closed: boolean = false;
     readonly socket: SocketSession;
 
     static getOrCreate(eventParent: UIMessageTarget, path: string, mainUI: MainUI) {
@@ -62,6 +63,26 @@ export class NotebookUI extends UIMessageTarget {
     private constructor(eventParent: UIMessageTarget, readonly path: string, readonly mainUI: MainUI) {
         super(eventParent);
         this.socket = SocketSession.fromRelativeURL(`ws/${path}`);
+        this.socket.addEventListener("error", err => {
+           const url = new URL(this.socket.url.toString());
+           url.protocol = document.location.protocol;
+           const req = new XMLHttpRequest();
+           req.responseType = "arraybuffer";
+           req.addEventListener("readystatechange", evt => {
+               if (req.readyState == 4) {
+                   if (req.response instanceof ArrayBuffer && req.response.byteLength > 0) {
+                       const msg = Message.decode(req.response);
+                       if (msg instanceof messages.Error) {
+                           this.socket.close();
+                           this.closed = true;
+                           this.cellUI.setLoadingFailure(msg);
+                       }
+                   }
+               }
+           });
+           req.open("GET", url.toString());
+           req.send(null);
+        });
         let cellUI = new NotebookCellsUI(this, path);
         let kernelUI = new KernelUI(this);
         this.cellUI = cellUI;
@@ -203,6 +224,11 @@ export class NotebookUI extends UIMessageTarget {
 
         // when the socket is disconnected, we're going to try reconnecting when the window gets focus.
         const reconnectOnWindowFocus = () => {
+            if (this.closed) {
+                window.removeEventListener("focus", reconnectOnWindowFocus);
+                return;
+            }
+
             if (this.socket.isClosed) {
                 this.socket.reconnect(true);
             }
@@ -264,6 +290,7 @@ export class NotebookUI extends UIMessageTarget {
 
     close() {
         this.socket.close();
+        this.closed = true;
         delete notebooks[this.path];
     }
 
