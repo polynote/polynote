@@ -15,7 +15,7 @@ import polynote.kernel.util.Publish
 import polynote.messages.TinyString
 import zio.blocking.Blocking
 import zio.clock.Clock
-import zio.{Cause, Fiber, Promise, Queue, Semaphore, Task, RIO, UIO, ZIO, ZSchedule}
+import zio.{Cause, Fiber, Promise, Queue, Semaphore, Task, RIO, UIO, ZIO, Schedule}
 import zio.interop.catz._
 
 trait TaskManager {
@@ -130,7 +130,7 @@ object TaskManager {
         taskFiber     <- runTask.fork
         descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
         _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
-      } yield taskFiber.join.interruptChildren.ensuring(remove)
+      } yield taskFiber.join.ensuring(remove)
     }
 
     private def runImpl[R <: CurrentTask, A, R1 >: R](
@@ -148,7 +148,7 @@ object TaskManager {
               .through(updates.publish)
               .compile.drain.uninterruptible.ensuring(remove).fork
             taskBody       = task.provideSome[R1](enrich(_, CurrentTask.of(statusRef)))
-            taskFiber     <- (taskBody <* statusRef.update(_.completed) <* updater.join).onError(cause => statusRef.update(errorWith(cause)).orDie).supervised.fork
+            taskFiber     <- (taskBody <* statusRef.update(_.completed) <* updater.join).onError(cause => statusRef.update(errorWith(cause)).orDie).fork
             descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
             _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
             result        <- taskFiber.join.onInterrupt(taskFiber.interrupt)
@@ -178,7 +178,7 @@ object TaskManager {
         onUpdate     = (fn: TaskInfo => TaskInfo) => updateTasks.put(fn)
         cancel       = cancelCallback(onUpdate)
         process     <- zio.blocking.effectBlocking(updateTasks.take()).flatMap(statusRef.update)
-          .repeat(ZSchedule.doUntil(_ => completed.get()))
+          .repeat(Schedule.doUntil(_ => completed.get()))
           .ensuring(ZIO.effectTotal(tasks.remove(id)))
           .onInterrupt(statusRef.update(_.done(errorWith)).orDie.ensuring(cancel))
           .fork

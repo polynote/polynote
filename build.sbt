@@ -13,8 +13,8 @@ val versions = new {
   val fs2        = "1.0.5"
   val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC2-6"
-  val zio        = "1.0.0-RC15"
-  val zioInterop = "2.0.0.0-RC6"
+  val zio        = "1.0.0-RC17"
+  val zioInterop = "2.0.0.0-RC10"
 }
 
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."

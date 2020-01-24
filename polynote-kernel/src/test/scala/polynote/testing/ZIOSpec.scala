@@ -16,11 +16,12 @@ import zio.{Runtime, ZIO}
 trait ZIOSpec extends Runtime[Clock with Console with System with Random with Blocking with Logging] {
   type Environment = Clock with Console with System with Random with Blocking with Logging
   // TODO: mock the pieces of this
-  val Environment: Environment =
+  override val environment: Environment =
     new Clock.Live with Console.Live with System.Live with Random.Live with Blocking.Live with Logging.Live
 
   // TODO: should test platform behave differently? Isolate per suite?
-  val Platform: Platform = PlatformLive.Default
+  override val platform: Platform = PlatformLive.Default
+    .withReportFailure(_ => ()) // suppress printing error stack traces by default
 
   implicit class ConfigIORunOps[A](val self: ZIO[Environment with Config, Throwable, A]) {
     def runIO(config: PolynoteConfig): A = self.provideSomeM(Env.enrich[Environment](Config.of(config))).runIO()

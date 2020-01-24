@@ -23,7 +23,7 @@ import zio.Cause._
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Cause, Promise, RIO, Task, ZIO, ZSchedule}
+import zio.{Cause, Promise, RIO, Task, ZIO, Schedule}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
 
@@ -127,7 +127,7 @@ class SocketTransportServer private (
 object SocketTransportServer {
   private def selectChannels(channel1: FramedSocket, channel2: FramedSocket, address: InetSocketAddress): TaskB[SocketTransport.Channels] = {
     def identify(channel: FramedSocket) = channel.read().repeat {
-      ZSchedule.doUntil[Option[Option[ByteBuffer]]] {
+      Schedule.doUntil[Option[Option[ByteBuffer]]] {
         case Some(Some(_)) => true
         case _ => false
       }
@@ -356,8 +356,8 @@ object SocketTransport {
 
     private def readBuffer(): Option[Option[ByteBuffer]] = incomingLengthBuffer.synchronized {
       incomingLengthBuffer.rewind()
-      while(incomingLengthBuffer.hasRemaining) {
-        if(socketChannel.read(incomingLengthBuffer) == -1) {
+      while (incomingLengthBuffer.hasRemaining) {
+        if (socketChannel.read(incomingLengthBuffer) == -1) {
           return None
         }
       }

@@ -35,7 +35,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   private implicit val taskConcurrentEffect: ConcurrentEffect[Task] = zio.interop.catz.taskEffectInstance[Any]
   private lazy val watchUIPath = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/index.html")
 
-  private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
+  private val blockingEC = unsafeRun(environment.blocking.blockingExecutor).asEC
 
   private def indexFileContent(key: String, config: PolynoteConfig, watchUI: Boolean) = {
     val is = ZIO {
@@ -77,7 +77,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       |before running Polynote. You are solely responsible for any breach, loss, or damage caused by running
       |this software insecurely.""".stripMargin
 
-  override def reportFailure(cause: Cause[_]): Unit = cause.failures.distinct.filterNot(_ == EOF) match {
+  override def reportFailure(cause: Cause[Any]): Unit = cause.failures.distinct.filterNot(_ == EOF) match {
     case Nil => ()  // unable to otherwise silence this error that happens whenever websocket is closed by client
     case _   => super.reportFailure(cause)
   }

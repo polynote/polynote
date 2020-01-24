@@ -216,7 +216,6 @@ class RemoteKernelClient(
             completed
               .catchAll(err => publishResponse.publish1(ResultResponse(reqId, ErrorResult(err))))
               .ensuring(publishResponse.publish1(RunCompleteResponse(reqId)).orDie)
-              .supervised
               .fork
         }.as(UnitResponse(reqId))
         case CancelAllRequest(reqId)                      => kernel.cancelAll().as(UnitResponse(reqId))
@@ -272,7 +271,7 @@ object RemoteKernelClient extends polynote.app.App {
     kernelFactory   <- args.getKernelFactory
     transport       <- SocketTransport.connectClient(addr)
     requests         = transport.requests
-    publishResponse  = Publish.fn[Task, RemoteResponse](rep => transport.sendResponse(rep).provide(Environment))
+    publishResponse  = Publish.fn[Task, RemoteResponse](rep => transport.sendResponse(rep).provide(environment))
     localAddress    <- effectBlocking(InetAddress.getLocalHost.getHostAddress)
     firstRequest    <- requests.head.compile.lastOrError
     initial         <- firstRequest match {
@@ -353,10 +352,10 @@ object RemoteKernelClient extends polynote.app.App {
     taskManager: TaskManager.Service,
     publishStatus: Publish[Task, KernelStatusUpdate]
   ) extends BaseEnvT with GlobalEnvT with CellEnvT {
-    override val blocking: Blocking.Service[Any] = Environment.blocking
-    override val clock: Clock.Service[Any] = Environment.clock
-    override val logging: Logging.Service = Environment.logging
-    override val system: System.Service[Any] = Environment.system
+    override val blocking: Blocking.Service[Any] = environment.blocking
+    override val clock: Clock.Service[Any] = environment.clock
+    override val logging: Logging.Service = environment.logging
+    override val system: System.Service[Any] = environment.system
 
     override val publishResult: Publish[Task, Result] = new Publish[Task, Result] {
       override def publish1(result: Result): Task[Unit] = publishResponse.publish1(ResultResponse(reqId, result))
