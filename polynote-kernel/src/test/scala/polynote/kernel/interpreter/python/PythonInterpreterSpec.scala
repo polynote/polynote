@@ -333,6 +333,26 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           err.getCause.getCause.getCause shouldEqual null
       }
     }
+
+    // TODO: need to shut down the interpreter in order to see this result.
+    //       should refactor the interpreter tests to start/stop the interpreter every time, allowing hooks to be set
+    //       before and after initialization.
+    "supports registration of exit handlers" in {
+      val code =
+        """
+          |import atexit, sys
+          |def exit_fun():
+          |    print("ran exit function!")
+          |
+          |atexit.register(exit_fun)
+          |""".stripMargin
+      assertOutput(code) {
+        case (vars, out) =>
+          val x = vars
+          val y = out
+          val z = 1
+      }
+    }
   }
 
   "PythonFunction" - {

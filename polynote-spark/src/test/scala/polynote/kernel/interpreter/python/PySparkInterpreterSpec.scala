@@ -38,7 +38,6 @@ class PySparkInterpreterSpec extends FreeSpec with InterpreterSpec with Matchers
   // we dont use BeforeAndAfterEach because some tests need to do stuff before initialization
   def initialize(f: => Unit = ()): Unit = {
     if (interpreterRef.get() != null) {
-      interpreterRef.get().jep(_.exec("__exit_pyspark__()")).runIO() // need to clean up pyspark
       interpreter.shutdown().runIO()
     }
     interpreterRef.set(PySparkInterpreter(None).provideSomeM(Env.enrich[Blocking](ScalaCompiler.Provider.of(compiler))).runIO())

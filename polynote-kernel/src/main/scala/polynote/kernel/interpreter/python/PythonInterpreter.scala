@@ -176,7 +176,17 @@ class PythonInterpreter private[python] (
     }
   } yield PythonState(state.id, state.prev, Nil, globals)
 
-  def shutdown(): Task[Unit] = jep(_.close())
+  def shutdown(): Task[Unit] = jep {
+    jep =>
+      // We need to run any registered Python exit hooks before closing the interpreter, because Jep doesn't seem be
+      // running them. See https://github.com/polynote/polynote/issues/759
+      jep.exec(
+        """
+          |import atexit
+          |atexit._run_exitfuncs()
+          |""".stripMargin)
+      jep.close()
+  }
 
   protected[python] def jep[T](fn: Jep => T): Task[T] = effectBlocking(fn(jepInstance)).lock(jepExecutor).provide(jepBlockingService)
   protected[python] def exec(code: String): Task[Unit] = jep(_.exec(code))
