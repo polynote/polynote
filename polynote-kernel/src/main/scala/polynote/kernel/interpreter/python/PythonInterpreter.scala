@@ -180,6 +180,10 @@ class PythonInterpreter private[python] (
     jep =>
       // We need to run any registered Python exit hooks before closing the interpreter, because Jep doesn't seem be
       // running them. See https://github.com/polynote/polynote/issues/759
+      // When running multiple interpreters in the same JVM (using KernelIsolation=Never) this may cause bad things to
+      // happen (since atexit is shared across all interpreters). Luckily we only run in this mode when debugging so
+      // this shouldn't cause problems for users.
+      // Please see here for more information: https://github.com/ninia/jep/issues/225#issuecomment-578376803
       jep.exec(
         """
           |import atexit
