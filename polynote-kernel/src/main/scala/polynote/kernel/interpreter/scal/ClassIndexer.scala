@@ -78,8 +78,8 @@ object SimpleClassIndexer {
     for {
       classPath <- ScalaCompiler.settings.map(_.classpath.value.split(File.pathSeparatorChar).map(new File(_)))
       deps      <- ScalaCompiler.dependencies
-      javaPath   = javaLibraryPath.toArray :+ new File(pathOf(classOf[List[_]]).toURI)
-      process   <- buildIndex(javaPath ++ deps, classPath).fork
+      priorities = new File(pathOf(classOf[List[_]]).toURI) :: javaLibraryPath.toList ::: deps
+      process   <- buildIndex(priorities.toArray, classPath).fork
     } yield new SimpleClassIndexer(process)
   }
 }

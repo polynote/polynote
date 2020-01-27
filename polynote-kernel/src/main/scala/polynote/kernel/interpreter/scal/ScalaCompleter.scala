@@ -7,6 +7,7 @@ import zio.{Fiber, RIO, Task, UIO, URIO, ZIO}
 import ZIO.{effect, effectTotal}
 import polynote.kernel.ScalaCompiler.OriginalPos
 import zio.blocking.{Blocking, effectBlocking}
+import zio.syntax._
 
 import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
@@ -20,6 +21,23 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 ) {
 
   import compiler.global._
+
+  private def indexCompletions(search: String) = index.findMatches(search).map {
+    matches => matches.toList.flatMap {
+      case (shortName, candidates) => candidates.map {
+        case (priority, longName) =>
+          val abbrevPath = longName.split('.').dropRight(1).toList match {
+            case first :: rest => rest.reverse match {
+              case last :: middle => (first :: (last :: middle.map(_.head.toString)).reverse).mkString(".")
+              case Nil => first
+            }
+            case Nil => ""
+          }
+
+          priority -> Completion(shortName, Nil, Nil, abbrevPath, CompletionType.Unknown, Some(longName))
+      }
+    }.sortBy(_._1).map(_._2)
+  }
 
   def completions(cellCode: compiler.CellCode, pos: Int): URIO[Blocking, List[Completion]] = {
     val position = Position.offset(cellCode.sourceFile, pos)
@@ -63,7 +81,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
       }
 
     def completeImport(tree: Import) = tree match {
-      case Import(qual, names) if qual.tpe != null =>
+      case Import(qual, names) if qual.tpe != null && !qual.tpe.isError =>
         val searchName = names.dropWhile(_.namePos < pos).headOption match {
           case None => TermName("")
           case Some(sel) if sel.name.decoded == "<error>" => TermName("")
@@ -78,6 +96,8 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
             .map(symToCompletion(_, NoType))
         }
 
+      case Import(Ident(name), List(ImportSelector(TermName("<error>"), _, _, _))) =>
+        indexCompletions(name.toString)
       case _ => ZIO.succeed(Nil)
     }
 
@@ -94,13 +114,22 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
         }
     }
 
+    def completeNew(original: Tree) = {
+      val fromIndex = original match {
+        case Ident(name) => indexCompletions(name.toString)
+        case _ => ZIO.succeed(Nil)
+      }
+      (completeTree(original), fromIndex).map2(_ ++ _)
+    }
+
     @tailrec def completeTree(tree: Tree): RIO[Blocking, List[Completion]] = tree match {
-      case tree@Select(qual, _) if qual != null       => completeSelect(tree)
-      case tree@Ident(_)                              => completeIdent(tree)
-      case tree@Import(qual, _) if !qual.isErrorTyped => completeImport(tree)
-      case tree@Apply(_, _)                           => completeApply(tree)
-      case New(tpt)                                   => completeTree(tpt)
-      case tree@TypeTree() if tree.original != null   => completeTree(tree.original)
+      case tree@Select(qual, _) if qual != null        => completeSelect(tree)
+      case tree@Ident(_)                               => completeIdent(tree)
+      case tree@Import(_, _)                           => completeImport(tree)
+      case tree@Apply(_, _)                            => completeApply(tree)
+      case New(tpt@TypeTree()) if tpt.original != null => completeNew(tpt.original)
+      case New(tpt)                                    => completeTree(tpt)
+      case tree@TypeTree() if tree.original != null    => completeTree(tree.original)
       case other =>
         val o = other
         ZIO.succeed(Nil)

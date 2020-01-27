@@ -5,7 +5,7 @@ import cats.data.StateT
 import cats.syntax.traverse._
 import cats.instances.list._
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.kernel.{CompletionType, Output, Result, ResultValue, ScalaCompiler, TaskInfo}
+import polynote.kernel.{Completion, CompletionType, Output, Result, ResultValue, ScalaCompiler, TaskInfo}
 import polynote.testing.{InterpreterSpec, ValueMap, ZIOSpec}
 import polynote.messages.CellID
 import zio.{RIO, ZIO}
@@ -398,6 +398,15 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
       val List(shouldBeVisible) = completions("shouldBeVisible")
       shouldBeVisible.completionType shouldEqual CompletionType.Term
       shouldBeVisible.resultType shouldEqual "Int"
+    }
+
+    "from class indexer" - {
+      "imports" in {
+        val code = "import HashM"
+        val completions = completionsMap(code, code.length, State.id(1))
+        val expected = Completion("HashMap", Nil, Nil, "scala.c.immutable", CompletionType.Unknown, Some("scala.collection.immutable.HashMap"))
+        completions("HashMap") should contain (expected)
+      }
     }
 
   }
