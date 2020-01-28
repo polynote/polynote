@@ -169,6 +169,13 @@ export class RenameNotebook extends UIMessage {
     }
 }
 
+export class CopyNotebook extends UIMessage {
+    constructor(readonly path: string) { super() }
+    static unapply(inst: CopyNotebook): ConstructorParameters<typeof CopyNotebook> {
+        return [inst.path];
+    }
+}
+
 export class DeleteNotebook extends UIMessage {
     constructor(readonly path: string) { super() }
     static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {

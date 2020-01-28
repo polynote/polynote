@@ -22,7 +22,7 @@ trait NotebookFilesystem {
 
   def exists(path: Path): RIO[BaseEnv, Boolean]
 
-  def move(from: Path, to: Path): RIO[BaseEnv, Unit]
+  def copy(from: Path, to: Path, deleteFrom: Boolean): RIO[BaseEnv, Unit]
 
   def delete(path: Path): RIO[BaseEnv, Unit]
 

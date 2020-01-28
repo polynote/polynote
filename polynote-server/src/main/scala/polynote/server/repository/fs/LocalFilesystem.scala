@@ -43,12 +43,16 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 
   override def exists(path: Path): RIO[BaseEnv, Boolean] = ZIO(path.toFile.exists())
 
-  override def move(from: Path, to: Path): RIO[BaseEnv, Unit] = effectBlocking {
+  override def copy(from: Path, to: Path, deleteFrom: Boolean): RIO[BaseEnv, Unit] = effectBlocking {
     val dir = to.getParent.toFile
     if (!dir.exists()) {
       dir.mkdirs()
     }
-    Files.move(from, to)
+    if (deleteFrom) {
+      Files.move(from, to)
+    } else {
+      Files.copy(from, to)
+    }
   }
 
   override def delete(path: Path): RIO[BaseEnv, Unit] =

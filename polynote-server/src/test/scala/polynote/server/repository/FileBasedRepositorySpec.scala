@@ -38,13 +38,15 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
 
     override def exists(path: Path): RIO[BaseEnv, Boolean] = ZIO(notebooks.containsKey(tmpDir.resolve(path)))
 
-    override def move(from: Path, to: Path): RIO[BaseEnv, Unit] = ZIO {
+    override def copy(from: Path, to: Path, deleteFrom: Boolean): RIO[BaseEnv, Unit] = ZIO {
       val fromKey = tmpDir.resolve(from)
       val toKey = tmpDir.resolve(to)
 
       val content = notebooks.get(fromKey)
       notebooks.put(toKey, content)
-      notebooks.remove(fromKey)
+      if (deleteFrom) {
+        notebooks.remove(fromKey)
+      }
     }
 
     override def delete(path: Path): RIO[BaseEnv, Unit] = ZIO(notebooks.remove(tmpDir.resolve(path)))
@@ -141,9 +143,19 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
     "should rename notebooks" in {
       tmpFS.writeStringToPath(Paths.get("foo.ipynb"), "foo").runIO
 
-      repo.renameNotebook("foo.ipynb", "bar.ipynb").runIO
+      repo.copyNotebook("foo.ipynb", "bar.ipynb", deletePrevious = true).runIO
 
       repo.notebookExists("foo.ipynb").runIO shouldEqual false
+      repo.notebookExists("bar.ipynb").runIO shouldEqual true
+      tmpFS.readPathAsString(Paths.get("bar.ipynb")).runIO shouldEqual "foo"
+    }
+
+    "should copy notebooks" in {
+      tmpFS.writeStringToPath(Paths.get("foo.ipynb"), "foo").runIO
+
+      repo.copyNotebook("foo.ipynb", "bar.ipynb", deletePrevious = false).runIO
+
+      repo.notebookExists("foo.ipynb").runIO shouldEqual true
       repo.notebookExists("bar.ipynb").runIO shouldEqual true
       tmpFS.readPathAsString(Paths.get("bar.ipynb")).runIO shouldEqual "foo"
     }

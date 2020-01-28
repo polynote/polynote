@@ -505,6 +505,22 @@ export class RenameNotebook extends Message {
     }
 }
 
+export class CopyNotebook extends Message {
+    static codec = combined(shortStr, shortStr).to(CopyNotebook);
+    static get msgTypeId() { return 27; }
+    static unapply(inst: CopyNotebook): ConstructorParameters<typeof RenameNotebook> {
+        return [inst.path, inst.newPath];
+    }
+    constructor(readonly path: string, readonly newPath: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    isResponse(other: Message): boolean {
+        return (other instanceof CopyNotebook) && other.path === this.path;
+    }
+}
+
 export class DeleteNotebook extends Message {
     static codec = combined(shortStr).to(DeleteNotebook);
     static get msgTypeId() { return 26; }
@@ -727,35 +743,35 @@ export class CurrentSelection extends Message {
 }
 
 Message.codecs = [
-    Error,           // 0
-    LoadNotebook,    // 1
-    NotebookCells,   // 2
-    RunCell,         // 3
-    CellResult,      // 4
-    UpdateCell,      // 5
-    InsertCell,      // 6
-    CompletionsAt,   // 7
-    ParametersAt,    // 8
-    KernelStatus,    // 9
-    UpdateConfig,    // 10
-    SetCellLanguage, // 11
-    StartKernel,     // 12
-    ListNotebooks,   // 13
-    CreateNotebook,  // 14
-    DeleteCell,      // 15
-    ServerHandshake, // 16
-    HandleData,      // 17
-    CancelTasks,     // 18
-    ModifyStream,    // 19
-    ReleaseHandle,   // 20
-    ClearOutput,     // 21
-    SetCellOutput,   // 22
-    NotebookVersion, // 23
-    RunningKernels,  // 24
-    RenameNotebook,  // 25
-    DeleteNotebook,  // 26
-    null as unknown as typeof Message, // 27 - reserve for CopyNotebook
-    CurrentSelection,    // 28
+    Error,            // 0
+    LoadNotebook,     // 1
+    NotebookCells,    // 2
+    RunCell,          // 3
+    CellResult,       // 4
+    UpdateCell,       // 5
+    InsertCell,       // 6
+    CompletionsAt,    // 7
+    ParametersAt,     // 8
+    KernelStatus,     // 9
+    UpdateConfig,     // 10
+    SetCellLanguage,  // 11
+    StartKernel,      // 12
+    ListNotebooks,    // 13
+    CreateNotebook,   // 14
+    DeleteCell,       // 15
+    ServerHandshake,  // 16
+    HandleData,       // 17
+    CancelTasks,      // 18
+    ModifyStream,     // 19
+    ReleaseHandle,    // 20
+    ClearOutput,      // 21
+    SetCellOutput,    // 22
+    NotebookVersion,  // 23
+    RunningKernels,   // 24
+    RenameNotebook,   // 25
+    DeleteNotebook,   // 26
+    CopyNotebook,     // 27
+    CurrentSelection, // 28
 ];
 
 

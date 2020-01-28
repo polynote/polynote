@@ -172,18 +172,18 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
     "should rename notebooks" - {
       "within the same mount" - {
         "in root" in {
-          (root.renameNotebook _).expects("foo", "bar").once().returning(ZIO.succeed("bar"))
-          tr.renameNotebook("foo", "bar").runIO shouldEqual "bar"
+          (root.copyNotebook _).expects("foo", "bar", true).once().returning(ZIO.succeed("bar"))
+          tr.copyNotebook("foo", "bar", deletePrevious = true).runIO shouldEqual "bar"
 
-          (root.renameNotebook _).expects("foo", "bar").once().returning(ZIO.succeed("bar"))
-          tr.renameNotebook("/foo", "/bar").runIO shouldEqual "bar"
+          (root.copyNotebook _).expects("foo", "bar", true).once().returning(ZIO.succeed("bar"))
+          tr.copyNotebook("/foo", "/bar", deletePrevious = true).runIO shouldEqual "bar"
         }
         "in a submount" in {
-          (mount1.renameNotebook _).expects("foo", "bar").once().returning(ZIO.succeed("bar"))
-          tr.renameNotebook("one/foo", "one/bar").runIO shouldEqual "one/bar"
+          (mount1.copyNotebook _).expects("foo", "bar", true).once().returning(ZIO.succeed("bar"))
+          tr.copyNotebook("one/foo", "one/bar", deletePrevious = true).runIO shouldEqual "one/bar"
 
-          (mount1.renameNotebook _).expects("foo", "bar").once().returning(ZIO.succeed("bar"))
-          tr.renameNotebook("/one/foo", "/one/bar").runIO shouldEqual "one/bar"
+          (mount1.copyNotebook _).expects("foo", "bar", true).once().returning(ZIO.succeed("bar"))
+          tr.copyNotebook("/one/foo", "/one/bar", deletePrevious = true).runIO shouldEqual "one/bar"
         }
       }
       "across different mounts" - {
@@ -193,7 +193,7 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
           (mount1.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
           (root.deleteNotebook _).expects("foo").returning(ZIO.unit)
 
-          tr.renameNotebook("foo", "one/bar").runIO shouldEqual "one/bar"
+          tr.copyNotebook("foo", "one/bar", deletePrevious = true).runIO shouldEqual "one/bar"
         }
         "from a submout to root" in {
           val nb = emptyNB("foo")
@@ -201,7 +201,7 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
           (root.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
           (mount1.deleteNotebook _).expects("foo").returning(ZIO.unit)
 
-          tr.renameNotebook("one/foo", "bar").runIO shouldEqual "bar"
+          tr.copyNotebook("one/foo", "bar", deletePrevious = true).runIO shouldEqual "bar"
         }
         "from a submount to another submount" in {
           val nb = emptyNB("foo")
@@ -209,9 +209,50 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
           (mount2.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
           (mount1.deleteNotebook _).expects("foo").returning(ZIO.unit)
 
-          tr.renameNotebook("one/foo", "two/bar").runIO shouldEqual "two/bar"
+          tr.copyNotebook("one/foo", "two/bar", deletePrevious = true).runIO shouldEqual "two/bar"
         }
       }
-    }
+
+      "should copy notebooks" - {
+        "within the same mount" - {
+          "in root" in {
+            (root.copyNotebook _).expects("foo", "bar", false).once().returning(ZIO.succeed("bar"))
+            tr.copyNotebook("foo", "bar", deletePrevious = false).runIO shouldEqual "bar"
+
+            (root.copyNotebook _).expects("foo", "bar", false).once().returning(ZIO.succeed("bar"))
+            tr.copyNotebook("/foo", "/bar", deletePrevious = false).runIO shouldEqual "bar"
+          }
+          "in a submount" in {
+            (mount1.copyNotebook _).expects("foo", "bar", false).once().returning(ZIO.succeed("bar"))
+            tr.copyNotebook("one/foo", "one/bar", deletePrevious = false).runIO shouldEqual "one/bar"
+
+            (mount1.copyNotebook _).expects("foo", "bar", false).once().returning(ZIO.succeed("bar"))
+            tr.copyNotebook("/one/foo", "/one/bar", deletePrevious = false).runIO shouldEqual "one/bar"
+          }
+        }
+        "across different mounts" - {
+          "from root to a submount" in {
+            val nb = emptyNB("foo")
+            (root.loadNotebook _).expects("foo").once().returning(ZIO.succeed(nb))
+            (mount1.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
+
+            tr.copyNotebook("foo", "one/bar", deletePrevious = false).runIO shouldEqual "one/bar"
+          }
+          "from a submout to root" in {
+            val nb = emptyNB("foo")
+            (mount1.loadNotebook _).expects("foo").once().returning(ZIO.succeed(nb))
+            (root.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
+
+            tr.copyNotebook("one/foo", "bar", deletePrevious = false).runIO shouldEqual "bar"
+          }
+          "from a submount to another submount" in {
+            val nb = emptyNB("foo")
+            (mount1.loadNotebook _).expects("foo").once().returning(ZIO.succeed(nb))
+            (mount2.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
+
+            tr.copyNotebook("one/foo", "two/bar", deletePrevious = false).runIO shouldEqual "two/bar"
+          }
+        }
+      }   }
   }
 }

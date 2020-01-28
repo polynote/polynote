@@ -36,7 +36,7 @@ object NotebookManager {
     def listRunning(): RIO[BaseEnv with GlobalEnv, List[String]]
     def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState]
     def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String]
-    def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
+    def copy(path: String, newPath: String, deletePrevious: Boolean): RIO[BaseEnv with GlobalEnv, String]
     def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit]
   }
 
@@ -92,21 +92,33 @@ object NotebookManager {
           actualPath => (broadcastAll.publish1(Some(CreateNotebook(ShortString(actualPath)))) *> broadcastAll.publish1(None)).as(actualPath)
         }
 
-      override def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] =
+      override def copy(path: String, newPath: String, deletePrevious: Boolean): RIO[BaseEnv with GlobalEnv, String] =
         openNotebooks.get(path).flatMap {
-          case None                      => repository.renameNotebook(path, newPath)
+          case None                      => repository.copyNotebook(path, newPath, deletePrevious)
           case Some((publisher, writer)) => repository.notebookExists(newPath).flatMap {
             case true  => ZIO.fail(new FileAlreadyExistsException(s"File $newPath already exists"))
-            case false => // if the notebook is already open, we have to stop writing, rename, and start writing again
-              writer.stop() *> repository.renameNotebook(path, newPath).foldM(
-                err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
-                realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
-                  writer => openNotebooks.put(path, (publisher, writer)).as(realPath)
-                }
-              )
+            case false =>
+              if (deletePrevious) {
+                // When renaming, if the notebook is already open, we have to stop writing, rename, and start
+                // writing again
+                writer.stop() *> repository.copyNotebook(path, newPath, deletePrevious).foldM(
+                  err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
+                  realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
+                    writer => openNotebooks.put(path, (publisher, writer)).as(realPath)
+                  }
+                )
+              } else {
+                // nothing special needs to be done in the copy case.
+                repository.copyNotebook(path, newPath, deletePrevious)
+              }
           }
         }.flatMap {
-          realPath => broadcastAll.publish1(Some(RenameNotebook(path, realPath))).as(realPath) <* broadcastAll.publish1(None)
+          realPath =>
+            if (deletePrevious){
+              broadcastAll.publish1(Some(RenameNotebook(path, realPath))).as(realPath) <* broadcastAll.publish1(None)
+            } else {
+              broadcastAll.publish1(Some(CreateNotebook(realPath, None))).as(realPath) <* broadcastAll.publish1(None)
+            }
         }
 
       override def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit] =
