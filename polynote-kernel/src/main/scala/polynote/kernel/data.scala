@@ -260,7 +260,7 @@ final case class PresenceUpdate(added: TinyList[Presence], removed: TinyList[Int
 }
 object PresenceUpdate extends KernelStatusUpdateCompanion[PresenceUpdate](5)
 
-final case class PresenceSelection(presenceId: Int, cellID: CellID, start: Int, length: Int) extends KernelStatusUpdate {
+final case class PresenceSelection(presenceId: Int, cellID: CellID, range: (Int, Int)) extends KernelStatusUpdate {
   override def isRelevant(subscriber: Int): Boolean = presenceId != subscriber
 }
 object PresenceSelection extends KernelStatusUpdateCompanion[PresenceSelection](6)

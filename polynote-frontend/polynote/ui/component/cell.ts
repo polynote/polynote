@@ -482,13 +482,11 @@ export class CodeCell extends Cell {
         if (selection) {
             const model = this.editor.getModel();
             if (model) {
-                const startOffs = model.getOffsetAt(selection.getStartPosition());
-                const endOffs = model.getOffsetAt(selection.getEndPosition());
-
+                const range = new PosRange(model.getOffsetAt(selection.getStartPosition()), model.getOffsetAt(selection.getEndPosition()));
                 if (selection.getDirection() === SelectionDirection.RTL) {
-                    this.notebook.setCurrentSelection(this.id, endOffs, startOffs);
+                    this.notebook.setCurrentSelection(this.id, range.reversed);
                 } else {
-                    this.notebook.setCurrentSelection(this.id, startOffs, endOffs);
+                    this.notebook.setCurrentSelection(this.id, range);
                 }
             }
         }
@@ -931,12 +929,12 @@ export class CodeCell extends Cell {
         }
     }
 
-    setPresence(id: number, name: string, color: string, start: number, length: number) {
+    setPresence(id: number, name: string, color: string, range: PosRange) {
         const model = this.editor.getModel();
         if (model) {
             const old = this.presenceMarkers[id] ? this.presenceMarkers[id] : [];
-            const startPos = model.getPositionAt(start);
-            const endPos = model.getPositionAt(start + length);
+            const startPos = model.getPositionAt(range.start);
+            const endPos = model.getPositionAt(range.end);
             const newDecorations = [
                 {
                     range: monaco.Range.fromPositions(endPos, endPos),
@@ -947,7 +945,7 @@ export class CodeCell extends Cell {
                     }
                 }
             ];
-            if (length != 0) {
+            if (range.start != range.end) {
                 newDecorations.unshift({
                     range: monaco.Range.fromPositions(startPos, endPos),
                     options: {

@@ -26,7 +26,7 @@ class KernelSubscriber private[server] (
   lazy val presence: Presence = {
     val (name, avatar) = identity match {
       case Some(identity) => (identity.name, identity.avatar)
-      case None           => ("Anonymous", None)
+      case None           => (s"Anonymous ($id)", None)
     }
     Presence(id, name, avatar.map(TinyString.apply))
   }
@@ -38,8 +38,8 @@ class KernelSubscriber private[server] (
   def checkPermission(permission: String => Permission): ZIO[SessionEnv, Throwable, Unit] =
     currentPath.map(permission) >>= IdentityProvider.checkPermission
 
-  def setSelection(cellID: CellID, start: Int, length: Int): UIO[Unit] =
-    currentSelection.set(Some(PresenceSelection(id, cellID, start, length)))
+  def setSelection(cellID: CellID, range: (Int, Int)): UIO[Unit] =
+    currentSelection.set(Some(PresenceSelection(id, cellID, range)))
 
   def getSelection: UIO[Option[PresenceSelection]] = currentSelection.get
 

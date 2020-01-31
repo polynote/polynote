@@ -18,7 +18,7 @@ import {Either, Left, Right} from "../../data/types";
 import * as Tinycon from "tinycon";
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
-import {SetSelection} from "../../data/messages";
+import {CurrentSelection} from "../../data/messages";
 
 const notebooks: Record<string, NotebookUI> = {};
 
@@ -179,7 +179,7 @@ export class NotebookUI extends UIMessageTarget {
                 added.forEach(p => this.otherUsers[p.id] = new PresenceColor(p, this.getNextColor()));
                 removed.forEach(id => { this.removePresenceSelection(id); delete this.otherUsers[id] });
             })
-            .when(messages.PresenceSelection, (id, cellId, start, length) => this.setPresenceSelection(id, cellId, new PosRange(start, start + length)))
+            .when(messages.PresenceSelection, (id, cellId, range) => this.setPresenceSelection(id, cellId, range))
         );
 
         this.socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
@@ -307,14 +307,14 @@ export class NotebookUI extends UIMessageTarget {
         })
     }
 
-    setCurrentSelection(cellId: number, startPos: number, endPos: number) {
+    setCurrentSelection(cellId: number, range: PosRange) {
         if (this.currentSelectionTimeout) {
             window.clearTimeout(this.currentSelectionTimeout);
         }
 
         this.currentSelectionTimeout = window.setTimeout(
             () => {
-                this.socket.send(new SetSelection(cellId, startPos, endPos - startPos));
+                this.socket.send(new CurrentSelection(cellId, range));
                 this.currentSelectionTimeout = undefined;
             },
             50);
@@ -327,7 +327,7 @@ export class NotebookUI extends UIMessageTarget {
             this.otherUserSelections[id] = [cellId, pos];
             const cell = this.cellUI.getCell(cellId);
             if (cell instanceof CodeCell) {
-                cell.setPresence(id, presence.presence.name, presence.color, pos.start, pos.end - pos.start);
+                cell.setPresence(id, presence.presence.name, presence.color, pos);
             }
         }
     }

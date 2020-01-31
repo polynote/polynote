@@ -377,13 +377,13 @@ export class PresenceUpdate extends KernelStatusUpdate {
 }
 
 export class PresenceSelection extends KernelStatusUpdate {
-    static codec = combined(int32, uint16, int32, int32).to(PresenceSelection);
+    static codec = combined(int32, uint16, PosRange.codec).to(PresenceSelection);
     static get msgTypeId() { return 6; }
     static unapply(inst: PresenceSelection): ConstructorParameters<typeof PresenceSelection> {
-        return [inst.presenceId, inst.cellId, inst.start, inst.length];
+        return [inst.presenceId, inst.cellId, inst.range];
     }
 
-    constructor(readonly presenceId: number, readonly cellId: number, readonly start: number, readonly length: number) {
+    constructor(readonly presenceId: number, readonly cellId: number, readonly range: PosRange) {
         super();
         Object.freeze(this);
     }
@@ -713,14 +713,14 @@ export class RunningKernels extends Message {
     }
 }
 
-export class SetSelection extends Message {
-    static codec = combined(uint16, int32, int32).to(SetSelection);
+export class CurrentSelection extends Message {
+    static codec = combined(uint16, PosRange.codec).to(CurrentSelection);
     static get msgTypeId() { return 28; }
-    static unapply(inst: SetSelection): ConstructorParameters<typeof SetSelection> {
-        return [inst.cellID, inst.start, inst.length];
+    static unapply(inst: CurrentSelection): ConstructorParameters<typeof CurrentSelection> {
+        return [inst.cellID, inst.range];
     }
 
-    constructor(readonly cellID: number, readonly start: number, readonly length: number) {
+    constructor(readonly cellID: number, readonly range: PosRange) {
         super();
         Object.freeze(this);
     }
@@ -755,7 +755,7 @@ Message.codecs = [
     RenameNotebook,  // 25
     DeleteNotebook,  // 26
     null as unknown as typeof Message, // 27 - reserve for CopyNotebook
-    SetSelection,    // 28
+    CurrentSelection,    // 28
 ];
 
 

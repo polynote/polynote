@@ -168,7 +168,7 @@ class NotebookSession(
         _          <- PublishMessage(nv.copy(globalVersion = versioned._1))
     } yield ()
 
-    case CurrentSelection(cellID, start, length) => subscriber.setSelection(cellID, start, length)
+    case CurrentSelection(cellID, range) => subscriber.setSelection(cellID, range)
   }
 
 }

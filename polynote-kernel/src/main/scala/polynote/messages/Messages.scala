@@ -339,5 +339,5 @@ object ModifyStream extends MessageCompanion[ModifyStream](19) {
 final case class ReleaseHandle(handleType: HandleType, handle: Int) extends Message
 object ReleaseHandle extends MessageCompanion[ReleaseHandle](20)
 
-final case class CurrentSelection(cellID: CellID, start: Int, length: Int) extends Message
+final case class CurrentSelection(cellID: CellID, range: (Int, Int)) extends Message
 object CurrentSelection extends MessageCompanion[CurrentSelection](28)
