@@ -9,11 +9,11 @@ import fs2.concurrent.Queue
 import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
-import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, StreamOps, StreamingHandles, UpdatedTasks}
+import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, PresenceUpdate, StreamOps, StreamingHandles, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
-import polynote.messages.{CancelTasks, CellID, CellResult, ClearOutput, CompletionsAt, Error, HandleData, KernelStatus, Message, ModifyStream, NotebookCell, NotebookUpdate, NotebookVersion, ParametersAt, ReleaseHandle, RunCell, ShortList, StartKernel, UpdateConfig}
+import polynote.messages._
 import polynote.server.SocketSession.sessionId
 import polynote.server.auth.{Permission, UserIdentity}
 import zio.{Promise, RIO, Task, UIO, URIO, ZIO}
@@ -86,6 +86,9 @@ class NotebookSession(
       _        <- if (status.alive) publishRunningKernelState(subscriber.publisher) else ZIO.unit
       tasks    <- subscriber.publisher.taskManager.list
       _        <- PublishMessage(KernelStatus(UpdatedTasks(tasks)))
+      presence <- subscriber.publisher.subscribersPresent
+      _        <- PublishMessage(KernelStatus(PresenceUpdate(presence.map(_._1), Nil))) // TODO: if there are tons of subscribers, disable presence stuff
+      _        <- presence.flatMap(_._2.toList).map(sel => PublishMessage(KernelStatus(sel))).sequence
     } yield ()
   }
 
@@ -164,16 +167,18 @@ class NotebookSession(
       versioned  <- subscriber.publisher.latestVersion
         _          <- PublishMessage(nv.copy(globalVersion = versioned._1))
     } yield ()
+
+    case CurrentSelection(cellID, start, length) => subscriber.setSelection(cellID, start, length)
   }
 
 }
 
 object NotebookSession {
-  def apply(path: String): ZIO[BaseEnv with GlobalEnv with NotebookManager, Throwable, NotebookSession] = for {
+  def apply(path: String): ZIO[SessionEnv with NotebookManager, Throwable, NotebookSession] = for {
     publisher        <- NotebookManager.open(path)
     input            <- Queue.unbounded[Task, WebSocketFrame]
     output           <- Queue.unbounded[Task, WebSocketFrame]
-    publishMessage   <- Env.add[BaseEnv with GlobalEnv with NotebookManager](PublishMessage.of(Publish(output).contraFlatMap(toFrame)))
+    publishMessage   <- Env.add[SessionEnv with NotebookManager](PublishMessage.of(Publish(output).contraFlatMap(toFrame)))
     subscriber       <- publisher.subscribe()
     sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
     streamingHandles <- Env.enrichM[BaseEnv](StreamingHandles.make(sessionId))

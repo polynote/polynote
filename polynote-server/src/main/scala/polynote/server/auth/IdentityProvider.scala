@@ -22,6 +22,7 @@ import ZIO.effectTotal
 
 trait Identity {
   def name: String
+  def avatar: Option[String] = None
 }
 
 case class BasicIdentity(name: String) extends Identity

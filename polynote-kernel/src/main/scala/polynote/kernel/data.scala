@@ -119,7 +119,14 @@ final case class Signatures(
   activeSignature: Byte,
   activeParameter: Byte)
 
-sealed trait KernelStatusUpdate
+sealed trait KernelStatusUpdate {
+  def isRelevant(subscriber: Int): Boolean
+  def forSubscriber(subscriber: Int): KernelStatusUpdate = this
+}
+
+sealed trait AlwaysRelevant { self: KernelStatusUpdate =>
+  override def isRelevant(subscriber: Int): Boolean = true
+}
 
 object KernelStatusUpdate {
   implicit val discriminated: Discriminated[KernelStatusUpdate, Byte] = Discriminated(byte)
@@ -139,7 +146,7 @@ final case class SymbolInfo(
 final case class UpdatedSymbols(
   newOrUpdated: TinyList[SymbolInfo],
   removed: TinyList[TinyString]
-) extends KernelStatusUpdate
+) extends KernelStatusUpdate with AlwaysRelevant
 
 object UpdatedSymbols extends KernelStatusUpdateCompanion[UpdatedSymbols](0)
 
@@ -215,13 +222,13 @@ object TaskInfo {
 
 final case class UpdatedTasks(
   tasks: TinyList[TaskInfo]
-) extends KernelStatusUpdate
+) extends KernelStatusUpdate with AlwaysRelevant
 
 object UpdatedTasks extends KernelStatusUpdateCompanion[UpdatedTasks](1) {
   def one(info: TaskInfo): UpdatedTasks = UpdatedTasks(List(info))
 }
 
-final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelStatusUpdate {
+final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelStatusUpdate with AlwaysRelevant {
   def setBusy: KernelBusyState = copy(busy = true)
   def setIdle: KernelBusyState = copy(busy = false)
   def setAlive: KernelBusyState = copy(alive = true)
@@ -230,7 +237,7 @@ final case class KernelBusyState(busy: Boolean, alive: Boolean) extends KernelSt
 object KernelBusyState extends KernelStatusUpdateCompanion[KernelBusyState](2)
 
 //                                           key          html
-final case class KernelInfo(content: TinyMap[ShortString, String]) extends KernelStatusUpdate {
+final case class KernelInfo(content: TinyMap[ShortString, String]) extends KernelStatusUpdate with AlwaysRelevant {
   def combine(other: KernelInfo): KernelInfo = {
     copy(TinyMap(content ++ other.content))
   }
@@ -243,5 +250,17 @@ object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3) {
   }.toMap))
 }
 
-final case class ExecutionStatus(cellID: CellID, pos: Option[(Int, Int)]) extends KernelStatusUpdate
+final case class ExecutionStatus(cellID: CellID, pos: Option[(Int, Int)]) extends KernelStatusUpdate with AlwaysRelevant
 object ExecutionStatus extends KernelStatusUpdateCompanion[ExecutionStatus](4)
+
+final case class Presence(id: Int, name: TinyString, avatar: Option[ShortString])
+final case class PresenceUpdate(added: TinyList[Presence], removed: TinyList[Int]) extends KernelStatusUpdate with AlwaysRelevant {
+  override def forSubscriber(subscriber: Int): KernelStatusUpdate =
+    copy(added = added.filterNot(_.id == subscriber), removed = removed.filterNot(_ == subscriber))
+}
+object PresenceUpdate extends KernelStatusUpdateCompanion[PresenceUpdate](5)
+
+final case class PresenceSelection(presenceId: Int, cellID: CellID, start: Int, length: Int) extends KernelStatusUpdate {
+  override def isRelevant(subscriber: Int): Boolean = presenceId != subscriber
+}
+object PresenceSelection extends KernelStatusUpdateCompanion[PresenceSelection](6)

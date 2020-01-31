@@ -5,6 +5,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 
 import cats.effect.concurrent.Ref
+import cats.instances.list._
+import cats.syntax.traverse._
 import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.kernel.util.{Publish, RefMap}
@@ -14,12 +16,12 @@ import polynote.env.ops._
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
 import polynote.messages.{CellID, CellResult, KernelStatus, Message, Notebook, NotebookUpdate, RenameNotebook, ShortList, ShortString}
-import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelStatusUpdate, Result, ScalaCompiler, Signatures, TaskB, TaskManager}
+import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelStatusUpdate, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, TaskB, TaskManager}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Promise, RIO, Semaphore, Task, UIO, ZIO}
-import zio.interop.catz._
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.logging.Logging
+import polynote.server.auth.UserIdentity
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -85,6 +87,14 @@ class KernelPublisher private (
   }
 
   def latestVersion: Task[(GlobalVersion, Notebook)] = versionedNotebook.get
+
+  def subscribersPresent: UIO[List[(Presence, Option[PresenceSelection])]] = subscribers.values.flatMap {
+    subscribers => subscribers.map {
+      subscriber => subscriber.getSelection.map {
+        presenceSelection => subscriber.presence -> presenceSelection
+      }
+    }.sequence
+  }
 
   def update(subscriberId: SubscriberId, update: NotebookUpdate): Task[Unit] =
     publishUpdate.publish1((subscriberId, update))
@@ -162,7 +172,7 @@ class KernelPublisher private (
     } yield ()
   }.ignore
 
-  def subscribe(): RIO[BaseEnv with GlobalEnv with PublishMessage, KernelSubscriber] = subscribing.withPermit {
+  def subscribe(): RIO[BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = subscribing.withPermit {
     for {
       isClosed           <- closed.isDone
       _                  <- if (isClosed) ZIO.fail(PublisherClosed) else ZIO.unit
@@ -170,6 +180,8 @@ class KernelPublisher private (
       subscriber         <- KernelSubscriber(subscriberId, this)
       _                  <- subscribers.put(subscriberId, subscriber)
       _                  <- subscriber.closed.await.flatMap(_ => removeSubscriber(subscriberId)).fork
+      _                  <- status.publish1(PresenceUpdate(List(subscriber.presence), Nil))
+      _                  <- subscriber.selections.through(status.publish).compile.drain.fork
     } yield subscriber
   }
 
@@ -180,6 +192,7 @@ class KernelPublisher private (
     _          <- subscribers.remove(id)
     allClosed  <- subscribers.isEmpty
     kernel     <- kernelRef.get
+    _          <- status.publish1(PresenceUpdate(Nil, List(id)))
     _          <- if (allClosed && kernel.isEmpty) {
       latestVersion.map(_._2.path).flatMap(path => Logging.info(s"Closing $path (idle with no more subscribers)")) *> close()
     } else ZIO.unit

@@ -26,25 +26,39 @@
   src: url(/style/fonts/Hasklig-BoldIt.otf) format("opentype");
 }
 
-@ui-background: rgb(245, 245, 245);
-@ui-background-bright: lighten(@ui-background, 20%);
-@ui-background-dark: darken(@ui-background, 20%);
-@ui-background-accent: rgb(198, 207, 223);
-@ui-sidebar-header: rgb(226, 230, 236);
-@ui-border:     rgb(225, 225, 225);
-@ui-border-light: #efefef;
-@ui-border-dark: darken(@ui-border, 20%);
-@ui-selected:   rgb(67, 104, 234);
-@ui-text:       rgb(50, 60, 68);
-@code-fonts:    'Hasklig', 'Fira Code', 'Menlo', fixed;
+@ui-background:                rgb(245, 245, 245);
+@ui-background-bright:         lighten(@ui-background, 20%);
+@ui-background-dark:           darken(@ui-background, 20%);
+@ui-background-accent:         rgb(198, 207, 223);
+@ui-sidebar-header:            rgb(226, 230, 236);
+@ui-border:                    rgb(225, 225, 225);
+@ui-border-light:              #efefef;
+@ui-border-dark:               darken(@ui-border, 20%);
+@ui-selected:                  rgb(67, 104, 234);
+@ui-text:                      rgb(50, 60, 68);
+@code-fonts:                   'Hasklig', 'Fira Code', 'Menlo', fixed;
 
-@toolbar-height: 68px;
-@cell-margin-width: 6em;
-@cell-left-border-width: 8px;
-@tab-view-height: 1.5em;
+@toolbar-height:               68px;
+@cell-margin-width:            6em;
+@cell-left-border-width:       8px;
+@tab-view-height:              1.5em;
 @tab-view-height-plus-padding: 2.5em;
 
-@line-highlight-color: rgba(253, 246, 227, 1.0);
+@line-highlight-color:         rgba(253, 246, 227, 1.0);
+
+
+/*
+  Presence colors (other people's cursors) – taken mostly from https://vega.github.io/vega/docs/schemes/ (various schemes mix & match)
+ */
+@presence0: #ff7f0e;
+@presence1: #2ca02c;
+@presence2: #d62728;
+@presence3: #9467bd;
+@presence4: #f2cf5b;
+@presence5: #e377c2;
+@presence6: #ff9da6;
+@presence7: #bcbd22;
+@presence8: #17becf;
 
 body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
@@ -3129,9 +3143,41 @@ button.dialog-button {
   }
 }
 
+/*
+  Presence colors (other people's cursors) – taken from https://vega.github.io/vega/docs/schemes/#pastel1
+ */
+.presence-color(@color) {
+  background-color: fadeout(@color, 70%);
+
+  &.ppc { // presence point cursor – where their cursor actually is (at the end of the selection)
+    width: 1pt !important;
+    margin-left: -.5pt;
+    background-color: @color;
+    &:after {
+      content: ' ';
+      position: absolute;
+      top: -2pt;
+      left: -1.5pt;
+      width: 4pt;
+      height: 4pt;
+      background-color: @color
+    }
+  }
+}
+
+.presence0 { .presence-color(@presence0) }
+.presence1 { .presence-color(@presence1) }
+.presence2 { .presence-color(@presence2) }
+.presence3 { .presence-color(@presence3) }
+.presence4 { .presence-color(@presence4) }
+.presence5 { .presence-color(@presence5) }
+.presence6 { .presence-color(@presence6) }
+.presence7 { .presence-color(@presence7) }
+.presence8 { .presence-color(@presence8) }
+
 @keyframes highlight {
   from {
-    background-color: rgba(253, 246, 227, 1.0);
+    background-color: @line-highlight-color;
   }
 
   50% {
