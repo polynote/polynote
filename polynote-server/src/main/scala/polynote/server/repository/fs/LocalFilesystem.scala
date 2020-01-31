@@ -42,13 +42,9 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 
   private def createDirs(path: Path): RIO[BaseEnv, Unit] = effectBlocking(Files.createDirectories(path.getParent))
 
-  override def move(from: Path, to: Path): RIO[BaseEnv, Unit] = for {
-    _ <- createDirs(to)
-  } yield Files.move(from, to)
+  override def move(from: Path, to: Path): RIO[BaseEnv, Unit] = createDirs(to).map(_ => Files.move(from, to))
 
-  override def copy(from: Path, to: Path): RIO[BaseEnv, Unit] = for {
-    _ <- createDirs(to)
-  } yield Files.copy(from, to)
+  override def copy(from: Path, to: Path): RIO[BaseEnv, Unit] = createDirs(to).map(_ => Files.copy(from, to))
 
   override def delete(path: Path): RIO[BaseEnv, Unit] =
     exists(path).flatMap {
