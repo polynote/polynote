@@ -21,6 +21,7 @@ trait ZIOSpec extends Runtime[Clock with Console with System with Random with Bl
 
   // TODO: should test platform behave differently? Isolate per suite?
   val Platform: Platform = PlatformLive.Default
+    .withReportFailure(_ => ()) // suppress printing error stack traces by default
 
   implicit class ConfigIORunOps[A](val self: ZIO[Environment with Config, Throwable, A]) {
     def runIO(config: PolynoteConfig): A = self.provideSomeM(Env.enrich[Environment](Config.of(config))).runIO()
