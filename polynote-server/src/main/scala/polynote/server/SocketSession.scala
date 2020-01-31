@@ -110,11 +110,11 @@ class SessionHandler(
     case RenameNotebook(path, newPath) =>
       checkPermission(Permission.CreateNotebook(newPath)) *>
         checkPermission(Permission.DeleteNotebook(path)) *>
-        notebookManager.copy(path, newPath, deletePrevious = true).unit
+        notebookManager.rename(path, newPath).unit
 
     case CopyNotebook(path, newPath) =>
       checkPermission(Permission.CreateNotebook(newPath)) *>
-        notebookManager.copy(path, newPath, deletePrevious = false).unit
+        notebookManager.copy(path, newPath).unit
 
     case DeleteNotebook(path) =>
       checkPermission(Permission.DeleteNotebook(path)) *> notebookManager.delete(path)

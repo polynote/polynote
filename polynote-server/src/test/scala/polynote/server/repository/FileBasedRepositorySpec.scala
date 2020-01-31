@@ -18,15 +18,13 @@ import scala.collection.JavaConverters._
 
 class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfterEach with MockFactory with MockServerSpec {
 
-  private val tmpDir = Files.createTempDirectory("foo")
-  println(s"tmpDir is $tmpDir")
-//  tmpDir.toFile.deleteOnExit()
+  private val tmpDir = Paths.get("/notebooks/")
 
   private val tmpFS = new NotebookFilesystem {
 
     private val notebooks = new ConcurrentHashMap[Path, String]()
 
-    override def readPathAsString(path: Path): RIO[BaseEnv, String] = ZIO(notebooks.get(tmpDir.resolve(path)))
+    override def readPathAsString(path: Path): RIO[BaseEnv, String] = withKeyContent(path)((_, content) => content)
 
     override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = ZIO(notebooks.put(tmpDir.resolve(path), content))
 
@@ -38,20 +36,27 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
 
     override def exists(path: Path): RIO[BaseEnv, Boolean] = ZIO(notebooks.containsKey(tmpDir.resolve(path)))
 
-    override def copy(from: Path, to: Path, deleteFrom: Boolean): RIO[BaseEnv, Unit] = ZIO {
-      val fromKey = tmpDir.resolve(from)
-      val toKey = tmpDir.resolve(to)
-
-      val content = notebooks.get(fromKey)
-      notebooks.put(toKey, content)
-      if (deleteFrom) {
+    override def move(from: Path, to: Path): RIO[BaseEnv, Unit] = withKeyContent(from) {
+      (fromKey, content) =>
+        val toKey = tmpDir.resolve(to)
+        notebooks.put(toKey, content)
         notebooks.remove(fromKey)
-      }
+    }
+
+    override def copy(from: Path, to: Path): RIO[BaseEnv, Unit] = withKeyContent(from) {
+      (_, content) =>
+        val toKey = tmpDir.resolve(to)
+        notebooks.put(toKey, content)
     }
 
     override def delete(path: Path): RIO[BaseEnv, Unit] = ZIO(notebooks.remove(tmpDir.resolve(path)))
 
     override def init(path: Path): RIO[BaseEnv, Unit] = ZIO.unit
+
+    private def withKeyContent[T](k: Path)(f: (Path, String) => T) = ZIO {
+      val key = tmpDir.resolve(k)
+      f(key, notebooks.get(key))
+    }
   }
   private val repo = new FileBasedRepository(tmpDir, fs = tmpFS)
 
@@ -142,8 +147,9 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
 
     "should rename notebooks" in {
       tmpFS.writeStringToPath(Paths.get("foo.ipynb"), "foo").runIO
+      repo.notebookExists("foo.ipynb").runIO shouldBe true
 
-      repo.copyNotebook("foo.ipynb", "bar.ipynb", deletePrevious = true).runIO
+      repo.renameNotebook("foo.ipynb", "bar.ipynb").runIO
 
       repo.notebookExists("foo.ipynb").runIO shouldEqual false
       repo.notebookExists("bar.ipynb").runIO shouldEqual true
@@ -153,7 +159,7 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
     "should copy notebooks" in {
       tmpFS.writeStringToPath(Paths.get("foo.ipynb"), "foo").runIO
 
-      repo.copyNotebook("foo.ipynb", "bar.ipynb", deletePrevious = false).runIO
+      repo.copyNotebook("foo.ipynb", "bar.ipynb").runIO
 
       repo.notebookExists("foo.ipynb").runIO shouldEqual true
       repo.notebookExists("bar.ipynb").runIO shouldEqual true

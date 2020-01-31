@@ -17,12 +17,9 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
     content <- readBytes(Files.newInputStream(path))
   } yield new String(content.toArray, StandardCharsets.UTF_8)
 
-  override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = effectBlocking {
-
-    Files.createDirectories(path.getParent)
-
-    Files.write(path, content.getBytes(StandardCharsets.UTF_8))
-  }.unit
+  override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = for {
+    _ <- createDirs(path)
+  } yield Files.write(path, content.getBytes(StandardCharsets.UTF_8))
 
   private def readBytes(is: => InputStream): RIO[BaseEnv, Chunk.Bytes] = {
     for {
@@ -41,19 +38,17 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
     } else ZIO.unit
   }
 
-  override def exists(path: Path): RIO[BaseEnv, Boolean] = ZIO(path.toFile.exists())
+  override def exists(path: Path): RIO[BaseEnv, Boolean] = effectBlocking(path.toFile.exists())
 
-  override def copy(from: Path, to: Path, deleteFrom: Boolean): RIO[BaseEnv, Unit] = effectBlocking {
-    val dir = to.getParent.toFile
-    if (!dir.exists()) {
-      dir.mkdirs()
-    }
-    if (deleteFrom) {
-      Files.move(from, to)
-    } else {
-      Files.copy(from, to)
-    }
-  }
+  private def createDirs(path: Path): RIO[BaseEnv, Unit] = effectBlocking(Files.createDirectories(path.getParent))
+
+  override def move(from: Path, to: Path): RIO[BaseEnv, Unit] = for {
+    _ <- createDirs(to)
+  } yield Files.move(from, to)
+
+  override def copy(from: Path, to: Path): RIO[BaseEnv, Unit] = for {
+    _ <- createDirs(to)
+  } yield Files.copy(from, to)
 
   override def delete(path: Path): RIO[BaseEnv, Unit] =
     exists(path).flatMap {
@@ -61,9 +56,5 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
       case true  => effectBlocking(Files.delete(path))
     }
 
-  override def init(path: Path): RIO[BaseEnv, Unit] = effectBlocking {
-    if (!Files.exists(path)) {
-      Files.createDirectories(path)
-    }
-  }
+  override def init(path: Path): RIO[BaseEnv, Unit] = createDirs(path)
 }
