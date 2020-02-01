@@ -1,24 +1,45 @@
 "use strict";
 
-import {blockquote, button, div, DropdownElement, iconButton, span, tag, TagElement} from "../util/tags";
+import {
+    blockquote,
+    button,
+    details,
+    div,
+    dropdown,
+    DropdownElement,
+    iconButton,
+    span,
+    tag,
+    TagElement
+} from "../util/tags";
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+import {
+    editor,
+    IDisposable,
+    IKeyboardEvent,
+    IPosition,
+    KeyCode,
+    languages,
+    SelectionDirection
+} from 'monaco-editor/esm/vs/editor/editor.api';
 // @ts-ignore (ignore use of non-public monaco api)
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent'
 import {
     ClearResults,
+    ClientResult,
     CompileErrors,
+    ExecutionInfo,
     KernelErrorWithCause,
     KernelReport,
     Output,
     PosRange,
     Result,
-    ResultValue, RuntimeError
+    ResultValue,
+    RuntimeError
 } from "../../data/result"
 import {RichTextEditor} from "./text_editor";
 import {SelectCell, UIMessageTarget} from "../util/ui_event"
 import {Diff} from '../../util/diff'
-import {details, dropdown} from "../util/tags";
-import {ClientResult, ExecutionInfo} from "../../data/result";
 import {preferences} from "../util/storage";
 import {createVim} from "../util/vim";
 import {KeyAction} from "../util/hotkeys";
@@ -28,16 +49,16 @@ import {Interpreters} from "./ui";
 import {displayContent, parseContentType, prettyDuration} from "./display_content";
 import {CellMetadata} from "../../data/data";
 import {ContentEdit, Delete, Insert} from "../../data/content_edit";
-import { editor, IDisposable, IKeyboardEvent, IPosition, KeyCode, languages } from "monaco-editor/esm/vs/editor/editor.api";
+import {FoldingController, SuggestController} from "../monaco/extensions";
+import {CurrentNotebook} from "./current_notebook";
+import {NotebookUI} from "./notebook";
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
-import {FoldingController, SuggestController} from "../monaco/extensions";
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
-import {CurrentNotebook} from "./current_notebook";
 import SignatureHelpResult = languages.SignatureHelpResult;
-import {NotebookUI} from "./notebook";
+import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -319,6 +340,8 @@ export class CodeCell extends Cell {
     private execDurationUpdater: number;
     public vim: any | null;
 
+    private presenceMarkers: Record<number, string[]> = {};
+
     static keyMapOverrides = new Map([
         [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell: CodeCell) => {
             if (cell.vim && !cell.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected
@@ -421,11 +444,13 @@ export class CodeCell extends Cell {
         });
 
         this.editor.onDidChangeCursorSelection(evt => {
-            // we only care if the user has selected more than a single character
+            // deep link - we only care if the user has selected more than a single character
             if ([0, 3].includes(evt.reason)) { // 0 -> NotSet, 3 -> Explicit
                 this.setUrl(evt.selection);
             }
 
+            // presence
+            this.notifySelection();
         });
 
         (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()!.then(
@@ -449,6 +474,21 @@ export class CodeCell extends Cell {
 
         if (this.metadata && this.metadata.executionInfo) {
             this.setExecutionInfo(this.metadata.executionInfo);
+        }
+    }
+
+    notifySelection() {
+        const selection = this.editor.getSelection();
+        if (selection) {
+            const model = this.editor.getModel();
+            if (model) {
+                const range = new PosRange(model.getOffsetAt(selection.getStartPosition()), model.getOffsetAt(selection.getEndPosition()));
+                if (selection.getDirection() === SelectionDirection.RTL) {
+                    this.notebook.setCurrentSelection(this.id, range.reversed);
+                } else {
+                    this.notebook.setCurrentSelection(this.id, range);
+                }
+            }
         }
     }
 
@@ -889,6 +929,43 @@ export class CodeCell extends Cell {
         }
     }
 
+    setPresence(id: number, name: string, color: string, range: PosRange) {
+        const model = this.editor.getModel();
+        if (model) {
+            const old = this.presenceMarkers[id] ? this.presenceMarkers[id] : [];
+            const startPos = model.getPositionAt(range.start);
+            const endPos = model.getPositionAt(range.end);
+            const newDecorations = [
+                {
+                    range: monaco.Range.fromPositions(endPos, endPos),
+                    options: {
+                        className: `ppc ${color}`,
+                        stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                        hoverMessage: { value: name }
+                    }
+                }
+            ];
+            if (range.start != range.end) {
+                newDecorations.unshift({
+                    range: monaco.Range.fromPositions(startPos, endPos),
+                    options: {
+                        className: `${color}`,
+                        stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                        hoverMessage: { value: name }
+                    }
+                });
+            }
+            this.presenceMarkers[id] = this.editor.deltaDecorations(old, newDecorations);
+        }
+    }
+
+    removePresence(id: number) {
+        if (this.presenceMarkers[id]) {
+            this.editor.deltaDecorations(this.presenceMarkers[id], []);
+            delete this.presenceMarkers[id];
+        }
+    }
+
     clearResult() {
         monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), []);
         this.container.classList.remove('error', 'success');
@@ -922,6 +999,9 @@ export class CodeCell extends Cell {
     makeActive() {
         super.makeActive();
         this.activateVim();
+
+        // presence
+        this.notifySelection();
     }
 
     focus() {

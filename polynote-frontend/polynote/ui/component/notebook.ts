@@ -5,21 +5,26 @@ import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
 import {Cell, CodeCell, TextCell} from "./cell";
 import match from "../../util/match";
-import {ClearResults, ClientResult, KernelError, Output, Result, ResultValue} from "../../data/result";
+import {ClearResults, ClientResult, KernelError, Output, PosRange, Result, ResultValue} from "../../data/result";
 import {DataRepr, DataStream, StreamingDataRepr} from "../../data/value_repr";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
 import {SocketSession} from "../../comms";
 import {MainUI} from "./ui";
-import {CompletionCandidate, Message, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
+import {CompletionCandidate, Message, Presence, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
 import {languages, Range} from "monaco-editor";
 import {ContentEdit} from "../../data/content_edit";
 import {Either, Left, Right} from "../../data/types";
 import * as Tinycon from "tinycon";
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
+import {CurrentSelection} from "../../data/messages";
 
 const notebooks: Record<string, NotebookUI> = {};
+
+class PresenceColor {
+    constructor(readonly presence: Presence, readonly color: string) {}
+}
 
 export class NotebookUI extends UIMessageTarget {
     readonly cellUI: NotebookCellsUI;
@@ -33,6 +38,19 @@ export class NotebookUI extends UIMessageTarget {
     private runningCell?: number;
     private closed: boolean = false;
     readonly socket: SocketSession;
+
+    private otherUsers: Record<number, PresenceColor> = {};
+    private otherUserSelections: Record<number, [number, PosRange]> = {};
+
+    private currentSelectionTimeout?: number = undefined;
+
+    private nextColor = 0;
+
+    private getNextColor() {
+        this.nextColor++;
+        this.nextColor = this.nextColor % 8;
+        return `presence${this.nextColor}`;
+    }
 
     static getOrCreate(eventParent: UIMessageTarget, path: string, mainUI: MainUI) {
         if (notebooks[path])
@@ -148,20 +166,21 @@ export class NotebookUI extends UIMessageTarget {
 
         this.socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 
-        this.socket.addMessageListener(messages.KernelStatus, (update) => {
-            if (update instanceof messages.UpdatedTasks) {
-                update.tasks.forEach((task: TaskInfo) => {
-                    this.handleTaskUpdate(task);
-                });
-            } else if (update instanceof messages.KernelBusyState) {
-                const state = (update.busy && 'busy') || (!update.alive && 'dead') || 'idle';
-                this.kernelUI.setKernelState(state);
-            } else if (update instanceof messages.KernelInfo) {
-                this.kernelUI.updateInfo(update.content);
-            } else if (update instanceof messages.ExecutionStatus) {
-                    this.cellUI.setExecutionHighlight(update.cellId, update.pos || null);
-            }
-        });
+        this.socket.addMessageListener(messages.KernelStatus, (update) => match(update)
+            .when(messages.UpdatedTasks, (tasks) => tasks.forEach((task: TaskInfo) => {
+                this.handleTaskUpdate(task);
+            }))
+            .when(messages.KernelBusyState,
+                (busy, alive) => this.kernelUI.setKernelState(
+                    (busy && 'busy') || (!alive && 'dead') || 'idle'))
+            .when(messages.KernelInfo, info => this.kernelUI.updateInfo(info))
+            .when(messages.ExecutionStatus, (id, pos) => this.cellUI.setExecutionHighlight(id, pos))
+            .when(messages.PresenceUpdate, (added, removed) => {
+                added.forEach(p => this.otherUsers[p.id] = new PresenceColor(p, this.getNextColor()));
+                removed.forEach(id => { this.removePresenceSelection(id); delete this.otherUsers[id] });
+            })
+            .when(messages.PresenceSelection, (id, cellId, range) => this.setPresenceSelection(id, cellId, range))
+        );
 
         this.socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
             if (update.globalVersion >= this.globalVersion) {
@@ -286,6 +305,42 @@ export class NotebookUI extends UIMessageTarget {
                 Tinycon.setBubble(numRunningOrQueued)
             }
         })
+    }
+
+    setCurrentSelection(cellId: number, range: PosRange) {
+        if (this.currentSelectionTimeout) {
+            window.clearTimeout(this.currentSelectionTimeout);
+        }
+
+        this.currentSelectionTimeout = window.setTimeout(
+            () => {
+                this.socket.send(new CurrentSelection(cellId, range));
+                this.currentSelectionTimeout = undefined;
+            },
+            50);
+    }
+
+    setPresenceSelection(id: number, cellId: number, pos?: PosRange) {
+        this.removePresenceSelection(id);
+        const presence = this.otherUsers[id];
+        if (presence && pos) {
+            this.otherUserSelections[id] = [cellId, pos];
+            const cell = this.cellUI.getCell(cellId);
+            if (cell instanceof CodeCell) {
+                cell.setPresence(id, presence.presence.name, presence.color, pos);
+            }
+        }
+    }
+
+    removePresenceSelection(id: number) {
+        const prevSelection = this.otherUserSelections[id];
+        if (prevSelection) {
+            const [cellId, range] = prevSelection;
+            const cell = this.cellUI.getCell(cellId);
+            if (cell instanceof CodeCell) {
+                cell.removePresence(id);
+            }
+        }
     }
 
     close() {

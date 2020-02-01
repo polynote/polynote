@@ -357,12 +357,46 @@ export class ExecutionStatus extends KernelStatusUpdate {
     }
 }
 
+export class Presence {
+    static codec = combined(int32, tinyStr, optional(shortStr)).to(Presence);
+    static unapply(inst: Presence): ConstructorParameters<typeof Presence> { return [inst.id, inst.name, inst.avatar]; }
+    constructor(readonly id: number, readonly name: string, readonly avatar?: string) { Object.freeze(this); }
+}
+
+export class PresenceUpdate extends KernelStatusUpdate {
+    static codec = combined(arrayCodec(uint8, Presence.codec), arrayCodec(uint8, int32)).to(PresenceUpdate);
+    static get msgTypeId() { return 5; }
+    static unapply(inst: PresenceUpdate): ConstructorParameters<typeof PresenceUpdate> {
+        return [inst.added, inst.removed];
+    }
+
+    constructor(readonly added: Presence[], readonly removed: number[]) {
+        super();
+        Object.freeze(this);
+    }
+}
+
+export class PresenceSelection extends KernelStatusUpdate {
+    static codec = combined(int32, uint16, PosRange.codec).to(PresenceSelection);
+    static get msgTypeId() { return 6; }
+    static unapply(inst: PresenceSelection): ConstructorParameters<typeof PresenceSelection> {
+        return [inst.presenceId, inst.cellId, inst.range];
+    }
+
+    constructor(readonly presenceId: number, readonly cellId: number, readonly range: PosRange) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 KernelStatusUpdate.codecs = [
-    UpdatedSymbols,   // 0
-    UpdatedTasks,     // 1
-    KernelBusyState,  // 2
-    KernelInfo,       // 3
-    ExecutionStatus,  // 4
+    UpdatedSymbols,    // 0
+    UpdatedTasks,      // 1
+    KernelBusyState,   // 2
+    KernelInfo,        // 3
+    ExecutionStatus,   // 4
+    PresenceUpdate,    // 5
+    PresenceSelection, // 6
 ];
 
 KernelStatusUpdate.codec = discriminated(
@@ -679,6 +713,19 @@ export class RunningKernels extends Message {
     }
 }
 
+export class CurrentSelection extends Message {
+    static codec = combined(uint16, PosRange.codec).to(CurrentSelection);
+    static get msgTypeId() { return 28; }
+    static unapply(inst: CurrentSelection): ConstructorParameters<typeof CurrentSelection> {
+        return [inst.cellID, inst.range];
+    }
+
+    constructor(readonly cellID: number, readonly range: PosRange) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 Message.codecs = [
     Error,           // 0
     LoadNotebook,    // 1
@@ -707,6 +754,8 @@ Message.codecs = [
     RunningKernels,  // 24
     RenameNotebook,  // 25
     DeleteNotebook,  // 26
+    null as unknown as typeof Message, // 27 - reserve for CopyNotebook
+    CurrentSelection,    // 28
 ];
 
 

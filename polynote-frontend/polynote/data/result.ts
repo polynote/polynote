@@ -203,6 +203,10 @@ export class PosRange {
     constructor(readonly start: number, readonly end: number) {
         Object.freeze(this);
     }
+
+    get reversed() {
+        return new PosRange(this.end, this.start);
+    }
 }
 
 

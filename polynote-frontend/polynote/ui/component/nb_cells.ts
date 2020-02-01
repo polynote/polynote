@@ -81,7 +81,7 @@ export class NotebookCellsUI extends UIMessageTarget {
         }
     }
 
-    setExecutionHighlight(id: number, pos: PosRange | null) {
+    setExecutionHighlight(id: number, pos?: PosRange) {
         const cell = this.getCell(id);
         if (cell instanceof CodeCell) {
             cell.setHighlight(pos, "currently-executing");
