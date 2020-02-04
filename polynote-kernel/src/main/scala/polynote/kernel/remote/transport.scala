@@ -221,12 +221,12 @@ class SocketTransport(
     TaskManager.run("RemoteKernel", "Remote kernel", "Starting remote kernel") {
       for {
         socketServer  <- openServerChannel
-          serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
-          process       <- deploy.deployKernel(this, serverAddress)
-          _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
-          connection    <- startConnection(socketServer)
-          connection2   <- startConnection(socketServer)
-          server        <- SocketTransportServer(socketServer, connection, connection2, process)
+        serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
+        process       <- deploy.deployKernel(this, serverAddress)
+        _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
+        connection    <- startConnection(socketServer)
+        connection2   <- startConnection(socketServer)
+        server        <- SocketTransportServer(socketServer, connection, connection2, process)
       } yield (server, process)
     }
 
