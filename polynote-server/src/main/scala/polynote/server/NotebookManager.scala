@@ -10,7 +10,7 @@ import polynote.config.{Mount, PolynoteConfig}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.RefMap
-import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState}
+import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, StreamThrowableOps}
 import polynote.messages.{CreateNotebook, DeleteNotebook, Message, RenameNotebook, ShortString}
 import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
 import zio.blocking.Blocking
@@ -62,8 +62,8 @@ object NotebookManager {
         shutdownSignal <- Promise.make[Throwable, Unit]
         fiber          <- publisher.notebooksTimed(Duration(1, TimeUnit.SECONDS))
           .evalMap(notebook => repository.saveNotebook(notebook))
-          .interruptWhen(shutdownSignal.await.either)
-          .interruptWhen(publisher.closed.await.either)
+          .interruptAndIgnoreWhen(shutdownSignal)
+          .interruptAndIgnoreWhen(publisher.closed)
           .compile.drain.fork
       } yield NotebookWriter(fiber, shutdownSignal)
 

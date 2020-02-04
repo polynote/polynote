@@ -5,7 +5,7 @@ import {
     mapCodec, optional, Pair, shortStr, str, tinyStr, uint16, uint32, uint8
 } from './codec'
 
-import {KernelErrorWithCause, Output, PosRange, Result} from './result'
+import {ServerErrorWithCause, Output, PosRange, Result} from './result'
 import {StreamingDataRepr} from "./value_repr";
 import {isEqual} from "../util/functions";
 import {CellMetadata, NotebookCell, NotebookConfig} from "./data";
@@ -33,14 +33,14 @@ export abstract class Message extends CodecContainer {
 }
 
 export class Error extends Message {
-    static codec = combined(uint16, KernelErrorWithCause.codec).to(Error);
+    static codec = combined(uint16, ServerErrorWithCause.codec).to(Error);
     static get msgTypeId() { return 0; }
 
     static unapply(inst: Error): ConstructorParameters<typeof Error> {
         return [inst.code, inst.error];
     }
 
-    constructor(readonly code: number, readonly error: KernelErrorWithCause) {
+    constructor(readonly code: number, readonly error: ServerErrorWithCause) {
         super();
         Object.freeze(this);
     }
@@ -389,6 +389,16 @@ export class PresenceSelection extends KernelStatusUpdate {
     }
 }
 
+export class KernelError extends KernelStatusUpdate {
+    static codec = combined(ServerErrorWithCause.codec).to(KernelError);
+    static get msgTypeId() { return 7; }
+    static unapply(inst: KernelError): ConstructorParameters<typeof KernelError> { return [inst.err] }
+    constructor(readonly err: ServerErrorWithCause) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 KernelStatusUpdate.codecs = [
     UpdatedSymbols,    // 0
     UpdatedTasks,      // 1
@@ -397,6 +407,7 @@ KernelStatusUpdate.codecs = [
     ExecutionStatus,   // 4
     PresenceUpdate,    // 5
     PresenceSelection, // 6
+    KernelError,       // 7
 ];
 
 KernelStatusUpdate.codec = discriminated(

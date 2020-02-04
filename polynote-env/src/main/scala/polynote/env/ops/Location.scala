@@ -13,4 +13,6 @@ object Location {
 
   implicit def materialize: Location = macro LocationMacros.materialize
 
+  val Empty: Location = Location("", 0, "", "")
+
 }

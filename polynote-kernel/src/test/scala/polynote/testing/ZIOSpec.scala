@@ -2,8 +2,10 @@ package polynote.testing
 
 import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
-import polynote.kernel.ResultValue
-import polynote.kernel.environment.{Config, Env}
+import polynote.kernel.Kernel.Factory
+import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, ResultValue, interpreter}
+import polynote.kernel.environment.{Config, Env, NotebookUpdates}
+import interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import zio.blocking.Blocking
 import zio.clock.Clock
@@ -11,36 +13,53 @@ import zio.console.Console
 import zio.internal.{Platform, PlatformLive}
 import zio.random.Random
 import zio.system.System
-import zio.{Runtime, ZIO}
+import zio.{RIO, Runtime, ZIO}
 
-trait ZIOSpec extends Runtime[Clock with Console with System with Random with Blocking with Logging] {
-  type Environment = Clock with Console with System with Random with Blocking with Logging
-  // TODO: mock the pieces of this
-  val Environment: Environment =
-    new Clock.Live with Console.Live with System.Live with Random.Live with Blocking.Live with Logging.Live
+trait ZIOSpecBase[Env] extends Runtime[Env] {
+  type Environment = Env
 
   // TODO: should test platform behave differently? Isolate per suite?
   val Platform: Platform = PlatformLive.Default
     .withReportFailure(_ => ()) // suppress printing error stack traces by default
 
-  implicit class ConfigIORunOps[A](val self: ZIO[Environment with Config, Throwable, A]) {
-    def runIO(config: PolynoteConfig): A = self.provideSomeM(Env.enrich[Environment](Config.of(config))).runIO()
-  }
-
-  implicit class TwoEnvIORunOps[R1, R2, A](val self: ZIO[Environment with R1 with R2, Throwable, A]) {
-    def runIO(env1: R1, env2: R2)(implicit enrich1: Enrich[Environment, R1], enrich2: Enrich[Environment with R1, R2]): A =
-      self.provideSome[Environment](env => enrich2(enrich1(env, env1), env2)).runIO()
-  }
-
-  implicit class EnvIORunOps[R, A](val self: ZIO[Environment with R, Throwable, A]) {
-    def runIO(env1: R)(implicit enrich1: Enrich[Environment, R]): A =
-      self.provideSome[Environment](env => enrich1(env, env1)).runIO()
-  }
-
   implicit class IORunOps[A](val self: ZIO[Environment, Throwable, A]) {
-    def runIO(): A = unsafeRunSync(self).getOrElse {
-      c => throw c.squash
-    }
+    def runIO(): A = ZIOSpecBase.this.runIO(self)
+  }
+
+  implicit class IORunWithOps[R, A](val self: ZIO[R, Throwable, A]) {
+    def runWith[R1](env: R1)(implicit ev: Environment with R1 <:< R, enrich: Enrich[Environment, R1]): A =
+      ZIOSpecBase.this.runIO(self.provide(enrich(Environment, env)))
+  }
+
+  def runIO[A](io: ZIO[Environment, Throwable, A]): A = unsafeRunSync(io).getOrElse {
+    c => throw c.squash
+  }
+
+}
+
+trait ZIOSpec extends ZIOSpecBase[Clock with Console with System with Random with Blocking with Logging] {
+  // TODO: mock the pieces of this
+  val Environment: Environment =
+    new Clock.Live with Console.Live with System.Live with Random.Live with Blocking.Live with Logging.Live
+
+  implicit class ConfigIORunOps[A](val self: ZIO[Environment with Config, Throwable, A]) {
+    def runWithConfig(config: PolynoteConfig): A = ZIOSpec.this.runIO(self.provide(Env.enrichWith[Environment, Config](Environment, Config.of(config))))
+  }
+}
+
+trait ConfiguredZIOSpec extends ZIOSpecBase[BaseEnv with Config] {
+  def config: PolynoteConfig = PolynoteConfig()
+
+  val Environment: BaseEnv with Config = new Blocking.Live with Clock.Live with System.Live with Logging.Live with Config {
+    override val polynoteConfig: PolynoteConfig = config
+  }
+}
+
+trait ExtConfiguredZIOSpec[Env] extends ZIOSpecBase[BaseEnv with Config with Env] {
+  def config: PolynoteConfig = PolynoteConfig()
+
+  val baseEnv: BaseEnv with Config = new Blocking.Live with Clock.Live with System.Live with Logging.Live with Config {
+    override val polynoteConfig: PolynoteConfig = config
   }
 }
 

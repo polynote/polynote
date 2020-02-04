@@ -264,3 +264,8 @@ final case class PresenceSelection(presenceId: Int, cellID: CellID, range: (Int,
   override def isRelevant(subscriber: Int): Boolean = presenceId != subscriber
 }
 object PresenceSelection extends KernelStatusUpdateCompanion[PresenceSelection](6)
+
+final case class KernelError(err: Throwable) extends KernelStatusUpdate with AlwaysRelevant
+object KernelError extends KernelStatusUpdateCompanion[KernelError](7) {
+  implicit val codec: Codec[KernelError] = RuntimeError.throwableWithCausesCodec.xmap(new KernelError(_), _.err)
+}

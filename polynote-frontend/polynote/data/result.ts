@@ -96,9 +96,9 @@ export class StackTraceElement {
 
 // maps to JVM Throwable
 // WARNING: not frozen (mutable)
-export class KernelError {
-    static codec = combined(str, str, arrayCodec(uint16, StackTraceElement.codec)).to(KernelError);
-    static unapply(inst: KernelError): ConstructorParameters<typeof KernelError> {
+export class ServerError {
+    static codec = combined(str, str, arrayCodec(uint16, StackTraceElement.codec)).to(ServerError);
+    static unapply(inst: ServerError): ConstructorParameters<typeof ServerError> {
         return [inst.className, inst.message, inst.stackTrace];
     }
 
@@ -119,28 +119,28 @@ export class KernelError {
     }
 }
 
-export class KernelErrorWithCause {
-    static codec = Codec.map<KernelError[], KernelErrorWithCause | null>(
-        arrayCodec(uint8, KernelError.codec),
-        (kernelErrors: KernelError[]) => {
+export class ServerErrorWithCause {
+    static codec = Codec.map<ServerError[], ServerErrorWithCause | null>(
+        arrayCodec(uint8, ServerError.codec),
+        (kernelErrors: ServerError[]) => {
             if (kernelErrors.length === 0) return null;
 
             let i = kernelErrors.length - 1;
-            let current = new KernelErrorWithCause(kernelErrors[i].className, kernelErrors[i].message, kernelErrors[i].stackTrace);
+            let current = new ServerErrorWithCause(kernelErrors[i].className, kernelErrors[i].message, kernelErrors[i].stackTrace);
 
             while (i > 0) {
                 const next = kernelErrors[--i];
-                current = new KernelErrorWithCause(next.className, next.message, next.stackTrace, current);
+                current = new ServerErrorWithCause(next.className, next.message, next.stackTrace, current);
             }
             return current;
         },
-        (withCause: KernelErrorWithCause | null) => {
+        (withCause: ServerErrorWithCause | null) => {
             if (withCause == null) return [];
             const errs = [];
-            let current: KernelErrorWithCause | undefined = withCause;
+            let current: ServerErrorWithCause | undefined = withCause;
             let i = 0;
             while (i < 16 && current != null) {
-                errs.push(new KernelError(current.className, current.message, current.stackTrace));
+                errs.push(new ServerError(current.className, current.message, current.stackTrace));
                 current = current.cause;
                 i++;
             }
@@ -148,30 +148,30 @@ export class KernelErrorWithCause {
             return errs;
         }
     );
-    static unapply(inst: KernelErrorWithCause): ConstructorParameters<typeof KernelErrorWithCause> {
+    static unapply(inst: ServerErrorWithCause): ConstructorParameters<typeof ServerErrorWithCause> {
         return [inst.className, inst.message, inst.stackTrace, inst.cause];
     }
 
-    constructor(readonly className: string, readonly message: string, readonly stackTrace: StackTraceElement[], readonly cause?: KernelErrorWithCause) {
+    constructor(readonly className: string, readonly message: string, readonly stackTrace: StackTraceElement[], readonly cause?: ServerErrorWithCause) {
         Object.freeze(this);
     }
 }
 
 
 export class RuntimeError extends Result {
-    static codec = combined(KernelErrorWithCause.codec).to(RuntimeError);
+    static codec = combined(ServerErrorWithCause.codec).to(RuntimeError);
     static get msgTypeId() { return 2; }
 
     static unapply(inst: RuntimeError): ConstructorParameters<typeof RuntimeError> {
         return [inst.error];
     }
 
-    constructor(readonly error: KernelErrorWithCause) {
+    constructor(readonly error: ServerErrorWithCause) {
         super();
         Object.freeze(this);
     }
 
-    static fromJS = (err: Error) => new RuntimeError(new KernelErrorWithCause(err.constructor.name, err.message || err.toString(), []));
+    static fromJS = (err: Error) => new RuntimeError(new ServerErrorWithCause(err.constructor.name, err.message || err.toString(), []));
 }
 
 export class ClearResults extends Result {

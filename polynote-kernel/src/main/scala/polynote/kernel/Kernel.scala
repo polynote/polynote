@@ -74,6 +74,12 @@ trait Kernel {
     * Release a handle. No further data will be available using [[getHandleData()]].
     */
   def releaseHandle(handleType: HandleType, handleId: Int): RIO[BaseEnv with StreamingHandles, Unit]
+
+  /**
+    * @return A task which will wait for the kernel to be closed. Completes with an error if the kernel closes due to
+    *         error.
+    */
+  def awaitClosed: Task[Unit]
 }
 
 object Kernel {

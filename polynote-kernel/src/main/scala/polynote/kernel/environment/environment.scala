@@ -14,6 +14,7 @@ import zio.blocking.Blocking
 import zio.internal.Executor
 import zio.interop.catz._
 import zio.{RIO, Task, UIO, URIO, ZIO}
+import zio.syntax.zioTuple3Syntax
 
 //////////////////////////////////////////////////////////////////////
 // Environment modules to mix for various layers of the application //

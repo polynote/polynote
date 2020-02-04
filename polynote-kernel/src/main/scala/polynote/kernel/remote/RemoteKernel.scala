@@ -33,7 +33,7 @@ import scala.collection.JavaConverters._
 import scala.concurrent.TimeoutException
 
 class RemoteKernel[ServerAddress](
-  transport: TransportServer[ServerAddress],
+  private[polynote] val transport: TransportServer[ServerAddress],
   updates: Stream[Task, NotebookUpdate],
   closed: Promise[Throwable, Unit]
 ) extends Kernel {
@@ -83,10 +83,10 @@ class RemoteKernel[ServerAddress](
     case rep@ResultResponse(_, result)   => withHandler(rep)(handler => PublishResult(result).provide(handler.env.asInstanceOf[PublishResult]))
     case rep@ResultsResponse(_, results) => withHandler(rep)(handler => PublishResult(results).provide(handler.env.asInstanceOf[PublishResult]))
     case rep: RemoteRequestResponse      => withHandler(rep)(_.run(rep))
-  }.onFinalize(PublishStatus(KernelBusyState(busy = false, alive = false)))
+  }
 
-  def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = for {                                                           // have to start pulling the updates before getting the current notebook
-    pullUpdates    <- updates.evalMap(transport.sendNotebookUpdate).interruptWhen(closed.await.either).compile.drain.fork        // otherwise some may be missed
+  def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = for {                                                    // have to start pulling the updates before getting the current notebook
+    pullUpdates    <- updates.evalMap(transport.sendNotebookUpdate).interruptAndIgnoreWhen(closed).compile.drain.fork   // otherwise some may be missed
     versioned      <- CurrentNotebook.getVersioned
     (ver, notebook) = versioned
     config         <- Config.access
@@ -172,13 +172,16 @@ class RemoteKernel[ServerAddress](
     _ <- transport.close()
   } yield ()
 
+  override def awaitClosed: Task[Unit] = closed.await
+
 }
 
 object RemoteKernel extends Kernel.Factory.Service {
   def apply[ServerAddress](transport: Transport[ServerAddress]): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, RemoteKernel[ServerAddress]] = for {
-    server  <- transport.serve()
-    updates <- NotebookUpdates.access
     closed  <- Promise.make[Throwable, Unit]
+    server  <- transport.serve()
+    _       <- server.awaitClosed.to(closed).fork
+    updates <- NotebookUpdates.access
   } yield new RemoteKernel(server, updates, closed)
 
   override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = apply(
@@ -186,6 +189,12 @@ object RemoteKernel extends Kernel.Factory.Service {
       new SocketTransport.DeploySubprocess(
         new SocketTransport.DeploySubprocess.DeployJava[LocalKernelFactory]),
       Some("127.0.0.1")))
+
+  def service[ServerAddress](transport: Transport[ServerAddress]): Kernel.Factory.Service = new Factory.Service {
+    override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = RemoteKernel(transport)
+  }
+
+  def factory[ServerAddress](transport: Transport[ServerAddress]): Kernel.Factory = Kernel.Factory.of(service(transport))
 }
 
 

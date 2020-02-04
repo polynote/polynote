@@ -29,7 +29,7 @@ import {
     ClientResult,
     CompileErrors,
     ExecutionInfo,
-    KernelErrorWithCause,
+    ServerErrorWithCause,
     KernelReport,
     Output,
     PosRange,
@@ -283,7 +283,7 @@ export abstract class Cell extends UIMessageTarget {
 }
 
 // TODO: it's a bit hacky to export this, should probably put this in some utils module
-export function errorDisplay(error: KernelErrorWithCause, currentFile: string, maxDepth: number = 0, nested: boolean = false): {el: TagElement<"details"> | TagElement<"div">, messageStr: string, cellLine: number | null} {
+export function errorDisplay(error: ServerErrorWithCause, currentFile: string, maxDepth: number = 0, nested: boolean = false): {el: TagElement<"details"> | TagElement<"div">, messageStr: string, cellLine: number | null} {
     let cellLine: number | null = null;
     const traceItems: TagElement<"li">[] = [];
     const messageStr = `${error.message} (${error.className})`;
@@ -621,7 +621,7 @@ export class CodeCell extends Cell {
         }
     }
 
-    setRuntimeError(error: KernelErrorWithCause) {
+    setRuntimeError(error: ServerErrorWithCause) {
         const {el, messageStr, cellLine} = errorDisplay(error, this.container.id, 3);
 
         this.cellOutputDisplay.classList.add('errors');

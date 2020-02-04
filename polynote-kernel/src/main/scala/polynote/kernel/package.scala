@@ -1,5 +1,6 @@
 package polynote
 
+import cats.effect.Concurrent
 import cats.effect.concurrent.Ref
 import fs2.Stream
 import polynote.config.PolynoteConfig
@@ -7,7 +8,7 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, Cur
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages.Notebook
-import zio.{Task, RIO, ZIO}
+import zio.{Promise, RIO, Task, UIO, ZIO}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.system.System
@@ -39,7 +40,7 @@ package object kernel {
   type InterpreterEnv = Blocking with PublishResult with PublishStatus with CurrentTask with CurrentRuntime
   trait InterpreterEnvT extends Blocking with PublishResult with PublishStatus with CurrentTask with CurrentRuntime
 
-  implicit class StreamOps[R, A](val stream: Stream[RIO[R, ?], A]) {
+  final implicit class StreamThrowableOps[R, A](val stream: Stream[RIO[R, ?], A]) {
 
     /**
       * Convenience method to terminate (rather than interrupt) a stream after a given predicate is met. In contrast to
@@ -51,31 +52,17 @@ package object kernel {
       case notEnd         => Stream.emit(Some(notEnd))
     }.unNoneTerminate
 
+    def terminateAfterEquals(value: A): Stream[RIO[R, ?], A] = terminateAfter(_ == value)
+
+    def interruptAndIgnoreWhen(signal: Promise[Throwable, Unit])(implicit concurrent: Concurrent[RIO[R, ?]]): Stream[RIO[R, ?], A] =
+      stream.interruptWhen(signal.await.either.as(Right(()): Either[Throwable, Unit]))
+
   }
 
-  // some tuple syntax that ZIO doesn't natively have
-  // PR for including this in ZIO: https://github.com/zio/zio/pull/1444
-  final implicit class ZIOTuple4[E, RA, A, RB, B, RC, C, RD, D](
-    val zios4: (ZIO[RA, E, A], ZIO[RB, E, B], ZIO[RC, E, C], ZIO[RD, E, D])
-  ) extends AnyVal {
-    def map4[F](f: (A, B, C, D) => F): ZIO[RA with RB with RC with RD, E, F] =
-      for {
-        a <- zios4._1
-        b <- zios4._2
-        c <- zios4._3
-        d <- zios4._4
-      } yield f(a, b, c, d)
-  }
+  final implicit class StreamUIOps[A](val stream: Stream[UIO, A]) {
 
-  final implicit class ZIOTuple3[E, RA, A, RB, B, RC, C](
-    val zios3: (ZIO[RA, E, A], ZIO[RB, E, B], ZIO[RC, E, C])
-  ) extends AnyVal {
-    def map3[F](f: (A, B, C) => F): ZIO[RA with RB with RC, E, F] =
-      for {
-        a <- zios3._1
-        b <- zios3._2
-        c <- zios3._3
-      } yield f(a, b, c)
+    def interruptAndIgnoreWhen(signal: Promise[Throwable, Unit])(implicit concurrent: Concurrent[UIO]): Stream[UIO, A] =
+      stream.interruptWhen(signal.await.either.as(Right(()): Either[Throwable, Unit]))
   }
 
   /**
@@ -83,19 +70,6 @@ package object kernel {
     */
   final implicit class ZIOOptionSyntax[R, A](val self: ZIO[R, Unit, A]) extends AnyVal {
     def withFilter(predicate: A => Boolean): ZIO[R, Unit, A] = self.filterOrFail(predicate)(())
-  }
-
-  // TODO: flesh this out and use it instead of that ^^ so we don't have to throw away errors for optionality
-  final case class OptionT[-R, +E, +A](run: ZIO[R, Either[E, Unit], Option[A]]) extends AnyVal {
-    def filter(predicate: A => Boolean): OptionT[R, E, A] = copy(run.filterOrFail(_.exists(predicate))(Right(())))
-    def map[B](fn: A => B): OptionT[R, E, B] = copy(run.map(_.map(fn)))
-    def flatMap[R1 <: R, E1 >: E, B](fn: A => OptionT[R1, E1, B]): OptionT[R1, E1, B] = {
-      val next = run.flatMap {
-        case None => ZIO.fail(Right(()))
-        case Some(a) => fn(a).run
-      }
-      copy(next)
-    }
   }
 
   /**
