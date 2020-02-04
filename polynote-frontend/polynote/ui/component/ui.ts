@@ -4,7 +4,6 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import {
     CancelTasks,
     CreateNotebook,
-    TriggerItem,
     UIMessageTarget,
     ImportNotebook,
     UIToggle,
@@ -17,7 +16,13 @@ import {
     ServerVersion,
     RunningKernels,
     KernelCommand,
-    LoadNotebook, CellsLoaded, RenameNotebook, DeleteNotebook, TabRemoved, TabRenamed
+    LoadNotebook,
+    CellsLoaded,
+    RenameNotebook,
+    DeleteNotebook,
+    TabRemoved,
+    TabRenamed,
+    FocusCell,
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -77,11 +82,6 @@ export class MainUI extends UIMessageTarget {
 
         this.browseUI = new NotebookListUI().setParent(this);
         this.mainView.left.el.appendChild(this.browseUI.el);
-        this.subscribe(TriggerItem, item => {
-            if (!this.disabled) {
-                this.loadNotebook(item);
-            }
-        });
         // TODO: remove listeners on children.
         this.subscribe(CreateNotebook, (path) => this.createNotebook(path));
         this.subscribe(RenameNotebook, path => this.renameNotebook(path));
@@ -172,6 +172,8 @@ export class MainUI extends UIMessageTarget {
                 if (SocketSession.global.isOpen) {
                     this.toolbarUI.setDisabled(false);
                 }
+
+                currentNotebook.notebook.setIconBubble();
             } else if (type === 'home') {
                 const title = 'Polynote';
                 window.history.pushState({notebook: name}, title, document.baseURI);
@@ -250,6 +252,11 @@ export class MainUI extends UIMessageTarget {
         });
 
         this.subscribe(LoadNotebook, path => this.loadNotebook(path));
+
+        this.subscribe(FocusCell, (path, cellId) => {
+            this.publish(new LoadNotebook(path));
+            CurrentNotebook.get.selectCell(cellId)
+        })
     }
 
     showWelcome() {

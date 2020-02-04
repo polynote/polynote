@@ -102,19 +102,21 @@ export class LoadNotebook extends UIMessage {
     }
 }
 
-export class SelectCell extends UIMessage {
+export class CellSelected extends UIMessage {
     constructor(readonly cell: Cell) { super() }
 
-    static unapply(inst: SelectCell): ConstructorParameters<typeof SelectCell> {
+    static unapply(inst: CellSelected): ConstructorParameters<typeof CellSelected> {
         return [inst.cell]
     }
 }
 
-export class TriggerItem extends UIMessage {
-    constructor(readonly item: string) { super() }
+export class FocusCell extends UIMessage {
+    constructor(readonly path: string, readonly cellId: number) {
+        super();
+    }
 
-    static unapply(inst: TriggerItem): ConstructorParameters<typeof TriggerItem> {
-        return [inst.item]
+    static unapply(inst: FocusCell): ConstructorParameters<typeof FocusCell> {
+        return [inst.path, inst.cellId]
     }
 }
 

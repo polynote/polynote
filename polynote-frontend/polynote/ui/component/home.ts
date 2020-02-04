@@ -1,6 +1,6 @@
 "use strict";
 
-import {TriggerItem, UIMessage, UIMessageTarget} from "../util/ui_event";
+import {LoadNotebook, UIMessage, UIMessageTarget} from "../util/ui_event";
 import {div, span, tag, TagElement} from "../util/tags";
 import {storage} from "../util/storage";
 
@@ -26,7 +26,7 @@ export class HomeUI extends UIMessageTarget {
         (storage.get('recentNotebooks') || []).forEach((nb: {name: string, path: string}) => {
             recent!.appendChild(
                 tag('li', ['notebook-link'], {}, [
-                    span([], nb.name).click(() => this.publish(new TriggerItem(nb.path)))
+                    span([], nb.name).click(() => this.publish(new LoadNotebook(nb.path)))
                 ])
             );
         });

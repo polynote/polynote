@@ -16,4 +16,8 @@ export class CurrentNotebook extends UIMessageTarget {
     static set(nb: NotebookUI) {
         this.inst = nb
     }
+
+    static equals(nb: NotebookUI) {
+        return nb === this.inst;
+    }
 }

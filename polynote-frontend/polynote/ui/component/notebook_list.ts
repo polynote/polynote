@@ -4,9 +4,9 @@ import {
     ImportNotebook,
     ModalClosed,
     RenameNotebook,
-    TriggerItem,
     UIMessageTarget,
-    UIToggle
+    UIToggle,
+    LoadNotebook
 } from "../util/ui_event";
 import {a, button, div, h2, iconButton, span, tag, TagElement, textbox} from "../util/tags";
 import {storage} from "../util/storage";
@@ -296,7 +296,7 @@ export class NotebookListUI extends UIMessageTarget {
                     itemEl = Object.assign(
                         tag('li', ['leaf'], {}, [
                             a(['name'], `notebooks/${item}`, true, [span([], [itemName])]).click(evt => {
-                                this.publish(new TriggerItem((itemEl as NotebookNode).item));
+                                this.publish(new LoadNotebook((itemEl as NotebookNode).item));
                             }).listener(
                                 "contextmenu", evt => this.contextMenu.showFor(evt, itemEl)
                             ).listener(
