@@ -885,7 +885,7 @@ export class CodeCell extends Cell {
     setStatus(status: "running" | "queued" | "error" | "complete") {
         switch(status) {
             case "complete":
-                this.container.classList.remove('running', 'queued', 'error');
+                this.container.classList.remove('running', 'queued');
                 break;
             case "error":
                 this.container.classList.remove('queued', 'running');
@@ -896,7 +896,7 @@ export class CodeCell extends Cell {
                 this.container.classList.add('queued');
                 break;
             case "running":
-                this.container.classList.remove('queued', 'error');
+                this.container.classList.remove('queued');
                 this.container.classList.add('running');
                 break;
         }
@@ -904,6 +904,10 @@ export class CodeCell extends Cell {
 
     isRunning() {
         return this.execInfoEl.classList.contains("running")
+    }
+
+    isError() {
+        return this.container.classList.contains("error")
     }
 
     static colorize(content: string, lang: string) {

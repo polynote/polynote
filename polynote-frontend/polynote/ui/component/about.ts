@@ -144,7 +144,7 @@ export class About extends FullScreenModal {
             setValueEl(v);
 
             storage.addStorageListener(k, (oldVal, newVal) => {
-                if (newVal) setValueEl(newVal);
+                if (newVal) setValueEl(JSON.stringify(newVal));
             });
 
             this.storageUpdateListeners.push(k);

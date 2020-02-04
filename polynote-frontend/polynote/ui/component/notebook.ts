@@ -27,6 +27,8 @@ import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 import {CurrentSelection} from "../../data/messages";
 import {CurrentNotebook} from "./current_notebook";
+import {notificationsEnabled} from "../util/notifications";
+import container from "vega-embed/build/src/container";
 
 const notebooks: Record<string, NotebookUI> = {};
 
@@ -300,15 +302,17 @@ export class NotebookUI extends UIMessageTarget {
 
                 // only notify if this notebook doesn't have focus
                 if (!this.isFocused()) {
-                    Notification.requestPermission().then((result) => {
+                    if (notificationsEnabled()) {
                         // Is there really no better way to fetch the favicon??
                         const favicon = (document.getElementsByTagName('head')[0].querySelector("link[rel*='icon") as HTMLLinkElement).href;
-                        const statusString = status === TaskStatus.Complete ? "Complete" : "Error";
+                        const cell = this.cellUI.getCell(cellId);
+                        const statusString = (cell instanceof CodeCell && cell.isError()) ? "Error" : "Complete";
                         const n = new Notification(path, {body: `Cell ${cellId} ${statusString}`, icon: favicon});
                         n.addEventListener("click", (ev) => {
-                            this.publish(new FocusCell(path, cellId))
+                            this.publish(new FocusCell(path, cellId));
+                            n.close();
                         });
-                    });
+                    }
                 }
             } else if (status === TaskStatus.Queued) {
                 if (!this.queuedCells.includes(cellId)) {
