@@ -1,6 +1,7 @@
 package polynote.server
 
 import java.net.InetSocketAddress
+import java.util.concurrent.TimeUnit
 
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers}
@@ -14,6 +15,7 @@ import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployJava
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, LocalKernelFactory}
 import polynote.messages.{Notebook, ShortList}
 import polynote.testing.{ConfiguredZIOSpec, ExtConfiguredZIOSpec}
+import zio.duration.Duration
 import zio.{Promise, RIO, Task, ZIO}
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory {
@@ -42,7 +44,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
       process.kill().runIO()
 
-      waitForDeath.join.runIO()
+      waitForDeath.join.timeout(Duration(2, TimeUnit.SECONDS)).runIO()
 
       val kernel2 = kernelPublisher.kernel.runWith(kernelFactory)
       assert(!(kernel2 eq kernel), "Kernel should have changed")
