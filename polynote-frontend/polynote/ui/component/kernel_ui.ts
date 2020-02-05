@@ -8,7 +8,7 @@ import {TaskInfo, TaskStatus} from "../../data/messages";
 import {storage} from "../util/storage";
 import {SocketSession} from "../../comms";
 import {NotebookUI} from "./notebook";
-import {KernelErrorWithCause, ResultValue} from "../../data/result";
+import {ServerErrorWithCause, ResultValue} from "../../data/result";
 import * as cell from "./cell";
 
 export class KernelUI extends UIMessageTarget {
@@ -63,7 +63,7 @@ export class KernelUI extends UIMessageTarget {
         }
     }
 
-    errorDisplay(code: number, err: KernelErrorWithCause) {
+    errorDisplay(code: number, err: ServerErrorWithCause) {
         console.log("Kernel error:", err);
 
         const {el, messageStr, cellLine} = cell.errorDisplay(err, this.path);
