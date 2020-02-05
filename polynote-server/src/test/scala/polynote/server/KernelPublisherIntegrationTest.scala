@@ -42,7 +42,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
       val kernel2 = kernelPublisher.kernel
         .repeat(ZSchedule.doUntil[Kernel](_ ne kernel))
-        .timeout(Duration(5, TimeUnit.SECONDS))
+        .timeout(Duration(20, TimeUnit.SECONDS))
         .someOrFail(new Exception("Kernel should have changed; didn't change after 5 seconds"))
         .runWith(kernelFactory)
 
