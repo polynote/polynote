@@ -1,3 +1,17 @@
+# 0.3.0 (Feb 4, 2020)
+* Better handling of unexpected kernel shutdowns 
+* Presence 
+* Add copy notebook 
+* Use index for import 
+* Use class indexer 
+* Manually call atexit shutdown hooks 
+* Fix Py4j version handling 
+* Added browser notifications for completed cells of unfocused notebooks 
+* Fix some websocket issues 
+* Adds UI x to close error boxes 
+* Retrieve causes of python exceptions 
+* Get jars from `SPARK_DIST_CLASSPATH` with config 
+
 # 0.2.17 (Jan 14, 2020)
 
 * Create a websocket for every notebook
