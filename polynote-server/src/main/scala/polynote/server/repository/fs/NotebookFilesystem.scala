@@ -24,6 +24,8 @@ trait NotebookFilesystem {
 
   def move(from: Path, to: Path): RIO[BaseEnv, Unit]
 
+  def copy(from: Path, to: Path): RIO[BaseEnv, Unit]
+
   def delete(path: Path): RIO[BaseEnv, Unit]
 
   def init(path: Path): RIO[BaseEnv, Unit]

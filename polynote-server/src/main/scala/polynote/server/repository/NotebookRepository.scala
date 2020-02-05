@@ -49,6 +49,8 @@ trait NotebookRepository {
 
   def renameNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
 
+  def copyNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
+
   def deleteNotebook(path: String): RIO[BaseEnv with GlobalEnv, Unit]
 
   /**
@@ -136,26 +138,37 @@ class TreeRepository (
         } yield base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath)
   }
 
-  override def renameNotebook(src: String, dest: String): RIO[BaseEnv with GlobalEnv, String] = {
+  private def copyOrRename(src: String, dest: String, deletePrevious: Boolean): RIO[BaseEnv with GlobalEnv, String] = {
     val (srcPath, srcBase) = extractPath(Paths.get(src))
 
     val (destPath, destBase) = extractPath(Paths.get(dest))
 
     if (srcBase == destBase) {
       for {
-        (renamed, base) <- delegate(srcPath.toString) {
+        (copied, base) <- delegate(srcPath.toString) {
           (repo, repoRelativePathStr, base) =>
-            repo.renameNotebook(repoRelativePathStr, base.fold(destPath.toString)(repoBase => Paths.get(repoBase).relativize(destPath).toString)).map(_ -> base)
+            val relativeDest = base.fold(destPath.toString)(repoBase => Paths.get(repoBase).relativize(destPath).toString)
+            if (deletePrevious) {
+              repo.renameNotebook(repoRelativePathStr, relativeDest).map(_ -> base)
+            } else {
+              repo.copyNotebook(repoRelativePathStr, relativeDest).map(_ -> base)
+            }
         }
-      } yield base.map(b => Paths.get(b, renamed).toString).getOrElse(renamed)
+      } yield base.map(b => Paths.get(b, copied).toString).getOrElse(copied)
     } else {
+      // If the two paths are on different filesystems, we can't rely on an atomic move or copy, so we need to fall back
+      // to handling the creation and deletion ourselves.
       for {
         srcNb                <- delegate(src)((repo, repoRelativePathStr, base) => repo.loadNotebook(repoRelativePathStr))
         (destRepoBase, dest) <- delegate(dest)((repo, repoRelativePathStr, base) => repo.saveNotebook(srcNb.copy(path=repoRelativePathStr)).map(_ => base -> repoRelativePathStr))
-        _                    <- delegate(src)((repo, repoRelativePathStr, _) => repo.deleteNotebook(repoRelativePathStr))
+        _                    <- if (deletePrevious) delegate(src)((repo, repoRelativePathStr, _) => repo.deleteNotebook(repoRelativePathStr)) else ZIO.unit
       } yield destRepoBase.map(base => Paths.get(base, dest).toString).getOrElse(dest)
     }
   }
+
+  override def renameNotebook(src: String, dest: String): RIO[BaseEnv with GlobalEnv, String] = copyOrRename(src, dest, deletePrevious = true)
+
+  override def copyNotebook(src: String, dest: String): RIO[BaseEnv with GlobalEnv, String] = copyOrRename(src, dest, deletePrevious = false)
 
   override def deleteNotebook(originalPath: String): RIO[BaseEnv with GlobalEnv, Unit] = delegate(originalPath) {
     (repo, relativePath, _) => repo.deleteNotebook(relativePath)
@@ -188,7 +201,7 @@ class FileBasedRepository(
     _         <- fs.writeStringToPath(pathOf(nb.path), rawString)
   } yield ()
 
-  def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
+  override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
     for {
       files <- fs.list(path)
       isSupported <- NotebookFormat.isSupported
@@ -197,9 +210,9 @@ class FileBasedRepository(
     }
   }
 
-  def notebookExists(path: String): RIO[BaseEnv with GlobalEnv, Boolean] = fs.exists(pathOf(path))
+  override def notebookExists(path: String): RIO[BaseEnv with GlobalEnv, Boolean] = fs.exists(pathOf(path))
 
-  def notebookURI(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = {
+  override def notebookURI(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = {
     val repoPath = this.path.resolve(path)
     notebookExists(path).map {
       exists =>
@@ -244,7 +257,7 @@ class FileBasedRepository(
     }
   }
 
-  def createNotebook(relativePath: String, maybeContent: Option[String] = None): RIO[BaseEnv with GlobalEnv, String] = {
+  override def createNotebook(relativePath: String, maybeContent: Option[String] = None): RIO[BaseEnv with GlobalEnv, String] = {
     val (noExtPath, ext) = extractExtension(relativePath.replaceFirst("""^/+""", ""))
     val path = s"$noExtPath.$ext"
 
@@ -260,23 +273,30 @@ class FileBasedRepository(
     } yield name
   }
 
-  def renameNotebook(oldPath: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = {
-    val ext = s".$defaultExtension"
-    val withExt = newPath.replaceFirst("""^/+""", "").stripSuffix(ext) + ext
+  private def withValidatedSrcDest[T](src: String, dest: String)(f: (String, String) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
+    val (destNoExt, destExt) = extractExtension(dest.replaceFirst("""^/+""", ""))
+    val withExt = s"$destNoExt.$destExt"
 
-    fs.validate(Paths.get(withExt)) *> (notebookExists(oldPath), notebookExists(withExt)).mapN(_ -> _).flatMap {
-      case (false, _)    => ZIO.fail(new FileNotFoundException(s"File $oldPath doesn't exist"))
-      case (_, true)     => ZIO.fail(new FileAlreadyExistsException(s"File $withExt already exists"))
-      case (true, false) =>
-        val absOldPath = pathOf(oldPath)
-        val absNewPath = pathOf(withExt)
+    for {
+      _   <- fs.validate(Paths.get(withExt))
+      _   <- notebookExists(src).filterOrFail(identity)(new FileNotFoundException(s"File $src doesn't exist"))
+      _   <- notebookExists(withExt).filterOrFail(!_)(new FileAlreadyExistsException(s"File $withExt already exists"))
+      res <- f(src, withExt)
+    } yield res
+  }
 
-        fs.move(absOldPath, absNewPath).as(withExt)
-    }
+  override def renameNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = withValidatedSrcDest(path, newPath) {
+    (src, dest) =>
+      fs.move(pathOf(src), pathOf(dest)).as(dest)
+  }
+
+  override def copyNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = withValidatedSrcDest(path, newPath) {
+    (src, dest) =>
+      fs.copy(pathOf(src), pathOf(dest)).as(dest)
   }
 
   // TODO: should probably have a "trash" or something instead – a way of recovering a file from accidental deletion?
-  def deleteNotebook(path: String): RIO[BaseEnv with GlobalEnv, Unit] = fs.delete(pathOf(path))
+  override def deleteNotebook(path: String): RIO[BaseEnv with GlobalEnv, Unit] = fs.delete(pathOf(path))
 
-  def initStorage(): RIO[BaseEnv with GlobalEnv, Unit] = fs.init(path)
+  override def initStorage(): RIO[BaseEnv with GlobalEnv, Unit] = fs.init(path)
 }

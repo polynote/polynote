@@ -1,4 +1,5 @@
 import {
+    CopyNotebook,
     CreateNotebook,
     DeleteNotebook,
     ImportNotebook,
@@ -45,6 +46,7 @@ class NotebookListContextMenu extends UIMessageTarget {
             tag('ul', [], {}, [
                 item('New notebook', noFile).click(evt => this.create(evt)),
                 item('Rename', onlyFile).click(evt => this.rename(evt)),
+                item('Copy', onlyFile).click(evt => this.copy(evt)),
                 item('Delete', onlyFile).click(evt => this.delete(evt))
             ])
         ]).listener("mousedown", evt => { evt.stopPropagation(); });
@@ -67,6 +69,16 @@ class NotebookListContextMenu extends UIMessageTarget {
         this.hide();
         if (this.targetItem) {
             this.publish(new RenameNotebook(this.targetItem));
+        }
+    }
+
+    private copy(evt?: Event) {
+        if (evt) {
+            evt.stopPropagation();
+        }
+        this.hide();
+        if (this.targetItem) {
+            this.publish(new CopyNotebook(this.targetItem));
         }
     }
 
@@ -508,22 +520,24 @@ export class CreateNotebookDialog extends Modal {
 }
 
 
-export class RenameNotebookDialog extends Modal {
+type NameChangeReason = "Rename"| "Copy"
+export class NotebookNameChangeDialog extends Modal {
 
     private pathInput: TagElement<"input">;
     private dialogContent: TagElement<"div">;
     private onComplete: (path: string) => void;
     private onCancel: () => void;
     private path?: string;
+    private completeButton: TagElement<"button">;
 
-    private static INSTANCE: RenameNotebookDialog;
+    private static INSTANCE: NotebookNameChangeDialog;
 
-    static prompt(path: string): Promise<string> {
-        if (!RenameNotebookDialog.INSTANCE) {
-            RenameNotebookDialog.INSTANCE = new RenameNotebookDialog();
+    static prompt(path: string, reason: NameChangeReason): Promise<string> {
+        if (!NotebookNameChangeDialog.INSTANCE) {
+            NotebookNameChangeDialog.INSTANCE = new NotebookNameChangeDialog();
         }
-        const inst = RenameNotebookDialog.INSTANCE;
-        inst.setTitle(`Rename ${path}`);
+        const inst = NotebookNameChangeDialog.INSTANCE;
+        inst.update(path, reason);
         inst.path = path;
         return new Promise((complete, cancel) => {
             inst.onComplete = complete;
@@ -545,12 +559,19 @@ export class RenameNotebookDialog extends Modal {
             div(['buttons'], [
                 button(['dialog-button'], {}, 'Cancel').click(evt => this.cancel()),
                 ' ',
-                button(['dialog-button'], {}, 'Rename').click(evt => this.complete())])
+                this.completeButton = button(['dialog-button'], {}, 'Rename').click(evt => this.complete())])
         ]);
         dialogWrapper.appendChild(this.dialogContent);
         this.pathInput.addEventListener('Accept', evt => this.complete());
         this.pathInput.addEventListener('Cancel', evt => this.cancel());
         this.subscribe(ModalClosed, () => this.cancel());
+    }
+
+    update(path: string, reason: NameChangeReason) {
+        this.setTitle(`${reason} ${path}`);
+        const newButton = button(['dialog-button'], {}, reason).click(evt => this.complete());
+        this.completeButton.parentNode!.replaceChild(newButton, this.completeButton);
+        this.completeButton = newButton;
     }
 
     cancel() {

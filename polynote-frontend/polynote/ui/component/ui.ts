@@ -23,6 +23,7 @@ import {
     TabRemoved,
     TabRenamed,
     FocusCell,
+    CopyNotebook
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -36,7 +37,7 @@ import {SplitView} from "./split_view";
 import {KernelUI} from "./kernel_ui";
 import {NotebookUI} from "./notebook";
 import {TabUI} from "./tab";
-import {CreateNotebookDialog, RenameNotebookDialog, NotebookListUI} from "./notebook_list";
+import {CreateNotebookDialog, NotebookNameChangeDialog, NotebookListUI} from "./notebook_list";
 import {HomeUI} from "./home";
 import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
@@ -85,6 +86,7 @@ export class MainUI extends UIMessageTarget {
         // TODO: remove listeners on children.
         this.subscribe(CreateNotebook, (path) => this.createNotebook(path));
         this.subscribe(RenameNotebook, path => this.renameNotebook(path));
+        this.subscribe(CopyNotebook, path => this.copyNotebook(path));
         this.subscribe(DeleteNotebook, path => this.deleteNotebook(path));
         this.subscribe(ImportNotebook, (name, content) => this.importNotebook(name, content));
         this.subscribe(UIToggle, (which, force) => {
@@ -184,7 +186,7 @@ export class MainUI extends UIMessageTarget {
 
         this.subscribe(TabRenamed, (oldName, newName, type, isCurrent) => {
             if (isCurrent) {
-                const tabUrl = new URL(`notebook/${name}`, document.baseURI);
+                const tabUrl = new URL(`notebook/${newName}`, document.baseURI);
                 const href = window.location.hash ? `${tabUrl.href}#${window.location.hash.replace(/^#/, '')}` : tabUrl.href;
                 window.history.replaceState({notebook: newName}, `${newName.split(/\//g).pop()} | Polynote`, href);
             }
@@ -314,8 +316,14 @@ export class MainUI extends UIMessageTarget {
 
     renameNotebook(path: string) {
         // Existing listener will hear broadcast and update UI
-        RenameNotebookDialog.prompt(path)
+        NotebookNameChangeDialog.prompt(path, "Rename")
             .then(newPath => SocketSession.global.send(new messages.RenameNotebook(path, newPath)))
+    }
+
+    copyNotebook(path: string) {
+        // Existing listener will hear broadcast and update UI
+        NotebookNameChangeDialog.prompt(path, "Copy")
+            .then(newPath => SocketSession.global.send(new messages.CopyNotebook(path, newPath)))
     }
 
     onNotebookRenamed(oldPath: string, newPath: string) {

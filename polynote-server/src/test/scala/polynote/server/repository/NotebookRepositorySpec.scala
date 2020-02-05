@@ -212,6 +212,47 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
           tr.renameNotebook("one/foo", "two/bar").runIO shouldEqual "two/bar"
         }
       }
-    }
+
+      "should copy notebooks" - {
+        "within the same mount" - {
+          "in root" in {
+            (root.copyNotebook _).expects("foo", "bar").once().returning(ZIO.succeed("bar"))
+            tr.copyNotebook("foo", "bar").runIO shouldEqual "bar"
+
+            (root.copyNotebook _).expects("foo", "bar").once().returning(ZIO.succeed("bar"))
+            tr.copyNotebook("/foo", "/bar").runIO shouldEqual "bar"
+          }
+          "in a submount" in {
+            (mount1.copyNotebook _).expects("foo", "bar").once().returning(ZIO.succeed("bar"))
+            tr.copyNotebook("one/foo", "one/bar").runIO shouldEqual "one/bar"
+
+            (mount1.copyNotebook _).expects("foo", "bar").once().returning(ZIO.succeed("bar"))
+            tr.copyNotebook("/one/foo", "/one/bar").runIO shouldEqual "one/bar"
+          }
+        }
+        "across different mounts" - {
+          "from root to a submount" in {
+            val nb = emptyNB("foo")
+            (root.loadNotebook _).expects("foo").once().returning(ZIO.succeed(nb))
+            (mount1.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
+
+            tr.copyNotebook("foo", "one/bar").runIO shouldEqual "one/bar"
+          }
+          "from a submout to root" in {
+            val nb = emptyNB("foo")
+            (mount1.loadNotebook _).expects("foo").once().returning(ZIO.succeed(nb))
+            (root.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
+
+            tr.copyNotebook("one/foo", "bar").runIO shouldEqual "bar"
+          }
+          "from a submount to another submount" in {
+            val nb = emptyNB("foo")
+            (mount1.loadNotebook _).expects("foo").once().returning(ZIO.succeed(nb))
+            (mount2.saveNotebook _).expects(nb.copy(path="bar")).returning(ZIO.unit)
+
+            tr.copyNotebook("one/foo", "two/bar").runIO shouldEqual "two/bar"
+          }
+        }
+      }   }
   }
 }

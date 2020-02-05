@@ -5,11 +5,11 @@ import {KernelTasksUI} from "./tasks";
 import {div, h2, iconButton, para, span, TagElement} from "../util/tags";
 import * as messages from "../../data/messages";
 import {TaskInfo, TaskStatus} from "../../data/messages";
-import {errorDisplay} from "./cell";
 import {storage} from "../util/storage";
 import {SocketSession} from "../../comms";
 import {NotebookUI} from "./notebook";
-import {ResultValue} from "../../data/result";
+import {KernelErrorWithCause, ResultValue} from "../../data/result";
+import * as cell from "./cell";
 
 export class KernelUI extends UIMessageTarget {
     private info: KernelInfoUI;
@@ -53,27 +53,30 @@ export class KernelUI extends UIMessageTarget {
 
         this.socket.addEventListener('close', () => this.setKernelState('disconnected'));
 
-        this.socket.addMessageListener(messages.Error, (code, err) => {
-            console.log("Kernel error:", err);
-
-            const {el, messageStr, cellLine} = errorDisplay(err, this.path);
-
-            const id = "KernelError";
-            const message = div(["message"], [
-                para([], `${err.className}: ${err.message}`),
-                para([], el)
-            ]);
-            this.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
-
-            // clean up (assuming that running another cell means users are done with this error)
-            this.socket.listenOnceFor(messages.CellResult, () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100));
-        });
+        this.socket.addMessageListener(messages.Error, (code, err) => this.errorDisplay(code, err));
+        SocketSession.global.addMessageListener(messages.Error, (code, err) => this.errorDisplay(code, err));
 
         // Check storage to see whether this should be collapsed
         const prefs = this.getStorage();
         if (prefs && prefs.collapsed) {
             this.collapse(true);
         }
+    }
+
+    errorDisplay(code: number, err: KernelErrorWithCause) {
+        console.log("Kernel error:", err);
+
+        const {el, messageStr, cellLine} = cell.errorDisplay(err, this.path);
+
+        const id = "KernelError";
+        const message = div(["message"], [
+            para([], `${err.className}: ${err.message}`),
+            para([], el)
+        ]);
+        this.tasks.updateTask(id, id, message, TaskStatus.Error, 0);
+
+        // clean up (assuming that running another cell means users are done with this error)
+        this.socket.listenOnceFor(messages.CellResult, () => this.tasks.updateTask(id, id, message, TaskStatus.Complete, 100));
     }
 
     presentSymbols(id: number, ids: number[]) {

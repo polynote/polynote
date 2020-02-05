@@ -270,6 +270,9 @@ object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 final case class RenameNotebook(path: ShortString, newPath: ShortString) extends Message
 object RenameNotebook extends MessageCompanion[RenameNotebook](25)
 
+final case class CopyNotebook(path: ShortString, newPath: ShortString) extends Message
+object CopyNotebook extends MessageCompanion[CopyNotebook](27)
+
 final case class DeleteNotebook(path: ShortString) extends Message
 object DeleteNotebook extends MessageCompanion[DeleteNotebook](26)
 

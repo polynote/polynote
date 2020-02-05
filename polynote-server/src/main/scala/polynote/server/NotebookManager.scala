@@ -37,6 +37,7 @@ object NotebookManager {
     def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState]
     def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String]
     def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
+    def copy(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
     def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit]
   }
 
@@ -87,32 +88,45 @@ object NotebookManager {
 
       override def listRunning(): RIO[BaseEnv, List[String]] = openNotebooks.keys
 
+      /**
+        * Broadcast a [[Message]] to *all* active clients connected to this server. Used for messages that are NOT specific
+        * to a given notebook or kernel.
+        */
+      private def broadcastMessage(m: Message): Task[Unit] = broadcastAll.publish1(Some(m)) *> broadcastAll.publish1(None)
+
       override def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] =
-        repository.createNotebook(path, maybeContent).flatMap {
-          actualPath => (broadcastAll.publish1(Some(CreateNotebook(ShortString(actualPath)))) *> broadcastAll.publish1(None)).as(actualPath)
-        }
+        for {
+          realPath <- repository.createNotebook(path, maybeContent)
+          _        <- broadcastMessage(CreateNotebook(ShortString(realPath)))
+        } yield realPath
 
       override def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] =
-        openNotebooks.get(path).flatMap {
-          case None                      => repository.renameNotebook(path, newPath)
-          case Some((publisher, writer)) => repository.notebookExists(newPath).flatMap {
-            case true  => ZIO.fail(new FileAlreadyExistsException(s"File $newPath already exists"))
-            case false => // if the notebook is already open, we have to stop writing, rename, and start writing again
-              writer.stop() *> repository.renameNotebook(path, newPath).foldM(
-                err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
-                realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
-                  writer => openNotebooks.put(path, (publisher, writer)).as(realPath)
-                }
-              )
+        for {
+          realPath <- openNotebooks.get(path).flatMap {
+            case None                      => repository.renameNotebook(path, newPath)
+            case Some((publisher, writer)) => repository.notebookExists(newPath).flatMap {
+              case true  => ZIO.fail(new FileAlreadyExistsException(s"File $newPath already exists"))
+              case false => // if the notebook is already open, we have to stop writing, rename, and start writing again
+                writer.stop() *> repository.renameNotebook(path, newPath).foldM(
+                  err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
+                  realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
+                    writer => openNotebooks.put(path, (publisher, writer)).as(realPath)
+                  }
+                )
+            }
           }
-        }.flatMap {
-          realPath => broadcastAll.publish1(Some(RenameNotebook(path, realPath))).as(realPath) <* broadcastAll.publish1(None)
-        }
+          _ <- broadcastMessage(RenameNotebook(path, realPath))
+        } yield realPath
+
+      override def copy(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = for {
+        realPath <- repository.copyNotebook(path, newPath)
+        _        <- broadcastMessage(CreateNotebook(realPath, None))
+      } yield realPath
 
       override def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit] =
         openNotebooks.get(path).flatMap {
           case Some(_) => ZIO.fail(new AccessDeniedException(path, null, "Notebook cannot be deleted while it is open"))
-          case None    => repository.deleteNotebook(path) *> broadcastAll.publish1(Some(DeleteNotebook(path))) *> broadcastAll.publish1(None)
+          case None    => repository.deleteNotebook(path) *> broadcastMessage(DeleteNotebook(path))
         }
 
       override def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState] = openNotebooks.get(path).flatMap {

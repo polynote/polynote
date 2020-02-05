@@ -93,7 +93,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
     host          = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
     url           = s"http://$host:$port"
     interps      <- interpreter.Loader.load.orDie
-    broadcastAll <- Topic[Task, Option[Message]](None).orDie
+    broadcastAll <- Topic[Task, Option[Message]](None).orDie  // used to broadcast messages to all connected clients
     _            <- Env.add[BaseEnv](GlobalEnv(config, interps, kernelFactory))
     _            <- Env.addM[BaseEnv with GlobalEnv](NotebookManager(broadcastAll).orDie)
     loadIndex    <- indexFileContent(wsKey, config, args.watchUI)
