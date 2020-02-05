@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import fs2.concurrent.{SignallingRef, Topic}
 import fs2.Stream
 import polynote.kernel.environment.{Config, PublishMessage}
-import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection}
+import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection, StreamUIOps, StreamThrowableOps}
 import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate, TinyString}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.server.auth.{Identity, IdentityProvider, Permission, UserIdentity}
@@ -43,7 +43,7 @@ class KernelSubscriber private[server] (
 
   def getSelection: UIO[Option[PresenceSelection]] = currentSelection.get
 
-  def selections: Stream[UIO, PresenceSelection] = currentSelection.discrete.unNone.interruptWhen(closed.await.either)
+  def selections: Stream[UIO, PresenceSelection] = currentSelection.discrete.unNone.interruptAndIgnoreWhen(closed)
 }
 
 object KernelSubscriber {
@@ -82,7 +82,7 @@ object KernelSubscriber {
           foreignUpdates(lastLocalVersion, lastGlobalVersion),
           publisher.status.subscribe(128).tail.filter(_.isRelevant(id)).map(update => KernelStatus(update.forSubscriber(id))),
           publisher.cellResults.subscribe(128).tail.unNone
-        )).parJoinUnbounded.interruptWhen(closed.await.either).through(publishMessage.publish).compile.drain.fork
+        )).parJoinUnbounded.interruptAndIgnoreWhen(closed).through(publishMessage.publish).compile.drain.fork
     } yield new KernelSubscriber(
       id,
       identity,

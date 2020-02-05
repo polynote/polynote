@@ -24,7 +24,7 @@ import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Task, RIO, ZIO}
+import zio.{Promise, RIO, Task, ZIO}
 import zio.interop.catz._
 import zio.system.{env, property}
 
@@ -41,8 +41,9 @@ class LocalSparkKernel private[kernel] (
   sparkSession: SparkSession,
   interpreterState: Ref[Task, State],
   interpreters: RefMap[String, Interpreter],
-  busyState: SignallingRef[Task, KernelBusyState]
-) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState) {
+  busyState: SignallingRef[Task, KernelBusyState],
+  closed: Promise[Throwable, Unit]
+) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState, closed) {
 
   override def info(): TaskG[KernelInfo] = super.info().map {
     info => sparkSession.sparkContext.uiWebUrl match {
@@ -132,7 +133,8 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     interpreters     <- RefMap.empty[String, Interpreter]
     scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeM(Env.enrich[Blocking](compiler)))
     interpState      <- Ref[Task].of[State](State.predef(State.Root, State.Root))
-  } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState)
+    closed           <- Promise.make[Throwable, Unit]
+  } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)
 
   private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
 

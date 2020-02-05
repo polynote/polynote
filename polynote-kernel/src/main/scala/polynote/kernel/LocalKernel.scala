@@ -19,7 +19,7 @@ import polynote.kernel.util.RefMap
 import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
 import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr, ValueRepr}
 import scodec.bits.ByteVector
-import zio.{RIO, Task, ZIO}
+import zio.{Promise, RIO, Task, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.duration.Duration
@@ -30,7 +30,8 @@ class LocalKernel private[kernel] (
   compilerProvider: ScalaCompiler.Provider,
   interpreterState: Ref[Task, State],
   interpreters: RefMap[String, Interpreter],
-  busyState: SignallingRef[Task, KernelBusyState]
+  busyState: SignallingRef[Task, KernelBusyState],
+  closed: Promise[Throwable, Unit]
 ) extends Kernel {
 
   import compilerProvider.scalaCompiler
@@ -155,6 +156,7 @@ class LocalKernel private[kernel] (
     interpreters <- interpreters.values
     _            <- interpreters.map(_.shutdown()).sequence.unit
     _            <- busyState.set(KernelBusyState(busy = false, alive = false))
+    _            <- closed.succeed(())
   } yield ()
 
   override def status(): Task[KernelBusyState] = busyState.get
@@ -251,6 +253,8 @@ class LocalKernel private[kernel] (
     }
 
   }
+
+  override def awaitClosed: Task[Unit] = closed.await
 }
 
 class LocalKernelFactory extends Kernel.Factory.LocalService {
@@ -263,7 +267,8 @@ class LocalKernelFactory extends Kernel.Factory.LocalService {
     interpreters <- RefMap.empty[String, Interpreter]
     _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provideSomeM(Env.enrich[Blocking](compiler)))
     interpState  <- Ref[Task].of[State](State.predef(State.Root, State.Root))
-  } yield new LocalKernel(compiler, interpState, interpreters, busyState)
+    closed       <- Promise.make[Throwable, Unit]
+  } yield new LocalKernel(compiler, interpState, interpreters, busyState, closed)
 
 }
 

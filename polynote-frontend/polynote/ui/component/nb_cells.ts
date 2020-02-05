@@ -7,7 +7,7 @@ import * as messages from "../../data/messages";
 import {storage} from "../util/storage";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import * as monaco from "monaco-editor";
-import {PosRange} from "../../data/result";
+import {PosRange, ServerErrorWithCause} from "../../data/result";
 import {NotebookUI} from "./notebook";
 import {CurrentNotebook} from "./current_notebook";
 import {NotebookConfig} from "../../data/data";
@@ -53,9 +53,9 @@ export class NotebookCellsUI extends UIMessageTarget {
         this.forEachCell(cell => cell.setDisabled(disabled));
     }
 
-    setLoadingFailure(error: messages.Error) {
+    setLoadingFailure(error: ServerErrorWithCause) {
         this.el.innerHTML = "";
-        this.el.appendChild(blockquote(['error-report'], [errorDisplay(error.error, "").el]));
+        this.el.appendChild(blockquote(['error-report'], [errorDisplay(error, "").el]));
     }
 
     setStatus(id: number, status: TaskInfo) {

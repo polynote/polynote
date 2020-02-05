@@ -23,7 +23,7 @@ import zio.interop.catz._
 
 import scala.concurrent.TimeoutException
 
-class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterAll with BeforeAndAfterEach with MockFactory with ScalaCheckDrivenPropertyChecks {
+class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterEach with MockFactory with ScalaCheckDrivenPropertyChecks {
   private val kernel        = mock[Kernel]
   private val kernelFactory = new Factory.LocalService {
     def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(kernel)

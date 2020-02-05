@@ -16,7 +16,7 @@ import polynote.env.ops._
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
 import polynote.messages.{CellID, CellResult, KernelStatus, Message, Notebook, NotebookUpdate, RenameNotebook, ShortList, ShortString}
-import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelStatusUpdate, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, TaskB, TaskManager}
+import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, TaskB, TaskManager, StreamThrowableOps}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Promise, RIO, Semaphore, Task, UIO, ZIO}
 import KernelPublisher.{GlobalVersion, SubscriberId}
@@ -72,7 +72,7 @@ class KernelPublisher private (
     *         number is updated only after a content change, while this stream will also contain a notebook for other
     *         changes (such as results). See [[SignallingRef.discrete]] for the semantics of "discrete".
     */
-  def notebooks: Stream[Task, Notebook] = versionedNotebook.discrete.map(_._2).interruptWhen(closed.await.either)
+  def notebooks: Stream[Task, Notebook] = versionedNotebook.discrete.map(_._2).interruptAndIgnoreWhen(closed)
 
   /**
     * @param duration The minimum delay between notebook versions
@@ -83,7 +83,7 @@ class KernelPublisher private (
     import zio.interop.catz.implicits.ioTimer
     (Stream.eval(versionedNotebook.get) ++ Stream.fixedDelay[UIO](duration).zipRight(versionedNotebook.continuous)).filterWithPrevious {
       (previous, current) => !(previous eq current) && previous != current
-    }.map(_._2).interruptWhen(closed.await.either) ++ Stream.eval(versionedNotebook.get.map(_._2))
+    }.map(_._2).interruptAndIgnoreWhen(closed) ++ Stream.eval(versionedNotebook.get.map(_._2))
   }
 
   def latestVersion: Task[(GlobalVersion, Notebook)] = versionedNotebook.get
@@ -99,6 +99,11 @@ class KernelPublisher private (
   def update(subscriberId: SubscriberId, update: NotebookUpdate): Task[Unit] =
     publishUpdate.publish1((subscriberId, update))
 
+  private def handleKernelClosed(kernel: Kernel): TaskB[Unit] =
+    kernel.awaitClosed.catchAll {
+      err => publishStatus.publish1(KernelError(err)) *> Logging.error(s"Kernel closed with error", err)
+    } *> Logging.info("Kernel closed") *> kernelRef.set(None) *> publishStatus.publish1(KernelBusyState(busy = false, alive = false))
+
   def kernel: RIO[BaseEnv with GlobalEnv, Kernel] = kernelRef.get.flatMap {
     case Some(kernel) => ZIO.succeed(kernel)
     case None => kernelStarting.withPermit {
@@ -107,13 +112,14 @@ class KernelPublisher private (
         case None =>
           val initKernel = for {
               kernel <- createKernel()
+              _      <- handleKernelClosed(kernel).fork
               _      <- kernel.init().provideSomeM(Env.enrichM[BaseEnv with GlobalEnv](cellEnv(-1)))
               _      <- kernelRef.set(Some(kernel))
               _      <- kernel.info() >>= publishStatus.publish1
             } yield kernel
 
           initKernel.tapError {
-            err => closed.succeed(())
+            err => kernelRef.get.flatMap(_.map(_.shutdown()).getOrElse(ZIO.unit)) *> kernelRef.set(None) *> status.publish1(KernelError(err))
           }
       }
     }
@@ -203,7 +209,10 @@ class KernelPublisher private (
     _       <- versionedNotebook.update(vn => vn._1 -> vn._2.copy(path = newPath))
   } yield ()
 
-  def close(): Task[Unit] = closed.succeed(()).unit *> taskManager.shutdown()
+  def close(): TaskB[Unit] =
+    closed.succeed(()).unit *>
+      kernelRef.get.flatMap(_.fold[TaskB[Unit]](ZIO.unit)(_.shutdown())) *>
+      taskManager.shutdown()
 
   private def createKernel(): RIO[BaseEnv with GlobalEnv, Kernel] = kernelFactory()
     .provideSomeM(Env.enrichM[BaseEnv with GlobalEnv](kernelFactoryEnv))

@@ -4,8 +4,9 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import cats.{Applicative, MonadError}
 import cats.effect.{Concurrent, Timer}
-import cats.syntax.traverse._
 import cats.instances.list._
+import cats.syntax.either._
+import cats.syntax.traverse._
 import fs2.Stream
 import fs2.concurrent.{Queue, Topic}
 import org.http4s.Response
@@ -15,7 +16,7 @@ import org.http4s.websocket.WebSocketFrame.Binary
 import polynote.buildinfo.BuildInfo
 import polynote.kernel
 import polynote.kernel.util.{Publish, RefMap}
-import polynote.kernel.{BaseEnv, ClearResults, StreamOps, StreamingHandles, TaskG, UpdatedTasks}
+import polynote.kernel.{BaseEnv, ClearResults, StreamThrowableOps, StreamingHandles, TaskG, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
@@ -39,9 +40,10 @@ class SocketSession(
     input     <- Queue.unbounded[Task, WebSocketFrame]
     output    <- Queue.unbounded[Task, WebSocketFrame]
     processor <- process(input, output)
-    fiber     <- processor.interruptWhen(handler.awaitClosed).compile.drain.ignore.fork
+    handlerClosed = handler.awaitClosed.either.as(Either.right[Throwable, Unit](()))
+    fiber     <- processor.interruptWhen(handlerClosed).compile.drain.ignore.fork
     keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
-      .interruptWhen(handler.awaitClosed)
+      .interruptWhen(handlerClosed)
       .through(output.enqueue)
       .compile.drain.ignore.fork
     allOutputs = Stream.emits(Seq(output.dequeue, broadcastAll.subscribe(128).unNone.evalMap(toFrame))).parJoinUnbounded

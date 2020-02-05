@@ -12,7 +12,7 @@ import {EditBuffer} from "../../data/edit_buffer";
 import * as messages from "../../data/messages";
 import {Cell, CodeCell, TextCell} from "./cell";
 import match from "../../util/match";
-import {ClearResults, ClientResult, KernelError, Output, PosRange, Result, ResultValue} from "../../data/result";
+import {ClearResults, ClientResult, ServerError, Output, PosRange, Result, ResultValue} from "../../data/result";
 import {DataRepr, DataStream, StreamingDataRepr} from "../../data/value_repr";
 import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
@@ -103,7 +103,7 @@ export class NotebookUI extends UIMessageTarget {
                        if (msg instanceof messages.Error) {
                            this.socket.close();
                            this.closed = true;
-                           this.cellUI.setLoadingFailure(msg);
+                           this.cellUI.setLoadingFailure(msg.error);
                        }
                    }
                }
@@ -188,6 +188,7 @@ export class NotebookUI extends UIMessageTarget {
                 removed.forEach(id => { this.removePresenceSelection(id); delete this.otherUsers[id] });
             })
             .when(messages.PresenceSelection, (id, cellId, range) => this.setPresenceSelection(id, cellId, range))
+            .when(messages.KernelError, (err) => console.log(err)) // TODO: need a general UI treatment for kernel-level errors
         );
 
         this.socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {

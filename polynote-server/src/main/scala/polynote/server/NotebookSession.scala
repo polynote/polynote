@@ -2,14 +2,15 @@ package polynote.server
 
 import cats.{Applicative, MonadError}
 import cats.effect.Concurrent
-import cats.syntax.traverse._
 import cats.instances.list._
+import cats.syntax.either._
+import cats.syntax.traverse._
 import fs2.Stream
 import fs2.concurrent.Queue
 import org.http4s.Response
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
-import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, PresenceUpdate, StreamOps, StreamingHandles, UpdatedTasks}
+import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, PresenceUpdate, StreamThrowableOps, StreamingHandles, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
@@ -44,9 +45,9 @@ class NotebookSession(
       env       <- ZIO.environment[SessionEnv]
       _         <- sendNotebookInfo()
       processor <- process(input, output)
-      fiber     <- processor.interruptWhen(closed.await.either).compile.drain.ignore.fork
+      fiber     <- processor.interruptWhen(closed.await.either.as(Either.right[Throwable, Unit](()))).compile.drain.ignore.fork
       keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
-        .interruptWhen(closed.await.either)
+        .interruptWhen(closed.await.either.as(Either.right[Throwable, Unit](())))
         .through(output.enqueue)
         .compile.drain.ignore.fork
       response  <- WebSocketBuilder[Task].build(

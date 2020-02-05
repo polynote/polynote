@@ -29,7 +29,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
     provider = "header",
     config = createProvider(allowAnonymous).asJsonObject))))
 
-  def loadFrom(config: PolynoteConfig): Option[IdentityProvider.Service] = config.security.auth.map(IdentityProvider.find).sequence.runIO(config)
+  def loadFrom(config: PolynoteConfig): Option[IdentityProvider.Service] = config.security.auth.map(IdentityProvider.find).sequence.runWithConfig(config)
 
   "HeaderIdentityProvider" - {
 
@@ -60,17 +60,17 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
         val config = authConfig(false)
         val authorize = IdentityProvider.authorize[Environment with Config]
           .provideSomeM(Env.enrichM[Environment with Config](IdentityProvider.load))
-          .runIO(config)
-        authorize(Request(), ok).runIO(config).status shouldEqual Status.Forbidden
+          .runWithConfig(config)
+        authorize(Request(), ok).runWithConfig(config).status shouldEqual Status.Forbidden
       }
 
       "succeeds when allowMissing = true" in {
         val config = authConfig(true)
         val authorize = IdentityProvider.authorize[Environment with Config]
           .provideSomeM(Env.enrichM[Environment with Config](IdentityProvider.load))
-          .runIO(config)
+          .runWithConfig(config)
 
-        authorize(Request(), ok).runIO(config).status shouldEqual Status.Ok
+        authorize(Request(), ok).runWithConfig(config).status shouldEqual Status.Ok
       }
     }
 
@@ -78,7 +78,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
       val config = authConfig(true)
       val authorize = IdentityProvider.authorize[Environment with Config]
         .provideSomeM(Env.enrichM[Environment with Config](IdentityProvider.load))
-        .runIO(config)
+        .runWithConfig(config)
 
       val response = ZIO.access[UserIdentity](_.userIdentity).map {
         identity =>
@@ -86,7 +86,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
       }
 
       def check(name: Option[String]) =
-        authorize(Request(headers = Headers(name.map(Header("X-User-Name", _)).toList)), response).runIO(config)
+        authorize(Request(headers = Headers(name.map(Header("X-User-Name", _)).toList)), response).runWithConfig(config)
           .headers.get(CaseInsensitiveString("FoundIdentity"))
           .map(_.value)
 
@@ -108,7 +108,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
         IdentityProvider.checkPermission(permission)
           .provideSomeM(Env.enrich[Environment with Config with IdentityProvider](UserIdentity.of(name.map(BasicIdentity.apply))))
           .provideSomeM(Env.enrich[Environment with Config](IdentityProvider.of(provider)))
-          .runIO(PolynoteConfig())
+          .runWithConfig(PolynoteConfig())
 
       def checkFail(name: Option[String], permission: Permission): Unit = a [PermissionDenied] shouldBe thrownBy {
         check(name, permission)

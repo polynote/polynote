@@ -20,6 +20,7 @@ object Logging {
     def error(msg: String, err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit]
     def warn(msg: String)(implicit location: Location): UIO[Unit]
     def info(msg: String)(implicit location: Location): UIO[Unit]
+    def remote(msg: String): UIO[Unit]
   }
 
   object Service {
@@ -27,17 +28,22 @@ object Logging {
     class Default(out: PrintStream, blocking: Blocking.Service[Any]) extends Service {
       private val Red = "\u001b[31m"
       private val Reset = "\u001b[0m"
-      private val errorPrefix = "[ERROR] "
-      private val infoPrefix = "[INFO]".padTo(errorPrefix.length, ' ')
-      private val warnPrefix = "[WARN]".padTo(errorPrefix.length, ' ')
-      private val indent = "".padTo(errorPrefix.length, ' ')
-      private val colonIndent = " :".padTo(errorPrefix.length, ' ').reverse
+      private val remotePrefix = "[REMOTE] "
+      private val errorPrefix = "[ERROR]".padTo(remotePrefix.length, ' ')
+      private val infoPrefix = "[INFO]".padTo(remotePrefix.length, ' ')
+      private val warnPrefix = "[WARN]".padTo(remotePrefix.length, ' ')
+      private val indent = "".padTo(remotePrefix.length, ' ')
+      private val colonIndent = " :".padTo(remotePrefix.length, ' ').reverse
 
       override def error(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
         out.synchronized {
           val lines = new StringOps(msg).lines
           out.print(Red)
           out.print(errorPrefix)
+          if (location.file != "") {
+            out.println(s"(Logged from ${location.file}:${location.line})")
+            out.print(errorPrefix)
+          }
           out.println(lines.next())
           lines.foreach {
             l =>
@@ -53,7 +59,11 @@ object Logging {
         out.synchronized {
           out.print(Red)
           out.print(errorPrefix)
-          out.println(msg)
+          out.print(msg)
+          if (location.file != "")
+            out.println(s" (Logged from ${location.file}:${location.line})")
+          else
+            out.println("")
           out.print(colonIndent)
           out.println(err)
           err.getStackTrace.foreach {
@@ -69,7 +79,11 @@ object Logging {
         out.synchronized {
           out.print(Red)
           out.print(errorPrefix)
-          out.println(msg)
+          out.print(msg)
+          if (location.file != "")
+            out.println(s" (Logged from ${location.file}:${location.line})")
+          else
+            out.println("")
           out.print(colonIndent)
           val squashed = err.squash
           out.println(squashed)
@@ -87,35 +101,25 @@ object Logging {
         }
       }.ignore
 
-      override def warn(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
-        out.synchronized {
-          val lines = new StringOps(msg).lines
-          val firstLine = lines.next()
-          out.print(warnPrefix)
-          out.println(firstLine)
-          lines.foreach {
-            l =>
-              out.print(indent)
-              out.println(l)
+      private def printWithPrefix(prefix: String, msg: String)(implicit location: Location): UIO[Unit] =
+        blocking.effectBlocking {
+          out.synchronized {
+            val lines = new StringOps(msg).lines
+            val firstLine = lines.next()
+            out.print(prefix)
+            out.println(firstLine)
+            lines.foreach {
+              l =>
+                out.print(indent)
+                out.println(l)
+            }
           }
-        }
-      }.ignore
+        }.ignore
 
-      override def info(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
-        out.synchronized {
-          val lines = new StringOps(msg).lines
-          val firstLine = lines.next()
-          out.print(infoPrefix)
-          out.println(firstLine)
-          lines.foreach {
-            l =>
-              out.print(indent)
-              out.println(l)
-          }
-        }
-      }.ignore
+      override def warn(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(warnPrefix, msg)
+      override def info(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(infoPrefix, msg)
+      override def remote(msg: String): UIO[Unit] = printWithPrefix(remotePrefix, msg)(Location.Empty)
     }
-
   }
 
   trait Live extends Logging {
@@ -127,6 +131,7 @@ object Logging {
   def error(msg: String, cause: zio.Cause[Throwable])(implicit location: Location): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.error(msg, cause))
   def warn(msg: String)(implicit location: Location): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.warn(msg))
   def info(msg: String)(implicit location: Location): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.info(msg))
+  def remote(msg: String): ZIO[Logging, Nothing, Unit] = ZIO.accessM[Logging](_.logging.remote(msg))
   def access: ZIO[Logging, Nothing, Service] = ZIO.access[Logging](_.logging)
 
 }
