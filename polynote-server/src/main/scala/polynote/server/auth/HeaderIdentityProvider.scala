@@ -27,7 +27,8 @@ case class HeaderIdentityProvider(
     permission: Permission
   ): ZIO[BaseEnv, Permission.PermissionDenied, Unit] = {
     val matchedUser = ident.map(_.name).getOrElse("*")
-    val resolvedPermissions = permissions.getOrElse(matchedUser, Set.empty)
+    val anyPermissions = permissions.getOrElse("*", Set.empty)
+    val resolvedPermissions = permissions.get(matchedUser).map(_ ++ anyPermissions).getOrElse(anyPermissions)
     if (resolvedPermissions contains permission.permissionType)
       ZIO.unit
     else
