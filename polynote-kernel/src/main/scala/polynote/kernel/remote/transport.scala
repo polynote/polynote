@@ -342,7 +342,9 @@ object SocketTransport {
         alive <- effectBlocking(process.isAlive)
       } yield if (alive) None else Option(process.exitValue())
 
-      override def kill(): RIO[Blocking, Unit] = effectBlocking(process.destroy())
+      override def kill(): RIO[Blocking, Unit] = effectBlocking {
+        process.destroy()
+      }
 
       override def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): RIO[Blocking, Option[Int]] = effectBlocking {
         if (process.waitFor(timeout, timeUnit)) {
@@ -399,8 +401,6 @@ object SocketTransport {
 
     def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).uninterruptible.catchSome {
       case err: AsynchronousCloseException => Logging.info("Remote peer closed connection") *> close() *> ZIO.succeed(None)
-    }.catchSome {
-      case err if err.getClass.getSimpleName == "AsynchronousCloseException" => Logging.info("WTFBRO") *> close() *> ZIO.succeed(None)
     }.tapError {
       err => closed.fail(err)
     }
@@ -456,7 +456,10 @@ object SocketTransport {
         doKeepalive  <- if (keepalive) {
           // This sends a keepalive quite frequently, because it's the only way we can detect if the remote peer dies.
           // It only sends 16 bytes per second, though, and they only send if the channel isn't being written.
-          framedSocket.sendKeepalive().repeat(ZSchedule.spaced(ZDuration(250, TimeUnit.MILLISECONDS))).ignore.fork
+          framedSocket.sendKeepalive().tapError {
+            err =>
+              closed.fail(err) *> effectBlocking(socketChannel.close())
+          }.repeat(ZSchedule.spaced(ZDuration(250, TimeUnit.MILLISECONDS))).fork
         } else ZIO.unit
       } yield framedSocket
     }

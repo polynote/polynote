@@ -16,7 +16,7 @@ import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, Ke
 import polynote.messages.{Notebook, ShortList}
 import polynote.testing.{ConfiguredZIOSpec, ExtConfiguredZIOSpec}
 import zio.duration.Duration
-import zio.{Promise, RIO, Task, ZIO}
+import zio.{Promise, RIO, Task, ZIO, ZSchedule}
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory {
 
@@ -37,16 +37,15 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
       val collectStatus = kernelPublisher.status.subscribe(5).interruptWhen(kernelPublisher.closed.await.either).compile.toList.fork.runIO()
 
-      val waitForDeath  = kernelPublisher.status.subscribe(5)
-        .terminateAfterEquals(KernelBusyState(busy = false, alive = false))
-        .covary[Task]
-        .compile.drain.fork.runIO()
-
       process.kill().runIO()
+      assert(process.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty)
 
-      waitForDeath.join.timeout(Duration(2, TimeUnit.SECONDS)).runIO()
+      val kernel2 = kernelPublisher.kernel
+        .repeat(ZSchedule.doUntil[Kernel](_ ne kernel))
+        .timeout(Duration(5, TimeUnit.SECONDS))
+        .someOrFail(new Exception("Kernel should have changed; didn't change after 5 seconds"))
+        .runWith(kernelFactory)
 
-      val kernel2 = kernelPublisher.kernel.runWith(kernelFactory)
       assert(!(kernel2 eq kernel), "Kernel should have changed")
       kernelPublisher.close().runIO()
       val statusUpdates = collectStatus.join.runIO()
