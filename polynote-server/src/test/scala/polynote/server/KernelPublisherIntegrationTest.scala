@@ -82,7 +82,8 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
       val notebook        = Notebook("/i/am/fake.ipynb", ShortList(Nil), None)
       val kernelPublisher = KernelPublisher(notebook).runWith(failingKernelFactory)
-      val collectStatus = kernelPublisher.status.subscribe(5).interruptWhen(kernelPublisher.closed.await.either).compile.toList.fork.runIO()
+      val stopStatus = Promise.make[Throwable, Unit].runIO()
+      val collectStatus = kernelPublisher.status.subscribe(5).interruptWhen(stopStatus.await.either).compile.toList.fork.runIO()
 
       a [FailedToStart] should be thrownBy {
         kernelPublisher.kernel.runWith(failingKernelFactory)
@@ -91,6 +92,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val kernel2 = kernelPublisher.kernel.runWith(failingKernelFactory)
       assert(kernel2 eq stubKernel)
       kernelPublisher.close().runIO()
+      stopStatus.succeed(()).runIO()
       val statusUpdates = collectStatus.join.runIO()
 
       // should have gotten the original startup error in status updates

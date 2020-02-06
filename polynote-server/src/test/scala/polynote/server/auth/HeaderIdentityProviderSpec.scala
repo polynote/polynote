@@ -56,7 +56,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
     "when specified header is missing" - {
       val ok = ZIO.effectTotal(Response[Task](Status.Ok))
 
-      "fails when allowMissing = false" in {
+      "fails when allowAnonymous = false" in {
         val config = authConfig(false)
         val authorize = IdentityProvider.authorize[Environment with Config]
           .provideSomeM(Env.enrichM[Environment with Config](IdentityProvider.load))
@@ -64,7 +64,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
         authorize(Request(), ok).runWithConfig(config).status shouldEqual Status.Forbidden
       }
 
-      "succeeds when allowMissing = true" in {
+      "succeeds when allowAnonymous = true" in {
         val config = authConfig(true)
         val authorize = IdentityProvider.authorize[Environment with Config]
           .provideSomeM(Env.enrichM[Environment with Config](IdentityProvider.load))
@@ -127,6 +127,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
         checkAll(Some("bob"), read, modify)
         checkAllFail(Some("bob"), execute, delete, create)
         checkAll(Some("alice"), read, modify, execute, delete, create)
+        checkAll(Some("charlie"), read)
       }
 
       "for unknown users" in {
