@@ -421,24 +421,26 @@ class ScalaCompiler private (
       exitingTyper(compilationUnit.body)
     }
 
-    private[ScalaCompiler] def compile() = ZIO {
-      val run = new Run()
-      compilationUnit.body = wrapped
-      unitOfFile.put(sourceFile.file, compilationUnit)
-      ZIO {
-        reporter.attempt {
-          run.compileUnits(List(compilationUnit), run.namerPhase)
-          exitingTyper(compilationUnit.body)
-          // materialize these lazy vals now while the run is still active
-          val _1 = cellClassSymbol
-          val _2 = cellClassType
-          val _3 = cellCompanionSymbol
-          val _4 = cellInstSymbol
-          val _5 = cellInstType
-          val _6 = typedOutputs
-        }
-      }.lock(compilerThread).absolve
-    }.flatten
+    private[ScalaCompiler] def compile() = classLoader.flatMap {
+      cl => ZIO {
+        val run = new Run()
+        compilationUnit.body = wrapped
+        unitOfFile.put(sourceFile.file, compilationUnit)
+        ZIO {
+          reporter.attempt {
+            withContextClassLoader(cl)(run.compileUnits(List(compilationUnit), run.namerPhase))
+            exitingTyper(compilationUnit.body)
+            // materialize these lazy vals now while the run is still active
+            val _1 = cellClassSymbol
+            val _2 = cellClassType
+            val _3 = cellCompanionSymbol
+            val _4 = cellInstSymbol
+            val _5 = cellInstType
+            val _6 = typedOutputs
+          }
+        }.lock(compilerThread).absolve
+      }.flatten
+    }
 
     // compute which inputs (values from previous cells) are actually referenced in the code
     private def usedInputs = {
@@ -523,13 +525,17 @@ class ScalaCompiler private (
         Imports(local.map(_._2.duplicate), external.map(_._2.duplicate))
     }
 
+    private def typedWithContextClassloader = classLoader.flatMap {
+      cl => ZIO(withContextClassLoader(cl)(reporter.attempt(typed))).lock(compilerThread).absolve
+    }
+
     /**
       * Make a new [[CellCode]] that uses a minimal subset of inputs and prior cells.
       * After invoking, this [[CellCode]] will not be compilable – bin it!
       */
     def pruneInputs(): Task[CellCode] = if (inputs.nonEmpty || priorCells.nonEmpty) {
       for {
-        typedTree  <- ZIO(reporter.attempt(typed)).lock(compilerThread).absolve
+        typedTree  <- typedWithContextClassloader
         usedNames  <- ZIO(usedInputs).lock(compilerThread)
         usedDeps   <- ZIO(usedPriorCells)
         usedNameSet = usedNames.map(_.decodedName.toString).toSet
