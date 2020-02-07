@@ -63,17 +63,18 @@ object NotebookManager {
       // write the notebook every 1 second, if it's changed.
       private def startWriter(publisher: KernelPublisher): ZIO[BaseEnv with GlobalEnv, Nothing, NotebookWriter] = for {
         shutdownSignal <- Promise.make[Throwable, Unit]
-        nbPath         <- publisher.latestVersion.map(_._2.path).orDie
+        nbPath          = publisher.latestVersion.map(_._2.path).orDie
         fiber          <- publisher.latestVersion.map(_._2)
           .flatMap(repository.saveNotebook)
           .tapError(Logging.error("Error writing notebook file", _))
           .retry(ZSchedule.exponential(Duration(250, TimeUnit.MILLISECONDS)).untilOutput(_ >= maxRetryDelay))
-          .tapError(err => broadcastMessage(Error(0, new Exception("A notebook writer is repeatedly failing! EVERYBODY PANIC!", err))) *> publisher.close())
+          .tapError(err =>
+            nbPath.flatMap(path => broadcastMessage(Error(0, new Exception(s"Notebook writer for $path is repeatedly failing! Notebook editing will be disabled.", err))) *> publisher.close()))
           .repeat(ZSchedule.spaced(Duration(1, TimeUnit.SECONDS)))
           .unit
           .race(shutdownSignal.await)
           .race(publisher.closed.await)
-          .onInterrupt(Logging.info(s"Stopped writer for $nbPath (interrupted)")).fork
+          .onInterrupt(nbPath.flatMap(path => Logging.info(s"Stopped writer for $path (interrupted)"))).fork
       } yield NotebookWriter(fiber, shutdownSignal)
 
       override def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher] = openNotebooks.getOrCreate(path) {
