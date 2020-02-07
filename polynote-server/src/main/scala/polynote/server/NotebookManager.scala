@@ -11,14 +11,14 @@ import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.RefMap
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, StreamThrowableOps}
-import polynote.messages.{CreateNotebook, DeleteNotebook, Message, RenameNotebook, ShortString}
+import polynote.messages.{CreateNotebook, DeleteNotebook, Message, RenameNotebook, ShortString, Error}
 import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
 import zio.blocking.Blocking
+import zio.duration.Duration
 import zio.interop.catz._
-import zio.{Fiber, Promise, RIO, Task, ZIO}
+import zio.{Fiber, Promise, RIO, Task, ZIO, ZSchedule}
 
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.Duration
 
 trait NotebookManager {
   val notebookManager: NotebookManager.Service
@@ -58,14 +58,22 @@ object NotebookManager {
       broadcastAll: Topic[Task, Option[Message]]
     ) extends Service {
 
+      private val maxRetryDelay = Duration(8, TimeUnit.SECONDS)
+
       // write the notebook every 1 second, if it's changed.
       private def startWriter(publisher: KernelPublisher): ZIO[BaseEnv with GlobalEnv, Nothing, NotebookWriter] = for {
         shutdownSignal <- Promise.make[Throwable, Unit]
-        fiber          <- publisher.notebooksTimed(Duration(1, TimeUnit.SECONDS))
-          .evalMap(notebook => repository.saveNotebook(notebook))
-          .interruptAndIgnoreWhen(shutdownSignal)
-          .interruptAndIgnoreWhen(publisher.closed)
-          .compile.drain.fork
+        nbPath         <- publisher.latestVersion.map(_._2.path).orDie
+        fiber          <- publisher.latestVersion.map(_._2)
+          .flatMap(repository.saveNotebook)
+          .tapError(Logging.error("Error writing notebook file", _))
+          .retry(ZSchedule.exponential(Duration(250, TimeUnit.MILLISECONDS)).untilOutput(_ >= maxRetryDelay))
+          .tapError(err => broadcastMessage(Error(0, new Exception("A notebook writer is repeatedly failing! EVERYBODY PANIC!", err))) *> publisher.close())
+          .repeat(ZSchedule.spaced(Duration(1, TimeUnit.SECONDS)))
+          .unit
+          .race(shutdownSignal.await)
+          .race(publisher.closed.await)
+          .onInterrupt(Logging.info(s"Stopped writer for $nbPath (interrupted)")).fork
       } yield NotebookWriter(fiber, shutdownSignal)
 
       override def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher] = openNotebooks.getOrCreate(path) {
