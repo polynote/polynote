@@ -35,7 +35,7 @@ class NotebookSession(
   def close(): URIO[SessionEnv, Unit] =
         subscriber.close() *> closed.succeed(()).flatMap {
           case true => (UserIdentity.access, subscriber.currentPath.orDie).map2 {
-              (user, path) => Logging.info(s"Closing notebook session $path for $user")
+              (user, path) => output.enqueue1(WebSocketFrame.Close()).orDie *> Logging.info(s"Closing notebook session $path for $user")
             }.flatten
           case false => ZIO.unit
         }
@@ -184,5 +184,7 @@ object NotebookSession {
     sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
     streamingHandles <- Env.enrichM[BaseEnv](StreamingHandles.make(sessionId))
     closed           <- Promise.make[Throwable, Unit]
-  } yield new NotebookSession(subscriber, streamingHandles, closed, input, output, publishMessage)
+    session           = new NotebookSession(subscriber, streamingHandles, closed, input, output, publishMessage)
+    _                <- subscriber.closed.await.flatMap(_ => session.close()).fork
+  } yield session
 }

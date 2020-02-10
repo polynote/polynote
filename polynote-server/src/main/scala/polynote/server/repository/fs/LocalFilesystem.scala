@@ -19,7 +19,8 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 
   override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = for {
     _ <- createDirs(path)
-  } yield Files.write(path, content.getBytes(StandardCharsets.UTF_8))
+    _ <- effectBlocking(Files.write(path, content.getBytes(StandardCharsets.UTF_8))).uninterruptible
+  } yield ()
 
   private def readBytes(is: => InputStream): RIO[BaseEnv, Chunk.Bytes] = {
     for {
