@@ -7,6 +7,7 @@ import io.circe.parser.parse
 import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages.{Notebook, NotebookConfig}
+import polynote.server.repository
 import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.format.ipynb.JupyterOutput.{DisplayData, Error, ExecuteResult}
 import zio.{RIO, ZIO}
@@ -16,7 +17,7 @@ import scala.collection.immutable.StringOps
 /**
   * Format that decodes Zeppelin json but encodes ipynb
   */
-class ZeppelinToIpynbFormat extends IPythonFormat {
+class ZeppelinToIpynbFormat extends NotebookFormat {
   override val extension: String = "json"
 
   override def decodeNotebook(noExtPath: String, rawContent: String): RIO[BaseEnv with GlobalEnv, Notebook] = {
@@ -30,6 +31,9 @@ class ZeppelinToIpynbFormat extends IPythonFormat {
       content.toNotebook(s"$noExtPath.ipynb") // Note the extension being overridden to ipynb here.
     }
   }
+
+  override def encodeNotebook(notebook: repository.NotebookContent): RIO[BaseEnv with GlobalEnv, String] =
+    new IPythonFormat().encodeNotebook(notebook)
 }
 
 
