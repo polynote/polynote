@@ -150,4 +150,4 @@
 # SPARK_DIST_CLASSPATH that match the regex will be added to the compiler classpath.
 ###############################################################################################
 
-#spark_dist_classpath_filter: "(hadoop-common-2.7.3-mycompany-*.jar)"
+#spark_dist_classpath_filter: "(hadoop-common-2.7.3-mycompany-.*.jar)"
