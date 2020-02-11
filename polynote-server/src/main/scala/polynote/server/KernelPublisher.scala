@@ -16,7 +16,7 @@ import polynote.env.ops._
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
 import polynote.messages.{CellID, CellResult, KernelStatus, Message, Notebook, NotebookUpdate, RenameNotebook, ShortList, ShortString}
-import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, TaskB, TaskManager, StreamThrowableOps}
+import polynote.kernel.{BaseEnv, CellEnv, CellEnvT, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskManager}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Promise, RIO, Semaphore, Task, UIO, ZIO}
 import KernelPublisher.{GlobalVersion, SubscriberId}
@@ -136,13 +136,24 @@ class KernelPublisher private (
     case Some(_) => killKernel() *> this.kernel.unit
   }
 
+
+  // process carriage returns in the string
+  private def collapseCrs(str: String): String = str.replaceAll("\\r\\n", "\n").replaceAll("[^\\n]*\\r", "")
+
   def queueCell(cellID: CellID): RIO[BaseEnv with GlobalEnv, Task[Unit]] = queueingCell.withPermit {
+
     def writeResult(result: Result) = versionedNotebook.update {
       case (ver, nb) => ver -> nb.updateCell(cellID) {
         cell => result match {
           case ClearResults() => cell.copy(results = ShortList(Nil))
           case execInfo@ExecutionInfo(_, _) => cell.copy(results = ShortList(cell.results :+ execInfo), metadata = cell.metadata.copy(executionInfo = Some(execInfo)))
-          case result => cell.copy(results = ShortList(cell.results :+ result))
+          case Output(contentType, str) =>
+            val updatedResults = cell.results.lastOption match {
+              case Some(Output(`contentType`, str1)) => cell.results.dropRight(1) :+ Output(contentType, collapseCrs(str1 + str))
+              case _ => cell.results :+ result
+            }
+            cell.copy(results = ShortList.fromRight(updatedResults))
+          case result => cell.copy(results = ShortList.fromRight(cell.results :+ result))
         }
       }
     }
