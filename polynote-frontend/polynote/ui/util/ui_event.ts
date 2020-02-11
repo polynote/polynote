@@ -1,5 +1,5 @@
 import {Extractable} from "../../util/match";
-import {KernelBusyState, KernelStatus} from "../../data/messages";
+import {KernelBusyState, KernelStatus, Message} from "../../data/messages";
 import {Cell} from "../component/cell";
 import {LazyDataRepr, StreamingDataRepr, UpdatingDataRepr} from "../../data/value_repr";
 
@@ -18,7 +18,7 @@ export class UIMessage {
     constructor(...args: any[]) {}
 }
 
-type UIMessageListenerCallback<T extends any[]> = (...args: T) => boolean | void
+type UIMessageListenerCallback<T extends new (...args: any) => any> = (...args: ConstructorParameters<T>) => boolean | void
 type UIMessageListener = [typeof UIMessage, UIMessageListenerCallback<any>, boolean?]
 
 // PubSub for UIMessages that also publishes events to its parent (if present)
@@ -32,7 +32,7 @@ export class UIMessageTarget {
         return this;
     }
 
-    subscribe<T extends typeof UIMessage>(msgType: T, fn: UIMessageListenerCallback<ConstructorParameters<T>>, removeWhenFalse = false) {
+    subscribe<T extends typeof UIMessage>(msgType: T, fn: UIMessageListenerCallback<T>, removeWhenFalse = false) {
         const handler: UIMessageListener = [msgType, fn, removeWhenFalse];
         this.listeners.push(handler);
         return handler
@@ -71,7 +71,7 @@ export class UIMessageRequest<T extends typeof UIMessage> extends UIMessage {
 
 
 export class ServerVersion extends UIMessage {
-    constructor(readonly version: number, readonly commit: number) { super() }
+    constructor(readonly version: string, readonly commit: string) { super() }
 
     static unapply(inst: ServerVersion): ConstructorParameters<typeof ServerVersion> {
         return [inst.version, inst.commit]

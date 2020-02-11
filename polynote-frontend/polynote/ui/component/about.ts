@@ -28,7 +28,7 @@ export class About extends FullScreenModal {
             ])
         ]);
 
-        this.subscribe(ServerVersion, (version, commit) => {
+        this.publish(new UIMessageRequest(ServerVersion, (version, commit) => {
             const info = [
                 ["Server Version", version],
                 ["Server Commit", commit]
@@ -46,8 +46,7 @@ export class About extends FullScreenModal {
             }
 
             el.appendChild(tableEl);
-            return false // remove the subscription.
-        }, /*removeWhenFalse*/ true);
+        }));
         return el;
     }
 
