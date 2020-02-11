@@ -104,6 +104,10 @@ object Kernel {
       override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = choose.flatMap(_.apply())
     }
 
+    def const(inst: Kernel): Factory = of(new Service {
+      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(inst)
+    })
+
     def access: RIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.kernelFactory)
   }
 

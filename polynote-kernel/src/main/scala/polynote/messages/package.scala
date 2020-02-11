@@ -51,6 +51,7 @@ package object messages {
       else
         list.asInstanceOf[ShortList[A]]
 
+    def fromRight[A](list: List[A]): ShortList[A] = list.takeRight(Short.MaxValue).asInstanceOf[ShortList[A]]
     def of[A](elems: A*): ShortList[A] = apply(elems.toList)
   }
 

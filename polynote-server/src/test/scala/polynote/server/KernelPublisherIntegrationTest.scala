@@ -3,6 +3,8 @@ package polynote.server
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 
+import cats.instances.list._
+import cats.syntax.traverse._
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.config.PolynoteConfig
@@ -12,8 +14,8 @@ import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.remote.SocketTransport.DeploySubprocess
 import polynote.kernel.remote.{RemoteKernel, SocketTransport, SocketTransportServer}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployJava
-import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, LocalKernelFactory}
-import polynote.messages.{Notebook, ShortList}
+import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, LocalKernel, LocalKernelFactory, Output}
+import polynote.messages.{Notebook, NotebookCell, ShortList, CellID}
 import polynote.testing.{ConfiguredZIOSpec, ExtConfiguredZIOSpec}
 import zio.duration.Duration
 import zio.{Promise, RIO, Task, ZIO, ZSchedule}
@@ -24,7 +26,32 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
     override val interpreterFactories: Map[String, List[Interpreter.Factory]] = Map.empty
   })
 
+  private def mkStubKernel = {
+    val stubKernel = stub[Kernel]
+    stubKernel.shutdown _ when () returns ZIO.unit
+    stubKernel.awaitClosed _ when () returns ZIO.unit
+    stubKernel.init _ when () returns ZIO.unit
+    stubKernel.info _ when () returns ZIO.succeed(KernelInfo())
+    stubKernel
+  }
+
   "KernelPublisher" - {
+
+    "collapses carriage returns in saved notebook" in {
+      val kernel          = mkStubKernel
+      val kernelFactory   = Kernel.Factory.const(kernel)
+      kernel.queueCell _ when (CellID(0)) returns ZIO.environment[CellEnv].map {
+        env => (0 until 100).toList.map {
+          i => env.publishResult.publish1(Output("text/plain; rel=stdout", s"$i\r"))
+        }.sequence *> env.publishResult.publish1(Output("text/plain; rel=stdout", "end\n"))
+      }
+      val notebook        = Notebook("/i/am/fake.ipynb", ShortList(List(NotebookCell(CellID(0), "scala", ""))), None)
+      val kernelPublisher = KernelPublisher(notebook).runWith(kernelFactory)
+      kernelPublisher.queueCell(CellID(0)).flatten.runWith(kernelFactory)
+      kernelPublisher.latestVersion.runIO()._2.cells.head.results should contain theSameElementsAs Seq(
+        Output("text/plain; rel=stdout", "end\n")
+      )
+    }
 
     "gracefully handles death of kernel" in {
       val deploy          = new DeploySubprocess(new DeployJava[LocalKernelFactory])
@@ -61,11 +88,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
     }
 
     "gracefully handles startup failure of kernel" in {
-      val stubKernel = stub[Kernel]
-      stubKernel.shutdown _ when () returns ZIO.unit
-      stubKernel.awaitClosed _ when () returns ZIO.unit
-      stubKernel.init _ when () returns ZIO.unit
-      stubKernel.info _ when () returns ZIO.succeed(KernelInfo())
+      val stubKernel = mkStubKernel
 
       case class FailedToStart() extends Exception("The kernel fails to start. What do you do?")
 
