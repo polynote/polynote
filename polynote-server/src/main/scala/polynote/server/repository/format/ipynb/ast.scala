@@ -179,10 +179,10 @@ object JupyterCell {
 
   implicit val decoder: Decoder[JupyterCell] = deriveDecoder[JupyterCell]
 
-  def toNotebookCell(cell: JupyterCell, index: Int): NotebookCell = {
+  def toNotebookCell(defaultLanguage: Option[String])(cell: JupyterCell, index: Int): NotebookCell = {
     val language = cell.cell_type match {
       case Markdown => "text"
-      case Code     => cell.language orElse cell.metadata.flatMap(_("language").flatMap(_.asString)) getOrElse "scala"
+      case Code     => cell.language orElse cell.metadata.flatMap(_("language").flatMap(_.asString)) orElse defaultLanguage getOrElse "scala"
     }
 
     val meta = cell.metadata.map {
@@ -246,7 +246,10 @@ object JupyterNotebook {
 
   def toNotebook(notebook: JupyterNotebook): NotebookContent = {
     val config = notebook.metadata.flatMap(_("config")).flatMap(_.as[NotebookConfig].right.toOption)
-    val cells = ShortList(notebook.cells.zipWithIndex.map((JupyterCell.toNotebookCell _).tupled))
+    val notebookLanguage = notebook.metadata.flatMap {
+      meta => HCursor.fromJson(Json.fromJsonObject(meta)).downField("language_info").downField("name").as[String].toOption
+    }
+    val cells = ShortList(notebook.cells.zipWithIndex.map((JupyterCell.toNotebookCell(notebookLanguage) _).tupled))
     NotebookContent(cells, config)
   }
 

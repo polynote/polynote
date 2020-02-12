@@ -14,13 +14,13 @@ class IPythonFormat extends NotebookFormat {
 
   override val extension: String = "ipynb"
 
-  override def decodeNotebook(noExtPath: String, rawContent: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
+  override def decodeNotebook(noExtPath: String, rawContent: String): RIO[Any, Notebook] = for {
     parsed  <- ZIO.fromEither(parse(rawContent))
     staged  <- ZIO.fromEither(parsed.as[JupyterNotebookStaged])
     decoded <- ZIO.fromEither(if (staged.nbformat == 3) parsed.as[JupyterNotebookV3].map(JupyterNotebookV3.toV4) else parsed.as[JupyterNotebook])
   } yield JupyterNotebook.toNotebook(decoded).toNotebook(s"$noExtPath.$extension")
 
-  override def encodeNotebook(nb: NotebookContent): RIO[BaseEnv with GlobalEnv, String] = for {
+  override def encodeNotebook(nb: NotebookContent): RIO[Any, String] = for {
     ipynb <- ZIO(JupyterNotebook.fromNotebook(nb))
   } yield Printer.spaces2.copy(dropNullValues = true).pretty(ipynb.asJson)
 }
