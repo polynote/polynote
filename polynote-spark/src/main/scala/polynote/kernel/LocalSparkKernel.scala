@@ -58,7 +58,6 @@ class LocalSparkKernel private[kernel] (
 }
 
 class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
-  import LocalSparkKernel.kernelCounter
 
   // all the JARs in Spark's classpath. I don't think this is actually needed.
   private def sparkDistClasspath = env("SPARK_DIST_CLASSPATH").orDie.get.flatMap {
@@ -128,7 +127,6 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     compiler         <- ScalaCompiler.provider(main.map(_._3), sparkRuntimeJar :: transitive.map(_._3), sparkClasspath, updateSettings)
     classLoader      <- compiler.scalaCompiler.classLoader
     session          <- startSparkSession(sparkJars, classLoader)
-    notebookPackage   = s"$$notebook$$${kernelCounter.getAndIncrement()}"
     busyState        <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
     scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeM(Env.enrich[Blocking](compiler)))
@@ -219,6 +217,4 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
   }
 }
 
-object LocalSparkKernel extends LocalSparkKernelFactory {
-  private[kernel] val kernelCounter = new AtomicInteger(0)
-}
+object LocalSparkKernel extends LocalSparkKernelFactory

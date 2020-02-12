@@ -2,6 +2,7 @@ package polynote.kernel
 
 import java.io.File
 import java.net.URL
+import java.util.concurrent.atomic.AtomicInteger
 
 import cats.syntax.traverse._
 import cats.instances.list._
@@ -10,7 +11,7 @@ import polynote.kernel.util.{KernelReporter, LimitedSharingClassLoader, pathOf}
 import zio.blocking.Blocking
 import zio.system.{System, env}
 import zio.internal.{ExecutionMetrics, Executor}
-import zio.{Task, RIO, ZIO}
+import zio.{RIO, Task, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.mutable
@@ -20,7 +21,6 @@ import scala.reflect.runtime.universe
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.Global
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
-
 import ScalaCompiler.OriginalPos
 
 class ScalaCompiler private (
@@ -566,7 +566,11 @@ object ScalaCompiler {
   def settings: ZIO[Provider, Nothing, Settings]       = access.map(_.global.settings)
   def dependencies: ZIO[Provider, Nothing, List[File]] = access.map(_.dependencies)
 
-  private[polynote] def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader], notebookPackage: String = "$notebook"): Task[ScalaCompiler] =
+  private val _kernelCounter = new AtomicInteger(0)
+  private[kernel] def kernelCounter: UIO[Int] = ZIO.effectTotal(_kernelCounter.getAndIncrement())
+
+  // Available for testing
+  private[polynote] def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader], notebookPackage: String = "notebook"): Task[ScalaCompiler] =
     classLoader.memoize.flatMap {
       classLoader => ZIO {
         val global = new Global(settings, KernelReporter(settings))
@@ -594,7 +598,8 @@ object ScalaCompiler {
   ): RIO[Config with System, ScalaCompiler] = for {
     settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencyClasspath ++ transitiveClasspath ++ otherClasspath)))
     global            <- ZIO(new Global(settings, KernelReporter(settings)))
-    notebookPackage    = "$notebook"
+    counter           <- kernelCounter
+    notebookPackage    = s"notebook$counter"
     classLoader       <- makeClassLoader(settings, dependencyClasspath ++ transitiveClasspath).memoize
   } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencyClasspath, otherClasspath)
 
