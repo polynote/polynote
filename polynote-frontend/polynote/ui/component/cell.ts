@@ -38,7 +38,7 @@ import {
     RuntimeError
 } from "../../data/result"
 import {RichTextEditor} from "./text_editor";
-import {CellSelected, UIMessageTarget} from "../util/ui_event"
+import {CellSelected, CommentDelta, CommentRootHidden, CommentRootShown, UIMessageTarget} from "../util/ui_event"
 import {Diff} from '../../util/diff'
 import {preferences} from "../util/storage";
 import {createVim} from "../util/vim";
@@ -59,6 +59,7 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import SignatureHelpResult = languages.SignatureHelpResult;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
+import {CommentRoot, CommentButton, CellComment} from "./comment";
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -339,8 +340,10 @@ export class CodeCell extends Cell {
     private highlightDecorations: string[];
     private execDurationUpdater: number;
     public vim: any | null;
-
     private presenceMarkers: Record<number, string[]> = {};
+    private commentButton?: CommentButton;
+    private comments: Record<string, [PosRange, CellComment[]]> = {}; // range_as_str -> [range_as_range, comments]
+    private commentButtonCB: IDisposable;
 
     static keyMapOverrides = new Map([
         [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell: CodeCell) => {
@@ -487,6 +490,67 @@ export class CodeCell extends Cell {
                     this.notebook.setCurrentSelection(this.id, range.reversed);
                 } else {
                     this.notebook.setCurrentSelection(this.id, range);
+                }
+
+                // display comment icon
+                if (range.start != range.end) {
+                    if(this.commentButton) this.commentButton.hide();
+                    // calculates location of right margin
+                    const calcOffset = () => {
+                        const containerOffset = this.editorEl.getBoundingClientRect().left;
+                        const currentY = this.editor.getTopForPosition(selection.endLineNumber, selection.endColumn);
+                        const containerY = this.editorEl.getBoundingClientRect().top;
+
+                        const l = this.editor.getLayoutInfo();
+                        const x = (
+                            containerOffset                 // the location of this cell on the page
+                            + l.contentWidth                // the width of the content area
+                            - l.verticalScrollbarWidth      // don't want to overlay on top of the scrollbar.
+                        );
+                        const y = containerY + currentY;
+                        return [x, y];
+                    };
+
+                    const [x, y] = calcOffset();
+                    const comment = new CommentButton(this, x, y, () => {
+                        this.commentButtonCB.dispose();
+                        this.commentButton = undefined;
+                    });
+                    comment.show();
+                    comment.subscribe(CommentRootShown, c => {
+
+                        const updatePosition = this.editor.onDidLayoutChange(() => {
+                            const [x, y] = calcOffset();
+                            c.position(x, y)
+                        });
+
+                        c.subscribe(CommentRootHidden, c2 => {
+                            if (c !== c2) {
+                                console.log("this shouldn't happen!");
+                            } else {
+                                updatePosition.dispose();
+                            }
+                        });
+
+                        c.subscribe(CommentDelta, (root, added, removed) => {
+                            const [r, currentComments] = this.comments[range.asString];
+                            let comments = currentComments.filter(curr => removed.find(c2 => curr.uuid === c2.uuid) === undefined)
+                            comments.concat(added);
+                            this.comments[range.asString] = [range, comments];
+
+
+
+                        });
+
+                        this.comments[range.asString] = [range, c.comments];
+                    });
+                    this.commentButtonCB = this.editor.onDidLayoutChange(() => {
+                        const [x, y] = calcOffset();
+                        comment.position(x, y)
+                    });
+                    this.commentButton = comment;
+                } else {
+                    if (this.commentButton) this.commentButton.hide()
                 }
             }
         }

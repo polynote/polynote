@@ -3192,3 +3192,51 @@ button.dialog-button {
 img.icon {
   height: 1em;
 }
+
+// comments
+.comment-container {
+  position: absolute;
+  z-index: 2;
+
+  .comments-list {
+    border-radius: 6px;
+    border: 1px solid black;
+    box-shadow: @ui-border-dark 0px 2px 6px 2px;
+    background-color: white;
+    padding: 8px 14px;
+
+    :not(:last-child) div {
+      border-bottom: 1px solid darkgray;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+    }
+
+    .comment .header {
+      font-size: 14px;
+      font-weight: normal;
+    }
+
+    .comment-content {
+      font-size: 16px;
+      font-weight: lighter;
+      white-space: pre-wrap;
+    }
+
+    textarea {
+      padding-top: 4px;
+      padding-bottom: 4px;
+      width: 100%;
+      resize: none;
+      box-sizing: border-box;
+    }
+  }
+
+  .new-comment-button {
+    width: 3ex; // why ex? dunno, it works..
+    height: 3ex;
+    border-radius: 100%;
+    //box-shadow: 0 0 2px 0px grey;
+    background: white url(icons/fa/comment-plus.svg) no-repeat 50% 50%;
+  }
+}
+

@@ -557,18 +557,30 @@ export class DeleteCell extends NotebookUpdate {
     }
 }
 
-export class ServerHandshake extends Message {
-    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr).to(ServerHandshake);
-    static get msgTypeId() { return 16; }
-    static unapply(inst: ServerHandshake): ConstructorParameters<typeof ServerHandshake> {
-        return [inst.interpreters, inst.serverVersion, inst.serverCommit];
+export class Identity {
+    static codec = combined(tinyStr, optional(shortStr)).to(Identity);
+    static unapply(inst: Identity): ConstructorParameters<typeof Identity> {
+        return [inst.name, inst.avatar];
     }
 
-    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string) {
+    constructor(readonly name: string, readonly avatar?: string) {
+        Object.freeze(this);
+    }
+}
+
+export class ServerHandshake extends Message {
+    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec)).to(ServerHandshake);
+    static get msgTypeId() { return 16; }
+    static unapply(inst: ServerHandshake): ConstructorParameters<typeof ServerHandshake> {
+        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity];
+    }
+
+    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity) {
         super();
         this.interpreters = interpreters;
         this.serverVersion = serverVersion;
         this.serverCommit = serverCommit;
+        this.identity = identity;
         Object.freeze(this);
     }
 }

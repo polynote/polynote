@@ -207,6 +207,10 @@ export class PosRange {
     get reversed() {
         return new PosRange(this.end, this.start);
     }
+
+    get asString() {
+        return `posrange-${this.start}-${this.end}`
+    }
 }
 
 

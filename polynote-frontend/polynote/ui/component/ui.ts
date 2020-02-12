@@ -23,7 +23,7 @@ import {
     TabRemoved,
     TabRenamed,
     FocusCell,
-    CopyNotebook
+    CopyNotebook, GetIdentity
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -43,7 +43,7 @@ import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
 import {CurrentNotebook} from "./current_notebook";
 import {NotebookCellsUI} from "./nb_cells";
-import {KernelBusyState} from "../../data/messages";
+import {Identity, KernelBusyState} from "../../data/messages";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
@@ -63,6 +63,7 @@ export class MainUI extends UIMessageTarget {
     private currentServerVersion: string;
     private about?: About;
     private welcomeUI?: HomeUI;
+    private identity?: Identity;
 
     constructor() {
         super();
@@ -101,7 +102,7 @@ export class MainUI extends UIMessageTarget {
         SocketSession.global.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
         SocketSession.global.send(new messages.ListNotebooks([]));
 
-        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit) => {
+        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit, identity) => {
             for (let interp of Object.keys(interpreters)) {
                 Interpreters[interp] = interpreters[interp];
             }
@@ -117,6 +118,7 @@ export class MainUI extends UIMessageTarget {
             }
             this.currentServerVersion = serverVersion;
             this.currentServerCommit = serverCommit;
+            this.identity = identity || undefined;
         });
 
         SocketSession.global.addMessageListener(
@@ -240,6 +242,10 @@ export class MainUI extends UIMessageTarget {
                     }
                     cb(statuses);
                 })
+            } else if (msg.prototype === GetIdentity.prototype) {
+                const name = (this.identity && this.identity.name) || "Anonymous";
+                const avatar = this.identity && this.identity.avatar;
+                cb(name, avatar);
             }
         });
 

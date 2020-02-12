@@ -73,13 +73,16 @@ class SocketSession(
       }
   }
 
-  private def handshake: TaskG[ServerHandshake] =
-    ZIO.access[Interpreter.Factories](_.interpreterFactories).map {
-      factories => ServerHandshake(
-        (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
-        serverVersion = BuildInfo.version,
-        serverCommit = BuildInfo.commit)
-    }
+  private def handshake: RIO[SessionEnv, ServerHandshake] =
+    for {
+      factories <- ZIO.access[Interpreter.Factories](_.interpreterFactories)
+      identity  <- ZIO.environment[UserIdentity]
+    } yield ServerHandshake(
+      (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
+      serverVersion = BuildInfo.version,
+      serverCommit = BuildInfo.commit,
+      identity = identity.userIdentity.map(i => Identity(i.name, i.avatar.map(ShortString)))
+    )
 }
 
 class SessionHandler(

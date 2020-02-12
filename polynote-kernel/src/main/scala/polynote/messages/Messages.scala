@@ -269,10 +269,13 @@ object DeleteCell extends NotebookUpdateCompanion[DeleteCell](15)
 final case class SetCellOutput(globalVersion: Int, localVersion: Int, id: CellID, output: Option[Output]) extends Message with NotebookUpdate
 object SetCellOutput extends NotebookUpdateCompanion[SetCellOutput](22)
 
+final case class Identity(name: TinyString, avatar: Option[ShortString])
+
 final case class ServerHandshake(
   interpreters: TinyMap[TinyString, TinyString],
   serverVersion: TinyString,
-  serverCommit: TinyString
+  serverCommit: TinyString,
+  identity: Option[Identity]
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 

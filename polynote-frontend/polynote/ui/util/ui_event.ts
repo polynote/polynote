@@ -2,6 +2,7 @@ import {Extractable} from "../../util/match";
 import {KernelBusyState, KernelStatus, Message} from "../../data/messages";
 import {Cell} from "../component/cell";
 import {LazyDataRepr, StreamingDataRepr, UpdatingDataRepr} from "../../data/value_repr";
+import {CellComment, CommentRoot} from "../component/comment";
 
 export class UIMessage {
     static unapply(inst: UIMessage): any[] {return []}
@@ -243,5 +244,40 @@ export class ModalClosed extends UIMessage {
     constructor() { super() }
     static unapply(inst: ModalClosed): ConstructorParameters<typeof ModalClosed> {
         return [];
+    }
+}
+
+export class GetIdentity extends UIMessage {
+    constructor(readonly name: string, readonly avatar?: string) { super() }
+
+    static unapply(inst: GetIdentity): ConstructorParameters<typeof GetIdentity> {
+        return [inst.name, inst.avatar]
+    }
+}
+
+export class CommentDelta extends UIMessage {
+    constructor(readonly root: CommentRoot, readonly added: CellComment[], readonly removed: CellComment[]) {
+        super();
+    }
+    static unapply(inst: CommentDelta): ConstructorParameters<typeof CommentDelta> {
+        return [inst.root, inst.added, inst.removed];
+    }
+}
+
+export class CommentRootShown extends UIMessage {
+    constructor(readonly root: CommentRoot) {
+        super();
+    }
+    static unapply(inst: CommentRootShown): ConstructorParameters<typeof CommentRootShown> {
+        return [inst.root];
+    }
+}
+
+export class CommentRootHidden extends UIMessage {
+    constructor(readonly root: CommentRoot) {
+        super();
+    }
+    static unapply(inst: CommentRootHidden): ConstructorParameters<typeof CommentRootHidden> {
+        return [inst.root];
     }
 }
