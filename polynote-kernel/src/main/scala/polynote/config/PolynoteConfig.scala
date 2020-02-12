@@ -2,6 +2,7 @@ package polynote.config
 
 import java.io.{File, FileNotFoundException, FileReader}
 import java.util.UUID
+import java.util.regex.Pattern
 
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
@@ -19,21 +20,21 @@ final case class Listen(
 
 object Listen {
   implicit val encoder: ObjectEncoder[Listen] = deriveEncoder
-  implicit val decoder: Decoder[Listen] = deriveDecoder
+  implicit val decoder: Decoder[Listen] = deriveConfigDecoder
 }
 
 final case class Mount(dir: String, mounts: Map[String, Mount] = Map.empty)
 
 object Mount {
   implicit val encoder: ObjectEncoder[Mount] = deriveEncoder
-  implicit val decoder: Decoder[Mount] = deriveDecoder[Mount]
+  implicit val decoder: Decoder[Mount] = deriveConfigDecoder[Mount]
 }
 
 final case class Storage(cache: String = "tmp", dir: String = "notebooks", mounts: Map[String, Mount] = Map.empty)
 
 object Storage {
   implicit val encoder: ObjectEncoder[Storage] = deriveEncoder
-  implicit val decoder: Decoder[Storage] = deriveDecoder[Storage]
+  implicit val decoder: Decoder[Storage] = deriveConfigDecoder[Storage]
 }
 
 sealed trait KernelIsolation
@@ -68,14 +69,14 @@ final case class Behavior(
 
 object Behavior {
   implicit val encoder: ObjectEncoder[Behavior] = deriveEncoder
-  implicit val decoder: Decoder[Behavior] = deriveDecoder
+  implicit val decoder: Decoder[Behavior] = deriveConfigDecoder
 }
 
 final case class AuthProvider(provider: String, config: JsonObject)
 
 object AuthProvider {
   implicit val encoder: ObjectEncoder[AuthProvider] = deriveEncoder
-  implicit val decoder: Decoder[AuthProvider] = deriveDecoder
+  implicit val decoder: Decoder[AuthProvider] = deriveConfigDecoder
 }
 
 final case class Security(
@@ -85,7 +86,7 @@ final case class Security(
 
 object Security {
   implicit val encoder: ObjectEncoder[Security] = deriveEncoder
-  implicit val decoder: Decoder[Security] = deriveDecoder
+  implicit val decoder: Decoder[Security] = deriveConfigDecoder
 }
 
 final case class UI(
@@ -111,14 +112,52 @@ object Credentials {
   implicit val decoder: Decoder[Credentials] = deriveDecoder
 }
 
+final case class SparkPropertySet(
+  name: String,
+  properties: Map[String, String] = Map.empty,
+  sparkSubmitArgs: Option[String] = None,
+  distClasspathFilter: Option[Pattern] = None
+)
+
+object SparkPropertySet {
+  implicit val decoder: Decoder[SparkPropertySet] = deriveConfigDecoder
+  implicit val encoder: Encoder[SparkPropertySet] = deriveEncoder
+}
+
+final case class SparkConfig(
+  properties: Map[String, String],
+  sparkSubmitArgs: Option[String] = None,
+  distClasspathFilter: Option[Pattern] = None,
+  propertySets: Option[List[SparkPropertySet]] = None
+)
+
+object SparkConfig {
+  def fromMap(properties: Map[String, String]): SparkConfig = SparkConfig(
+    properties - "sparkSubmitArgs",
+    properties.get("sparkSubmitArgs"),
+    None,
+    None
+  )
+
+  // TODO: remove once NotebookConfig no longer uses the Map with magic sparkSubmitArgs field
+  def toMap(config: SparkConfig): Map[String, String] = config.properties ++ config.sparkSubmitArgs.toList.map("sparkSubmitArgs" -> _).toMap
+
+  private val legacyDecoder: Decoder[SparkConfig] = mapStringStringDecoder.map(fromMap)
+  private val newDecoder: Decoder[SparkConfig] = deriveConfigDecoder
+  implicit val decoder: Decoder[SparkConfig] = Decoder.decodeJsonObject.flatMap {
+    case obj if obj.contains("properties") || obj.contains("spark_submit_args") || obj.contains("dist_classpath_filter") || obj.contains("property_sets") => newDecoder
+    case _ => legacyDecoder
+  }
+  implicit val encoder: Encoder[SparkConfig] = deriveEncoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   storage: Storage = Storage(),
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,
-  spark: Map[String, String] = Map.empty,
-  sparkDistClasspathFilter: String = "",
+  spark: Option[SparkConfig] = None,
   behavior: Behavior = Behavior(),
   security: Security = Security(),
   ui: UI = UI(),
@@ -128,19 +167,25 @@ final case class PolynoteConfig(
 
 object PolynoteConfig {
   implicit val encoder: ObjectEncoder[PolynoteConfig] = deriveEncoder
-  implicit val decoder: Decoder[PolynoteConfig] = deriveDecoder[PolynoteConfig]
+  implicit val decoder: Decoder[PolynoteConfig] = deriveConfigDecoder[PolynoteConfig]
 
   private val defaultConfig = "default.yml" // we expect this to be in the directory Polynote was launched from.
 
-  def parse(content: String): Either[Throwable, PolynoteConfig] = yaml.parser.parse(content).flatMap(_.as[PolynoteConfig])
+  def parse(content: String): Either[Throwable, PolynoteConfig] = yaml.parser.parse(content).flatMap {
+    case json if json.isBoolean => Right(Json.fromJsonObject(JsonObject.empty))
+    case json if json.isObject  => Right(json)
+    case json => Left(DecodingFailure(s"Invalid configuration; expected properties but found $json", Nil))
+  }.flatMap(_.as[PolynoteConfig])
 
   private def parseFile(file: File): TaskB[Json] =
     effectBlocking(file.exists()).flatMap {
       case true => effectBlocking(new FileReader(file)).bracketAuto {
-        reader => ZIO.fromEither(yaml.parser.parse(reader)).map {
-          json =>
-            // if the config is empty, its Json value is "false"... (reliable sources indicate this is part of the yaml spec)
-            if (json.isBoolean) Json.fromJsonObject(JsonObject.empty) else json
+        reader => ZIO.fromEither {
+          yaml.parser.parse(reader).flatMap {
+            case json if json.isBoolean => Right(Json.fromJsonObject(JsonObject.empty))
+            case json if json.isObject  => Right(json)
+            case json => Left(DecodingFailure(s"Invalid configuration; expected properties but found $json", Nil))
+          }
         }
       }
       case false => ZIO.succeed(Json.fromJsonObject(JsonObject.empty))

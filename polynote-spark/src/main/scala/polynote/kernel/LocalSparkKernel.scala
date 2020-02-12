@@ -12,7 +12,7 @@ import fs2.concurrent.SignallingRef
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import polynote.buildinfo.BuildInfo
-import polynote.config.PolynoteConfig
+import polynote.config.{PolynoteConfig, SparkConfig}
 import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env, InterpreterEnvironment}
 import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
@@ -65,33 +65,34 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     cp =>
       Config.access.flatMap {
         config =>
-          if (config.sparkDistClasspathFilter.nonEmpty) {
-            cp.split(File.pathSeparator).toList.map {
-              filepath =>
-                val file = new File(filepath)
-                file.getName match {
-                  case "*" | "*.jar" =>
-                    effectBlocking {
-                      if (file.getParentFile.exists())
-                        Files.newDirectoryStream(file.getParentFile.toPath, file.getName).iterator().asScala.toList.map(_.toFile)
-                      else
-                        Nil
-                    }.orDie
-                  case _ =>
-                    effectBlocking(if (file.exists()) List(file) else Nil).orDie
-                }
-            }.sequence.map(_.flatten).map {
-              expandedFiles =>
-                val reg = Pattern.compile(config.sparkDistClasspathFilter).asPredicate()
-                expandedFiles.filter(path => reg.test(path.getAbsolutePath) && path.getAbsolutePath.endsWith(".jar"))
-            }.tap {
-              extraJars =>
-                if (extraJars.nonEmpty) {
-                  Logging.info(s"Adding these paths from SPARK_DIST_CLASSPATH: $extraJars")
-                } else ZIO.unit
-            }
+          config.spark.flatMap(_.distClasspathFilter) match {
+            case None => ZIO.succeed(Nil)
+            case Some(pattern) =>
+              cp.split(File.pathSeparator).toList.map {
+                filepath =>
+                  val file = new File(filepath)
+                  file.getName match {
+                    case "*" | "*.jar" =>
+                      effectBlocking {
+                        if (file.getParentFile.exists())
+                          Files.newDirectoryStream(file.getParentFile.toPath, file.getName).iterator().asScala.toList.map(_.toFile)
+                        else
+                          Nil
+                      }.orDie
+                    case _ =>
+                      effectBlocking(if (file.exists()) List(file) else Nil).orDie
+                  }
+              }.sequence.map(_.flatten).map {
+                expandedFiles =>
+                  val reg = pattern.asPredicate()
+                  expandedFiles.filter(path => reg.test(path.getAbsolutePath) && path.getAbsolutePath.endsWith(".jar"))
+              }.tap {
+                extraJars =>
+                  if (extraJars.nonEmpty) {
+                    Logging.info(s"Adding these paths from SPARK_DIST_CLASSPATH: $extraJars")
+                  } else ZIO.unit
+              }
           }
-          else ZIO.succeed(List.empty)
       }
   }
 
@@ -210,7 +211,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
         config         <- Config.access
         notebookConfig <- CurrentNotebook.config
         executor       <- mkExecutor()
-        session        <- mkSpark(config.spark ++ notebookConfig.sparkConfig.getOrElse(Map.empty)).lock(executor)
+        session        <- mkSpark(config.spark.map(SparkConfig.toMap).getOrElse(Map.empty) ++ notebookConfig.sparkConfig.getOrElse(Map.empty)).lock(executor)
         _              <- ensureJars(session).lock(executor)
         _              <- ZIO(SparkEnv.get.serializer.setDefaultClassLoader(classLoader)).lock(executor)
         _              <- attachListener(session)

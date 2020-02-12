@@ -111,17 +111,27 @@
 ###
 ###################################################################################################################
 
-#################################################################################
+###################################################################################################################
 # Spark config params can be set by uncommenting and editing the following lines.
+# To add additional spark configuration properties, add them as keys under `properties`.
+# To set additional arguments to `spark-submit`, you can use the `spark_submit_args` property.
 #
-# To set additional arguments to `spark-submit`, you can use the `sparkSubmitArgs` key. 
+# By default, not all jars in SPARK_DIST_CLASSPATH are available to the Polynote compiler (i.e., to user-code
+# inside cells). To use these jars (for example, if you want to use Hadoop APIs in your notebook without adding
+# a Hadoop dependency), set the `dist_classpath_filter` to a valid regular expression that selects which JARs
+# you want to use (there can be a huge number of JARs in SPARK_DIST_CLASSPATH, so it would be burdensome to
+# include all of them by default.)
 #
 #################################################################################
 
 #spark:
-#  sparkSubmitArgs: "--some --arguments"
-#  spark.driver.userClasspathFirst: true
-#  spark.executor.userClasspathFirst: true
+#  properties:
+#    spark.driver.memory: 28g
+#    spark.executor.memory: 60g
+#    spark.driver.userClasspathFirst: true
+#    spark.executor.userClasspathFirst: true
+#  spark_submit_args: "--some --arguments"
+#  dist_classpath_filter: hadoop.*\.jar
 
 
 ########## Front-end Configuration ################################################################################
@@ -144,10 +154,3 @@
 #  coursier:
 #    path: ~/.config/coursier/credentials.properties
 
-###############################################################################################
-# Extra jars to add from SPARK_DIST_CLASSPATH. By default, not all jars in SPARK_DIST_CLASSPATH
-# are available to the Polynote compiler (i.e., to user-code inside cells). All jars present on
-# SPARK_DIST_CLASSPATH that match the regex will be added to the compiler classpath.
-###############################################################################################
-
-#spark_dist_classpath_filter: "(hadoop-common-2.7.3-mycompany-.*.jar)"
