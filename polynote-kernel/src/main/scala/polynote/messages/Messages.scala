@@ -9,7 +9,7 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.codecs.implicits._
 import io.circe.generic.semiauto._
-import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig}
+import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, SparkConfig}
 import polynote.data.Rope
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import shapeless.cachedImplicit
@@ -83,20 +83,7 @@ final case class NotebookConfig(
   exclusions: Option[TinyList[TinyString]],
   repositories: Option[TinyList[RepositoryConfig]],
   sparkConfig: Option[ShortMap[String, String]]
-) {
-
-  def asPolynoteConfig: PolynoteConfig = {
-    val unTinyDependencies = dependencies.map(_.map {
-      case (k, v) => k.toString -> v
-    }).getOrElse(Map.empty)
-    PolynoteConfig(
-      repositories = repositories.getOrElse(Nil),
-      dependencies = unTinyDependencies,
-      exclusions = exclusions.getOrElse(Nil).map(_.toString),
-      spark = sparkConfig.getOrElse(Map.empty)
-    )
-  }
-}
+)
 
 object NotebookConfig {
   implicit val encoder: Encoder[NotebookConfig] = deriveEncoder[NotebookConfig]
@@ -113,7 +100,7 @@ object NotebookConfig {
       dependencies = Option(veryTinyDependencies),
       exclusions = Option(config.exclusions),
       repositories = Option(config.repositories),
-      sparkConfig = Option(config.spark)
+      sparkConfig = config.spark.map(SparkConfig.toMap)
     )
   }
 

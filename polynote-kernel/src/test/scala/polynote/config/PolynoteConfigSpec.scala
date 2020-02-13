@@ -1,5 +1,7 @@
 package polynote.config
 
+import java.util.regex.Pattern
+
 import cats.syntax.either._
 import io.circe._
 import io.circe.syntax._
@@ -10,7 +12,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
   "PolynoteConfig" should "Ser/De" in {
 
     val cfg = PolynoteConfig(
-      Listen(), Storage(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), Map("key" -> "val")
+      Listen(), Storage(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), Some(SparkConfig(Map("key" -> "val")))
     )
     val js = cfg.asJson
     val cfgString = cfg.asJson.spaces2
@@ -62,6 +64,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |spark:
         |  spark.driver.userClasspathFirst: true
         |  spark.executor.userClasspathFirst: true
+        |  sparkSubmitArgs: testing
         |
         |# Credentials. This list contains the list of credentials used to access the repositories
         |
@@ -91,12 +94,54 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
       ),
       List("org.typelevel", "com.mycompany"),
       Map("scala" -> List("org.typelevel:cats-core_2.11:1.6.0", "com.mycompany:my-library:jar:all:1.0.0")),
-      Map("spark.driver.userClasspathFirst" -> "true", "spark.executor.userClasspathFirst" -> "true"),
+      Some(SparkConfig(Map("spark.driver.userClasspathFirst" -> "true", "spark.executor.userClasspathFirst" -> "true"), Some("testing"))),
       credentials = Credentials(
         coursier = Some(Credentials.Coursier("~/.config/coursier/credentials.properties"))
       )
     )
 
+  }
+
+  it should "parse new spark config" in {
+    val yaml =
+      """spark:
+        |  properties:
+        |    flurg: blurg
+        |    foo:   bar
+        |  spark_submit_args: these are the args
+        |  dist_classpath_filter: .jar$
+        |  property_sets:
+        |    - name: Test
+        |      properties:
+        |        something: thing
+        |        another:   one
+        |      spark_submit_args: some more args
+        |
+        |    - name: Test 2
+        |      properties:
+        |        something: thing2
+        |""".stripMargin
+
+    // Pattern has no equals :(
+    val parsed = PolynoteConfig.parse(yaml).right.get.spark.get
+    parsed.properties shouldEqual Map("flurg" -> "blurg", "foo" -> "bar")
+    parsed.sparkSubmitArgs shouldEqual Some("these are the args")
+    parsed.distClasspathFilter.get.pattern() shouldEqual ".jar$"
+    parsed.propertySets.get shouldEqual List(
+      SparkPropertySet(name = "Test", properties = Map("something" -> "thing", "another" -> "one"), sparkSubmitArgs = Some("some more args"), None),
+      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"))
+    )
+  }
+
+  it should "fail on invalid configuration" in {
+    val badYaml =
+      """spark:
+        |  dist_classpath_filter: not a regex**
+        |""".stripMargin
+
+    val Left(err) = PolynoteConfig.parse(badYaml)
+    assert(err.getMessage contains "Configuration is invalid")
+    assert(err.getMessage contains "Invalid regular expression")
   }
 
   it should "Parse Shared Classes" in {
@@ -120,7 +165,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
 
     val parsed = PolynoteConfig.parse(yamlStr)
     val defaultConfig = PolynoteConfig()
-    parsed.right.value shouldEqual defaultConfig
+    parsed shouldEqual Right(defaultConfig)
   }
 
   it should "handle comment-only configurations" in {
@@ -132,6 +177,6 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
 
     val parsed = PolynoteConfig.parse(yamlStr)
     val defaultConfig = PolynoteConfig()
-    parsed.right.value shouldEqual defaultConfig
+    parsed shouldEqual Right(defaultConfig)
   }
 }

@@ -4,6 +4,7 @@ import java.io.File
 import java.net.InetSocketAddress
 
 import polynote.buildinfo.BuildInfo
+import polynote.config.SparkConfig
 import polynote.kernel.{Kernel, LocalSparkKernelFactory, ScalaCompiler, remote}
 import polynote.kernel.environment.{Config, CurrentNotebook}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployCommand
@@ -64,7 +65,7 @@ object DeploySparkSubmit extends DeployCommand {
     config   <- Config.access
     nbConfig <- CurrentNotebook.config
   } yield build(
-    sparkConfig = config.spark ++ nbConfig.sparkConfig.getOrElse(Map.empty),
+    sparkConfig = config.spark.map(SparkConfig.toMap).getOrElse(Map.empty) ++ nbConfig.sparkConfig.getOrElse(Map.empty),
     serverArgs =
       "--address" :: serverAddress.getAddress.getHostAddress ::
       "--port" :: serverAddress.getPort.toString ::

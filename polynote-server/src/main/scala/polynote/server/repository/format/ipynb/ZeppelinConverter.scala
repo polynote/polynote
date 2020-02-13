@@ -4,6 +4,7 @@ import io.circe.{Decoder, Json, JsonObject, Printer}
 import io.circe.syntax._
 import io.circe.generic.semiauto._
 import io.circe.parser.parse
+import polynote.config.SparkConfig
 import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages.{Notebook, NotebookConfig}
@@ -26,7 +27,7 @@ class ZeppelinToIpynbFormat extends NotebookFormat {
       zep <- ZIO.fromEither(parsed.as[ZeppelinNotebook])
       config <- Config.access
     } yield {
-      val nbConfig = Option(NotebookConfig.empty.copy(sparkConfig = Option(config.spark)))
+      val nbConfig = Option(NotebookConfig.empty.copy(sparkConfig = config.spark.map(SparkConfig.toMap)))
       val content = JupyterNotebook.toNotebook(zep.toJupyterNotebook).copy(config = nbConfig)
       content.toNotebook(s"$noExtPath.ipynb") // Note the extension being overridden to ipynb here.
     }
