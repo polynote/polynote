@@ -1,3 +1,12 @@
+# 0.3.1 (Feb 19, 2020)
+* Disable notebook if writing fails repeatedly
+* Unmangle package name for Spark 2.4.4 compatibility
+* Validate config on server startup
+* Respect language from imported Jupyter notebook
+* Don't save stdout to the notebook if it's subsequently been erased
+* Fix docker build for Scala 2.12/Spark 2.4
+* Misc UI and backend fixes
+
 # 0.3.0 (Feb 4, 2020)
 * Better handling of unexpected kernel shutdowns 
 * Presence 
