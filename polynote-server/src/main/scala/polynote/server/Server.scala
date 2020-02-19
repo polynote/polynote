@@ -35,7 +35,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   private implicit val taskConcurrentEffect: ConcurrentEffect[Task] = zio.interop.catz.taskEffectInstance[Any]
   private lazy val watchUIPath = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/index.html")
 
-  private val blockingExecutor = unsafeRun(Environment.blocking.blockingExecutor)
+  private val blockingExecutor = unsafeRun(environment.blocking.blockingExecutor)
   private val blockingEC = blockingExecutor.asEC
 
   private def indexFileContent(key: String, config: PolynoteConfig, watchUI: Boolean) = {

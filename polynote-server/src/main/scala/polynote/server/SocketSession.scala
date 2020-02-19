@@ -40,7 +40,7 @@ class SocketSession(
     input     <- Queue.unbounded[Task, WebSocketFrame]
     output    <- Queue.unbounded[Task, WebSocketFrame]
     processor <- process(input, output)
-    handlerClosed = handler.awaitClosed.either.as(Either.right[Throwable, Unit](()))
+    handlerClosed = handler.awaitClosed.as(Either.right[Throwable, Unit](()))
     fiber     <- processor.interruptWhen(handlerClosed).compile.drain.ignore.fork
     keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
       .interruptWhen(handlerClosed)
@@ -65,7 +65,7 @@ class SocketSession(
         case _ => Stream.empty
       }.evalMap {
         message =>
-          handler.accept(message).supervised.catchAll {
+          handler.accept(message).catchAll {
             err =>
               Logging.error("Kernel error", err) *>
               PublishMessage(Error(0, err))

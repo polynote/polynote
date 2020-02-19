@@ -23,7 +23,7 @@ import zio.Cause._
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Cause, Promise, RIO, Task, ZIO, ZSchedule}
+import zio.{Cause, Promise, RIO, Task, ZIO, Schedule}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
 
@@ -127,7 +127,7 @@ class SocketTransportServer private (
 object SocketTransportServer {
   private def selectChannels(channel1: FramedSocket, channel2: FramedSocket, address: InetSocketAddress): TaskB[SocketTransport.Channels] = {
     def identify(channel: FramedSocket) = channel.read().repeat {
-      ZSchedule.doUntil[Option[Option[ByteBuffer]]] {
+      Schedule.doUntil[Option[Option[ByteBuffer]]] {
         case Some(Some(_)) => true
         case _ => false
       }
@@ -293,7 +293,7 @@ object SocketTransport {
         stream => effectBlocking(stream.readLine()).tap {
           case null => ZIO.unit
           case line => Logging.remote(line)
-        }.repeat(ZSchedule.doUntil(line => line == null)).unit
+        }.repeat(Schedule.doUntil(line => line == null)).unit
       }
     }
 
@@ -459,7 +459,7 @@ object SocketTransport {
           framedSocket.sendKeepalive().tapError {
             err =>
               closed.fail(err) *> effectBlocking(socketChannel.close())
-          }.repeat(ZSchedule.spaced(ZDuration(250, TimeUnit.MILLISECONDS))).fork
+          }.repeat(Schedule.spaced(ZDuration(250, TimeUnit.MILLISECONDS))).fork
         } else ZIO.unit
       } yield framedSocket
     }

@@ -65,7 +65,7 @@ class NotebookSession(
         case _ => Stream.empty
       }.evalMap {
         message =>
-          handleMessage(message).supervised.catchAll {
+          handleMessage(message).catchAll {
             err => Logging.error("Kernel error", err) *> PublishMessage(Error(0, err))
           }.provide(env).fork.unit
       }

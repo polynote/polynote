@@ -19,7 +19,7 @@ trait ZIOSpecBase[Env] extends Runtime[Env] {
   type Environment = Env
 
   // TODO: should test platform behave differently? Isolate per suite?
-  val Platform: Platform = PlatformLive.Default
+  val platform: Platform = PlatformLive.Default
     .withReportFailure(_ => ()) // suppress printing error stack traces by default
 
   implicit class IORunOps[A](val self: ZIO[Environment, Throwable, A]) {
@@ -28,7 +28,7 @@ trait ZIOSpecBase[Env] extends Runtime[Env] {
 
   implicit class IORunWithOps[R, A](val self: ZIO[R, Throwable, A]) {
     def runWith[R1](env: R1)(implicit ev: Environment with R1 <:< R, enrich: Enrich[Environment, R1]): A =
-      ZIOSpecBase.this.runIO(self.provide(enrich(Environment, env)))
+      ZIOSpecBase.this.runIO(self.provide(enrich(environment, env)))
   }
 
   def runIO[A](io: ZIO[Environment, Throwable, A]): A = unsafeRunSync(io).getOrElse {
@@ -39,18 +39,18 @@ trait ZIOSpecBase[Env] extends Runtime[Env] {
 
 trait ZIOSpec extends ZIOSpecBase[Clock with Console with System with Random with Blocking with Logging] {
   // TODO: mock the pieces of this
-  val Environment: Environment =
+  val environment: Environment =
     new Clock.Live with Console.Live with System.Live with Random.Live with Blocking.Live with Logging.Live
 
   implicit class ConfigIORunOps[A](val self: ZIO[Environment with Config, Throwable, A]) {
-    def runWithConfig(config: PolynoteConfig): A = ZIOSpec.this.runIO(self.provide(Env.enrichWith[Environment, Config](Environment, Config.of(config))))
+    def runWithConfig(config: PolynoteConfig): A = ZIOSpec.this.runIO(self.provide(Env.enrichWith[Environment, Config](environment, Config.of(config))))
   }
 }
 
 trait ConfiguredZIOSpec extends ZIOSpecBase[BaseEnv with Config] {
   def config: PolynoteConfig = PolynoteConfig()
 
-  val Environment: BaseEnv with Config = new Blocking.Live with Clock.Live with System.Live with Logging.Live with Config {
+  val environment: BaseEnv with Config = new Blocking.Live with Clock.Live with System.Live with Logging.Live with Config {
     override val polynoteConfig: PolynoteConfig = config
   }
 }

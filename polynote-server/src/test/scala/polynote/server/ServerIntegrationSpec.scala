@@ -30,7 +30,7 @@ class ServerIntegrationSpec extends FeatureSpec with ZIOSpec with GivenWhenThen 
   private val kernelFactory   = new Factory.Service {
     def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(kernel)
   }
-  private val notebookManager = unsafeRun(NotebookManager.Service(repository, broadcastAll).provide(Env.enrichWith[BaseEnv, GlobalEnv](Environment, GlobalEnv(PolynoteConfig(), Map.empty, kernelFactory))))
+  private val notebookManager = unsafeRun(NotebookManager.Service(repository, broadcastAll).provide(Env.enrichWith[BaseEnv, GlobalEnv](environment, GlobalEnv(PolynoteConfig(), Map.empty, kernelFactory))))
 
   private val nextSessionId = new AtomicInteger(0)
 

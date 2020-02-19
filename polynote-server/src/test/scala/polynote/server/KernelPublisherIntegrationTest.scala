@@ -18,11 +18,11 @@ import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, Ke
 import polynote.messages.{Notebook, NotebookCell, ShortList, CellID}
 import polynote.testing.{ConfiguredZIOSpec, ExtConfiguredZIOSpec}
 import zio.duration.Duration
-import zio.{Promise, RIO, Task, ZIO, ZSchedule}
+import zio.{Promise, RIO, Task, ZIO, Schedule}
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory {
 
-  val Environment: Environment = Env.enrichWith[BaseEnv with Config, Interpreter.Factories](baseEnv, new Interpreter.Factories {
+  val environment: Environment = Env.enrichWith[BaseEnv with Config, Interpreter.Factories](baseEnv, new Interpreter.Factories {
     override val interpreterFactories: Map[String, List[Interpreter.Factory]] = Map.empty
   })
 
@@ -68,7 +68,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       assert(process.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty)
 
       val kernel2 = kernelPublisher.kernel
-        .repeat(ZSchedule.doUntil[Kernel](_ ne kernel))
+        .repeat(Schedule.doUntil[Kernel](_ ne kernel))
         .timeout(Duration(20, TimeUnit.SECONDS))
         .someOrFail(new Exception("Kernel should have changed; didn't change after 5 seconds"))
         .runWith(kernelFactory)

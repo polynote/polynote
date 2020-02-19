@@ -16,7 +16,7 @@ class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref
         Some(serverAddress.getHostString),
         Some(serverAddress.getPort),
         Some(kernelFactory)),
-      Some(clientRef)).interruptChildren
+      Some(clientRef))
 
     connectClient.fork.map(new InProcessDeploy.Process(_))
   }

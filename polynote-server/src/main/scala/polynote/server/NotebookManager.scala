@@ -17,7 +17,7 @@ import polynote.server.repository.{FileBasedRepository, NotebookRepository, Tree
 import zio.blocking.Blocking
 import zio.duration.Duration
 import zio.interop.catz._
-import zio.{Fiber, Promise, RIO, Ref, Task, ZIO, ZSchedule}
+import zio.{Fiber, Promise, RIO, Ref, Task, ZIO, Schedule}
 import zio.syntax.zioTuple2Syntax
 
 import scala.concurrent.duration.DurationInt
@@ -70,7 +70,7 @@ object NotebookManager {
         fiber          <- publisher.notebooks.debounce(1.second).evalMap {
           notebook => repository.saveNotebook(notebook)
             .tapError(Logging.error("Error writing notebook file", _))
-            .retry(ZSchedule.exponential(Duration(250, TimeUnit.MILLISECONDS)).untilOutput(_ > maxRetryDelay))
+            .retry(Schedule.exponential(Duration(250, TimeUnit.MILLISECONDS)).untilOutput(_ > maxRetryDelay))
             .tapError(err =>
               nbPath.flatMap(path => broadcastMessage(Error(0, new Exception(s"Notebook writer for $path is repeatedly failing! Notebook editing will be disabled.", err))) *> publisher.close()))
             .onInterrupt(nbPath.flatMap(path => Logging.info(s"Stopped writer for $path (interrupted)")))

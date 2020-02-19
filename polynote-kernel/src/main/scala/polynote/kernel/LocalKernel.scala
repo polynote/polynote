@@ -67,7 +67,7 @@ class LocalKernel private[kernel] (
             _             <- busyState.update(_.setIdle)
           } yield ()
 
-          run.supervised.onInterrupt {
+          run.onInterrupt {
             PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
             busyState.update(_.setIdle).orDie *>
             publishEndTime.orDie
@@ -143,7 +143,7 @@ class LocalKernel private[kernel] (
   }
 
   private def initScala(): RIO[BaseEnv with GlobalEnv with CellEnv with CurrentTask, State] = for {
-    scalaInterp   <- interpreters.get("scala").orDie.get.mapError(_ => new IllegalStateException("No scala interpreter"))
+    scalaInterp   <- interpreters.get("scala").get.mapError(_ => new IllegalStateException("No scala interpreter"))
     initialState  <- interpreterState.get
     predefEnv     <- InterpreterEnvironment.fromKernel(initialState.id)
     predefState   <- scalaInterp.init(initialState).provideSomeM(Env.enrich[BaseEnv with GlobalEnv with CellEnv](predefEnv: InterpreterEnv))
@@ -167,7 +167,7 @@ class LocalKernel private[kernel] (
     * Get the cell with the given ID along with its interpreter and state. If its interpreter hasn't been started,
     * the overall result is None unless forceStart is true, in which case the interpreter will be started.
     */
-  private def cellInterpreter(id: CellID, forceStart: Boolean = false): ZIO[BaseEnv with GlobalEnv with CellEnv, Unit, (NotebookCell, Interpreter, State)] = {
+  private def cellInterpreter(id: CellID, forceStart: Boolean = false): ZIO[BaseEnv with GlobalEnv with CellEnv, NoSuchElementException, (NotebookCell, Interpreter, State)] = {
     for {
       notebook    <- CurrentNotebook.get.orDie
       cell        <- CurrentNotebook.getCell(id)
@@ -179,11 +179,11 @@ class LocalKernel private[kernel] (
           getOrLaunch(cell.language, id).provideSomeM(Env.enrichM[BaseEnv with GlobalEnv with CellEnv](
             InterpreterEnvironment.noTask(id).widen[InterpreterEnv]))
         else
-          interpreters.get(cell.language).orDie.get.mapError(_ => InterpreterNotStarted)
+          interpreters.get(cell.language).get.mapError(_ => InterpreterNotStarted)
     } yield (cell, interpreter, State.id(id, prevState))
   }.map {
     result => Option(result)
-  }.catchAll(_ => ZIO.succeed(None)).get  // TODO: need a real OptionT
+  }.catchAll(_ => ZIO.succeed(None)).someOrFailException  // TODO: need a real OptionT
 
   private def getOrLaunch(language: String, at: CellID): RIO[BaseEnv with GlobalEnv with InterpreterEnv with CurrentNotebook with TaskManager, Interpreter] =
     interpreters.getOrCreate(language) {

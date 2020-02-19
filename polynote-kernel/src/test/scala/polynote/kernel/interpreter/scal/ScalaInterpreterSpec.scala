@@ -25,7 +25,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
   val interpreter: ScalaInterpreter = ScalaInterpreter().provide(new ScalaCompiler.Provider with Blocking {
     val scalaCompiler: ScalaCompiler = compiler
-    override val blocking: Blocking.Service[Any] = ScalaInterpreterSpec.this.Environment.blocking
+    override val blocking: Blocking.Service[Any] = ScalaInterpreterSpec.this.environment.blocking
   }).runIO()
   import interpreter.ScalaCellState
 

@@ -183,7 +183,7 @@ object CoursierFetcher {
     maxIterations: Int = 100
   ): RIO[TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Any].flatMap {
     runtime =>
-      Artifacts(new TaskManagedCache(cache, runtime.Platform.executor.asEC)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
+      Artifacts(new TaskManagedCache(cache, runtime.platform.executor.asEC)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
         artifactResult =>
           artifactResult.detailedArtifacts.toList.map {
             case (dep, pub, artifact, file) =>
