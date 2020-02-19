@@ -6,11 +6,12 @@ WORKDIR /opt
 
 USER root
 
-RUN wget -q https://www-us.apache.org/dist/spark/spark-2.4.4/spark-2.4.4-bin-hadoop2.7.tgz && \
-    tar xfz spark-2.4.4-bin-hadoop2.7.tgz && \
-    rm spark-2.4.4-bin-hadoop2.7.tgz
-
-ENV SPARK_HOME="/opt/spark-2.4.4-bin-hadoop2.7"
+COPY scripts/install_spark.sh .
+ADD https://archive.apache.org/dist/hadoop/common/hadoop-2.7.7/hadoop-2.7.7.tar.gz /opt
+RUN ./install_spark.sh
+RUN rm /opt/hadoop-2.7.7.tar.gz
+ENV SPARK_HOME="/opt/spark"
+ENV HADOOP_HOME="/opt/hadoop-2.7.7"
 ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
 
 # switch to non-root user
