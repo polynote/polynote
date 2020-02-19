@@ -35,10 +35,11 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
   private implicit val taskConcurrentEffect: ConcurrentEffect[Task] = zio.interop.catz.taskEffectInstance[Any]
   private lazy val watchUIPath = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/index.html")
 
-  private val blockingEC = unsafeRun(Environment.blocking.blockingExecutor).asEC
+  private val blockingExecutor = unsafeRun(Environment.blocking.blockingExecutor)
+  private val blockingEC = blockingExecutor.asEC
 
   private def indexFileContent(key: String, config: PolynoteConfig, watchUI: Boolean) = {
-    val is = ZIO {
+    val is = effectBlocking {
       if (watchUI) {
         Some(java.nio.file.Files.newInputStream(watchUIPath))
       } else {
@@ -46,7 +47,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       }
     }.someOrFail(new RuntimeException("Failed to load polynote frontend"))
 
-    val content = is.bracket(is => ZIO(is.close()).orDie) {
+    val content = is.bracket(is => effectBlocking(is.close()).orDie) {
       is => effectBlocking(scala.io.Source.fromInputStream(is, "UTF-8").mkString
         .replace("$WS_KEY", key.toString)
         .replace("$BASE_URI", config.ui.baseUri))
@@ -118,6 +119,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       )
       .bindHttp(port, address)
       .withWebSockets(true)
+      .withNio2(true)
       .withHttpApp(app)
       .serve.compile.last.orDie
   } yield exit.map(_.code).getOrElse(0)
