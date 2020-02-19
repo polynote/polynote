@@ -236,7 +236,6 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynot
 
         val files = jars ++ examples ++ List(
           (file(".") / "config-template.yml") -> "polynote/config-template.yml",
-          (file(".") / "scripts" / "polynote") -> "polynote/polynote",
           (file(".") / "scripts" / "plugin") -> "polynote/plugin",
           (file(".") / "scripts" / "polynote.py") -> "polynote/polynote.py")
 
