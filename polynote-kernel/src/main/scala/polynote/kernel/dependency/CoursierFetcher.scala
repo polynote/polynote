@@ -52,8 +52,8 @@ object CoursierFetcher {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
       dependencies    = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
-      splitRes     <- splitDependencies(dependencies)
-      (deps, uris)  = splitRes
+      splitRes       <- splitDependencies(dependencies)
+      (deps, uris)    = splitRes
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
       credentials    <- loadCredentials(polynoteConfig.credentials)
@@ -181,15 +181,18 @@ object CoursierFetcher {
     resolution: Resolution,
     cache: FileCache[ArtifactTask],
     maxIterations: Int = 100
-  ): RIO[TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Any].flatMap {
+  ): RIO[Blocking with TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Blocking].flatMap {
     runtime =>
-      Artifacts(new TaskManagedCache(cache, runtime.Platform.executor.asEC)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
-        artifactResult =>
-          artifactResult.detailedArtifacts.toList.map {
-            case (dep, pub, artifact, file) =>
-              (resolution.rootDependencies.contains(dep), artifact.url, file)
-          }
+      runtime.Environment.blocking.blockingExecutor.map(_.asEC).flatMap {
+        blockingExecutor => Artifacts(new TaskManagedCache(cache, blockingExecutor)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
+          artifactResult =>
+            artifactResult.detailedArtifacts.toList.map {
+              case (dep, pub, artifact, file) =>
+                (resolution.rootDependencies.contains(dep), artifact.url, file)
+            }
+        }
       }
+
   }
 
   private def downloadUris(uris: List[URI]): RIO[TaskManager with CurrentTask with Blocking, List[(Boolean, String, File)]] = {
