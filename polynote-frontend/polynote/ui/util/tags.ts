@@ -172,11 +172,12 @@ export function textarea(classes: string[], placeholder: string, value: string =
         const p = (s: string | null) => parseInt(s || '0');
         const s = window.getComputedStyle(text);
         const h = text.scrollHeight + p(s.paddingBottom) + p(s.paddingTop) + p(s.borderBottomWidth) + p(s.borderTopWidth);
-        text.style.height = `${h}px`;
+        const ems = Math.floor(h / parseInt(s.fontSize));
+        text.style.height = `${ems}em`;
     };
 
     text.addEventListener('input', () => adjustHeight());
-    setTimeout(() => adjustHeight(), 50);
+    text.style.height = "3em"; // default height;
 
     return text;
 }

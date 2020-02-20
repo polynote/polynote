@@ -11,7 +11,7 @@ import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import polynote.messages.{CellID, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
-import polynote.runtime.ValueRepr
+import polynote.runtime.{CellRange, ValueRepr}
 import scodec.bits.BitVector
 
 import scala.collection.mutable.ListBuffer
@@ -155,7 +155,7 @@ final case class ResultValue(
   sourceCell: CellID,
   value: Any,
   scalaType: Universe#Type,
-  pos: Option[(Int, Int)]
+  pos: Option[CellRange]
 ) extends Result {
 
   def isCellResult: Boolean = name == "Out"

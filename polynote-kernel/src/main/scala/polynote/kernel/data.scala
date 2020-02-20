@@ -3,6 +3,7 @@ package polynote.kernel
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
 import polynote.messages.{CellID, ShortString, TinyList, TinyMap, TinyString}
+import polynote.runtime.CellRange
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
 import scodec.codecs.implicits._
@@ -250,7 +251,7 @@ object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3) {
   }.toMap))
 }
 
-final case class ExecutionStatus(cellID: CellID, pos: Option[(Int, Int)]) extends KernelStatusUpdate with AlwaysRelevant
+final case class ExecutionStatus(cellID: CellID, pos: Option[CellRange]) extends KernelStatusUpdate with AlwaysRelevant
 object ExecutionStatus extends KernelStatusUpdateCompanion[ExecutionStatus](4)
 
 final case class Presence(id: Int, name: TinyString, avatar: Option[ShortString])
@@ -260,7 +261,7 @@ final case class PresenceUpdate(added: TinyList[Presence], removed: TinyList[Int
 }
 object PresenceUpdate extends KernelStatusUpdateCompanion[PresenceUpdate](5)
 
-final case class PresenceSelection(presenceId: Int, cellID: CellID, range: (Int, Int)) extends KernelStatusUpdate {
+final case class PresenceSelection(presenceId: Int, cellID: CellID, range: CellRange) extends KernelStatusUpdate {
   override def isRelevant(subscriber: Int): Boolean = presenceId != subscriber
 }
 object PresenceSelection extends KernelStatusUpdateCompanion[PresenceSelection](6)

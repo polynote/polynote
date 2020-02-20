@@ -4,6 +4,7 @@
     "module": "es6",
     "target": "es6",
     "lib": [
+      "esnext", // needed for BigInt. Hopefully this is ok?
       "es2019", // needed for array.flatMap. Hopefully this is ok?
       "dom", // needed this after adding a "lib" section...
       "dom.iterable" // allow iteration for some iterable dom objects (no idea why this'd be separate from 'dom'...)

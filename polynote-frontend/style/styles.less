@@ -3193,11 +3193,30 @@ img.icon {
   height: 1em;
 }
 
-// comments
-.comment-container {
+// cell overlays
+.cell-overlay {
   position: absolute;
   z-index: 2;
+}
 
+// comments
+.comment-highlight {
+  background-color: #ffed9e;
+}
+
+.comment-highlight-strong {
+  background-color: #ffce6f;
+}
+
+.new-comment-button {
+  width: 3ex; // why ex? dunno, it works..
+  height: 3ex;
+  border-radius: 100%;
+  //box-shadow: 0 0 2px 0px grey;
+  background: white url(icons/fa/comment-plus.svg) no-repeat 50% 50%;
+}
+
+.comment-container {
   .comments-list {
     border-radius: 6px;
     border: 1px solid black;
@@ -3205,7 +3224,7 @@ img.icon {
     background-color: white;
     padding: 8px 14px;
 
-    :not(:last-child) div {
+    :not(:last-child) .comment-content {
       border-bottom: 1px solid darkgray;
       margin-bottom: 8px;
       padding-bottom: 8px;
@@ -3214,6 +3233,49 @@ img.icon {
     .comment .header {
       font-size: 14px;
       font-weight: normal;
+      display: flex;
+
+      .actions {
+        display: flex;
+        background: white url(icons/fa/triple-dots-vert.svg) no-repeat 50% 50%;
+        width: 2em;
+        height: 1.5em;
+        margin-left: 1em;
+
+        ul {
+          border: 1px solid @ui-border;
+          box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+          list-style: none;
+          margin: 1.75em 1em;
+          padding: 0;
+          height: fit-content;
+          width: fit-content;
+          background: white;
+          z-index: 1;
+
+          li {
+            padding: .5em 1em;
+            color: @ui-text;
+            cursor: default;
+
+            &:hover {
+              background: @ui-selected;
+              color: white;
+            }
+          }
+        }
+      }
+
+      .author-timestamp {
+        display: flex;
+        flex-direction: column;
+
+        .timestamp {
+          font-size: smaller;
+          font-style: italic;
+          font-weight: lighter;
+        }
+      }
     }
 
     .comment-content {
@@ -3229,14 +3291,6 @@ img.icon {
       resize: none;
       box-sizing: border-box;
     }
-  }
-
-  .new-comment-button {
-    width: 3ex; // why ex? dunno, it works..
-    height: 3ex;
-    border-radius: 100%;
-    //box-shadow: 0 0 2px 0px grey;
-    background: white url(icons/fa/comment-plus.svg) no-repeat 50% 50%;
   }
 }
 

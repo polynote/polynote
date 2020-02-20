@@ -4,7 +4,7 @@ import {
     CellSelected,
     UIMessage,
     UIMessageTarget,
-    FocusCell,
+    FocusCell, CreateComment, UpdateComment, DeleteComment,
 } from "../util/ui_event";
 import {NotebookCellsUI} from "./nb_cells";
 import {KernelUI} from "./kernel_ui";
@@ -240,6 +240,24 @@ export class NotebookUI extends UIMessageTarget {
                                 cell.addOutput(output.contentType, output.content);
                             }
                         }
+                    })
+                    .when(messages.CreateComment, (g: number, l: number, id, comment) => {
+                        const cell = this.cellUI.getCell(id);
+                        if (cell instanceof CodeCell) {
+                            cell.commentHandler.add(comment)
+                        }
+                    })
+                    .when(messages.UpdateComment, (g: number, l: number, id, commentId, range, content) => {
+                        const cell = this.cellUI.getCell(id);
+                        if (cell instanceof CodeCell) {
+                            cell.commentHandler.update(commentId, range, content)
+                        }
+                    })
+                    .when(messages.DeleteComment, (g: number, l: number, id, commentId) => {
+                        const cell = this.cellUI.getCell(id);
+                        if (cell instanceof CodeCell) {
+                            cell.commentHandler.delete(commentId)
+                        }
                     });
 
 
@@ -322,7 +340,20 @@ export class NotebookUI extends UIMessageTarget {
             }
 
             this.setIconBubble()
-        })
+        });
+
+        this.subscribe(CreateComment, (cellId, comment) => {
+            console.log("comment was created:", comment);
+            this.socket.send(new messages.CreateComment(this.globalVersion, this.localVersion, cellId, comment))
+        });
+        this.subscribe(UpdateComment, (cellId, commentId, range, content) => {
+            console.log("comment was updated:", commentId, range, content);
+            this.socket.send(new messages.UpdateComment(this.globalVersion, this.localVersion, cellId, commentId, range, content))
+        });
+        this.subscribe(DeleteComment, (cellId, commentId) => {
+            console.log("comment was deleted:", commentId);
+            this.socket.send(new messages.DeleteComment(this.globalVersion, this.localVersion, cellId, commentId))
+        });
     }
 
     isFocused() {
@@ -564,7 +595,15 @@ export class NotebookUI extends UIMessageTarget {
                         cell.addResult(result);
                     }
                     this.updateCellResults(result, cellInfo.id);
-                })
+                });
+
+                // handle comments
+                if (cell instanceof CodeCell) {
+                    Object.values(cellInfo.comments).forEach(function(comment) {
+                        // not sure why I need this cast...
+                        (cell as CodeCell).commentHandler.add(comment)
+                    })
+                }
             }
         }
         this.mainUI.publish(new CellsLoaded());

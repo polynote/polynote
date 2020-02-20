@@ -4,7 +4,7 @@ import cats.{Applicative, MonadError}
 import cats.effect.{Concurrent, ConcurrentEffect, ContextShift, Timer}
 import org.http4s.websocket.WebSocketFrame.Binary
 import polynote.kernel.environment.PublishMessage
-import polynote.kernel.{BaseEnv, GlobalEnv, TaskG}
+import polynote.kernel.{BaseEnv, GlobalEnv, TaskB, TaskG}
 import polynote.messages.Message
 import polynote.server.auth.{IdentityProvider, UserIdentity}
 import zio.{RIO, Task, UIO, ZIO}
@@ -17,6 +17,7 @@ package object server {
   implicit val taskTimer: Timer[Task] = interop.implicits.ioTimer[Throwable]
   implicit val taskMonadError: MonadError[Task, Throwable] = interop.monadErrorInstance[Any, Throwable]
   implicit val taskConcurrent: Concurrent[Task] = interop.taskConcurrentInstance[Any]
+  implicit val taskBConcurrent: Concurrent[TaskB] = interop.taskConcurrentInstance[BaseEnv]
   implicit val taskGConcurrent: Concurrent[TaskG] = interop.taskConcurrentInstance[BaseEnv with GlobalEnv]
   implicit val sessionConcurrent: Concurrent[RIO[SessionEnv, ?]] = interop.taskConcurrentInstance[SessionEnv]
   implicit val contextShiftTask: ContextShift[Task] = interop.zioContextShift[Any, Throwable]

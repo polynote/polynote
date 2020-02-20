@@ -1,14 +1,14 @@
 'use strict';
 
 import {
-    arrayCodec, bool, bufferCodec, Codec, CodecContainer, combined, discriminated, either, float64, int16, int32,
+    arrayCodec, bool, bufferCodec, Codec, CodecContainer, combined, discriminated, either, float64, int16, int32, int64,
     mapCodec, optional, Pair, shortStr, str, tinyStr, uint16, uint32, uint8
 } from './codec'
 
 import {ServerErrorWithCause, Output, PosRange, Result} from './result'
 import {StreamingDataRepr} from "./value_repr";
 import {isEqual} from "../util/functions";
-import {CellMetadata, NotebookCell, NotebookConfig} from "./data";
+import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "./data";
 import {ContentEdit} from "./content_edit";
 import {Left, Right} from "./types";
 
@@ -164,6 +164,51 @@ export class InsertCell extends NotebookUpdate {
 
     constructor(readonly globalVersion: number, readonly localVersion: number,
                 readonly cell: NotebookCell, readonly after: number) {
+        super();
+        Object.freeze(this);
+    }
+}
+
+export class CreateComment extends NotebookUpdate {
+    static codec = combined(uint32, uint32, int16, CellComment.codec).to(CreateComment);
+    static get msgTypeId() { return 29; }
+
+    static unapply(inst: CreateComment): ConstructorParameters<typeof CreateComment> {
+        return [inst.globalVersion, inst.localVersion, inst.cellId, inst.comment];
+    }
+
+    constructor(readonly globalVersion: number, readonly localVersion: number,
+                readonly cellId: number, readonly comment: CellComment) {
+        super();
+        Object.freeze(this);
+    }
+}
+
+export class UpdateComment extends NotebookUpdate {
+    static codec = combined(uint32, uint32, int16, tinyStr, PosRange.codec, shortStr).to(UpdateComment);
+    static get msgTypeId() { return 30; }
+
+    static unapply(inst: UpdateComment): ConstructorParameters<typeof UpdateComment> {
+        return [inst.globalVersion, inst.localVersion, inst.cellId, inst.commentId, inst.range, inst.content];
+    }
+
+    constructor(readonly globalVersion: number, readonly localVersion: number, readonly cellId: number,
+                readonly commentId: string, readonly range: PosRange, readonly content: string) {
+        super();
+        Object.freeze(this);
+    }
+}
+
+export class DeleteComment extends NotebookUpdate {
+    static codec = combined(uint32, uint32, int16, tinyStr).to(DeleteComment);
+    static get msgTypeId() { return 31; }
+
+    static unapply(inst: DeleteComment): ConstructorParameters<typeof DeleteComment> {
+        return [inst.globalVersion, inst.localVersion, inst.cellId, inst.commentId];
+    }
+
+    constructor(readonly globalVersion: number, readonly localVersion: number,
+                readonly cellId: number, readonly commentId: string) {
         super();
         Object.freeze(this);
     }
@@ -795,6 +840,9 @@ Message.codecs = [
     DeleteNotebook,   // 26
     CopyNotebook,     // 27
     CurrentSelection, // 28
+    CreateComment,    // 29
+    UpdateComment,    // 30
+    DeleteComment,    // 31
 ];
 
 

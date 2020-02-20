@@ -38,7 +38,7 @@ import {
     RuntimeError
 } from "../../data/result"
 import {RichTextEditor} from "./text_editor";
-import {CellSelected, CommentDelta, CommentRootHidden, CommentRootShown, UIMessageTarget} from "../util/ui_event"
+import {CellSelected, CurrentIdentity, UIMessageRequest, UIMessageTarget} from "../util/ui_event"
 import {Diff} from '../../util/diff'
 import {preferences} from "../util/storage";
 import {createVim} from "../util/vim";
@@ -47,7 +47,7 @@ import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {ValueInspector} from "./value_inspector";
 import {Interpreters} from "./ui";
 import {displayContent, parseContentType, prettyDuration} from "./display_content";
-import {CellMetadata} from "../../data/data";
+import {CellComment, CellMetadata} from "../../data/data";
 import {ContentEdit, Delete, Insert} from "../../data/content_edit";
 import {FoldingController, SuggestController} from "../monaco/extensions";
 import {CurrentNotebook} from "./current_notebook";
@@ -59,7 +59,7 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import SignatureHelpResult = languages.SignatureHelpResult;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
-import {CommentRoot, CommentButton, CellComment} from "./comment";
+import {CommentID, CommentHandler} from "./comment";
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -82,7 +82,9 @@ export abstract class Cell extends UIMessageTarget {
     readonly resultTabs: TagElement<"div">;
     protected keyMap: Map<KeyCode, KeyAction>;
 
-    get path(): string { return this.notebook.path }
+    get path(): string {
+        return this.notebook.path
+    }
 
     constructor(readonly id: number, public language: string, readonly notebook: NotebookUI, public metadata?: CellMetadata) {
         super();
@@ -116,7 +118,7 @@ export abstract class Cell extends UIMessageTarget {
                 ]),
             ])
         ]).withId(`Cell${id}`);
-        this.container = Object.assign(containerEl, { cell: this });
+        this.container = Object.assign(containerEl, {cell: this});
 
         // clicking anywhere in a cell should select it
         this.container.addEventListener('click', evt => this.makeActive());
@@ -279,9 +281,8 @@ export abstract class Cell extends UIMessageTarget {
             new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.deleteCell(cell.id))
                 .withDesc("Delete this cell.")],
     ]);
-
-
 }
+
 
 // TODO: it's a bit hacky to export this, should probably put this in some utils module
 export function errorDisplay(error: ServerErrorWithCause, currentFile: string, maxDepth: number = 0, nested: boolean = false): {el: TagElement<"details"> | TagElement<"div">, messageStr: string, cellLine: number | null} {
@@ -341,9 +342,7 @@ export class CodeCell extends Cell {
     private execDurationUpdater: number;
     public vim: any | null;
     private presenceMarkers: Record<number, string[]> = {};
-    private commentButton?: CommentButton;
-    private comments: Record<string, [PosRange, CellComment[]]> = {}; // range_as_str -> [range_as_range, comments]
-    private commentButtonCB: IDisposable;
+    readonly commentHandler: CommentHandler;
 
     static keyMapOverrides = new Map([
         [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell: CodeCell) => {
@@ -478,6 +477,8 @@ export class CodeCell extends Cell {
         if (this.metadata && this.metadata.executionInfo) {
             this.setExecutionInfo(this.metadata.executionInfo);
         }
+
+        this.commentHandler = new CommentHandler(this)  // TODO need to forward events to the backend
     }
 
     notifySelection() {
@@ -492,66 +493,8 @@ export class CodeCell extends Cell {
                     this.notebook.setCurrentSelection(this.id, range);
                 }
 
-                // display comment icon
-                if (range.start != range.end) {
-                    if(this.commentButton) this.commentButton.hide();
-                    // calculates location of right margin
-                    const calcOffset = () => {
-                        const containerOffset = this.editorEl.getBoundingClientRect().left;
-                        const currentY = this.editor.getTopForPosition(selection.endLineNumber, selection.endColumn);
-                        const containerY = this.editorEl.getBoundingClientRect().top;
-
-                        const l = this.editor.getLayoutInfo();
-                        const x = (
-                            containerOffset                 // the location of this cell on the page
-                            + l.contentWidth                // the width of the content area
-                            - l.verticalScrollbarWidth      // don't want to overlay on top of the scrollbar.
-                        );
-                        const y = containerY + currentY;
-                        return [x, y];
-                    };
-
-                    const [x, y] = calcOffset();
-                    const comment = new CommentButton(this, x, y, () => {
-                        this.commentButtonCB.dispose();
-                        this.commentButton = undefined;
-                    });
-                    comment.show();
-                    comment.subscribe(CommentRootShown, c => {
-
-                        const updatePosition = this.editor.onDidLayoutChange(() => {
-                            const [x, y] = calcOffset();
-                            c.position(x, y)
-                        });
-
-                        c.subscribe(CommentRootHidden, c2 => {
-                            if (c !== c2) {
-                                console.log("this shouldn't happen!");
-                            } else {
-                                updatePosition.dispose();
-                            }
-                        });
-
-                        c.subscribe(CommentDelta, (root, added, removed) => {
-                            const [r, currentComments] = this.comments[range.asString];
-                            let comments = currentComments.filter(curr => removed.find(c2 => curr.uuid === c2.uuid) === undefined)
-                            comments.concat(added);
-                            this.comments[range.asString] = [range, comments];
-
-
-
-                        });
-
-                        this.comments[range.asString] = [range, c.comments];
-                    });
-                    this.commentButtonCB = this.editor.onDidLayoutChange(() => {
-                        const [x, y] = calcOffset();
-                        comment.position(x, y)
-                    });
-                    this.commentButton = comment;
-                } else {
-                    if (this.commentButton) this.commentButton.hide()
-                }
+                // comment stuff
+                this.commentHandler.handleSelection(selection);
             }
         }
     }
@@ -609,6 +552,7 @@ export class CodeCell extends Cell {
         // TODO: there might be non-error markers, or might otherwise want to be smarter about clearing markers
         monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), []);
         const edits = event.changes.flatMap((contentChange) => {
+            // this.commentHandler.handleContentEdit(contentChange.range, contentChange.text.length - contentChange.rangeLength);
             if (contentChange.rangeLength && contentChange.text.length) {
                 return [new Delete(contentChange.rangeOffset, contentChange.rangeLength), new Insert(contentChange.rangeOffset, contentChange.text)];
             } else if (contentChange.rangeLength) {

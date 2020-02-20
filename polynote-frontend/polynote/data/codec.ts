@@ -6,7 +6,7 @@ import {Both, Either, ExtractorConstructor, Ior, Left, Right} from "./types";
 declare global {
     interface DataView {
         getBigInt64(byteOffset: number, littleEndian?: boolean): number;
-        setBigInt64(byteOffset: number, value: number, littleEndian?: boolean): void;
+        setBigInt64(byteOffset: number, value: bigint, littleEndian?: boolean): void;
     }
 }
 
@@ -170,7 +170,7 @@ export class DataWriter {
 
     writeInt64(value: number) {
         this.ensureBufSize(this.buffer.byteLength + 8);
-        this.dataView.setBigInt64(this.offset, value);
+        this.dataView.setBigInt64(this.offset, BigInt(value));
         this.offset += 8;
     }
 

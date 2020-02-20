@@ -209,7 +209,16 @@ export class PosRange {
     }
 
     get asString() {
-        return `posrange-${this.start}-${this.end}`
+        return `${this.start}-${this.end}`
+    }
+
+    equals(other: PosRange): Boolean {
+        return this.start === other.start && this.end === other.end
+    }
+
+    static fromString(serialized: string): PosRange {
+        const [start, end] = serialized.split("-");
+        return new PosRange(parseInt(start), parseInt(end));
     }
 }
 
@@ -322,7 +331,6 @@ export class ClientResult extends Result {
         throw new Error(`Class ${this.constructor.name} does not implement toOutput()`);
     }
 }
-
 
 export class ExecutionInfo extends Result {
     static codec = combined(int64, optional(int64)).to(ExecutionInfo);

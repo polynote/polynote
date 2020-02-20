@@ -23,7 +23,7 @@ import {
     TabRemoved,
     TabRenamed,
     FocusCell,
-    CopyNotebook, GetIdentity
+    CopyNotebook, CurrentIdentity
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -67,6 +67,8 @@ export class MainUI extends UIMessageTarget {
 
     constructor() {
         super();
+        this.makeRoot(); // MainUI is always a root message target.
+
         let left = { el: div(['grid-shell'], []) };
         let center = { el: div(['tab-view'], []) };
         let right = { el: div(['grid-shell'], []) };
@@ -242,7 +244,7 @@ export class MainUI extends UIMessageTarget {
                     }
                     cb(statuses);
                 })
-            } else if (msg.prototype === GetIdentity.prototype) {
+            } else if (msg.prototype === CurrentIdentity.prototype) {
                 const name = (this.identity && this.identity.name) || "Anonymous";
                 const avatar = this.identity && this.identity.avatar;
                 cb(name, avatar);

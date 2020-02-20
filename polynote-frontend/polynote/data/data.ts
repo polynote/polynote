@@ -1,8 +1,22 @@
 import {
-    arrayCodec, bool, Codec, CodecContainer, combined, discriminated, int16, mapCodec, optional, str, tinyStr,
-    uint16, uint8
+    arrayCodec,
+    bool,
+    Codec,
+    CodecContainer,
+    combined,
+    discriminated, either,
+    int16,
+    int64,
+    mapCodec,
+    optional,
+    shortStr,
+    str,
+    tinyStr,
+    uint16,
+    uint8
 } from "./codec";
-import {ExecutionInfo, Result} from "./result";
+import {ExecutionInfo, PosRange, Result} from "./result";
+import {Left, Right} from "./types";
 
 export class CellMetadata {
     static codec = combined(bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
@@ -21,17 +35,30 @@ export class CellMetadata {
     }
 }
 
+// called CellComment to differentiate it from the DOM Node which is globally available without import -- is there any way to make those imports explicit???
+export class CellComment {
+    static codec = combined(tinyStr, PosRange.codec, tinyStr, int64, shortStr).to(CellComment);
+    static unapply(inst: CellComment): ConstructorParameters<typeof CellComment> {
+        return [inst.uuid, inst.range, inst.author, inst.createdAt, inst.content];
+    }
+
+    constructor(readonly uuid: string, readonly range: PosRange, readonly author: string, readonly createdAt: number, readonly content: string) {
+        Object.freeze(this);
+    }
+}
+
 export class NotebookCell {
-    static codec = combined(int16, tinyStr, str, arrayCodec(int16, Result.codec), CellMetadata.codec).to(NotebookCell);
+    static codec = combined(int16, tinyStr, str, arrayCodec(int16, Result.codec), CellMetadata.codec, mapCodec(int16, tinyStr, CellComment.codec)).to(NotebookCell);
     static unapply(inst: NotebookCell): ConstructorParameters<typeof NotebookCell> {
-        return [inst.id, inst.language, inst.content, inst.results, inst.metadata];
+        return [inst.id, inst.language, inst.content, inst.results, inst.metadata, inst.comments];
     }
 
     constructor(readonly id: number,
                 readonly language: string,
                 readonly content: string = '',
                 readonly results: Result[] = [],
-                readonly metadata: CellMetadata = new CellMetadata(false, false, false)) {}
+                readonly metadata: CellMetadata = new CellMetadata(false, false, false),
+                readonly comments: Record<string, CellComment> = {}) {}
 }
 
 export abstract class RepositoryConfig extends CodecContainer {
