@@ -6,7 +6,7 @@ WORKDIR /opt
 
 USER root
 
-COPY scripts/install_spark.sh .
+COPY install_spark.sh .
 RUN ./install_spark.sh
 ENV SPARK_HOME="/opt/spark"
 ENV HADOOP_HOME="/opt/hadoop-2.7.7"

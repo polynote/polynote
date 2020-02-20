@@ -8,7 +8,7 @@ RUN apt update -y && \
     apt install -y wget python3 python3-dev python3-pip build-essential && \
     pip3 install jep jedi virtualenv
 
-COPY scripts/install_spark.sh .
+COPY docker/spark-2.4/install_spark.sh .
 RUN ./install_spark.sh
 ENV SPARK_HOME="/opt/spark"
 ENV HADOOP_HOME="/opt/hadoop-2.7.7"
