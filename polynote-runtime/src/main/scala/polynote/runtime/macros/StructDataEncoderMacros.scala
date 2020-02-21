@@ -14,12 +14,30 @@ class StructDataEncoderMacros(val c: whitebox.Context) extends CaseClassMacros {
 
   private val DataEncoderTC = weakTypeOf[DataEncoder[_]].typeConstructor
 
+  def fieldSymbolsOf(tpe: Type): List[(TermSymbol, Type)] = {
+    val tSym = tpe.typeSymbol
+    if(tSym.isClass && isAnonOrRefinement(tSym)) Nil
+    else
+      tpe.decls.sorted collect {
+        case sym: TermSymbol if isCaseAccessorLike(sym) =>
+          (sym, sym.typeSignatureIn(tpe).finalResultType)
+      }
+  }
+
   /**
     * A macro to materialize a more performant set of getters for [[StructDataEncoder]] over a case class.
     */
   def materialize[A <: Product : WeakTypeTag]: Expr[StructDataEncoder[A]] = {
     val A = weakTypeOf[A].dealias.widen
-    fieldsOf(A) match {
+
+    def isEncodable(sym: TermSymbol, typ: Type): Boolean =
+      !(typ =:= typeOf[Unit]) && !sym.isSetter && (!sym.isMethod || sym.asMethod.paramLists.flatten.isEmpty)
+
+    val encodableFields = fieldSymbolsOf(A).collect {
+      case (sym, typ) if isEncodable(sym, typ) => (sym.name.toTermName, typ)
+    }
+
+    encodableFields match {
       case Nil => c.abort(c.enclosingPosition, "Not a case class, or has no fields")
       case fields =>
         fields.flatMap {
