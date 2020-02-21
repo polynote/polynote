@@ -1,4 +1,9 @@
+# 0.3.2 (Feb 21, 2020)
+* Fix issue where kernel hangs trying to find `ReprsOf` something that has `var`s in it
+* Make `kernel` variable implicit so it can be threaded into functions
+
 # 0.3.1 (Feb 19, 2020)
+* Remove deprecated `polynote` shell script (use `python.py` instead)
 * Disable notebook if writing fails repeatedly
 * Unmangle package name for Spark 2.4.4 compatibility
 * Validate config on server startup
