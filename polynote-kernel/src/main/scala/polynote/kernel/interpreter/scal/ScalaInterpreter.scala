@@ -96,7 +96,7 @@ class ScalaInterpreter private[scal] (
   private val completer = ScalaCompleter(scalaCompiler, indexer)
 
   // create the parameter that's used to inject the `kernel` value into cell scope
-  private def runtimeValDef = ValDef(Modifiers(), TermName("kernel"), tq"polynote.runtime.KernelRuntime", EmptyTree)
+  private def runtimeValDef = ValDef(Modifiers(global.Flag.IMPLICIT), TermName("kernel"), tq"polynote.runtime.KernelRuntime", EmptyTree)
 
   /**
     * Goes backward through the state and collects all the output values and imports from previous cells. For Scala cells,
