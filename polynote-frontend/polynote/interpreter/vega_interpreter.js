@@ -34,13 +34,6 @@ export const VegaInterpreter = {
             // some validation of the spec
             if (!spec.data)
                 throw new Error("Spec is missing data attribute");
-            if (spec.data instanceof Array) {
-                spec.data.forEach(data => {
-                    if (!data.name) {
-                        throw new Error("Spec data attribute is missing name property");
-                    }
-                });
-            }
 
             if (!spec["$schema"]) {
                 spec["$schema"] = 'https://vega.github.io/schema/vega-lite/v3.json';
