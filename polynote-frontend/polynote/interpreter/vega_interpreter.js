@@ -40,8 +40,6 @@ export const VegaInterpreter = {
                         throw new Error("Spec data attribute is missing name property");
                     }
                 });
-            } else if (!spec.data.name) {
-                throw new Error("Spec data attribute is missing name property");
             }
 
             if (!spec["$schema"]) {
