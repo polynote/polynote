@@ -153,6 +153,8 @@ object SparkConfig {
 
 final case class PolynoteConfig(
   listen: Listen = Listen(),
+  kernelListen: String = "127.0.0.1",
+  kernelPortRange: String = "1-65535",
   storage: Storage = Storage(),
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,

@@ -12,7 +12,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
   "PolynoteConfig" should "Ser/De" in {
 
     val cfg = PolynoteConfig(
-      Listen(), Storage(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), Some(SparkConfig(Map("key" -> "val")))
+      Listen(), "1.2.3.4","987654321-1234567890", Storage(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), Some(SparkConfig(Map("key" -> "val")))
     )
     val js = cfg.asJson
     val cfgString = cfg.asJson.spaces2
@@ -80,6 +80,8 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         host = "1.1.1.1",
         port = 8193
       ),
+      "",
+      "",
       Storage("tmp", dir = "notebooks", Map("examples" -> Mount("examples"))),
       List(
         ivy("https://my-artifacts.org/artifacts/"),

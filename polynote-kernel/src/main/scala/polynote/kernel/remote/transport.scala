@@ -198,10 +198,12 @@ class SocketTransport(
   forceServerAddress: Option[String] = None
 ) extends Transport[InetSocketAddress] {
 
-  private def openServerChannel: RIO[Blocking, ServerSocketChannel] = effectBlocking {
+  private def openServerChannel(
+                                 config: PolynoteConfig
+                               ): RIO[Blocking, ServerSocketChannel] = effectBlocking {
+
     ServerSocketChannel.open().bind(
-      new InetSocketAddress(
-        forceServerAddress.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress), 0))
+      new InetSocketAddress(config.kernelListen, 0))
   }
 
   private def startConnection(
@@ -220,7 +222,8 @@ class SocketTransport(
   private[polynote] def deployAndServe(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, (TransportServer[InetSocketAddress], SocketTransport.DeployedProcess)] =
     TaskManager.run("RemoteKernel", "Remote kernel", "Starting remote kernel") {
       for {
-        socketServer  <- openServerChannel
+        config        <- ZIO.access[Config](_.polynoteConfig)
+        socketServer  <- openServerChannel(config)
         serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
         process       <- deploy.deployKernel(this, serverAddress)
         _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
