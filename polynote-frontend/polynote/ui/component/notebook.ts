@@ -1,10 +1,5 @@
 import {
-    CellsLoaded,
-    ReprDataRequest,
-    CellSelected,
-    UIMessage,
-    UIMessageTarget,
-    FocusCell, CreateComment, UpdateComment, DeleteComment,
+    CellsLoaded, ReprDataRequest, CellSelected, UIMessageTarget, FocusCell, CreateComment, UpdateComment, DeleteComment
 } from "../util/ui_event";
 import {NotebookCellsUI} from "./nb_cells";
 import {KernelUI} from "./kernel_ui";
@@ -343,15 +338,12 @@ export class NotebookUI extends UIMessageTarget {
         });
 
         this.subscribe(CreateComment, (cellId, comment) => {
-            console.log("comment was created:", comment);
             this.socket.send(new messages.CreateComment(this.globalVersion, this.localVersion, cellId, comment))
         });
         this.subscribe(UpdateComment, (cellId, commentId, range, content) => {
-            console.log("comment was updated:", commentId, range, content);
             this.socket.send(new messages.UpdateComment(this.globalVersion, this.localVersion, cellId, commentId, range, content))
         });
         this.subscribe(DeleteComment, (cellId, commentId) => {
-            console.log("comment was deleted:", commentId);
             this.socket.send(new messages.DeleteComment(this.globalVersion, this.localVersion, cellId, commentId))
         });
     }

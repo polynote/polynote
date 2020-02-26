@@ -82,9 +82,7 @@ export abstract class Cell extends UIMessageTarget {
     readonly resultTabs: TagElement<"div">;
     protected keyMap: Map<KeyCode, KeyAction>;
 
-    get path(): string {
-        return this.notebook.path
-    }
+    get path(): string { return this.notebook.path }
 
     constructor(readonly id: number, public language: string, readonly notebook: NotebookUI, public metadata?: CellMetadata) {
         super();
@@ -118,7 +116,7 @@ export abstract class Cell extends UIMessageTarget {
                 ]),
             ])
         ]).withId(`Cell${id}`);
-        this.container = Object.assign(containerEl, {cell: this});
+        this.container = Object.assign(containerEl, { cell: this });
 
         // clicking anywhere in a cell should select it
         this.container.addEventListener('click', evt => this.makeActive());
@@ -282,7 +280,6 @@ export abstract class Cell extends UIMessageTarget {
                 .withDesc("Delete this cell.")],
     ]);
 }
-
 
 // TODO: it's a bit hacky to export this, should probably put this in some utils module
 export function errorDisplay(error: ServerErrorWithCause, currentFile: string, maxDepth: number = 0, nested: boolean = false): {el: TagElement<"details"> | TagElement<"div">, messageStr: string, cellLine: number | null} {
@@ -493,7 +490,7 @@ export class CodeCell extends Cell {
                     this.notebook.setCurrentSelection(this.id, range);
                 }
 
-                // comment stuff
+                // notify the comment handler
                 this.commentHandler.handleSelection(selection);
             }
         }

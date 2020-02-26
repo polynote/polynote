@@ -2,18 +2,12 @@
 
 
 import {button, Content, div, span, tag, TagElement, textarea, textbox} from "../util/tags";
-import {
-    CreateComment,
-    CurrentIdentity, DeleteComment, UIMessageListener,
-    UIMessageRequest,
-    UIMessageTarget, UpdateComment
-} from "../util/ui_event";
+import { CreateComment, CurrentIdentity, DeleteComment, UIMessageRequest, UIMessageTarget, UpdateComment } from "../util/ui_event";
 import * as uuidv4 from 'uuid/v4';
 import {CellComment} from "../../data/data";
 import {PosRange} from "../../data/result";
-import {Cell, CodeCell} from "./cell";
 import * as monaco from "monaco-editor";
-import {editor, IDisposable, IRange} from "monaco-editor";
+import {editor, IDisposable} from "monaco-editor";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
@@ -70,7 +64,6 @@ export class CommentHandler extends UIMessageTarget {
                             const rootId = this.commentRoots[range_str];
                             const root = this.comments[rootId];
 
-                            // console.log("Updated range for", rootId, "from", ps, "to", newRange, root);
                             this.publish(new UpdateComment(this.cellId, rootId, newRange, root.content));
 
                             // reset highlights.
@@ -81,7 +74,6 @@ export class CommentHandler extends UIMessageTarget {
                         // decoration wasn't found or was empty, so we need to delete it.
                         const rootAtRange = this.commentRoots[range_str];
                         if (rootAtRange) {
-                            // console.log("deleting comment", rootAtRange, "at range", range_str);
                             this.publish(new DeleteComment(this.cellId, rootAtRange));
                         }
                         delete this.highlights[range_str];
@@ -136,7 +128,6 @@ export class CommentHandler extends UIMessageTarget {
             Object.values(this.comments).filter(c => c !== prev).forEach(c => {
                 if (c.range.equals(prev.range)) {
                     this.publish(new UpdateComment(this.cellId, c.uuid, range, c.content));
-                    // console.log("Updating comment", c.uuid, "from", c.range, "to", range, "because its root comment was updated")
                 }
             });
         }
@@ -148,8 +139,6 @@ export class CommentHandler extends UIMessageTarget {
         const upd = this._update(commentId, range, content);
         this.commentUIs[upd.range.asString].update(upd);
     }
-
-
 
     private _delete(commentId: CommentID) {
         const comment = this.comments[commentId];
@@ -459,9 +448,7 @@ export class CommentUI extends RightGutterOverlay {
 
         if (typeof(this.currentAuthor) === "string" ? comment.author === this.currentAuthor : true) {
             actions.click(() => {
-                console.log("showing menu")
                 const listener = () => {
-                    console.log("removing menu")
                     actions.removeChild(items);
                     document.body.removeEventListener("mousedown", listener);
                 };

@@ -228,11 +228,6 @@ sealed trait NotebookUpdate extends Message {
 
       u.copy(edits = edits1.rebase(edits2))
 
-//    TODO: I think we don't need to worry about this because we are now using time to order the comments
-//    case (cc1 @ CreateComment(_, _, cell1, comment1), cc2 @ CreateComment(_, _, cell2, comment2)) if cell1 == cell2 && comment1.range == comment2.range =>
-//      // we both tried to insert a new comment in exactly the same spot! Transform the first update so it's a reply to the second update.
-//      cc1.copy(comment = comment1.copy(range = Right(comment2.uuid)))
-
     // all other cases should be independent (TODO: they're not yet, though)
     case _ => this
 

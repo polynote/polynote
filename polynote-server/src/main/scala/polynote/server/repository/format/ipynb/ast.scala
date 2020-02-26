@@ -191,7 +191,7 @@ object JupyterCell {
         val hideSource = obj("jupyter.source_hidden").flatMap(_.asBoolean).getOrElse(false)
         val hideOutput = obj("jupyter.outputs_hidden").flatMap(_.asBoolean).getOrElse(false)
         val executionInfo = obj("cell.metadata.exec_info").flatMap(_.as[ExecutionInfo].right.toOption)
-        val comments = obj("cell.comments").flatMap(_.as[ShortMap[CommentID, Comment]].right.toOption).getOrElse(ShortMap(Map.empty[CommentID, Comment]))
+        val comments = obj("cell.comments").flatMap(_.as[ShortMap[CommentID, Comment]].right.toOption).getOrElse(ShortMap(Map.empty[CommentID, Comment])) // TODO: should we verify identity?
 
         (CellMetadata(disabled, hideSource, hideOutput, executionInfo), comments)
     }.getOrElse((CellMetadata(), ShortMap(Map.empty[CommentID, Comment])))
@@ -218,19 +218,6 @@ object JupyterCell {
         val metadata = runControl ++ source ++ output ++ execInfo ++ comments
         if (metadata.nonEmpty) Option(JsonObject.fromMap(metadata.toMap)) else None
     }
-
-//    val cellMetadata = cell.metadata match {
-//      case CellMetadata(false, false, false, None) => Some(JsonObject.singleton("language", cell.language.toString.asJson))
-//      case meta => Some {
-//        JsonObject.fromMap(List(
-//          "cell.metadata.run_control.frozen" -> meta.disableRun,
-//          "jupyter.source_hidden" -> meta.hideSource,
-//          "jupyter.outputs_hidden" -> meta.hideOutput).filter(_._2).toMap.mapValues(Json.fromBoolean)
-//          ++ Map("cell.metadata.exec_info" -> meta.executionInfo.asJson, "language" -> cell.language.toString.asJson)
-//        )
-//      }
-//    }
-//
 
     val outputs = cell.results.flatMap(JupyterOutput.fromResult(_, executionCount.getOrElse(-1)))
 

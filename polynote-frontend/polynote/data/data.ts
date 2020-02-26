@@ -1,22 +1,8 @@
 import {
-    arrayCodec,
-    bool,
-    Codec,
-    CodecContainer,
-    combined,
-    discriminated, either,
-    int16,
-    int64,
-    mapCodec,
-    optional,
-    shortStr,
-    str,
-    tinyStr,
-    uint16,
-    uint8
+    arrayCodec, bool, Codec, CodecContainer, combined, discriminated, either, int16, int64, mapCodec, optional, shortStr,
+    str, tinyStr, uint16, uint8
 } from "./codec";
 import {ExecutionInfo, PosRange, Result} from "./result";
-import {Left, Right} from "./types";
 
 export class CellMetadata {
     static codec = combined(bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);

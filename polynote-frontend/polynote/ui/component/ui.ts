@@ -2,28 +2,9 @@
 
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import {
-    CancelTasks,
-    CreateNotebook,
-    UIMessageTarget,
-    ImportNotebook,
-    UIToggle,
-    TabActivated,
-    NoActiveTab,
-    ViewAbout,
-    DownloadNotebook,
-    ClearOutput,
-    UIMessageRequest,
-    ServerVersion,
-    RunningKernels,
-    KernelCommand,
-    LoadNotebook,
-    CellsLoaded,
-    RenameNotebook,
-    DeleteNotebook,
-    TabRemoved,
-    TabRenamed,
-    FocusCell,
-    CopyNotebook, CurrentIdentity
+    CancelTasks, CreateNotebook, UIMessageTarget, ImportNotebook, UIToggle, TabActivated, NoActiveTab, ViewAbout,
+    DownloadNotebook, ClearOutput, UIMessageRequest, ServerVersion, RunningKernels, KernelCommand, LoadNotebook,
+    CellsLoaded, RenameNotebook, DeleteNotebook, TabRemoved, TabRenamed, FocusCell, CopyNotebook, CurrentIdentity
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -39,7 +20,6 @@ import {NotebookUI} from "./notebook";
 import {TabUI} from "./tab";
 import {CreateNotebookDialog, NotebookNameChangeDialog, NotebookListUI} from "./notebook_list";
 import {HomeUI} from "./home";
-import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
 import {CurrentNotebook} from "./current_notebook";
 import {NotebookCellsUI} from "./nb_cells";
@@ -120,7 +100,7 @@ export class MainUI extends UIMessageTarget {
             }
             this.currentServerVersion = serverVersion;
             this.currentServerCommit = serverCommit;
-            this.identity = identity || undefined;
+            this.identity = identity;
         });
 
         SocketSession.global.addMessageListener(
@@ -245,7 +225,7 @@ export class MainUI extends UIMessageTarget {
                     cb(statuses);
                 })
             } else if (msg.prototype === CurrentIdentity.prototype) {
-                const name = (this.identity && this.identity.name);
+                const name = this.identity && this.identity.name;
                 const avatar = this.identity && this.identity.avatar;
                 cb(name, avatar);
             }
