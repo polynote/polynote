@@ -362,19 +362,17 @@ export class CommentUI extends RightGutterOverlay {
     private readonly newComment: TagElement<"div">;
     private newCommentText: TagElement<"textarea">;
     private readonly commentContainers: CommentContainer[] = [];
-    private readonly currentAuthor: string | TagElement<"input">;
 
-    constructor(readonly cellId: number, editor: IStandaloneCodeEditor, range: PosRange, currentAuthor?: string, readonly currentAvatar?: string) {
+    constructor(readonly cellId: number, editor: IStandaloneCodeEditor, range: PosRange, readonly currentAuthor: string = "Anonymous", readonly currentAvatar?: string) {
         super(editor, undefined, range);
         const [text, controls] = this.commentSubmitter(
             () => this.doCreate(),
             () => this.hide()
         );
-        this.currentAuthor = currentAuthor || textbox(['author-input'], 'Author', '');
         this.newComment = div(['create-comment', 'comment'], [
             div(['header'], [
                 span(['avatar'], [currentAvatar]),
-                span(['author'], [this.currentAuthor]),
+                span(['author'], [currentAuthor]),
             ]),
             div(["comment-content"], [
                 this.newCommentText = text,
@@ -411,7 +409,7 @@ export class CommentUI extends RightGutterOverlay {
         if (this.newCommentText.value) {
             const comment = createCellComment({
                 range: this.range,
-                author: typeof(this.currentAuthor) === "string" ? this.currentAuthor : this.currentAuthor.value,
+                author: this.currentAuthor,
                 createdAt: Date.now(),
                 content: this.newCommentText.value,
             });
@@ -446,7 +444,7 @@ export class CommentUI extends RightGutterOverlay {
     private commentElement(comment: CellComment, avatar?: string): CommentContainer {
         const actions = div(['actions'], []);
 
-        if (typeof(this.currentAuthor) === "string" ? comment.author === this.currentAuthor : true) {
+        if (this.currentAuthor === comment.author) {
             actions.click(() => {
                 const listener = () => {
                     actions.removeChild(items);
