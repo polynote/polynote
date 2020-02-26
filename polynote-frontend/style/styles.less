@@ -3218,29 +3218,33 @@ img.icon {
 
 .comment-container {
   .comments-list {
-    border-radius: 6px;
-    border: 1px solid black;
-    box-shadow: @ui-border-dark 0px 2px 6px 2px;
+    border: 1px solid @ui-border;
+    box-shadow: @ui-border 0px 2px 6px 2px;
     background-color: white;
-    padding: 8px 14px;
 
-    :not(:last-child) .comment-content {
-      border-bottom: 1px solid darkgray;
-      margin-bottom: 8px;
-      padding-bottom: 8px;
+    .comment:first-child .header {
+      border-top: none;
     }
 
     .comment .header {
+      background: @ui-background;
+      border-top: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
       font-size: 14px;
       font-weight: normal;
       display: flex;
+      padding: 8px 14px;
 
       .actions {
         display: flex;
-        background: white url(icons/fa/triple-dots-vert.svg) no-repeat 50% 50%;
+        background: @ui-background url(icons/fa/triple-dots-vert.svg) no-repeat 50% 50%;
         width: 2em;
         height: 1.5em;
         margin-left: 1em;
+
+        &:disabled {
+          visibility: hidden;
+        }
 
         ul {
           border: 1px solid @ui-border;
@@ -3266,6 +3270,15 @@ img.icon {
         }
       }
 
+      .avatar:empty {
+        background: white url(icons/fa/user.svg) no-repeat 50% 50%;
+        border: 2px solid darkgray;
+        border-radius: 100%;
+        width: 2em;
+        height: 2em;
+        margin-right: 0.5em;
+      }
+
       .author-timestamp {
         display: flex;
         flex-direction: column;
@@ -3276,20 +3289,39 @@ img.icon {
           font-weight: lighter;
         }
       }
+
+      input {
+        padding: 4px;
+        font-size: 14px;
+      }
+    }
+
+    .create-comment {
+      border-top: 1px solid darkgray;
+      margin-top: 8px;
+      padding-top: 8px;
+
+      .header {
+        background: inherit;
+        border: none;
+        padding: 0 14px;
+      }
     }
 
     .comment-content {
       font-size: 16px;
-      font-weight: lighter;
+      //font-weight: lighter;
       white-space: pre-wrap;
-    }
+      margin: 8px 20px;
 
-    textarea {
-      padding-top: 4px;
-      padding-bottom: 4px;
-      width: 100%;
-      resize: none;
-      box-sizing: border-box;
+      textarea {
+        padding-top: 4px;
+        padding-bottom: 4px;
+        width: 100%;
+        resize: none;
+        box-sizing: border-box;
+        font-size: inherit;
+      }
     }
   }
 }

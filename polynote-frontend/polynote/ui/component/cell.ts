@@ -478,7 +478,7 @@ export class CodeCell extends Cell {
             this.setExecutionInfo(this.metadata.executionInfo);
         }
 
-        this.commentHandler = new CommentHandler(this)  // TODO need to forward events to the backend
+        this.commentHandler = new CommentHandler(this.id, this.editor).setParent(this)
     }
 
     notifySelection() {
@@ -552,7 +552,6 @@ export class CodeCell extends Cell {
         // TODO: there might be non-error markers, or might otherwise want to be smarter about clearing markers
         monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), []);
         const edits = event.changes.flatMap((contentChange) => {
-            // this.commentHandler.handleContentEdit(contentChange.range, contentChange.text.length - contentChange.rangeLength);
             if (contentChange.rangeLength && contentChange.text.length) {
                 return [new Delete(contentChange.rangeOffset, contentChange.rangeLength), new Insert(contentChange.rangeOffset, contentChange.text)];
             } else if (contentChange.rangeLength) {

@@ -267,7 +267,7 @@ export class ModalClosed extends UIMessage {
 }
 
 export class CurrentIdentity extends UIMessage {
-    constructor(readonly name: string, readonly avatar?: string) { super() }
+    constructor(readonly name?: string, readonly avatar?: string) { super() }
 
     static unapply(inst: CurrentIdentity): ConstructorParameters<typeof CurrentIdentity> {
         return [inst.name, inst.avatar]

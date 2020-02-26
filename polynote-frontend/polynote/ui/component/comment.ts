@@ -1,7 +1,7 @@
 "use strict";
 
 
-import {button, Content, div, span, tag, TagElement, textarea} from "../util/tags";
+import {button, Content, div, span, tag, TagElement, textarea, textbox} from "../util/tags";
 import {
     CreateComment,
     CurrentIdentity, DeleteComment, UIMessageListener,
@@ -15,7 +15,6 @@ import {Cell, CodeCell} from "./cell";
 import * as monaco from "monaco-editor";
 import {editor, IDisposable, IRange} from "monaco-editor";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
-import {Either, Left, Right} from "../../data/types";
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 
@@ -33,8 +32,6 @@ export function createCellComment({range, author, createdAt, content}: Omit<Cell
     )
 }
 
-//TODO: ranges need to be updated!
-
 // Comment Handler is in charge of comments for a particular cell
 export class CommentHandler extends UIMessageTarget {
     private comments: Record<CommentID, CellComment> = {}; // holds all comments (root and replies)
@@ -42,9 +39,8 @@ export class CommentHandler extends UIMessageTarget {
     private commentRoots: Record<string, CommentID> = {};  // lookup table for range (serialized as string) to root comments
     private highlights: Record<string, string[]> = {};     // deltaDecorations, range string -> monaco decoration ids.
 
-    // TODO: should explicitly get id and editor rather than relying on parent.
-    constructor(readonly parent: CodeCell) {
-        super(parent);
+    constructor(readonly cellId: number, readonly editor: IStandaloneCodeEditor) {
+        super();
 
         this.subscribe(CreateComment, (cellId, comment) => {
             this._add(comment);
@@ -56,15 +52,11 @@ export class CommentHandler extends UIMessageTarget {
             this._delete(commentId);
         });
 
-        // TODO: - deleting range needs to delete the comment
-        //       - for some reason replies aren't always getting updated! very weird.
-        this.parent.editor.onDidChangeModelContent((evt: IModelContentChangedEvent) => {
-            const model = this.parent.editor.getModel();
+        this.editor.onDidChangeModelContent((evt: IModelContentChangedEvent) => {
+            const model = this.editor.getModel();
             if (model) {
                 // check for drift between decorations and the ranges we're keeping
-
                 const modelDecorations = model.getAllDecorations();
-
                 Object.entries(this.highlights).forEach(([range_str, highlights]) => {
                     const maybeDecoration = modelDecorations.find(d => highlights.includes(d.id));
                     if (maybeDecoration && !maybeDecoration.range.isEmpty()) {
@@ -78,25 +70,23 @@ export class CommentHandler extends UIMessageTarget {
                             const rootId = this.commentRoots[range_str];
                             const root = this.comments[rootId];
 
-                            console.log("Updated range for", rootId, "from", ps, "to", newRange, root);
-                            this.publish(new UpdateComment(this.parent.id, rootId, newRange, root.content));
+                            // console.log("Updated range for", rootId, "from", ps, "to", newRange, root);
+                            this.publish(new UpdateComment(this.cellId, rootId, newRange, root.content));
 
                             // reset highlights.
                             delete this.highlights[range_str];
                             this.highlights[newRange.asString] = highlights;
-
-                            // TODO: clicking isn't working. CommentUI's range needs to be updated. Also, we need to make sure the root comments are getting properly changed.
                         }
                     } else {
                         // decoration wasn't found or was empty, so we need to delete it.
                         const rootAtRange = this.commentRoots[range_str];
                         if (rootAtRange) {
-                            console.log("deleting comment", rootAtRange, "at range", range_str);
-                            this.publish(new DeleteComment(this.parent.id, rootAtRange));
+                            // console.log("deleting comment", rootAtRange, "at range", range_str);
+                            this.publish(new DeleteComment(this.cellId, rootAtRange));
                         }
                         delete this.highlights[range_str];
 
-                        // if the range was empty, remove it. TODO: maybe we don't need this if we update all the decorations later.
+                        // if the range was empty, remove it.
                         if (maybeDecoration) model.deltaDecorations([maybeDecoration.id], [])
                     }
                 });
@@ -120,7 +110,7 @@ export class CommentHandler extends UIMessageTarget {
     add(comment: CellComment) {
         this._add(comment);
         if (!this.commentUIs[comment.range.asString]) {
-            this.commentUIs[comment.range.asString] = this.initializeUI(comment.range, comment.author, CommentHandler.fetchAvatar(comment.author));
+            this.commentUIs[comment.range.asString] = this.initializeUI(comment.range);
         }
 
         this.commentUIs[comment.range.asString].add(comment);
@@ -145,8 +135,8 @@ export class CommentHandler extends UIMessageTarget {
             // finally, update all the other comments.
             Object.values(this.comments).filter(c => c !== prev).forEach(c => {
                 if (c.range.equals(prev.range)) {
-                    this.publish(new UpdateComment(this.parent.id, c.uuid, range, c.content));
-                    console.log("Updating comment", c.uuid, "from", c.range, "to", range, "because its root comment was updated")
+                    this.publish(new UpdateComment(this.cellId, c.uuid, range, c.content));
+                    // console.log("Updating comment", c.uuid, "from", c.range, "to", range, "because its root comment was updated")
                 }
             });
         }
@@ -186,8 +176,8 @@ export class CommentHandler extends UIMessageTarget {
         if (maybeUI) maybeUI.delete(commentId);
     }
 
-    private initializeUI(range: PosRange, name: string, avatar?: string) {
-        const commentUI = new CommentUI(this.parent.id, this.parent.editor, range,  name, avatar).setParent(this);
+    private initializeUI(range: PosRange, name?: string, avatar?: string) {
+        const commentUI = new CommentUI(this.cellId, this.editor, range,  name, avatar).setParent(this);
         this.commentUIs[range.asString] = commentUI;
         this.rangeHighlight(range);
         return commentUI;
@@ -212,25 +202,25 @@ export class CommentHandler extends UIMessageTarget {
             // if there are no comments for this range, we should remove this UI
             if (this.commentRoots[found.range.asString] === undefined ){
                 delete this.commentUIs[range.asString];
-                this.parent.editor.deltaDecorations(this.highlights[range.asString] || [], []);
+                this.editor.deltaDecorations(this.highlights[range.asString] || [], []);
                 delete this.highlights[range.asString];
             }
         }
     }
 
     private rangeHighlight(range: PosRange) {
-        const model = this.parent.editor.getModel();
+        const model = this.editor.getModel();
         if (model) {
             const startPos = model.getPositionAt(range.start);
             const endPos = model.getPositionAt(range.end);
             const mRange = monaco.Range.fromPositions(startPos, endPos);
 
-            const currentPosition = this.parent.editor.getPosition();
+            const currentPosition = this.editor.getPosition();
             let className = 'comment-highlight';
             if (currentPosition && mRange.containsPosition(currentPosition)) {
                 className = 'comment-highlight-strong';
             }
-            this.highlights[range.asString] = this.parent.editor.deltaDecorations(this.highlights[range.asString] || [], [
+            this.highlights[range.asString] = this.editor.deltaDecorations(this.highlights[range.asString] || [], [
                 {
                     range: mRange,
                     options: {
@@ -244,7 +234,7 @@ export class CommentHandler extends UIMessageTarget {
     }
 
     handleSelection(selection: monaco.Selection) {
-        const model = this.parent.editor.getModel();
+        const model = this.editor.getModel();
         if (model) {
             // check if there is a comment there
             let found = false;
@@ -266,7 +256,7 @@ export class CommentHandler extends UIMessageTarget {
                 if (!selection.isEmpty()) {
                     const range = new PosRange(model.getOffsetAt(selection.getStartPosition()), model.getOffsetAt(selection.getEndPosition()));
                     if (range.start != range.end) {
-                        new CommentButton(this.parent.editor, range, () => {
+                        new CommentButton(this.editor, range, () => {
                             this.show(range);
                         }).show()
                     } else {
@@ -379,23 +369,28 @@ export class CommentButton extends RightGutterOverlay {
 type CommentContainer = TagElement<"div"> & {uuid: string, createdAt: number, avatar?: string }
 
 export class CommentUI extends RightGutterOverlay {
-    private commentsEl: TagElement<"div">;
+    private readonly commentsEl: TagElement<"div">;
     private readonly newComment: TagElement<"div">;
     private newCommentText: TagElement<"textarea">;
     private readonly commentContainers: CommentContainer[] = [];
+    private readonly currentAuthor: string | TagElement<"input">;
 
-    constructor(readonly cellId: number, editor: IStandaloneCodeEditor, range: PosRange, readonly currentAuthor: string, readonly currentAvatar?: string) {
+    constructor(readonly cellId: number, editor: IStandaloneCodeEditor, range: PosRange, currentAuthor?: string, readonly currentAvatar?: string) {
         super(editor, undefined, range);
-        const [text, controls] = this.commentSubmitter(() => {
-            this.doCreate()
-        });
+        const [text, controls] = this.commentSubmitter(
+            () => this.doCreate(),
+            () => this.hide()
+        );
+        this.currentAuthor = currentAuthor || textbox(['author-input'], 'Author', '');
         this.newComment = div(['create-comment', 'comment'], [
             div(['header'], [
                 span(['avatar'], [currentAvatar]),
-                span(['author'], [currentAuthor]),
+                span(['author'], [this.currentAuthor]),
             ]),
-            this.newCommentText = text,
-            controls
+            div(["comment-content"], [
+                this.newCommentText = text,
+                controls
+            ]),
         ]);
 
         this.commentsEl = div(['comments-list'], [this.newComment]);
@@ -403,8 +398,8 @@ export class CommentUI extends RightGutterOverlay {
         this.container.classList.add('comment-container');
     }
 
-    private commentSubmitter(onSubmit: () => void, initialContent: string = ''): [TagElement<"textarea">, TagElement<"div">] {
-        const text = textarea(['comment-content'], '', initialContent).listener('keydown', (evt: KeyboardEvent) => {
+    private commentSubmitter(onSubmit: () => void, onCancel: () => void, initialContent: string = ''): [TagElement<"textarea">, TagElement<"div">] {
+        const text = textarea(['comment-text'], '', initialContent).listener('keydown', (evt: KeyboardEvent) => {
             if (evt.shiftKey && evt.key === "Enter") {
                 onSubmit();
                 evt.stopPropagation();
@@ -413,7 +408,7 @@ export class CommentUI extends RightGutterOverlay {
         });
         const controls = div(['controls'], [
             button(['create-comment-button'], {}, ['Comment']).click(() => onSubmit()),
-            button(['cancel'], {}, ['Cancel']).click(() => this.hide())
+            button(['cancel'], {}, ['Cancel']).click(() => onCancel())
         ]);
         return [text, controls];
     }
@@ -427,7 +422,7 @@ export class CommentUI extends RightGutterOverlay {
         if (this.newCommentText.value) {
             const comment = createCellComment({
                 range: this.range,
-                author: this.currentAuthor,
+                author: typeof(this.currentAuthor) === "string" ? this.currentAuthor : this.currentAuthor.value,
                 createdAt: Date.now(),
                 content: this.newCommentText.value,
             });
@@ -447,6 +442,8 @@ export class CommentUI extends RightGutterOverlay {
             };
             this.update(newComment);
             this.publish(new UpdateComment(this.cellId, newComment.uuid, newComment.range, newComment.content))
+        }, () => {
+            container.replaceChild(oldContent, newEl)
         }, oldContent.innerText);
         const newEl = div(['comment-content'], [text, controls]);
         container.replaceChild(newEl, oldContent);
@@ -460,14 +457,16 @@ export class CommentUI extends RightGutterOverlay {
     private commentElement(comment: CellComment, avatar?: string): CommentContainer {
         const actions = div(['actions'], []);
 
-        if (comment.author === this.currentAuthor) {
+        if (typeof(this.currentAuthor) === "string" ? comment.author === this.currentAuthor : true) {
             actions.click(() => {
+                console.log("showing menu")
                 const listener = () => {
+                    console.log("removing menu")
                     actions.removeChild(items);
                     document.body.removeEventListener("mousedown", listener);
                 };
                 const items = tag('ul', [], {}, [
-                    tag('li', [], {}, ['Edit']).click(() => { listener(); this.doEdit(comment) }),
+                    tag('li', [], {}, ['Edit']).click((e) => { e.preventDefault(); e.stopPropagation(); listener(); this.doEdit(comment) }),
                     tag('li', [], {}, ['Delete']).click(() => { listener(); this.doDelete(comment.uuid) }),
                 ]).listener("mousedown", evt => evt.stopPropagation());
 
