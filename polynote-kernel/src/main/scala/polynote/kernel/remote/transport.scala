@@ -2,7 +2,7 @@ package polynote.kernel
 package remote
 
 import java.io.{BufferedReader, IOException, InputStreamReader}
-import java.net.InetSocketAddress
+import java.net.{ConnectException, InetSocketAddress, Socket}
 import java.nio.ByteBuffer
 import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, ServerSocketChannel, SocketChannel}
 import java.nio.file.Paths
@@ -33,6 +33,8 @@ import scala.reflect.{ClassTag, classTag}
 import Update.notebookUpdateCodec
 import cats.arrow.FunctionK
 import cats.~>
+
+import scala.util.Random
 
 trait Transport[ServerAddress] {
   def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
@@ -198,12 +200,23 @@ class SocketTransport(
   forceServerAddress: Option[String] = None
 ) extends Transport[InetSocketAddress] {
 
+  private[this] def socketIsFree(host: String, port: Int): Boolean =
+    try {
+      new Socket(host, port).close()
+      false
+    } catch {
+      case _: ConnectException =>
+        true
+    }
+
   private def openServerChannel(
                                  config: PolynoteConfig
                                ): RIO[Blocking, ServerSocketChannel] = effectBlocking {
 
-    ServerSocketChannel.open().bind(
-      new InetSocketAddress(config.kernelListen, 0))
+    Random.shuffle(Range.inclusive(1234, 4321).toList)
+      .find(port => socketIsFree(config.kernelListen, port))
+      .map(availablePort => ServerSocketChannel.open().bind(new InetSocketAddress(config.kernelListen, availablePort)))
+      .get
   }
 
   private def startConnection(
