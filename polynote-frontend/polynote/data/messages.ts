@@ -608,7 +608,7 @@ export class Identity {
         return [inst.name, inst.avatar];
     }
 
-    constructor(readonly name: string, readonly avatar?: string) {
+    constructor(readonly name: string, readonly avatar: string | null) {
         Object.freeze(this);
     }
 }

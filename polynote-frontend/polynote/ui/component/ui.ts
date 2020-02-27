@@ -225,8 +225,8 @@ export class MainUI extends UIMessageTarget {
                     cb(statuses);
                 })
             } else if (msg.prototype === CurrentIdentity.prototype) {
-                const name = this.identity && this.identity.name;
-                const avatar = this.identity && this.identity.avatar;
+                const name = this.identity && this.identity.name || undefined;
+                const avatar = this.identity && this.identity.avatar || undefined;
                 cb(name, avatar);
             }
         });
