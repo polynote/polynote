@@ -620,7 +620,7 @@ export class ServerHandshake extends Message {
         return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity];
     }
 
-    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity?: Identity) {
+    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity | null) {
         super();
         Object.freeze(this);
     }

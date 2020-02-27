@@ -3212,7 +3212,6 @@ img.icon {
   width: 3ex; // why ex? dunno, it works..
   height: 3ex;
   border-radius: 100%;
-  //box-shadow: 0 0 2px 0px grey;
   background: white url(icons/fa/comment-plus.svg) no-repeat 50% 50%;
 }
 
@@ -3297,7 +3296,9 @@ img.icon {
     }
 
     .create-comment {
-      border-top: 1px solid darkgray;
+      &:not(:first-child) {
+        border-top: 1px solid darkgray;
+      }
       margin-top: 8px;
       padding-top: 8px;
 
@@ -3315,7 +3316,6 @@ img.icon {
 
     .comment-content {
       font-size: 16px;
-      //font-weight: lighter;
       white-space: pre-wrap;
       margin: 8px 20px;
 

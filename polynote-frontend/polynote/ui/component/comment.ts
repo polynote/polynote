@@ -9,7 +9,6 @@ import {PosRange} from "../../data/result";
 import * as monaco from "monaco-editor";
 import {editor, IDisposable} from "monaco-editor";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
-import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 
 export type CommentID = string
@@ -31,7 +30,6 @@ export class CommentHandler extends UIMessageTarget {
     private comments: Record<CommentID, CellComment> = {}; // holds all comments (root and replies)
     private commentUIs: Record<string, CommentUI> = {};    // lookup table for comment UIs (keys are ranges, serialized as strings)
     private commentRoots: Record<string, CommentID> = {};  // lookup table for range (serialized as string) to root comments
-    private highlights: Record<string, string[]> = {};     // deltaDecorations, range string -> monaco decoration ids.
 
     constructor(readonly cellId: number, readonly editor: IStandaloneCodeEditor) {
         super();
@@ -46,44 +44,6 @@ export class CommentHandler extends UIMessageTarget {
             this._delete(commentId);
         });
 
-        this.editor.onDidChangeModelContent((evt: IModelContentChangedEvent) => {
-            const model = this.editor.getModel();
-            if (model) {
-                // check for drift between decorations and the ranges we're keeping
-                const modelDecorations = model.getAllDecorations();
-                Object.entries(this.highlights).forEach(([range_str, highlights]) => {
-                    const maybeDecoration = modelDecorations.find(d => highlights.includes(d.id));
-                    if (maybeDecoration && !maybeDecoration.range.isEmpty()) {
-                        const ps = PosRange.fromString(range_str);
-                        const startPos = model.getPositionAt(ps.start);
-                        const endPos = model.getPositionAt(ps.end);
-                        const mRange = monaco.Range.fromPositions(startPos, endPos);
-                        if (!monaco.Range.equalsRange(maybeDecoration.range, mRange)) {
-                            // we have a highlight with the same ID, but a different range. This means there is some drift.
-                            const newRange = new PosRange(model.getOffsetAt(maybeDecoration.range.getStartPosition()), model.getOffsetAt(maybeDecoration.range.getEndPosition()));
-                            const rootId = this.commentRoots[range_str];
-                            const root = this.comments[rootId];
-
-                            this.publish(new UpdateComment(this.cellId, rootId, newRange, root.content));
-
-                            // reset highlights.
-                            delete this.highlights[range_str];
-                            this.highlights[newRange.asString] = highlights;
-                        }
-                    } else {
-                        // decoration wasn't found or was empty, so we need to delete it.
-                        const rootAtRange = this.commentRoots[range_str];
-                        if (rootAtRange) {
-                            this.publish(new DeleteComment(this.cellId, rootAtRange));
-                        }
-                        delete this.highlights[range_str];
-
-                        // if the range was empty, remove it.
-                        if (maybeDecoration) model.deltaDecorations([maybeDecoration.id], [])
-                    }
-                });
-            }
-        })
     }
 
     // placeholder for avatars
@@ -102,7 +62,7 @@ export class CommentHandler extends UIMessageTarget {
     add(comment: CellComment) {
         this._add(comment);
         if (!this.commentUIs[comment.range.asString]) {
-            this.commentUIs[comment.range.asString] = this.initializeUI(comment.range);
+            this.initializeUI(comment.range);
         }
 
         this.commentUIs[comment.range.asString].add(comment);
@@ -168,7 +128,6 @@ export class CommentHandler extends UIMessageTarget {
     private initializeUI(range: PosRange, name?: string, avatar?: string) {
         const commentUI = new CommentUI(this.cellId, this.editor, range,  name, avatar).setParent(this);
         this.commentUIs[range.asString] = commentUI;
-        this.rangeHighlight(range);
         return commentUI;
     }
 
@@ -179,7 +138,6 @@ export class CommentHandler extends UIMessageTarget {
             }));
         } else {
             this.commentUIs[range.asString].show();
-            this.rangeHighlight(range);
         }
     }
 
@@ -187,40 +145,13 @@ export class CommentHandler extends UIMessageTarget {
         const found = this.commentUIs[range.asString];
         if (found) {
             found.hide();
-            this.rangeHighlight(range);
             // if there are no comments for this range, we should remove this UI
             if (this.commentRoots[found.range.asString] === undefined ){
                 delete this.commentUIs[range.asString];
-                this.editor.deltaDecorations(this.highlights[range.asString] || [], []);
-                delete this.highlights[range.asString];
             }
         }
     }
 
-    private rangeHighlight(range: PosRange) {
-        const model = this.editor.getModel();
-        if (model) {
-            const startPos = model.getPositionAt(range.start);
-            const endPos = model.getPositionAt(range.end);
-            const mRange = monaco.Range.fromPositions(startPos, endPos);
-
-            const currentPosition = this.editor.getPosition();
-            let className = 'comment-highlight';
-            if (currentPosition && mRange.containsPosition(currentPosition)) {
-                className = 'comment-highlight-strong';
-            }
-            this.highlights[range.asString] = this.editor.deltaDecorations(this.highlights[range.asString] || [], [
-                {
-                    range: mRange,
-                    options: {
-                        className: className,
-                        stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-                        hoverMessage: { value: 'Click to see comment'}
-                    },
-                }
-            ]);
-        }
-    }
 
     handleSelection(selection: monaco.Selection) {
         const model = this.editor.getModel();
@@ -355,13 +286,14 @@ export class CommentButton extends RightGutterOverlay {
     }
 }
 
-type CommentContainer = TagElement<"div"> & {uuid: string, createdAt: number, avatar?: string }
+type CommentContainer = TagElement<"div"> & {comment: CellComment, avatar?: string }
 
 export class CommentUI extends RightGutterOverlay {
     private readonly commentsEl: TagElement<"div">;
     private readonly newComment: TagElement<"div">;
     private newCommentText: TagElement<"textarea">;
     private readonly commentContainers: CommentContainer[] = [];
+    private highlight: string[] = [];
 
     constructor(readonly cellId: number, editor: IStandaloneCodeEditor, range: PosRange, readonly currentAuthor: string = "Anonymous", readonly currentAvatar?: string) {
         super(editor, undefined, range);
@@ -383,6 +315,38 @@ export class CommentUI extends RightGutterOverlay {
         this.commentsEl = div(['comments-list'], [this.newComment]);
         this.container.appendChild(this.commentsEl);
         this.container.classList.add('comment-container');
+
+        this.highlightRange();
+
+        this.editor.onDidChangeModelContent(() => {
+            const model = this.editor.getModel();
+            if (model) {
+                const modelDecorations = model.getAllDecorations();
+                const maybeDecoration = modelDecorations.find(d => this.highlight.includes(d.id));
+                if (maybeDecoration && !maybeDecoration.range.isEmpty()) {
+                    const startPos = model.getPositionAt(this.range.start);
+                    const endPos = model.getPositionAt(this.range.end);
+                    const mRange = monaco.Range.fromPositions(startPos, endPos);
+                    if (!monaco.Range.equalsRange(maybeDecoration.range, mRange)) {
+                        // we have a highlight with the same ID, but a different range. This means there is some drift.
+                        const newRange = new PosRange(model.getOffsetAt(maybeDecoration.range.getStartPosition()), model.getOffsetAt(maybeDecoration.range.getEndPosition()));
+                        const root = this.commentContainers[0].comment;
+
+                        this.publish(new UpdateComment(this.cellId, root.uuid, newRange, root.content));
+                    }
+                } else {
+                    // decoration wasn't found or was empty, so we need to delete it.
+                    const root = this.commentContainers[0].comment;
+                    if (root) {
+                        this.publish(new DeleteComment(this.cellId, root.uuid));
+                    }
+                    this.highlight = [];
+
+                    // if the range was empty, remove it.
+                    if (maybeDecoration) model.deltaDecorations([maybeDecoration.id], [])
+                }
+            }
+        })
     }
 
     private commentSubmitter(onSubmit: () => void, onCancel: () => void, initialContent: string = ''): [TagElement<"textarea">, TagElement<"div">] {
@@ -398,6 +362,45 @@ export class CommentUI extends RightGutterOverlay {
             button(['cancel'], {}, ['Cancel']).click(() => onCancel())
         ]);
         return [text, controls];
+    }
+
+    private highlightRange() {
+        const model = this.editor.getModel();
+        if (model) {
+            const startPos = model.getPositionAt(this.range.start);
+            const endPos = model.getPositionAt(this.range.end);
+            const mRange = monaco.Range.fromPositions(startPos, endPos);
+
+            const currentPosition = this.editor.getPosition();
+            let className = 'comment-highlight';
+            if (currentPosition && mRange.containsPosition(currentPosition)) {
+                className = 'comment-highlight-strong';
+            }
+            this.highlight = this.editor.deltaDecorations(this.highlight, [
+                {
+                    range: mRange,
+                    options: {
+                        className: className,
+                        stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                        hoverMessage: { value: 'Click to see comment'}
+                    },
+                }
+            ]);
+        }
+    }
+
+    show() {
+        super.show();
+        this.highlightRange()
+    }
+
+    hide() {
+        super.hide();
+        if (this.commentContainers.length > 0) {
+            this.highlightRange()
+        } else {
+            this.editor.deltaDecorations(this.highlight, [])
+        }
     }
 
     focus() {
@@ -420,7 +423,7 @@ export class CommentUI extends RightGutterOverlay {
     }
 
     private doEdit(comment: CellComment) {
-        const container = this.commentContainers.find(c => c.uuid === comment.uuid)!;
+        const container = this.commentContainers.find(c => c.comment.uuid === comment.uuid)!;
         const oldContent = container.querySelector(".comment-content") as TagElement<"div">;
         const [text, controls] = this.commentSubmitter(() => {
             const newComment: CellComment = {
@@ -473,9 +476,8 @@ export class CommentUI extends RightGutterOverlay {
             ]),
             div(['comment-content'], [comment.content])
         ]), {
-            uuid: comment.uuid,
-            createdAt: comment.createdAt,
-            avatar: avatar
+            comment,
+            avatar
         });
     }
 
@@ -485,7 +487,7 @@ export class CommentUI extends RightGutterOverlay {
         let next: {c: CommentContainer, idx: number} | undefined;
         // we can assume commentContainers is ordered by creation time because we build it here
         for (const [idx, c] of this.commentContainers.entries()) {
-            if (c.createdAt > comment.createdAt) {
+            if (c.comment.createdAt > comment.createdAt) {
                 next = {c, idx};
                 break;
             }
@@ -501,7 +503,7 @@ export class CommentUI extends RightGutterOverlay {
     }
 
     update(updated: CellComment) {
-        const containerIdx = this.commentContainers.findIndex(c => c.uuid === updated.uuid)!;
+        const containerIdx = this.commentContainers.findIndex(c => c.comment.uuid === updated.uuid)!;
         const container = this.commentContainers[containerIdx];
         const newEl = this.commentElement(updated, container.avatar);
         container.parentElement!.replaceChild(newEl, container);
@@ -509,7 +511,7 @@ export class CommentUI extends RightGutterOverlay {
     }
 
     delete(id: string) {
-        const containerIdx = this.commentContainers.findIndex(c => c.uuid === id)!;
+        const containerIdx = this.commentContainers.findIndex(c => c.comment.uuid === id)!;
         const container = this.commentContainers[containerIdx];
         this.commentsEl.removeChild(container);
         this.commentContainers.splice(containerIdx, 1);

@@ -100,7 +100,7 @@ export class MainUI extends UIMessageTarget {
             }
             this.currentServerVersion = serverVersion;
             this.currentServerCommit = serverCommit;
-            this.identity = identity;
+            this.identity = identity || undefined;
         });
 
         SocketSession.global.addMessageListener(
