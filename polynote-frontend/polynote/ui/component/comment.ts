@@ -61,11 +61,12 @@ export class CommentHandler extends UIMessageTarget {
 
     add(comment: CellComment) {
         this._add(comment);
-        if (!this.commentUIs[comment.range.asString]) {
-            this.initializeUI(comment.range);
+        const maybeUI = this.commentUIs[comment.range.asString];
+        if (maybeUI) {
+            maybeUI.add(comment);
+        } else {
+            this.initializeUI(comment.range, ui => ui.add(comment));
         }
-
-        this.commentUIs[comment.range.asString].add(comment);
     }
 
     private _update(commentId: CommentID, range: PosRange, content: string) {
@@ -125,17 +126,17 @@ export class CommentHandler extends UIMessageTarget {
         if (maybeUI) maybeUI.delete(commentId);
     }
 
-    private initializeUI(range: PosRange, name?: string, avatar?: string) {
-        const commentUI = new CommentUI(this.cellId, this.editor, range,  name, avatar).setParent(this);
-        this.commentUIs[range.asString] = commentUI;
-        return commentUI;
+    private initializeUI(range: PosRange, cb?: (ui: CommentUI) => void) {
+        this.publish(new UIMessageRequest(CurrentIdentity, (name, avatar) => {
+            const commentUI = new CommentUI(this.cellId, this.editor, range,  name, avatar).setParent(this);
+            this.commentUIs[range.asString] = commentUI;
+            if (cb) cb(commentUI)
+        }));
     }
 
     show(range: PosRange) {
         if (!this.commentUIs[range.asString]) {
-            this.publish(new UIMessageRequest(CurrentIdentity, (name, avatar) => {
-                this.initializeUI(range, name, avatar).focus();
-            }));
+            this.initializeUI(range, ui => ui.focus());
         } else {
             this.commentUIs[range.asString].show();
         }
