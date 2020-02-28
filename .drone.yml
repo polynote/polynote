@@ -49,7 +49,8 @@ steps:
   - name: dapla-polynote
     image: plugins/gcr
     settings:
-      dockerfile: docker/Dockerfile
+      context: target/scala-2.11/
+      dockerfile: docker/dev/Dockerfile
       repo: eu.gcr.io/prod-bip/dapla-polynote
       registry: eu.gcr.io
       tags:
