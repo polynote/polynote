@@ -17,7 +17,7 @@ steps:
     commands:
       - sbt dist
     depends_on:
-      - authenticate
+      - restore-cache
 
   # Rebuild cache if it has changed with this build
   - name: rebuild-cache
