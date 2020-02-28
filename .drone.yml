@@ -1,0 +1,94 @@
+kind: pipeline
+name: default
+
+steps:
+
+  - name: restore-cache
+    image: homerovalle/drone-gcs-cache
+    settings:
+      pull: true
+      bucket: bip-drone-dependency-cache
+      json_key:
+        from_secret: gcs_credentials
+      restore: true
+
+  - name: build
+    image: chatwork/scala-sbt
+    commands:
+      - sbt dist
+    depends_on:
+      - authenticate
+
+  # Rebuild cache if it has changed with this build
+  - name: rebuild-cache
+    image: homerovalle/drone-gcs-cache
+    settings:
+      pull: true
+      bucket: bip-drone-dependency-cache
+      json_key:
+        from_secret: gcs_credentials
+      rebuild: true
+      mount:
+        - .m2/repository
+    depends_on:
+      - build
+
+  # OPTIONAL: Flush the cache of old cache items (older than 14 days)
+  - name: flush-cache
+    image: homerovalle/drone-gcs-cache
+    settings:
+      pull: true
+      bucket: bip-drone-dependency-cache
+      json_key:
+        from_secret: gcs_credentials
+      flush: true
+      flush_age: 14
+    depends_on:
+      - build
+
+  - name: dapla-polynote
+    image: plugins/gcr
+    settings:
+      dockerfile: docker/Dockerfile
+      repo: eu.gcr.io/prod-bip/dapla-polynote
+      registry: eu.gcr.io
+      tags:
+        - latest
+        - ${DRONE_BRANCH//\//-}-${DRONE_COMMIT_SHA:0:8}
+      json_key:
+        from_secret: gcr_credentials
+    when:
+      event: push
+    depends_on:
+      - build
+
+  - name: slack
+    image: plugins/slack
+    settings:
+      webhook:
+        from_secret: slack_webhook_url
+      channel: bip-ci-test
+    when:
+      status: [ success, failure ]
+    depends_on:
+      - dapla-polynote
+
+---
+kind: secret
+name: slack_webhook_url
+get:
+  path: drone-slack-webhook-url
+  name: slack-webhook-url
+
+---
+kind: secret
+name: gcr_credentials
+get:
+  path: drone-gcr-credentials
+  name: gcr-credentials
+---
+kind: secret
+name: gcs_credentials
+get:
+  path: drone-gcs-credentials
+  name: gcs-credentials
