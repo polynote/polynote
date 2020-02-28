@@ -260,7 +260,7 @@ object KernelPublisher {
                     publishUpdates.publish1((subscriberId, newUpdate)) *> ZIO(versions.add(newUpdate.globalVersion, newUpdate))
                   } else {
                     // there was a concurrent modification to this ref, so try to access again
-                    Logging.warn("Retrying KernelUpdate because concurrent access was detected") *> applyUpdate(versionRef, versions, publishUpdates, subscriberVersions)(subscriberId, update)
+                    Logging.warn("Retrying NotebookUpdate because concurrent access was detected") *> applyUpdate(versionRef, versions, publishUpdates, subscriberVersions)(subscriberId, update)
                   }
               }
 
