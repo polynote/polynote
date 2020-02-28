@@ -211,7 +211,7 @@ lazy val `polynote-spark` = project.settings(
   `polynote-runtime` % "provided",
   `polynote-runtime` % "test")
 
-lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`)
+lazy val polynote = project.in(file(".")).aggregate(`polynote-env`, `polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`)
     .settings(
       commonSettings,
       dist := {
