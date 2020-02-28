@@ -20,6 +20,36 @@ trait DataEncoder[@specialized T] extends Serializable {
   def dataType: DataType
   def sizeOf(t: T): Int
   def numeric: Option[Numeric[T]]
+  
+  def bimap[U](from: U => T, to: T => U): DataEncoder[U] = new DataEncoder[U] {
+    override def encode(dataOutput: DataOutput, value: U): Unit = DataEncoder.this.encode(dataOutput, from(value))
+    override val dataType: DataType = DataEncoder.this.dataType
+    override def sizeOf(t: U): Int = DataEncoder.this.sizeOf(from(t))
+    override def numeric: Option[Numeric[U]] = DataEncoder.this.numeric.map {
+      numericT => new Numeric[U] {
+        override def plus(x: U, y: U): U = to(numericT.plus(from(x), from(y)))
+        override def minus(x: U, y: U): U = to(numericT.minus(from(x), from(y)))
+        override def times(x: U, y: U): U = to(numericT.times(from(x), from(y)))
+        override def negate(x: U): U = to(numericT.negate(from(x)))
+        override def fromInt(x: Int): U = to(numericT.fromInt(x))
+        override def toInt(x: U): Int = numericT.toInt(from(x))
+        override def toLong(x: U): Long = numericT.toLong(from(x))
+        override def toFloat(x: U): Float = numericT.toFloat(from(x))
+        override def toDouble(x: U): Double = numericT.toDouble(from(x))
+        override def compare(x: U, y: U): Int = numericT.compare(from(x), from(y))
+      }
+    }
+  }
+
+  /**
+    * Contramap this data encoder, discarding any numeric abilities
+    */
+  def contramap[U](from: U => T): DataEncoder[U] = new DataEncoder[U] {
+    override def encode(dataOutput: DataOutput, value: U): Unit = DataEncoder.this.encode(dataOutput, from(value))
+    override val dataType: DataType = DataEncoder.this.dataType
+    override def sizeOf(t: U): Int = DataEncoder.this.sizeOf(from(t))
+    override val numeric: Option[Numeric[U]] = None
+  }
 }
 
 object DataEncoder extends DataEncoder0 {

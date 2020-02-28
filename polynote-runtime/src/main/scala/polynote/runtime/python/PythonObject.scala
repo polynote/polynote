@@ -1,9 +1,12 @@
 package polynote.runtime.python
 
-import jep.JepException
+import java.nio.ByteBuffer
+
+import jep.{Jep, JepException}
 import jep.python.{PyCallable, PyObject}
 import polynote.runtime._
 import polynote.runtime.python.PythonObject.ReturnTypeFor
+import shapeless.Witness
 
 import scala.collection.JavaConverters._
 import scala.reflect.{ClassTag, classTag}
@@ -12,7 +15,7 @@ import scala.language.dynamics
 /**
   * Just a bit of Scala sugar over [[PyObject]]
   */
-class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
+class PythonObject(obj: PyObject, private[polynote] val runner: PythonObject.Runner) extends Dynamic {
   import PythonObject.unwrapArg
 
   private[polynote] def unwrap: PyObject = obj
@@ -56,9 +59,11 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
   }
 
   def hasAttribute(name: String): Boolean = runner.hasAttribute(this, name)
-  def asScalaList: List[Any] = runner.asScalaList(this)
+  def asScalaList: List[PythonObject] = runner.asScalaList(this)
   def asScalaMap: Map[Any, Any] = runner.asScalaMap(this)
   def asScalaMapOf[K : ClassTag, V : ClassTag]: Map[K, V] = runner.asScalaMapOf[K, V](this)
+  def asTuple2: (PythonObject, PythonObject) = runner.asTuple2(this)
+  def asTuple2Of[A : ClassTag, B : ClassTag]: (A, B) = runner.asTuple2Of[A, B](this)
 
   def selectDynamic[T](name: String)(implicit returnType: ReturnTypeFor[T]): returnType.Out = {
     runner.run {
@@ -67,7 +72,7 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
   }
 
   def updateDynamic(name: String)(value: Any): Unit = runner.run {
-    obj.setAttr(name, value)
+    obj.setAttr(name, unwrapArg(value.asInstanceOf[AnyRef]))
   }
 
   def applyDynamic(method: String)(args: Any*): PythonObject =
@@ -153,10 +158,22 @@ object PythonObject {
 
   trait Runner {
     def run[T](task: => T): T
+    def runJep[T](task: Jep => T): T
     def hasAttribute(obj: PythonObject, name: String): Boolean
-    def asScalaList(obj: PythonObject): List[Any]
+    def asScalaList(obj: PythonObject): List[PythonObject]
     def asScalaMap(obj: PythonObject): Map[Any, Any]
     def asScalaMapOf[K : ClassTag, V : ClassTag](obj: PythonObject): Map[K, V]
+    def asTuple2(obj: PythonObject): (PythonObject, PythonObject)
+    def asTuple2Of[A : ClassTag, B : ClassTag](obj: PythonObject): (A, B)
+    def typeName(obj: PythonObject): String
+    def qualifiedTypeName(obj: PythonObject): String
+    def len(obj: PythonObject): Int
+    def len64(obj: PythonObject): Long
+    def list(obj: AnyRef): PythonObject
+    def listOf(objs: AnyRef*): PythonObject
+    def tupleOf(objs: AnyRef*): PythonObject
+    def dictOf(kvs: (AnyRef, AnyRef)*): PythonObject
+    def str(obj: AnyRef): PythonObject
   }
 
 }
@@ -176,7 +193,19 @@ class TypedPythonObject[TN <: String](obj: PyObject, runner: PythonObject.Runner
 }
 
 // TODO: Implement specific reprs for pandas, numpy, etc
-object TypedPythonObject extends AnyPythonReprs
+object TypedPythonObject extends PandasReprs {
+
+}
+
+
+private[runtime] trait PandasReprs extends AnyPythonReprs { self: TypedPythonObject.type =>
+  implicit val dataFrameReprs: ReprsOf[TypedPythonObject[Witness.`"DataFrame"`.T]] = new ReprsOf[TypedPythonObject[Witness.`"DataFrame"`.T]] {
+    override def apply(value: TypedPythonObject[Witness.`"DataFrame"`.T]): Array[ValueRepr] = {
+      // this should be a Pandas DataFrame, as a PySpark DataFrame gets converted to a Scala value and shouldn't be wrapped in Python object.
+      StreamingDataRepr.fromHandle(new pandas.PandasHandle(_, value)) +: PythonObject.defaultReprs(value)
+    }
+  }
+}
 
 private[runtime] trait AnyPythonReprs { self: TypedPythonObject.type =>
 
