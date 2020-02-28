@@ -98,6 +98,7 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
             }
             override def numeric: Option[Numeric[PythonObject]] = None
           }
+        case _ => throw new IllegalStateException(s"Can't handle $dataType for pandas")
       }
   }
 
@@ -175,7 +176,7 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
           tryEither {
             df.__getitem__(df.runner.listOf(cols: _*))
           }
-        case op => Left(new UnsupportedOperationException(s"$op not yet supported by pandas"))
+        case op => Left(new UnsupportedOperationException(s"$op not yet supported for pandas"))
       }
     }
   }.right.map {
