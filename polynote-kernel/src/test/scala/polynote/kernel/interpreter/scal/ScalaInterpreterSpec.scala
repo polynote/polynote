@@ -84,8 +84,8 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
       (res._1.state.values ++ res._2.state.values /* ++ res._3.state.value */) match {
         case ValueMap(values) =>
-          values("fooCls").toString shouldEqual "class notebook.Cell1$2$Foo"
-          values("bazCls").toString shouldEqual "class notebook.Cell3$2$Bar$Baz"
+          values("fooCls").toString.contains("$Foo") shouldBe true
+          values("bazCls").toString.contains("$Bar$Baz") shouldBe true
 //          values("barBazCls").toString shouldEqual "class notebook.Cell1$2$Foo"
       }
     }
