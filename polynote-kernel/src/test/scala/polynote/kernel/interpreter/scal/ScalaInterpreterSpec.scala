@@ -77,16 +77,16 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
         res3 <- interp("object Bar { class Baz }")
         res4 <- interp("val bazCls = classOf[Bar.Baz]")
 //        res5 <- interp("val bar = Bar")
-//        res6 <- interp("val bar2 = bar; val barBazCls = classOf[bar.Baz]")
-      } yield (res2, res4/*, res6*/)
+//        res6 <- interp("val barBazCls = classOf[bar.Baz]")
+      } yield (res2, res4 /* , res6 */)
 
       val (finalState, res) = test.run(cellState).runIO()
 
-      (res._1.state.values ++ res._2.state.values /* ++ res._3.state.value */) match {
+      (res._1.state.values ++ res._2.state.values /* ++ res._3.state.values */) match {
         case ValueMap(values) =>
           values("fooCls").toString.contains("$Foo") shouldBe true
           values("bazCls").toString.contains("$Bar$Baz") shouldBe true
-//          values("barBazCls").toString shouldEqual "class notebook.Cell1$2$Foo"
+//          values("barBazCls").toString.contains("$Bar$Baz") shouldBe true
       }
     }
   }
