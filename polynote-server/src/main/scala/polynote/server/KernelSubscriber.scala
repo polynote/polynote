@@ -5,9 +5,10 @@ import java.util.concurrent.atomic.AtomicInteger
 import fs2.concurrent.{SignallingRef, Topic}
 import fs2.Stream
 import polynote.kernel.environment.{Config, PublishMessage}
-import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection, StreamUIOps, StreamThrowableOps}
+import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection, StreamThrowableOps, StreamUIOps}
 import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate, TinyString}
 import KernelPublisher.{GlobalVersion, SubscriberId}
+import polynote.runtime.CellRange
 import polynote.server.auth.{Identity, IdentityProvider, Permission, UserIdentity}
 import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
 import zio.interop.catz._
@@ -38,7 +39,7 @@ class KernelSubscriber private[server] (
   def checkPermission(permission: String => Permission): ZIO[SessionEnv, Throwable, Unit] =
     currentPath.map(permission) >>= IdentityProvider.checkPermission
 
-  def setSelection(cellID: CellID, range: (Int, Int)): UIO[Unit] =
+  def setSelection(cellID: CellID, range: CellRange): UIO[Unit] =
     currentSelection.set(Some(PresenceSelection(id, cellID, range)))
 
   def getSelection: UIO[Option[PresenceSelection]] = currentSelection.get

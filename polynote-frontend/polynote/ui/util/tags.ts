@@ -161,6 +161,27 @@ export function textbox(classes: string[], placeholder: string, value: string = 
     return input;
 }
 
+export function textarea(classes: string[], placeholder: string, value: string =""): TagElement<"textarea"> {
+    const text = tag('textarea', classes, {placeholder: placeholder}, []);
+    if (value) {
+        text.value = value;
+    }
+
+    const adjustHeight = () => {
+        text.style.height = 'inherit'; // reset height first;
+        const p = (s: string | null) => parseInt(s || '0');
+        const s = window.getComputedStyle(text);
+        const h = text.scrollHeight + p(s.paddingBottom) + p(s.paddingTop) + p(s.borderBottomWidth) + p(s.borderTopWidth);
+        const ems = Math.floor(h / parseInt(s.fontSize));
+        text.style.height = `${ems}em`;
+    };
+
+    text.addEventListener('input', () => adjustHeight());
+    text.style.height = "3em"; // default height;
+
+    return text;
+}
+
 export interface DropdownElement extends TagElement<"select"> {
     setSelectedValue(value: string): void
     getSelectedValue(): string

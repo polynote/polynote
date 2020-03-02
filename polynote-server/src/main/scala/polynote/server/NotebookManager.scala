@@ -82,7 +82,7 @@ object NotebookManager {
       override def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher] = openNotebooks.getOrCreate(path) {
         for {
           notebook      <- repository.loadNotebook(path)
-          publisher     <- KernelPublisher(notebook)
+          publisher     <- KernelPublisher(notebook, broadcastAll)
           writer        <- startWriter(publisher)
           onClose       <- publisher.closed.await.flatMap(_ => openNotebooks.remove(path)).fork
         } yield (publisher, writer)

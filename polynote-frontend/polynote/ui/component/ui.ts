@@ -2,28 +2,9 @@
 
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import {
-    CancelTasks,
-    CreateNotebook,
-    UIMessageTarget,
-    ImportNotebook,
-    UIToggle,
-    TabActivated,
-    NoActiveTab,
-    ViewAbout,
-    DownloadNotebook,
-    ClearOutput,
-    UIMessageRequest,
-    ServerVersion,
-    RunningKernels,
-    KernelCommand,
-    LoadNotebook,
-    CellsLoaded,
-    RenameNotebook,
-    DeleteNotebook,
-    TabRemoved,
-    TabRenamed,
-    FocusCell,
-    CopyNotebook
+    CancelTasks, CreateNotebook, UIMessageTarget, ImportNotebook, UIToggle, TabActivated, NoActiveTab, ViewAbout,
+    DownloadNotebook, ClearOutput, UIMessageRequest, ServerVersion, RunningKernels, KernelCommand, LoadNotebook,
+    CellsLoaded, RenameNotebook, DeleteNotebook, TabRemoved, TabRenamed, FocusCell, CopyNotebook, CurrentIdentity
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -39,11 +20,10 @@ import {NotebookUI} from "./notebook";
 import {TabUI} from "./tab";
 import {CreateNotebookDialog, NotebookNameChangeDialog, NotebookListUI} from "./notebook_list";
 import {HomeUI} from "./home";
-import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
 import {CurrentNotebook} from "./current_notebook";
 import {NotebookCellsUI} from "./nb_cells";
-import {KernelBusyState} from "../../data/messages";
+import {Identity, KernelBusyState} from "../../data/messages";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
@@ -63,9 +43,12 @@ export class MainUI extends UIMessageTarget {
     private currentServerVersion: string;
     private about?: About;
     private welcomeUI?: HomeUI;
+    private identity?: Identity;
 
     constructor() {
         super();
+        this.makeRoot(); // MainUI is always a root message target.
+
         let left = { el: div(['grid-shell'], []) };
         let center = { el: div(['tab-view'], []) };
         let right = { el: div(['grid-shell'], []) };
@@ -101,7 +84,7 @@ export class MainUI extends UIMessageTarget {
         SocketSession.global.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
         SocketSession.global.send(new messages.ListNotebooks([]));
 
-        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit) => {
+        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit, identity) => {
             for (let interp of Object.keys(interpreters)) {
                 Interpreters[interp] = interpreters[interp];
             }
@@ -117,6 +100,7 @@ export class MainUI extends UIMessageTarget {
             }
             this.currentServerVersion = serverVersion;
             this.currentServerCommit = serverCommit;
+            this.identity = identity || undefined;
         });
 
         SocketSession.global.addMessageListener(
@@ -240,6 +224,10 @@ export class MainUI extends UIMessageTarget {
                     }
                     cb(statuses);
                 })
+            } else if (msg.prototype === CurrentIdentity.prototype) {
+                const name = this.identity && this.identity.name || undefined;
+                const avatar = this.identity && this.identity.avatar || undefined;
+                cb(name, avatar);
             }
         });
 

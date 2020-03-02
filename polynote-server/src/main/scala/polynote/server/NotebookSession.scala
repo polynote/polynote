@@ -88,7 +88,7 @@ class NotebookSession(
       tasks    <- subscriber.publisher.taskManager.list
       _        <- PublishMessage(KernelStatus(UpdatedTasks(tasks)))
       presence <- subscriber.publisher.subscribersPresent
-      _        <- PublishMessage(KernelStatus(PresenceUpdate(presence.map(_._1), Nil))) // TODO: if there are tons of subscribers, disable presence stuff
+      _        <- PublishMessage(KernelStatus(PresenceUpdate(presence.filterNot(_._1.id == subscriber.id).map(_._1), Nil))) // TODO: if there are tons of subscribers, disable presence stuff
       _        <- presence.flatMap(_._2.toList).map(sel => PublishMessage(KernelStatus(sel))).sequence
     } yield ()
   }

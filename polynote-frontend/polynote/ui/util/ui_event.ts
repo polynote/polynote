@@ -2,6 +2,10 @@ import {Extractable} from "../../util/match";
 import {KernelBusyState, KernelStatus, Message} from "../../data/messages";
 import {Cell} from "../component/cell";
 import {LazyDataRepr, StreamingDataRepr, UpdatingDataRepr} from "../../data/value_repr";
+import {CellComment} from "../../data/data";
+import {editor} from "monaco-editor";
+import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
+import {PosRange} from "../../data/result";
 
 export class UIMessage {
     static unapply(inst: UIMessage): any[] {return []}
@@ -19,16 +23,27 @@ export class UIMessage {
 }
 
 type UIMessageListenerCallback<T extends new (...args: any) => any> = (...args: ConstructorParameters<T>) => boolean | void
-type UIMessageListener = [typeof UIMessage, UIMessageListenerCallback<any>, boolean?]
+export type UIMessageListener = [typeof UIMessage, UIMessageListenerCallback<any>, boolean?]
 
-// PubSub for UIMessages that also publishes events to its parent (if present)
 export class UIMessageTarget {
     private listeners: UIMessageListener[] = [];
 
+    /**
+     * PubSub for UIMessages. Bubbles published messages up the chain.
+     *
+     * @param uiParent  All UIMessageTargets must have a parent. If this is the root node, uiParent should point to itself.
+     *                  Since we can't really have a constructor parameter that points to itself, instantiators are responsible
+     *                  for calling `makeRoot` on root nodes.
+     */
     constructor(private uiParent?: UIMessageTarget) {}
 
     setParent(parent: UIMessageTarget) {
         this.uiParent = parent;
+        return this;
+    }
+
+    makeRoot() {
+        this.uiParent = this;
         return this;
     }
 
@@ -57,7 +72,12 @@ export class UIMessageTarget {
             }
         }
         if (this.uiParent instanceof UIMessageTarget) {
-            this.uiParent.publish(event.copy())
+            if (this.uiParent !== this) {
+                this.uiParent.publish(event.copy())
+            }
+        } else {
+            // this is for catching unintentional breaks in the chain.
+            console.warn("Called publish() on parent-less instance! This might be an accidental break in the chain. Otherwise, consider calling makeRoot() when initializing this UIMessageTarget")
         }
     }
 }
@@ -243,5 +263,46 @@ export class ModalClosed extends UIMessage {
     constructor() { super() }
     static unapply(inst: ModalClosed): ConstructorParameters<typeof ModalClosed> {
         return [];
+    }
+}
+
+export class CurrentIdentity extends UIMessage {
+    constructor(readonly name?: string, readonly avatar?: string) { super() }
+
+    static unapply(inst: CurrentIdentity): ConstructorParameters<typeof CurrentIdentity> {
+        return [inst.name, inst.avatar]
+    }
+}
+
+export class CreateComment extends UIMessage {
+    constructor(readonly cellId: number, readonly comment: CellComment) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: CreateComment): ConstructorParameters<typeof CreateComment> {
+        return [inst.cellId, inst.comment];
+    }
+}
+
+export class UpdateComment extends UIMessage {
+    constructor(readonly cellId: number, readonly commentId: string, readonly range: PosRange, readonly content: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: UpdateComment): ConstructorParameters<typeof UpdateComment> {
+        return [inst.cellId, inst.commentId, inst.range, inst.content];
+    }
+}
+
+export class DeleteComment extends UIMessage {
+    constructor(readonly cellId: number, readonly commentId: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: DeleteComment): ConstructorParameters<typeof DeleteComment> {
+        return [inst.cellId, inst.commentId];
     }
 }
