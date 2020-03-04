@@ -52,8 +52,7 @@ export class KernelSymbolsUI extends UIMessageTarget {
             type: span([], [resultValue.typeName]).attr('title', resultValue.typeName)
         }, whichBody) as ResultRow;
         tr.onclick = (evt) => {
-            ValueInspector.get().setParent(this);
-            ValueInspector.get().inspect(tr.resultValue, this.notebook);
+            ValueInspector.get().setParent(this).inspect(tr.resultValue, this.notebook);
         };
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;

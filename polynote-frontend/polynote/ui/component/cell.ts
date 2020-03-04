@@ -814,8 +814,7 @@ export class CodeCell extends Cell {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
                             evt => {
-                                ValueInspector.get().setParent(this);
-                                ValueInspector.get().inspect(result, this.notebook)
+                                ValueInspector.get().setParent(this).inspect(result, this.notebook)
                             }
                         )
                     ]
@@ -825,7 +824,7 @@ export class CodeCell extends Cell {
                 this.cellResultMargin.innerHTML = '';
                 this.cellResultMargin.appendChild(outLabel);
 
-                result.displayRepr(this, ValueInspector.get()).then(display => {
+                result.displayRepr(this, ValueInspector.get().setParent(this)).then(display => {
                     const [mime, content] = display;
                     const [mimeType, args] = parseContentType(mime);
                     this.buildOutput(mime, args, content).then((el: MIMEElement) => {

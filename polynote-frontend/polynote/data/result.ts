@@ -260,61 +260,35 @@ export class ResultValue extends Result {
         index = this.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
         if (index >= 0) {
             const repr = this.reprs[index] as StreamingDataRepr;
-            if (repr.dataType instanceof StructType) {
-                // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
-                return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
-                    const streamingRepr = this.reprs[index] as StreamingDataRepr;
-                    const frag = document.createDocumentFragment();
-                    const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-                    resultType.innerHTML = typeHTML;
-                    // Why do they put a <br> in there?
-                    [...resultType.getElementsByTagName("br")].forEach(br => {
-                        if (br && br.parentNode) br.parentNode.removeChild(br)
-                    });
-                    const el = div([], [
-                        h4(['result-name-and-type'], [
-                            span(['result-name'], [this.name]), ': ', resultType,
-                            iconButton(['view-data'], 'View data', 'table', '[View]')
-                                .click(_ => valueInspector.inspect(this, cell.notebook, 'View data')),
-                            iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
+            // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
+            return monaco.editor.colorize(this.typeName, cell.language, {}).then(typeHTML => {
+                const streamingRepr = this.reprs[index] as StreamingDataRepr;
+                const frag = document.createDocumentFragment();
+                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                resultType.innerHTML = typeHTML;
+                // Why do they put a <br> in there?
+                [...resultType.getElementsByTagName("br")].forEach(br => {
+                    if (br && br.parentNode) br.parentNode.removeChild(br)
+                });
+
+                const el = div([], [
+                    h4(['result-name-and-type'], [
+                        span(['result-name'], [this.name]), ': ', resultType,
+                        iconButton(['view-data'], 'View data', 'table', '[View]')
+                            .click(_ => valueInspector.inspect(this, cell.notebook, 'View data')),
+                        repr.dataType instanceof StructType
+                            ? iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
                                 .click(_ => {
                                     valueInspector.setParent(cell);
                                     valueInspector.inspect(this, cell.notebook, 'Plot data');
                                 })
-                        ]),
-                        displaySchema(streamingRepr.dataType)
-                    ]);
-                    frag.appendChild(el);
-                    return ["text/html", frag];
-                })
-            } else if (repr.knownSize && repr.knownSize > 0 && repr.knownSize < 1000) {
-                return monaco.editor.colorize(this.typeName, cell.language, {}).then(typeHTML => {
-                    const dataRepr = this.reprs[index] as StreamingDataRepr;
-                    const frag = document.createDocumentFragment();
-                    const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-                    resultType.innerHTML = typeHTML;
-                    let resultData = span([], 'Awaiting result...');
-                    const fragContents = div([], [
-                        h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
-                        resultData
-                    ]);
-                    frag.appendChild(fragContents);
-
-                    const stream = new DataStream(SocketSession.fromRelativeURL(`ws/${cell.path}`), repr);
-                    const data: any[] = [];
-                    stream
-                        .to(batch => {
-                            data.push(...batch);
-                            const newResults = displayData(data, undefined, 1);
-                            fragContents.replaceChild(newResults, resultData);
-                            resultData = newResults;
-                        })
-                        .run()
-                        .catch(reason => console.log("Error streaming results", reason));
-
-                    return ["text/html", frag];
-                })
-            }
+                            : undefined
+                    ]),
+                    repr.dataType instanceof StructType ? displaySchema(streamingRepr.dataType) : undefined
+                ]);
+                frag.appendChild(el);
+                return ["text/html", frag];
+            })
         }
 
         index = this.reprs.findIndex(repr => repr instanceof DataRepr);
