@@ -9,6 +9,7 @@ import polynote.runtime.python.PythonObject.ReturnTypeFor
 import shapeless.Witness
 
 import scala.collection.JavaConverters._
+import scala.collection.immutable.ListMap
 import scala.reflect.{ClassTag, classTag}
 import scala.language.dynamics
 
@@ -106,15 +107,43 @@ object PythonObject {
   // and whichever succeeds we'll use.
   implicit object defaultReprs extends ReprsOf[PythonObject] {
     override def apply(obj: PythonObject): Array[ValueRepr] = {
-      def attemptRepr(mimeType: String, t: => String): Option[MIMERepr] = try Option(t).map(str => MIMERepr(mimeType, str)) catch {
-        case err: Throwable => None
+      def attemptRepr(mimeType: String, t: => PythonObject): Option[MIMERepr] = try Option(t.as[String]).map(str => MIMERepr(mimeType, str)) catch {
+        case err: Throwable =>
+          // According to https://ipython.readthedocs.io/en/stable/config/integrating.html#rich-display it's possible
+          // that _repr_*_ functions return tuple (data, metadata) values. For now, we just drop the metadata values
+          // In future, we might be interested in doing something with them.
+          try Option(t.asTuple2Of[String, Any]).map(tup => MIMERepr(mimeType, tup._1)) catch {
+            case e: Throwable => None
+          }
       }
 
-      val htmlRepr = if (obj.hasAttribute("_repr_html_")) attemptRepr("text/html", obj._repr_html_().as[String]) else None
-      val textRepr = if (obj.hasAttribute("__repr__")) attemptRepr("text/plain", obj.__repr__().as[String]) else None
-      val latexRepr = if (obj.hasAttribute("_repr_latex_")) attemptRepr("application/x-latex", obj._repr_latex_().as[String]) else None
+      val basicMimeReprs = Map(
+        "text/html"           -> "_repr_html_",
+        "text/plain"          -> "__repr__",
+        "application/x-latex" -> "_repr_latex_",
+        "image/svg+xml"       -> "_repr_svg_",
+        "image/jpeg"          -> "_repr_jpeg_",
+        "image/png"           -> "_repr_png_"
+      ).flatMap {
+        case (mime, funcName) =>
+          if (obj.hasAttribute(funcName)) attemptRepr(mime, obj.applyDynamic(funcName)()) else None
+      }
 
-      List(htmlRepr, textRepr, latexRepr).flatten.toArray
+      val mimeBundleReprs = if (obj.hasAttribute("_repr_mimebundle_")) {
+        try {
+          obj._repr_mimebundle_().asScalaMapOf[String, String].map { case (k, v) => MIMERepr(k, v) }.toList
+        } catch {
+          case err: Throwable =>
+            // Similarly, _repr_mimebundle_ may also return a tuple of (data, metadata), so we'll do the same as above.
+            try {
+              obj._repr_mimebundle_().asTuple2._1.asScalaMapOf[String, String].map { case (k, v) => MIMERepr(k, v) }.toList
+            } catch {
+              case err: Throwable => List.empty[MIMERepr]
+            }
+        }
+      } else List.empty[MIMERepr]
+
+      (basicMimeReprs ++ mimeBundleReprs).toArray
     }
   }
 

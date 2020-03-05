@@ -253,9 +253,9 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
   }
 
   "PythonObject" - {
-    "provide reprs from the __repr__, _repr_html_, and _repr_latex_ methods if they exist" in {
+    "provide reprs from __repr__, _repr_*_, and _repr_mimebundle_ methods if they exist" in {
       val code =
-        """class Example:
+        """class Example(object):
           |  def __init__(self):
           |    return
           |
@@ -268,6 +268,18 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           |  def _repr_latex_(self):
           |    return "latex{string}"
           |
+          |  def _repr_svg_(self):
+          |    return "<svg />"
+          |
+          |  def _repr_jpeg_(self):
+          |    return ("somekindofbase64encodedjpeg", {'height': 400 })
+          |
+          |  def _repr_png_(self):
+          |    return "iguessabase64encodedpng"
+          |
+          |  def _repr_mimebundle_(self, include=None, exclude=None):
+          |    return { "application/x-blahblah": "blahblah" }
+          |
           |test = Example()""".stripMargin
 
       assertOutput(code) {
@@ -276,7 +288,35 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           PythonObject.defaultReprs(test).toList should contain theSameElementsAs List(
             MIMERepr("text/plain", "Plaintext string"),
             MIMERepr("text/html", "<h1>HTML string</h1>"),
-            MIMERepr("application/x-latex", "latex{string}")
+            MIMERepr("application/x-latex", "latex{string}"),
+            MIMERepr("image/svg+xml", "<svg />"),
+            MIMERepr("image/jpeg", "somekindofbase64encodedjpeg"),
+            MIMERepr("image/png", "iguessabase64encodedpng"),
+            MIMERepr("application/x-blahblah", "blahblah")
+          )
+      }
+    }
+
+    "handle case where _repr_mimebundle_ returns a tuple" in {
+      val code =
+        """class Example(object):
+          |  def __init__(self):
+          |    return
+          |
+          |  def __repr__(self):
+          |    return "Plaintext string"
+          |
+          |  def _repr_mimebundle_(self, include=None, exclude=None):
+          |    return ({ "application/x-blahblah": "blahblah" }, {})
+          |
+          |test = Example()""".stripMargin
+
+      assertOutput(code) {
+        case (vars, _) =>
+          val test = vars("test").asInstanceOf[PythonObject]
+          PythonObject.defaultReprs(test).toList should contain theSameElementsAs List(
+            MIMERepr("text/plain", "Plaintext string"),
+            MIMERepr("application/x-blahblah", "blahblah")
           )
       }
     }

@@ -247,15 +247,28 @@ export class ResultValue extends Result {
      * Get a default MIME type and string, for display purposes
      */
     displayRepr(cell: CodeCell, valueInspector: ValueInspector): Promise<[string, string | DocumentFragment]> {
+        // We're searching for the best MIME type and representation for this result by going in order of most to least
+        // useful (kind of arbitrarily defined...)
         // TODO: make this smarter
-        let index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/html"));
-        if (index >= 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+        // TODO: for lazy data repr, inform that it can't be displayed immediately
 
-        index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/"));
-        if (index >= 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+        let index = -1;
 
-        index = this.reprs.findIndex(repr => repr instanceof MIMERepr);
-        if (index >= 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+        // First, check to see if there's a special DataRepr or StreamingDataRepr
+        index = this.reprs.findIndex(repr => repr instanceof DataRepr);
+        if (index >= 0) {
+            return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
+                const dataRepr = this.reprs[index] as DataRepr;
+                const frag = document.createDocumentFragment();
+                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                resultType.innerHTML = typeHTML;
+                frag.appendChild(div([], [
+                    h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
+                    displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
+                ]));
+                return ["text/html", frag];
+            })
+        }
 
         index = this.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
         if (index >= 0) {
@@ -291,23 +304,24 @@ export class ResultValue extends Result {
             })
         }
 
-        index = this.reprs.findIndex(repr => repr instanceof DataRepr);
-        if (index >= 0) {
-            return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
-                const dataRepr = this.reprs[index] as DataRepr;
-                const frag = document.createDocumentFragment();
-                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-                resultType.innerHTML = typeHTML;
-                frag.appendChild(div([], [
-                    h4(['result-name-and-type'], [span(['result-name'], [this.name]), ': ', resultType]),
-                    displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
-                ]));
-                return ["text/html", frag];
-            })
+        // next, if it's a MIMERepr we want to follow this order
+        const mimeOrder = [
+            "image/",
+            "application/x-latex",
+            "text/html",
+            "text/",
+        ];
+
+        for (const partialMime of mimeOrder) {
+            index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith(partialMime));
+            if (index >= 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
         }
 
-        // TODO: for lazy data repr, inform that it can't be displayed immediately; maybe give a
+        // ok, maybe there's some other mime type we didn't expect?
+        index = this.reprs.findIndex(repr => repr instanceof MIMERepr);
+        if (index >= 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
 
+        // just give up and show some plaintext...
         return Promise.resolve(["text/plain", this.valueText]);
     }
 }
