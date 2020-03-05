@@ -706,6 +706,7 @@ export class NotebookUI extends UIMessageTarget {
                     kind: isMethod ? 1 : 9,
                     label: label,
                     insertText: insertText,
+                    filterText: insertText,
                     insertTextRules: 4,
                     sortText: ("" + index).padStart(indexStrLen, '0'),
                     detail: candidate.type,
