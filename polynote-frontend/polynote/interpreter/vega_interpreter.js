@@ -109,7 +109,7 @@ export class VegaClientResult extends ClientResult {
         return plot.view.toCanvas()
             .then(canvas => canvas.toDataURL("image/png"))
             .then(fromDataURL)
-            .catch(_ => plot.toSVG().then(svgStr => new Output("image/svg", svgStr)))
+            .catch(_ => plot.toSVG().then(svgStr => new Output("image/svg+xml", svgStr)))
     }
 
     toOutput() {

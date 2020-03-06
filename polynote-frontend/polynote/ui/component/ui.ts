@@ -406,7 +406,7 @@ monaco.languages.registerCompletionItemProvider('scala', {
 });
 
 monaco.languages.registerCompletionItemProvider('python', {
-  triggerCharacters: ['.'],
+  triggerCharacters: ['.', "["],
   provideCompletionItems: (doc, pos, cancelToken, context) => {
       return (doc as CodeCellModel).cellInstance.requestCompletion(doc.getOffsetAt(pos));
   }

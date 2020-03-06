@@ -1,0 +1,7 @@
+virtualenv
+ipython
+nbconvert
+jedi>=0.16.0
+numpy
+pandas
+jep==3.9.0
