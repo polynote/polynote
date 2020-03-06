@@ -55,6 +55,7 @@ export function contentTypeName(contentType: string) {
         case "text/plain": return "Text";
         case "text/html": return "HTML";
         case "image/svg": return "SVG";
+        case "image/svg+xml": return "SVG";
         default:
             if (mime.startsWith("image/")) return "Image";
             return mime;

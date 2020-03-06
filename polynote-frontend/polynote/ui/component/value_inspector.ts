@@ -52,14 +52,14 @@ export class ValueInspector extends FullScreenModal {
                     })
                     .when(StreamingDataRepr, (handle, dataType, knownSize) => {
                         const repr = new StreamingDataRepr(handle, dataType, knownSize);
-                        if (dataType instanceof StructType) {
-                            tabs['Schema'] = displaySchema(dataType);
-                            try {
+                        try {
+                            if (dataType instanceof StructType) {
+                                tabs['Schema'] = displaySchema(dataType);
                                 tabs['Plot data'] = new PlotEditor(repr, notebook, resultValue.name, resultValue.sourceCell, () => this.hide()).container;
-                                tabs['View data'] = new TableView(repr, notebook).el;
-                            } catch(err) {
-                                console.log(err);
                             }
+                            tabs['View data'] = new TableView(repr, notebook).el;
+                        } catch(err) {
+                            console.log(err);
                         }
                     });
                 return tabs;

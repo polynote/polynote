@@ -13,6 +13,7 @@ import {div, h4, iconButton, span} from "../ui/util/tags";
 import * as monaco from "monaco-editor";
 import {ValueInspector} from "../ui/component/value_inspector";
 import {StructType} from "./data_type";
+import {SocketSession} from "../comms";
 
 export class Result extends CodecContainer {
     static codec: Codec<Result>;
@@ -246,51 +247,14 @@ export class ResultValue extends Result {
      * Get a default MIME type and string, for display purposes
      */
     displayRepr(cell: CodeCell, valueInspector: ValueInspector): Promise<[string, string | DocumentFragment]> {
+        // We're searching for the best MIME type and representation for this result by going in order of most to least
+        // useful (kind of arbitrarily defined...)
         // TODO: make this smarter
-        let index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/html"));
-        if (index > 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+        // TODO: for lazy data repr, inform that it can't be displayed immediately
 
-        index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith("text/"));
-        if (index > 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+        let index = -1;
 
-        index = this.reprs.findIndex(repr => repr instanceof MIMERepr);
-        if (index > 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
-
-        index = this.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
-        if (index >= 0) {
-            const repr = this.reprs[index] as StreamingDataRepr;
-            if (repr.dataType instanceof StructType) {
-                // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
-                return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
-                    const streamingRepr = this.reprs[index] as StreamingDataRepr;
-                    const frag = document.createDocumentFragment();
-                    const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-                    resultType.innerHTML = typeHTML;
-                    // Why do they put a <br> in there?
-                    [...resultType.getElementsByTagName("br")].forEach(br => {
-                        if (br && br.parentNode) br.parentNode.removeChild(br)
-                    });
-                    const el = div([], [
-                        h4(['result-name-and-type'], [
-                            span(['result-name'], [this.name]), ': ', resultType,
-                            iconButton(['view-data'], 'View data', 'table', '[View]')
-                                .click(_ => valueInspector.inspect(this, cell.notebook, 'View data')),
-                            iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
-                                .click(_ => {
-                                    valueInspector.setParent(cell);
-                                    valueInspector.inspect(this, cell.notebook, 'Plot data');
-                                })
-                        ]),
-                        displaySchema(streamingRepr.dataType)
-                    ]);
-                    frag.appendChild(el);
-                    return ["text/html", frag];
-                })
-            } else if (repr.knownSize && repr.knownSize > 0) {
-                // TODO: get a batch of data?
-            }
-        }
-
+        // First, check to see if there's a special DataRepr or StreamingDataRepr
         index = this.reprs.findIndex(repr => repr instanceof DataRepr);
         if (index >= 0) {
             return monaco.editor.colorize(this.typeName, "scala", {}).then(typeHTML => {
@@ -306,8 +270,58 @@ export class ResultValue extends Result {
             })
         }
 
-        // TODO: for lazy data repr, inform that it can't be displayed immediately; maybe give a
+        index = this.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
+        if (index >= 0) {
+            const repr = this.reprs[index] as StreamingDataRepr;
+            // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
+            return monaco.editor.colorize(this.typeName, cell.language, {}).then(typeHTML => {
+                const streamingRepr = this.reprs[index] as StreamingDataRepr;
+                const frag = document.createDocumentFragment();
+                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                resultType.innerHTML = typeHTML;
+                // Why do they put a <br> in there?
+                [...resultType.getElementsByTagName("br")].forEach(br => {
+                    if (br && br.parentNode) br.parentNode.removeChild(br)
+                });
 
+                const el = div([], [
+                    h4(['result-name-and-type'], [
+                        span(['result-name'], [this.name]), ': ', resultType,
+                        iconButton(['view-data'], 'View data', 'table', '[View]')
+                            .click(_ => valueInspector.inspect(this, cell.notebook, 'View data')),
+                        repr.dataType instanceof StructType
+                            ? iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
+                                .click(_ => {
+                                    valueInspector.setParent(cell);
+                                    valueInspector.inspect(this, cell.notebook, 'Plot data');
+                                })
+                            : undefined
+                    ]),
+                    repr.dataType instanceof StructType ? displaySchema(streamingRepr.dataType) : undefined
+                ]);
+                frag.appendChild(el);
+                return ["text/html", frag];
+            })
+        }
+
+        // next, if it's a MIMERepr we want to follow this order
+        const mimeOrder = [
+            "image/",
+            "application/x-latex",
+            "text/html",
+            "text/",
+        ];
+
+        for (const partialMime of mimeOrder) {
+            index = this.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith(partialMime));
+            if (index >= 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+        }
+
+        // ok, maybe there's some other mime type we didn't expect?
+        index = this.reprs.findIndex(repr => repr instanceof MIMERepr);
+        if (index >= 0) return Promise.resolve(MIMERepr.unapply(this.reprs[index] as MIMERepr));
+
+        // just give up and show some plaintext...
         return Promise.resolve(["text/plain", this.valueText]);
     }
 }

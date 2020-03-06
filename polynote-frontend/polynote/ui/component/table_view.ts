@@ -32,9 +32,9 @@ export class TableView {
 
     constructor(readonly repr: StreamingDataRepr, readonly notebook: NotebookUI) {
         const dataType = repr.dataType;
-        this.fields = dataType.fields;
-        const fieldClasses = dataType.fields.map(field => field.name);
-        const fieldNames = dataType.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
+        this.fields = dataType.fields || [new StructField("entries", dataType)]; // if dataType is not a StructType, create a dummy entry for it.
+        const fieldClasses = this.fields.map(field => field.name);
+        const fieldNames = this.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
 
         if (!notebook.socket.isOpen) {
             this.el = div(['table-view', 'disconnected'], [
@@ -80,7 +80,7 @@ export class TableView {
         start = Math.max(start, 0);
         this.table.tBodies.item(0)!.innerHTML = '';
         for (let i = start; i < end && i < this.rows.length; i++) {
-            const row = this.fields.map(field => renderData(field.dataType, this.rows[i][field.name]));
+            const row = this.fields.map(field => renderData(field.dataType, this.rows[i][field.name] || this.rows[i]));
             this.table.addRow(row);
         }
         this.currentPos = start;
