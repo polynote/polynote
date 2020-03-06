@@ -1,3 +1,17 @@
+# 0.3.2 (Feb 21, 2020)
+* Fix issue where kernel hangs trying to find `ReprsOf` something that has `var`s in it
+* Make `kernel` variable implicit so it can be threaded into functions
+
+# 0.3.1 (Feb 19, 2020)
+* Remove deprecated `polynote` shell script (use `python.py` instead)
+* Disable notebook if writing fails repeatedly
+* Unmangle package name for Spark 2.4.4 compatibility
+* Validate config on server startup
+* Respect language from imported Jupyter notebook
+* Don't save stdout to the notebook if it's subsequently been erased
+* Fix docker build for Scala 2.12/Spark 2.4
+* Misc UI and backend fixes
+
 # 0.3.0 (Feb 4, 2020)
 * Better handling of unexpected kernel shutdowns 
 * Presence 

@@ -17,24 +17,25 @@ import polynote.kernel.util.Publish
 import polynote.messages._
 import polynote.server.SocketSession.sessionId
 import polynote.server.auth.{Permission, UserIdentity}
-import zio.{Promise, RIO, Task, UIO, URIO, ZIO}
-import zio.syntax._
+import zio.{Promise, RIO, Task, UIO, URIO, ZIO, ZLayer}
 
 import scala.concurrent.duration.{Duration, SECONDS}
 
 
 class NotebookSession(
   subscriber: KernelSubscriber,
-  streamingHandles: StreamingHandles with BaseEnv,
+  streamingHandles: StreamingHandles.Service,
   closed: Promise[Throwable, Unit],
   input: Queue[Task, WebSocketFrame],
   output: Queue[Task, WebSocketFrame],
-  publishMessage: PublishMessage
+  publishMessage: Publish[Task, Message]
 ) {
+
+  private val streamingHandlesLayer = ZLayer.succeed(streamingHandles)
 
   def close(): URIO[SessionEnv, Unit] =
         subscriber.close() *> closed.succeed(()).flatMap {
-          case true => (UserIdentity.access, subscriber.currentPath.orDie).map2 {
+          case true => ZIO.mapN(UserIdentity.access, subscriber.currentPath.orDie) {
               (user, path) => output.enqueue1(WebSocketFrame.Close()).orDie *> Logging.info(s"Closing notebook session $path for $user")
             }.flatten
           case false => ZIO.unit
@@ -45,20 +46,20 @@ class NotebookSession(
       env       <- ZIO.environment[SessionEnv]
       _         <- sendNotebookInfo()
       processor <- process(input, output)
-      fiber     <- processor.interruptWhen(closed.await.either.as(Either.right[Throwable, Unit](()))).compile.drain.ignore.fork
+      fiber     <- processor.interruptWhen(closed.await.either.as(Either.right[Throwable, Unit](()))).compile.drain.ignore.forkDaemon
       keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
         .interruptWhen(closed.await.either.as(Either.right[Throwable, Unit](())))
         .through(output.enqueue)
-        .compile.drain.ignore.fork
+        .compile.drain.ignore.forkDaemon
       response  <- WebSocketBuilder[Task].build(
         output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]) ++ Stream.eval(close().provide(env)).drain,
         input.enqueue,
         onClose = keepalive.interrupt *> fiber.interrupt.unit *> close().provide(env))
     } yield response
-  }.provideSomeM(Env.enrich[SessionEnv](publishMessage))
+  }.provideSomeLayer[SessionEnv](ZLayer.succeed(publishMessage))
 
-  def process(input: Queue[Task, WebSocketFrame], output: Queue[Task, WebSocketFrame]): URIO[SessionEnv, Stream[Task, Unit]] = {
-    Env.enrich[SessionEnv](publishMessage).map {
+  def process(input: Queue[Task, WebSocketFrame], output: Queue[Task, WebSocketFrame]): URIO[SessionEnv, Stream[Task, Unit]] =
+    ZIO.environment[SessionEnv with PublishMessage].map {
       env => input.dequeue.flatMap {
         case WebSocketFrame.Close(_) => Stream.eval(output.enqueue1(WebSocketFrame.Close())).drain
         case WebSocketFrame.Binary(data, true) => Stream.eval(Message.decode[Task](data))
@@ -67,10 +68,9 @@ class NotebookSession(
         message =>
           handleMessage(message).catchAll {
             err => Logging.error("Kernel error", err) *> PublishMessage(Error(0, err))
-          }.provide(env).fork.unit
+          }.provide(env).forkDaemon.unit
       }
-    }
-  }
+    }.provideSomeLayer[SessionEnv](ZLayer.succeed(publishMessage))
 
   private def sendNotebookInfo() = {
     def publishRunningKernelState(publisher: KernelPublisher) = for {
@@ -88,7 +88,7 @@ class NotebookSession(
       tasks    <- subscriber.publisher.taskManager.list
       _        <- PublishMessage(KernelStatus(UpdatedTasks(tasks)))
       presence <- subscriber.publisher.subscribersPresent
-      _        <- PublishMessage(KernelStatus(PresenceUpdate(presence.map(_._1), Nil))) // TODO: if there are tons of subscribers, disable presence stuff
+      _        <- PublishMessage(KernelStatus(PresenceUpdate(presence.filterNot(_._1.id == subscriber.id).map(_._1), Nil))) // TODO: if there are tons of subscribers, disable presence stuff
       _        <- presence.flatMap(_._2.toList).map(sel => PublishMessage(KernelStatus(sel))).sequence
     } yield ()
   }
@@ -132,19 +132,19 @@ class NotebookSession(
 
     case req@HandleData(handleType, handle, count, _) => for {
       kernel <- subscriber.publisher.kernel
-      data   <- kernel.getHandleData(handleType, handle, count).provide(streamingHandles).mapError(err => Error(0, err)).either
+      data   <- kernel.getHandleData(handleType, handle, count).provideSomeLayer[BaseEnv](streamingHandlesLayer).mapError(err => Error(0, err)).either
       _      <- PublishMessage(req.copy(data = data))
     } yield ()
 
     case req @ ModifyStream(fromHandle, ops, _) => for {
       kernel  <- subscriber.publisher.kernel
-      newRepr <- kernel.modifyStream(fromHandle, ops).provide(streamingHandles)
+      newRepr <- kernel.modifyStream(fromHandle, ops).provideSomeLayer[BaseEnv](streamingHandlesLayer)
       _       <- PublishMessage(req.copy(newRepr = newRepr))
     } yield ()
 
     case req @ ReleaseHandle(handleType, handleId) => for {
       kernel <- subscriber.publisher.kernel
-      _      <- kernel.releaseHandle(handleType, handleId).provide(streamingHandles)
+      _      <- kernel.releaseHandle(handleType, handleId).provideSomeLayer[BaseEnv](streamingHandlesLayer)
       _      <- PublishMessage(req)
     } yield ()
 
@@ -179,12 +179,12 @@ object NotebookSession {
     publisher        <- NotebookManager.open(path)
     input            <- Queue.unbounded[Task, WebSocketFrame]
     output           <- Queue.unbounded[Task, WebSocketFrame]
-    publishMessage   <- Env.add[SessionEnv with NotebookManager](PublishMessage.of(Publish(output).contraFlatMap(toFrame)))
+    publishMessage   <- Env.add[SessionEnv with NotebookManager](Publish(output).contraFlatMap(toFrame))
     subscriber       <- publisher.subscribe()
     sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
-    streamingHandles <- Env.enrichM[BaseEnv](StreamingHandles.make(sessionId))
+    streamingHandles <- StreamingHandles.make(sessionId)
     closed           <- Promise.make[Throwable, Unit]
     session           = new NotebookSession(subscriber, streamingHandles, closed, input, output, publishMessage)
-    _                <- subscriber.closed.await.flatMap(_ => session.close()).fork
+    _                <- subscriber.closed.await.flatMap(_ => session.close()).forkDaemon
   } yield session
 }

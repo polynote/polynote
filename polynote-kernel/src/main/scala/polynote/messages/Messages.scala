@@ -2,7 +2,7 @@ package polynote.messages
 
 import cats.MonadError
 import cats.syntax.either._
-import io.circe.{Decoder, Encoder}
+import io.circe.{Decoder, Encoder, ObjectEncoder}
 import polynote.kernel._
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
@@ -11,7 +11,7 @@ import scodec.codecs.implicits._
 import io.circe.generic.semiauto._
 import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, SparkConfig}
 import polynote.data.Rope
-import polynote.runtime.{StreamingDataRepr, TableOp}
+import polynote.runtime.{CellRange, StreamingDataRepr, TableOp}
 import shapeless.cachedImplicit
 
 sealed trait Message
@@ -69,7 +69,8 @@ final case class NotebookCell(
   language: TinyString,
   content: Rope,
   results: ShortList[Result] = ShortList(Nil),
-  metadata: CellMetadata = CellMetadata()
+  metadata: CellMetadata = CellMetadata(),
+  comments: ShortMap[CommentID, Comment] = Map.empty[CommentID, Comment]
 ) {
   def updateContent(fn: Rope => Rope): NotebookCell = copy(content = fn(content))
 }
@@ -139,6 +140,46 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
     case cell if cell.id != id => cell
   }))
 
+  def createComment(id: CellID, comment: Comment): Notebook = updateCell(id) {
+    cell =>
+      require(!cell.comments.contains(comment.uuid), s"Comment with id ${comment.uuid} already exists!")
+      cell.copy(comments = cell.comments.updated(comment.uuid, comment))
+  }
+
+  def updateComment(id: CellID, commentId: CommentID, range: CellRange, content: String): Notebook = updateCell(id) {
+    cell =>
+      require(cell.comments.contains(commentId), s"Comment with id $commentId does not exist!")
+      val comment = cell.comments(commentId).copy(content = content, range = range)
+      cell.copy(comments = cell.comments.updated(commentId, comment))
+  }
+
+  private def rootForRange(cell: NotebookCell, range: CellRange): Comment = {
+      cell.comments.values.reduce[Comment] {
+        case (acc, next) =>
+          if (next.range == acc.range && next.createdAt < acc.createdAt) next else acc
+      }
+  }
+
+  def deleteComment(id: CellID, commentId: CommentID): Notebook = updateCell(id) {
+    cell =>
+      require(cell.comments.contains(commentId), s"Comment with id $commentId does not exist!")
+      val deletedCell = cell.comments(commentId)
+      val withoutDeleted = cell.comments - commentId
+
+      val rootComment = rootForRange(cell, deletedCell.range)
+
+      if (deletedCell == rootComment) {
+        // this is a root comment, we need to delete all the comments that point to it
+        val remaining = withoutDeleted.filter {
+          case (_, Comment(_, range, _, _, _)) if range == deletedCell.range => false
+          case _ => true
+        }
+        cell.copy(comments = remaining)
+      } else {
+        cell.copy(comments = withoutDeleted)
+      }
+  }
+
   def setResults(id: CellID, results: List[Result]): Notebook = updateCell(id) {
     cell => cell.copy(results = ShortList(results))
   }
@@ -165,12 +206,15 @@ sealed trait NotebookUpdate extends Message {
   def localVersion: Int
 
   def withVersions(global: Int, local: Int): NotebookUpdate = this match {
-    case u @ UpdateCell(_, _, _, _, _) => u.copy(globalVersion = global, localVersion = local)
-    case i @ InsertCell(_, _, _, _) => i.copy(globalVersion = global, localVersion = local)
-    case d @ DeleteCell(_, _, _)    => d.copy(globalVersion = global, localVersion = local)
-    case u @ UpdateConfig(_, _, _)  => u.copy(globalVersion = global, localVersion = local)
-    case l @ SetCellLanguage(_, _, _, _) => l.copy(globalVersion = global, localVersion = local)
-    case o @ SetCellOutput(_, _, _, _) => o.copy(globalVersion = global, localVersion = local)
+    case u @ UpdateCell(_, _, _, _, _)         => u.copy(globalVersion = global, localVersion = local)
+    case i @ InsertCell(_, _, _, _)            => i.copy(globalVersion = global, localVersion = local)
+    case d @ DeleteCell(_, _, _)               => d.copy(globalVersion = global, localVersion = local)
+    case u @ UpdateConfig(_, _, _)             => u.copy(globalVersion = global, localVersion = local)
+    case l @ SetCellLanguage(_, _, _, _)       => l.copy(globalVersion = global, localVersion = local)
+    case o @ SetCellOutput(_, _, _, _)         => o.copy(globalVersion = global, localVersion = local)
+    case cc @ CreateComment(_, _, _, _)        => cc.copy(globalVersion = global, localVersion = local)
+    case dc @ DeleteComment(_, _, _, _)        => dc.copy(globalVersion = global, localVersion = local)
+    case uc @ UpdateComment(_, _, _, _, _, _)  => uc.copy(globalVersion = global, localVersion = local)
   }
 
   // transform this update so that it has the same effect when applied after the given update
@@ -199,6 +243,9 @@ sealed trait NotebookUpdate extends Message {
     case UpdateConfig(_, _, config)    => notebook.copy(config = Some(config))
     case SetCellLanguage(_, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
     case SetCellOutput(_, _, id, output) => notebook.setResults(id, output.toList)
+    case CreateComment(_, _, cellId, comment) => notebook.createComment(cellId, comment)
+    case UpdateComment(_, _, cellId, commentId, range, content) => notebook.updateComment(cellId, commentId, range, content)
+    case DeleteComment(_, _, cellId, commentId) => notebook.deleteComment(cellId, commentId)
   }
 
 }
@@ -223,6 +270,28 @@ object UpdateCell extends NotebookUpdateCompanion[UpdateCell](5)
 
 final case class InsertCell(globalVersion: Int, localVersion: Int, cell: NotebookCell, after: CellID) extends Message with NotebookUpdate
 object InsertCell extends NotebookUpdateCompanion[InsertCell](6)
+
+final case class Comment(
+  uuid: CommentID,
+  range: CellRange, // note, cells are sorted by creation time
+  author: TinyString,
+  createdAt: Long,
+  content: ShortString
+)
+
+object Comment {
+  implicit val encoder: ObjectEncoder[Comment] = deriveEncoder
+  implicit val decoder: Decoder[Comment] = deriveDecoder
+}
+
+final case class CreateComment(globalVersion: Int, localVersion: Int, cellId: CellID, comment: Comment) extends Message with NotebookUpdate
+object CreateComment extends NotebookUpdateCompanion[CreateComment](29)
+
+final case class UpdateComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID, range: CellRange, content: ShortString) extends Message with NotebookUpdate
+object UpdateComment extends NotebookUpdateCompanion[UpdateComment](30)
+
+final case class DeleteComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID) extends Message with NotebookUpdate
+object DeleteComment extends NotebookUpdateCompanion[DeleteComment](31)
 
 final case class CompletionsAt(id: CellID, pos: Int, completions: ShortList[Completion]) extends Message
 object CompletionsAt extends MessageCompanion[CompletionsAt](7)
@@ -269,10 +338,13 @@ object DeleteCell extends NotebookUpdateCompanion[DeleteCell](15)
 final case class SetCellOutput(globalVersion: Int, localVersion: Int, id: CellID, output: Option[Output]) extends Message with NotebookUpdate
 object SetCellOutput extends NotebookUpdateCompanion[SetCellOutput](22)
 
+final case class Identity(name: TinyString, avatar: Option[ShortString])
+
 final case class ServerHandshake(
   interpreters: TinyMap[TinyString, TinyString],
   serverVersion: TinyString,
-  serverCommit: TinyString
+  serverCommit: TinyString,
+  identity: Option[Identity]
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 
@@ -329,5 +401,5 @@ object ModifyStream extends MessageCompanion[ModifyStream](19) {
 final case class ReleaseHandle(handleType: HandleType, handle: Int) extends Message
 object ReleaseHandle extends MessageCompanion[ReleaseHandle](20)
 
-final case class CurrentSelection(cellID: CellID, range: (Int, Int)) extends Message
+final case class CurrentSelection(cellID: CellID, range: CellRange) extends Message
 object CurrentSelection extends MessageCompanion[CurrentSelection](28)

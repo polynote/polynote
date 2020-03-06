@@ -18,7 +18,7 @@ class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref
         Some(kernelFactory)),
       Some(clientRef))
 
-    connectClient.fork.map(new InProcessDeploy.Process(_))
+    connectClient.forkDaemon.map(new InProcessDeploy.Process(_))
   }
 
 }
@@ -30,8 +30,9 @@ object InProcessDeploy {
       case None => ZIO.succeed(None)
     }
 
-    def awaitExit(timeout: Long, timeUnit: TimeUnit): RIO[BaseEnv, Option[Int]] =
-      fiber.join.timeout(Duration(timeout, timeUnit))
+    def awaitExit(timeout: Long, timeUnit: TimeUnit): RIO[BaseEnv, Option[Int]] = {
+      fiber.join.disconnect.timeout(Duration(timeout, timeUnit))
+    }
 
     def kill(): RIO[BaseEnv, Unit] = fiber.interrupt.unit
   }

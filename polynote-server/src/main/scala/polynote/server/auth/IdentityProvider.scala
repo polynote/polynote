@@ -25,7 +25,10 @@ trait Identity {
   def avatar: Option[String] = None
 }
 
-case class BasicIdentity(name: String) extends Identity
+class BasicIdentity(val name: String) extends Identity with Serializable
+object BasicIdentity {
+  def apply(name: String): Identity = new BasicIdentity(name)
+}
 
 sealed abstract class PermissionType(val encoded: String)
 object PermissionType {
@@ -63,84 +66,6 @@ object Permission {
   case class PermissionDenied(permission: Permission, reason: String) extends Throwable(s"Permission denied: $permission ($reason)")
 }
 
-trait IdentityProvider {
-  def identityProvider: IdentityProvider.Service
-}
-
-object IdentityProvider {
-
-  trait Service {
-    /**
-      * Any special endpoints or pages that the provider has to mount, if there are any.
-      */
-    def authRoutes: Option[Routes]
-
-    /**
-      * Check the authorization for a request, failing with a Response (if not authorized) or succeeding with an
-      * Identity (if authorized) or None to indicate authorized anonymous access
-      */
-    def checkAuth(req: Request[Task]): ZIO[BaseEnv with Config, Response[Task], Option[Identity]]
-
-    /**
-      * Check whether the given identity (or None for anonymous) has the given permission. If not, the returned task
-      * should fail with PermissionDenied.
-      */
-    def checkPermission(ident: Option[Identity], permission: Permission): ZIO[BaseEnv with Config, Permission.PermissionDenied, Unit]
-  }
-
-  val noneService: Service = new Service {
-    def authRoutes: Option[Routes] = None
-    def checkAuth(req: Request[Task]): ZIO[BaseEnv with Config, Response[Task], Option[Identity]] = ZIO.succeed(None)
-    def checkPermission(ident: Option[Identity], permission: Permission): ZIO[BaseEnv with Config, Permission.PermissionDenied, Unit] = ZIO.unit
-  }
-
-  val none: IdentityProvider = of(noneService)
-
-  def of(service: Service): IdentityProvider = new IdentityProvider {
-    def identityProvider: Service = service
-  }
-
-  private lazy val loaders: Map[String, ProviderLoader] = {
-    import scala.collection.JavaConverters._
-    val loaders = ServiceLoader.load(classOf[ProviderLoader]).iterator.asScala.toList
-    loaders.map(l => l.providerKey -> l).toMap
-  }
-
-  def find(config: AuthProvider): RIO[BaseEnv with Config, IdentityProvider.Service] = effectBlocking(loaders)
-    .map(_.get(config.provider))
-    .someOrFail(new NoSuchElementException(s"No identity provider could be found with key ${config.provider}"))
-    .flatMap(_.provider(config.config))
-
-  val load: RIO[BaseEnv with Config, IdentityProvider] =
-    ZIO.access[Config](_.polynoteConfig.security.auth).get
-      .foldM(_ => ZIO.succeed(none), config => find(config).map(of))
-
-  def access: URIO[IdentityProvider, Service] = ZIO.access[IdentityProvider](_.identityProvider)
-
-  def authRoutes: RIO[IdentityProvider, Routes] =
-    ZIO.access[IdentityProvider](_.identityProvider.authRoutes.getOrElse(PartialFunction.empty))
-
-  /**
-    * Fail if the current user doesn't have the given permission
-    */
-  def checkPermission(permission: Permission): ZIO[BaseEnv with Config with UserIdentity with IdentityProvider, Permission.PermissionDenied, Unit] = for {
-    service <- access
-    ident   <- UserIdentity.access
-    _       <- service.checkPermission(ident, permission)
-  } yield ()
-
-  /**
-    * Provide a function that will authorize a Request against the configured auth provider
-    */
-  def authorize[Env <: BaseEnv with Config](implicit enrich: Enrich[Env, UserIdentity]): RIO[Env with IdentityProvider, (Request[Task], RIO[Env with UserIdentity, Response[Task]]) => RIO[Env, Response[Task]]] =
-    access.map {
-      provider =>
-        (req, task) =>
-          provider.checkAuth(req).foldM(
-            ZIO.succeed,
-            ident => task.provideSomeM(Env.enrich[Env][UserIdentity](UserIdentity.of(ident))))
-    }
-}
 
 /**
   * A service interface for loading identity providers from plug-ins.
@@ -150,19 +75,3 @@ trait ProviderLoader {
   def provider(config: JsonObject): RIO[BaseEnv with Config, IdentityProvider.Service]
 }
 
-// An environment for user identity
-trait UserIdentity {
-  def userIdentity: Option[Identity]
-}
-
-object UserIdentity {
-
-  def access: URIO[UserIdentity, Option[Identity]] = ZIO.access[UserIdentity](_.userIdentity)
-
-  def of(maybeIdent: Option[Identity]): UserIdentity = new UserIdentity {
-    val userIdentity: Option[Identity] = maybeIdent
-  }
-
-  final val empty: UserIdentity = of(None)
-
-}

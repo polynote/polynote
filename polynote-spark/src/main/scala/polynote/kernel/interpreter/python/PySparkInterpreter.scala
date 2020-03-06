@@ -8,10 +8,11 @@ import jep.Jep
 import jep.python.{PyCallable, PyObject}
 import org.apache.commons.lang3.RandomStringUtils
 import org.apache.spark.launcher.SparkLauncher
-import org.apache.spark.sql.SparkSession
-import polynote.kernel.{BaseEnv, GlobalEnv, InterpreterEnv, ScalaCompiler, TaskManager}
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import polynote.kernel.{BaseEnv, GlobalEnv, InterpreterEnv, ScalaCompiler}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.interpreter.{Interpreter, State}
+import polynote.kernel.task.TaskManager
 import polynote.kernel.util._
 import py4j.GatewayServer
 import py4j.GatewayServer.GatewayServerBuilder
@@ -22,7 +23,7 @@ import zio.internal.Executor
 import scala.util.Properties
 
 class PySparkInterpreter(
-  compiler: ScalaCompiler,
+  _compiler: ScalaCompiler,
   jepInstance: Jep,
   jepExecutor: Executor,
   jepThread: AtomicReference[Thread],
@@ -30,9 +31,11 @@ class PySparkInterpreter(
   runtime: Runtime[Any],
   pyApi: PythonInterpreter.PythonAPI,
   venvPath: Option[Path]
-) extends PythonInterpreter(compiler, jepInstance, jepExecutor, jepThread, jepBlockingService, runtime, pyApi, venvPath) {
+) extends PythonInterpreter(_compiler, jepInstance, jepExecutor, jepThread, jepBlockingService, runtime, pyApi, venvPath) {
 
   val gatewayRef = new AtomicReference[GatewayServer]()
+
+  private val dataFrameType = compiler.global.ask(() => compiler.global.typeOf[Dataset[Row]])
 
   override protected def injectGlobals(globals: PyObject): RIO[CurrentRuntime, Unit] = super.injectGlobals(globals) *> jep {
       jep =>
@@ -208,6 +211,22 @@ class PySparkInterpreter(
           |sqlContext = spark._wrapped
           |from pyspark.sql import DataFrame
           |""".stripMargin)
+  }
+
+  override protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = super.convertToPython(jep) orElse {
+    case (name, dataFrame: Dataset[_]) =>
+        // should this go through py4j instead? We could use gateway.getGateway.putObject, but how to retrieve it on python side?
+        // will just pass directly to the DataFrame constructor
+      val pyDf = gatewayRef.get().getGateway.putObject(name, dataFrame)
+      jep.getValue("DataFrame", classOf[PyCallable]).callAs(classOf[PyObject], jep.getValue("gateway.java_gateway_server.getGateway().getObject", classOf[PyCallable]).callAs(classOf[PyObject], name), jep.getValue("sqlContext", classOf[PyObject]))
+  }
+
+  override protected def convertFromPython(jep: Jep): PartialFunction[(String, PyObject), (compiler.global.Type, Any)] = super.convertFromPython(jep) orElse {
+    case ("DataFrame", obj) if jep.getValue("hasattr", classOf[PyCallable]).callAs(classOf[java.lang.Boolean], obj, "_jdf").booleanValue() =>
+      // it's a Spark DataFrame
+      jep.getValue("gateway.java_gateway_server.getGateway().putObject", classOf[PyCallable]).call("_jdf", obj.getAttr("_jdf", classOf[PyObject]))
+      val df = gatewayRef.get().getGateway().getObject("_jdf").asInstanceOf[Dataset[Row]]
+      (dataFrameType, df)
   }
 
   override protected def errorCause(get: PyCallable): Option[Throwable] = {

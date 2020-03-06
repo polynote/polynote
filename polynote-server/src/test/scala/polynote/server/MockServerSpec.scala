@@ -10,6 +10,7 @@ import polynote.testing.kernel.{MockEnv, MockKernelEnv}
 import zio.{RIO, ZIO}
 
 trait MockServerSpec extends MockFactory with ZIOSpec {
+  import runtime.unsafeRun
   private val kernel          = mock[Kernel]
   private val kernelFactory   = new Factory.Service {
     def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(kernel)
@@ -18,6 +19,6 @@ trait MockServerSpec extends MockFactory with ZIOSpec {
   val testEnv: MockKernelEnv = unsafeRun(MockKernelEnv(kernelFactory))
 
   implicit class ResolvedEnvIORunOps[A](val self: ZIO[MockEnv.Env, Throwable, A]) {
-    def runIO(implicit enrich: Enrich[Environment, MockEnv.Env]): A = self.provideSome[Environment](env => enrich(env, testEnv)).runIO()
+    def runIO: A = self.provideSomeLayer[Environment](testEnv.baseLayer).runIO()
   }
 }

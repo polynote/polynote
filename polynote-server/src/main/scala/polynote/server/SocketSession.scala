@@ -22,7 +22,7 @@ import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages._
 import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
-import zio.{Promise, RIO, Task, ZIO}
+import zio.{Has, Promise, RIO, Task, ZIO}
 
 import scala.collection.immutable.SortedMap
 import scala.concurrent.duration.{Duration, SECONDS}
@@ -41,11 +41,11 @@ class SocketSession(
     output    <- Queue.unbounded[Task, WebSocketFrame]
     processor <- process(input, output)
     handlerClosed = handler.awaitClosed.as(Either.right[Throwable, Unit](()))
-    fiber     <- processor.interruptWhen(handlerClosed).compile.drain.ignore.fork
+    fiber     <- processor.interruptWhen(handlerClosed).compile.drain.ignore.forkDaemon
     keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
       .interruptWhen(handlerClosed)
       .through(output.enqueue)
-      .compile.drain.ignore.fork
+      .compile.drain.ignore.forkDaemon
     allOutputs = Stream.emits(Seq(output.dequeue, broadcastAll.subscribe(128).unNone.evalMap(toFrame))).parJoinUnbounded
     logging   <- ZIO.access[Logging](identity)
     response  <- WebSocketBuilder[Task].build(
@@ -57,9 +57,10 @@ class SocketSession(
   private def process(
     input: Queue[Task, WebSocketFrame],
     output: Queue[Task, WebSocketFrame]
-  ): ZIO[SessionEnv, Nothing, Stream[Task, Unit]] = Env.enrich[SessionEnv](PublishMessage.of(Publish(output).contraFlatMap(toFrame))).map {
+  ): ZIO[SessionEnv, Nothing, Stream[Task, Unit]] = ZIO.environment[SessionEnv].map {
     env =>
-      Stream.eval(handshake.provide(env)).evalMap(env.publishMessage.publish1) ++ input.dequeue.flatMap {
+      val publishMessage = Publish(output).contraFlatMap(toFrame)
+      Stream.eval(handshake.provide(env)).evalMap(publishMessage.publish1) ++ input.dequeue.flatMap {
         case WebSocketFrame.Close(_) => Stream.eval(output.enqueue1(WebSocketFrame.Close())).drain
         case WebSocketFrame.Binary(data, true) => Stream.eval(Message.decode[Task](data))
         case _ => Stream.empty
@@ -69,24 +70,25 @@ class SocketSession(
             err =>
               Logging.error("Kernel error", err) *>
               PublishMessage(Error(0, err))
-          }.provide(env).fork.unit
+          }.provide(env ++ Has(publishMessage)).forkDaemon.unit
       }
   }
 
-  private def handshake: TaskG[ServerHandshake] =
-    ZIO.access[Interpreter.Factories](_.interpreterFactories).map {
-      factories => ServerHandshake(
-        (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
-        serverVersion = BuildInfo.version,
-        serverCommit = BuildInfo.commit)
-    }
+  private def handshake: RIO[SessionEnv, ServerHandshake] =
+    for {
+      factories <- Interpreter.Factories.access
+      identity  <- UserIdentity.access
+    } yield ServerHandshake(
+      (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
+      serverVersion = BuildInfo.version,
+      serverCommit = BuildInfo.commit,
+      identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString)))
+    )
 }
 
 class SessionHandler(
   notebookManager: NotebookManager.Service,
-  subscribed: RefMap[String, KernelSubscriber],
-  closed: Promise[Throwable, Unit],
-  streamingHandles: StreamingHandles with BaseEnv
+  closed: Promise[Throwable, Unit]
 ) {
 
   import auth.Permission
@@ -137,11 +139,8 @@ object SocketSession {
   def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with NotebookManager, SocketSession] =
     for {
       notebookManager  <- NotebookManager.access
-      subscribed       <- RefMap.empty[String, KernelSubscriber]
       closed           <- Promise.make[Throwable, Unit]
-      sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
-      streamingHandles <- Env.enrichM[BaseEnv](StreamingHandles.make(sessionId))
-      handler           = new SessionHandler(notebookManager, subscribed, closed, streamingHandles)
+      handler           = new SessionHandler(notebookManager, closed)
     } yield new SocketSession(handler, broadcastAll)
 
   private[server] val sessionId = new AtomicInteger(0)

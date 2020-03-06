@@ -158,6 +158,9 @@ package object messages {
 
   implicit def int2cellId(i: Int): CellID = i.toShort
 
+  // alias for Comment ID type
+  type CommentID = TinyString
+
   implicit def arrayCodec[A : ClassTag](implicit aCodec: Codec[A]): Codec[Array[A]] =
     int32.flatZip {
       len => new Codec[Array[A]] {

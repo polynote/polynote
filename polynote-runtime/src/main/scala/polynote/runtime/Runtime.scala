@@ -36,9 +36,9 @@ object Runtime extends Serializable {
 
   def setProgressSetter(fn: (Double,String) => Unit): Unit = progressSetter = fn
 
-  @transient private var executionStatusSetter: Option[(Int, Int)] => Unit = (_ => ())
+  @transient private var executionStatusSetter: Option[CellRange] => Unit = (_ => ())
 
-  def setExecutionStatusSetter(fn: Option[(Int, Int)] => Unit): Unit = executionStatusSetter = fn
+  def setExecutionStatusSetter(fn: Option[CellRange] => Unit): Unit = executionStatusSetter = fn
 
   def clear(): Unit = externalValues.clear()
 

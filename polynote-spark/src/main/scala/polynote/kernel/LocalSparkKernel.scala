@@ -14,17 +14,18 @@ import org.apache.spark.sql.SparkSession
 import polynote.buildinfo.BuildInfo
 import polynote.config.{PolynoteConfig, SparkConfig}
 import polynote.kernel.dependency.CoursierFetcher
-import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env, InterpreterEnvironment}
+import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
 import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.kernel.logging.Logging
+import polynote.kernel.task.TaskManager
 import polynote.kernel.util.{RefMap, pathOf}
 import polynote.messages.{CellID, NotebookConfig, TinyList}
 import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Promise, RIO, Task, ZIO}
+import zio.{Promise, RIO, Task, ZIO, ZLayer}
 import zio.interop.catz._
 import zio.system.{env, property}
 
@@ -37,7 +38,7 @@ import scala.tools.nsc.io.Directory
 
 // TODO: this class may not even be necessary
 class LocalSparkKernel private[kernel] (
-  compilerProvider: ScalaCompiler.Provider,
+  compilerProvider: ScalaCompiler,
   sparkSession: SparkSession,
   interpreterState: Ref[Task, State],
   interpreters: RefMap[String, Interpreter],
@@ -125,12 +126,12 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     sparkClasspath   <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
     _                <- Logging.info(s"Using spark classpath: ${sparkClasspath.mkString(":")}")
     sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map { case (_, uri, file) => (uri, file) }
-    compiler         <- ScalaCompiler.provider(main.map(_._3), sparkRuntimeJar :: transitive.map(_._3), sparkClasspath, updateSettings)
-    classLoader      <- compiler.scalaCompiler.classLoader
+    compiler         <- ScalaCompiler(main.map(_._3), sparkRuntimeJar :: transitive.map(_._3), sparkClasspath, updateSettings)
+    classLoader       = compiler.classLoader
     session          <- startSparkSession(sparkJars, classLoader)
     busyState        <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
-    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeM(Env.enrich[Blocking](compiler)))
+    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
     interpState      <- Ref[Task].of[State](State.predef(State.Root, State.Root))
     closed           <- Promise.make[Throwable, Unit]
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)

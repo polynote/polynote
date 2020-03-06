@@ -14,7 +14,7 @@ import polynote.messages.Message
 import polynote.testing.ZIOSpec
 import polynote.testing.kernel.{MockEnv, MockKernelEnv}
 import polynote.testing.repository.MemoryRepository
-import zio.{Promise, RIO, Task, ZIO}
+import zio.{Promise, RIO, Task, ZIO, ZLayer}
 import zio.interop.catz._
 import zio.interop.catz.implicits._
 
@@ -22,7 +22,7 @@ import zio.interop.catz.implicits._
   * Simulates a server with a couple of clients in order to exercise some scenarios
   */
 class ServerIntegrationSpec extends FeatureSpec with ZIOSpec with GivenWhenThen with MockFactory {
-
+  import runtime.unsafeRun
   // set up fixture
   private val broadcastAll    = unsafeRun(Topic[Task, Option[Message]](None))
   private val repository      = new MemoryRepository
@@ -30,14 +30,14 @@ class ServerIntegrationSpec extends FeatureSpec with ZIOSpec with GivenWhenThen 
   private val kernelFactory   = new Factory.Service {
     def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(kernel)
   }
-  private val notebookManager = unsafeRun(NotebookManager.Service(repository, broadcastAll).provide(Env.enrichWith[BaseEnv, GlobalEnv](environment, GlobalEnv(PolynoteConfig(), Map.empty, kernelFactory))))
+  private val notebookManager = unsafeRun(NotebookManager.Service(repository, broadcastAll).provideSomeLayer[BaseEnv](ZLayer.succeedMany(GlobalEnv(PolynoteConfig(), Map.empty, kernelFactory))))
 
   private val nextSessionId = new AtomicInteger(0)
 
   class Client(broadcastAll: Topic[Task, Option[Message]]) {
     val sessionId: Int = nextSessionId.getAndIncrement()
     val env: MockKernelEnv = unsafeRun(MockKernelEnv(kernelFactory, sessionId))
-    val handler = new SessionHandler(notebookManager, unsafeRun(RefMap.empty), unsafeRun(Promise.make), env)
+    val handler = new SessionHandler(notebookManager, unsafeRun(Promise.make))
   }
 
 }

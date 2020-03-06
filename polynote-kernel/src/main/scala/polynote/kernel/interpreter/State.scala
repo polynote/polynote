@@ -189,7 +189,7 @@ object State {
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =
-      ZIO.sequence(values.map(fn)).map(values => copy(values = values))
+      ZIO.collectAll(values.map(fn)).map(values => copy(values = values))
   }
 
   val root: State = Root

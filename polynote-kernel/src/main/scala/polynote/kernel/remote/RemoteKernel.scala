@@ -10,27 +10,23 @@ import scala.compat.java8.FunctionConverters.enrichAsJavaFunction
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.instances.list._
 import cats.syntax.traverse._
-import fs2.concurrent.{Queue, SignallingRef, Topic}
+import fs2.concurrent.SignallingRef
 import fs2.{Chunk, Pipe, Stream}
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
-import polynote.kernel.remote
-import polynote.kernel.remote.RemoteKernelClient.KernelEnvironment
+import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{FiberRef, Promise, Task, RIO, UIO, ZIO}
-import zio.blocking.{Blocking, effectBlocking}
-import zio.clock.Clock
+import zio.{Promise, RIO, Task, UIO, ZIO, ZLayer}
+import zio.blocking.effectBlocking
 import zio.duration.Duration
 import zio.interop.catz._
-import zio.system.System
 
 import scala.collection.JavaConverters._
-import scala.concurrent.TimeoutException
 
 class RemoteKernel[ServerAddress](
   private[polynote] val transport: TransportServer[ServerAddress],
@@ -82,15 +78,15 @@ class RemoteKernel[ServerAddress](
     case KernelStatusResponse(status)    => PublishStatus(status)
     case rep@ResultResponse(_, result)   => withHandler(rep)(handler => PublishResult(result).provide(handler.env.asInstanceOf[PublishResult]))
     case rep@ResultsResponse(_, results) => withHandler(rep)(handler => PublishResult(results).provide(handler.env.asInstanceOf[PublishResult]))
-    case rep: RemoteRequestResponse      => withHandler(rep)(_.run(rep))
+    case rep: RemoteRequestResponse      => withHandler(rep)(_.run(rep).ignore)
   }
 
-  def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = for {                                                    // have to start pulling the updates before getting the current notebook
-    pullUpdates    <- updates.evalMap(transport.sendNotebookUpdate).interruptAndIgnoreWhen(closed).compile.drain.fork   // otherwise some may be missed
+  def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = for {                                                          // have to start pulling the updates before getting the current notebook
+    pullUpdates    <- updates.evalMap(transport.sendNotebookUpdate).interruptAndIgnoreWhen(closed).compile.drain.forkDaemon   // otherwise some may be missed
     versioned      <- CurrentNotebook.getVersioned
     (ver, notebook) = versioned
     config         <- Config.access
-    process        <- processResponses.compile.drain.fork
+    process        <- processResponses.compile.drain.forkDaemon
     startup        <- request(StartupRequest(nextReq, notebook, ver, config)) {
       case Announce(reqId, remoteAddress) => done(reqId, ()) // TODO: may want to keep the remote address to try reconnecting?
     }
@@ -130,7 +126,9 @@ class RemoteKernel[ServerAddress](
     case Some(()) => ZIO.succeed(())
     case None =>
       Logging.warn("Waited for remote kernel to shut down for 10 seconds; killing the process")
-  }.ensuring(close().orDie)
+  }.ensuring {
+    close().orDie
+  }
 
   def status(): TaskB[KernelBusyState] = request(StatusRequest(nextReq)) {
     case StatusResponse(reqId, status) => done(reqId, status)
@@ -141,21 +139,21 @@ class RemoteKernel[ServerAddress](
   }
 
   def getHandleData(handleType: HandleType, handle: Int, count: Int): RIO[BaseEnv with StreamingHandles, Array[ByteVector32]] =
-    ZIO.access[StreamingHandles](_.sessionID).flatMap {
+    ZIO.access[StreamingHandles](_.get.sessionID).flatMap {
       sessionID => request(GetHandleDataRequest(nextReq, sessionID, handleType, handle, count)) {
         case GetHandleDataResponse(reqId, data) => done(reqId, data)
       }
     }
 
   def modifyStream(handleId: Int, ops: List[TableOp]): RIO[BaseEnv with StreamingHandles, Option[StreamingDataRepr]] =
-    ZIO.access[StreamingHandles](_.sessionID).flatMap {
+    ZIO.access[StreamingHandles](_.get.sessionID).flatMap {
       sessionID => request(ModifyStreamRequest(nextReq, sessionID, handleId, ops)) {
         case ModifyStreamResponse(reqId, result) => done(reqId, result)
       }
     }
 
   def releaseHandle(handleType: HandleType, handleId: Int): RIO[BaseEnv with StreamingHandles, Unit] =
-    ZIO.access[StreamingHandles](_.sessionID).flatMap {
+    ZIO.access[StreamingHandles](_.get.sessionID).flatMap {
       sessionID => request(ReleaseHandleRequest(nextReq, sessionID, handleType, handleId)) {
         case UnitResponse(reqId) => done(reqId, ())
       }
@@ -180,7 +178,7 @@ object RemoteKernel extends Kernel.Factory.Service {
   def apply[ServerAddress](transport: Transport[ServerAddress]): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, RemoteKernel[ServerAddress]] = for {
     closed  <- Promise.make[Throwable, Unit]
     server  <- transport.serve()
-    _       <- server.awaitClosed.to(closed).fork
+    _       <- server.awaitClosed.to(closed).forkDaemon
     updates <- NotebookUpdates.access
   } yield new RemoteKernel(server, updates, closed)
 
@@ -194,7 +192,7 @@ object RemoteKernel extends Kernel.Factory.Service {
     override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = RemoteKernel(transport)
   }
 
-  def factory[ServerAddress](transport: Transport[ServerAddress]): Kernel.Factory = Kernel.Factory.of(service(transport))
+  def factory[ServerAddress](transport: Transport[ServerAddress]): Kernel.Factory.Service = service(transport)
 }
 
 
@@ -206,9 +204,9 @@ class RemoteKernelClient(
   private[remote] val notebookRef: SignallingRef[Task, (Int, Notebook)] // for testing
 ) {
 
-  private val sessionHandles = new ConcurrentHashMap[Int, BaseEnv with StreamingHandles]()
+  private val sessionHandles = new ConcurrentHashMap[Int, StreamingHandles.Service]()
 
-  def run(): RIO[KernelEnvironment, Int] =
+  def run(): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, Int] =
     requests
       .map(handleRequest)
       .map(Stream.eval)
@@ -217,15 +215,14 @@ class RemoteKernelClient(
       .evalMap(publishResponse.publish1)
       .compile.drain.as(0) <* close
 
-  private def handleRequest(req: RemoteRequest): RIO[KernelEnvironment, RemoteResponse] = ZIO.access[KernelEnvironment](identity).flatMap {
-    env =>
+  private def handleRequest(req: RemoteRequest): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, RemoteResponse] = {
       val response = req match {
         case QueueCellRequest(reqId, cellID)              => kernel.queueCell(cellID).flatMap {
           completed =>
             completed
               .catchAll(err => publishResponse.publish1(ResultResponse(reqId, ErrorResult(err))))
               .ensuring(publishResponse.publish1(RunCompleteResponse(reqId)).orDie)
-              .fork
+              .forkDaemon
         }.as(UnitResponse(reqId))
         case CancelAllRequest(reqId)                      => kernel.cancelAll().as(UnitResponse(reqId))
         case CompletionsAtRequest(reqId, cellID, pos)     => kernel.completionsAt(cellID, pos).map(CompletionsAtResponse(reqId, _))
@@ -233,54 +230,53 @@ class RemoteKernelClient(
         case ShutdownRequest(reqId)                       => kernel.shutdown().as(ShutdownResponse(reqId))
         case StatusRequest(reqId)                         => kernel.status().map(StatusResponse(reqId, _))
         case ValuesRequest(reqId)                         => kernel.values().map(ValuesResponse(reqId, _))
-        case GetHandleDataRequest(reqId, sid, ht, hid, c) => kernel.getHandleData(ht, hid, c).map(GetHandleDataResponse(reqId, _)).provideSomeM(streamingHandles(sid))
-        case ModifyStreamRequest(reqId, sid, hid, ops)    => kernel.modifyStream(hid, ops).map(ModifyStreamResponse(reqId, _)).provideSomeM(streamingHandles(sid))
-        case ReleaseHandleRequest(reqId, sid,  ht, hid)   => kernel.releaseHandle(ht, hid).as(UnitResponse(reqId)).provideSomeM(streamingHandles(sid))
+        case GetHandleDataRequest(reqId, sid, ht, hid, c) => kernel.getHandleData(ht, hid, c).map(GetHandleDataResponse(reqId, _)).provideSomeLayer(streamingHandles(sid))
+        case ModifyStreamRequest(reqId, sid, hid, ops)    => kernel.modifyStream(hid, ops).map(ModifyStreamResponse(reqId, _)).provideSomeLayer(streamingHandles(sid))
+        case ReleaseHandleRequest(reqId, sid,  ht, hid)   => kernel.releaseHandle(ht, hid).as(UnitResponse(reqId)).provideSomeLayer(streamingHandles(sid))
         case KernelInfoRequest(reqId)                     => kernel.info().map(KernelInfoResponse(reqId, _))
         // TODO: Kernel needs an API to release all streaming handles (then we could let go of elements from sessionHandles map; right now they will just accumulate forever)
         case req => ZIO.succeed(UnitResponse(req.reqId))
       }
 
-      response.provide(env.withReqId(req.reqId))
+      response.provideSomeLayer[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse](RemoteKernelClient.mkResultPublisher(req.reqId))
   }.catchAll {
     err => ZIO.succeed(ErrorResponse(req.reqId, err))
   }
 
-  private def streamingHandles(sessionId: Int): RIO[BaseEnv, BaseEnv with StreamingHandles] =
-    ZIO.access[BaseEnv](identity).flatMap {
-      baseEnv =>
-        Option(sessionHandles.get(sessionId)) match {
-          case Some(env) => ZIO.succeed(env)
-          case None => StreamingHandles.make(sessionId).map {
-            handles => synchronized {
-              Option(sessionHandles.get(sessionId)) match {
-                case Some(env) => env
-                case None =>
-                  val env = Env.enrichWith[BaseEnv, StreamingHandles](baseEnv, handles)
-                  sessionHandles.put(sessionId, env)
-                  env
-              }
+  private def streamingHandles(sessionId: Int): ZLayer[BaseEnv, Throwable, StreamingHandles] =
+    ZLayer.fromEffect {
+      Option(sessionHandles.get(sessionId)) match {
+        case Some(handles) => ZIO.succeed(handles)
+        case None => StreamingHandles.make(sessionId).map {
+          handles => synchronized {
+            Option(sessionHandles.get(sessionId)) match {
+              case Some(handles) => handles
+              case None =>
+                sessionHandles.put(sessionId, handles)
+                handles
             }
           }
         }
+      }
     }
   
 }
 
 object RemoteKernelClient extends polynote.app.App {
 
-  override def run(args: List[String]): ZIO[Environment, Nothing, Int] =
+  override def main(args: List[String]): ZIO[Environment, Nothing, Int] =
     (parseArgs(args) >>= runThrowable).orDie
 
-  def runThrowable(args: Args): RIO[Environment, Int] = tapRunThrowable(args, None)
+  def runThrowable(args: Args): RIO[BaseEnv, Int] = tapRunThrowable(args, None)
 
   // for testing – so we can get out the remote kernel client
-  def tapRunThrowable(args: Args, tapClient: Option[zio.Ref[RemoteKernelClient]]): RIO[Environment, Int] = for {
+  def tapRunThrowable(args: Args, tapClient: Option[zio.Ref[RemoteKernelClient]]): RIO[BaseEnv, Int] = for {
     addr            <- args.getSocketAddress
     kernelFactory   <- args.getKernelFactory
     transport       <- SocketTransport.connectClient(addr)
+    baseEnv         <- ZIO.environment[BaseEnv]
     requests         = transport.requests
-    publishResponse  = Publish.fn[Task, RemoteResponse](rep => transport.sendResponse(rep).provide(environment))
+    publishResponse  = Publish.fn[Task, RemoteResponse](rep => transport.sendResponse(rep).provide(baseEnv))
     localAddress    <- effectBlocking(InetAddress.getLocalHost.getHostAddress)
     firstRequest    <- requests.head.compile.lastOrError
     initial         <- firstRequest match {
@@ -291,17 +287,15 @@ object RemoteKernelClient extends polynote.app.App {
     processUpdates  <- transport.updates.dropWhile(_.globalVersion <= initial.globalVersion)
       .evalMap(update => notebookRef.update { case (ver, notebook) => update.globalVersion -> update.applyTo(notebook) })
       .compile.drain
-      .fork
+      .forkDaemon
     interpFactories <- interpreter.Loader.load
-    kernelEnv       <- mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config)
-    kernel          <- kernelFactory.apply().provide(kernelEnv)
-    closed          <- Deferred[Task, Unit]
+    kernelEnv        = mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config)
+    kernel          <- kernelFactory.apply().provideSomeLayer[BaseEnv](kernelEnv)
     client           = new RemoteKernelClient(kernel, requests, publishResponse, transport.close(), notebookRef)
     _               <- tapClient.fold(ZIO.unit)(_.set(client))
-    _               <- kernel.init().provide(kernelEnv)
+    _               <- kernel.init().provideSomeLayer[BaseEnv](kernelEnv)
     _               <- publishResponse.publish1(Announce(initial.reqId, localAddress))
-    exitCode        <- client.run().provide(kernelEnv)
-    _               <- processUpdates.interrupt
+    exitCode        <- client.run().provideSomeLayer[BaseEnv](kernelEnv)
   } yield exitCode
 
   def mkEnv(
@@ -311,21 +305,29 @@ object RemoteKernelClient extends polynote.app.App {
     interpreterFactories: Map[String, List[Interpreter.Factory]],
     kernelFactory: Factory.Service,
     polynoteConfig: PolynoteConfig
-  ): Task[KernelEnvironment] = {
-    val publishStatus = publishResponse.contramap(KernelStatusResponse.apply)
-    TaskManager(publishStatus).map {
-      taskManager => KernelEnvironment(
-        currentNotebook,
-        reqId,
-        publishResponse,
-        interpreterFactories,
-        kernelFactory: Factory.Service,
-        polynoteConfig: PolynoteConfig,
-        taskManager,
-        publishStatus
-      )
+  ): ZLayer.NoDeps[Throwable, GlobalEnv with CellEnv with PublishRemoteResponse] = {
+    val publishStatus = PublishStatus.layer(publishResponse.contramap(KernelStatusResponse.apply))
+    val publishRemote: ZLayer.NoDeps[Nothing, PublishRemoteResponse] = ZLayer.succeed(publishResponse)
+
+    Config.layer(polynoteConfig) ++
+      CurrentNotebook.layer(currentNotebook) ++
+      Interpreter.Factories.layer(interpreterFactories) ++
+      ZLayer.succeed(kernelFactory) ++
+      publishStatus ++
+      (publishStatus >>> TaskManager.layer) ++
+      (publishRemote >>> mkResultPublisher(reqId)) ++
+      publishRemote
+  }
+
+  def mkResultPublisher(reqId: Int): ZLayer[PublishRemoteResponse, Nothing, PublishResult] = ZLayer.fromService {
+    publishResponse: Publish[Task, RemoteResponse] => new Publish[Task, Result] {
+      override def publish1(result: Result): Task[Unit] = publishResponse.publish1(ResultResponse(reqId, result))
+      override def publish: Pipe[Task, Result, Unit] = results => results.mapChunks {
+        resultChunk => Chunk.singleton(ResultsResponse(reqId, ShortList(resultChunk.toList)))
+      }.through(publishResponse.publish)
     }
   }
+
 
   case class Args(address: Option[String] = None, port: Option[Int] = None, kernelFactory: Option[Kernel.Factory.LocalService] = None) {
     def getSocketAddress: Task[InetSocketAddress] = for {
@@ -351,28 +353,4 @@ object RemoteKernelClient extends polynote.app.App {
     factoryInst  <- ZIO(factoryClass.newInstance())
   } yield factoryInst
 
-  case class KernelEnvironment(
-    currentNotebook: Ref[Task, (Int, Notebook)],
-    reqId: Int,
-    publishResponse: Publish[Task, RemoteResponse],
-    interpreterFactories: Map[String, List[Interpreter.Factory]],
-    kernelFactory: Factory.Service,
-    polynoteConfig: PolynoteConfig,
-    taskManager: TaskManager.Service,
-    publishStatus: Publish[Task, KernelStatusUpdate]
-  ) extends BaseEnvT with GlobalEnvT with CellEnvT {
-    override val blocking: Blocking.Service[Any] = environment.blocking
-    override val clock: Clock.Service[Any] = environment.clock
-    override val logging: Logging.Service = environment.logging
-    override val system: System.Service[Any] = environment.system
-
-    override val publishResult: Publish[Task, Result] = new Publish[Task, Result] {
-      override def publish1(result: Result): Task[Unit] = publishResponse.publish1(ResultResponse(reqId, result))
-      override def publish: Pipe[Task, Result, Unit] = results => results.mapChunks {
-        resultChunk => Chunk.singleton(ResultsResponse(reqId, ShortList(resultChunk.toList)))
-      }.through(publishResponse.publish)
-    }
-
-    def withReqId(reqId: Int): KernelEnvironment = copy(reqId = reqId)
-  }
 }

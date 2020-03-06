@@ -3,6 +3,7 @@
   "dependencies": {
     "@types/katex": "0.10.1",
     "@types/tinycon": "0.6.1",
+    "@types/uuid": "3.4.7",
     "acorn": "6.2.0",
     "event-target-shim": "5.0.1",
     "katex": "0.10.2",

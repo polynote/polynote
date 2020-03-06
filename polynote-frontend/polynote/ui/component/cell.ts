@@ -38,7 +38,7 @@ import {
     RuntimeError
 } from "../../data/result"
 import {RichTextEditor} from "./text_editor";
-import {CellSelected, UIMessageTarget} from "../util/ui_event"
+import {CellSelected, CurrentIdentity, UIMessageRequest, UIMessageTarget} from "../util/ui_event"
 import {Diff} from '../../util/diff'
 import {preferences} from "../util/storage";
 import {createVim} from "../util/vim";
@@ -47,7 +47,7 @@ import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {ValueInspector} from "./value_inspector";
 import {Interpreters} from "./ui";
 import {displayContent, parseContentType, prettyDuration} from "./display_content";
-import {CellMetadata} from "../../data/data";
+import {CellComment, CellMetadata} from "../../data/data";
 import {ContentEdit, Delete, Insert} from "../../data/content_edit";
 import {FoldingController, SuggestController} from "../monaco/extensions";
 import {CurrentNotebook} from "./current_notebook";
@@ -59,6 +59,7 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import SignatureHelpResult = languages.SignatureHelpResult;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
+import {CommentID, CommentHandler} from "./comment";
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -278,8 +279,6 @@ export abstract class Cell extends UIMessageTarget {
             new KeyAction((pos, range, selection, cell) => CurrentNotebook.get.deleteCell(cell.id))
                 .withDesc("Delete this cell.")],
     ]);
-
-
 }
 
 // TODO: it's a bit hacky to export this, should probably put this in some utils module
@@ -339,8 +338,8 @@ export class CodeCell extends Cell {
     private highlightDecorations: string[];
     private execDurationUpdater: number;
     public vim: any | null;
-
     private presenceMarkers: Record<number, string[]> = {};
+    readonly commentHandler: CommentHandler;
 
     static keyMapOverrides = new Map([
         [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell: CodeCell) => {
@@ -475,6 +474,8 @@ export class CodeCell extends Cell {
         if (this.metadata && this.metadata.executionInfo) {
             this.setExecutionInfo(this.metadata.executionInfo);
         }
+
+        this.commentHandler = new CommentHandler(this.id, this.editor).setParent(this)
     }
 
     notifySelection() {
@@ -488,6 +489,9 @@ export class CodeCell extends Cell {
                 } else {
                     this.notebook.setCurrentSelection(this.id, range);
                 }
+
+                // notify the comment handler
+                this.commentHandler.handleSelection(selection);
             }
         }
     }

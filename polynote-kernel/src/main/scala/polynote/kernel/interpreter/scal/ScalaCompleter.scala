@@ -7,7 +7,6 @@ import zio.{Fiber, RIO, Task, UIO, URIO, ZIO}
 import ZIO.{effect, effectTotal}
 import polynote.kernel.ScalaCompiler.OriginalPos
 import zio.blocking.{Blocking, effectBlocking}
-import zio.syntax._
 
 import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
@@ -119,7 +118,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
         case Ident(name) => indexCompletions(name.toString)
         case _ => ZIO.succeed(Nil)
       }
-      (completeTree(original), fromIndex).map2(_ ++ _)
+      ZIO.mapN(completeTree(original), fromIndex)(_ ++ _)
     }
 
     @tailrec def completeTree(tree: Tree): RIO[Blocking, List[Completion]] = tree match {

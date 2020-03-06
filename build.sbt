@@ -13,8 +13,8 @@ val versions = new {
   val fs2        = "1.0.5"
   val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC2-6"
-  val zio        = "1.0.0-RC17"
-  val zioInterop = "2.0.0.0-RC10"
+  val zio        = "1.0.0-RC18"
+  val zioInterop = "2.0.0.0-RC11"
 }
 
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
@@ -32,7 +32,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.3.0",
+  version := "0.3.2",
   publishTo := sonatypePublishToBundle.value,
   developers := List(
     Developer(id = "jeremyrsmith", name = "Jeremy Smith", email = "", url = url("https://github.com/jeremyrsmith")),
@@ -211,7 +211,7 @@ lazy val `polynote-spark` = project.settings(
   `polynote-runtime` % "provided",
   `polynote-runtime` % "test")
 
-lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`)
+lazy val polynote = project.in(file(".")).aggregate(`polynote-env`, `polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`)
     .settings(
       commonSettings,
       dist := {
@@ -236,7 +236,6 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-runtime`, `polynot
 
         val files = jars ++ examples ++ List(
           (file(".") / "config-template.yml") -> "polynote/config-template.yml",
-          (file(".") / "scripts" / "polynote") -> "polynote/polynote",
           (file(".") / "scripts" / "plugin") -> "polynote/plugin",
           (file(".") / "scripts" / "polynote.py") -> "polynote/polynote.py")
 

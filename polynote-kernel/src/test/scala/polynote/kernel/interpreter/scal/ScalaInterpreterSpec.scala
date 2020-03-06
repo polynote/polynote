@@ -8,7 +8,7 @@ import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.{Completion, CompletionType, Output, Result, ResultValue, ScalaCompiler, TaskInfo}
 import polynote.testing.{InterpreterSpec, ValueMap, ZIOSpec}
 import polynote.messages.CellID
-import zio.{RIO, ZIO}
+import zio.{RIO, ZIO, ZLayer}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
@@ -23,10 +23,7 @@ import scala.tools.nsc.Settings
 
 class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
-  val interpreter: ScalaInterpreter = ScalaInterpreter().provide(new ScalaCompiler.Provider with Blocking {
-    val scalaCompiler: ScalaCompiler = compiler
-    override val blocking: Blocking.Service[Any] = ScalaInterpreterSpec.this.environment.blocking
-  }).runIO()
+  val interpreter: ScalaInterpreter = ScalaInterpreter().provideSomeLayer[Environment](ZLayer.succeed(compiler)).runIO()
   import interpreter.ScalaCellState
 
 

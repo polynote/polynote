@@ -12,12 +12,13 @@ import jep.{Jep, JepConfig, JepException, MainInterpreter, NamingConventionClass
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
-import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures, TaskManager}
+import polynote.kernel.task.TaskManager
+import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures}
 import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{RIO, Runtime, Task, UIO, ZIO}
+import zio.{Has, RIO, Runtime, Task, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
@@ -27,7 +28,7 @@ import scala.reflect.{ClassTag, classTag}
 import scala.util.Try
 
 class PythonInterpreter private[python] (
-  compiler: ScalaCompiler,
+  val compiler: ScalaCompiler,
   jepInstance: Jep,
   jepExecutor: Executor,
   jepThread: AtomicReference[Thread],
@@ -45,6 +46,12 @@ class PythonInterpreter private[python] (
       runtime.unsafeRun(effectBlocking(task).lock(jepExecutor).provide(jepBlockingService))
     }
 
+    override def runJep[T](task: Jep => T): T = if (Thread.currentThread() eq jepThread.get()) {
+      task(jepInstance)
+    } else {
+      runtime.unsafeRun(effectBlocking(task(jepInstance)).lock(jepExecutor).provide(jepBlockingService))
+    }
+
     def hasAttribute(obj: PythonObject, name: String): Boolean = run {
       hasAttr(obj.unwrap, name)
     }
@@ -52,7 +59,7 @@ class PythonInterpreter private[python] (
     def asScalaList(obj: PythonObject): List[PythonObject] = run {
       val pyObj = obj.unwrap
       val getItem = pyObj.getAttr("__getitem__", classOf[PyCallable])
-      val length = len(pyObj)
+      val length = pyApi.len(pyObj)
 
       List.tabulate(length)(i => getItem.callAs(classOf[PyObject], Int.box(i))).map(obj => new PythonObject(obj, this))
     }
@@ -66,7 +73,7 @@ class PythonInterpreter private[python] (
       val V = classTag[V].runtimeClass.asInstanceOf[Class[V]]
       val items = dictToItemsList(obj.unwrap)
       val getItem = items.getAttr("__getitem__", classOf[PyCallable])
-      val length = len(items)
+      val length = pyApi.len(items)
       val tuples = List.tabulate(length)(i => getItem.callAs(classOf[PyObject], Int.box(i)))
       val result = tuples.map {
         tup =>
@@ -75,6 +82,32 @@ class PythonInterpreter private[python] (
       }.toMap
       result
     }
+
+    override def asTuple2(obj: PythonObject): (PythonObject, PythonObject) = run {
+      val pyobj = obj.unwrap
+      val getItem = pyobj.getAttr("__getitem__", classOf[PyCallable])
+      val _1 = new PythonObject(getItem.callAs(classOf[PyObject], Int.box(0)), this)
+      val _2 = new PythonObject(getItem.callAs(classOf[PyObject], Int.box(1)), this)
+      (_1, _2)
+    }
+
+    override def asTuple2Of[A: ClassTag, B: ClassTag](obj: PythonObject): (A, B) = run {
+      val pyobj = obj.unwrap
+      val getItem = pyobj.getAttr("__getitem__", classOf[PyCallable])
+      val _1 = getItem.callAs(classTag[A].runtimeClass.asInstanceOf[Class[A]], Int.box(0))
+      val _2 = getItem.callAs(classTag[B].runtimeClass.asInstanceOf[Class[B]], Int.box(1))
+      (_1, _2)
+    }
+
+    override def typeName(obj: PythonObject): String = run(pyApi.typeName(obj.unwrap))
+    override def qualifiedTypeName(obj: PythonObject): String = run(pyApi.qualifiedTypeName(obj.unwrap))
+    override def len(obj: PythonObject): Int = run(pyApi.len(obj.unwrap))
+    override def len64(obj: PythonObject): Long = run(pyApi.len64(obj.unwrap))
+    override def list(obj: AnyRef): PythonObject = new PythonObject(run(pyApi.list(obj)), this)
+    override def listOf(objs: AnyRef*): PythonObject = new PythonObject(run(pyApi.list(objs.map(PythonObject.unwrapArg).toArray)), this)
+    override def tupleOf(objs: AnyRef*): PythonObject = new PythonObject(run(pyApi.tuple(pyApi.list(objs.map(PythonObject.unwrapArg).toArray))), this)
+    override def dictOf(kvs: (AnyRef, AnyRef)*): PythonObject = new PythonObject(run(pyApi.dictOf(kvs: _*)), this)
+    override def str(obj: AnyRef): PythonObject = new PythonObject(run(pyApi.str(obj)), this)
   }
 
   def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
@@ -229,6 +262,10 @@ class PythonInterpreter private[python] (
       |        else:
       |            return node
       |
+      |def __polynote_mkindex__(l1, l2):
+      |    import pandas as pd
+      |    return pd.MultiIndex.from_arrays([[x for x in list(l1)], [x for x in list(l2)]])
+      |
       |def __polynote_parse__(code, cell):
       |    try:
       |        return { 'result': ast.fix_missing_locations(LastExprAssigner().visit(ast.parse(code, cell, 'exec'))) }
@@ -360,15 +397,26 @@ class PythonInterpreter private[python] (
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
 
+      val convert = convertToPython(jep) orElse PartialFunction(defaultConvertToPython)
+
       rest.map(_.values).map {
         values => values.map(v => v.name -> v.value).toMap
       }.foldLeft(Map.empty[String, Any])(_ ++ _).foreach {
-        case (name, value: PythonObject) => addGlobal.call(name, value.unwrap)
-        case (name, value) => addGlobal.call(name, value.asInstanceOf[AnyRef])
+        case nv@(name, value) => addGlobal.call(name, convert(nv))
       }
 
       globalsDict
   }
+
+  protected def defaultConvertToPython(nv: (String, Any)): Task[AnyRef] =
+    ZIO.succeed(nv._2.asInstanceOf[AnyRef])
+
+  protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = {
+    case (_, value: PythonObject) => value.unwrap
+  }
+
+  protected def convertFromPython(jep: Jep): PartialFunction[(String, PyObject), (compiler.global.Type, Any)] =
+    PartialFunction.empty
 
   protected def parse(code: String, cell: String): Task[PyObject] = jep {
     jep =>
@@ -396,7 +444,7 @@ class PythonInterpreter private[python] (
           val run = jep.getValue("__polynote_run__", classOf[PyCallable])
           val result = run.callAs(classOf[PyObject], compiled, globals, locals, kernelRuntime)
           val get = result.getAttr("get", classOf[PyCallable])
-
+          val convert = convertFromPython(jep)
           get.callAs(classOf[util.ArrayList[Object]], "stack_trace") match {
             case null =>
               val globals = get.callAs(classOf[PyObject], "globals")
@@ -432,10 +480,15 @@ class PythonInterpreter private[python] (
                         val typ = runtime.unsafeRun(compiler.reflect(jValue)).symbol.info
                         (typ, jValue)
                       case other =>
-                        // should we use the qualified type? It's confusing that both Spark and Pandas have a "DataFrame".
-                        // But in every other case it's just noise.
-                        val typ = appliedType(typeOf[TypedPythonObject[Nothing]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
-                        (typ, new TypedPythonObject[String](valueAs(classOf[PyObject]), runner))
+                        val pyObj = valueAs(classOf[PyObject])
+                        if (convert.isDefinedAt((typeStr, pyObj))) {
+                          convert((typeStr, pyObj))
+                        } else {
+                          // should we use the qualified type? It's confusing that both Spark and Pandas have a "DataFrame".
+                          // But in every other case it's just noise.
+                          val typ = appliedType(typeOf[TypedPythonObject[Nothing]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
+                          (typ, new TypedPythonObject[String](valueAs(classOf[PyObject]), runner))
+                        }
                     }
                     Some(new ResultValue(key, compiler.unsafeFormatType(typ.asInstanceOf[Type]), Nil, state.id, value, typ.asInstanceOf[Type], None))
                   } else None
@@ -473,18 +526,23 @@ class PythonInterpreter private[python] (
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =
-      ZIO.sequence(values.map(fn)).map(values => copy(values = values))
+      ZIO.collectAll(values.map(fn)).map(values => copy(values = values))
   }
 }
 
 object PythonInterpreter {
 
   private[python] class PythonAPI(jep: Jep) {
+    import PythonObject.unwrapArg
     private val typeFn: PyCallable = jep.getValue("type", classOf[PyCallable])
     private val lenFn: PyCallable = jep.getValue("len", classOf[PyCallable])
     private val listFn: PyCallable = jep.getValue("list", classOf[PyCallable])
+    private val tupleFn: PyCallable = jep.getValue("tuple", classOf[PyCallable])
+    private val dictFn: PyCallable = jep.getValue("dict", classOf[PyCallable])
+    private val zipFn: PyCallable = jep.getValue("zip", classOf[PyCallable])
     private val dictToItemsListFn: PyCallable = jep.getValue("lambda x: list(x.items())", classOf[PyCallable])
     private val hasAttrFn: PyCallable = jep.getValue("hasattr", classOf[PyCallable])
+    private val strFn: PyCallable = jep.getValue("str", classOf[PyCallable])
 
     jep.exec(
       """def __polynote_qualified_type__(o):
@@ -499,8 +557,17 @@ object PythonInterpreter {
     def typeName(obj: PyObject): String = typeFn.callAs(classOf[PyObject], obj).getAttr("__name__", classOf[String])
     def qualifiedTypeName(obj: PyObject): String = qualifiedTypeFn.callAs(classOf[String], obj)
     def len(obj: PyObject): Int = lenFn.callAs(classOf[java.lang.Number], obj).intValue()
-    def list(obj: PyObject): PyObject = listFn.callAs(classOf[PyObject], obj)
+    def len64(obj: PyObject): Long = lenFn.callAs(classOf[java.lang.Number], obj).longValue()
+    def list(obj: AnyRef): PyObject = listFn.callAs(classOf[PyObject], unwrapArg(obj))
+    def tuple(obj: AnyRef): PyObject = tupleFn.callAs(classOf[PyObject], unwrapArg(obj))
     def dictToItemsList(obj: PyObject): PyObject = dictToItemsListFn.callAs(classOf[PyObject], obj)
+    def dictOf(kvs: (AnyRef, AnyRef)*): PyObject = {
+      val (ks, vs) = kvs.unzip
+      dict(zip(ks.map(unwrapArg).toArray, vs.map(unwrapArg).toArray))
+    }
+    def dict(obj: AnyRef): PyObject = dictFn.callAs(classOf[PyObject], unwrapArg(obj))
+    def zip(list1: AnyRef, list2: AnyRef): PyObject = zipFn.callAs(classOf[PyObject], unwrapArg(list1), unwrapArg(list2))
+    def str(obj: AnyRef): PyObject = strFn.callAs(classOf[PyObject], unwrapArg(obj))
     def hasAttr(obj: PyObject, name: String): Boolean = hasAttrFn.callAs(classOf[java.lang.Boolean], obj, name).booleanValue()
   }
 
@@ -526,7 +593,7 @@ object PythonInterpreter {
     }
   }
 
-  private[python] def mkJep(venv: Option[Path]): RIO[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
+  private[python] def mkJep(venv: Option[Path]): RIO[ScalaCompiler.Provider, Jep] = ZIO.access[ScalaCompiler.Provider](_.get.classLoader).flatMap {
     classLoader => ZIO {
       val conf = new JepConfig()
         .setClassLoader(classLoader)
@@ -544,17 +611,17 @@ object PythonInterpreter {
     }
   }
 
-  private[python] def mkJepBlocking(jepExecutor: Executor) = new Blocking {
-    val blocking: Blocking.Service[Any] = new Blocking.Service[Any] {
-      def blockingExecutor: ZIO[Any, Nothing, Executor] = ZIO.succeed(jepExecutor)
+  private[python] def mkJepBlocking(jepExecutor: Executor): Blocking = Has {
+    new Blocking.Service {
+      override def blockingExecutor: Executor = jepExecutor
     }
   }
 
   def interpreterDependencies(venv: Option[Path]): ZIO[ScalaCompiler.Provider, Throwable, (ScalaCompiler, Jep, Executor, AtomicReference[Thread], Blocking, Runtime[Any], PythonAPI)] = {
     val jepThread = new AtomicReference[Thread](null)
     for {
-      compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
-      executor <- compiler.classLoader >>= jepExecutor(jepThread)
+      compiler <- ScalaCompiler.access
+      executor <- jepExecutor(jepThread)(compiler.classLoader)
       jep      <- mkJep(venv).lock(executor)
       blocking  = mkJepBlocking(executor)
       api      <- effectBlocking(new PythonAPI(jep)).lock(executor).provide(blocking)
