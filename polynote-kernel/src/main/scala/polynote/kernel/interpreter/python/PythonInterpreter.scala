@@ -119,6 +119,16 @@ class PythonInterpreter private[python] (
     resState  <- run(compiled, globals, locals, state)
   } yield resState
 
+  private def extractParams(jep: Jep, jediDefinition: PyObject): List[(String, String)] = {
+    val getParams = jep.getValue("lambda jediDef: list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], jediDef.params))", classOf[PyCallable])
+    getParams.callAs(classOf[java.util.List[java.util.List[String]]], jediDefinition).asScala.map {
+      tup =>
+        val name = tup.get(0)
+        val typeName = if (tup.size > 1) Option(tup.get(1)) else None
+        (name, typeName.getOrElse(""))
+    }.toList
+  }
+
   def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = populateGlobals(state).flatMap {
     globals => jep {
       jep =>
@@ -126,19 +136,18 @@ class PythonInterpreter private[python] (
         val lines = code.substring(0, pos).split('\n')
         val lineNo = lines.length
         val col = lines.last.length
-        val pyCompletions = jedi.callAs[PyObject](classOf[PyObject], Array[Object](code, Array(globals)), Map[String, Object]("line" -> Integer.valueOf(lineNo), "column" -> Integer.valueOf(col)).asJava)
-          .getAttr("completions", classOf[PyCallable])
-          .callAs(classOf[Array[PyObject]])
+        val pyCompletions = jedi.callAs[PyObject](classOf[PyObject], code, Array(globals))
+          .getAttr("complete", classOf[PyCallable])
+          .callAs(classOf[Array[PyObject]], Integer.valueOf(lineNo), Integer.valueOf(col))
 
         pyCompletions.map {
           completion =>
             val name = completion.getAttr("name", classOf[String])
             val typ = completion.getAttr("type", classOf[String])
+            // TODO: can we get better type completions?
             val params = typ match {
-              case "function" => List(TinyList(completion.getAttr("params", classOf[Array[PyObject]]).map {
-                  paramObj =>
-                    TinyString(paramObj.getAttr("name", classOf[String])) -> ShortString("")
-                }.toList))
+              case "function" =>
+                List(TinyList(extractParams(jep, completion).map { case (a, b) => (TinyString(a), ShortString(b))}))
               case _ => Nil
             }
             val completionType = typ match {
@@ -164,18 +173,16 @@ class PythonInterpreter private[python] (
           val line = lines.length
           val col = lines.last.length
           val jedi = jep.getValue("jedi.Interpreter", classOf[PyCallable])
-          val sig = jedi.callAs[PyObject](classOf[PyObject], Array[Object](code, Array(globals)), Map[String, Object]("line" -> Integer.valueOf(line), "column" -> Integer.valueOf(col)).asJava)
-            .getAttr("call_signatures", classOf[PyCallable])
-            .callAs(classOf[Array[PyObject]])
+          val sig = jedi.callAs[PyObject](classOf[PyObject], code, Array(globals))
+            .getAttr("get_signatures", classOf[PyCallable])
+            .callAs(classOf[Array[PyObject]], Integer.valueOf(line), Integer.valueOf(col))
             .head
 
           val index = sig.getAttr("index", classOf[java.lang.Long])
-          val getParams = jep.getValue("lambda sig: list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], sig.params))", classOf[PyCallable])
-          val params = getParams.callAs(classOf[java.util.List[java.util.List[String]]], sig).asScala.map {
-            tup =>
-              val name = tup.get(0)
-              val typeName = if (tup.size > 1) Option(tup.get(1)) else None
-              ParameterHint(name, typeName.getOrElse(""), None) // TODO: can we parse per-param docstrings out of the main docstring?
+
+          val params = extractParams(jep, sig).map {
+            case (name, typeName) =>
+              ParameterHint(name, typeName, None) // TODO: can we parse per-param docstrings out of the main docstring?
           }
 
           val docString = Try(sig.getAttr("docstring", classOf[PyCallable]).callAs(classOf[String], java.lang.Boolean.TRUE))
@@ -186,7 +193,7 @@ class PythonInterpreter private[python] (
           val hints = ParameterHints(
             name,
             docString,
-            params.toList
+            params
           )
           Some(Signatures(List(hints), 0, index.byteValue()))
         } catch {

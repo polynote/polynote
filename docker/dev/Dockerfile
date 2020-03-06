@@ -5,8 +5,7 @@ ARG SCALA_VERSION="2.11"
 WORKDIR /opt
 
 RUN apt update -y && \
-    apt install -y wget python3 python3-dev python3-pip build-essential && \
-    pip3 install jep jedi virtualenv
+    apt install -y wget python3 python3-dev python3-pip build-essential
 
 COPY docker/spark-2.4/install_spark.sh .
 RUN ./install_spark.sh
@@ -25,6 +24,8 @@ ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
 COPY target/scala-$SCALA_VERSION/polynote-dist*.tar.gz .
 RUN tar xfzp polynote-dist*.tar.gz && \
     rm polynote-dist*.tar.gz
+
+RUN pip3 install -r ./polynote/requirements.txt
 
 # to wrap up, we create (safe)user
 ENV UID 1000
