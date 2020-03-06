@@ -61,13 +61,11 @@ cd polynote
   [Python's installation instructions](https://wiki.python.org/moin/BeginnersGuide/Download){:target="_blank"} for
   instructions on installing these packages.
   
-  You'll also need to install some Python dependencies `jep`, `jedi`, `virtualenv`:
+  You'll also need to install Polynote's Python dependencies:
   
   ```
-  pip3 install jep jedi virtualenv
+  pip3 install -r ./requirements.txt
   ``` 
-  
-  Additionally, you will probably want to install `numpy` and `pandas`. 
   
 
 ## Configure
