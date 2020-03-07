@@ -139,7 +139,7 @@ package object config {
         n =>
           n.toLong
             .map(_.toString).orElse(n.toBigDecimal.map(_.toString()))
-            .fold(Left("Only values"): Either[String, (String, String)])(v => Right(key -> v)),
+            .fold(Left("No invalid numeric values allowed in this map"): Either[String, (String, String)])(v => Right(key -> v)),
         s => Right(key -> s),
         _ => Left("No array values allowed in this map"),
         _ => Left("No object values allowed in this map")
