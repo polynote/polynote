@@ -12,7 +12,7 @@ import IContextKey = editor.IContextKey;
 
 // see: https://github.com/microsoft/vscode/blob/master/src/vs/editor/contrib/suggest/suggestController.ts
 export interface SuggestController extends IEditorContribution {
-    readonly _widget: { _value: { suggestWidgetVisible: IContextKey<boolean>}}
+    readonly widget: { _value: { suggestWidgetVisible: IContextKey<boolean>}}
 }
 
 // see: https://github.com/microsoft/vscode/blob/master/src/vs/editor/contrib/folding/foldingModel.ts

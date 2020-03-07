@@ -18,6 +18,9 @@ module.exports = {
       test: /\.ts$/,
       use: ['ts-loader'],
       exclude: /node_modules/
+    }, {
+      test: /\.ttf$/,  // these are bundled with monaco
+      use: ['file-loader']
     }]
   },
   resolve: {

@@ -3,7 +3,7 @@
 
 import {button, Content, div, span, tag, TagElement, textarea, textbox} from "../util/tags";
 import { CreateComment, CurrentIdentity, DeleteComment, UIMessageRequest, UIMessageTarget, UpdateComment } from "../util/ui_event";
-import * as uuidv4 from 'uuid/v4';
+import {v4 as uuidv4} from 'uuid';
 import {CellComment} from "../../data/data";
 import {PosRange} from "../../data/result";
 import * as monaco from "monaco-editor";
