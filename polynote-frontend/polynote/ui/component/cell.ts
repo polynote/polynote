@@ -60,6 +60,7 @@ import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import SignatureHelpResult = languages.SignatureHelpResult;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import {CommentID, CommentHandler} from "./comment";
+import EditorOption = editor.EditorOption;
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -215,7 +216,7 @@ export abstract class Cell extends UIMessageTarget {
 
             if (this instanceof CodeCell && action.ignoreWhenSuggesting) {
                 // this is really ugly, is there a better way to tell whether the widget is visible??
-                const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController)._widget._value.suggestWidgetVisible.get();
+                const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController).widget._value.suggestWidgetVisible.get();
                 if (!suggestionsVisible) { // don't do stuff when suggestions are visible
                     runAction()
                 }
@@ -461,7 +462,7 @@ export class CodeCell extends Cell {
         );
 
         this.lastLineTop = this.editor.getTopForLineNumber(this.editor.getModel()!.getLineCount());
-        this.lineHeight = this.editor.getConfiguration().lineHeight;
+        this.lineHeight = this.editor.getOption(EditorOption.lineHeight);
 
         this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
@@ -501,7 +502,7 @@ export class CodeCell extends Cell {
     }
 
     setDisabled(disabled: boolean) {
-        const isDisabled = this.editor.getConfiguration().readOnly;
+        const isDisabled = this.editor.getOption(EditorOption.readOnly);
         if (disabled && !isDisabled) {
             this.editor.updateOptions({readOnly: true});
             [...this.cellInputTools.querySelectorAll('.run-cell')].forEach((button: HTMLButtonElement) => button.disabled = true);
