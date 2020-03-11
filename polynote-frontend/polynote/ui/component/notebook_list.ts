@@ -307,10 +307,10 @@ export class NotebookListUI extends UIMessageTarget {
                     // leaf - item is the complete path
                     itemEl = Object.assign(
                         tag('li', ['leaf'], {}, [
-                            a(['name'], `notebooks/${item}`, true, [span([], [itemName])]).click(evt => {
+                            a(['name'], `notebooks/${item}`, true, [span([], [itemName])]).click((evt: Event) => {
                                 this.publish(new LoadNotebook((itemEl as NotebookNode).item));
                             }).listener(
-                                "contextmenu", evt => this.contextMenu.showFor(evt, itemEl)
+                                "contextmenu", (evt: Event) => this.contextMenu.showFor(evt, itemEl)
                             ).listener(
                                 "keydown", (evt: KeyboardEvent) => {
                                     switch (evt.key) {

@@ -110,9 +110,9 @@ export function icon(classes: string[], iconName: string, alt?: string) {
 export function a(classes: string[], href: string, contentOrPreventNavigate: Content | boolean, contentWhenPreventNavigate?: Content) {
     const preventNavigate = typeof(contentOrPreventNavigate) === "boolean" ? contentOrPreventNavigate : false;
     const content = typeof(contentOrPreventNavigate) === "boolean" ? contentWhenPreventNavigate : contentOrPreventNavigate;
-    const a = tag("a", classes, {href}, content);
+    const a = tag("a", classes, {href: href, toString: href}, content);
     if (preventNavigate) {
-        a.addEventListener("click", evt => {
+        a.addEventListener("click", (evt: MouseEvent) => {
             evt.preventDefault();
             return false;
         });
