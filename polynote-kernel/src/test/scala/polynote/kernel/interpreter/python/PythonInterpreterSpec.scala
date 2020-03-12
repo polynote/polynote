@@ -36,9 +36,9 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           vars("x") shouldEqual 1
           vars("y") shouldEqual "foo"
           vars("A") shouldBe a[PythonFunction]
-          vars("A").toString shouldEqual "<class '__main__.A'>"
+          vars("A").toString shouldEqual "<class 'A'>"
           vars("z") shouldBe a[PythonObject]
-          vars("z").toString should startWith("<__main__.A object")
+          vars("z").toString should startWith("<A object")
           vars("d") shouldBe a[PythonObject]
           vars("d").toString shouldEqual "2019-02-03 00:00:00"
           vars("l") match {
@@ -242,6 +242,28 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           val fInstance = f.asInstanceOf[PythonFunction]
           fInstance(Math.PI/2).as[java.lang.Number] shouldEqual 1.0
           vars("Out") shouldEqual 1.0
+          output shouldBe empty
+      }
+    }
+
+    "properly handle variables defined inside nested scopes" in {
+      assertOutput(
+        """
+          |a = 1
+          |result = 0
+          |if True:
+          |    b = 1
+          |    a = 2
+          |    result = max([x for x in [1,2,3,4,5,6] if x < a + b])
+          |
+          |result
+          |""".stripMargin) {
+        case (vars, output) =>
+          vars should have size 4
+          vars("a") shouldEqual 2
+          vars("b") shouldEqual 1
+          vars("result") shouldEqual 2
+          vars("Out") shouldEqual 2
           output shouldBe empty
       }
     }

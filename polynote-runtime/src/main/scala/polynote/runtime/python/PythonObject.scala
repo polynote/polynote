@@ -117,33 +117,38 @@ object PythonObject {
           }
       }
 
-      val basicMimeReprs = Map(
-        "text/html"           -> "_repr_html_",
-        "text/plain"          -> "__repr__",
-        "application/x-latex" -> "_repr_latex_",
-        "image/svg+xml"       -> "_repr_svg_",
-        "image/jpeg"          -> "_repr_jpeg_",
-        "image/png"           -> "_repr_png_"
-      ).flatMap {
-        case (mime, funcName) =>
-          if (obj.hasAttribute(funcName)) attemptRepr(mime, obj.applyDynamic(funcName)()) else None
-      }
+      if (obj.hasAttribute("__init__")) { // For now, don't bother with classes (in future we might want to do something special?)
+        Array.empty
+      } else {
 
-      val mimeBundleReprs = if (obj.hasAttribute("_repr_mimebundle_")) {
-        try {
-          obj._repr_mimebundle_().asScalaMapOf[String, String].map { case (k, v) => MIMERepr(k, v) }.toList
-        } catch {
-          case err: Throwable =>
-            // Similarly, _repr_mimebundle_ may also return a tuple of (data, metadata), so we'll do the same as above.
-            try {
-              obj._repr_mimebundle_().asTuple2._1.asScalaMapOf[String, String].map { case (k, v) => MIMERepr(k, v) }.toList
-            } catch {
-              case err: Throwable => List.empty[MIMERepr]
-            }
+        val basicMimeReprs = Map(
+          "text/html"           -> "_repr_html_",
+          "text/plain"          -> "__repr__",
+          "application/x-latex" -> "_repr_latex_",
+          "image/svg+xml"       -> "_repr_svg_",
+          "image/jpeg"          -> "_repr_jpeg_",
+          "image/png"           -> "_repr_png_"
+        ).flatMap {
+          case (mime, funcName) =>
+            if (obj.hasAttribute(funcName)) attemptRepr(mime, obj.applyDynamic(funcName)()) else None
         }
-      } else List.empty[MIMERepr]
 
-      (basicMimeReprs ++ mimeBundleReprs).toArray
+        val mimeBundleReprs = if (obj.hasAttribute("_repr_mimebundle_")) {
+          try {
+            obj._repr_mimebundle_().asScalaMapOf[String, String].map { case (k, v) => MIMERepr(k, v) }.toList
+          } catch {
+            case err: Throwable =>
+              // Similarly, _repr_mimebundle_ may also return a tuple of (data, metadata), so we'll do the same as above.
+              try {
+                obj._repr_mimebundle_().asTuple2._1.asScalaMapOf[String, String].map { case (k, v) => MIMERepr(k, v) }.toList
+              } catch {
+                case err: Throwable => List.empty[MIMERepr]
+              }
+          }
+        } else List.empty[MIMERepr]
+
+        (basicMimeReprs ++ mimeBundleReprs).toArray
+      }
     }
   }
 
