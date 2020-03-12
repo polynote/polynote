@@ -119,7 +119,7 @@ object PythonObject {
 
       // For now, don't bother with classes (in future we might want to do something special?)
       // TODO: must be a better way to tell if an object is a class...
-      if (obj.hasAttribute("__dict__") && obj.__dict__().hasAttribute("__module__")) {
+      if (obj.hasAttribute("__dict__") && obj.__dict__.hasAttribute("__module__")) {
         Array.empty
       } else {
 
