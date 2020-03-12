@@ -93,7 +93,7 @@ constructor() {
     parseRaw(rawPrefs: Record<string, Preference>): Record<string, Preference> {
         const prefs: Record<string, Preference> = {};
         for (const [key, json] of Object.entries(rawPrefs)) {
-            if (json && json.value !== undefined && json.description !== undefined) {
+            if (json?.value !== undefined && json?.description !== undefined) {
                 prefs[key] = new Preference(json.value, json.description);
             } else {
                 throw new Error(`Unable to decode preference ${key} with value ${JSON.stringify(json)}`)

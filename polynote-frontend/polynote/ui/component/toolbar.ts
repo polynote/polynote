@@ -202,12 +202,9 @@ class TextToolbarUI extends UIMessageTarget {
                 this.codeButton = iconButton(["code"], "Inline code", "code", "Code")
                     .click(() => {
                         const selection = document.getSelection();
-                        if (selection && selection.anchorNode &&
-                            selection.anchorNode.parentNode &&
-                            (selection.anchorNode.parentNode as HTMLElement).tagName &&
-                            (selection.anchorNode.parentNode as HTMLElement).tagName.toLowerCase() === "code") {
+                        if ((selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code") {
 
-                            if (selection.anchorOffset === selection.focusOffset) {
+                            if (selection?.anchorOffset === selection?.focusOffset) {
                                 // expand selection to the whole element
                                 document.getSelection()!.selectAllChildren(document.getSelection()!.anchorNode!.parentNode!);
                             }
@@ -218,10 +215,7 @@ class TextToolbarUI extends UIMessageTarget {
                     }).withKey('getState', () => {
                         const selection = document.getSelection()!;
                         return (
-                            selection.anchorNode &&
-                            selection.anchorNode.parentNode &&
-                            (selection.anchorNode.parentNode as HTMLElement).tagName &&
-                            (selection.anchorNode.parentNode as HTMLElement).tagName.toLowerCase() === "code"
+                            (selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code"
                         )
                     }) as CommandButton,
             ]}, {
@@ -239,7 +233,7 @@ class TextToolbarUI extends UIMessageTarget {
                     .click(() => LaTeXEditor.forSelection()!.show())
                     .withKey('getState', () => {
                         const selection = document.getSelection()!;
-                        if (selection.focusNode && selection.focusNode.childNodes) {
+                        if (selection?.focusNode?.childNodes) {
                             for (let i = 0; i < selection.focusNode.childNodes.length; i++) {
                                 const node = selection.focusNode.childNodes[i];
                                 if (node.nodeType === 1 && selection.containsNode(node, false) && ((node as HTMLElement).classList.contains('katex') || (node as HTMLElement).classList.contains('katex-block'))) {

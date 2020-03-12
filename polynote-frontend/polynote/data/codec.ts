@@ -119,7 +119,7 @@ export class DataWriter {
     dataView: DataView;
     offset: number;
     constructor(chunkSize?: number) {
-        this.chunkSize = chunkSize || 1024;
+        this.chunkSize = chunkSize ?? 1024;
         this.buffer = new ArrayBuffer(this.chunkSize);
         this.dataView = new DataView(this.buffer);
         this.offset = 0;

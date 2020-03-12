@@ -23,7 +23,7 @@ export class HomeUI extends UIMessageTarget {
         `;
 
         const recent = this.el.querySelector('.recent-notebooks');
-        (storage.get('recentNotebooks') || []).forEach((nb: {name: string, path: string}) => {
+        (storage.get('recentNotebooks') ?? []).forEach((nb: {name: string, path: string}) => {
             recent!.appendChild(
                 tag('li', ['notebook-link'], {}, [
                     span([], nb.name).click(() => this.publish(new LoadNotebook(nb.path)))

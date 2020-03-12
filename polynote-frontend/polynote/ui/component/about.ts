@@ -120,7 +120,7 @@ export class About extends FullScreenModal {
             }
             prefsTable.addRow({
                 key: k,
-                val: valueEl || value.toString(),
+                val: valueEl ?? value.toString(),
                 desc: preference.description
             })
         }

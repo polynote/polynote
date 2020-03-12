@@ -212,7 +212,7 @@ export class PlotEditor extends EventTarget {
 
         this.el.addEventListener('dragstart', evt => {
            // Firefox only allows dragging elements with a set DataTransfer
-           evt && evt.dataTransfer && evt.dataTransfer.setData('dummy', 'dummy');
+           evt?.dataTransfer?.setData('dummy', 'dummy');
            this.draggingEl = evt.target as MeasureEl;
         });
 
@@ -230,7 +230,7 @@ export class PlotEditor extends EventTarget {
         const attachAxisListener = (axisEl: HTMLElement, setField: (from: MeasureEl) => void, axisType: () => string) => {
             axisEl.addEventListener('dragenter', evt => {
                 evt.stopPropagation();
-                if (this.draggingEl && this.draggingEl.classList.contains(axisType())) {
+                if (this.draggingEl?.classList.contains(axisType())) {
                     axisEl.classList.add('drop-ok');
                 } else {
                     axisEl.classList.add('drop-disallowed');
@@ -238,7 +238,7 @@ export class PlotEditor extends EventTarget {
             });
 
             axisEl.addEventListener('dragover', evt => {
-                if (this.draggingEl && this.draggingEl.classList.contains(axisType())) {
+                if (this.draggingEl?.classList.contains(axisType())) {
                     evt.preventDefault();
                 }
             });
@@ -344,7 +344,7 @@ export class PlotEditor extends EventTarget {
             return ops;
         }
 
-        if (this.xDimension && this.yMeasures && this.yMeasures.length) {
+        if (this.xDimension && this.yMeasures?.length) {
             ops.push(
                 new GroupAgg(
                     [this.xDimension.name],
