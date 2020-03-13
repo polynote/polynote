@@ -13,10 +13,10 @@ export class CellMetadata {
     constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly executionInfo?: ExecutionInfo) {}
 
     copy(metadata: Partial<CellMetadata>) {
-        const disableRun = typeof metadata.disableRun !== 'undefined' ? metadata.disableRun : this.disableRun;
-        const hideSource = typeof metadata.hideSource !== 'undefined' ? metadata.hideSource : this.hideSource;
-        const hideOutput = typeof metadata.hideOutput !== 'undefined' ? metadata.hideOutput : this.hideOutput;
-        const executionInfo = typeof metadata.executionInfo !== 'undefined' ? metadata.executionInfo : this.executionInfo;
+        const disableRun = metadata.disableRun ?? this.disableRun;
+        const hideSource = metadata.hideSource ?? this.hideSource;
+        const hideOutput = metadata.hideOutput ?? this.hideOutput;
+        const executionInfo = metadata.executionInfo ?? this.executionInfo;
         return new CellMetadata(disableRun, hideSource, hideOutput, executionInfo);
     }
 }

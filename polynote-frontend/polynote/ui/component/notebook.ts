@@ -548,7 +548,7 @@ export class NotebookUI extends UIMessageTarget {
     }
 
     onCellLanguageSelected(setLanguage: string, id?: number) {
-        id = id !== undefined ? id : (this.currentCell ? this.currentCell.id : undefined);
+        id = id ?? this.currentCell?.id;
         const cell = id && this.cellUI.getCell(id);
         if (id && cell) {
             if (cell.language !== setLanguage) {
@@ -608,7 +608,7 @@ export class NotebookUI extends UIMessageTarget {
     insertCell(direction: "above" | "below", anchor?: number, mkCell?: (nextCellId: number) => Cell, results?: Output[], postInsertCb?: (cell: Cell) => void): void {
 
         const anchorCell = anchor !== undefined ? this.cellUI.getCell(anchor) : this.currentCell || undefined; // sigh
-        const anchorEl = anchorCell && anchorCell.container;
+        const anchorEl = anchorCell?.container;
 
         let insertedCell: Cell;
         if (direction === "above") {
@@ -620,7 +620,7 @@ export class NotebookUI extends UIMessageTarget {
         const notebookCell = new NotebookCell(insertedCell.id, insertedCell.language, insertedCell.content, results || [], insertedCell.metadata);
 
         const prevCell = this.cellUI.getCellBefore(insertedCell);
-        const update = new messages.InsertCell(this.globalVersion, ++this.localVersion, notebookCell, prevCell ? prevCell.id : -1);
+        const update = new messages.InsertCell(this.globalVersion, ++this.localVersion, notebookCell, prevCell?.id ?? -1);
         this.socket.send(update);
         this.editBuffer.push(this.localVersion, update);
 
@@ -632,7 +632,7 @@ export class NotebookUI extends UIMessageTarget {
     }
 
     deleteCell(cellId?: number): void {
-        const deleteCellId = cellId !== undefined ? cellId : (this.currentCell ? this.currentCell.id : undefined);
+        const deleteCellId = cellId ?? this.currentCell?.id ;
         if (deleteCellId !== undefined) {
             this.cellUI.deleteCell(deleteCellId, () => {
                 const update = new messages.DeleteCell(this.globalVersion, ++this.localVersion, deleteCellId);
@@ -732,12 +732,12 @@ export class NotebookUI extends UIMessageTarget {
                         const params = sig.parameters.map(param => {
                             return {
                                 label: param.typeName ? `${param.name}: ${param.typeName}` : param.name,
-                                documentation: param.docString || undefined
-                            };
+                                documentation: param.docString
+                            }
                         });
 
                         return {
-                            documentation: sig.docString || undefined,
+                            documentation: sig.docString,
                             label: sig.name,
                             parameters: params
                         }

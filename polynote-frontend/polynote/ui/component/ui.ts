@@ -130,7 +130,7 @@ export class MainUI extends UIMessageTarget {
         });
 
         window.addEventListener('popstate', evt => {
-           if (evt.state && evt.state.notebook) {
+           if (evt.state?.notebook) {
                this.loadNotebook(evt.state.notebook);
            }
         });
@@ -225,8 +225,8 @@ export class MainUI extends UIMessageTarget {
                     cb(statuses);
                 })
             } else if (msg.prototype === CurrentIdentity.prototype) {
-                const name = this.identity && this.identity.name || undefined;
-                const avatar = this.identity && this.identity.avatar || undefined;
+                const name = this.identity?.name;
+                const avatar = this.identity?.avatar ?? undefined;
                 cb(name, avatar);
             }
         });
@@ -362,7 +362,7 @@ export class MainUI extends UIMessageTarget {
             const [hashId, lines] = hash.slice(1).split(",");
 
             const selected = document.getElementById(hashId) as CellContainer;
-            if (selected && selected.cell && selected.cell !== Cell.currentFocus) {
+            if (selected?.cell !== Cell.currentFocus) {
 
                 // highlight lines
                 if (lines) {

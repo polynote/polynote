@@ -25,7 +25,7 @@ SocketSession.global;
 
 const mainUI = new MainUI();
 const mainEl = document.getElementById('Main');
-mainEl && mainEl.appendChild(mainUI.el);
+mainEl?.appendChild(mainUI.el);
 const path = unescape(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
 const notebookBase = 'notebook/';
 if (path.startsWith(notebookBase)) {

@@ -16,7 +16,7 @@ type ListenerCallback = (...args: any[]) => void
 export type MessageListener = [typeof Message, ListenerCallback, boolean?];
 
 const mainEl = document.getElementById('Main');
-const socketKey = mainEl ? mainEl.getAttribute('data-ws-key') : null;
+const socketKey = mainEl?.getAttribute('data-ws-key');
 
 const openSessions: Record<string, SocketSession> = {};
 
@@ -97,11 +97,11 @@ export class SocketSession extends EventTarget {
     }
 
     get isOpen(): boolean {
-        return !!this.socket && this.socket.readyState === WebSocket.OPEN;
+        return this.socket?.readyState === WebSocket.OPEN;
     }
 
     get isConnecting() {
-        return this.socket && this.socket.readyState === WebSocket.CONNECTING;
+        return this.socket?.readyState === WebSocket.CONNECTING;
     }
 
     get isClosed() {

@@ -26,7 +26,7 @@ export class RichTextEditor {
                     const currentHeaderMatch = /^h([1-6])/.exec(blockType);
                     let currentHeader = 0;
                     let nextHeader = 1;
-                    if (currentHeaderMatch && currentHeaderMatch[1]) {
+                    if (currentHeaderMatch?.[1]) {
                         currentHeader = parseInt(currentHeaderMatch[1]);
                     }
                     if (currentHeader) {

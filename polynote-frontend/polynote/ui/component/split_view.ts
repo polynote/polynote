@@ -14,7 +14,7 @@ export class SplitView {
             const prefId = `${id}.leftSize`;
             left.el.classList.add("left");
             left.el.style.gridArea = 'left';
-            left.el.style.width = storage.get(prefId) || '300px';
+            left.el.style.width = storage.get(prefId) ?? '300px';
 
             let leftDragger = Object.assign(
                 div(['drag-handle', 'left'], [
@@ -54,7 +54,7 @@ export class SplitView {
             const prefId = `${id}.rightSize`;
             right.el.classList.add("right");
             right.el.style.gridArea = 'right';
-            right.el.style.width = storage.get(prefId) || '300px';
+            right.el.style.width = storage.get(prefId) ?? '300px';
 
             let rightDragger = Object.assign(
                 div(['drag-handle', 'right'], [

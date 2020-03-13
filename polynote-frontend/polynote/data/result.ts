@@ -281,7 +281,7 @@ export class ResultValue extends Result {
                 resultType.innerHTML = typeHTML;
                 // Why do they put a <br> in there?
                 [...resultType.getElementsByTagName("br")].forEach(br => {
-                    if (br && br.parentNode) br.parentNode.removeChild(br)
+                    br?.parentNode?.removeChild(br)
                 });
 
                 const el = div([], [
