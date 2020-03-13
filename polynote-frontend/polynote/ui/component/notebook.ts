@@ -85,7 +85,7 @@ export class NotebookUI extends UIMessageTarget {
     // TODO: remove mainUI reference
     private constructor(eventParent: UIMessageTarget, readonly path: string, readonly mainUI: MainUI) {
         super(eventParent);
-        this.socket = SocketSession.fromRelativeURL(`ws/${path}`);
+        this.socket = SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`);
         this.socket.addEventListener("error", err => {
            const url = new URL(this.socket.url.toString());
            url.protocol = document.location.protocol;
