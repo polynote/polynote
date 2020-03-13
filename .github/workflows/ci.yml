@@ -48,3 +48,9 @@ jobs:
         pushd $GITHUB_WORKSPACE
           sbt ++2.12.10 test
         popd
+
+        echo "Testing npm build"
+        pushd $GITHUB_WORKSPACE/polynote-frontend
+          npm install
+          npm run dist
+        popd

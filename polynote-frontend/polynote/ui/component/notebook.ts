@@ -173,9 +173,11 @@ export class NotebookUI extends UIMessageTarget {
             .when(messages.UpdatedTasks, (tasks) => tasks.forEach((task: TaskInfo) => {
                 this.handleTaskUpdate(task);
             }))
-            .when(messages.KernelBusyState,
-                (busy, alive) => this.kernelUI.setKernelState(
-                    (busy && 'busy') || (!alive && 'dead') || 'idle'))
+            .when(messages.KernelBusyState, (busy, alive) => {
+                const state = (busy && 'busy') || (!alive && 'dead') || 'idle';
+                this.kernelUI.setKernelState(state);
+                this.cellUI.configUI.setKernelState(state);
+            })
             .when(messages.KernelInfo, info => this.kernelUI.updateInfo(info))
             .when(messages.ExecutionStatus, (id, pos) => this.cellUI.setExecutionHighlight(id, pos))
             .when(messages.PresenceUpdate, (added, removed) => {
