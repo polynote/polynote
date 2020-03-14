@@ -117,18 +117,20 @@ export class NotebookConfig {
         optional(arrayCodec(uint8, tinyStr)),
         optional(arrayCodec(uint8, RepositoryConfig.codec)),
         optional(mapCodec(uint16, str as Codec<string>, str)),
+        optional(mapCodec(uint16, str as Codec<string>, str)),
     ).to(NotebookConfig);
     static unapply(inst: NotebookConfig): ConstructorParameters<typeof NotebookConfig> {
-        return [inst.dependencies, inst.exclusions, inst.repositories, inst.sparkConfig];
+        return [inst.dependencies, inst.exclusions, inst.repositories, inst.sparkConfig, inst.env];
     }
 
     constructor(readonly dependencies?: Record<string, string[]>, readonly exclusions?: string[],
-                readonly repositories?: RepositoryConfig[], readonly sparkConfig?: Record<string, string>) {
+                readonly repositories?: RepositoryConfig[], readonly sparkConfig?: Record<string, string>,
+                readonly env?: Record<string, string>) {
         Object.freeze(this);
     }
 
     static get default() {
-        return new NotebookConfig({}, [], [], {});
+        return new NotebookConfig({}, [], [], {}, {});
     }
 }
 

@@ -308,9 +308,17 @@ object SocketTransport {
 
         val processBuilder = new ProcessBuilder(command: _*).redirectErrorStream(true)
         for {
-          _       <- Logging.info(s"Deploying with command:\n$displayCommand")
-          process <- effectBlocking(processBuilder.start())
-          _       <- logProcess(process).fork
+          _        <- Logging.info(s"Deploying with command:\n$displayCommand")
+          config   <- Config.access
+          nbConfig <- CurrentNotebook.config
+          _        <- ZIO {
+            val processEnv = processBuilder.environment()
+            (config.env ++ nbConfig.env.getOrElse(Map.empty)).foreach {
+              case (k,v) => processEnv.put(k, v)
+            }
+          }
+          process  <- effectBlocking(processBuilder.start())
+          _        <- logProcess(process).fork
         } yield new DeploySubprocess.Subprocess(process)
     }
   }

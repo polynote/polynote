@@ -154,3 +154,9 @@
 #  coursier:
 #    path: ~/.config/coursier/credentials.properties
 
+#############################################################################################################
+# Environment variables. This map gets merged with the notebook config's environment variable map at runtime.
+#############################################################################################################
+
+#env:
+#  foo: bar

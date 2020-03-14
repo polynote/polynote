@@ -161,7 +161,8 @@ final case class PolynoteConfig(
   behavior: Behavior = Behavior(),
   security: Security = Security(),
   ui: UI = UI(),
-  credentials: Credentials = Credentials()
+  credentials: Credentials = Credentials(),
+  env: Map[String, String] = Map.empty
 )
 
 
