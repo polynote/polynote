@@ -345,15 +345,25 @@ class PythonInterpreter private[python] (
       |        # see https://github.com/ipython/ipython/issues/11590
       |        from ast import Module as OriginalModule
       |        Module = lambda nodelist, ignored: OriginalModule(nodelist)
-      |    return list(map(lambda node: compile(Module([node], []), cell, 'exec'), parsed.body))
+      |
+      |    result = []
+      |    for tree in parsed.body:
+      |        compiled = compile(Module([tree], []), cell, 'exec')
+      |        isImport = isinstance(tree, ast.Import) or isinstance(tree, ast.ImportFrom)
+      |        result.append([compiled, isImport])
+      |    return result
       |
       |def __polynote_run__(compiled, globals, kernel):
       |    try:
       |        sys.stdout = kernel.display
       |        tracking_ns = TrackingNamespace(globals)
-      |        for stat in compiled:
-      |            exec(stat, tracking_ns)
-      |            tracking_ns.globals.update(tracking_ns.data)
+      |        for stat, isImport in compiled:
+      |            if isImport: # don't track locals if the tree is an import.
+      |                exec(stat, tracking_ns.globals)
+      |            else:
+      |                exec(stat, tracking_ns)
+      |                tracking_ns.globals.update(tracking_ns.data)
+      |
       |        types = { x: type(y).__name__ for x,y in tracking_ns.data.items() }
       |        return { 'globals': tracking_ns.globals, 'locals': tracking_ns.data, 'types': types }
       |    except Exception as err:
