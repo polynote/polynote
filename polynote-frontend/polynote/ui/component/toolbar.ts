@@ -43,7 +43,14 @@ export class ToolbarUI extends UIMessageTarget {
     setDisabled(disable: boolean) {
         if (disable) {
             [...this.el.querySelectorAll('button')].forEach(button => {
-                button.disabled = true;
+                function hasNeverDisabled(button: HTMLButtonElement): button is HTMLButtonElement & {neverDisabled: boolean} {
+                    return 'neverDisabled' in button
+                }
+                let disable = true;
+                if (hasNeverDisabled(button)) {
+                    disable = false
+                }
+                button.disabled = disable;
             });
         } else {
             [...this.el.querySelectorAll('button')].forEach(button => {
@@ -284,9 +291,11 @@ class SettingsToolbarUI extends UIMessageTarget {
         super(parent);
         this.el = toolbarElem("about", [[
             iconButton(["preferences"], "View UI Preferences", "cogs", "Preferences")
-                .click(() => this.publish(new ViewAbout("Preferences"))),
+                .click(() => this.publish(new ViewAbout("Preferences")))
+                .withKey('neverDisabled', true),
             iconButton(["help"], "help", "question", "Help")
-                .click(() => this.publish(new ViewAbout("Hotkeys"))),
+                .click(() => this.publish(new ViewAbout("Hotkeys")))
+                .withKey('neverDisabled', true),
         ]]);
 
         this.floatingMenu = div(['floating-menu'], []);
