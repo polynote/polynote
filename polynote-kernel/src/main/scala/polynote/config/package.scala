@@ -131,14 +131,15 @@ package object config {
 
   def deriveConfigDecoder[A](implicit decoder: Lazy[ValidatedConfigDecoder[A]]): Decoder[A] = decoder.value
 
-  case class Test(first: Int = 10, second: String = "hi")
-
   implicit val mapStringStringDecoder: Decoder[Map[String, String]] = Decoder[Map[String, Json]].emap {
     jsonMap => jsonMap.toList.map {
       case (key, json) => json.fold(
         Left("No null values allowed in this map"),
         b => Right(key -> b.toString),
-        n => Right(key -> n.toString),
+        n =>
+          n.toLong
+            .map(_.toString).orElse(n.toBigDecimal.map(_.toString()))
+            .fold(Left("No invalid numeric values allowed in this map"): Either[String, (String, String)])(v => Right(key -> v)),
         s => Right(key -> s),
         _ => Left("No array values allowed in this map"),
         _ => Left("No object values allowed in this map")
