@@ -1,18 +1,34 @@
-FROM openjdk:8-slim-buster
+FROM openjdk:8-alpine
 
 ARG SCALA_VERSION="2.11"
 
-WORKDIR /opt
-
-RUN apt update -y && \
-    apt install -y wget python3 python3-dev python3-pip build-essential && \
-    pip3 install jep jedi virtualenv
-
-COPY docker/spark-2.4/install_spark.sh .
-RUN ./install_spark.sh
-ENV SPARK_HOME="/opt/spark"
-ENV HADOOP_HOME="/opt/hadoop-2.7.7"
+# Intall spark.
+ENV SPARK_HOME "/usr/lib/spark"
+RUN wget https://apache.uib.no/spark/spark-2.4.5/spark-2.4.5-bin-hadoop2.7.tgz && \
+    tar -zxpf spark-2.4.5-bin-hadoop2.7.tgz -C /tmp && \
+    mv /tmp/spark-2.4.5-bin-hadoop2.7 ${SPARK_HOME} && \
+    rm -rf /tmp/spark-2.4.5-bin-hadoop2.7 && \
+    rm spark-2.4.5-bin-hadoop2.7.tgz
 ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
+
+RUN echo "**** install Python ****" && \
+    apk add --no-cache python3 linux-pam && \
+    if [ ! -e /usr/bin/python ]; then ln -sf python3 /usr/bin/python ; fi
+
+RUN echo "**** install pip ****" && \
+    apk add --virtual build-dependencies build-base python3-dev && \
+    python3 -m ensurepip && \
+    rm -r /usr/lib/python*/ensurepip && \
+    pip3 install --no-cache --upgrade pip setuptools wheel && \
+    if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi
+
+RUN echo "**** install python dependencies ****" && \
+    python3 -m pip install jep jedi virtualenv
+
+RUN echo "**** install bash ****" && \
+    apk add --no-cache bash
+
+WORKDIR /opt
 
 # First, create the distribution with `sbt dist`
 # Then build this from the project root using `-f docker/dev/Dockerfile` to select this file.
@@ -29,14 +45,10 @@ RUN tar xfzp polynote-dist*.tar.gz && \
 # to wrap up, we create (safe)user
 ENV UID 1000
 ENV NB_USER polly
-
-RUN adduser --disabled-password \
-    --gecos "Default user" \
-    --uid ${UID} \
-    ${NB_USER}
+RUN adduser  -u ${UID} --shell /bin/false -D -S ${NB_USER}
 
 # allow user access to the WORKDIR
-RUN chown -R ${NB_USER}:${NB_USER} /opt/
+RUN chown -R ${NB_USER} /opt/
 
 # start image as (safe)user
 USER ${NB_USER}
