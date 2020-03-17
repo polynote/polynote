@@ -212,10 +212,9 @@ class SocketTransport(
   private def openServerChannel(
                                  config: PolynoteConfig
                                ): RIO[Blocking, ServerSocketChannel] = effectBlocking {
-
-    Random.shuffle(Range.inclusive(1234, 4321).toList)
-      .find(port => socketIsFree(config.kernelListen, port))
-      .map(availablePort => ServerSocketChannel.open().bind(new InetSocketAddress(config.kernelListen, availablePort)))
+    Random.shuffle(config.kernel.portRange.toList)
+      .find(port => socketIsFree(config.kernel.listen, port))
+      .map(availablePort => ServerSocketChannel.open().bind(new InetSocketAddress(config.kernel.listen, availablePort)))
       .get
   }
 
