@@ -36,8 +36,8 @@ object Mount {
 
 
 final case class Kernel(
-  listen: String = "127.0.0.1",
-  portRange: Range = Range.inclusive(1234,4321)
+  listen: Option[String] = None,
+  portRange: Option[Range] = None
 )
 
 object Kernel {

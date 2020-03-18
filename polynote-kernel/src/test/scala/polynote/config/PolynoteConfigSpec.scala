@@ -29,6 +29,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |  host: 1.1.1.1
         |  port: 8193
         |
+        |# The host and port range for server/kernel communication
         |kernel:
         |  listen: 127.1.1.1
         |  port_range: "1000:2000"
@@ -83,7 +84,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         host = "1.1.1.1",
         port = 8193
       ),
-      Kernel("127.1.1.1", Range.inclusive(1000, 2000)),
+      Kernel(Some("127.1.1.1"), Some(Range.inclusive(1000, 2000))),
       Storage("tmp", dir = "notebooks", Map("examples" -> Mount("examples"))),
       List(
         ivy("https://my-artifacts.org/artifacts/"),
