@@ -375,12 +375,8 @@ object SocketTransport {
     private def readBuffer(): Option[Option[ByteBuffer]] = incomingLengthBuffer.synchronized {
       incomingLengthBuffer.rewind()
       while(incomingLengthBuffer.hasRemaining) {
-        try {
-          if(socketChannel.read(incomingLengthBuffer) == -1) {
-            return None
-          }
-        } catch {
-          case err: IOException => return None
+        if(socketChannel.read(incomingLengthBuffer) == -1) {
+          return None
         }
       }
 
@@ -401,7 +397,7 @@ object SocketTransport {
     }
 
     def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).uninterruptible.catchSome {
-      case err: AsynchronousCloseException => Logging.info("Remote peer closed connection") *> close() *> ZIO.succeed(None)
+      case err: ClosedChannelException => Logging.info("Remote peer closed connection") *> close() *> ZIO.succeed(None)
     }.tapError {
       err => closed.fail(err)
     }
