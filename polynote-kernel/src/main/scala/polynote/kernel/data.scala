@@ -210,7 +210,10 @@ final case class TaskInfo(
   def running: TaskInfo = copy(status = Running)
   def completed: TaskInfo = copy(status = Complete, progress = 255.toByte)
   def failed: TaskInfo = if (status == Complete) this else copy(status = ErrorStatus, progress = 255.toByte)
-  def failed(err: Cause[Throwable]): TaskInfo = if (status == Complete) this else copy(status = ErrorStatus, detail = ShortString.truncate(err.squash.getMessage), progress = 255.toByte)
+  def failed(err: Cause[Throwable]): TaskInfo = if (status == Complete) this else {
+    val errMsg = Option(err.squash.getMessage).getOrElse(err.squash.toString)
+    copy(status = ErrorStatus, detail = ShortString.truncate(errMsg), progress = 255.toByte)
+  }
   def done(status: DoneStatus): TaskInfo = if (this.status.isDone) this else copy(status = status, progress = 255.toByte)
   def progress(fraction: Double): TaskInfo = copy(progress = (fraction * 255).toByte)
   def progress(fraction: Double, detailOpt: Option[String]): TaskInfo = copy(progress = (fraction * 255).toByte, detail = detailOpt.getOrElse(detail))
