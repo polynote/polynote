@@ -20,6 +20,7 @@ export class NotebookConfigUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
     private lastConfig: NotebookConfig;
     private configHandler: NotebookConfigHandler;
+    private saveButton: TagElement<"button", HTMLButtonElement>;
 
     constructor(private onConfigUpdate: (conf: NotebookConfig) => void) {
         super();
@@ -57,7 +58,7 @@ export class NotebookConfigUI extends UIMessageTarget {
                     this.configHandler.sparkConfigContainer
                 ]),
                 div(['controls'], [
-                    button(['save'], {}, ['Save & Restart']).click(evt => {
+                    this.saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
                         const conf = this.configHandler.toConfig();
                         this.lastConfig = conf;
                         this.el.classList.remove("open");
@@ -78,6 +79,19 @@ export class NotebookConfigUI extends UIMessageTarget {
         }
 
         children.forEach(el => this.el.appendChild(el));
+    }
+
+    setKernelState(state: 'busy' | 'idle' | 'dead' | 'disconnected') {
+        if (state === 'disconnected') {
+            this.saveButton.disabled = true;
+        } else {
+            this.saveButton.disabled = false;
+            if (state === 'dead') {
+                this.saveButton.textContent = "Save"
+            } else {
+                this.saveButton.textContent = "Save & Restart"
+            }
+        }
     }
 }
 
