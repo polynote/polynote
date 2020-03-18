@@ -137,7 +137,7 @@ export class MainUI extends UIMessageTarget {
 
         this.subscribe(TabActivated, (name, type) => {
             if (type === 'notebook') {
-                const tabUrl = new URL(`notebook/${name}`, document.baseURI);
+                const tabUrl = new URL(`notebook/${encodeURIComponent(name)}`, document.baseURI);
 
                 const href = window.location.href;
                 const hash = window.location.hash;
@@ -145,7 +145,7 @@ export class MainUI extends UIMessageTarget {
                 document.title = title; // looks like chrome ignores history title so we need to be explicit here.
 
                  // handle hashes and ensure scrolling works
-                if (hash && window.location.href === tabUrl.href) {
+                if (hash && window.location.href === (tabUrl.href + hash)) {
                     window.history.pushState({notebook: name}, title, href);
                     this.handleHashChange()
                 } else {
@@ -362,7 +362,7 @@ export class MainUI extends UIMessageTarget {
             const [hashId, lines] = hash.slice(1).split(",");
 
             const selected = document.getElementById(hashId) as CellContainer;
-            if (selected?.cell !== Cell.currentFocus) {
+            if (selected && selected.cell !== Cell.currentFocus) {
 
                 // highlight lines
                 if (lines) {
