@@ -1,92 +1,26 @@
 package polynote.server
 
-import java.util.concurrent.atomic.AtomicInteger
-
-import cats.{Applicative, MonadError}
-import cats.effect.{Concurrent, Timer}
 import cats.instances.list._
-import cats.syntax.either._
 import cats.syntax.traverse._
-import fs2.Stream
-import fs2.concurrent.{Queue, Topic}
-import org.http4s.Response
-import org.http4s.server.websocket.WebSocketBuilder
-import org.http4s.websocket.WebSocketFrame
-import org.http4s.websocket.WebSocketFrame.Binary
+import fs2.concurrent.Topic
 import polynote.buildinfo.BuildInfo
-import polynote.kernel
-import polynote.kernel.util.{Publish, RefMap}
-import polynote.kernel.{BaseEnv, ClearResults, StreamThrowableOps, StreamingHandles, TaskG, UpdatedTasks}
+import polynote.kernel.util.Publish
+import polynote.kernel.{BaseEnv, StreamThrowableOps}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages._
-import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
-import zio.{Has, Promise, RIO, Task, ZIO}
+import polynote.server.auth.IdentityProvider.checkPermission
+import polynote.server.auth.{IdentityProvider, Permission, UserIdentity}
+import uzhttp.websocket.Frame
+import zio.stream.ZStream
+import zio.stream.{Stream, Take}
+import zio.Queue
+import zio.{Promise, RIO, Task, URIO, ZIO}
 
 import scala.collection.immutable.SortedMap
-import scala.concurrent.duration.{Duration, SECONDS}
 
 class SocketSession(
-  handler: SessionHandler,
-  broadcastAll: Topic[Task, Option[Message]]
-) {
-
-  private def toFrame(message: Message): Task[Binary] = {
-    Message.encode[Task](message).map(bits => Binary(bits.toByteVector))
-  }
-
-  lazy val toResponse: RIO[SessionEnv, Response[Task]] = for {
-    input     <- Queue.unbounded[Task, WebSocketFrame]
-    output    <- Queue.unbounded[Task, WebSocketFrame]
-    processor <- process(input, output)
-    handlerClosed = handler.awaitClosed.as(Either.right[Throwable, Unit](()))
-    fiber     <- processor.interruptWhen(handlerClosed).compile.drain.ignore.forkDaemon
-    keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
-      .interruptWhen(handlerClosed)
-      .through(output.enqueue)
-      .compile.drain.ignore.forkDaemon
-    allOutputs = Stream.emits(Seq(output.dequeue, broadcastAll.subscribe(128).unNone.evalMap(toFrame))).parJoinUnbounded
-    logging   <- ZIO.access[Logging](identity)
-    response  <- WebSocketBuilder[Task].build(
-      allOutputs.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]) ++ Stream.eval(handler.close()).drain,
-      input.enqueue,
-      onClose = keepalive.interrupt *> fiber.interrupt.unit *> handler.close())
-  } yield response
-
-  private def process(
-    input: Queue[Task, WebSocketFrame],
-    output: Queue[Task, WebSocketFrame]
-  ): ZIO[SessionEnv, Nothing, Stream[Task, Unit]] = ZIO.environment[SessionEnv].map {
-    env =>
-      val publishMessage = Publish(output).contraFlatMap(toFrame)
-      Stream.eval(handshake.provide(env)).evalMap(publishMessage.publish1) ++ input.dequeue.flatMap {
-        case WebSocketFrame.Close(_) => Stream.eval(output.enqueue1(WebSocketFrame.Close())).drain
-        case WebSocketFrame.Binary(data, true) => Stream.eval(Message.decode[Task](data))
-        case _ => Stream.empty
-      }.evalMap {
-        message =>
-          handler.accept(message).catchAll {
-            err =>
-              Logging.error("Kernel error", err) *>
-              PublishMessage(Error(0, err))
-          }.provide(env ++ Has(publishMessage)).forkDaemon.unit
-      }
-  }
-
-  private def handshake: RIO[SessionEnv, ServerHandshake] =
-    for {
-      factories <- Interpreter.Factories.access
-      identity  <- UserIdentity.access
-    } yield ServerHandshake(
-      (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
-      serverVersion = BuildInfo.version,
-      serverCommit = BuildInfo.commit,
-      identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString)))
-    )
-}
-
-class SessionHandler(
   notebookManager: NotebookManager.Service,
   closed: Promise[Throwable, Unit]
 ) {
@@ -133,15 +67,78 @@ class SessionHandler(
     case other =>
       ZIO.unit
   }
+
+  def handshake: RIO[SessionEnv, ServerHandshake] =
+    for {
+      factories <- Interpreter.Factories.access
+      identity  <- UserIdentity.access
+    } yield ServerHandshake(
+      (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
+      serverVersion = BuildInfo.version,
+      serverCommit = BuildInfo.commit,
+      identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString)))
+    )
 }
 
 object SocketSession {
-  def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with NotebookManager, SocketSession] =
-    for {
-      notebookManager  <- NotebookManager.access
-      closed           <- Promise.make[Throwable, Unit]
-      handler           = new SessionHandler(notebookManager, closed)
-    } yield new SocketSession(handler, broadcastAll)
 
-  private[server] val sessionId = new AtomicInteger(0)
+  def apply(in: Stream[Throwable, Frame], broadcastAll: Topic[Task, Option[Message]]): URIO[SessionEnv with NotebookManager, Stream[Throwable, Frame]] =
+    for {
+      output          <- Queue.unbounded[Take[Nothing, Message]]
+      publishMessage  <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])
+      env             <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
+      closed          <- Promise.make[Throwable, Unit]
+      _               <- broadcastAll.subscribe(32).unNone.interruptAndIgnoreWhen(closed).through(publishMessage.publish).compile.drain.forkDaemon
+      close            = closeQueueIf(closed, output)
+    } yield parallelStreams(
+        toFrames(ZStream.fromEffect(handshake) ++ Stream.fromQueueWithShutdown(output).unTake),
+        in.handleMessages(close)(handler andThen errorHandler).haltWhen(closed) ++ closeStream(closed, output),
+        keepaliveStream(closed)).provide(env)
+
+  private val handler: Message => RIO[SessionEnv with PublishMessage with NotebookManager, Option[Message]] = {
+    case ListNotebooks(_) =>
+      NotebookManager.list().map {
+        notebooks => Some(ListNotebooks(notebooks.map(ShortString.apply)))
+      }
+
+    case CreateNotebook(path, maybeContent) =>
+      checkPermission(Permission.CreateNotebook(path)) *> NotebookManager.create(path, maybeContent).as(None)
+
+    case RenameNotebook(path, newPath) =>
+      checkPermission(Permission.CreateNotebook(newPath)) *>
+        checkPermission(Permission.DeleteNotebook(path)) *>
+        NotebookManager.rename(path, newPath).as(None)
+
+    case CopyNotebook(path, newPath) =>
+      checkPermission(Permission.CreateNotebook(newPath)) *>
+        NotebookManager.copy(path, newPath).as(None)
+
+    case DeleteNotebook(path) =>
+      checkPermission(Permission.DeleteNotebook(path)) *> NotebookManager.delete(path).as(None)
+
+    case RunningKernels(_) => for {
+      paths          <- NotebookManager.listRunning()
+      statuses       <- ZIO.collectAllPar(paths.map(NotebookManager.status))
+      kernelStatuses  = paths.zip(statuses).map { case (p, s) => ShortString(p) -> s }
+    } yield Some(RunningKernels(kernelStatuses))
+
+    case other =>
+      ZIO.succeed(None)
+  }
+
+  val errorHandler: RIO[SessionEnv with PublishMessage with NotebookManager, Option[Message]] => RIO[SessionEnv with PublishMessage with NotebookManager, Option[Message]] =
+    _.catchAll {
+      err => Logging.error("Error processing message", err).as(Some(Error(0, err)))
+    }
+
+  def handshake: RIO[SessionEnv, ServerHandshake] =
+    for {
+      factories <- Interpreter.Factories.access
+      identity  <- UserIdentity.access
+    } yield ServerHandshake(
+      (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
+      serverVersion = BuildInfo.version,
+      serverCommit = BuildInfo.commit,
+      identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString)))
+    )
 }

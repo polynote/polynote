@@ -4,13 +4,12 @@ import cats.syntax.traverse._
 import cats.instances.option._
 import io.circe.{Json, JsonObject}
 import io.circe.syntax.EncoderOps
-import org.http4s.util.CaseInsensitiveString
-import org.http4s.{Header, Headers, Request, Response, Status}
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.config.{AuthProvider, PolynoteConfig, Security}
 import polynote.kernel.environment.{Config, Env}
 import polynote.testing.ZIOSpec
 import polynote.messages.CellID
+import uzhttp.{Request, Response, Status, HTTPError}
 import zio.{RIO, Task, ZIO, ZLayer}
 import zio.interop.catz._
 
@@ -54,14 +53,14 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
     }
 
     "when specified header is missing" - {
-      val ok = ZIO.effectTotal(Response[Task](Status.Ok))
+      val ok = ZIO.effectTotal(Response.plain(""))
 
       "fails when allowAnonymous = false" in {
         val config = authConfig(false)
         val authorize = IdentityProvider.authorize[Environment with Config]
           .provideSomeLayer[Environment with Config](ZLayer.fromEffect(IdentityProvider.load))
           .runWithConfig(config)
-        authorize(Request(), ok).runWithConfig(config).status shouldEqual Status.Forbidden
+        authorize(Request.empty(), ok).runWithConfig(config).status.statusCode shouldEqual 403
       }
 
       "succeeds when allowAnonymous = true" in {
@@ -70,7 +69,7 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
           .provideSomeLayer[Environment with Config](ZLayer.fromEffect(IdentityProvider.load))
           .runWithConfig(config)
 
-        authorize(Request(), ok).runWithConfig(config).status shouldEqual Status.Ok
+        authorize(Request.empty(), ok).runWithConfig(config).status shouldEqual Status.Ok
       }
     }
 
@@ -82,13 +81,12 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
 
       val response = ZIO.access[UserIdentity](_.get).map {
         identity =>
-          Response[Task](headers = Headers(identity.map(id => Header("FoundIdentity", id.name)).toList))
+          Response.plain("", headers = identity.map("FoundIdentity" -> _.name).toList)
       }
 
       def check(name: Option[String]) =
-        authorize(Request(headers = Headers(name.map(Header("X-User-Name", _)).toList)), response).runWithConfig(config)
-          .headers.get(CaseInsensitiveString("FoundIdentity"))
-          .map(_.value)
+        authorize(name.map("X-User-Name" -> _).toList.foldLeft(Request.empty()) { case (r, (k, v)) => r.addHeader(k, v) }, response).runWithConfig(config)
+          .headers.get("FoundIdentity")
 
       "non-empty when header is present" in {
         check(Some("bob")) shouldEqual Some("bob")

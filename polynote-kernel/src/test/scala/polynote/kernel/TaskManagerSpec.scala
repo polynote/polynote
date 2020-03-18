@@ -10,7 +10,7 @@ import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
 import polynote.messages.TinyList
 import polynote.testing.{MockPublish, ZIOSpec}
-import zio.{DefaultRuntime, Semaphore, Task, ZIO}
+import zio.{Semaphore, Task, ZIO}
 
 import scala.collection.JavaConverters._
 

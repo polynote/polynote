@@ -1,99 +1,30 @@
 package polynote.server
 
-import cats.{Applicative, MonadError}
-import cats.effect.Concurrent
+import java.util.concurrent.atomic.AtomicInteger
+
 import cats.instances.list._
 import cats.syntax.either._
 import cats.syntax.traverse._
-import fs2.Stream
-import fs2.concurrent.Queue
-import org.http4s.Response
-import org.http4s.server.websocket.WebSocketBuilder
-import org.http4s.websocket.WebSocketFrame
 import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, PresenceUpdate, StreamThrowableOps, StreamingHandles, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
-import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
 import polynote.messages._
-import polynote.server.SocketSession.sessionId
-import polynote.server.auth.{Permission, UserIdentity}
-import zio.{Promise, RIO, Task, UIO, URIO, ZIO, ZLayer}
+import polynote.server.auth.Permission
+import uzhttp.HTTPError
+import HTTPError.NotFound
+import polynote.kernel.logging.Logging
+import uzhttp.websocket.Frame
+import zio.stream.{Stream, Take}
+import zio.ZQueue
+import zio.stream.ZStream
+import zio.{Promise, RIO, Task, UIO, ZIO, ZLayer}
 
-import scala.concurrent.duration.{Duration, SECONDS}
 
-
-class NotebookSession(
-  subscriber: KernelSubscriber,
-  streamingHandles: StreamingHandles.Service,
-  closed: Promise[Throwable, Unit],
-  input: Queue[Task, WebSocketFrame],
-  output: Queue[Task, WebSocketFrame],
-  publishMessage: Publish[Task, Message]
-) {
+class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingHandles.Service) {
 
   private val streamingHandlesLayer = ZLayer.succeed(streamingHandles)
 
-  def close(): URIO[SessionEnv, Unit] =
-        subscriber.close() *> closed.succeed(()).flatMap {
-          case true => ZIO.mapN(UserIdentity.access, subscriber.currentPath.orDie) {
-              (user, path) => output.enqueue1(WebSocketFrame.Close()).orDie *> Logging.info(s"Closing notebook session $path for $user")
-            }.flatten
-          case false => ZIO.unit
-        }
-
-  lazy val toResponse: ZIO[SessionEnv, Throwable, Response[Task]] = {
-    for {
-      env       <- ZIO.environment[SessionEnv]
-      _         <- sendNotebookInfo()
-      processor <- process(input, output)
-      fiber     <- processor.interruptWhen(closed.await.either.as(Either.right[Throwable, Unit](()))).compile.drain.ignore.forkDaemon
-      keepalive <- Stream.awakeEvery[Task](Duration(10, SECONDS)).map(_ => WebSocketFrame.Ping())
-        .interruptWhen(closed.await.either.as(Either.right[Throwable, Unit](())))
-        .through(output.enqueue)
-        .compile.drain.ignore.forkDaemon
-      response  <- WebSocketBuilder[Task].build(
-        output.dequeue.terminateAfter(_.isInstanceOf[WebSocketFrame.Close]) ++ Stream.eval(close().provide(env)).drain,
-        input.enqueue,
-        onClose = keepalive.interrupt *> fiber.interrupt.unit *> close().provide(env))
-    } yield response
-  }.provideSomeLayer[SessionEnv](ZLayer.succeed(publishMessage))
-
-  def process(input: Queue[Task, WebSocketFrame], output: Queue[Task, WebSocketFrame]): URIO[SessionEnv, Stream[Task, Unit]] =
-    ZIO.environment[SessionEnv with PublishMessage].map {
-      env => input.dequeue.flatMap {
-        case WebSocketFrame.Close(_) => Stream.eval(output.enqueue1(WebSocketFrame.Close())).drain
-        case WebSocketFrame.Binary(data, true) => Stream.eval(Message.decode[Task](data))
-        case _ => Stream.empty
-      }.evalMap {
-        message =>
-          handleMessage(message).catchAll {
-            err => Logging.error("Kernel error", err) *> PublishMessage(Error(0, err))
-          }.provide(env).forkDaemon.unit
-      }
-    }.provideSomeLayer[SessionEnv](ZLayer.succeed(publishMessage))
-
-  private def sendNotebookInfo() = {
-    def publishRunningKernelState(publisher: KernelPublisher) = for {
-      kernel <- publisher.kernel
-        _      <- kernel.values().flatMap(_.filter(_.sourceCell < 0).map(rv => PublishMessage(CellResult(rv.sourceCell, rv))).sequence)
-        _      <- kernel.info().map(KernelStatus(_)) >>= PublishMessage.apply
-    } yield ()
-
-    for {
-      notebook <- subscriber.notebook
-      _        <- PublishMessage(notebook)
-      status   <- subscriber.publisher.kernelStatus()
-      _        <- PublishMessage(KernelStatus(status))
-      _        <- if (status.alive) publishRunningKernelState(subscriber.publisher) else ZIO.unit
-      tasks    <- subscriber.publisher.taskManager.list
-      _        <- PublishMessage(KernelStatus(UpdatedTasks(tasks)))
-      presence <- subscriber.publisher.subscribersPresent
-      _        <- PublishMessage(KernelStatus(PresenceUpdate(presence.filterNot(_._1.id == subscriber.id).map(_._1), Nil))) // TODO: if there are tons of subscribers, disable presence stuff
-      _        <- presence.flatMap(_._2.toList).map(sel => PublishMessage(KernelStatus(sel))).sequence
-    } yield ()
-  }
-
-  val handleMessage: PartialFunction[Message, RIO[SessionEnv with PublishMessage, Unit]] = {
+  val handleMessage: Message => RIO[SessionEnv with PublishMessage, Unit] = {
     case upConfig @ UpdateConfig(_, _, config) =>
       for {
         _ <- subscriber.checkPermission(Permission.ModifyNotebook)
@@ -161,30 +92,69 @@ class NotebookSession(
           val updates = cellIds.map(id => PublishMessage(CellResult(id, ClearResults()))).sequence.unit
           (ver -> notebook.copy(cells = ShortList(newCells)), updates)
       }
-        _          <- publish
+      _          <- publish
     } yield ()
 
     case nv @ NotebookVersion(path, _) => for {
       versioned  <- subscriber.publisher.latestVersion
-        _          <- PublishMessage(nv.copy(globalVersion = versioned._1))
+      _          <- PublishMessage(nv.copy(globalVersion = versioned._1))
     } yield ()
 
     case CurrentSelection(cellID, range) => subscriber.setSelection(cellID, range)
+
+    // TODO: remove once Global and Notebook messages are separated, to give back exhaustivity checking
+    case _ => ZIO.unit
   }
+
+  private def sendStatus: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] = subscriber.publisher.kernelStatus().flatMap {
+    status => PublishMessage(KernelStatus(status)) *> ZIO.when(status.alive) {
+      subscriber.publisher.kernel.flatMap {
+        kernel => kernel.values().flatMap {
+          values => ZIO.foreach_(values.filter(_.sourceCell < 0))(value => PublishMessage(CellResult(value.sourceCell, value)))
+        } *> (kernel.info().map(KernelStatus(_)) >>= PublishMessage)
+      }
+    }
+  }
+
+  private def sendTasks: RIO[PublishMessage, Unit] =
+    subscriber.publisher.taskManager.list.map(tasks => KernelStatus(UpdatedTasks(tasks))) >>= PublishMessage
+
+  private def sendPresence: RIO[PublishMessage, Unit] = subscriber.publisher.subscribersPresent.flatMap {
+    presence =>
+      PublishMessage(KernelStatus(PresenceUpdate(presence.filterNot(_._1.id == subscriber.id).map(_._1), Nil))) *>
+        ZIO.foreach_(presence.flatMap(_._2.toList).map(sel => KernelStatus(sel)))(PublishMessage)
+  }
+
+  def sendNotebookInfo: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] =
+    (subscriber.notebook >>= PublishMessage) *> sendStatus *> sendTasks *> sendPresence
 
 }
 
 object NotebookSession {
-  def apply(path: String): ZIO[SessionEnv with NotebookManager, Throwable, NotebookSession] = for {
-    publisher        <- NotebookManager.open(path)
-    input            <- Queue.unbounded[Task, WebSocketFrame]
-    output           <- Queue.unbounded[Task, WebSocketFrame]
-    publishMessage   <- Env.add[SessionEnv with NotebookManager](Publish(output).contraFlatMap(toFrame))
-    subscriber       <- publisher.subscribe()
-    sessionId        <- ZIO.effectTotal(sessionId.getAndIncrement())
-    streamingHandles <- StreamingHandles.make(sessionId)
-    closed           <- Promise.make[Throwable, Unit]
-    session           = new NotebookSession(subscriber, streamingHandles, closed, input, output, publishMessage)
-    _                <- subscriber.closed.await.flatMap(_ => session.close()).forkDaemon
-  } yield session
+
+  def stream(path: String, input: Stream[Throwable, Frame]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
+    for {
+      publisher        <- NotebookManager.open(path).orElseFail(NotFound(path))
+      output           <- ZQueue.unbounded[Take[Nothing, Message]]
+      publishMessage   <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])
+      subscriber       <- publisher.subscribe().orDie
+      sessionId        <- nextSessionId
+      streamingHandles <- StreamingHandles.make(sessionId).orDie
+      closed           <- Promise.make[Throwable, Unit]
+      handler           = new NotebookSession(subscriber, streamingHandles)
+      env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
+      close             = closeQueueIf(closed, output) *> subscriber.close()
+      _                <- handler.sendNotebookInfo
+    } yield parallelStreams(
+      toFrames(ZStream.fromQueueWithShutdown(output).unTake),
+      input.handleMessages(close)(handler.handleMessage andThen (_.as(None)) andThen SocketSession.errorHandler).haltWhen(closed) ++ closeStream(closed, output),
+      keepaliveStream(closed)
+    ).provide(env)
+  }.catchAll {
+    case err: HTTPError => ZIO.fail(err)
+    case err => ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
+  }
+
+  private val sessionId = new AtomicInteger(0)
+  def nextSessionId: UIO[Int] = ZIO.effectTotal(sessionId.getAndIncrement())
 }

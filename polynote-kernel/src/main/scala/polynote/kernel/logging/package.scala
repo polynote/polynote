@@ -32,11 +32,13 @@ package object logging {
         private val Red = "\u001b[31m"
         private val Reset = "\u001b[0m"
         private val remotePrefix = "[REMOTE] "
+        private val remoteIndent = "    |    "
         private val errorPrefix = "[ERROR]".padTo(remotePrefix.length, ' ')
+        private val errorIndent = "   |   ".padTo(remotePrefix.length, ' ')
         private val infoPrefix = "[INFO]".padTo(remotePrefix.length, ' ')
+        private val infoIndent = "   |  ".padTo(remotePrefix.length, ' ')
         private val warnPrefix = "[WARN]".padTo(remotePrefix.length, ' ')
-        private val indent = "".padTo(remotePrefix.length, ' ')
-        private val colonIndent = " :".padTo(remotePrefix.length, ' ').reverse
+        private val warnIndent = infoIndent
 
         override def error(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
           out.synchronized {
@@ -50,7 +52,7 @@ package object logging {
             out.println(lines.next())
             lines.foreach {
               l =>
-                out.print(indent)
+                out.print(errorIndent)
                 out.println(l)
             }
             out.print(Reset)
@@ -67,11 +69,11 @@ package object logging {
               out.println(s" (Logged from ${location.file}:${location.line})")
             else
               out.println("")
-            out.print(colonIndent)
+            out.print(errorIndent)
             out.println(err)
             err.getStackTrace.foreach {
               el =>
-                out.print(indent)
+                out.print(errorIndent)
                 out.println(el)
             }
             out.print(Reset)
@@ -87,24 +89,24 @@ package object logging {
               out.println(s" (Logged from ${location.file}:${location.line})")
             else
               out.println("")
-            out.print(colonIndent)
+            out.print(errorIndent)
             val squashed = err.squash
             out.println(squashed)
             squashed.getStackTrace.foreach {
               el =>
-                out.print(indent)
+                out.print(errorIndent)
                 out.println(el)
             }
             new StringOps(err.prettyPrint).linesWithSeparators.foreach {
               line =>
-                out.print(indent)
+                out.print(errorIndent)
                 out.print(line)
             }
             out.print(Reset)
           }
         }.ignore
 
-        private def printWithPrefix(prefix: String, msg: String)(implicit location: Location): UIO[Unit] =
+        private def printWithPrefix(prefix: String, indent: String, msg: String)(implicit location: Location): UIO[Unit] =
           blocking.effectBlocking {
             out.synchronized {
               val lines = new StringOps(msg).lines
@@ -119,9 +121,9 @@ package object logging {
             }
           }.ignore
 
-        override def warn(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(warnPrefix, msg)
-        override def info(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(infoPrefix, msg)
-        override def remote(msg: String): UIO[Unit] = printWithPrefix(remotePrefix, msg)(Location.Empty)
+        override def warn(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(warnPrefix, warnIndent, msg)
+        override def info(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(infoPrefix, infoIndent, msg)
+        override def remote(msg: String): UIO[Unit] = printWithPrefix(remotePrefix, remoteIndent, msg)(Location.Empty)
       }
     }
 

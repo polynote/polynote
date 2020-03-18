@@ -2,12 +2,11 @@ package polynote.server
 
 import java.util.ServiceLoader
 
-import org.http4s.{Request, Response}
 import polynote.config.AuthProvider
-import polynote.env.ops.Enrich
 import polynote.kernel.BaseEnv
-import polynote.kernel.environment.{Config, Env}
+import polynote.kernel.environment.Config
 import polynote.server.Server.Routes
+import uzhttp.{HTTPError, Request, Response}
 import zio.blocking.effectBlocking
 import zio.{Has, RIO, Task, URIO, ZIO, ZLayer}
 
@@ -26,7 +25,7 @@ package object auth {
         * Check the authorization for a request, failing with a Response (if not authorized) or succeeding with an
         * Identity (if authorized) or None to indicate authorized anonymous access
         */
-      def checkAuth(req: Request[Task]): ZIO[BaseEnv with Config, Response[Task], Option[Identity]]
+      def checkAuth(req: Request): ZIO[BaseEnv with Config, Response, Option[Identity]]
 
       /**
         * Check whether the given identity (or None for anonymous) has the given permission. If not, the returned task
@@ -37,7 +36,7 @@ package object auth {
 
     val noneService: Service = new Service {
       def authRoutes: Option[Routes] = None
-      def checkAuth(req: Request[Task]): ZIO[BaseEnv with Config, Response[Task], Option[Identity]] = ZIO.succeed(None)
+      def checkAuth(req: Request): ZIO[BaseEnv with Config, Response, Option[Identity]] = ZIO.succeed(None)
       def checkPermission(ident: Option[Identity], permission: Permission): ZIO[BaseEnv with Config, Permission.PermissionDenied, Unit] = ZIO.unit
     }
 
@@ -60,8 +59,8 @@ package object auth {
 
     def access: URIO[IdentityProvider, Service] = ZIO.access[IdentityProvider](_.get)
 
-    def authRoutes: RIO[IdentityProvider, Routes] =
-      ZIO.access[IdentityProvider](_.get.authRoutes.getOrElse(PartialFunction.empty))
+    def authRoutes: URIO[IdentityProvider, Routes] =
+      ZIO.access[IdentityProvider](_.get[IdentityProvider.Service].authRoutes.getOrElse(PartialFunction.empty))
 
     /**
       * Fail if the current user doesn't have the given permission
@@ -75,7 +74,7 @@ package object auth {
     /**
       * Provide a function that will authorize a Request against the configured auth provider
       */
-    def authorize[Env <: BaseEnv with Config]: RIO[Env with IdentityProvider, (Request[Task], RIO[Env with UserIdentity, Response[Task]]) => RIO[Env, Response[Task]]] =
+    def authorize[Env <: BaseEnv with Config]: URIO[Env with IdentityProvider, (Request, ZIO[Env with UserIdentity, HTTPError, Response]) => ZIO[Env, HTTPError, Response]] =
       access.map {
         provider =>
           (req, task) =>

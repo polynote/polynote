@@ -10,7 +10,7 @@ import polynote.kernel.interpreter.{CellExecutor, Interpreter}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
-import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, InterpreterEnv, KernelStatusUpdate, Result, StreamingHandles, TaskInfo, TaskManager}
+import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, InterpreterEnv, KernelStatusUpdate, Result, StreamingHandles, TaskInfo}
 import polynote.messages._
 import polynote.runtime.{KernelRuntime, StreamingDataRepr, TableOp}
 import polynote.testing.MockPublish

@@ -21,8 +21,6 @@ import zio.system.System
 
 package object kernel {
 
-  type TaskManager = Has[TaskManager.Service]
-
   type BaseEnv = Blocking with Clock with System with Logging
 
   // some type aliases jut to avoid env clutter

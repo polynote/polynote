@@ -1,24 +1,10 @@
 package polynote.server.auth
 
-import java.util.ServiceLoader
-
-import cats.syntax.either._
-import cats.syntax.traverse._
-import cats.instances.either._
-import cats.instances.option._
-import io.circe.{Decoder, Encoder, Json, JsonObject}
-import org.http4s.{Request, Response}
-import polynote.config.AuthProvider
-import polynote.env.ops.Enrich
-import polynote.kernel.environment.{Config, CurrentNotebook, Env}
-import polynote.kernel.{BaseEnv, TaskB}
+import io.circe.{Decoder, Encoder, JsonObject}
+import polynote.kernel.environment.Config
+import polynote.kernel.BaseEnv
 import polynote.messages.CellID
-import polynote.server.Server.Routes
-import zio.{RIO, Task, UIO, URIO, ZIO}
-import polynote.server.auth
-import zio.interop.catz._
-import zio.blocking.effectBlocking
-import ZIO.effectTotal
+import zio.RIO
 
 trait Identity {
   def name: String

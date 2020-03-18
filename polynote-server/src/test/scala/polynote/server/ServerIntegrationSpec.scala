@@ -37,7 +37,7 @@ class ServerIntegrationSpec extends FeatureSpec with ZIOSpec with GivenWhenThen 
   class Client(broadcastAll: Topic[Task, Option[Message]]) {
     val sessionId: Int = nextSessionId.getAndIncrement()
     val env: MockKernelEnv = unsafeRun(MockKernelEnv(kernelFactory, sessionId))
-    val handler = new SessionHandler(notebookManager, unsafeRun(Promise.make))
+    val handler = new SocketSession(notebookManager, unsafeRun(Promise.make))
   }
 
 }

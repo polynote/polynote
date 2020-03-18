@@ -13,7 +13,7 @@ import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
 import zio.internal.Executor
 import zio.interop.catz._
-import zio.{Has, RIO, Tagged, Task, UIO, URIO, ZIO, ZLayer}
+import zio.{Has, Layer, RIO, Tagged, Task, UIO, URIO, ZIO, ZLayer}
 //import zio.syntax.zioTuple3Syntax
 
 //////////////////////////////////////////////////////////////////////
@@ -27,7 +27,7 @@ import zio.{Has, RIO, Tagged, Task, UIO, URIO, ZIO, ZLayer}
 object Config {
   def access: URIO[Config, PolynoteConfig] = ZIO.access[Config](_.get)
   def of(config: PolynoteConfig): Config = Has(config)
-  def layer(config: PolynoteConfig): ZLayer.NoDeps[Nothing, Config] = ZLayer.succeed(config)
+  def layer(config: PolynoteConfig): Layer[Nothing, Config] = ZLayer.succeed(config)
 }
 
 /**
@@ -38,7 +38,7 @@ object PublishStatus {
   def apply(statusUpdate: KernelStatusUpdate): RIO[PublishStatus, Unit] =
    access.flatMap(_.publish1(statusUpdate))
 
-  def layer(publishStatus: Publish[Task, KernelStatusUpdate]): ZLayer.NoDeps[Nothing, PublishStatus] = ZLayer.succeed(publishStatus)
+  def layer(publishStatus: Publish[Task, KernelStatusUpdate]): Layer[Nothing, PublishStatus] = ZLayer.succeed(publishStatus)
 }
 
 /**
@@ -58,7 +58,7 @@ object PublishResult {
 /**
   * The capability to publish general messages
   */
-object PublishMessage {
+object PublishMessage extends (Message => RIO[PublishMessage, Unit]) {
   def access: RIO[PublishMessage, Publish[Task, Message]] = ZIO.access[PublishMessage](_.get)
   def apply(message: Message): RIO[PublishMessage, Unit] =
     access.flatMap(_.publish1(message))
@@ -81,8 +81,8 @@ object CurrentTask {
 
   def of(ref: Ref[Task, TaskInfo]): CurrentTask = Has(ref)
 
-  def layer(ref: Ref[Task, TaskInfo]): ZLayer.NoDeps[Nothing, CurrentTask] = ZLayer.succeed(ref)
-  def none: ZLayer.NoDeps[Throwable, CurrentTask] = ZLayer.fromEffect(Ref[Task].of(TaskInfo("None")))
+  def layer(ref: Ref[Task, TaskInfo]): Layer[Nothing, CurrentTask] = ZLayer.succeed(ref)
+  def none: Layer[Throwable, CurrentTask] = ZLayer.fromEffect(Ref[Task].of(TaskInfo("None")))
 }
 
 /**
@@ -97,7 +97,7 @@ object CurrentRuntime {
     _ => ()
   )
 
-  val noRuntime: ZLayer.NoDeps[Nothing, CurrentRuntime] = ZLayer.succeed(NoRuntime)
+  val noRuntime: Layer[Nothing, CurrentRuntime] = ZLayer.succeed(NoRuntime)
 
   def from(
     cellID: CellID,
@@ -130,7 +130,7 @@ object CurrentRuntime {
 // TODO: should separate out a read-only capability for interpreters (they have no business modifying the notebook)
 object CurrentNotebook {
   def of(ref: Ref[Task, (Int, Notebook)]): CurrentNotebook = Has(ref)
-  def layer(ref: Ref[Task, (Int, Notebook)]): ZLayer.NoDeps[Nothing, CurrentNotebook] = ZLayer.succeed(ref)
+  def layer(ref: Ref[Task, (Int, Notebook)]): Layer[Nothing, CurrentNotebook] = ZLayer.succeed(ref)
   def get: RIO[CurrentNotebook, Notebook] = getVersioned.map(_._2)
   def getVersioned: RIO[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.get.get)
 

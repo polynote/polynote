@@ -8,7 +8,6 @@ import java.util.concurrent.TimeUnit
 import cats.{Applicative, MonadError}
 import cats.effect.{Concurrent, ConcurrentEffect, ContextShift, Timer}
 import fs2.concurrent.Topic
-import org.http4s.websocket.WebSocketFrame.Binary
 import polynote.config.{Mount, PolynoteConfig}
 import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.logging.Logging
@@ -17,12 +16,16 @@ import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, TaskB, TaskG}
 import polynote.messages.{CreateNotebook, DeleteNotebook, Error, Message, RenameNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
 import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
+import scodec.bits.ByteVector
+import uzhttp.websocket.{Binary, Close, Frame, Ping, Pong}
 import zio.blocking.Blocking
+import zio.clock.Clock
 import zio.duration.Duration
-import zio.{Fiber, Has, Promise, RIO, Schedule, Task, UIO, ZIO}
+import zio.stream.{Take, ZStream}
+import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Task, UIO, URIO, ZIO}
 
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{DurationInt, SECONDS}
 
 package object server {
   type SessionEnv = BaseEnv with GlobalEnv with UserIdentity with IdentityProvider
@@ -40,16 +43,57 @@ package object server {
   implicit val rioApplicativeGlobal: Applicative[TaskG] = interop.taskConcurrentInstance[BaseEnv with GlobalEnv]
   implicit val rioApplicativePublishMessage: Applicative[RIO[PublishMessage, ?]] = interop.taskConcurrentInstance[PublishMessage]
 
-  def toFrame(message: Message): Task[Binary] = {
-    Message.encode[Task](message).map(bits => Binary(bits.toByteVector))
+  def toFrame(message: Message): ZIO[Any, Throwable, Binary] =
+    Message.encode[Task](message).map(bits => Binary(bits.toByteArray))
+
+  def toFrames[R](stream: ZStream[R, Throwable, Message]): ZStream[R, Throwable, Binary] =
+    stream.mapM(toFrame)
+
+  implicit class FrameStreamOps[R](val self: ZStream[R, Throwable, Frame]) extends AnyVal {
+    def handleMessages[R1 <: R, A](onClose: ZIO[R, Throwable, Any])(fn: Message => ZIO[R1, Throwable, Option[Message]]): ZStream[R1, Throwable, Frame] =
+      self.mapM {
+        case Binary(data, true) => Message.decode[Task](ByteVector(data))
+          .flatMap(fn).flatMap {
+            case Some(msg) => toFrame(msg).asSome
+            case None => ZIO.none
+          }
+        case Ping => ZIO.succeed(Some(Pong))
+        case Pong => ZIO.none
+        case Close => onClose.as(Some(Close))
+        case _ => ZIO.none
+      }.unNone
   }
+
+  def closeQueueIf[A](promise: Promise[Throwable, Unit], queue: Queue[Take[Nothing, A]]): UIO[Unit] =
+    promise.succeed(()).flatMap {
+      case true => queue.offer(Take.End).unit
+      case false => ZIO.unit
+    }
+
+  def closeStream[A](closed: Promise[Throwable, Unit], queue: Queue[Take[Nothing, A]]): ZStream[Any, Nothing, Nothing] =
+    ZStream.fromEffect(closeQueueIf(closed, queue)).drain
+
+  def keepaliveStream(closed: Promise[Throwable, Unit]): ZStream[Clock, Throwable, Frame] =
+    ZStream.fromSchedule(Schedule.fixed(zio.duration.Duration(10, SECONDS)).as(Ping)).interruptWhen(closed)
+
+  def parallelStreams[R, E, A](streams: ZStream[R, E, A]*): ZStream[R, E, A] =
+    ZStream.flattenPar(streams.size)(ZStream(streams: _*))
+
+  def streamEffects[R, E, A](effects: ZIO[R, E, A]*): ZStream[R, E, A] = ZStream.flatten(ZStream(effects.map(e => ZStream.fromEffect(e)): _*))
 
   type NotebookManager = Has[NotebookManager.Service]
 
   object NotebookManager {
 
-    def access: RIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
+    def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
+    def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())
+    def listRunning(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.listRunning())
+    def status(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelBusyState] = access.flatMap(_.status(path))
+    def create(path: String, maybeContent: Option[String]): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.create(path, maybeContent))
+    def rename(path: String, newPath: String): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.rename(path, newPath))
+    def copy(path: String, newPath: String): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.copy(path, newPath))
+    def delete(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Unit] = access.flatMap(_.delete(path))
 
     trait Service {
       def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]
@@ -85,25 +129,26 @@ package object server {
         // write the notebook every 1 second, if it's changed.
         private def startWriter(publisher: KernelPublisher): ZIO[BaseEnv with GlobalEnv, Nothing, NotebookWriter] = for {
           shutdownSignal <- Promise.make[Throwable, Unit]
-            nbPath          = publisher.latestVersion.map(_._2.path).orDie
-            fiber          <- publisher.notebooks.debounce(1.second).evalMap {
-              notebook => repository.saveNotebook(notebook)
-                .tapError(Logging.error("Error writing notebook file", _))
-                .retry(Schedule.exponential(Duration(250, TimeUnit.MILLISECONDS)).untilOutput(_ > maxRetryDelay))
-                .tapError(err =>
-                  nbPath.flatMap(path => broadcastMessage(Error(0, new Exception(s"Notebook writer for $path is repeatedly failing! Notebook editing will be disabled.", err))) *> publisher.close()))
-                .onInterrupt(nbPath.flatMap(path => Logging.info(s"Stopped writer for $path (interrupted)")))
-            }.interruptAndIgnoreWhen(shutdownSignal).interruptAndIgnoreWhen(publisher.closed).onFinalize {
-              nbPath.flatMap(path => Logging.info(s"Stopped writer for $path (interrupted)"))
-            }.compile.drain.forkDaemon
+          nbPath          = publisher.latestVersion.map(_._2.path).orDie
+          curPath        <- nbPath
+          fiber          <- Logging.info(s"Starting writer for $curPath") *> publisher.notebooks.debounce(1.second).evalMap {
+            notebook => repository.saveNotebook(notebook)
+              .tapError(Logging.error("Error writing notebook file", _))
+              .retry(Schedule.exponential(Duration(250, TimeUnit.MILLISECONDS)).untilOutput(_ > maxRetryDelay))
+              .tapError(err =>
+                nbPath.flatMap(path => broadcastMessage(Error(0, new Exception(s"Notebook writer for $path is repeatedly failing! Notebook editing will be disabled.", err))) *> publisher.close()))
+              .onInterrupt(nbPath.flatMap(path => Logging.info(s"Stopped writer for $path (interrupted)")))
+          }.interruptAndIgnoreWhen(shutdownSignal).interruptAndIgnoreWhen(publisher.closed).onFinalize {
+            nbPath.flatMap(path => Logging.info(s"Stopped writer for $path (interrupted)"))
+          }.compile.drain.forkDaemon
         } yield NotebookWriter(fiber, shutdownSignal)
 
         override def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher] = openNotebooks.getOrCreate(path) {
           for {
             notebook      <- repository.loadNotebook(path)
-              publisher     <- KernelPublisher(notebook, broadcastAll)
-              writer        <- startWriter(publisher)
-              onClose       <- publisher.closed.await.flatMap(_ => openNotebooks.remove(path)).forkDaemon
+            publisher     <- KernelPublisher(notebook, broadcastAll)
+            writer        <- startWriter(publisher)
+            onClose       <- publisher.closed.await.flatMap(_ => openNotebooks.remove(path)).forkDaemon
           } yield (publisher, writer)
         }.flatMap {
           case (publisher, writer) => publisher.closed.isDone.flatMap {
@@ -178,9 +223,9 @@ package object server {
 
     def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, NotebookManager.Service] = for {
       config    <- Config.access
-        blocking  <- ZIO.access[Blocking](_.get[Blocking.Service].blockingExecutor)
-        repository = makeTreeRepository(config.storage.dir, config.storage.mounts, config, blocking.asEC)
-        service   <- Service(repository, broadcastAll)
+      blocking  <- ZIO.access[Blocking](_.get[Blocking.Service].blockingExecutor)
+      repository = makeTreeRepository(config.storage.dir, config.storage.mounts, config, blocking.asEC)
+      service   <- Service(repository, broadcastAll)
     } yield service
   }
 }

@@ -9,8 +9,9 @@ import cats.instances.map._
 import cats.instances.list._
 import polynote.messages.CellID
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
+import polynote.kernel.task.TaskManager
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Has, RIO, Task, ZIO, ZLayer}
+import zio.{Has, Layer, RIO, Task, ZIO, ZLayer}
 
 trait Interpreter {
 
@@ -77,7 +78,7 @@ object Interpreter {
   type Factories = Has[Map[String, List[Interpreter.Factory]]]
 
   object Factories {
-    def layer(factories: Map[String, List[Interpreter.Factory]]): ZLayer.NoDeps[Nothing, Factories] = ZLayer.succeed(factories)
+    def layer(factories: Map[String, List[Interpreter.Factory]]): Layer[Nothing, Factories] = ZLayer.succeed(factories)
     def access: ZIO[Factories, Nothing, Map[String, List[Interpreter.Factory]]] = ZIO.access[Factories](_.get)
   }
 

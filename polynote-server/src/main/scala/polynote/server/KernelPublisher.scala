@@ -2,7 +2,7 @@ package polynote
 package server
 
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
+import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.concurrent.Ref
 import cats.instances.list._
@@ -10,13 +10,9 @@ import cats.syntax.traverse._
 import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.kernel.util.{Publish, RefMap}
-import Publish.{PublishEnqueue, PublishTopic}
-import polynote.config.PolynoteConfig
-import polynote.env.ops._
-import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
-import polynote.kernel.interpreter.Interpreter
-import polynote.messages.{CellID, CellResult, Error, KernelStatus, Message, Notebook, NotebookUpdate, RenameNotebook, ShortList, ShortString}
-import polynote.kernel.{BaseEnv, CellEnv, ClearResults, Completion, Deque, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskManager}
+import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
+import polynote.messages.{CellID, CellResult, Error, Message, Notebook, NotebookUpdate, ShortList}
+import polynote.kernel.{BaseEnv, CellEnv, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Has, Promise, RIO, Semaphore, Task, UIO, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}

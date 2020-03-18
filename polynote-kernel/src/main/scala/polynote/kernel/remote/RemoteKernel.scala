@@ -21,7 +21,7 @@ import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Promise, RIO, Task, UIO, ZIO, ZLayer}
+import zio.{Layer, Promise, RIO, Task, UIO, ZIO, ZLayer}
 import zio.blocking.effectBlocking
 import zio.duration.Duration
 import zio.interop.catz._
@@ -305,9 +305,9 @@ object RemoteKernelClient extends polynote.app.App {
     interpreterFactories: Map[String, List[Interpreter.Factory]],
     kernelFactory: Factory.Service,
     polynoteConfig: PolynoteConfig
-  ): ZLayer.NoDeps[Throwable, GlobalEnv with CellEnv with PublishRemoteResponse] = {
+  ): Layer[Throwable, GlobalEnv with CellEnv with PublishRemoteResponse] = {
     val publishStatus = PublishStatus.layer(publishResponse.contramap(KernelStatusResponse.apply))
-    val publishRemote: ZLayer.NoDeps[Nothing, PublishRemoteResponse] = ZLayer.succeed(publishResponse)
+    val publishRemote: Layer[Nothing, PublishRemoteResponse] = ZLayer.succeed(publishResponse)
 
     Config.layer(polynoteConfig) ++
       CurrentNotebook.layer(currentNotebook) ++

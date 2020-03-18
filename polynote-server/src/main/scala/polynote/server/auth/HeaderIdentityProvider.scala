@@ -1,25 +1,24 @@
 package polynote.server.auth
-import io.circe.{Decoder, Encoder, Json, JsonObject, ObjectEncoder}
+import io.circe.{Decoder, Json, JsonObject, ObjectEncoder}
 import io.circe.generic.extras.semiauto.{deriveDecoder, deriveEncoder}
-import org.http4s.util.CaseInsensitiveString
-import org.http4s.{Header, Request, Response}
+import uzhttp.{HTTPError, Request, Response}, HTTPError.Forbidden
 import polynote.kernel.{BaseEnv, environment}
-import polynote.kernel.environment.Config
-import zio.{RIO, Task, ZIO}
+import zio.{RIO, ZIO}
 import polynote.config.circeConfig
+import polynote.server.Server.Routes
 
 case class HeaderIdentityProvider(
   header: String,
   permissions: Map[String, Set[PermissionType]] = Map("*" -> PermissionType.All),
   allowAnonymous: Boolean = false
 ) extends IdentityProvider.Service {
-  override def authRoutes: Option[PartialFunction[Request[Task], RIO[BaseEnv, Response[Task]]]] = None
+  override def authRoutes: Option[Routes] = None
 
-  override def checkAuth(req: Request[Task]): ZIO[BaseEnv, Response[Task], Option[Identity]] =
-    req.headers.get(CaseInsensitiveString(header)) match {
-      case Some(Header(_, name))         => ZIO.succeed(Some(BasicIdentity(name)))
+  override def checkAuth(req: Request): ZIO[BaseEnv, Response, Option[Identity]] =
+    req.headers.get(header) match {
+      case Some(name)             => ZIO.succeed(Some(BasicIdentity(name)))
       case None if allowAnonymous => ZIO.succeed(None)
-      case None                          => ZIO.fail(Response[Task](status = org.http4s.Status.Forbidden))
+      case None                   => ZIO.fail(Response.plain("Anonymous access not allowed", status = Forbidden("Anonymous access not allowed")))
     }
 
   override def checkPermission(
