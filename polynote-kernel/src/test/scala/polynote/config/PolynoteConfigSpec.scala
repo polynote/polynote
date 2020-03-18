@@ -179,4 +179,24 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     val defaultConfig = PolynoteConfig()
     parsed shouldEqual Right(defaultConfig)
   }
+
+  it should "parse spark config int values properly" in {
+    val yamlStr =
+      """
+        |spark:
+        |  spark.executor.instances: 10
+        |""".stripMargin
+    val parsed = PolynoteConfig.parse(yamlStr)
+    parsed.right.value.spark.get.properties("spark.executor.instances") shouldEqual "10"
+  }
+
+  it should "parse spark config decimal values properly" in {
+    val yamlStr =
+      """
+        |spark:
+        |  spark.some.decimal: 1.523432422343
+        |""".stripMargin
+    val parsed = PolynoteConfig.parse(yamlStr)
+    parsed.right.value.spark.get.properties("spark.some.decimal") shouldEqual "1.523432422343"
+  }
 }

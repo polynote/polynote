@@ -114,10 +114,9 @@ class PythonInterpreter private[python] (
     cell      <- ZIO.succeed(s"Cell${state.id}")
     parsed    <- parse(code, cell)
     compiled  <- compile(parsed, cell)
-    locals    <- eval[PyObject]("{}")
     globals   <- populateGlobals(state)
     _         <- injectGlobals(globals)
-    resState  <- run(compiled, globals, locals, state)
+    resState  <- run(compiled, globals, state)
   } yield resState
 
   private def extractParams(jep: Jep, jediDefinition: PyObject): List[(String, String)] = {
@@ -269,6 +268,62 @@ class PythonInterpreter private[python] (
       |        else:
       |            return node
       |
+      |from collections import UserDict
+      |
+      |class TrackingNamespace(UserDict, dict):
+      |    '''
+      |    A special namespace for Python 3 exec() that provides access to globals while tracking variables added or
+      |    updated in the local namespace.
+      |
+      |    The global namespace is stored in `globals`.
+      |    The local namespace is stored in `locals`.
+      |
+      |    Why this is necessary:
+      |
+      |        When we run user code from a Python cell, we need to provide it access to the global namespace (builtins,
+      |        variables defined in other cells, etc). We also need to keep track of any modifications to the namespace
+      |        made as a result of executing the code (say, the definition/modification of a variable).
+      |
+      |        It would seem that the correct way to do this would be to call `exec` with all three parameters - the code,
+      |        the globals dictionary, and an empty locals dictionary to capture the execution results.
+      |
+      |        In fact, that is what we used to do, until we ran into this:
+      |
+      |           If exec gets two separate objects as globals and locals, the code will be executed as if it were embedded
+      |           in a class definition
+      |           (from https://docs.python.org/3/library/functions.html#exec)
+      |
+      |        Unfortunately, scoping acts a little strangely in class scopes:
+      |
+      |           Names in class scope are not accessible. Names are resolved in the innermost enclosing function scope. If
+      |           a class definition occurs in a chain of nested scopes, the resolution process skips class definitions.
+      |           (from https://www.python.org/dev/peps/pep-0227/#discussion)
+      |
+      |        See also this excellent post https://stackoverflow.com/a/13913933 for more details.
+      |
+      |        The solution to all this is "don't pass in two dictionaries to exec".
+      |
+      |        So, we need another way to provide a single dictionary that can provide the global namespace while still
+      |        tracking the execution result.
+      |
+      |        Luckily, someone else had the same problem, so I was able to grab this class from their solution, which
+      |        can be found at https://stackoverflow.com/a/48720150
+      |    '''
+      |
+      |
+      |    def __init__(self, initial, *args, **kw):
+      |        UserDict.__init__(self, *args, **kw)
+      |        self.globals = initial
+      |
+      |    def __getitem__(self, key):
+      |        try:
+      |            return self.data[key]
+      |        except KeyError:
+      |            return self.globals[key]
+      |
+      |    def __contains__(self, key):
+      |        return key in self.data or key in self.globals
+      |
       |def __polynote_mkindex__(l1, l2):
       |    import pandas as pd
       |    return pd.MultiIndex.from_arrays([[x for x in list(l1)], [x for x in list(l2)]])
@@ -293,14 +348,15 @@ class PythonInterpreter private[python] (
       |        Module = lambda nodelist, ignored: OriginalModule(nodelist)
       |    return list(map(lambda node: compile(Module([node], []), cell, 'exec'), parsed.body))
       |
-      |def __polynote_run__(compiled, _globals, _locals, kernel):
+      |def __polynote_run__(compiled, globals, kernel):
       |    try:
       |        sys.stdout = kernel.display
+      |        tracking_ns = TrackingNamespace(globals)
       |        for stat in compiled:
-      |            exec(stat, _globals, _locals)
-      |            _globals.update(_locals)
-      |        types = { x: type(y).__name__ for x,y in _locals.items() }
-      |        return { 'globals': _globals, 'locals': _locals, 'types': types }
+      |            exec(stat, tracking_ns)
+      |            tracking_ns.globals.update(tracking_ns.data)
+      |        types = { x: type(y).__name__ for x,y in tracking_ns.data.items() }
+      |        return { 'globals': tracking_ns.globals, 'locals': tracking_ns.data, 'types': types }
       |    except Exception as err:
       |        import traceback
       |
@@ -444,12 +500,12 @@ class PythonInterpreter private[python] (
       compile.callAs(classOf[PyObject], parsed, cell)
   }
 
-  protected def run(compiled: PyObject, globals: PyObject, locals: PyObject, state: State): RIO[CurrentRuntime, State] =
+  protected def run(compiled: PyObject, globals: PyObject, state: State): RIO[CurrentRuntime, State] =
     CurrentRuntime.access.flatMap {
       kernelRuntime => jep {
         jep =>
           val run = jep.getValue("__polynote_run__", classOf[PyCallable])
-          val result = run.callAs(classOf[PyObject], compiled, globals, locals, kernelRuntime)
+          val result = run.callAs(classOf[PyObject], compiled, globals, kernelRuntime)
           val get = result.getAttr("get", classOf[PyCallable])
           val convert = convertFromPython(jep)
           get.callAs(classOf[util.ArrayList[Object]], "stack_trace") match {

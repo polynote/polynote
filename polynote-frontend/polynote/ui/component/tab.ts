@@ -120,12 +120,12 @@ export class TabUI extends UIMessageTarget {
 
             for (const area in this.contentAreas) {
                 if (this.contentAreas.hasOwnProperty(area)) {
-                    if (this.currentTab.content[area] && this.currentTab.content[area].parentNode) {
+                    if (this.currentTab.content[area]?.parentNode) {
                         this.currentTab.content[area].parentNode.removeChild(this.currentTab.content[area]);
                     }
                 }
             }
-            if (this.tabEls[this.currentTab.name] && this.tabEls[this.currentTab.name].classList) {
+            if (this.tabEls[this.currentTab.name]?.classList) {
                 this.tabEls[this.currentTab.name].classList.remove('active');
             }
         }

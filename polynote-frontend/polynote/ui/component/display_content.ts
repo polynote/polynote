@@ -75,7 +75,7 @@ export function parseContentType(contentType: string): [string, Record<string, s
 }
 
 export function truncate(string: any, len?: number) {
-    len = len || 32;
+    len = len ?? 32;
     if (typeof string !== "string" && !(string instanceof String)) {
         string = string.toString();
     }

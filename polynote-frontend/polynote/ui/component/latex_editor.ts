@@ -163,7 +163,7 @@ export class LaTeXEditor extends UIMessageTarget {
         let currentKatexEl = null;
         while (notebookParent && (notebookParent.nodeType !== 1 || !(notebookParent.classList.contains('notebook-cells')))) {
             notebookParent = notebookParent.parentNode as HTMLElement;
-            if (notebookParent.hasAttribute && notebookParent.hasAttribute('data-tex-source'))
+            if (notebookParent.hasAttribute?.('data-tex-source'))
                 currentKatexEl = notebookParent;
         }
 
@@ -174,7 +174,7 @@ export class LaTeXEditor extends UIMessageTarget {
 
         let el = currentKatexEl;
         let deleteOnCancel = false;
-        let displayMode = (!!el && (el.classList.contains('katex-block') || el.classList.contains('katex-display')));
+        let displayMode = (el?.classList.contains('katex-block') || el?.classList.contains('katex-display'));
 
         if (!el) {
             if (selection.focusNode instanceof HTMLElement && selection.focusNode.tagName && selection.focusNode.tagName.toLowerCase() === "p" && selection.focusNode.textContent === "") {

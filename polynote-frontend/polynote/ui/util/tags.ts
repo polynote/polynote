@@ -110,9 +110,9 @@ export function icon(classes: string[], iconName: string, alt?: string) {
 export function a(classes: string[], href: string, contentOrPreventNavigate: Content | boolean, contentWhenPreventNavigate?: Content) {
     const preventNavigate = typeof(contentOrPreventNavigate) === "boolean" ? contentOrPreventNavigate : false;
     const content = typeof(contentOrPreventNavigate) === "boolean" ? contentWhenPreventNavigate : contentOrPreventNavigate;
-    const a = tag("a", classes, {href}, content);
+    const a = tag("a", classes, {href: href, toString: href}, content);
     if (preventNavigate) {
-        a.addEventListener("click", evt => {
+        a.addEventListener("click", (evt: MouseEvent) => {
             evt.preventDefault();
             return false;
         });
@@ -277,7 +277,7 @@ export interface TableElement extends TagElement<"table"> {
  */
 type TableRow = Record<string, Content>
 export function table(classes: string[], contentSpec: TableContentSpec): TableElement {
-    const colClass = (col: number) => contentSpec.classes ? contentSpec.classes[col] : '';
+    const colClass = (col: number) => contentSpec.classes?.[col] ?? '';
     const heading = contentSpec.header ? [tag('thead', [], {}, [
             tag('tr', [], {}, contentSpec.header.map((c, i) => tag('th', [colClass(i)], {}, [c])))
         ])] : [];
@@ -322,7 +322,7 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
 
     const body = tag(
         'tbody', [], {},
-        contentSpec.rows ? contentSpec.rows.map(mkTR) : []
+        contentSpec.rows?.map(mkTR) ?? []
     );
 
     const table = tag('table', classes, {}, [
@@ -331,7 +331,7 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
 
     return Object.assign(table, {
         addRow(row: Content[] | TableRow, whichBody?: TagElement<"tbody">) {
-            const tbody = whichBody === undefined ? body : whichBody;
+            const tbody = whichBody ?? body;
             const rowEl = mkTR(row);
             if (contentSpec.addToTop)
                 tbody.insertBefore(rowEl, tbody.firstChild);
@@ -363,7 +363,7 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
         addBody(rows?: TableRow[]) {
             const newBody = tag(
                 'tbody', [], {},
-                contentSpec.rows ? contentSpec.rows.map(mkTR) : []
+                contentSpec.rows?.map(mkTR) ?? []
             );
 
             table.appendChild(newBody);

@@ -46,14 +46,13 @@ export class KernelTasksUI {
             taskEl.attr('title', detail);
         }
 
-        const container = parent ? (this.tasks[parent] && this.tasks[parent].querySelector('.child-tasks'))
-                                 : this.taskContainer;
+        const container = (typeof parent !== "undefined" && (this.tasks[parent]?.querySelector('.child-tasks'))) ?? this.taskContainer;
 
         if (container) {
             KernelTasksUI.setProgress(taskEl, progress);
 
             let before = container.firstChild as KernelTask;
-            while (before && before.status <= status) {
+            while (before?.status <= status) {
                 before = before.nextSibling as KernelTask;
             }
 
@@ -70,7 +69,7 @@ export class KernelTasksUI {
 
     taskStatus(id: string) {
         const task = this.tasks[id];
-        return task && task.status;
+        return task?.status;
     }
 
     updateTask(id: string, label: string, detail: Content, status: number, progress: number, parent?: string) {

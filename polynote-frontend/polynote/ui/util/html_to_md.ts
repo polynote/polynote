@@ -127,7 +127,7 @@ export const htmlToMarkdown = (function () {
             }
 
             const accum = [...items].map((el, index) => {
-                const nodeName = el.nodeName && el.nodeName.toLowerCase();
+                const nodeName = el.nodeName?.toLowerCase();
                 if (nodeName && nodeName === 'li') {
                     return listItem(convertChildren(el), index);
                 } else return convert(el);

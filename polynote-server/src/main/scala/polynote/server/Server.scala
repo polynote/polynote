@@ -183,6 +183,7 @@ object Server {
     case ("--config" | "-c") :: filename :: rest => parseArgs(rest, current.copy(configFile = new File(filename)))
     case ("--watch"  | "-w") :: rest => parseArgs(rest, current.copy(watchUI = true))
     case serverClass(_) :: rest => parseArgs(rest, current) // class name might be arg0 in some circumstances
+    case "--config" :: Nil => Left(new IllegalArgumentException("No config path specified. Usage: `--config path/to/config.yml`"))
     case other :: rest => Left(new IllegalArgumentException(s"Unknown argument $other"))
   }
 

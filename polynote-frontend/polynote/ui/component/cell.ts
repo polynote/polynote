@@ -60,6 +60,7 @@ import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import SignatureHelpResult = languages.SignatureHelpResult;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import {CommentID, CommentHandler} from "./comment";
+import EditorOption = editor.EditorOption;
 
 export type CellContainer = TagElement<"div"> & {
     cell: Cell
@@ -215,7 +216,7 @@ export abstract class Cell extends UIMessageTarget {
 
             if (this instanceof CodeCell && action.ignoreWhenSuggesting) {
                 // this is really ugly, is there a better way to tell whether the widget is visible??
-                const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController)._widget._value.suggestWidgetVisible.get();
+                const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController).widget._value.suggestWidgetVisible.get();
                 if (!suggestionsVisible) { // don't do stuff when suggestions are visible
                     runAction()
                 }
@@ -289,7 +290,7 @@ export function errorDisplay(error: ServerErrorWithCause, currentFile: string, m
 
     let reachedIrrelevant = false;
 
-    if (error.stackTrace && error.stackTrace.length) {
+    if (error.stackTrace?.length) {
         error.stackTrace.forEach((traceEl, i) => {
             if (traceEl.file === currentFile && traceEl.line >= 0) {
                 if (cellLine === null)
@@ -343,7 +344,7 @@ export class CodeCell extends Cell {
 
     static keyMapOverrides = new Map([
         [monaco.KeyCode.DownArrow, new KeyAction((pos, range, selection, cell: CodeCell) => {
-            if (cell.vim && !cell.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected
+            if (!cell.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected
                 (range as any) // force mutability on endColumn (hacky)
                     .endColumn -= 1
             }
@@ -406,7 +407,7 @@ export class CodeCell extends Cell {
             }
         }
 
-        const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
+        const highlightLanguage = clientInterpreters[language]?.highlightLanguage ?? language;
         this.highlightLanguage = highlightLanguage;
 
 
@@ -461,7 +462,7 @@ export class CodeCell extends Cell {
         );
 
         this.lastLineTop = this.editor.getTopForLineNumber(this.editor.getModel()!.getLineCount());
-        this.lineHeight = this.editor.getConfiguration().lineHeight;
+        this.lineHeight = this.editor.getOption(EditorOption.lineHeight);
 
         this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
@@ -475,7 +476,7 @@ export class CodeCell extends Cell {
         this.onWindowResize = (evt) => this.editor.layout();
         window.addEventListener('resize', this.onWindowResize);
 
-        if (this.metadata && this.metadata.executionInfo) {
+        if (this.metadata?.executionInfo) {
             this.setExecutionInfo(this.metadata.executionInfo);
         }
 
@@ -501,13 +502,13 @@ export class CodeCell extends Cell {
     }
 
     setDisabled(disabled: boolean) {
-        const isDisabled = this.editor.getConfiguration().readOnly;
+        const isDisabled = this.editor.getOption(EditorOption.readOnly);
         if (disabled && !isDisabled) {
             this.editor.updateOptions({readOnly: true});
             [...this.cellInputTools.querySelectorAll('.run-cell')].forEach((button: HTMLButtonElement) => button.disabled = true);
         } else if (!disabled && isDisabled) {
             this.editor.updateOptions({readOnly: false});
-            if (this.metadata && !this.metadata.disableRun) {
+            if (!this.metadata?.disableRun) {
                 [...this.cellInputTools.querySelectorAll('.run-cell')].forEach((button: HTMLButtonElement) => button.disabled = false);
             }
         }
@@ -518,7 +519,7 @@ export class CodeCell extends Cell {
         super.setMetadata(metadata);
         if (metadata.hideSource) {
             this.container.classList.add('hide-code');
-        } else if (prevMetadata && prevMetadata.hideSource) {
+        } else if (prevMetadata?.hideSource) {
             this.container.classList.remove('hide-code');
             this.updateEditorHeight();
             this.editor.layout();
@@ -532,14 +533,14 @@ export class CodeCell extends Cell {
     }
 
     toggleCode() {
-        const prevMetadata = this.metadata || new CellMetadata();
+        const prevMetadata = this.metadata ?? new CellMetadata();
         this.setMetadata(prevMetadata.copy({hideSource: !prevMetadata.hideSource}));
         CurrentNotebook.get.handleContentChange(this.id, [], this.metadata);
     }
 
     toggleOutput() {
         this.container.classList.toggle('hide-output');
-        const prevMetadata = this.metadata || new CellMetadata();
+        const prevMetadata = this.metadata ?? new CellMetadata();
         this.setMetadata(prevMetadata.copy({hideOutput: !prevMetadata.hideOutput}));
         CurrentNotebook.get.handleContentChange(this.id, [], this.metadata);
     }
@@ -689,7 +690,7 @@ export class CodeCell extends Cell {
             const lines = content.split(/\n/g);
 
 
-            if (!this.stdOutEl || !this.stdOutEl.parentNode) {
+            if (! this.stdOutEl?.parentNode) {
                 this.stdOutEl = this.mimeEl(mimeType, args, "");
                 this.stdOutLines = lines.length;
                 this.cellOutputDisplay.appendChild(this.stdOutEl);
@@ -717,7 +718,7 @@ export class CodeCell extends Cell {
 
                 // fold all but the first 5 and last 5 lines into an expandable thingy
                 const numHiddenLines = this.stdOutLines - 11;
-                if (!this.stdOutDetails || !this.stdOutDetails.parentNode) {
+                if (! this.stdOutDetails?.parentNode) {
                     this.stdOutDetails = tag('details', [], {}, [
                         tag('summary', [], {}, [span([], '')])
                     ]);
@@ -849,7 +850,7 @@ export class CodeCell extends Cell {
             className = "currently-executing"
         }
         if (pos) {
-            const oldExecutionPos = this.highlightDecorations || [];
+            const oldExecutionPos = this.highlightDecorations ?? [];
             const model = this.editor.getModel()!;
             const startPos = pos instanceof PosRange ? model.getPositionAt(pos.start) : pos.startPos;
             const endPos = pos instanceof PosRange ? model.getPositionAt(pos.end) : pos.endPos;
@@ -867,7 +868,7 @@ export class CodeCell extends Cell {
 
     setExecutionInfo(result: ExecutionInfo) {
         const start = new Date(Number(result.startTs));
-        const endTs = result.endTs || Date.now();
+        const endTs = result.endTs ?? Date.now();
         const duration = Number(endTs) - Number(result.startTs);
         // clear display
         this.execInfoEl.innerHTML = '';
@@ -943,7 +944,7 @@ export class CodeCell extends Cell {
     setPresence(id: number, name: string, color: string, range: PosRange) {
         const model = this.editor.getModel();
         if (model) {
-            const old = this.presenceMarkers[id] ? this.presenceMarkers[id] : [];
+            const old = this.presenceMarkers[id] ?? [];
             const startPos = model.getPositionAt(range.start);
             const endPos = model.getPositionAt(range.end);
             const newDecorations = [
@@ -1265,7 +1266,7 @@ export class TextCell extends Cell {
     getRange() {
         const contentLines = this.getContentNodes();
 
-        const lastLine = (contentLines[contentLines.length - 1] && contentLines[contentLines.length - 1].textContent) || "";
+        const lastLine = contentLines[contentLines.length - 1]?.textContent || "";
 
         return {
             startLineNumber: 1, // start at 1 like Monaco
