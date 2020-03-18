@@ -82,10 +82,15 @@ export class NotebookConfigUI extends UIMessageTarget {
     }
 
     setKernelState(state: 'busy' | 'idle' | 'dead' | 'disconnected') {
-        if (state === 'dead') {
-            this.saveButton.textContent = "Save"
+        if (state === 'disconnected') {
+            this.saveButton.disabled = true;
         } else {
-            this.saveButton.textContent = "Save & Restart"
+            this.saveButton.disabled = false;
+            if (state === 'dead') {
+                this.saveButton.textContent = "Save"
+            } else {
+                this.saveButton.textContent = "Save & Restart"
+            }
         }
     }
 }

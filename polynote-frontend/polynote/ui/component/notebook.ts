@@ -187,6 +187,7 @@ export class NotebookUI extends UIMessageTarget {
             .when(messages.PresenceSelection, (id, cellId, range) => this.setPresenceSelection(id, cellId, range))
             .when(messages.KernelError, (err) => console.log(err)) // TODO: need a general UI treatment for kernel-level errors
         );
+        this.socket.addEventListener('close', () => this.cellUI.configUI.setKernelState('disconnected'));
 
         this.socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
             if (update.globalVersion >= this.globalVersion) {
