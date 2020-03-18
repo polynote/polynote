@@ -121,7 +121,8 @@ object NotebookManager {
                 writer.stop() *> repository.renameNotebook(path, newPath).foldM(
                   err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
                   realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
-                    writer => openNotebooks.put(path, (publisher, writer)).as(realPath)
+                    writer =>
+                      openNotebooks.put(newPath, (publisher, writer)) *> openNotebooks.remove(path).as(realPath)
                   }
                 )
             }
