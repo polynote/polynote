@@ -1,20 +1,7 @@
 package polynote.app
 
-import java.util.Collections
-import java.util.concurrent.atomic.AtomicReference
-
-import polynote.kernel.environment.Env
 import polynote.kernel.logging.Logging
-import zio.blocking.Blocking
-import zio.clock.Clock
-import zio.console.Console
-import zio.internal.stacktracer.Tracer
-import zio.internal.stacktracer.impl.AkkaLineNumbersTracer
-import zio.internal.tracing.TracingConfig
-import zio.internal.{Executor, Platform, Tracing}
-import zio.random.Random
-import zio.system.System
-import zio.{BootstrapRuntime, Cause, IO, Runtime, Task, ZIO, ZLayer, system}
+import zio.{Runtime, ZIO}
 
 trait App extends zio.App {
   type Environment = zio.ZEnv with Logging
