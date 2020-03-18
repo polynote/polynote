@@ -1,3 +1,7 @@
+# Unreleased
+* Switch HTTP server to https://github.com/polynote/uzhttp (this affects the `IdentityProvider.Service` interface)
+* Update to ZIO 1.0.0-RC18-2 (this deprecates the `Enrich` macro)
+
 # 0.3.2 (Feb 21, 2020)
 * Fix issue where kernel hangs trying to find `ReprsOf` something that has `var`s in it
 * Make `kernel` variable implicit so it can be threaded into functions
