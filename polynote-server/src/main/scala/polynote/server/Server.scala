@@ -1,7 +1,7 @@
 package polynote.server
 
 import java.io.{BufferedReader, File, FileInputStream, FileNotFoundException, InputStreamReader}
-import java.net.InetSocketAddress
+import java.net.{InetSocketAddress, URLEncoder}
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
@@ -20,7 +20,8 @@ import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
 import polynote.messages.{Error, Message}
 import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
 import uzhttp.server.ServerLogger
-import uzhttp.{HTTPError, Request, Response}, HTTPError.{Forbidden, NotFound}
+import uzhttp.{HTTPError, Request, Response}
+import HTTPError.{Forbidden, NotFound}
 import zio.{Cause, Has, IO, RIO, Task, URIO, ZIO, ZLayer}
 import zio.blocking.{Blocking, effectBlocking}
 
@@ -126,12 +127,23 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
   
   type RequestEnv = BaseEnv with GlobalEnv with NotebookManager with IdentityProvider
 
+  private def downloadFile(path: String, req: Request): ZIO[RequestEnv, HTTPError, Response] = {
+    for {
+      uri <- NotebookManager.location(path).someOrFail(NotFound(req.uri.toString))
+        loc <- effectBlocking(Paths.get(uri)) // eventually we'll have to deal with other schemes here
+        rep <- Response.fromPath(
+          loc, req,
+          "application/x-ipynb+json",
+          headers = List("Content-Disposition" -> s"attachment; filename=${URLEncoder.encode(loc.getFileName.toString, "utf-8")}"))
+    } yield rep
+  }.orElseFail(NotFound(req.uri.toString))
+
   def mkHandler(
     watchUI: Boolean,
     wsKey: String,
     getIndex: URIO[Blocking, String],
     broadcastAll: Topic[Task, Option[Message]]
-  ): URIO[RequestEnv with IdentityProvider, Request => ZIO[RequestEnv, HTTPError, Response]] = {
+  ): URIO[RequestEnv, Request => ZIO[RequestEnv, HTTPError, Response]] = {
     for {
       authRoutes <- IdentityProvider.authRoutes
       authorize  <- IdentityProvider.authorize[RequestEnv]
@@ -159,10 +171,10 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
           case "/" | "" => getIndex.map(Response.html(_))
           case uri if uri startsWith "/notebook" =>
             req.uri.getQuery match {
-              case "download" => ???
+              case "download=true" => downloadFile(uri.stripPrefix("/notebook"), req)
               case _ => getIndex.map(Response.html(_))
             }
-          case uri      => serveFile(uri).orElse(authRoutes.lift(req).getOrElse(ZIO.fail(NotFound(uri))))
+          case uri => serveFile(uri).orElse(authRoutes.lift(req).getOrElse(ZIO.fail(NotFound(uri))))
         }
     }
   }
