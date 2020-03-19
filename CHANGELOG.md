@@ -1,3 +1,18 @@
+
+# 0.3.3 (Mar 19, 2020)
+* *Automatic conversion of PySpark <-> Spark DataFrames* - it no longer matters which language you used to create the DataFrame!
+* *Comment support* Code cells only for now. Highlight some text in a code cell and you'll be able to add a comment, similar to Google Docs. 
+* *Environment Variable Configuration* Requires isolated kernels. Can now set environment variables to be passed to the notebook process.
+* Improvements to Pandas DataFrame support. 
+* Add new `Run to cursor` hotkey - it's `Ctrl + Alt + F9`. Thanks @kuckjwi0928 !
+* Added support for more IPython repr formats: Polynote now understands `_repr_svg_`, `_repr_jpeg_`, `_repr_png_`, and `_repr_mimebundle_`
+* Improvement to autocomplete - it should now be higher quality and won't trigger for weird characters like `:`
+* Python completion improvements: Function parameter hints should now have types, dictionaries now have key completions, 
+  and `jedi` has been updated [for even more goodies](https://github.com/davidhalter/jedi/blob/master/CHANGELOG.rst#0160-2020-01-26)
+* Fixed some more bugs in the Python interpreter
+* Fix config number format issue. Thanks @bgparkerdev !
+* A bunch of other fixes and improvements!
+
 # 0.3.2 (Feb 21, 2020)
 * Fix issue where kernel hangs trying to find `ReprsOf` something that has `var`s in it
 * Make `kernel` variable implicit so it can be threaded into functions

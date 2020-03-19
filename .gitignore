@@ -6,11 +6,11 @@ node_modules
 libjep.dylib
 .idea
 .DS_Store
-/*.yml
 scripts/dist-config.yml
 *.zip
 tmp/
 config.yml
+default.yml
 metastore_db
 *.log
 tmp
