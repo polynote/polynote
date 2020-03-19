@@ -461,27 +461,25 @@ class PythonInterpreter private[python] (
 
   protected def populateGlobals(state: State): Task[PyObject] = jep {
     jep =>
-      val prevStates = state.takeUntil(_.isInstanceOf[PythonState]).reverse
-      val (globalsDict, rest) = prevStates match {
-        case PythonState(_, _, _, globalsDict) :: rest => (globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject]), rest)
-        case others => (jep.getValue("{}", classOf[PyObject]), others)
+      // grab the nearest Python state (if any) so we can use its globals dict.
+      val maybePrevPyState = state.takeUntil(_.isInstanceOf[PythonState]).reverse
+      val globalsDict = maybePrevPyState match {
+        case PythonState(_, _, _, globalsDict) :: _ => globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject])
+        case _                                      => jep.getValue("{}", classOf[PyObject])
       }
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
 
       val convert = convertToPython(jep) orElse PartialFunction(defaultConvertToPython)
 
-      rest.map(_.values).map {
-        values => values.map(v => v.name -> v.value).toMap
-      }.foldLeft(Map.empty[String, Any])(_ ++ _).foreach {
+      state.scope.reverse.map(v => v.name -> v.value).foreach {
         case nv@(name, value) => addGlobal.call(name, convert(nv))
       }
 
       globalsDict
   }
 
-  protected def defaultConvertToPython(nv: (String, Any)): Task[AnyRef] =
-    ZIO.succeed(nv._2.asInstanceOf[AnyRef])
+  protected def defaultConvertToPython(nv: (String, Any)): AnyRef = nv._2.asInstanceOf[AnyRef]
 
   protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = {
     case (_, value: PythonObject) => value.unwrap
