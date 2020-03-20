@@ -187,7 +187,6 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
           }
       } .handleSome(staticHandler)
         .handleSome(authRoutes)
-        .withLogger(ServerLogger.Debug)
         .logRequests(ServerLogger.noLogRequests)
         .logErrors((msg, err) => Logging.error(msg, err))
         .logInfo(msg => Logging.info(msg))
