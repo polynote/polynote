@@ -178,9 +178,10 @@ object RemoteKernel extends Kernel.Factory.Service {
   def apply[ServerAddress](transport: Transport[ServerAddress]): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, RemoteKernel[ServerAddress]] = for {
     closed  <- Promise.make[Throwable, Unit]
     server  <- transport.serve()
-    _       <- server.awaitClosed.to(closed).forkDaemon
     updates <- NotebookUpdates.access
-  } yield new RemoteKernel(server, updates, closed)
+    kernel   = new RemoteKernel(server, updates, closed)
+    _       <- (server.awaitClosed.to(closed).ensuring(kernel.close().ignore)).forkDaemon
+  } yield kernel
 
   override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = apply(
     new SocketTransport(

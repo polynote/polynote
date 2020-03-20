@@ -52,7 +52,8 @@ package object server {
   implicit class FrameStreamOps[R](val self: ZStream[R, Throwable, Frame]) extends AnyVal {
     def handleMessages[R1 <: R, A](onClose: ZIO[R, Throwable, Any])(fn: Message => ZIO[R1, Throwable, Option[Message]]): ZStream[R1, Throwable, Frame] =
       self.mapM {
-        case Binary(data, true) => Message.decode[Task](ByteVector(data))
+        case Binary(data, true) =>
+          Message.decode[Task](ByteVector(data))
           .flatMap(fn).flatMap {
             case Some(msg) => toFrame(msg).asSome
             case None => ZIO.none
@@ -77,7 +78,7 @@ package object server {
     ZStream.fromSchedule(Schedule.fixed(zio.duration.Duration(10, SECONDS)).as(Ping)).interruptWhen(closed)
 
   def parallelStreams[R, E, A](streams: ZStream[R, E, A]*): ZStream[R, E, A] =
-    ZStream.flattenPar(streams.size)(ZStream(streams: _*))
+    ZStream.flattenPar(streams.size)(ZStream(streams: _*)).catchAllCause(_ => ZStream.empty)
 
   def streamEffects[R, E, A](effects: ZIO[R, E, A]*): ZStream[R, E, A] = ZStream.flatten(ZStream(effects.map(e => ZStream.fromEffect(e)): _*))
 

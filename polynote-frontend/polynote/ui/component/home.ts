@@ -10,12 +10,12 @@ export class HomeUI extends UIMessageTarget {
         super();
         this.el = div(['welcome-page'], []);
         this.el.innerHTML = `
-          <img src="style/polynote.svg" alt="Polynote" />
+          <img src="static/style/polynote.svg" alt="Polynote" />
           <h2>Home</h2>
           
           <p>
             To get started, open a notebook by clicking on it in the Notebooks panel, or create a new notebook by
-             clicking the Create Notebook (<span class="create-notebook icon fas"><img class="icon" src="style/icons/fa/plus-circle.svg"/></span>) button.
+             clicking the Create Notebook (<span class="create-notebook icon fas"><img class="icon" src="static/style/icons/fa/plus-circle.svg"/></span>) button.
           </p>
           
           <h3>Recent notebooks</h3>

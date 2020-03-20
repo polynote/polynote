@@ -3,7 +3,7 @@ package polynote.kernel
 import java.io.PrintStream
 
 import polynote.env.ops.Location
-import zio.{Has, UIO, ZIO, ZLayer}
+import zio.{Has, UIO, URIO, ZIO, ZLayer}
 import zio.blocking.Blocking
 
 import scala.collection.immutable.StringOps
@@ -19,8 +19,8 @@ package object logging {
 
     trait Service {
       def error(msg: String)(implicit location: Location): UIO[Unit]
-      def error(msg: String, err: Throwable)(implicit location: Location): UIO[Unit]
-      def error(msg: String, err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit]
+      def error(msg: Option[String], err: Throwable)(implicit location: Location): UIO[Unit]
+      def error(msg: Option[String], err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit]
       def warn(msg: String)(implicit location: Location): UIO[Unit]
       def info(msg: String)(implicit location: Location): UIO[Unit]
       def remote(msg: String): UIO[Unit]
@@ -60,11 +60,11 @@ package object logging {
         }.ignore
 
 
-        override def error(msg: String, err: Throwable)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
+        override def error(msg: Option[String], err: Throwable)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
           out.synchronized {
             out.print(Red)
             out.print(errorPrefix)
-            out.print(msg)
+            msg.foreach(out.print)
             if (location.file != "")
               out.println(s" (Logged from ${location.file}:${location.line})")
             else
@@ -80,11 +80,11 @@ package object logging {
           }
         }.ignore
 
-        override def error(msg: String, err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
+        override def error(msg: Option[String], err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
           out.synchronized {
             out.print(Red)
             out.print(errorPrefix)
-            out.print(msg)
+            msg.foreach(out.print)
             if (location.file != "")
               out.println(s" (Logged from ${location.file}:${location.line})")
             else
@@ -128,12 +128,14 @@ package object logging {
     }
 
 
-    def error(msg: String)(implicit location: Location): ZIO[Logging, Nothing, Unit] = access.flatMap(_.error(msg))
-    def error(msg: String, err: Throwable)(implicit location: Location): ZIO[Logging, Nothing, Unit] = access.flatMap(_.error(msg, err))
-    def error(msg: String, cause: zio.Cause[Throwable])(implicit location: Location): ZIO[Logging, Nothing, Unit] = access.flatMap(_.error(msg, cause))
-    def warn(msg: String)(implicit location: Location): ZIO[Logging, Nothing, Unit] = access.flatMap(_.warn(msg))
-    def info(msg: String)(implicit location: Location): ZIO[Logging, Nothing, Unit] = access.flatMap(_.info(msg))
-    def remote(msg: String): ZIO[Logging, Nothing, Unit] = access.flatMap(_.remote(msg))
+    def error(msg: String)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.error(msg))
+    def error(msg: String, err: Throwable)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.error(Some(msg), err))
+    def error(err: Throwable)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.error(None, err))
+    def error(msg: String, cause: zio.Cause[Throwable])(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.error(Some(msg), cause))
+    def error(cause: zio.Cause[Throwable])(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.error(None, cause))
+    def warn(msg: String)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.warn(msg))
+    def info(msg: String)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.info(msg))
+    def remote(msg: String): URIO[Logging, Unit] = access.flatMap(_.remote(msg))
     def access: ZIO[Logging, Nothing, Service] = ZIO.access[Logging](_.get)
 
   }

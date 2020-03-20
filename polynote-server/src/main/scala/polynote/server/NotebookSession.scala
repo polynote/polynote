@@ -56,7 +56,8 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
       _      <- PublishMessage(KernelStatus(status))
     } yield ()
 
-    case StartKernel(StartKernel.NoRestart)   => subscriber.publisher.kernel.unit
+    case StartKernel(StartKernel.NoRestart)   =>
+      subscriber.publisher.kernel.unit
     case StartKernel(StartKernel.WarmRestart) => ??? // TODO
     case StartKernel(StartKernel.ColdRestart) => subscriber.publisher.restartKernel(true)
     case StartKernel(StartKernel.Kill)        => subscriber.publisher.killKernel()
@@ -146,10 +147,17 @@ object NotebookSession {
       close             = closeQueueIf(closed, output) *> subscriber.close()
       _                <- handler.sendNotebookInfo
     } yield parallelStreams(
-      toFrames(ZStream.fromQueueWithShutdown(output).unTake),
-      input.handleMessages(close)(handler.handleMessage andThen (_.as(None)) andThen SocketSession.errorHandler).haltWhen(closed) ++ closeStream(closed, output),
+      toFrames(ZStream.fromQueue(output).unTake),
+      input.handleMessages(close) {
+        msg => handler.handleMessage(msg).catchAll {
+          err => output.offer(Take.Value(Error(0, err)))
+        }.forkDaemon.as(None)
+      },
       keepaliveStream(closed)
-    ).provide(env)
+    ).provide(env).catchAllCause {
+      cause =>
+        ZStream.empty
+    }
   }.catchAll {
     case err: HTTPError => ZIO.fail(err)
     case err => ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))

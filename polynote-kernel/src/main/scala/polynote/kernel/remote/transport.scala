@@ -340,7 +340,7 @@ object SocketTransport {
       } yield if (alive) None else Option(process.exitValue())
 
       override def kill(): RIO[Blocking, Unit] = effectBlocking {
-        process.destroy()
+        process.destroyForcibly()
       }
 
       override def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): RIO[Blocking, Option[Int]] = effectBlocking {
