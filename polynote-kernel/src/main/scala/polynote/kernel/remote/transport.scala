@@ -27,6 +27,7 @@ import scala.reflect.{ClassTag, classTag}
 import Update.notebookUpdateCodec
 import cats.~>
 import polynote.kernel.task.TaskManager
+import zio.clock.Clock
 
 trait Transport[ServerAddress] {
   def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
@@ -284,10 +285,16 @@ object SocketTransport {
 
     private def logProcess(process: Process) = {
       ZIO(new BufferedReader(new InputStreamReader(process.getInputStream))).flatMap {
-        stream => effectBlocking(stream.readLine()).tap {
-          case null => ZIO.unit
-          case line => Logging.remote(line)
-        }.repeat(Schedule.doUntil(line => line == null)).unit
+        stream =>
+          val nextLine = effectBlocking(stream.readLine())
+          lazy val chompLines: ZIO[Blocking with Clock, Unit, List[String]] = nextLine.catchAll(_ => ZIO.fail(())).flatMap {
+            case null => ZIO.fail(())
+            case line => chompLines.timeoutFail(())(ZDuration(250, TimeUnit.MILLISECONDS)).map(line :: _) orElse ZIO.succeed(List(line))
+          }
+
+          chompLines.flatMap {
+            lines => CurrentNotebook.path.flatMap(path => Logging.remote(path, lines.mkString("\n")))
+          }.forever.catchAll(_ => ZIO.unit)
       }
     }
 

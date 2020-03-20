@@ -132,6 +132,7 @@ object CurrentNotebook {
   def of(ref: Ref[Task, (Int, Notebook)]): CurrentNotebook = Has(ref)
   def layer(ref: Ref[Task, (Int, Notebook)]): Layer[Nothing, CurrentNotebook] = ZLayer.succeed(ref)
   def get: RIO[CurrentNotebook, Notebook] = getVersioned.map(_._2)
+  def path: RIO[CurrentNotebook, String] = get.map(_.path)
   def getVersioned: RIO[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.get.get)
 
   def getCell(id: CellID): RIO[CurrentNotebook, NotebookCell] = get.flatMap {

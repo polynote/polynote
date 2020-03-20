@@ -23,7 +23,7 @@ package object logging {
       def error(msg: Option[String], err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit]
       def warn(msg: String)(implicit location: Location): UIO[Unit]
       def info(msg: String)(implicit location: Location): UIO[Unit]
-      def remote(msg: String): UIO[Unit]
+      def remote(path: String, msg: String): UIO[Unit]
     }
 
     object Service {
@@ -31,13 +31,12 @@ package object logging {
       class Default(out: PrintStream, blocking: Blocking.Service) extends Service {
         private val Red = "\u001b[31m"
         private val Reset = "\u001b[0m"
-        private val remotePrefix = "[REMOTE] "
-        private val remoteIndent = "    |    "
-        private val errorPrefix = "[ERROR]".padTo(remotePrefix.length, ' ')
-        private val errorIndent = "   |   ".padTo(remotePrefix.length, ' ')
-        private val infoPrefix = "[INFO]".padTo(remotePrefix.length, ' ')
-        private val infoIndent = "   |  ".padTo(remotePrefix.length, ' ')
-        private val warnPrefix = "[WARN]".padTo(remotePrefix.length, ' ')
+        private val remoteIndent = "        |   "
+        private val errorPrefix =  "[ERROR]  "
+        private val errorIndent =  "   |     "
+        private val infoPrefix =   "[INFO]   "
+        private val infoIndent =   "   |     "
+        private val warnPrefix =   "[WARN]   "
         private val warnIndent = infoIndent
 
         override def error(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
@@ -123,7 +122,10 @@ package object logging {
 
         override def warn(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(warnPrefix, warnIndent, msg)
         override def info(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(infoPrefix, infoIndent, msg)
-        override def remote(msg: String): UIO[Unit] = printWithPrefix(remotePrefix, remoteIndent, msg)(Location.Empty)
+        override def remote(path: String, msg: String): UIO[Unit] = {
+          val remotePrefix = s"[REMOTE | $path]\n$remoteIndent"
+          printWithPrefix(remotePrefix, remoteIndent, msg)(Location.Empty)
+        }
       }
     }
 
@@ -135,7 +137,7 @@ package object logging {
     def error(cause: zio.Cause[Throwable])(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.error(None, cause))
     def warn(msg: String)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.warn(msg))
     def info(msg: String)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.info(msg))
-    def remote(msg: String): URIO[Logging, Unit] = access.flatMap(_.remote(msg))
+    def remote(path: String, msg: String): URIO[Logging, Unit] = access.flatMap(_.remote(path, msg))
     def access: ZIO[Logging, Nothing, Service] = ZIO.access[Logging](_.get)
 
   }
