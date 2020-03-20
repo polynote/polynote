@@ -85,7 +85,7 @@ export class NotebookUI extends UIMessageTarget {
     // TODO: remove mainUI reference
     private constructor(eventParent: UIMessageTarget, readonly path: string, readonly mainUI: MainUI) {
         super(eventParent);
-        this.socket = SocketSession.fromRelativeURL(`ws/${path}`);
+        this.socket = SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`);
         this.socket.addEventListener("error", err => {
            const url = new URL(this.socket.url.toString());
            url.protocol = document.location.protocol;
@@ -173,9 +173,11 @@ export class NotebookUI extends UIMessageTarget {
             .when(messages.UpdatedTasks, (tasks) => tasks.forEach((task: TaskInfo) => {
                 this.handleTaskUpdate(task);
             }))
-            .when(messages.KernelBusyState,
-                (busy, alive) => this.kernelUI.setKernelState(
-                    (busy && 'busy') || (!alive && 'dead') || 'idle'))
+            .when(messages.KernelBusyState, (busy, alive) => {
+                const state = (busy && 'busy') || (!alive && 'dead') || 'idle';
+                this.kernelUI.setKernelState(state);
+                this.cellUI.configUI.setKernelState(state);
+            })
             .when(messages.KernelInfo, info => this.kernelUI.updateInfo(info))
             .when(messages.ExecutionStatus, (id, pos) => this.cellUI.setExecutionHighlight(id, pos))
             .when(messages.PresenceUpdate, (added, removed) => {
@@ -185,6 +187,7 @@ export class NotebookUI extends UIMessageTarget {
             .when(messages.PresenceSelection, (id, cellId, range) => this.setPresenceSelection(id, cellId, range))
             .when(messages.KernelError, (err) => console.log(err)) // TODO: need a general UI treatment for kernel-level errors
         );
+        this.socket.addEventListener('close', () => this.cellUI.configUI.setKernelState('disconnected'));
 
         this.socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
             if (update.globalVersion >= this.globalVersion) {

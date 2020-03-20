@@ -83,14 +83,15 @@ final case class NotebookConfig(
   dependencies: Option[DependencyConfigs],
   exclusions: Option[TinyList[TinyString]],
   repositories: Option[TinyList[RepositoryConfig]],
-  sparkConfig: Option[ShortMap[String, String]]
+  sparkConfig: Option[ShortMap[String, String]],
+  env: Option[ShortMap[String, String]]
 )
 
 object NotebookConfig {
   implicit val encoder: Encoder[NotebookConfig] = deriveEncoder[NotebookConfig]
   implicit val decoder: Decoder[NotebookConfig] = deriveDecoder[NotebookConfig]
 
-  def empty = NotebookConfig(None, None, None, None)
+  def empty = NotebookConfig(None, None, None, None, None)
 
   def fromPolynoteConfig(config: PolynoteConfig): NotebookConfig = {
     val veryTinyDependencies: DependencyConfigs = TinyMap(config.dependencies.map {
@@ -101,7 +102,8 @@ object NotebookConfig {
       dependencies = Option(veryTinyDependencies),
       exclusions = Option(config.exclusions),
       repositories = Option(config.repositories),
-      sparkConfig = config.spark.map(SparkConfig.toMap)
+      sparkConfig = config.spark.map(SparkConfig.toMap),
+      env = Option(config.env)
     )
   }
 

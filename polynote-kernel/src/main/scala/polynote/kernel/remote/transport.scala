@@ -153,10 +153,7 @@ object SocketTransportServer {
 class SocketTransportClient private (channels: SocketTransport.Channels, closed: Promise[Throwable, Unit]) extends TransportClient {
 
   def logError(fn: Cause[Throwable] => ZIO[Logging, Nothing, Unit]): TaskB ~> TaskB = new ~>[TaskB, TaskB] {
-    override def apply[A](fa: TaskB[A]): TaskB[A] = fa.onError {
-      case cause if cause.interruptedOnly => ZIO.unit
-      case cause => fn(cause)
-    }
+    override def apply[A](fa: TaskB[A]): TaskB[A] = fa.onError(fn)
   }
 
   private val requestStream = channels.mainChannel.bitVectors.interruptAndIgnoreWhen(closed)
@@ -305,9 +302,17 @@ object SocketTransport {
 
         val processBuilder = new ProcessBuilder(command: _*).redirectErrorStream(true)
         for {
-          _       <- Logging.info(s"Deploying with command:\n$displayCommand")
-          process <- effectBlocking(processBuilder.start())
-          _       <- logProcess(process).forkDaemon
+          _        <- Logging.info(s"Deploying with command:\n$displayCommand")
+          config   <- Config.access
+          nbConfig <- CurrentNotebook.config
+          _        <- ZIO {
+            val processEnv = processBuilder.environment()
+            (config.env ++ nbConfig.env.getOrElse(Map.empty)).foreach {
+              case (k,v) => processEnv.put(k, v)
+            }
+          }
+          process  <- effectBlocking(processBuilder.start())
+          _        <- logProcess(process).forkDaemon
         } yield new DeploySubprocess.Subprocess(process)
     }
   }

@@ -346,15 +346,25 @@ class PythonInterpreter private[python] (
       |        # see https://github.com/ipython/ipython/issues/11590
       |        from ast import Module as OriginalModule
       |        Module = lambda nodelist, ignored: OriginalModule(nodelist)
-      |    return list(map(lambda node: compile(Module([node], []), cell, 'exec'), parsed.body))
+      |
+      |    result = []
+      |    for tree in parsed.body:
+      |        compiled = compile(Module([tree], []), cell, 'exec')
+      |        isImport = isinstance(tree, ast.Import) or isinstance(tree, ast.ImportFrom)
+      |        result.append([compiled, isImport])
+      |    return result
       |
       |def __polynote_run__(compiled, globals, kernel):
       |    try:
       |        sys.stdout = kernel.display
       |        tracking_ns = TrackingNamespace(globals)
-      |        for stat in compiled:
-      |            exec(stat, tracking_ns)
-      |            tracking_ns.globals.update(tracking_ns.data)
+      |        for stat, isImport in compiled:
+      |            if isImport: # don't track locals if the tree is an import.
+      |                exec(stat, tracking_ns.globals)
+      |            else:
+      |                exec(stat, tracking_ns)
+      |                tracking_ns.globals.update(tracking_ns.data)
+      |
       |        types = { x: type(y).__name__ for x,y in tracking_ns.data.items() }
       |        return { 'globals': tracking_ns.globals, 'locals': tracking_ns.data, 'types': types }
       |    except Exception as err:
@@ -452,27 +462,25 @@ class PythonInterpreter private[python] (
 
   protected def populateGlobals(state: State): Task[PyObject] = jep {
     jep =>
-      val prevStates = state.takeUntil(_.isInstanceOf[PythonState]).reverse
-      val (globalsDict, rest) = prevStates match {
-        case PythonState(_, _, _, globalsDict) :: rest => (globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject]), rest)
-        case others => (jep.getValue("{}", classOf[PyObject]), others)
+      // grab the nearest Python state (if any) so we can use its globals dict.
+      val maybePrevPyState = state.takeUntil(_.isInstanceOf[PythonState]).reverse
+      val globalsDict = maybePrevPyState match {
+        case PythonState(_, _, _, globalsDict) :: _ => globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject])
+        case _                                      => jep.getValue("{}", classOf[PyObject])
       }
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
 
       val convert = convertToPython(jep) orElse PartialFunction(defaultConvertToPython)
 
-      rest.map(_.values).map {
-        values => values.map(v => v.name -> v.value).toMap
-      }.foldLeft(Map.empty[String, Any])(_ ++ _).foreach {
+      state.scope.reverse.map(v => v.name -> v.value).foreach {
         case nv@(name, value) => addGlobal.call(name, convert(nv))
       }
 
       globalsDict
   }
 
-  protected def defaultConvertToPython(nv: (String, Any)): Task[AnyRef] =
-    ZIO.succeed(nv._2.asInstanceOf[AnyRef])
+  protected def defaultConvertToPython(nv: (String, Any)): AnyRef = nv._2.asInstanceOf[AnyRef]
 
   protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = {
     case (_, value: PythonObject) => value.unwrap

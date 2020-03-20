@@ -424,6 +424,25 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           val z = 1
       }
     }
+
+    "doesn't pollute namespace with imports" in {
+      val code =
+        """
+          |import sys
+          |
+          |args = sys.argv
+          |
+          |from os import *
+          |c = curdir
+          |
+          |""".stripMargin
+      assertOutput(code) {
+        case (vars, out) =>
+          vars should have size 2
+          vars("args").asInstanceOf[PythonObject].asScalaList.map(_.as[String]) shouldEqual List("")
+          vars("c") shouldEqual "."
+      }
+    }
   }
 
   "PythonFunction" - {

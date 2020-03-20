@@ -187,7 +187,7 @@ package object server {
                   writer.stop() *> repository.renameNotebook(path, newPath).foldM(
                     err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
                     realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
-                      writer => openNotebooks.put(path, (publisher, writer)).as(realPath)
+                      writer => openNotebooks.put(newPath, (publisher, writer)) *> openNotebooks.remove(path).as(realPath)
                     }
                   )
               }
@@ -197,7 +197,7 @@ package object server {
 
         override def copy(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = for {
           realPath <- repository.copyNotebook(path, newPath)
-            _        <- broadcastMessage(CreateNotebook(realPath, None))
+          _        <- broadcastMessage(CreateNotebook(realPath, None))
         } yield realPath
 
         override def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit] =
