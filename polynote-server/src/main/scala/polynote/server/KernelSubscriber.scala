@@ -8,9 +8,10 @@ import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection, StreamThrowableOps, StreamUIOps}
 import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate, TinyString}
 import KernelPublisher.{GlobalVersion, SubscriberId}
+import polynote.kernel.logging.Logging
 import polynote.runtime.CellRange
 import polynote.server.auth.{Identity, IdentityProvider, Permission, UserIdentity}
-import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
+import zio.{Fiber, Promise, RIO, Task, UIO, URIO, ZIO}
 import zio.interop.catz._
 
 

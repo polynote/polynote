@@ -60,7 +60,8 @@ package object server {
           }
         case Ping => ZIO.succeed(Some(Pong))
         case Pong => ZIO.none
-        case Close => onClose.as(Some(Close))
+        case Close =>
+          onClose.as(Some(Close))
         case _ => ZIO.none
       }.unNone
   }

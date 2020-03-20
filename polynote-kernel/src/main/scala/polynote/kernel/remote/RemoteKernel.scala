@@ -21,7 +21,7 @@ import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Layer, Promise, RIO, Task, UIO, ZIO, ZLayer}
+import zio.{Cause, Layer, Promise, RIO, Task, UIO, ZIO, ZLayer}
 import zio.blocking.effectBlocking
 import zio.duration.Duration
 import zio.interop.catz._
@@ -64,7 +64,13 @@ class RemoteKernel[ServerAddress](
         env     <- ZIO.access[R](identity)
         _       <- ZIO(waiting.put(req.reqId, RequestHandler(fn, promise, env)))
         _       <- transport.sendRequest(req)
-        result  <- promise.await.onError(cause => Logging.error("Error from remote kernel", cause))
+        result  <- promise.await.onError {
+          cause =>
+            if (!cause.interruptedOnly)
+              Logging.error("Error from remote kernel", cause)
+            else
+              ZIO.unit
+        }
       } yield result
     case true => ZIO.fail(new ClosedChannelException())
   }

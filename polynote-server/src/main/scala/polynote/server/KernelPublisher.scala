@@ -213,7 +213,7 @@ class KernelPublisher private (
 
   def close(): TaskB[Unit] =
     closed.succeed(()).unit *>
-      subscribers.values.flatMap(_.map(_.close()).sequence).unit *>
+      subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit *>
       kernelRef.get.flatMap(_.fold[TaskB[Unit]](ZIO.unit)(_.shutdown())) *>
       taskManager.shutdown()
 

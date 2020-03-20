@@ -435,8 +435,13 @@ object SocketTransport {
       acquired => if (acquired) effectBlocking(writeSize(0)) else ZIO.unit
     }
 
-    def close(): TaskB[Unit] =  ZIO.effectTotal(writeLock.acquire()).bracket(_ => ZIO.effectTotal(writeLock.release())) {
-      _ => effectBlocking(socketChannel.close()).uninterruptible <* closed.succeed(())
+    def close(): TaskB[Unit] = closed.succeed(()).flatMap {
+      case true =>
+        ZIO.effect { socketChannel.shutdownInput(); socketChannel.shutdownOutput() } *>
+          ZIO.effectTotal(writeLock.acquire()).bracket(_ => ZIO.effectTotal(writeLock.release())) {
+            _ => effectBlocking(socketChannel.close()).uninterruptible
+          }
+      case false => ZIO.unit
     }
 
     def isConnected: Boolean = socketChannel.isConnected
