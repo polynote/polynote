@@ -24,12 +24,14 @@ import {SocketSession} from "../../comms";
 import {CurrentNotebook} from "./current_notebook";
 import {NotebookCellsUI} from "./nb_cells";
 import {Identity, KernelBusyState} from "../../data/messages";
+import {SparkPropertySet} from "../../data/data";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false);
 
 export const Interpreters: Record<string, string> = {};
+export const SparkTemplates: Record<string, SparkPropertySet> = {};
 
 export class MainUI extends UIMessageTarget {
     private mainView: SplitView;
@@ -84,12 +86,16 @@ export class MainUI extends UIMessageTarget {
         SocketSession.global.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
         SocketSession.global.send(new messages.ListNotebooks([]));
 
-        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit, identity) => {
+        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
             for (let interp of Object.keys(interpreters)) {
                 Interpreters[interp] = interpreters[interp];
             }
             for (let interp of Object.keys(clientInterpreters)) {
                 Interpreters[interp] = clientInterpreters[interp].languageTitle;
+            }
+
+            for (let template of sparkTemplates) {
+                SparkTemplates[template.name] = template;
             }
 
             this.toolbarUI.cellToolbar.setInterpreters(Interpreters);

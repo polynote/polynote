@@ -6,8 +6,7 @@ import {
     div,
     dropdown,
     DropdownElement,
-    h2,
-    h3,
+    h2, h3, h4,
     iconButton,
     para,
     span,
@@ -15,6 +14,7 @@ import {
     textbox
 } from "../util/tags";
 import {IvyRepository, MavenRepository, NotebookConfig, PipRepository, RepositoryConfig} from "../../data/data";
+import {SparkTemplates} from "./ui";
 
 export class NotebookConfigUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
@@ -55,7 +55,9 @@ export class NotebookConfigUI extends UIMessageTarget {
                 div(['notebook-spark-config', 'notebook-config-section'], [
                     h3([], ['Spark Config']),
                     para([], ['Set Spark configuration for this notebook here. Please note that it is possible that your environment may override some of these settings at runtime :(']),
-                    this.configHandler.sparkConfigContainer
+                    Object.keys(SparkTemplates).length ?
+                        div([], [h4([], ['Spark template:']), this.configHandler.sparkTemplateSelector, h4([], ['Spark properties:']), this.configHandler.sparkConfigContainer]) :
+                        this.configHandler.sparkConfigContainer
                 ]),
                 div(['notebook-env', 'notebook-config-section'], [
                     h3([], ['Environment Variables']),
@@ -144,6 +146,7 @@ class NotebookConfigHandler extends UIMessageTarget {
     readonly resolverContainer: TagElement<"div">;
     readonly exclusionContainer: TagElement<"div">;
     readonly sparkConfigContainer: TagElement<"div">;
+    readonly sparkTemplateSelector: TagElement<"select">;
     readonly envContainer: TagElement<"div">;
 
     private dependencies: Dep[] = [];
@@ -159,6 +162,11 @@ class NotebookConfigHandler extends UIMessageTarget {
         this.resolverContainer = div(['resolver-list'], []);
         this.exclusionContainer = div(['exclusion-list'], []);
         this.sparkConfigContainer = div(['spark-config-list'], []);
+        this.sparkTemplateSelector = dropdown(
+            [],
+            Object.fromEntries(
+                [["", "None"], ...Object.keys(SparkTemplates).map(key => [key, key])]),
+            config.sparkTemplate?.name);
         this.envContainer = div(['env-list'], []);
 
         if (config.dependencies) {
@@ -246,11 +254,14 @@ class NotebookConfigHandler extends UIMessageTarget {
             return acc;
         }, {});
 
+        const selectedTemplate = this.sparkTemplateSelector.options[this.sparkTemplateSelector.selectedIndex].value;
+
         return new NotebookConfig(
             deps,
             exclusions,
             resolvers,
             sparkConf,
+            selectedTemplate ? SparkTemplates[selectedTemplate] : undefined,
             env
         )
 

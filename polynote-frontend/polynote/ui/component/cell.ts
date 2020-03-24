@@ -429,7 +429,10 @@ export class CodeCell extends Cell {
             lineNumbers: 'on',
             lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
-            renderLineHighlight: "none"
+            renderLineHighlight: "none",
+            scrollbar: {
+                alwaysConsumeMouseWheel: false
+            }
         });
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";

@@ -23,10 +23,13 @@ object Main {
         notebook <- CurrentNotebook.get
         config   <- Config.access
       } yield {
-        val isSpark = notebook.config.getOrElse(NotebookConfig.empty).sparkConfig match {
-          case None                     => false
-          case Some(map) if map.isEmpty => false
-          case Some(_)                  => true
+        val notebookConfig = notebook.config.getOrElse(NotebookConfig.empty)
+        val isSpark = notebookConfig.sparkTemplate.nonEmpty || {
+          notebookConfig.sparkConfig match {
+            case None                     => false
+            case Some(map) if map.isEmpty => false
+            case Some(_)                  => true
+          }
         }
 
         config.behavior.kernelIsolation match {

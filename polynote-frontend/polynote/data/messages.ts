@@ -8,7 +8,7 @@ import {
 import {ServerErrorWithCause, Output, PosRange, Result} from './result'
 import {StreamingDataRepr} from "./value_repr";
 import {isEqual} from "../util/functions";
-import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "./data";
+import {CellComment, CellMetadata, NotebookCell, NotebookConfig, SparkPropertySet} from "./data";
 import {ContentEdit} from "./content_edit";
 import {Left, Right} from "./types";
 
@@ -614,13 +614,13 @@ export class Identity {
 }
 
 export class ServerHandshake extends Message {
-    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec)).to(ServerHandshake);
+    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec), arrayCodec(int32, SparkPropertySet.codec)).to(ServerHandshake);
     static get msgTypeId() { return 16; }
     static unapply(inst: ServerHandshake): ConstructorParameters<typeof ServerHandshake> {
-        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity];
+        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity, inst.sparkTemplates];
     }
 
-    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity | null) {
+    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity | null, readonly sparkTemplates: SparkPropertySet[]) {
         super();
         Object.freeze(this);
     }

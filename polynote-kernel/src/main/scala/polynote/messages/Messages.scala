@@ -9,7 +9,7 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.codecs.implicits._
 import io.circe.generic.semiauto._
-import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, SparkConfig}
+import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, SparkConfig, SparkPropertySet}
 import polynote.data.Rope
 import polynote.runtime.{CellRange, StreamingDataRepr, TableOp}
 import shapeless.cachedImplicit
@@ -84,6 +84,7 @@ final case class NotebookConfig(
   exclusions: Option[TinyList[TinyString]],
   repositories: Option[TinyList[RepositoryConfig]],
   sparkConfig: Option[ShortMap[String, String]],
+  sparkTemplate: Option[SparkPropertySet],
   env: Option[ShortMap[String, String]]
 )
 
@@ -91,7 +92,7 @@ object NotebookConfig {
   implicit val encoder: Encoder[NotebookConfig] = deriveEncoder[NotebookConfig]
   implicit val decoder: Decoder[NotebookConfig] = deriveDecoder[NotebookConfig]
 
-  def empty = NotebookConfig(None, None, None, None, None)
+  def empty = NotebookConfig(None, None, None, None, None, None)
 
   def fromPolynoteConfig(config: PolynoteConfig): NotebookConfig = {
     val veryTinyDependencies: DependencyConfigs = TinyMap(config.dependencies.map {
@@ -103,6 +104,7 @@ object NotebookConfig {
       exclusions = Option(config.exclusions),
       repositories = Option(config.repositories),
       sparkConfig = config.spark.map(SparkConfig.toMap),
+      sparkTemplate = None,
       env = Option(config.env)
     )
   }
@@ -346,7 +348,8 @@ final case class ServerHandshake(
   interpreters: TinyMap[TinyString, TinyString],
   serverVersion: TinyString,
   serverCommit: TinyString,
-  identity: Option[Identity]
+  identity: Option[Identity],
+  sparkTemplates: List[SparkPropertySet]
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 
