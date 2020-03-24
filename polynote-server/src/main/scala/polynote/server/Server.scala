@@ -1,12 +1,15 @@
 package polynote.server
 
-import java.io.{BufferedReader, File, FileInputStream, FileNotFoundException, InputStreamReader}
+import java.io.{BufferedReader, ByteArrayOutputStream, File, FileInputStream, FileNotFoundException, InputStream, InputStreamReader, OutputStream}
 import java.net.{InetSocketAddress, URLEncoder}
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
+import java.time.{OffsetDateTime, ZoneOffset}
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.{ExecutorService, Executors, ThreadFactory, TimeUnit}
+import java.util.zip.GZIPOutputStream
 
 import fs2.{Chunk, Stream}
 import fs2.concurrent.Topic
@@ -22,11 +25,13 @@ import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
 import uzhttp.server.ServerLogger
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.{Forbidden, InternalServerError, NotFound}
-import zio.{Cause, Has, IO, RIO, Task, URIO, ZIO, ZLayer, ZManaged}
+import polynote.util.GZip
+import zio.{Cause, Has, IO, Managed, RIO, Schedule, Task, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
 import sun.net.www.MimeTable
+import zio.duration.Duration
 
 import scala.concurrent.ExecutionContext
 
@@ -157,11 +162,52 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
       case req if req.uri.getPath startsWith "/static/" => serveFile(req.uri.getPath, req)
     }
 
+    def managedStream(is: => InputStream): ZManaged[Blocking, Throwable, InputStream] =
+      effectBlocking(Option(is)).someOrFail(NotFound("")).toManaged(stream => ZIO.effectTotal(stream.close()))
+
+    // preload main JS file and cache it gzipped, because otherwise it is slow to load from resources
+    // TODO: It might be better if we unpack static files into the distribution instead of serving them from resources.
+    val preloadJS = managedStream(getClass.getClassLoader.getResourceAsStream("static/index.html")).use {
+      stream => effectBlocking(scala.io.Source.fromInputStream(stream, "UTF-8").mkString).map {
+        html => "(app.[0-9A-Fa-f]+.js)".r.findFirstMatchIn(html)
+      }.someOrFail(()).flatMap {
+        m => m.group(0) match {
+          case null => ZIO.fail(())
+          case filename => managedStream(getClass.getClassLoader.getResourceAsStream(s"static/$filename")).use {
+            stream => effectBlocking(scala.io.Source.fromInputStream(stream, "UTF-8").mkString).flatMap {
+              js => GZip(js.getBytes(StandardCharsets.UTF_8)).map {
+                gzipped =>
+                  val rep = ZIO.succeed(
+                    Response.const(
+                      gzipped,
+                      contentType = "application/javascript; charset=UTF-8",
+                      headers = List(
+                        "Content-Encoding" -> "gzip",
+                        "Last-Modified" -> DateTimeFormatter.RFC_1123_DATE_TIME.format(OffsetDateTime.now(ZoneOffset.UTC)))))
+                  val handler: PartialFunction[Request, ZIO[Any, HTTPError, Response]] = {
+                    case req if Paths.get(req.uri.getPath).getFileName.toString == filename =>
+                      if (req.headers.contains("If-Modified-Since")) ZIO.succeed(Response.notModified) else rep
+                  }
+                  handler
+              }
+            }
+          }
+        }
+      }
+    }
+
     val staticFiles: ZManaged[RequestEnv, Nothing, PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]]] =
       if (watchUI) {
         ZManaged.succeed(serveStatic)
       } else {
-        Response.permanentCache.cacheWith(Response.PermanentCache.alwaysCache).handleSome(serveStatic).build
+        (preloadJS orElse ZIO.succeed(PartialFunction.empty)).toManaged_.flatMap {
+          preloadedJS => Response.permanentCache.cacheWith(Response.PermanentCache.alwaysCache)
+            .handleSome(serveStatic)
+            .build.map {
+              cache => preloadedJS orElse cache
+            }
+        }
+
       }
 
     for {
