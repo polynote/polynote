@@ -36,9 +36,8 @@
     "webpack-cli": "3.3.11"
   },
   "scripts": {
-    "clean": "rm dist/*.js dist/*.map || echo Nothing to clean",
-    "build": "webpack --config webpack.config.js && node_modules/.bin/lessc style/styles.less dist/style/styles.css",
+    "clean": "rm dist/static/*.js dist/static/*.map || echo Nothing to clean",
+    "build": "webpack --config webpack.config.js && node_modules/.bin/lessc style/styles.less dist/static/style/styles.css",
     "dist": "webpack --config webpack.config.js --mode production && node_modules/.bin/lessc style/styles.less dist/style/styles.css",
-    "watch": "webpack --config webpack.config.js --watch & node_modules/.bin/less-watch-compiler style dist/style styles.less"
-  }
+    "watch": "webpack --config webpack.config.js --watch & node_modules/.bin/less-watch-compiler style dist/static/style styles.less"  }
 }

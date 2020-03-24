@@ -14,7 +14,7 @@ import zio.interop.catz._
 class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
   val interpreter: PythonInterpreter = PythonInterpreter(None).provide(ScalaCompiler.Provider.of(compiler)).runIO()
-  interpreter.init(State.Root).provideSomeM(MockEnv(-1)).runIO()
+  interpreter.init(State.Root).provideSomeLayer(MockEnv.init).runIO()
 
   "PythonInterpreter" - {
     "properly return vars declared by python code" in {

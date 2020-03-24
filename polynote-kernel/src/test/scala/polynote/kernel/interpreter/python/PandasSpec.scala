@@ -11,7 +11,7 @@ import shapeless.Witness
 
 class PandasSpec extends FreeSpec with Matchers with InterpreterSpec {
   val interpreter: PythonInterpreter = PythonInterpreter(None).provide(ScalaCompiler.Provider.of(compiler)).runIO()
-  interpreter.init(State.Root).provideSomeM(MockEnv(-1)).runIO()
+  interpreter.init(State.Root).provideSomeLayer(MockEnv.init).runIO()
 
   "Pandas interop" - {
 

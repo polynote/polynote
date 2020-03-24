@@ -4,14 +4,14 @@ package interpreter
 import java.util.ServiceLoader
 
 import scala.collection.JavaConverters._
-
 import cats.syntax.semigroup._
 import cats.instances.map._
 import cats.instances.list._
 import polynote.messages.CellID
-import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, InterpreterEnvironment}
+import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
+import polynote.kernel.task.TaskManager
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Task, RIO, ZIO}
+import zio.{Has, Layer, RIO, Task, ZIO, ZLayer}
 
 trait Interpreter {
 
@@ -75,12 +75,15 @@ object Interpreter {
     def priority: Int = 0
   }
 
-  trait Factories {
-    val interpreterFactories: Map[String, List[Interpreter.Factory]]
+  type Factories = Has[Map[String, List[Interpreter.Factory]]]
+
+  object Factories {
+    def layer(factories: Map[String, List[Interpreter.Factory]]): Layer[Nothing, Factories] = ZLayer.succeed(factories)
+    def access: ZIO[Factories, Nothing, Map[String, List[Interpreter.Factory]]] = ZIO.access[Factories](_.get)
   }
 
   def availableFactories(language: String): RIO[Factories, List[Interpreter.Factory]] = for {
-    allFactories <- ZIO.access[Factories](_.interpreterFactories)
+    allFactories <- ZIO.access[Factories](_.get)
     factories    <- ZIO.fromOption(allFactories.get(language)).mapError(_ => new IllegalArgumentException(s"No interpreter for $language"))
   } yield factories
 

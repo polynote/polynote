@@ -5,7 +5,7 @@ import java.nio.file.{FileVisitOption, Files, Path}
 
 import fs2.Chunk
 import polynote.kernel.BaseEnv
-import zio.blocking.effectBlocking
+import zio.blocking.{Blocking, effectBlocking}
 import zio.interop.catz._
 import zio.{RIO, Task, ZIO}
 
@@ -25,7 +25,7 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
   private def readBytes(is: => InputStream): RIO[BaseEnv, Chunk.Bytes] = {
     for {
       env    <- ZIO.environment[BaseEnv]
-      ec     <- env.blocking.blockingExecutor.map(_.asEC)
+      ec      = env.get[Blocking.Service].blockingExecutor.asEC
       chunks <- fs2.io.readInputStream[Task](effectBlocking(is).provide(env), 8192, ec, closeAfterUse = true).compile.toChunk.map(_.toBytes)
     } yield chunks
   }

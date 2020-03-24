@@ -9,9 +9,10 @@ import jep.python.{PyCallable, PyObject}
 import org.apache.commons.lang3.RandomStringUtils
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import polynote.kernel.{BaseEnv, GlobalEnv, InterpreterEnv, ScalaCompiler, TaskManager}
+import polynote.kernel.{BaseEnv, GlobalEnv, InterpreterEnv, ScalaCompiler}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.interpreter.{Interpreter, State}
+import polynote.kernel.task.TaskManager
 import polynote.kernel.util._
 import py4j.GatewayServer
 import py4j.GatewayServer.GatewayServerBuilder

@@ -104,7 +104,7 @@ export function img(classes: string[], src: string, alt: string) {
 }
 
 export function icon(classes: string[], iconName: string, alt?: string) {
-    return span(classes, img(['icon'], `style/icons/fa/${iconName}.svg`, alt || iconName))
+    return span(classes, img(['icon'], `static/style/icons/fa/${iconName}.svg`, alt || iconName))
 }
 
 export function a(classes: string[], href: string, contentOrPreventNavigate: Content | boolean, contentWhenPreventNavigate?: Content) {

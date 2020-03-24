@@ -12,12 +12,13 @@ import jep.{Jep, JepConfig, JepException, MainInterpreter, NamingConventionClass
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
-import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures, TaskManager}
+import polynote.kernel.task.TaskManager
+import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures}
 import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{RIO, Runtime, Task, UIO, ZIO}
+import zio.{Has, RIO, Runtime, Task, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
@@ -596,7 +597,7 @@ class PythonInterpreter private[python] (
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =
-      ZIO.sequence(values.map(fn)).map(values => copy(values = values))
+      ZIO.collectAll(values.map(fn)).map(values => copy(values = values))
   }
 }
 
@@ -663,7 +664,7 @@ object PythonInterpreter {
     }
   }
 
-  private[python] def mkJep(venv: Option[Path]): RIO[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
+  private[python] def mkJep(venv: Option[Path]): RIO[ScalaCompiler.Provider, Jep] = ZIO.access[ScalaCompiler.Provider](_.get.classLoader).flatMap {
     classLoader => ZIO {
       val conf = new JepConfig()
         .setClassLoader(classLoader)
@@ -681,17 +682,17 @@ object PythonInterpreter {
     }
   }
 
-  private[python] def mkJepBlocking(jepExecutor: Executor) = new Blocking {
-    val blocking: Blocking.Service[Any] = new Blocking.Service[Any] {
-      def blockingExecutor: ZIO[Any, Nothing, Executor] = ZIO.succeed(jepExecutor)
+  private[python] def mkJepBlocking(jepExecutor: Executor): Blocking = Has {
+    new Blocking.Service {
+      override def blockingExecutor: Executor = jepExecutor
     }
   }
 
   def interpreterDependencies(venv: Option[Path]): ZIO[ScalaCompiler.Provider, Throwable, (ScalaCompiler, Jep, Executor, AtomicReference[Thread], Blocking, Runtime[Any], PythonAPI)] = {
     val jepThread = new AtomicReference[Thread](null)
     for {
-      compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
-      executor <- compiler.classLoader >>= jepExecutor(jepThread)
+      compiler <- ScalaCompiler.access
+      executor <- jepExecutor(jepThread)(compiler.classLoader)
       jep      <- mkJep(venv).lock(executor)
       blocking  = mkJepBlocking(executor)
       api      <- effectBlocking(new PythonAPI(jep)).lock(executor).provide(blocking)

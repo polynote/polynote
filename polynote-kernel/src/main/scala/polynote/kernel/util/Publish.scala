@@ -5,6 +5,8 @@ import cats.effect.Concurrent
 import cats.syntax.flatMap._
 import fs2.Pipe
 import fs2.concurrent.{Enqueue, Topic}
+import zio.{IO, Task, ZIO, ZQueue}
+import zio.stream.Take
 
 /**
   * Captures only the ability to Publish, as in [[Topic]], but without the ability to subscribe. This means it can
@@ -66,4 +68,12 @@ object Publish {
   def fn[F[+_], T](fn: T => F[Unit]): Publish[F, T] = new Publish[F, T] {
     override def publish1(t: T): F[Unit] = fn(t)
   }
+
+  final case class PublishZQueueTake[RA, EA, RB, EB, ET <: EA, A, B](queue: ZQueue[RA, EA, RB, EB, Take[ET, A], B]) extends Publish[ZIO[RA, EA, +?], A] {
+    override def publish1(t: A): ZIO[RA, EA, Unit] = queue.offer(Take.Value(t)).doUntil(identity).unit
+  }
+
+  implicit def zqueueTakeToPublish[RA, EA, RB, EB, ET <: EA, A, B](queue: ZQueue[RA, EA, RB, EB, Take[ET, A], B]): Publish[ZIO[RA, EA, +?], A] = PublishZQueueTake(queue)
+
+  def apply[E, E1 <: E, A](queue: zio.Queue[Take[E1, A]])(implicit dummyImplicit: DummyImplicit): Publish[IO[E, +?], A] = PublishZQueueTake(queue)
 }

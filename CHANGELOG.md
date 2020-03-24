@@ -1,3 +1,6 @@
+# Unreleased
+* Switch HTTP server to https://github.com/polynote/uzhttp (this affects the `IdentityProvider.Service` interface)
+* Update to ZIO 1.0.0-RC18-2 (this deprecates the `Enrich` macro)
 
 # 0.3.3 (Mar 19, 2020)
 * *Automatic conversion of PySpark <-> Spark DataFrames* - it no longer matters which language you used to create the DataFrame!

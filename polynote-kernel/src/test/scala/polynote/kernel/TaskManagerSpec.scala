@@ -6,14 +6,16 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import cats.effect.concurrent.Ref
 import fs2.Pipe
 import org.scalatest.{FreeSpec, Matchers}
+import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
 import polynote.messages.TinyList
 import polynote.testing.{MockPublish, ZIOSpec}
-import zio.{DefaultRuntime, Semaphore, Task, ZIO}
+import zio.{Semaphore, Task, ZIO}
 
 import scala.collection.JavaConverters._
 
 class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
+  import runtime.unsafeRunAsync_
   private val debug = true
 
   "queues tasks" - {
@@ -22,14 +24,14 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
       val mockPublish = new MockPublish[KernelStatusUpdate]
       val taskManager = TaskManager(mockPublish).runIO()
       @volatile var state = 0
-      val task1 = zio.blocking.effectBlocking {
+      val task1 = zio.blocking.effectBlockingInterrupt {
         if (debug) println(s"${Instant.now()} running 1")
         Thread.sleep(50)
         state = 1
         if (debug) println(s"${Instant.now()} completed 1")
       }
 
-      val task2 = zio.blocking.effectBlocking {
+      val task2 = zio.blocking.effectBlockingInterrupt {
         if (debug) println(s"${Instant.now()} running 2")
         state shouldEqual 1
         Thread.sleep(50)
@@ -37,7 +39,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
         if (debug) println(s"${Instant.now()} completed 2")
       }
 
-      val task3 = zio.blocking.effectBlocking {
+      val task3 = zio.blocking.effectBlockingInterrupt {
         if (debug) println(s"${Instant.now()} running 3")
         state shouldEqual 2
         Thread.sleep(50)
@@ -80,10 +82,10 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
 
     "interrupts running tasks and cancels queued tasks before they run" in {
       val mockPublish = new MockPublish[KernelStatusUpdate]
-      val taskManager = TaskManager(mockPublish).runIO()
+      val taskManager = task.TaskManager(mockPublish).runIO()
 
       @volatile var state = 0
-      val task1 = zio.blocking.effectBlocking {
+      val task1 = zio.blocking.effectBlockingInterrupt {
         if (debug) println(s"${Instant.now()} running 1")
         Thread.sleep(100000)
         state = 1

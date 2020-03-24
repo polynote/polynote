@@ -11,6 +11,7 @@ import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.runtime.python.PythonObject
 import polynote.testing.InterpreterSpec
 import polynote.testing.kernel.MockEnv
+import zio.ZLayer
 import zio.blocking.Blocking
 
 import scala.reflect.io.PlainDirectory
@@ -40,11 +41,11 @@ class PySparkInterpreterSpec extends FreeSpec with InterpreterSpec with Matchers
     if (interpreterRef.get() != null) {
       interpreter.shutdown().runIO()
     }
-    interpreterRef.set(PySparkInterpreter(None).provideSomeM(Env.enrich[Blocking](ScalaCompiler.Provider.of(compiler))).runIO())
+    interpreterRef.set(PySparkInterpreter(None).provideSomeLayer[Blocking](ZLayer.succeed(compiler)).runIO())
 
     f
 
-    initialStateRef.set(interpreter.init(State.Root).provideSomeM(MockEnv(State.Root.id + 1)).runIO())
+    initialStateRef.set(interpreter.init(State.Root).provideSomeLayer(MockEnv.layer(State.Root.id + 1)).runIO())
   }
 
   "The PySpark Kernel" - {

@@ -9,12 +9,11 @@ val polynoteJars: TaskKey[Seq[(File, String)]] = taskKey("Polynote JARs")
 val sparkVersion: SettingKey[String] = settingKey("Spark version")
 
 val versions = new {
-  val http4s     = "0.20.6"
   val fs2        = "1.0.5"
   val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC2-6"
-  val zio        = "1.0.0-RC15"
-  val zioInterop = "2.0.0.0-RC6"
+  val zio        = "1.0.0-RC18-2"
+  val zioInterop = "2.0.0.0-RC12"
 }
 
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
@@ -115,6 +114,7 @@ val `polynote-kernel` = project.settings(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
     "org.typelevel" %% "cats-effect" % versions.catsEffect,
     "dev.zio" %% "zio" % versions.zio,
+    "dev.zio" %% "zio-streams" % versions.zio,
     "dev.zio" %% "zio-interop-cats" % versions.zioInterop,
     "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.11.4",
@@ -138,10 +138,7 @@ val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.http4s" %% "http4s-core" % versions.http4s,
-    "org.http4s" %% "http4s-dsl" % versions.http4s,
-    "org.http4s" %% "http4s-blaze-server" % versions.http4s,
-    "org.http4s" %% "http4s-blaze-client" % versions.http4s,
+    "org.polynote" %% "uzhttp" % "0.1.3",
     "org.scodec" %% "scodec-core" % "1.10.3",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
