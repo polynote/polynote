@@ -255,7 +255,22 @@ object JupyterNotebook {
   }
 
   def fromNotebook(notebook: NotebookContent): JupyterNotebook = {
-    val meta = JsonObject("config" -> notebook.config.map(_.asJson).getOrElse(Json.Null))
+    val languages = notebook.cells.collect {
+      case cell if cell.language != "text" && cell.language != "markdown" && cell.language != "html" => cell.language
+    }
+
+    val mostUsedLanguage = languages.groupBy(identity)
+      .mapValues(_.size)
+      .toSeq
+      .sortBy {
+        case (lang, count) => -count
+      }.map(_._1).headOption.getOrElse("scala")
+
+    val languageInfo = Json.fromJsonObject(JsonObject.singleton("name", Json.fromString(mostUsedLanguage)))
+
+    val meta = JsonObject(
+      "config" -> notebook.config.map(_.asJson).getOrElse(Json.Null),
+      "language_info" -> languageInfo)
     val cells = notebook.cells.map(JupyterCell.fromNotebookCell)
     JupyterNotebook(metadata = Some(meta), cells = cells)
   }
