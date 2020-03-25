@@ -1,6 +1,8 @@
 package polynote.config
 
 import java.io.{File, FileNotFoundException, FileReader}
+import java.net.URI
+import java.nio.file.Path
 import java.util.UUID
 import java.util.regex.Pattern
 
@@ -160,6 +162,16 @@ object SparkConfig {
   implicit val encoder: Encoder[SparkConfig] = deriveEncoder
 }
 
+final case class StaticConfig(
+  path: Option[Path] = None,
+  url: Option[URI] = None
+)
+
+object StaticConfig {
+  implicit val encoder: Encoder[StaticConfig] = deriveEncoder
+  implicit val decoder: Decoder[StaticConfig] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   storage: Storage = Storage(),
@@ -171,7 +183,8 @@ final case class PolynoteConfig(
   security: Security = Security(),
   ui: UI = UI(),
   credentials: Credentials = Credentials(),
-  env: Map[String, String] = Map.empty
+  env: Map[String, String] = Map.empty,
+  static: StaticConfig = StaticConfig()
 )
 
 

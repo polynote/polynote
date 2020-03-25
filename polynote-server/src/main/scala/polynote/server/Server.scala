@@ -4,7 +4,7 @@ import java.io.{BufferedReader, ByteArrayOutputStream, File, FileInputStream, Fi
 import java.net.{InetSocketAddress, URLEncoder}
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
-import java.nio.file.Paths
+import java.nio.file.{Path, Paths}
 import java.time.{OffsetDateTime, ZoneOffset}
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -36,30 +36,32 @@ import zio.duration.Duration
 import scala.concurrent.ExecutionContext
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
-  private lazy val staticPath = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist")
-  private lazy val watchUIPath = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/static/index.html")
+  private lazy val currentPath = new File(System.getProperty("user.dir")).toPath
+  private lazy val staticWatchPath = currentPath.resolve(s"polynote-frontend/dist")
+  private lazy val defaultStaticPath = currentPath
+  private lazy val watchUIIndexPath = currentPath.resolve(s"polynote-frontend/dist/static/index.html")
 
-  private def staticFilePath(filename: String): IO[HTTPError, java.nio.file.Path] = {
+  private def staticFilePath(filename: String, base: Path): IO[HTTPError, java.nio.file.Path] = {
     val pieces = filename.split('/').drop(1).filterNot(_ == "..")
     if (pieces.isEmpty)
       ZIO.fail(NotFound(filename))
     else
-      ZIO.succeed(staticPath.resolve(Paths.get(pieces.head, pieces.tail: _*)))
+      ZIO.succeed(base.resolve(Paths.get(pieces.head, pieces.tail: _*)))
   }
 
   private def indexFileContent(key: String, config: PolynoteConfig, watchUI: Boolean) = {
+    val staticUri = config.static.url.map(_.toString).getOrElse("static")
+    val staticPath = if (watchUI) staticWatchPath else config.static.path.getOrElse(defaultStaticPath)
+
     val is = effectBlocking {
-      if (watchUI) {
-        Some(java.nio.file.Files.newInputStream(watchUIPath))
-      } else {
-        Option(getClass.getClassLoader.getResourceAsStream("static/index.html"))
-      }
-    }.someOrFail(new RuntimeException("Failed to load polynote frontend"))
+      java.nio.file.Files.newInputStream(staticPath.resolve("static").resolve("index.html"))
+    }
 
     val content = is.bracket(is => effectBlocking(is.close()).orDie) {
       is => effectBlocking(scala.io.Source.fromInputStream(is, "UTF-8").mkString
         .replace("$WS_KEY", key.toString)
-        .replace("$BASE_URI", config.ui.baseUri))
+        .replace("$BASE_URI", config.ui.baseUri)
+        .replace("\"static/", s""""$staticUri/"""))
     }.orDie
 
     content match {
@@ -143,15 +145,22 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
     getIndex: URIO[Blocking, String],
     broadcastAll: Topic[Task, Option[Message]],
     builder: uzhttp.server.Server.Builder[Any]
-  ): ZManaged[RequestEnv, Nothing, uzhttp.server.Server] = {
+  ): ZManaged[RequestEnv, Nothing, uzhttp.server.Server] = Config.access.toManaged_.flatMap { config =>
+    val staticPath = if (watchUI) staticWatchPath else config.static.path.getOrElse(defaultStaticPath)
+
     def serveFile(name: String, req: Request) = {
-      if (watchUI) {
-        staticFilePath(name).flatMap {
-          path => Response.fromPath(path, req, contentType = Server.MimeTypes.get(name)).map(_.withCacheControl)
-        }
-      } else {
-        Response.fromResource(name.drop(1), req, contentType = Server.MimeTypes.get(name)).map(_.withCacheControl)
+      val mimeType = Server.MimeTypes.get(name)
+      val gzipped = staticFilePath(s"$name.gz", staticPath).flatMap {
+        path => Response.fromPath(path, req, contentType = mimeType, headers = List("Content-Encoding" -> "gzip")).map(_.withCacheControl)
       }
+
+      val nogzip = staticFilePath(name, staticPath).flatMap {
+        path => Response.fromPath(path, req, contentType = mimeType).map(_.withCacheControl)
+      }
+
+      val fromJar = Response.fromResource(name.drop(1), req, contentType = Server.MimeTypes.get(name)).map(_.withCacheControl)
+
+      gzipped orElse nogzip orElse fromJar
     }.catchAll {
       case err: HTTPError => ZIO.fail(err)
       case err => Logging.error("Error serving file", err) *> ZIO.fail(InternalServerError("Error serving file", Some(err)))
@@ -162,52 +171,13 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
       case req if req.uri.getPath startsWith "/static/" => serveFile(req.uri.getPath, req)
     }
 
-    def managedStream(is: => InputStream): ZManaged[Blocking, Throwable, InputStream] =
-      effectBlocking(Option(is)).someOrFail(NotFound("")).toManaged(stream => ZIO.effectTotal(stream.close()))
-
-    // preload main JS file and cache it gzipped, because otherwise it is slow to load from resources
-    // TODO: It might be better if we unpack static files into the distribution instead of serving them from resources.
-    val preloadJS = managedStream(getClass.getClassLoader.getResourceAsStream("static/index.html")).use {
-      stream => effectBlocking(scala.io.Source.fromInputStream(stream, "UTF-8").mkString).map {
-        html => "(app.[0-9A-Fa-f]+.js)".r.findFirstMatchIn(html)
-      }.someOrFail(()).flatMap {
-        m => m.group(0) match {
-          case null => ZIO.fail(())
-          case filename => managedStream(getClass.getClassLoader.getResourceAsStream(s"static/$filename")).use {
-            stream => effectBlocking(scala.io.Source.fromInputStream(stream, "UTF-8").mkString).flatMap {
-              js => GZip(js.getBytes(StandardCharsets.UTF_8)).map {
-                gzipped =>
-                  val rep = ZIO.succeed(
-                    Response.const(
-                      gzipped,
-                      contentType = "application/javascript; charset=UTF-8",
-                      headers = List(
-                        "Content-Encoding" -> "gzip",
-                        "Last-Modified" -> DateTimeFormatter.RFC_1123_DATE_TIME.format(OffsetDateTime.now(ZoneOffset.UTC)))))
-                  val handler: PartialFunction[Request, ZIO[Any, HTTPError, Response]] = {
-                    case req if Paths.get(req.uri.getPath).getFileName.toString == filename =>
-                      if (req.headers.contains("If-Modified-Since")) ZIO.succeed(Response.notModified) else rep
-                  }
-                  handler
-              }
-            }
-          }
-        }
-      }
-    }
-
     val staticFiles: ZManaged[RequestEnv, Nothing, PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]]] =
       if (watchUI) {
         ZManaged.succeed(serveStatic)
       } else {
-        (preloadJS orElse ZIO.succeed(PartialFunction.empty)).toManaged_.flatMap {
-          preloadedJS => Response.permanentCache.cacheWith(Response.PermanentCache.alwaysCache)
-            .handleSome(serveStatic)
-            .build.map {
-              cache => preloadedJS orElse cache
-            }
-        }
-
+        Response.permanentCache
+          .handleSome(serveStatic)
+          .build
       }
 
     for {
