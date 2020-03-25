@@ -1,7 +1,8 @@
-# Unreleased
+# 0.3.4 (Mar 25, 2020) 
 * Switch HTTP server to https://github.com/polynote/uzhttp (this affects the `IdentityProvider.Service` interface)
 * Update to ZIO 1.0.0-RC18-2 (this deprecates the `Enrich` macro)
 * Front-end static files were moved out of the application JAR, so they can be served directly on disk. This changes the directory structure of the polynote installation by adding a `static` directory which contains the (gzipped) static files. These static files can now be served directly by a dedicated webserver if so desired.
+* Write `language_info` metadata to ipynb files (improves interop with notebook tools)
 
 # 0.3.3 (Mar 19, 2020)
 * *Automatic conversion of PySpark <-> Spark DataFrames* - it no longer matters which language you used to create the DataFrame!
