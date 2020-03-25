@@ -1,5 +1,8 @@
 package polynote
 
+import java.io.File
+import java.net.URI
+import java.nio.file.{Path, Paths}
 import java.util.regex.Pattern
 
 import cats.data.{NonEmptyList, Validated, ValidatedNel}
@@ -152,4 +155,14 @@ package object config {
   }
 
   implicit val patternEncoder: Encoder[Pattern] = Encoder.encodeString.contramap(_.pattern())
+
+  implicit val pathEncoder: Encoder[Path] = Encoder.encodeString.contramap(_.toString())
+  implicit val pathDecoder: Decoder[Path] = Decoder.decodeString.emap {
+    pathStr => Either.catchNonFatal(new File(pathStr).toPath).leftMap(err => s"Malformed path: ${err.getMessage}")
+  }
+
+  implicit val uriEncoder: Encoder[URI] = Encoder.encodeString.contramap(_.toString())
+  implicit val uriDecoder: Decoder[URI] = Decoder.decodeString.emap {
+    uriStr => Either.catchNonFatal(new URI(uriStr)).leftMap(err => s"Malformed URI: ${err.getMessage}")
+  }
 }

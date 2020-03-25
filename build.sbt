@@ -144,7 +144,7 @@ val `polynote-server` = project.settings(
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
-  unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist",
+  //unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist",
   packageBin := {
     val _ = distUI.value
     (packageBin in Compile).value
@@ -246,6 +246,8 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-env`, `polynote-ru
         }
 
         IO.copy(resolvedFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
+
+        IO.copyDirectory(file(".") / "polynote-frontend" / "dist" / "static", targetDir / "static")
 
         val rootPath = crossTarget.value.toPath
         def relative(file: File): String = rootPath.relativize(file.toPath).toString
