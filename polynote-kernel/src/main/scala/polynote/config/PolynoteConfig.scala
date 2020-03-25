@@ -10,8 +10,15 @@ import io.circe.syntax._
 import io.circe._
 import polynote.kernel.TaskB
 import polynote.kernel.logging.Logging
+import polynote.messages.ShortMap
+import scodec.{Attempt, Codec}
+import scodec.codecs.implicits._
+import scodec.codecs.utf8_32
 import zio.ZIO
 import zio.blocking.effectBlocking
+import shapeless.cachedImplicit
+
+import scala.util.Try
 
 final case class Listen(
   port: Int = 8192,
@@ -114,7 +121,7 @@ object Credentials {
 
 final case class SparkPropertySet(
   name: String,
-  properties: Map[String, String] = Map.empty,
+  properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
   sparkSubmitArgs: Option[String] = None,
   distClasspathFilter: Option[Pattern] = None
 )
@@ -122,6 +129,8 @@ final case class SparkPropertySet(
 object SparkPropertySet {
   implicit val decoder: Decoder[SparkPropertySet] = deriveConfigDecoder
   implicit val encoder: Encoder[SparkPropertySet] = deriveEncoder
+  private implicit val patternCodec: Codec[Pattern] = utf8_32.exmap(str => Attempt.fromTry(Try(Pattern.compile(str))), pat => Attempt.fromTry(Try(pat.pattern())))
+  implicit val codec: Codec[SparkPropertySet] = cachedImplicit[Codec[SparkPropertySet]]
 }
 
 final case class SparkConfig(

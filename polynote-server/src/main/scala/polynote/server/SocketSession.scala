@@ -6,7 +6,7 @@ import fs2.concurrent.Topic
 import polynote.buildinfo.BuildInfo
 import polynote.kernel.util.Publish
 import polynote.kernel.{BaseEnv, StreamThrowableOps}
-import polynote.kernel.environment.{Env, PublishMessage}
+import polynote.kernel.environment.{Env, PublishMessage, Config}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages._
@@ -78,10 +78,12 @@ object SocketSession {
     for {
       factories <- Interpreter.Factories.access
       identity  <- UserIdentity.access
+      config    <- Config.access
     } yield ServerHandshake(
       (SortedMap.empty[String, String] ++ factories.mapValues(_.head.languageName)).asInstanceOf[TinyMap[TinyString, TinyString]],
       serverVersion = BuildInfo.version,
       serverCommit = BuildInfo.commit,
-      identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString)))
+      identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString))),
+      sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil)
     )
 }

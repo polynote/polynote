@@ -111,26 +111,39 @@ RepositoryConfig.codec = discriminated(
     (msgTypeId) => RepositoryConfig.codecs[msgTypeId].codec,
     msg => (msg.constructor as typeof RepositoryConfig).msgTypeId);
 
+export class SparkPropertySet {
+    static codec = combined(str, mapCodec(uint16, str as Codec<string>, str), optional(str), optional(str)).to(SparkPropertySet);
+    static unapply(inst: SparkPropertySet): ConstructorParameters<typeof SparkPropertySet> {
+        return [inst.name, inst.properties, inst.sparkSubmitArgs, inst.distClasspathFilter];
+    }
+
+    constructor(readonly name: string, readonly properties: Record<string, string>, readonly sparkSubmitArgs?: string, readonly distClasspathFilter?: string) {
+        Object.freeze(this);
+    }
+}
+
 export class NotebookConfig {
     static codec = combined(
         optional(mapCodec(uint8, tinyStr, arrayCodec(uint8, tinyStr))),
         optional(arrayCodec(uint8, tinyStr)),
         optional(arrayCodec(uint8, RepositoryConfig.codec)),
         optional(mapCodec(uint16, str as Codec<string>, str)),
+        optional(SparkPropertySet.codec),
         optional(mapCodec(uint16, str as Codec<string>, str)),
     ).to(NotebookConfig);
     static unapply(inst: NotebookConfig): ConstructorParameters<typeof NotebookConfig> {
-        return [inst.dependencies, inst.exclusions, inst.repositories, inst.sparkConfig, inst.env];
+        return [inst.dependencies, inst.exclusions, inst.repositories, inst.sparkConfig, inst.sparkTemplate, inst.env];
     }
 
     constructor(readonly dependencies?: Record<string, string[]>, readonly exclusions?: string[],
                 readonly repositories?: RepositoryConfig[], readonly sparkConfig?: Record<string, string>,
+                readonly sparkTemplate?: SparkPropertySet,
                 readonly env?: Record<string, string>) {
         Object.freeze(this);
     }
 
     static get default() {
-        return new NotebookConfig({}, [], [], {}, {});
+        return new NotebookConfig({}, [], [], {}, undefined, {});
     }
 }
 
