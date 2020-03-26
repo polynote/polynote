@@ -23,12 +23,12 @@ export class CellMetadata {
 
 // called CellComment to differentiate it from the DOM Node which is globally available without import -- is there any way to make those imports explicit???
 export class CellComment {
-    static codec = combined(tinyStr, PosRange.codec, tinyStr, int64, shortStr).to(CellComment);
+    static codec = combined(tinyStr, PosRange.codec, tinyStr, optional(str), int64, shortStr).to(CellComment);
     static unapply(inst: CellComment): ConstructorParameters<typeof CellComment> {
-        return [inst.uuid, inst.range, inst.author, inst.createdAt, inst.content];
+        return [inst.uuid, inst.range, inst.author, inst.authorAvatarUrl, inst.createdAt, inst.content];
     }
 
-    constructor(readonly uuid: string, readonly range: PosRange, readonly author: string, readonly createdAt: number, readonly content: string) {
+    constructor(readonly uuid: string, readonly range: PosRange, readonly author: string, readonly authorAvatarUrl: string | undefined, readonly createdAt: number, readonly content: string) {
         Object.freeze(this);
     }
 }

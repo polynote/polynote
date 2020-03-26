@@ -175,7 +175,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
       if (deletedCell == rootComment) {
         // this is a root comment, we need to delete all the comments that point to it
         val remaining = withoutDeleted.filter {
-          case (_, Comment(_, range, _, _, _)) if range == deletedCell.range => false
+          case (_, Comment(_, range, _, _, _, _)) if range == deletedCell.range => false
           case _ => true
         }
         cell.copy(comments = remaining)
@@ -279,6 +279,7 @@ final case class Comment(
   uuid: CommentID,
   range: CellRange, // note, cells are sorted by creation time
   author: TinyString,
+  authorAvatarUrl: Option[String],
   createdAt: Long,
   content: ShortString
 )

@@ -1,7 +1,7 @@
 "use strict";
 
 
-import {button, Content, div, span, tag, TagElement, textarea, textbox} from "../util/tags";
+import {button, Content, div, img, span, tag, TagElement, textarea, textbox} from "../util/tags";
 import { CreateComment, CurrentIdentity, DeleteComment, UIMessageRequest, UIMessageTarget, UpdateComment } from "../util/ui_event";
 import {v4 as uuidv4} from 'uuid';
 import {CellComment} from "../../data/data";
@@ -14,12 +14,13 @@ import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 export type CommentID = string
 
 // to ensure UUID uniqueness, make sure to only create new comments with createCellComment!
-export function createCellComment({range, author, createdAt, content}: Omit<CellComment, 'uuid'>): CellComment {
+export function createCellComment({range, author, authorAvatarUrl, createdAt, content}: Omit<CellComment, 'uuid'>): CellComment {
     const uuid = uuidv4();
     return new CellComment(
         uuid,
         range,
         author,
+        authorAvatarUrl,
         createdAt,
         content,
     )
@@ -71,7 +72,7 @@ export class CommentHandler extends UIMessageTarget {
 
     private _update(commentId: CommentID, range: PosRange, content: string) {
         const prev = this.comments[commentId];
-        const upd = new CellComment(prev.uuid, range, prev.author, prev.createdAt, content);
+        const upd = new CellComment(prev.uuid, range, prev.author, prev.authorAvatarUrl, prev.createdAt, content);
 
         // we need to update some things if the range has been changed and this is a root comment.
         if (range !== prev.range && this.commentRoots[prev.range.asString] === commentId) {
@@ -304,7 +305,7 @@ export class CommentUI extends RightGutterOverlay {
         );
         this.newComment = div(['create-comment', 'comment'], [
             div(['header'], [
-                span(['avatar'], [currentAvatar]),
+                ...(currentAvatar ? [img(['avatar'], currentAvatar, `[Avatar of ${currentAuthor}]`)] : []),
                 span(['author'], [currentAuthor]),
             ]),
             div(["comment-content"], [
@@ -414,6 +415,7 @@ export class CommentUI extends RightGutterOverlay {
             const comment = createCellComment({
                 range: this.range,
                 author: this.currentAuthor,
+                authorAvatarUrl: this.currentAvatar,
                 createdAt: Date.now(),
                 content: this.newCommentText.value,
             });
@@ -445,7 +447,7 @@ export class CommentUI extends RightGutterOverlay {
         this.publish(new DeleteComment(this.cellId, commentId))
     }
 
-    private commentElement(comment: CellComment, avatar?: string): CommentContainer {
+    private commentElement(comment: CellComment): CommentContainer {
         const actions = div(['actions'], []);
 
         if (this.currentAuthor === comment.author) {
@@ -468,7 +470,7 @@ export class CommentUI extends RightGutterOverlay {
 
         return Object.assign(div(['comment'], [
             div(['header'], [
-                span(['avatar'], [avatar]),
+                comment.authorAvatarUrl ? img(['avatar'], comment.authorAvatarUrl, `[Avatar of ${comment.author}]`) : span(['avatar'], []),
                 div(['author-timestamp'], [
                     span(['author'], [comment.author]),
                     span(['timestamp'], [new Date(Number(comment.createdAt)).toLocaleString("en-US", {timeZoneName: "short"})]),
@@ -477,13 +479,12 @@ export class CommentUI extends RightGutterOverlay {
             ]),
             div(['comment-content'], [comment.content])
         ]), {
-            comment,
-            avatar
+            comment
         });
     }
 
-    add(comment: CellComment, avatar?: string) { // TODO: avatars
-        const container = this.commentElement(comment, avatar);
+    add(comment: CellComment) {
+        const container = this.commentElement(comment);
 
         let next: {c: CommentContainer, idx: number} | undefined;
         // we can assume commentContainers is ordered by creation time because we build it here
@@ -506,7 +507,7 @@ export class CommentUI extends RightGutterOverlay {
     update(updated: CellComment) {
         const containerIdx = this.commentContainers.findIndex(c => c.comment.uuid === updated.uuid)!;
         const container = this.commentContainers[containerIdx];
-        const newEl = this.commentElement(updated, container.avatar);
+        const newEl = this.commentElement(updated);
         container.parentElement!.replaceChild(newEl, container);
         this.commentContainers[containerIdx] = newEl;
     }
