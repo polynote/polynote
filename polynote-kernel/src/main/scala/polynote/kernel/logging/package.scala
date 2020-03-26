@@ -1,6 +1,7 @@
 package polynote.kernel
 
 import java.io.PrintStream
+import java.util.concurrent.atomic.AtomicReference
 
 import polynote.env.ops.Location
 import zio.{Has, UIO, URIO, ZIO, ZLayer}
@@ -29,6 +30,7 @@ package object logging {
     object Service {
 
       class Default(out: PrintStream, blocking: Blocking.Service) extends Service {
+        private val lastRemote = new AtomicReference[String](null)
         private val Red = "\u001b[31m"
         private val Reset = "\u001b[0m"
         private val remoteIndent = "        |   "
@@ -41,6 +43,7 @@ package object logging {
 
         override def error(msg: String)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
           out.synchronized {
+            lastRemote.lazySet(null)
             val lines = new StringOps(msg).lines
             out.print(Red)
             out.print(errorPrefix)
@@ -61,6 +64,7 @@ package object logging {
 
         override def error(msg: Option[String], err: Throwable)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
           out.synchronized {
+            lastRemote.lazySet(null)
             out.print(Red)
             out.print(errorPrefix)
             msg.foreach(out.print)
@@ -81,6 +85,7 @@ package object logging {
 
         override def error(msg: Option[String], err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
           out.synchronized {
+            lastRemote.lazySet(null)
             out.print(Red)
             out.print(errorPrefix)
             msg.foreach(out.print)
@@ -120,11 +125,22 @@ package object logging {
             }
           }.ignore
 
-        override def warn(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(warnPrefix, warnIndent, msg)
-        override def info(msg: String)(implicit location: Location): UIO[Unit] = printWithPrefix(infoPrefix, infoIndent, msg)
+        override def warn(msg: String)(implicit location: Location): UIO[Unit] = {
+          lastRemote.lazySet(null)
+          printWithPrefix(warnPrefix, warnIndent, msg)
+        }
+        override def info(msg: String)(implicit location: Location): UIO[Unit] = {
+          lastRemote.lazySet(null)
+          printWithPrefix(infoPrefix, infoIndent, msg)
+        }
+
         override def remote(path: String, msg: String): UIO[Unit] = {
-          val remotePrefix = s"[REMOTE | $path]\n$remoteIndent"
-          printWithPrefix(remotePrefix, remoteIndent, msg)(Location.Empty)
+          if (lastRemote.getAndSet(path) ne path) {
+            val remotePrefix = s"[REMOTE | $path]\n$remoteIndent"
+            printWithPrefix(remotePrefix, remoteIndent, msg)(Location.Empty)
+          } else {
+            printWithPrefix("", remoteIndent, msg)(Location.Empty)
+          }
         }
       }
     }
