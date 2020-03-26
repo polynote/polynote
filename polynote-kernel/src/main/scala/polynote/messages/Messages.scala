@@ -104,7 +104,12 @@ object NotebookConfig {
       exclusions = Option(config.exclusions),
       repositories = Option(config.repositories),
       sparkConfig = config.spark.map(SparkConfig.toMap),
-      sparkTemplate = None,
+      sparkTemplate = for {
+        spark       <- config.spark
+        defaultName <- spark.defaultPropertySet
+        propSets    <- spark.propertySets
+        default     <- propSets.find(_.name == defaultName)
+      } yield default,
       env = Option(config.env)
     )
   }

@@ -175,7 +175,7 @@ package object server {
         override def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] =
           for {
             realPath <- repository.createNotebook(path, maybeContent)
-              _        <- broadcastMessage(CreateNotebook(ShortString(realPath)))
+            _        <- broadcastMessage(CreateNotebook(ShortString(realPath)))
           } yield realPath
 
         override def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] =

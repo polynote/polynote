@@ -139,13 +139,15 @@ final case class SparkConfig(
   properties: Map[String, String],
   sparkSubmitArgs: Option[String] = None,
   distClasspathFilter: Option[Pattern] = None,
-  propertySets: Option[List[SparkPropertySet]] = None
+  propertySets: Option[List[SparkPropertySet]] = None,
+  defaultPropertySet: Option[String] = None
 )
 
 object SparkConfig {
   def fromMap(properties: Map[String, String]): SparkConfig = SparkConfig(
     properties - "sparkSubmitArgs",
     properties.get("sparkSubmitArgs"),
+    None,
     None,
     None
   )
