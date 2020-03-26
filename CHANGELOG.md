@@ -1,6 +1,8 @@
 # 0.3.5 (Mar 26, 2020)
 * Fixed plugin script
 * Fixed avatar images in commenting UI (when identity supports them)
+* Added configuration for a "default" spark props template
+* Reverted bug in remote kernel logging
 
 # 0.3.4 (Mar 25, 2020) 
 * Switch HTTP server to https://github.com/polynote/uzhttp (this affects the `IdentityProvider.Service` interface)
