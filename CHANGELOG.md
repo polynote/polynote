@@ -1,3 +1,7 @@
+# 0.3.5 (Mar 26, 2020)
+* Fixed plugin script
+* Fixed avatar images in commenting UI (when identity supports them)
+
 # 0.3.4 (Mar 25, 2020) 
 * Switch HTTP server to https://github.com/polynote/uzhttp (this affects the `IdentityProvider.Service` interface)
 * Update to ZIO 1.0.0-RC18-2 (this deprecates the `Enrich` macro)
