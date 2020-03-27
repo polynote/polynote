@@ -24,6 +24,7 @@ import zio.interop.catz._
 import scala.concurrent.TimeoutException
 
 class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterEach with MockFactory with ScalaCheckDrivenPropertyChecks {
+  import runtime.{unsafeRun, unsafeRunSync, unsafeRunTask}
   private val kernel        = mock[Kernel]
   private val kernelFactory = new Factory.LocalService {
     def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(kernel)
@@ -33,7 +34,7 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
   private val clientRef     = unsafeRun(Ref.make[RemoteKernelClient](null))
   private val deploy        = new InProcessDeploy(kernelFactory, clientRef)
   private val transport     = new SocketTransport(deploy)
-  private val remoteKernel  = unsafeRun(RemoteKernel(transport).provide(env))
+  private val remoteKernel  = unsafeRun(RemoteKernel(transport).provideCustomLayer(env.baseLayer))
 
   "RemoteKernel" - {
 
@@ -47,7 +48,7 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
           PublishResult(result) *> PublishStatus(statusUpdate)
         }
 
-        unsafeRun(remoteKernel.init().provide(env))
+        unsafeRun(remoteKernel.init().provideCustomLayer(env.baseLayer))
         unsafeRun(env.publishStatus.toList) should contain(statusUpdate)
         unsafeRun(env.publishResult.toList) shouldEqual List(result)
       }
@@ -56,20 +57,20 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
         (kernel.queueCell _).expects(CellID(1)).returning {
           PublishResult(Output("text/plain", "hello")).as(ZIO.unit)
         }
-        unsafeRun(remoteKernel.queueCell(CellID(1)).provide(env).flatten)
+        unsafeRun(remoteKernel.queueCell(CellID(1)).provideCustomLayer(env.baseLayer).flatten)
         unsafeRun(env.publishResult.toList) shouldEqual List(Output("text/plain", "hello"))
       }
 
       "completionsAt" in {
         val completion = Completion("foo", Nil, TinyList.of(TinyList.of(("test", "thing"))), "resultType", CompletionType.Method)
         (kernel.completionsAt _).expects(CellID(1), 5).returning(ZIO.succeed(List(completion)))
-        unsafeRun(remoteKernel.completionsAt(CellID(1), 5).provide(env)) shouldEqual List(completion)
+        unsafeRun(remoteKernel.completionsAt(CellID(1), 5).provideCustomLayer(env.baseLayer)) shouldEqual List(completion)
       }
 
       "parametersAt" in {
         val params = Signatures(TinyList.of(ParameterHints("name", None, TinyList.of(ParameterHint("name", "typeName", None)))), 0, 1)
         (kernel.parametersAt _).expects(CellID(1), 5).returning(ZIO.succeed(Some(params)))
-        unsafeRun(remoteKernel.parametersAt(CellID(1), 5).provide(env)) shouldEqual Some(params)
+        unsafeRun(remoteKernel.parametersAt(CellID(1), 5).provideCustomLayer(env.baseLayer)) shouldEqual Some(params)
       }
 
       "status" in {
@@ -81,7 +82,7 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
       "info" in {
         val info = KernelInfo("foo" -> "bar", "baz" -> "buzz")
         (kernel.info _).expects().returning(ZIO.succeed(info))
-        unsafeRun(remoteKernel.info().provide(env)) shouldEqual info
+        unsafeRun(remoteKernel.info().provideCustomLayer(env.baseLayer)) shouldEqual info
       }
 
       "values" in {
@@ -96,7 +97,7 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
       "getHandleData" in {
         val data = ByteVector32(ByteVector(DataReprsOf.string.encode("testing")))
         (kernel.getHandleData _).expects(Streaming, 0, 1).returning(ZIO.succeed(Array(data)))
-        unsafeRun(remoteKernel.getHandleData(Streaming, 0, 1).provide(env)).toList match {
+        unsafeRun(remoteKernel.getHandleData(Streaming, 0, 1).provideCustomLayer(env.baseLayer)).toList match {
           case one :: Nil => one shouldEqual data
           case other => fail(other.toString)
         }
@@ -106,12 +107,12 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
         val ops = List(GroupAgg(List("one", "two"), List(("agg", "bagg"))))
         val newHandle = StreamingDataRepr(1, StringType, Some(2))
         (kernel.modifyStream _).expects(0, ops).returning(ZIO.succeed(Some(newHandle)))
-        unsafeRun(remoteKernel.modifyStream(0, ops).provide(env)) shouldEqual Some(newHandle)
+        unsafeRun(remoteKernel.modifyStream(0, ops).provideCustomLayer(env.baseLayer)) shouldEqual Some(newHandle)
       }
 
       "releaseHandle" in {
         (kernel.releaseHandle _).expects(Streaming, 1).returning(ZIO.unit)
-        unsafeRun(remoteKernel.releaseHandle(Streaming, 1).provide(env))
+        unsafeRun(remoteKernel.releaseHandle(Streaming, 1).provideCustomLayer(env.baseLayer))
       }
 
       "handles notebook updates" in {
@@ -139,17 +140,13 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
         (kernel.info _).expects().returning(ZIO.fail(new RuntimeException("Simulated error")))
         a[RecoveredException] should be thrownBy {
           // unsafeRun throws a fiber failure; this way will throw the actual error
-          unsafeRunSync(remoteKernel.info().provide(env)).fold(err => throw err.squash, identity)
+          unsafeRunSync(remoteKernel.info().provideSomeLayer(env.baseLayer)).fold(err => throw err.squash, identity)
         }
       }
 
       "shutdown" in {
         (kernel.shutdown _).expects().returning(ZIO.unit)
-        val remoteExit = unsafeRunSync(remoteKernel.shutdown())
-        remoteExit.fold(
-          err => fail(s"Shutdown failed or was interrupted:\n${err.prettyPrint}"),
-          _ => ()
-        )
+        unsafeRunTask(remoteKernel.shutdown())
       }
     }
 

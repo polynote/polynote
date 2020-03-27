@@ -5,6 +5,7 @@ import java.io.File
 import cats.data.StateT
 import cats.syntax.traverse._
 import cats.instances.list._
+import org.scalatest.Suite
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.Config
 import polynote.kernel.{Output, Result, ScalaCompiler}
@@ -25,19 +26,19 @@ import scala.tools.nsc.Settings
 import scala.tools.nsc.io.AbstractFile
 
 trait InterpreterSpec extends ZIOSpec {
+  import runtime.{unsafeRun, unsafeRunSync}
+  val classpath: List[File] = sys.props("java.class.path").split(File.pathSeparator).toList.map(new File(_))
+  val settings: Settings = ScalaCompiler.defaultSettings(new Settings(), classpath)
 
-  lazy val classpath: List[File] = sys.props("java.class.path").split(File.pathSeparator).toList.map(new File(_))
-  lazy val settings: Settings = ScalaCompiler.defaultSettings(new Settings(), classpath)
-
-  lazy val outDir: AbstractFile = new VirtualDirectory("(memory)", None)
+  def outDir: AbstractFile = new VirtualDirectory("(memory)", None)
   settings.outputDirs.setSingleOutput(outDir)
 
-  lazy val classLoader: AbstractFileClassLoader = unsafeRun(ScalaCompiler.makeClassLoader(settings, Nil).provide(Config.of(PolynoteConfig())))
-  lazy val compiler: ScalaCompiler = ScalaCompiler(settings, ZIO.succeed(classLoader)).runIO()
+  val classLoader: AbstractFileClassLoader = unsafeRun(ScalaCompiler.makeClassLoader(settings, Nil).provide(Config.of(PolynoteConfig())))
+  val compiler: ScalaCompiler = ScalaCompiler(settings, classLoader).runIO()
 
   def interpreter: Interpreter
 
-  lazy val initialState: State = unsafeRun(interpreter.init(State.Root).provideSomeM(MockEnv(State.Root.id + 1)))
+  lazy val initialState: State = unsafeRun(interpreter.init(State.Root).provideSomeLayer[Environment](MockEnv.layer(State.Root.id + 1)))
   def cellState: State = State.id(1, initialState)
 
   def assertOutput(code: String)(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit =
@@ -62,14 +63,14 @@ trait InterpreterSpec extends ZIOSpec {
     state => MockEnv(state.id).flatMap {
       env => interpreter.run(code, state).map {
         newState => State.id(newState.id + 1, newState) -> InterpResult(newState, env)
-      }.provide(env.toCellEnv(classLoader))
+      }.provideSomeLayer[Environment](env.toCellEnv(classLoader))
     }
   }
 
   def interp1(code: String): InterpResult = unsafeRun {
     MockEnv(cellState.id).flatMap {
       env =>
-        interpreter.run(code, cellState).provide(env.toCellEnv(getClass.getClassLoader)).map {
+        interpreter.run(code, cellState).provideSomeLayer(env.toCellEnv(getClass.getClassLoader)).map {
           state => InterpResult(state, env)
         }
     }

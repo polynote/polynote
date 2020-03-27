@@ -3,6 +3,7 @@ package polynote.kernel
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
 import polynote.messages.{CellID, ShortString, TinyList, TinyMap, TinyString}
+import polynote.runtime.CellRange
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
 import scodec.codecs.implicits._
@@ -209,7 +210,10 @@ final case class TaskInfo(
   def running: TaskInfo = copy(status = Running)
   def completed: TaskInfo = copy(status = Complete, progress = 255.toByte)
   def failed: TaskInfo = if (status == Complete) this else copy(status = ErrorStatus, progress = 255.toByte)
-  def failed(err: Cause[Throwable]): TaskInfo = if (status == Complete) this else copy(status = ErrorStatus, detail = ShortString.truncate(err.squash.getMessage), progress = 255.toByte)
+  def failed(err: Cause[Throwable]): TaskInfo = if (status == Complete) this else {
+    val errMsg = Option(err.squash.getMessage).getOrElse(err.squash.toString)
+    copy(status = ErrorStatus, detail = ShortString.truncate(errMsg), progress = 255.toByte)
+  }
   def done(status: DoneStatus): TaskInfo = if (this.status.isDone) this else copy(status = status, progress = 255.toByte)
   def progress(fraction: Double): TaskInfo = copy(progress = (fraction * 255).toByte)
   def progress(fraction: Double, detailOpt: Option[String]): TaskInfo = copy(progress = (fraction * 255).toByte, detail = detailOpt.getOrElse(detail))
@@ -250,7 +254,7 @@ object KernelInfo extends KernelStatusUpdateCompanion[KernelInfo](3) {
   }.toMap))
 }
 
-final case class ExecutionStatus(cellID: CellID, pos: Option[(Int, Int)]) extends KernelStatusUpdate with AlwaysRelevant
+final case class ExecutionStatus(cellID: CellID, pos: Option[CellRange]) extends KernelStatusUpdate with AlwaysRelevant
 object ExecutionStatus extends KernelStatusUpdateCompanion[ExecutionStatus](4)
 
 final case class Presence(id: Int, name: TinyString, avatar: Option[ShortString])
@@ -260,7 +264,7 @@ final case class PresenceUpdate(added: TinyList[Presence], removed: TinyList[Int
 }
 object PresenceUpdate extends KernelStatusUpdateCompanion[PresenceUpdate](5)
 
-final case class PresenceSelection(presenceId: Int, cellID: CellID, range: (Int, Int)) extends KernelStatusUpdate {
+final case class PresenceSelection(presenceId: Int, cellID: CellID, range: CellRange) extends KernelStatusUpdate {
   override def isRelevant(subscriber: Int): Boolean = presenceId != subscriber
 }
 object PresenceSelection extends KernelStatusUpdateCompanion[PresenceSelection](6)

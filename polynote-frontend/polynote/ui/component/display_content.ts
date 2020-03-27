@@ -55,6 +55,7 @@ export function contentTypeName(contentType: string) {
         case "text/plain": return "Text";
         case "text/html": return "HTML";
         case "image/svg": return "SVG";
+        case "image/svg+xml": return "SVG";
         default:
             if (mime.startsWith("image/")) return "Image";
             return mime;
@@ -74,7 +75,7 @@ export function parseContentType(contentType: string): [string, Record<string, s
 }
 
 export function truncate(string: any, len?: number) {
-    len = len || 32;
+    len = len ?? 32;
     if (typeof string !== "string" && !(string instanceof String)) {
         string = string.toString();
     }

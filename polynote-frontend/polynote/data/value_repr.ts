@@ -162,7 +162,7 @@ export class DataStream extends EventTarget {
     private repr: StreamingDataRepr;
     constructor(private readonly socket: SocketSession, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
         super();
-        this.mods = mods || [];
+        this.mods = mods ?? [];
         this.repr = originalRepr;
         this.dataType = originalRepr.dataType;
         this.dataType = this.finalDataType();

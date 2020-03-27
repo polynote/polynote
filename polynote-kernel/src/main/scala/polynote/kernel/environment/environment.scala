@@ -7,14 +7,14 @@ import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
 import polynote.kernel.interpreter.CellExecutor
 import polynote.kernel.util.Publish
-import polynote.kernel.{CellEnv, ExecutionStatus, InterpreterEnv, InterpreterEnvT, KernelStatusUpdate, Output, Result, TaskInfo}
+import polynote.kernel.{BaseEnv, CellEnv, ExecutionStatus, GlobalEnv, InterpreterEnv, KernelStatusUpdate, Output, Result, TaskInfo}
 import polynote.messages.{CellID, Message, Notebook, NotebookCell, NotebookConfig, NotebookUpdate}
 import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
 import zio.internal.Executor
 import zio.interop.catz._
-import zio.{RIO, Task, UIO, URIO, ZIO}
-import zio.syntax.zioTuple3Syntax
+import zio.{Has, Layer, RIO, Tagged, Task, UIO, URIO, ZIO, ZLayer}
+//import zio.syntax.zioTuple3Syntax
 
 //////////////////////////////////////////////////////////////////////
 // Environment modules to mix for various layers of the application //
@@ -23,41 +23,31 @@ import zio.syntax.zioTuple3Syntax
 /**
   * The capability to access the current configuration as a [[PolynoteConfig]]
   */
-trait Config {
-  val polynoteConfig: PolynoteConfig
-}
 
 object Config {
-  def access: URIO[Config, PolynoteConfig] = ZIO.access[Config](_.polynoteConfig)
-  def of(config: PolynoteConfig): Config = new Config {
-    val polynoteConfig: PolynoteConfig = config
-  }
+  def access: URIO[Config, PolynoteConfig] = ZIO.access[Config](_.get)
+  def of(config: PolynoteConfig): Config = Has(config)
+  def layer(config: PolynoteConfig): Layer[Nothing, Config] = ZLayer.succeed(config)
 }
 
 /**
   * The capability to publish status updates
   */
-trait PublishStatus {
-  val publishStatus: Publish[Task, KernelStatusUpdate]
-}
-
 object PublishStatus {
-  def access: RIO[PublishStatus, Publish[Task, KernelStatusUpdate]] = ZIO.access[PublishStatus](_.publishStatus)
+  def access: RIO[PublishStatus, Publish[Task, KernelStatusUpdate]] = ZIO.access[PublishStatus](_.get)
   def apply(statusUpdate: KernelStatusUpdate): RIO[PublishStatus, Unit] =
-    ZIO.accessM[PublishStatus](_.publishStatus.publish1(statusUpdate))
+   access.flatMap(_.publish1(statusUpdate))
+
+  def layer(publishStatus: Publish[Task, KernelStatusUpdate]): Layer[Nothing, PublishStatus] = ZLayer.succeed(publishStatus)
 }
 
 /**
   * The capability to publish results
   */
-trait PublishResult {
-  val publishResult: Publish[Task, Result]
-}
-
 object PublishResult {
-  def access: RIO[PublishResult, Publish[Task, Result]] = ZIO.access[PublishResult](_.publishResult)
+  def access: RIO[PublishResult, Publish[Task, Result]] = ZIO.access[PublishResult](_.get)
   def apply(result: Result): RIO[PublishResult, Unit] =
-    ZIO.accessM[PublishResult](_.publishResult.publish1(result))
+    access.flatMap(_.publish1(result))
 
   def apply(results: List[Result]): RIO[PublishResult, Unit] =
     access.flatMap {
@@ -68,29 +58,19 @@ object PublishResult {
 /**
   * The capability to publish general messages
   */
-trait PublishMessage {
-  val publishMessage: Publish[Task, Message]
-}
-
-object PublishMessage {
-  def access: RIO[PublishMessage, Publish[Task, Message]] = ZIO.access[PublishMessage](_.publishMessage)
+object PublishMessage extends (Message => RIO[PublishMessage, Unit]) {
+  def access: RIO[PublishMessage, Publish[Task, Message]] = ZIO.access[PublishMessage](_.get)
   def apply(message: Message): RIO[PublishMessage, Unit] =
-    ZIO.accessM[PublishMessage](_.publishMessage.publish1(message))
+    access.flatMap(_.publish1(message))
 
-  def of(publish: Publish[Task, Message]): PublishMessage = new PublishMessage {
-    val publishMessage: Publish[Task, Message] = publish
-  }
+  def of(publish: Publish[Task, Message]): PublishMessage = Has(publish)
 }
 
 /**
   * The capability to access and update the current task as a [[TaskInfo]]
   */
-trait CurrentTask {
-  val currentTask: Ref[Task, TaskInfo]
-}
-
 object CurrentTask {
-  def access: RIO[CurrentTask, Ref[Task, TaskInfo]] = ZIO.access[CurrentTask](_.currentTask)
+  def access: RIO[CurrentTask, Ref[Task, TaskInfo]] = ZIO.access[CurrentTask](_.get)
   def get: RIO[CurrentTask, TaskInfo] = access.flatMap(_.get)
 
   def update(fn: TaskInfo => TaskInfo): RIO[CurrentTask, Unit] = for {
@@ -99,18 +79,15 @@ object CurrentTask {
     _     <- if (fn(value) != value) ref.update(fn) else ZIO.unit
   } yield ()
 
-  def of(ref: Ref[Task, TaskInfo]): CurrentTask = new CurrentTask {
-    val currentTask: Ref[Task, TaskInfo] = ref
-  }
+  def of(ref: Ref[Task, TaskInfo]): CurrentTask = Has(ref)
+
+  def layer(ref: Ref[Task, TaskInfo]): Layer[Nothing, CurrentTask] = ZLayer.succeed(ref)
+  def none: Layer[Throwable, CurrentTask] = ZLayer.fromEffect(Ref[Task].of(TaskInfo("None")))
 }
 
 /**
   * The capability to access the current [[KernelRuntime]]
   */
-trait CurrentRuntime {
-  val currentRuntime: KernelRuntime
-}
-
 object CurrentRuntime {
   object NoRuntime extends KernelRuntime(
     new KernelRuntime.Display {
@@ -120,49 +97,43 @@ object CurrentRuntime {
     _ => ()
   )
 
-  object NoCurrentRuntime extends CurrentRuntime {
-    val currentRuntime: KernelRuntime = NoRuntime
-  }
+  val noRuntime: Layer[Nothing, CurrentRuntime] = ZLayer.succeed(NoRuntime)
 
   def from(
     cellID: CellID,
     publishResult: Publish[Task, Result],
     publishStatus: Publish[Task, KernelStatusUpdate],
     taskRef: Ref[Task, TaskInfo]
-  ): Task[CurrentRuntime] = ZIO.runtime.map {
-    runtime =>
-      new CurrentRuntime {
-        val currentRuntime: KernelRuntime = new KernelRuntime(
+  ): ZIO[Any, Throwable, KernelRuntime] =
+    ZIO.runtime.map {
+      runtime =>
+        new KernelRuntime(
           new KernelRuntime.Display {
             def content(contentType: String, content: String): Unit = runtime.unsafeRunSync(publishResult.publish1(Output(contentType, content)))
           },
           (frac, detail) => runtime.unsafeRunAsync_(taskRef.tryUpdate(_.progress(frac, Option(detail).filter(_.nonEmpty)))),
           posOpt => runtime.unsafeRunAsync_(publishStatus.publish1(ExecutionStatus(cellID, posOpt.map(boxed => (boxed._1.intValue(), boxed._2.intValue())))))
         )
-      }
-  }
+    }
 
-  def from(cellID: CellID): RIO[PublishResult with PublishStatus with CurrentTask, CurrentRuntime] =
-    ((PublishResult.access, PublishStatus.access, CurrentTask.access)).map3(CurrentRuntime.from(cellID, _, _, _)).flatten
 
-  def access: ZIO[CurrentRuntime, Nothing, KernelRuntime] = ZIO.access[CurrentRuntime](_.currentRuntime)
+
+  def layer(cellID: CellID): ZLayer[BaseEnv with GlobalEnv with CellEnv with CurrentTask, Throwable, CurrentRuntime] =
+    ZLayer.fromEffect(ZIO.mapParN(PublishResult.access, PublishStatus.access, CurrentTask.access)(CurrentRuntime.from(cellID, _, _, _)).flatten)
+
+  def access: ZIO[CurrentRuntime, Nothing, KernelRuntime] = ZIO.access[CurrentRuntime](_.get)
 }
 
 /**
   * The capability to access and modify the current [[Notebook]]
   */
 // TODO: should separate out a read-only capability for interpreters (they have no business modifying the notebook)
-trait CurrentNotebook {
-  val currentNotebook: Ref[Task, (Int, Notebook)]
-}
-
 object CurrentNotebook {
-  def of(ref: Ref[Task, (Int, Notebook)]): CurrentNotebook = new CurrentNotebook {
-    val currentNotebook: Ref[Task, (Int, Notebook)] = ref
-  }
-
+  def of(ref: Ref[Task, (Int, Notebook)]): CurrentNotebook = Has(ref)
+  def layer(ref: Ref[Task, (Int, Notebook)]): Layer[Nothing, CurrentNotebook] = ZLayer.succeed(ref)
   def get: RIO[CurrentNotebook, Notebook] = getVersioned.map(_._2)
-  def getVersioned: RIO[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.currentNotebook.get)
+  def path: RIO[CurrentNotebook, String] = get.map(_.path)
+  def getVersioned: RIO[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.get.get)
 
   def getCell(id: CellID): RIO[CurrentNotebook, NotebookCell] = get.flatMap {
     notebook => ZIO.fromOption(notebook.getCell(id)).mapError(_ => new NoSuchElementException(s"No such cell $id in notebook ${notebook.path}"))
@@ -174,64 +145,11 @@ object CurrentNotebook {
 /**
   * The capability to access a stream of changes to the notebook's content
   */
-trait NotebookUpdates {
-  def notebookUpdates: Stream[Task, NotebookUpdate]
-}
-
 object NotebookUpdates {
-  def access: RIO[NotebookUpdates, Stream[Task, NotebookUpdate]] = ZIO.access[NotebookUpdates](_.notebookUpdates)
+  def access: RIO[NotebookUpdates, Stream[Task, NotebookUpdate]] = ZIO.access[NotebookUpdates](_.get)
 }
 
 
-/////////////////////////////////////////////////////////////////////////////////////////////
-// Some concrete environment classes to make it easier to instantiate composed env modules //
-/////////////////////////////////////////////////////////////////////////////////////////////
-case class InterpreterEnvironment(
-  blocking: Blocking.Service[Any],
-  publishResult: Publish[Task, Result],
-  publishStatus: Publish[Task, KernelStatusUpdate],
-  currentTask: Ref[Task, TaskInfo],
-  currentRuntime: KernelRuntime
-) extends InterpreterEnvT {
-
-  def localBlocking(mk: Executor => Executor): InterpreterEnvironment = copy(
-    blocking = new Blocking.Service[Any] {
-      override def blockingExecutor: ZIO[Any, Nothing, Executor] = InterpreterEnvironment.this.blocking.blockingExecutor.map(mk)
-    }
-  )
-
-  def tapResults(to: Result => Task[Unit]): InterpreterEnvironment = copy(
-    publishResult = publishResult.tap(to)
-  )
-
-  /**
-    * Insert custom [[Blocking]] service.
-    * @see [[CellExecutor]]
-    */
-  def mkExecutor(classLoader: Task[ClassLoader]): Task[InterpreterEnvironment] = for {
-    runtime     <- ZIO.runtime[Any]
-    classLoader <- classLoader
-  } yield localBlocking(new CellExecutor(result => runtime.unsafeRun(publishResult.publish1(result)), classLoader, _))
-
-}
-
-object InterpreterEnvironment {
-  def from(env: InterpreterEnv): InterpreterEnvironment = env match {
-    case env: InterpreterEnvironment => env
-    case env => InterpreterEnvironment(env.blocking, env.publishResult, env.publishStatus, env.currentTask, env.currentRuntime)
-  }
-
-  def fromKernel(cellID: CellID): RIO[Blocking with CellEnv with CurrentTask, InterpreterEnvironment] = for {
-    env            <- ZIO.access[Blocking with CellEnv with CurrentTask](identity)
-    currentRuntime <- CurrentRuntime.from(cellID)
-  } yield InterpreterEnvironment(env.blocking, env.publishResult, env.publishStatus, env.currentTask, currentRuntime.currentRuntime)
-
-  def noTask(cellID: CellID): RIO[Blocking with CellEnv, InterpreterEnvironment] = for {
-    env            <- ZIO.access[Blocking with CellEnv](identity)
-    taskRef        <- Ref[Task].of(TaskInfo("None"))
-    currentRuntime <- CurrentRuntime.from(cellID, env.publishResult, env.publishStatus, taskRef)
-  } yield InterpreterEnvironment(env.blocking, env.publishResult, env.publishStatus, taskRef, currentRuntime.currentRuntime)
-}
 
 /**
   * Some utilities for enrichment of environment
@@ -265,19 +183,16 @@ object Env {
     * The MyEnv environment is automatically provided to the continuation after Env.addM, so it doesn't have to be
     * named and explicitly provided everywhere.
     */
-  def addM[RO]: AddMPartial[RO] = addMPartialInst.asInstanceOf[AddMPartial[RO]]
+  def addM[RO <: Has[_]]: AddMPartial[RO] = addMPartialInst.asInstanceOf[AddMPartial[RO]]
 
-  class AddMPartial[RO] {
+  class AddMPartial[RO <: Has[_]] {
     def apply[RA, E, RB](rbTask: ZIO[RA, E, RB]): AddM[RO, RA, RB, E] = new AddM(rbTask)
   }
-  private val addMPartialInst: AddMPartial[Any] = new AddMPartial[Any]
+  private val addMPartialInst: AddMPartial[Has[Any]] = new AddMPartial[Has[Any]]
 
-  class AddM[RO, -RA, RB, +E](val rbTask: ZIO[RA, E, RB]) extends AnyVal {
-    def flatMap[E1 >: E, A](
-      zio: RB => ZIO[RO with RB, E1, A])(
-      implicit enricher: Enrich[RO, RB]
-    ): ZIO[RO with RA, E1, A] =
-      rbTask.flatMap(rb => Env.enrich[RO][RB](rb)).flatMap(r => zio(r).provide(r))
+  class AddM[RO <: Has[_], -RA, RB, +E](val rbTask: ZIO[RA, E, RB]) extends AnyVal {
+    def flatMap[E1 >: E, A](zio: RB => ZIO[RO with Has[RB], E1, A])(implicit ev: Tagged[RB], ev1: Tagged[Has[RB]]): ZIO[RO with RA, E1, A] =
+      ZLayer.fromEffect(rbTask).build.use(r => zio(r.get[RB]).provideSomeLayer[RO](ZLayer.succeed(r.get[RB])))
   }
 
   /**
@@ -307,18 +222,42 @@ object Env {
     * The MyEnv environment is automatically provided to the continuation after Env.add, so it doesn't have to be
     * named and explicitly provided everywhere.
     */
-  def add[RO]: AddPartial[RO] = addPartialInstance.asInstanceOf[AddPartial[RO]]
+  def add[RO <: Has[_]]: AddPartial[RO] = addPartialInstance.asInstanceOf[AddPartial[RO]]
 
-  class AddPartial[RO] {
+  class AddPartial[RO <: Has[_]] {
     def apply[R](r: R): Add[RO, R] = new Add[RO, R](r)
   }
-  private val addPartialInstance: AddPartial[Any] = new AddPartial[Any]
+  private val addPartialInstance: AddPartial[Has[Any]] = new AddPartial[Has[Any]]
 
-  class Add[RO, R](val r: R) extends AnyVal {
-    def flatMap[E, A](
-      zio: R => ZIO[RO with R, E, A])(
-      implicit enricher: Enrich[RO, R]
-    ): ZIO[RO, E, A] = zio(r).provideSome[RO](ro => enricher(ro, r))
+  class Add[RO <: Has[_], R](val r: R) extends AnyVal {
+    def flatMap[E, A](zio: R => ZIO[RO with Has[R], E, A])(implicit ev: Tagged[Has[R]], ev1: Tagged[R]): ZIO[RO, E, A] =
+      zio(r).provideSomeLayer[RO](ZLayer.succeed(r))
+  }
+
+  def addMany[RO <: Has[_]]: AddManyPartial[RO] = addManyPartialInstance.asInstanceOf[AddManyPartial[RO]]
+
+  class AddManyPartial[RO <: Has[_]] {
+    def apply[R <: Has[_]](r: R): AddMany[RO, R] = new AddMany[RO, R](r)
+  }
+  private val addManyPartialInstance: AddManyPartial[Has[Any]] = new AddManyPartial[Has[Any]]
+
+  class AddMany[RO <: Has[_], R <: Has[_]](val r: R) extends AnyVal {
+    def flatMap[E, A](zio: R => ZIO[RO with R, E, A])(implicit ev: Tagged[R]): ZIO[RO, E, A] =
+      zio(r).provideSomeLayer[RO](ZLayer.succeedMany(r))
+  }
+
+  def addManyM[RO <: Has[_]]: AddManyMPartial[RO] = addManyMPartialInstance.asInstanceOf[AddManyMPartial[RO]]
+
+  class AddManyMPartial[RO <: Has[_]] {
+    def apply[RA, E, RB <: Has[_]](rbTask: ZIO[RA, E, RB]): AddManyM[RO, RA, RB, E] = new AddManyM(rbTask)
+  }
+  private val addManyMPartialInstance: AddManyMPartial[Has[Any]] = new AddManyMPartial[Has[Any]]
+
+  class AddManyM[RO <: Has[_], -RA, RB <: Has[_], +E](val rbTask: ZIO[RA, E, RB]) extends AnyVal {
+    def flatMap[E1 >: E, A](zio: RB => ZIO[RO with RB, E1, A])(implicit ev: Tagged[RB]): ZIO[RO with RA, E1, A] =
+      rbTask.flatMap {
+        rb => zio(rb).provideSomeLayer[RO](ZLayer.succeedMany(rb))
+      }
   }
 
 
@@ -332,7 +271,7 @@ object Env {
     *
     * @see [[Enrich]] for the macro implementation.
     */
-  def enrichWith[A, B](a: A, b: B)(implicit enrich: Enrich[A, B]): A with B = enrich(a, b)
+  //def enrichWith[A, B](a: A, b: B)(implicit enrich: Enrich[A, B]): A with B = enrich(a, b)
 
   /**
     * A partially applied enrichment. Provide as a type parameter the type that will be pulled from the ZIO environment
@@ -343,11 +282,11 @@ object Env {
     *     val thing3: Thing3 = ???
     *     zio.provideSomeM(Env.enrich[Thing1 with Thing2](thing3)) // result: ZIO[Thing1 with Thing2, Nothing, Int]
     */
-  def enrich[A]: Enricher[A] = new Enricher()
+  //def enrich[A]: Enricher[A] = new Enricher()
 
-  class Enricher[A] {
-    def apply[B](b: B)(implicit enrich: Enrich[A, B]): ZIO[A, Nothing, A with B] = ZIO.access[A](identity).map(enrichWith[A, B](_, b))
-  }
+//  class Enricher[A] {
+//    def apply[B](b: B)(implicit enrich: Enrich[A, B]): ZIO[A, Nothing, A with B] = ZIO.access[A](identity).map(enrichWith[A, B](_, b))
+//  }
 
   /**
     * A partially applied enrichment. Provide as a type parameter the type that will be pulled from the ZIO environment
@@ -359,14 +298,14 @@ object Env {
     *     val thing3: ZIO[Thing1, Nothing, Thing3] = ???
     *     zio.provideSomeM(Env.enrichM[Thing1 with Thing2](thing3)) // result: ZIO[Thing1 with Thing2, Nothing, Int]
     */
-  def enrichM[A]: MEnricher[A] = new MEnricher
+  //def enrichM[A]: MEnricher[A] = new MEnricher
 
-  class MEnricher[A]() {
-    def apply[R <: A, E, B](ioB: ZIO[R, E, B])(implicit enrich: Enrich[A, B]): ZIO[R, E, A with B] = ZIO.access[A](identity).flatMap {
-      a => ioB.map {
-        b => enrichWith[A, B](a, b)
-      }
-    }
-  }
+//  class MEnricher[A]() {
+//    def apply[R <: A, E, B](ioB: ZIO[R, E, B])(implicit enrich: Enrich[A, B]): ZIO[R, E, A with B] = ZIO.access[A](identity).flatMap {
+//      a => ioB.map {
+//        b => enrichWith[A, B](a, b)
+//      }
+//    }
+//  }
 
 }

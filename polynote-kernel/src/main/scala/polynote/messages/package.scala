@@ -37,6 +37,8 @@ package object messages {
   implicit def truncateShortString(str: String): ShortString = ShortString(
     if (str.length > Short.MaxValue) str.substring(0, Short.MaxValue) else str)
 
+  implicit def optionShortString(o: Option[String]): Option[ShortString] = o.map(ShortString)
+
   implicit val shortStringCodec: Codec[ShortString] =
     variableSizeBytes(uint16, string(StandardCharsets.UTF_8)).xmap(ShortString, x => x)
 
@@ -157,6 +159,9 @@ package object messages {
   def CellID(i: Int): CellID = i.toShort
 
   implicit def int2cellId(i: Int): CellID = i.toShort
+
+  // alias for Comment ID type
+  type CommentID = TinyString
 
   implicit def arrayCodec[A : ClassTag](implicit aCodec: Codec[A]): Codec[Array[A]] =
     int32.flatZip {

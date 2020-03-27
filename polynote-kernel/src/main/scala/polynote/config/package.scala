@@ -1,5 +1,8 @@
 package polynote
 
+import java.io.File
+import java.net.URI
+import java.nio.file.{Path, Paths}
 import java.util.regex.Pattern
 
 import cats.data.{NonEmptyList, Validated, ValidatedNel}
@@ -131,14 +134,15 @@ package object config {
 
   def deriveConfigDecoder[A](implicit decoder: Lazy[ValidatedConfigDecoder[A]]): Decoder[A] = decoder.value
 
-  case class Test(first: Int = 10, second: String = "hi")
-
   implicit val mapStringStringDecoder: Decoder[Map[String, String]] = Decoder[Map[String, Json]].emap {
     jsonMap => jsonMap.toList.map {
       case (key, json) => json.fold(
         Left("No null values allowed in this map"),
         b => Right(key -> b.toString),
-        n => Right(key -> n.toString),
+        n =>
+          n.toLong
+            .map(_.toString).orElse(n.toBigDecimal.map(_.toString()))
+            .fold(Left("No invalid numeric values allowed in this map"): Either[String, (String, String)])(v => Right(key -> v)),
         s => Right(key -> s),
         _ => Left("No array values allowed in this map"),
         _ => Left("No object values allowed in this map")
@@ -151,4 +155,14 @@ package object config {
   }
 
   implicit val patternEncoder: Encoder[Pattern] = Encoder.encodeString.contramap(_.pattern())
+
+  implicit val pathEncoder: Encoder[Path] = Encoder.encodeString.contramap(_.toString())
+  implicit val pathDecoder: Decoder[Path] = Decoder.decodeString.emap {
+    pathStr => Either.catchNonFatal(new File(pathStr).toPath).leftMap(err => s"Malformed path: ${err.getMessage}")
+  }
+
+  implicit val uriEncoder: Encoder[URI] = Encoder.encodeString.contramap(_.toString())
+  implicit val uriDecoder: Decoder[URI] = Decoder.decodeString.emap {
+    uriStr => Either.catchNonFatal(new URI(uriStr)).leftMap(err => s"Malformed URI: ${err.getMessage}")
+  }
 }

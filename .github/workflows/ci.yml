@@ -20,7 +20,7 @@ jobs:
     - name: Build
       run: |
         echo "Setting up Python dependencies"
-        pip install virtualenv ipython nbconvert jedi numpy scipy jep==3.9.0
+        pip install -r ./requirements.txt
         jep_site_packages_path=`pip show jep | grep "^Location:" | cut -d ':' -f 2 | cut -d ' ' -f 2`
         jep_path=${jep_site_packages_path}/jep
         jep_lib_path=`realpath ${jep_site_packages_path}/../../`
@@ -47,4 +47,10 @@ jobs:
         echo "Testing with Scala 2.12"
         pushd $GITHUB_WORKSPACE
           sbt ++2.12.10 test
+        popd
+
+        echo "Testing npm build"
+        pushd $GITHUB_WORKSPACE/polynote-frontend
+          npm install
+          npm run dist
         popd

@@ -202,7 +202,7 @@ export class NotebookCellsUI extends UIMessageTarget {
         };
 
         const prev = el && this.getCellBeforeEl(el);
-        const newCell = (cell && cell(newCellId)) || mkCell(prev);
+        const newCell = cell?.(newCellId) ?? mkCell(prev);
 
         // it'd be nice if we could use some simpler logic here :\
         // most of this logic is to ensure that there's always a new cell divider in between each cell, above the first cell, and below the last cell.
@@ -348,7 +348,7 @@ export class NotebookCellsUI extends UIMessageTarget {
             newCell.focus();
         } else {
             // already a code cell, change the language
-            const highlightLanguage = (clientInterpreters[language] && clientInterpreters[language].highlightLanguage) || language;
+            const highlightLanguage = clientInterpreters[language]?.highlightLanguage ?? language;
             monaco.editor.setModelLanguage((currentCell as CodeCell).editor.getModel()!, highlightLanguage);
             currentCell.setLanguage(language);
             currentCell.focus();

@@ -125,9 +125,9 @@ class NotebookListContextMenu extends UIMessageTarget {
 }
 
 function moveNext(el: HTMLLIElement) {
-    if (el.nextElementSibling && el.nextElementSibling.firstElementChild) {
+    if (el.nextElementSibling?.firstElementChild) {
         (el.nextElementSibling.firstElementChild as HTMLElement).focus();
-    } else if (el.parentElement && el.parentElement.parentElement) {
+    } else if (el.parentElement?.parentElement) {
         moveNext(el.parentElement.parentElement as HTMLLIElement);
     }
 }
@@ -148,14 +148,14 @@ function moveLast(el: HTMLUListElement): boolean {
 }
 
 function movePrev(el: HTMLLIElement) {
-    const prev = el.previousElementSibling && (el.previousElementSibling.firstElementChild as HTMLElement);
-    if (prev && prev.parentElement) {
-        if (prev.parentElement.classList.contains('expanded') && prev.parentElement.lastElementChild && prev.parentElement.lastElementChild.children.length) {
+    const prev = el.previousElementSibling?.firstElementChild as HTMLElement;
+    if (prev?.parentElement) {
+        if (prev.parentElement.classList.contains('expanded') && prev.parentElement.lastElementChild?.children.length) {
             moveLast(prev.parentElement.lastElementChild as HTMLUListElement) || prev.focus();
         } else {
             prev.focus();
         }
-    } else if (el.parentElement && el.parentElement.parentElement && el.parentElement.parentElement.firstElementChild) {
+    } else if (el.parentElement?.parentElement?.firstElementChild) {
         (el.parentElement.parentElement.firstElementChild as HTMLElement).focus();
     }
 }
@@ -163,10 +163,8 @@ function movePrev(el: HTMLLIElement) {
 function moveInOrNext(el: HTMLLIElement) {
     if (
         el.classList.contains('expanded') &&
-        el.lastElementChild && // ul
-        el.lastElementChild.firstElementChild && // li
-        el.lastElementChild.firstElementChild.firstElementChild && // a | button
-        el.lastElementChild.firstElementChild.firstElementChild instanceof HTMLElement
+        //               ul,               li,       a | button
+        el.lastElementChild?.firstElementChild?.firstElementChild instanceof HTMLElement
     ) {
         el.lastElementChild.firstElementChild.firstElementChild.focus();
     } else  {
@@ -248,7 +246,7 @@ export class NotebookListUI extends UIMessageTarget {
     // Check storage to see whether this should be collapsed. Sends events, so must be called AFTER the element is created.
     init() {
         const prefs = this.getPrefs();
-        if (prefs && prefs.collapsed) {
+        if (prefs?.collapsed) {
             this.collapse(true);
         }
     }
@@ -307,10 +305,10 @@ export class NotebookListUI extends UIMessageTarget {
                     // leaf - item is the complete path
                     itemEl = Object.assign(
                         tag('li', ['leaf'], {}, [
-                            a(['name'], `notebooks/${item}`, true, [span([], [itemName])]).click(evt => {
+                            a(['name'], `notebooks/${item}`, true, [span([], [itemName])]).click((evt: Event) => {
                                 this.publish(new LoadNotebook((itemEl as NotebookNode).item));
                             }).listener(
-                                "contextmenu", evt => this.contextMenu.showFor(evt, itemEl)
+                                "contextmenu", (evt: Event) => this.contextMenu.showFor(evt, itemEl)
                             ).listener(
                                 "keydown", (evt: KeyboardEvent) => {
                                     switch (evt.key) {
@@ -416,7 +414,7 @@ export class NotebookListUI extends UIMessageTarget {
         const prefs = this.getPrefs();
         if (force) {
             this.publish(new UIToggle('NotebookList', /* force */ true));
-        } else if (prefs && prefs.collapsed) {
+        } else if (prefs?.collapsed) {
             this.setPrefs({collapsed: false});
             this.publish(new UIToggle('NotebookList'));
         } else {

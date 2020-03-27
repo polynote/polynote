@@ -23,7 +23,7 @@ export class About extends FullScreenModal {
     aboutMain() {
         const el = div(["about-display"], [
             div([], [
-                tag('img', [], {src: "style/polynote.svg", alt:"Polynote"}, []),
+                tag('img', [], {src: "static/style/polynote.svg", alt:"Polynote"}, []),
                 h2([], ["About this Polynote Server"])
             ])
         ]);
@@ -120,7 +120,7 @@ export class About extends FullScreenModal {
             }
             prefsTable.addRow({
                 key: k,
-                val: valueEl || value.toString(),
+                val: valueEl ?? value.toString(),
                 desc: preference.description
             })
         }
@@ -185,12 +185,14 @@ export class About extends FullScreenModal {
                         ]);
                         const actionsEl = div([], [
                             iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
-                                this.publish(new KernelCommand(path, 'kill'));
-                                getKernelStatuses();
-                            }),
-                            iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
                                 this.publish(new KernelCommand(path, 'start'));
                                 getKernelStatuses();
+                                setTimeout(() => getKernelStatuses(), 5000); // TODO: this should be event-driven!
+                            }),
+                            iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
+                                this.publish(new KernelCommand(path, 'kill'));
+                                getKernelStatuses();
+                                setTimeout(() => getKernelStatuses(), 5000);
                             }),
                             iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
                                 this.publish(new LoadNotebook(path));

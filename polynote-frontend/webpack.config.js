@@ -7,8 +7,9 @@ module.exports = {
   entry: './polynote/main.ts',
   devtool: 'source-map',
   output: {
-    path: path.resolve(__dirname, 'dist'),
-    filename: 'app.[contenthash].js'
+    path: path.resolve(__dirname, 'dist/static'),
+    filename: 'app.[contenthash].js',
+    publicPath: 'static/'
   },
   module: {
     rules: [{
@@ -18,6 +19,9 @@ module.exports = {
       test: /\.ts$/,
       use: ['ts-loader'],
       exclude: /node_modules/
+    }, {
+      test: /\.ttf$/,  // these are bundled with monaco
+      use: ['file-loader']
     }]
   },
   resolve: {

@@ -76,7 +76,7 @@ object SimpleClassIndexer {
       deps      <- ScalaCompiler.dependencies
       priorities = new File(pathOf(classOf[List[_]]).toURI) :: javaLibraryPath.toList ::: deps
       indexRef   = new AtomicReference[TreeMap[String, List[(Int, String)]]](new TreeMap)
-      process   <- buildIndex(priorities.toArray, classPath, indexRef).fork
+      process   <- buildIndex(priorities.toArray, classPath, indexRef).forkDaemon
     } yield new SimpleClassIndexer(indexRef)
   }
 }

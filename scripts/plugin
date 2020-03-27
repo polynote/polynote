@@ -13,7 +13,7 @@ fi
 
 case $1 in
   enable)
-    ln -s "plugins/$2.jar" "plugins.d/$2.jar"
+    ln -s "../plugins/$2.jar" plugins.d/
     ;;
   disable)
     unlink "plugins.d/$2.jar"

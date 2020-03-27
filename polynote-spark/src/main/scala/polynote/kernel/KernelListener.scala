@@ -7,6 +7,7 @@ import scala.collection.JavaConverters._
 import org.apache.spark.scheduler.{JobFailed, JobSucceeded, SparkListener, SparkListenerJobEnd, SparkListenerJobStart, SparkListenerStageCompleted, SparkListenerStageSubmitted, SparkListenerTaskEnd, SparkListenerTaskStart, StageInfo}
 import org.apache.spark.sql.SparkSession
 import polynote.kernel.logging.Logging
+import polynote.kernel.task.TaskManager
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.{Runtime, UIO, ZIO}

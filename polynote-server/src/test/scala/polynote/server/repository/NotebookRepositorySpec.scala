@@ -253,6 +253,7 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
             tr.copyNotebook("one/foo", "two/bar").runIO shouldEqual "two/bar"
           }
         }
-      }   }
+      }
+    }
   }
 }

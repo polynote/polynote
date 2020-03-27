@@ -2,28 +2,28 @@
   font-family: Hasklig;
   font-weight: 400;
   font-style: normal;
-  src: url(/style/fonts/Hasklig-Regular.otf) format("opentype");
+  src: url(fonts/Hasklig-Regular.otf) format("opentype");
 }
 
 @font-face {
   font-family: Hasklig;
   font-weight: 400;
   font-style: italic;
-  src: url(/style/fonts/Hasklig-It.otf) format("opentype");
+  src: url(fonts/Hasklig-It.otf) format("opentype");
 }
 
 @font-face {
   font-family: Hasklig;
   font-weight: 700;
   font-style: normal;
-  src: url(/style/fonts/Hasklig-Bold.otf) format("opentype");
+  src: url(fonts/Hasklig-Bold.otf) format("opentype");
 }
 
 @font-face {
   font-family: Hasklig;
   font-weight: 800;
   font-style: italic;
-  src: url(/style/fonts/Hasklig-BoldIt.otf) format("opentype");
+  src: url(fonts/Hasklig-BoldIt.otf) format("opentype");
 }
 
 @ui-background:                rgb(245, 245, 245);
@@ -2389,6 +2389,7 @@ button.dialog-button {
 .notebook-cells {
   position: relative;
   padding: 12pt;
+  margin-bottom: 50vh; // allow last cell to scroll up to midpoint
 }
 
 .latex-editor {
@@ -3197,3 +3198,144 @@ button.dialog-button {
 img.icon {
   height: 1em;
 }
+
+// cell overlays
+.cell-overlay {
+  position: absolute;
+  z-index: 2;
+}
+
+// comments
+.comment-highlight {
+  background-color: rgba(255, 237, 158, 0.7);
+}
+
+.comment-highlight-strong {
+  background-color: rgba(255, 206, 111, 0.7);
+}
+
+.new-comment-button {
+  width: 3ex; // why ex? dunno, it works..
+  height: 3ex;
+  border-radius: 100%;
+  background: white url(icons/fa/comment-plus.svg) no-repeat 50% 50%;
+}
+
+.comment-container {
+  .comments-list {
+    border: 1px solid @ui-border;
+    box-shadow: @ui-border 0px 2px 6px 2px;
+    background-color: white;
+
+    .comment:first-child .header {
+      border-top: none;
+    }
+
+    .comment .header {
+      background: @ui-background;
+      border-top: 1px solid @ui-border;
+      border-bottom: 1px solid @ui-border;
+      font-size: 14px;
+      font-weight: normal;
+      display: flex;
+      padding: 8px 14px;
+
+      .actions {
+        display: flex;
+        background: @ui-background url(icons/fa/triple-dots-vert.svg) no-repeat 50% 50%;
+        width: 2em;
+        height: 1.5em;
+        margin-left: 1em;
+
+        &:disabled {
+          visibility: hidden;
+        }
+
+        ul {
+          border: 1px solid @ui-border;
+          box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+          list-style: none;
+          margin: 1.75em 1em;
+          padding: 0;
+          height: fit-content;
+          width: fit-content;
+          background: white;
+          z-index: 1;
+
+          li {
+            padding: .5em 1em;
+            color: @ui-text;
+            cursor: default;
+
+            &:hover {
+              background: @ui-selected;
+              color: white;
+            }
+          }
+        }
+      }
+
+      .avatar:empty {
+        background: white url(icons/fa/user.svg) no-repeat 50% 50%;
+        border: 2px solid darkgray;
+        border-radius: 100%;
+        width: 2em;
+        height: 2em;
+        margin-right: 0.5em;
+      }
+
+      .author-timestamp {
+        display: flex;
+        flex-direction: column;
+
+        .timestamp {
+          font-size: smaller;
+          font-style: italic;
+          font-weight: lighter;
+        }
+      }
+
+      input {
+        padding: 4px;
+        font-size: 14px;
+      }
+    }
+
+    .create-comment {
+      &:not(:first-child) {
+        border-top: 1px solid darkgray;
+      }
+      margin-top: 8px;
+      padding-top: 8px;
+
+      .header {
+        background: inherit;
+        border: none;
+        padding: 0 14px;
+
+        .author {
+          font-size: 16px;
+          align-self: center;
+        }
+      }
+    }
+
+    .comment-content {
+      font-size: 16px;
+      white-space: pre-wrap;
+      margin: 8px 20px;
+      max-width: fit-content;
+      word-break: break-word;
+
+      textarea {
+        padding-top: 4px;
+        padding-bottom: 4px;
+        min-width: 13em; // seems arbitrary..
+        resize: none;
+        box-sizing: border-box;
+        font-size: inherit;
+      }
+    }
+  }
+}
+

@@ -1,20 +1,20 @@
 package polynote.server
 
-import java.io.{BufferedReader, File, FileInputStream, FileNotFoundException, InputStreamReader}
+import java.io.{BufferedReader, ByteArrayOutputStream, File, FileInputStream, FileNotFoundException, InputStream, InputStreamReader, OutputStream}
+import java.net.{InetSocketAddress, URLEncoder}
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
+import java.nio.file.{Path, Paths}
+import java.time.{OffsetDateTime, ZoneOffset}
+import java.time.format.DateTimeFormatter
 import java.util.UUID
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{ExecutorService, Executors, ThreadFactory, TimeUnit}
+import java.util.zip.GZIPOutputStream
 
 import fs2.{Chunk, Stream}
 import fs2.concurrent.Topic
 import cats.instances.option._
 import cats.syntax.traverse._
-import org.http4s.{Charset, Headers, HttpApp, HttpRoutes, MediaType, Request, Response, StaticFile, Status}
-import org.http4s.blaze.pipeline.Command.EOF
-import org.http4s.dsl.Http4sDsl
-import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.headers.{`Content-Length`, `Content-Type`}
 import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
@@ -22,35 +22,46 @@ import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
 import polynote.messages.{Error, Message}
 import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
-import zio.{Cause, RIO, Task, ZIO}
+import uzhttp.server.ServerLogger
+import uzhttp.{HTTPError, Request, Response}
+import HTTPError.{Forbidden, InternalServerError, NotFound}
+import polynote.util.GZip
+import zio.{Cause, Has, IO, Managed, RIO, Schedule, Task, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
-import scala.collection.immutable.StringOps
-import Server.Routes
-import cats.effect.ConcurrentEffect
-import polynote.server.repository.format.FormatProviderNotFound
+import sun.net.www.MimeTable
+import zio.duration.Duration
 
-class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App with Http4sDsl[Task] {
-  private implicit val taskConcurrentEffect: ConcurrentEffect[Task] = zio.interop.catz.taskEffectInstance[Any]
-  private lazy val watchUIPath = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/index.html")
+import scala.concurrent.ExecutionContext
 
-  private val blockingExecutor = unsafeRun(Environment.blocking.blockingExecutor)
-  private val blockingEC = blockingExecutor.asEC
+class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
+  private lazy val currentPath = new File(System.getProperty("user.dir")).toPath
+  private lazy val staticWatchPath = currentPath.resolve(s"polynote-frontend/dist")
+  private lazy val defaultStaticPath = currentPath
+  private lazy val watchUIIndexPath = currentPath.resolve(s"polynote-frontend/dist/static/index.html")
+
+  private def staticFilePath(filename: String, base: Path): IO[HTTPError, java.nio.file.Path] = {
+    val pieces = filename.split('/').drop(1).filterNot(_ == "..")
+    if (pieces.isEmpty)
+      ZIO.fail(NotFound(filename))
+    else
+      ZIO.succeed(base.resolve(Paths.get(pieces.head, pieces.tail: _*)))
+  }
 
   private def indexFileContent(key: String, config: PolynoteConfig, watchUI: Boolean) = {
+    val staticUri = config.static.url.map(_.toString).getOrElse("static")
+    val staticPath = if (watchUI) staticWatchPath else config.static.path.getOrElse(defaultStaticPath)
+
     val is = effectBlocking {
-      if (watchUI) {
-        Some(java.nio.file.Files.newInputStream(watchUIPath))
-      } else {
-        Option(getClass.getClassLoader.getResourceAsStream("index.html"))
-      }
-    }.someOrFail(new RuntimeException("Failed to load polynote frontend"))
+      java.nio.file.Files.newInputStream(staticPath.resolve("static").resolve("index.html"))
+    }
 
     val content = is.bracket(is => effectBlocking(is.close()).orDie) {
       is => effectBlocking(scala.io.Source.fromInputStream(is, "UTF-8").mkString
         .replace("$WS_KEY", key.toString)
-        .replace("$BASE_URI", config.ui.baseUri))
+        .replace("$BASE_URI", config.ui.baseUri)
+        .replace("\"static/", s""""$staticUri/"""))
     }.orDie
 
     content match {
@@ -78,135 +89,131 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App wit
       |before running Polynote. You are solely responsible for any breach, loss, or damage caused by running
       |this software insecurely.""".stripMargin
 
-  override def reportFailure(cause: Cause[_]): Unit = cause.failures.distinct.filterNot(_ == EOF) match {
-    case Nil => ()  // unable to otherwise silence this error that happens whenever websocket is closed by client
-    case _   => super.reportFailure(cause)
+  private val banner: String =
+    raw"""|
+          |  _____      _                   _
+          | |  __ \    | |                 | |
+          | | |__) |__ | |_   _ _ __   ___ | |_ ___
+          | |  ___/ _ \| | | | | '_ \ / _ \| __/ _ \
+          | | |  | (_) | | |_| | | | | (_) | ||  __/
+          | |_|   \___/|_|\__, |_| |_|\___/ \__\___|
+          |                __/ |
+          |               |___/
+          |
+          |""".stripMargin
+
+  override def main(args: List[String]): ZIO[Environment, Nothing, Int] = {
+    for {
+      args         <- ZIO.fromEither(Server.parseArgs(args)).orDie
+      _            <- Logging.info(s"Loading configuration from ${args.configFile}")
+      config       <- PolynoteConfig.load(args.configFile).orDie
+      _            <- Logging.info(s"Loaded configuration: $config")
+      port          = config.listen.port
+      address       = config.listen.host
+      wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
+      host          = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
+      interps      <- interpreter.Loader.load.orDie
+      broadcastAll <- Topic[Task, Option[Message]](None).orDie  // used to broadcast messages to all connected clients
+      _            <- Env.addMany[BaseEnv](GlobalEnv(config, interps, kernelFactory))
+      _            <- Env.addM[BaseEnv with GlobalEnv](NotebookManager(broadcastAll).orDie)
+      loadIndex    <- indexFileContent(wsKey, config, args.watchUI)
+      _            <- Env.addM[BaseEnv with GlobalEnv with NotebookManager](IdentityProvider.load.orDie)
+      _            <- Logging.warn(securityWarning)
+      _            <- Logging.info(banner)
+      _            <- serve(args.watchUI, wsKey, loadIndex, broadcastAll, uzhttp.server.Server.builder(new InetSocketAddress(host, port))).use {
+        server => server.awaitShutdown
+      }.orDie
+    } yield 0
   }
-
-  override def run(args: List[String]): ZIO[Environment, Nothing, Int] = for {
-    args         <- ZIO.fromEither(Server.parseArgs(args)).orDie
-    _            <- Logging.info(s"Loading configuration from ${args.configFile}")
-    config       <- PolynoteConfig.load(args.configFile).orDie
-    _            <- Logging.info(s"Loaded configuration: $config")
-    port          = config.listen.port
-    address       = config.listen.host
-    wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
-    host          = if (address == "0.0.0.0") java.net.InetAddress.getLocalHost.getHostAddress else address
-    url           = s"http://$host:$port"
-    interps      <- interpreter.Loader.load.orDie
-    broadcastAll <- Topic[Task, Option[Message]](None).orDie  // used to broadcast messages to all connected clients
-    _            <- Env.add[BaseEnv](GlobalEnv(config, interps, kernelFactory))
-    _            <- Env.addM[BaseEnv with GlobalEnv](NotebookManager(broadcastAll).orDie)
-    loadIndex    <- indexFileContent(wsKey, config, args.watchUI)
-    _            <- Env.addM[BaseEnv with GlobalEnv with NotebookManager](IdentityProvider.load.orDie)
-    app          <- httpApp(args.watchUI, wsKey, loadIndex, broadcastAll).orDie
-    _            <- Logging.warn(securityWarning)
-    exit         <- BlazeServerBuilder[Task]
-      .withBanner(
-        new StringOps(raw"""
-             |
-             |  _____      _                   _
-             | |  __ \    | |                 | |
-             | | |__) |__ | |_   _ _ __   ___ | |_ ___
-             | |  ___/ _ \| | | | | '_ \ / _ \| __/ _ \
-             | | |  | (_) | | |_| | | | | (_) | ||  __/
-             | |_|   \___/|_|\__, |_| |_|\___/ \__\___|
-             |                __/ |
-             |               |___/
-             |
-             |Server running at $url
-             |""".stripMargin).lines.toList
-      )
-      .bindHttp(port, address)
-      .withWebSockets(true)
-      .withNio2(true)
-      .withHttpApp(app)
-      .serve.compile.last.orDie
-  } yield exit.map(_.code).getOrElse(0)
-
-  private def staticFile(location: String, req: Request[Task]): Task[Response[Task]] =
-    StaticFile.fromString[Task](location, blockingEC, Some(req)).getOrElseF(NotFound())
-
-  private def staticResource(path: String, req: Request[Task]): Task[Response[Task]] =
-    StaticFile.fromResource(path, blockingEC, Some(req)).getOrElseF(NotFound())
-
-  def serveFile(path: String, req: Request[Task], watchUI: Boolean): Task[Response[Task]] = {
-    if (watchUI) {
-      val outputLoc = new File(System.getProperty("user.dir")).toPath.resolve(s"polynote-frontend/dist/$path").toString
-      staticFile(outputLoc, req)
-    } else {
-      staticResource(path, req)
-    }
-  }
-
-  def downloadFile(path: String, req: Request[Task]): ZIO[BaseEnv with GlobalEnv with NotebookManager, Throwable, Response[Task]] = for {
-    notebookManager <- ZIO.access[NotebookManager](_.notebookManager)
-    nbURI           <- notebookManager.location(path).someOrFail(new FileNotFoundException(s"Unable to find notebook with path: $path"))
-    nbLoc            = new File(nbURI).toString // eventually we'll have to deal with other schemes heret
-    result          <- staticFile(nbLoc, req).onError(err => Logging.error("Error downloading file", err))
-  } yield result
-
-  object DownloadMatcher extends OptionalQueryParamDecoderMatcher[String]("download")
-  object KeyMatcher extends QueryParamDecoderMatcher[String]("key")
-
+  
   type RequestEnv = BaseEnv with GlobalEnv with NotebookManager with IdentityProvider
 
-  def httpApp(
+  private def downloadFile(path: String, req: Request): ZIO[RequestEnv, HTTPError, Response] = {
+    for {
+      uri <- NotebookManager.location(path).someOrFail(NotFound(req.uri.toString))
+      loc <- effectBlocking(Paths.get(uri)) // eventually we'll have to deal with other schemes here
+      rep <- Response.fromPath(
+        loc, req,
+        "application/x-ipynb+json",
+        headers = List("Content-Disposition" -> s"attachment; filename=${URLEncoder.encode(loc.getFileName.toString, "utf-8")}"))
+    } yield rep
+  }.orElseFail(NotFound(req.uri.toString))
+
+  def serve(
     watchUI: Boolean,
     wsKey: String,
-    getIndex: ZIO[Blocking, Nothing, String],
-    broadcastAll: Topic[Task, Option[Message]]
-  ): RIO[RequestEnv, HttpApp[Task]] = {
-    val indexResponse = getIndex.map {
-      index =>
-        val indexBytes = index.getBytes(StandardCharsets.UTF_8)
-        Response[Task](
-          headers = Headers.of(`Content-Type`(MediaType.text.html, Charset.`UTF-8`), `Content-Length`.unsafeFromLong(indexBytes.length)),
-          body = fs2.Stream.chunk(Chunk.bytes(indexBytes))
-        )
-    }
+    getIndex: URIO[Blocking, String],
+    broadcastAll: Topic[Task, Option[Message]],
+    builder: uzhttp.server.Server.Builder[Any]
+  ): ZManaged[RequestEnv, Nothing, uzhttp.server.Server] = Config.access.toManaged_.flatMap { config =>
+    val staticPath = if (watchUI) staticWatchPath else config.static.path.getOrElse(defaultStaticPath)
 
-    def toResponse(msg: Message, status: Status): Response[Task] =
-      Response(
-        status = status,
-        body = Stream.eval(Message.encode[Task](msg)).flatMap {
-          bitVector => Stream.chunk(Chunk.byteVector(bitVector.toByteVector))
-        }
-      ).withContentType(`Content-Type`(MediaType.application.`octet-stream`))
+    def serveFile(name: String, req: Request) = {
+      val mimeType = Server.MimeTypes.get(name)
+      val gzipped = staticFilePath(s"$name.gz", staticPath).flatMap {
+        path => Response.fromPath(path, req, contentType = mimeType, headers = List("Content-Encoding" -> "gzip")).map(_.withCacheControl)
+      }
 
-    def notebookSession(path: String): RIO[SessionEnv with NotebookManager, Response[Task]] = {
-        NotebookSession(path).flatMap(_.toResponse) <* UserIdentity.access.flatMap(user => Logging.info(s"Beginning notebook session $path for user $user"))
+      val nogzip = staticFilePath(name, staticPath).flatMap {
+        path => Response.fromPath(path, req, contentType = mimeType).map(_.withCacheControl)
+      }
+
+      val fromJar = Response.fromResource(name.drop(1), req, contentType = Server.MimeTypes.get(name)).map(_.withCacheControl)
+
+      gzipped orElse nogzip orElse fromJar
     }.catchAll {
-      case err: FileNotFoundException => ZIO.succeed(toResponse(Error(404, err), NotFound))
-      case err => ZIO.succeed(toResponse(Error(0, err), InternalServerError))
+      case err: HTTPError => ZIO.fail(err)
+      case err => Logging.error("Error serving file", err) *> ZIO.fail(InternalServerError("Error serving file", Some(err)))
     }
+
+    val serveStatic: PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]] = {
+      case req if req.uri.getPath == "/favicon.ico" => serveFile("/static/favicon.ico", req)
+      case req if req.uri.getPath startsWith "/static/" => serveFile(req.uri.getPath, req)
+    }
+
+    val staticFiles: ZManaged[RequestEnv, Nothing, PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]]] =
+      if (watchUI) {
+        ZManaged.succeed(serveStatic)
+      } else {
+        Response.permanentCache
+          .handleSome(serveStatic)
+          .build
+      }
 
     for {
-      env        <- ZIO.access[RequestEnv](identity)
-      authRoutes <- IdentityProvider.authRoutes
-      authorize  <- IdentityProvider.authorize[RequestEnv]
-    } yield HttpRoutes.of[Task] {
-
-      val defaultRoutes: Routes = {
-        case req @ GET -> Root / "ws" :? KeyMatcher(`wsKey`)                  => authorize(req, SocketSession(broadcastAll).flatMap(_.toResponse)).provide(env)
-        case req @ GET -> "ws" /: path :? KeyMatcher(`wsKey`)                 => authorize(req, notebookSession(path.toList.mkString("/"))).provide(env)
-        case GET -> Root / "ws"                                               => Forbidden()
-        case req @ GET -> Root                                                => indexResponse.provide(env)
-        case req @ GET -> "notebook" /: path :? DownloadMatcher(Some("true")) => downloadFile(path.toList.mkString("/"), req).provide(env)
-        case req @ GET -> "notebook" /: _                                     => indexResponse.provide(env)
-        case req @ GET -> (Root / "polynote-assembly.jar")                    => StaticFile.fromFile[Task](new File(getClass.getProtectionDomain.getCodeSource.getLocation.getPath), blockingEC).getOrElseF(NotFound())
-      }
-
-      (defaultRoutes orElse authRoutes).andThen(_.provide(env)) orElse {
-        case req @ GET -> path => serveFile(path.toString, req, watchUI)
-      }
-    }.mapF(_.getOrElseF(NotFound()))
+      authRoutes    <- IdentityProvider.authRoutes.toManaged_
+      authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_
+      staticHandler <- staticFiles
+      server        <- builder.handleSome {
+        case req@Request.WebsocketRequest(_, uri, _, _, inputFrames) =>
+          val path = uri.getPath
+          val query = uri.getQuery
+          if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
+            path.stripPrefix("/ws") match {
+              case "" => authorize(req, SocketSession(inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output)))
+              case rest => authorize(req, NotebookSession.stream(rest, inputFrames).flatMap(output => Response.websocket(req, output)))
+            }
+          } else ZIO.fail(Forbidden("Missing or incorrect key"))
+      }.handleSome {
+        case req if req.uri.getPath == "/" || req.uri.getPath == "" => getIndex.map(Response.html(_))
+        case req if req.uri.getPath startsWith "/notebook" =>
+          req.uri.getQuery match {
+            case "download=true" => downloadFile(req.uri.getPath.stripPrefix("/notebook"), req)
+            case _ => getIndex.map(Response.html(_))
+          }
+      } .handleSome(staticHandler)
+        .handleSome(authRoutes)
+        .logRequests(ServerLogger.noLogRequests)
+        .logErrors((msg, err) => Logging.error(msg, err))
+        .logInfo(msg => Logging.info(msg))
+        .serve.orDie
+    } yield server
   }
 
 }
 
 object Server {
-  type Routes = PartialFunction[Request[Task], RIO[BaseEnv with Config, Response[Task]]]
+  type Routes = PartialFunction[Request, ZIO[BaseEnv with Config, HTTPError, Response]]
   case class Args(
     configFile: File = new File("config.yml"),
     watchUI: Boolean = false
@@ -220,6 +227,29 @@ object Server {
     case ("--config" | "-c") :: filename :: rest => parseArgs(rest, current.copy(configFile = new File(filename)))
     case ("--watch"  | "-w") :: rest => parseArgs(rest, current.copy(watchUI = true))
     case serverClass(_) :: rest => parseArgs(rest, current) // class name might be arg0 in some circumstances
+    case "--config" :: Nil => Left(new IllegalArgumentException("No config path specified. Usage: `--config path/to/config.yml`"))
     case other :: rest => Left(new IllegalArgumentException(s"Unknown argument $other"))
+  }
+
+  object MimeTypes {
+    private val fromSystem = MimeTable.getDefaultTable
+    private val explicit = Map(
+      ".png" -> "image/png",
+      ".js" -> "application/javascript",
+      ".map" -> "application/json",
+      ".css" -> "text/css",
+      ".ico" -> "image/x-icon",
+      ".otf" -> "font/otf",
+      ".svg" -> "image/svg+xml",
+      ".woff" -> "font/woff",
+      ".woff2" -> "font/woff2"
+    )
+
+    def get(filename: String): String = {
+      filename.lastIndexOf('.') match {
+        case -1 => "application/octet-stream"
+        case n  => explicit.get(filename.substring(n).toLowerCase()) orElse Option(fromSystem.getContentTypeFor(filename)) getOrElse "application/octet-stream"
+      }
+    }
   }
 }

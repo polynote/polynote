@@ -1,10 +1,5 @@
 import {
-    CellsLoaded,
-    ReprDataRequest,
-    CellSelected,
-    UIMessage,
-    UIMessageTarget,
-    FocusCell,
+    CellsLoaded, ReprDataRequest, CellSelected, UIMessageTarget, FocusCell, CreateComment, UpdateComment, DeleteComment
 } from "../util/ui_event";
 import {NotebookCellsUI} from "./nb_cells";
 import {KernelUI} from "./kernel_ui";
@@ -90,7 +85,7 @@ export class NotebookUI extends UIMessageTarget {
     // TODO: remove mainUI reference
     private constructor(eventParent: UIMessageTarget, readonly path: string, readonly mainUI: MainUI) {
         super(eventParent);
-        this.socket = SocketSession.fromRelativeURL(`ws/${path}`);
+        this.socket = SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`);
         this.socket.addEventListener("error", err => {
            const url = new URL(this.socket.url.toString());
            url.protocol = document.location.protocol;
@@ -178,9 +173,11 @@ export class NotebookUI extends UIMessageTarget {
             .when(messages.UpdatedTasks, (tasks) => tasks.forEach((task: TaskInfo) => {
                 this.handleTaskUpdate(task);
             }))
-            .when(messages.KernelBusyState,
-                (busy, alive) => this.kernelUI.setKernelState(
-                    (busy && 'busy') || (!alive && 'dead') || 'idle'))
+            .when(messages.KernelBusyState, (busy, alive) => {
+                const state = (busy && 'busy') || (!alive && 'dead') || 'idle';
+                this.kernelUI.setKernelState(state);
+                this.cellUI.configUI.setKernelState(state);
+            })
             .when(messages.KernelInfo, info => this.kernelUI.updateInfo(info))
             .when(messages.ExecutionStatus, (id, pos) => this.cellUI.setExecutionHighlight(id, pos))
             .when(messages.PresenceUpdate, (added, removed) => {
@@ -190,6 +187,7 @@ export class NotebookUI extends UIMessageTarget {
             .when(messages.PresenceSelection, (id, cellId, range) => this.setPresenceSelection(id, cellId, range))
             .when(messages.KernelError, (err) => console.log(err)) // TODO: need a general UI treatment for kernel-level errors
         );
+        this.socket.addEventListener('close', () => this.cellUI.configUI.setKernelState('disconnected'));
 
         this.socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
             if (update.globalVersion >= this.globalVersion) {
@@ -239,6 +237,24 @@ export class NotebookUI extends UIMessageTarget {
                             if (output) {
                                 cell.addOutput(output.contentType, output.content);
                             }
+                        }
+                    })
+                    .when(messages.CreateComment, (g: number, l: number, id, comment) => {
+                        const cell = this.cellUI.getCell(id);
+                        if (cell instanceof CodeCell) {
+                            cell.commentHandler.add(comment)
+                        }
+                    })
+                    .when(messages.UpdateComment, (g: number, l: number, id, commentId, range, content) => {
+                        const cell = this.cellUI.getCell(id);
+                        if (cell instanceof CodeCell) {
+                            cell.commentHandler.update(commentId, range, content)
+                        }
+                    })
+                    .when(messages.DeleteComment, (g: number, l: number, id, commentId) => {
+                        const cell = this.cellUI.getCell(id);
+                        if (cell instanceof CodeCell) {
+                            cell.commentHandler.delete(commentId)
                         }
                     });
 
@@ -322,7 +338,17 @@ export class NotebookUI extends UIMessageTarget {
             }
 
             this.setIconBubble()
-        })
+        });
+
+        this.subscribe(CreateComment, (cellId, comment) => {
+            this.socket.send(new messages.CreateComment(this.globalVersion, this.localVersion, cellId, comment))
+        });
+        this.subscribe(UpdateComment, (cellId, commentId, range, content) => {
+            this.socket.send(new messages.UpdateComment(this.globalVersion, this.localVersion, cellId, commentId, range, content))
+        });
+        this.subscribe(DeleteComment, (cellId, commentId) => {
+            this.socket.send(new messages.DeleteComment(this.globalVersion, this.localVersion, cellId, commentId))
+        });
     }
 
     isFocused() {
@@ -525,7 +551,7 @@ export class NotebookUI extends UIMessageTarget {
     }
 
     onCellLanguageSelected(setLanguage: string, id?: number) {
-        id = id !== undefined ? id : (this.currentCell ? this.currentCell.id : undefined);
+        id = id ?? this.currentCell?.id;
         const cell = id && this.cellUI.getCell(id);
         if (id && cell) {
             if (cell.language !== setLanguage) {
@@ -564,7 +590,15 @@ export class NotebookUI extends UIMessageTarget {
                         cell.addResult(result);
                     }
                     this.updateCellResults(result, cellInfo.id);
-                })
+                });
+
+                // handle comments
+                if (cell instanceof CodeCell) {
+                    Object.values(cellInfo.comments).forEach(function(comment) {
+                        // not sure why I need this cast...
+                        (cell as CodeCell).commentHandler.add(comment)
+                    })
+                }
             }
         }
         this.mainUI.publish(new CellsLoaded());
@@ -577,7 +611,7 @@ export class NotebookUI extends UIMessageTarget {
     insertCell(direction: "above" | "below", anchor?: number, mkCell?: (nextCellId: number) => Cell, results?: Output[], postInsertCb?: (cell: Cell) => void): void {
 
         const anchorCell = anchor !== undefined ? this.cellUI.getCell(anchor) : this.currentCell || undefined; // sigh
-        const anchorEl = anchorCell && anchorCell.container;
+        const anchorEl = anchorCell?.container;
 
         let insertedCell: Cell;
         if (direction === "above") {
@@ -589,7 +623,7 @@ export class NotebookUI extends UIMessageTarget {
         const notebookCell = new NotebookCell(insertedCell.id, insertedCell.language, insertedCell.content, results || [], insertedCell.metadata);
 
         const prevCell = this.cellUI.getCellBefore(insertedCell);
-        const update = new messages.InsertCell(this.globalVersion, ++this.localVersion, notebookCell, prevCell ? prevCell.id : -1);
+        const update = new messages.InsertCell(this.globalVersion, ++this.localVersion, notebookCell, prevCell?.id ?? -1);
         this.socket.send(update);
         this.editBuffer.push(this.localVersion, update);
 
@@ -601,7 +635,7 @@ export class NotebookUI extends UIMessageTarget {
     }
 
     deleteCell(cellId?: number): void {
-        const deleteCellId = cellId !== undefined ? cellId : (this.currentCell ? this.currentCell.id : undefined);
+        const deleteCellId = cellId ?? this.currentCell?.id ;
         if (deleteCellId !== undefined) {
             this.cellUI.deleteCell(deleteCellId, () => {
                 const update = new messages.DeleteCell(this.globalVersion, ++this.localVersion, deleteCellId);
@@ -675,6 +709,7 @@ export class NotebookUI extends UIMessageTarget {
                     kind: isMethod ? 1 : 9,
                     label: label,
                     insertText: insertText,
+                    filterText: insertText,
                     insertTextRules: 4,
                     sortText: ("" + index).padStart(indexStrLen, '0'),
                     detail: candidate.type,
@@ -700,12 +735,12 @@ export class NotebookUI extends UIMessageTarget {
                         const params = sig.parameters.map(param => {
                             return {
                                 label: param.typeName ? `${param.name}: ${param.typeName}` : param.name,
-                                documentation: param.docString || undefined
-                            };
+                                documentation: param.docString
+                            }
                         });
 
                         return {
-                            documentation: sig.docString || undefined,
+                            documentation: sig.docString,
                             label: sig.name,
                             parameters: params
                         }

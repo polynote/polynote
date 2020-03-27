@@ -5,11 +5,12 @@ import org.apache.spark.sql.catalyst.parser.{SqlBaseBaseVisitor, SqlBaseParser}
 import org.apache.spark.sql.thief.SessionStateThief
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import polynote.kernel.environment.CurrentNotebook
-import polynote.kernel.{BaseEnv, Completion, CompletionType, GlobalEnv, InterpreterEnv, ResultValue, ScalaCompiler, Signatures, TaskManager}
+import polynote.kernel.{BaseEnv, Completion, CompletionType, GlobalEnv, InterpreterEnv, ResultValue, ScalaCompiler, Signatures}
 import polynote.kernel.interpreter.{Interpreter, State}
+import polynote.kernel.task.TaskManager
 import polynote.messages.{ShortString, TinyList}
 import polynote.runtime.spark.reprs.SparkReprsOf
-import zio.{Task, RIO, ZIO}
+import zio.{RIO, Task, ZIO}
 import zio.blocking.effectBlocking
 
 import scala.collection.mutable
@@ -24,7 +25,7 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
   private val tables = new mutable.HashMap[String, mutable.TreeSet[String]]()
 
   def run(code: String, state: State): RIO[InterpreterEnv, State] = {
-    parser.parse(state.id, code).fold(ZIO.fail, ZIO.succeed, (err, _) => ZIO.fail(err)).flatMap {
+    parser.parse(state.id, code).fold(err => ZIO.fail(err), succ => ZIO.succeed(succ), (err, _) => ZIO.fail(err)).flatMap {
       parsed =>
         effectBlocking {
           val idents = parsed.tableIdentifiers.collect {
@@ -62,7 +63,7 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
 
 
   private def loadCatalog() = effectBlocking(sessionCatalog.listDatabases()).flatMap {
-    dbs => ZIO.sequencePar {
+    dbs => ZIO.collectAllPar {
       effectBlocking(sessionCatalog.listFunctions(sessionCatalog.getCurrentDatabase)).map {
         fns => functions ++= fns.map(_._1.funcName)
       } :: dbs.toList.map {
@@ -77,7 +78,7 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
     }.unit
   }
 
-  def init(state: State): RIO[InterpreterEnv, State] = loadCatalog().fork.as(state)
+  def init(state: State): RIO[InterpreterEnv, State] = loadCatalog().forkDaemon.as(state)
 
   def shutdown(): Task[Unit] = ZIO.unit
 
@@ -122,7 +123,7 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
 }
 
 object SparkSqlInterpreter {
-  def apply(): RIO[ScalaCompiler.Provider, SparkSqlInterpreter] = ZIO.access[ScalaCompiler.Provider](_.scalaCompiler).map {
+  def apply(): RIO[ScalaCompiler.Provider, SparkSqlInterpreter] = ZIO.access[ScalaCompiler.Provider](_.get).map {
     compiler => new SparkSqlInterpreter(compiler)
   }
 

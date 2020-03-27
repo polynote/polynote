@@ -50,7 +50,7 @@ class Parser {
       }
     } catch {
       case err: RecognitionException =>
-        errors += report(id, err.getMessage, err)
+        errors += report(id, Option(err.getMessage).getOrElse(err.toString), err)
         Ior.left(CompileErrors(errors.toList))
     }
 

@@ -5,8 +5,8 @@ import {Both, Either, ExtractorConstructor, Ior, Left, Right} from "./types";
 // Add `getBigInt64` to DataView
 declare global {
     interface DataView {
-        getBigInt64(byteOffset: number, littleEndian?: boolean): number;
-        setBigInt64(byteOffset: number, value: number, littleEndian?: boolean): void;
+        getBigInt64(byteOffset: number, littleEndian?: boolean): bigint;
+        setBigInt64(byteOffset: number, value: bigint, littleEndian?: boolean): void;
     }
 }
 
@@ -119,7 +119,7 @@ export class DataWriter {
     dataView: DataView;
     offset: number;
     constructor(chunkSize?: number) {
-        this.chunkSize = chunkSize || 1024;
+        this.chunkSize = chunkSize ?? 1024;
         this.buffer = new ArrayBuffer(this.chunkSize);
         this.dataView = new DataView(this.buffer);
         this.offset = 0;
@@ -168,9 +168,9 @@ export class DataWriter {
         this.offset += 4;
     }
 
-    writeInt64(value: number) {
+    writeInt64(value: bigint) {
         this.ensureBufSize(this.buffer.byteLength + 8);
-        this.dataView.setBigInt64(this.offset, value);
+        this.dataView.setBigInt64(this.offset, BigInt(value));
         this.offset += 8;
     }
 
@@ -304,7 +304,7 @@ export const int32: Codec<number>  = Object.freeze({
     decode: (reader) => reader.readInt32()
 });
 
-export const int64: Codec<number>  = Object.freeze({
+export const int64: Codec<bigint>  = Object.freeze({
     encode: (value, writer) => writer.writeInt64(value),
     decode: (reader) => reader.readInt64()
 });

@@ -4,11 +4,12 @@ import java.io.File
 import java.net.InetSocketAddress
 
 import polynote.buildinfo.BuildInfo
-import polynote.config.SparkConfig
+import polynote.config.{PolynoteConfig, SparkConfig}
 import polynote.kernel.{Kernel, LocalSparkKernelFactory, ScalaCompiler, remote}
 import polynote.kernel.environment.{Config, CurrentNotebook}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployCommand
 import polynote.kernel.util.pathOf
+import polynote.messages.NotebookConfig
 import polynote.runtime.KernelRuntime
 import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.RIO
@@ -21,16 +22,23 @@ object DeploySparkSubmit extends DeployCommand {
   }.map(_.trim).filterNot(_.isEmpty)
 
   def build(
-    sparkConfig: Map[String, String],
+    config: PolynoteConfig,
+    nbConfig: NotebookConfig,
     mainClass: String = classOf[RemoteKernelClient].getName,
     jarLocation: String = getClass.getProtectionDomain.getCodeSource.getLocation.getPath,
     serverArgs: List[String] = Nil
   ): Seq[String] = {
 
+    val sparkConfig = config.spark.map(_.properties).getOrElse(Map.empty) ++
+      nbConfig.sparkTemplate.map(_.properties).getOrElse(Map.empty) ++
+      nbConfig.sparkConfig.getOrElse(Map.empty)
+
     val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory")
       .flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
 
-    val sparkSubmitArgs = sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
+    val sparkSubmitArgs =
+      nbConfig.sparkTemplate.flatMap(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
+      sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
 
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
     val libraryPath = List(sys.props.get("java.library.path"), sys.env.get("LD_LIBRARY_PATH"))
@@ -65,7 +73,8 @@ object DeploySparkSubmit extends DeployCommand {
     config   <- Config.access
     nbConfig <- CurrentNotebook.config
   } yield build(
-    sparkConfig = config.spark.map(SparkConfig.toMap).getOrElse(Map.empty) ++ nbConfig.sparkConfig.getOrElse(Map.empty),
+    config,
+    nbConfig,
     serverArgs =
       "--address" :: serverAddress.getAddress.getHostAddress ::
       "--port" :: serverAddress.getPort.toString ::

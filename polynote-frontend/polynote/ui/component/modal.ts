@@ -31,7 +31,7 @@ export class Modal extends UIMessageTarget {
             title = [title];
         }
 
-        const windowClasses = opts.windowClasses || [];
+        const windowClasses = opts.windowClasses ?? [];
 
         this.container = div(['modal-container'], [
             this.background = div(['modal-background'], []).click(evt => this.hide()),
@@ -66,7 +66,7 @@ export class Modal extends UIMessageTarget {
 
 export class FullScreenModal extends Modal {
     constructor(content: TagElement<"div">, opts: ModalOptions = {}) {
-        opts.windowClasses = [...(opts.windowClasses || []), 'full-screen'];
+        opts.windowClasses = [...(opts.windowClasses ?? []), 'full-screen'];
         super(
             content,
             opts

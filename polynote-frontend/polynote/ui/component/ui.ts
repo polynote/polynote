@@ -2,28 +2,9 @@
 
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import {
-    CancelTasks,
-    CreateNotebook,
-    UIMessageTarget,
-    ImportNotebook,
-    UIToggle,
-    TabActivated,
-    NoActiveTab,
-    ViewAbout,
-    DownloadNotebook,
-    ClearOutput,
-    UIMessageRequest,
-    ServerVersion,
-    RunningKernels,
-    KernelCommand,
-    LoadNotebook,
-    CellsLoaded,
-    RenameNotebook,
-    DeleteNotebook,
-    TabRemoved,
-    TabRenamed,
-    FocusCell,
-    CopyNotebook
+    CancelTasks, CreateNotebook, UIMessageTarget, ImportNotebook, UIToggle, TabActivated, NoActiveTab, ViewAbout,
+    DownloadNotebook, ClearOutput, UIMessageRequest, ServerVersion, RunningKernels, KernelCommand, LoadNotebook,
+    CellsLoaded, RenameNotebook, DeleteNotebook, TabRemoved, TabRenamed, FocusCell, CopyNotebook, CurrentIdentity
 } from '../util/ui_event'
 import {Cell, CellContainer, CodeCell, CodeCellModel} from "./cell"
 import {div, span, TagElement} from '../util/tags'
@@ -39,17 +20,18 @@ import {NotebookUI} from "./notebook";
 import {TabUI} from "./tab";
 import {CreateNotebookDialog, NotebookNameChangeDialog, NotebookListUI} from "./notebook_list";
 import {HomeUI} from "./home";
-import {Either} from "../../data/types";
 import {SocketSession} from "../../comms";
 import {CurrentNotebook} from "./current_notebook";
 import {NotebookCellsUI} from "./nb_cells";
-import {KernelBusyState} from "../../data/messages";
+import {Identity, KernelBusyState} from "../../data/messages";
+import {SparkPropertySet} from "../../data/data";
 
 // what is this?
 document.execCommand("defaultParagraphSeparator", false, "p");
 document.execCommand("styleWithCSS", false);
 
 export const Interpreters: Record<string, string> = {};
+export const SparkTemplates: Record<string, SparkPropertySet> = {};
 
 export class MainUI extends UIMessageTarget {
     private mainView: SplitView;
@@ -63,9 +45,12 @@ export class MainUI extends UIMessageTarget {
     private currentServerVersion: string;
     private about?: About;
     private welcomeUI?: HomeUI;
+    private identity?: Identity;
 
     constructor() {
         super();
+        this.makeRoot(); // MainUI is always a root message target.
+
         let left = { el: div(['grid-shell'], []) };
         let center = { el: div(['tab-view'], []) };
         let right = { el: div(['grid-shell'], []) };
@@ -101,12 +86,16 @@ export class MainUI extends UIMessageTarget {
         SocketSession.global.listenOnceFor(messages.ListNotebooks, (items) => this.browseUI.setItems(items));
         SocketSession.global.send(new messages.ListNotebooks([]));
 
-        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit) => {
+        SocketSession.global.listenOnceFor(messages.ServerHandshake, (interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
             for (let interp of Object.keys(interpreters)) {
                 Interpreters[interp] = interpreters[interp];
             }
             for (let interp of Object.keys(clientInterpreters)) {
                 Interpreters[interp] = clientInterpreters[interp].languageTitle;
+            }
+
+            for (let template of sparkTemplates) {
+                SparkTemplates[template.name] = template;
             }
 
             this.toolbarUI.cellToolbar.setInterpreters(Interpreters);
@@ -117,6 +106,7 @@ export class MainUI extends UIMessageTarget {
             }
             this.currentServerVersion = serverVersion;
             this.currentServerCommit = serverCommit;
+            this.identity = identity || undefined;
         });
 
         SocketSession.global.addMessageListener(
@@ -146,14 +136,14 @@ export class MainUI extends UIMessageTarget {
         });
 
         window.addEventListener('popstate', evt => {
-           if (evt.state && evt.state.notebook) {
+           if (evt.state?.notebook) {
                this.loadNotebook(evt.state.notebook);
            }
         });
 
         this.subscribe(TabActivated, (name, type) => {
             if (type === 'notebook') {
-                const tabUrl = new URL(`notebook/${name}`, document.baseURI);
+                const tabUrl = new URL(`notebook/${encodeURIComponent(name)}`, document.baseURI);
 
                 const href = window.location.href;
                 const hash = window.location.hash;
@@ -161,7 +151,7 @@ export class MainUI extends UIMessageTarget {
                 document.title = title; // looks like chrome ignores history title so we need to be explicit here.
 
                  // handle hashes and ensure scrolling works
-                if (hash && window.location.href === tabUrl.href) {
+                if (hash && window.location.href === (tabUrl.href + hash)) {
                     window.history.pushState({notebook: name}, title, href);
                     this.handleHashChange()
                 } else {
@@ -240,6 +230,10 @@ export class MainUI extends UIMessageTarget {
                     }
                     cb(statuses);
                 })
+            } else if (msg.prototype === CurrentIdentity.prototype) {
+                const name = this.identity?.name;
+                const avatar = this.identity?.avatar ?? undefined;
+                cb(name, avatar);
             }
         });
 
@@ -374,7 +368,7 @@ export class MainUI extends UIMessageTarget {
             const [hashId, lines] = hash.slice(1).split(",");
 
             const selected = document.getElementById(hashId) as CellContainer;
-            if (selected && selected.cell && selected.cell !== Cell.currentFocus) {
+            if (selected && selected.cell !== Cell.currentFocus) {
 
                 // highlight lines
                 if (lines) {
@@ -418,7 +412,7 @@ monaco.languages.registerCompletionItemProvider('scala', {
 });
 
 monaco.languages.registerCompletionItemProvider('python', {
-  triggerCharacters: ['.'],
+  triggerCharacters: ['.', "["],
   provideCompletionItems: (doc, pos, cancelToken, context) => {
       return (doc as CodeCellModel).cellInstance.requestCompletion(doc.getOffsetAt(pos));
   }

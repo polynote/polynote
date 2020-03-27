@@ -2,9 +2,11 @@ package polynote.kernel
 
 import polynote.buildinfo.BuildInfo
 import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates}
+import polynote.kernel.task.TaskManager
 import polynote.messages.{ByteVector32, CellID, HandleType}
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Task, RIO, ZIO}
+import zio.{Has, RIO, Task, ZIO}
+
 
 trait Kernel {
   /**
@@ -83,9 +85,7 @@ trait Kernel {
 }
 
 object Kernel {
-  trait Factory {
-    val kernelFactory: Factory.Service
-  }
+  type Factory = Has[Factory.Service]
 
   object Factory {
     trait Service {
@@ -96,19 +96,15 @@ object Kernel {
       override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel]
     }
 
-    def of(factory: Service): Factory = new Factory {
-      val kernelFactory: Service = factory
-    }
-
     def choose(choose: RIO[BaseEnv with GlobalEnv with CellEnv, Service]): Service = new Service {
       override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = choose.flatMap(_.apply())
     }
 
-    def const(inst: Kernel): Factory = of(new Service {
+    def const(inst: Kernel): Service = new Service {
       override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(inst)
-    })
+    }
 
-    def access: RIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.kernelFactory)
+    def access: RIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.get)
   }
 
   case object InterpreterNotStarted extends Throwable

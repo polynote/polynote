@@ -104,15 +104,15 @@ export function img(classes: string[], src: string, alt: string) {
 }
 
 export function icon(classes: string[], iconName: string, alt?: string) {
-    return span(classes, img(['icon'], `style/icons/fa/${iconName}.svg`, alt || iconName))
+    return span(classes, img(['icon'], `static/style/icons/fa/${iconName}.svg`, alt || iconName))
 }
 
 export function a(classes: string[], href: string, contentOrPreventNavigate: Content | boolean, contentWhenPreventNavigate?: Content) {
     const preventNavigate = typeof(contentOrPreventNavigate) === "boolean" ? contentOrPreventNavigate : false;
     const content = typeof(contentOrPreventNavigate) === "boolean" ? contentWhenPreventNavigate : contentOrPreventNavigate;
-    const a = tag("a", classes, {href}, content);
+    const a = tag("a", classes, {href: href, toString: href}, content);
     if (preventNavigate) {
-        a.addEventListener("click", evt => {
+        a.addEventListener("click", (evt: MouseEvent) => {
             evt.preventDefault();
             return false;
         });
@@ -159,6 +159,27 @@ export function textbox(classes: string[], placeholder: string, value: string = 
         }
     });
     return input;
+}
+
+export function textarea(classes: string[], placeholder: string, value: string =""): TagElement<"textarea"> {
+    const text = tag('textarea', classes, {placeholder: placeholder}, []);
+    if (value) {
+        text.value = value;
+    }
+
+    const adjustHeight = () => {
+        text.style.height = 'inherit'; // reset height first;
+        const p = (s: string | null) => parseInt(s || '0');
+        const s = window.getComputedStyle(text);
+        const h = text.scrollHeight + p(s.paddingBottom) + p(s.paddingTop) + p(s.borderBottomWidth) + p(s.borderTopWidth);
+        const ems = Math.floor(h / parseInt(s.fontSize));
+        text.style.height = `${ems}em`;
+    };
+
+    text.addEventListener('input', () => adjustHeight());
+    text.style.height = "3em"; // default height;
+
+    return text;
 }
 
 export interface DropdownElement extends TagElement<"select"> {
@@ -256,7 +277,7 @@ export interface TableElement extends TagElement<"table"> {
  */
 type TableRow = Record<string, Content>
 export function table(classes: string[], contentSpec: TableContentSpec): TableElement {
-    const colClass = (col: number) => contentSpec.classes ? contentSpec.classes[col] : '';
+    const colClass = (col: number) => contentSpec.classes?.[col] ?? '';
     const heading = contentSpec.header ? [tag('thead', [], {}, [
             tag('tr', [], {}, contentSpec.header.map((c, i) => tag('th', [colClass(i)], {}, [c])))
         ])] : [];
@@ -301,7 +322,7 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
 
     const body = tag(
         'tbody', [], {},
-        contentSpec.rows ? contentSpec.rows.map(mkTR) : []
+        contentSpec.rows?.map(mkTR) ?? []
     );
 
     const table = tag('table', classes, {}, [
@@ -310,7 +331,7 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
 
     return Object.assign(table, {
         addRow(row: Content[] | TableRow, whichBody?: TagElement<"tbody">) {
-            const tbody = whichBody === undefined ? body : whichBody;
+            const tbody = whichBody ?? body;
             const rowEl = mkTR(row);
             if (contentSpec.addToTop)
                 tbody.insertBefore(rowEl, tbody.firstChild);
@@ -342,7 +363,7 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
         addBody(rows?: TableRow[]) {
             const newBody = tag(
                 'tbody', [], {},
-                contentSpec.rows ? contentSpec.rows.map(mkTR) : []
+                contentSpec.rows?.map(mkTR) ?? []
             );
 
             table.appendChild(newBody);

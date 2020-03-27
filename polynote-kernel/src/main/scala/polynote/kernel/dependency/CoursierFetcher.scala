@@ -22,22 +22,22 @@ import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
 import coursier.util.{EitherT, Sync}
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
-import polynote.config.{Credentials => CredentialsConfig, RepositoryConfig, ivy, maven}
-import polynote.kernel.TaskManager
+import polynote.config.{RepositoryConfig, ivy, maven, Credentials => CredentialsConfig}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
 import zio.blocking.{Blocking, blocking, effectBlocking}
 import polynote.kernel.logging.Logging
 import polynote.messages.NotebookConfig
-import zio.blocking.{Blocking, effectBlocking, blocking}
-import zio.{Task, RIO, UIO, URIO, ZIO, ZManaged}
+import zio.blocking.{Blocking, blocking, effectBlocking}
+import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
 import zio.interop.catz._
 import zio.{RIO, Task, ZIO, ZManaged}
 
 import scala.concurrent.ExecutionContext
 import scala.tools.nsc.interpreter.InputStream
-import coursier.credentials.{Credentials => CoursierCredentials, DirectCredentials}
+import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentials}
 import coursier.core.Authentication
+import polynote.kernel.task.TaskManager
 
 object CoursierFetcher {
   type ArtifactTask[A] = RIO[CurrentTask, A]
@@ -63,7 +63,7 @@ object CoursierFetcher {
       _              <- CurrentTask.update(_.copy(detail = "Downloading dependencies...", progress = 0))
       downloadDeps   <- download(resolution, cache).fork
       downloadUris   <- downloadUris(uris).fork
-      downloaded     <- downloadDeps.join.map2(downloadUris.join)(_ ++ _)
+      downloaded     <- ZIO.mapN(downloadDeps.join, downloadUris.join)(_ ++ _)
     } yield downloaded
   }
 
@@ -183,16 +183,14 @@ object CoursierFetcher {
     maxIterations: Int = 100
   ): RIO[Blocking with TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Blocking].flatMap {
     runtime =>
-      runtime.Environment.blocking.blockingExecutor.map(_.asEC).flatMap {
-        blockingExecutor => Artifacts(new TaskManagedCache(cache, blockingExecutor)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
-          artifactResult =>
-            artifactResult.detailedArtifacts.toList.map {
-              case (dep, pub, artifact, file) =>
-                (resolution.rootDependencies.contains(dep), artifact.url, file)
-            }
-        }
+      val blockingExecutor = runtime.environment.get.blockingExecutor.asEC
+      Artifacts(new TaskManagedCache(cache, blockingExecutor)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
+        artifactResult =>
+          artifactResult.detailedArtifacts.toList.map {
+            case (dep, pub, artifact, file) =>
+              (resolution.rootDependencies.contains(dep), artifact.url, file)
+          }
       }
-
   }
 
   private def downloadUris(uris: List[URI]): RIO[TaskManager with CurrentTask with Blocking, List[(Boolean, String, File)]] = {
@@ -211,7 +209,7 @@ object CoursierFetcher {
     def downloadToFile(file: DownloadableFile, cacheFile: File) = for {
       blockingEnv <- ZIO.access[Blocking](identity)
       task        <- CurrentTask.access
-      ec          <- blockingEnv.blocking.blockingExecutor.map(_.asEC)
+      ec           = blockingEnv.get.blockingExecutor.asEC
       size        <- blocking(LiftIO[Task].liftIO(file.size))
       _           <- ZIO(Files.createDirectories(cacheFile.toPath.getParent))
       _           <- ZManaged.fromAutoCloseable(effectBlocking(new FileOutputStream(cacheFile))).use {
@@ -261,7 +259,7 @@ object CoursierFetcher {
   // coursier doesn't have instances for ZIO built in
   implicit def zioSync[R]: Sync[RIO[R, ?]] = new Sync[RIO[R, ?]] {
     def delay[A](a: => A): RIO[R, A] = ZIO.effect(a)
-    def handle[A](a: RIO[R, A])(f: PartialFunction[Throwable, A]): RIO[R, A] = a.catchSome(f andThen ZIO.succeed)
+    def handle[A](a: RIO[R, A])(f: PartialFunction[Throwable, A]): RIO[R, A] = a.catchSome(f andThen (a => ZIO.succeed(a)))
     def fromAttempt[A](a: Either[Throwable, A]): RIO[R, A] = ZIO.fromEither(a)
     def gather[A](elems: Seq[RIO[R, A]]): RIO[R, Seq[A]] = Traverse[List].sequence[RIO[R, ?], A](elems.toList)
     def point[A](a: A): RIO[R, A] = ZIO.succeed(a)

@@ -38,16 +38,16 @@ export class KernelUI extends UIMessageTarget {
             this.statusEl = h2(['kernel-status'], [
                 this.status = span(['status'], ['●']),
                 'Kernel',
-                notebook ? span(['buttons'], [
+                notebook && span(['buttons'], [
                     iconButton(['connect'], 'Connect to server', 'plug', 'Connect').click(evt => this.connect(evt)),
                     iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
                     iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(evt => this.killKernel(evt))
-                ]) : undefined
+                ])
             ]).click(evt => this.collapse()),
             div(['ui-panel-content'], [
-                notebook ? this.info.el : undefined,
-                notebook && this.symbols ? this.symbols.el : undefined,
-                notebook ? this.tasks.el : undefined
+                notebook && this.info.el,
+                notebook && this.symbols?.el,
+                notebook && this.tasks.el
             ])
         ]);
 
@@ -58,7 +58,7 @@ export class KernelUI extends UIMessageTarget {
 
         // Check storage to see whether this should be collapsed
         const prefs = this.getStorage();
-        if (prefs && prefs.collapsed) {
+        if (prefs?.collapsed) {
             this.collapse(true);
         }
     }
@@ -139,7 +139,7 @@ export class KernelUI extends UIMessageTarget {
         const prefs = this.getStorage();
         if (force) {
             this.publish(new UIToggle('KernelUI', /* force */ true));
-        } else if (prefs && prefs.collapsed) {
+        } else if (prefs?.collapsed) {
             this.setStorage({collapsed: false});
             this.publish(new UIToggle('KernelUI'));
         } else {

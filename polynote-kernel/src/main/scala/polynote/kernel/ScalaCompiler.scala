@@ -11,7 +11,7 @@ import polynote.kernel.util.{KernelReporter, LimitedSharingClassLoader, pathOf}
 import zio.blocking.Blocking
 import zio.system.{System, env}
 import zio.internal.{ExecutionMetrics, Executor}
-import zio.{RIO, Task, UIO, ZIO}
+import zio.{Has, RIO, Task, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.mutable
@@ -26,7 +26,7 @@ import ScalaCompiler.OriginalPos
 class ScalaCompiler private (
   val global: Global,
   val notebookPackage: String,
-  val classLoader: Task[AbstractFileClassLoader],
+  val classLoader: AbstractFileClassLoader,
   val dependencies: List[File],
   val otherClasspath: List[File]
 ) {
@@ -79,9 +79,7 @@ class ScalaCompiler private (
 
   private[kernel] def unsafeFormatType(typ: Type): String = formatTypeInternal(typ)
 
-  private val runtimeMirror = ZIO.accessM[ClassLoader](cl => ZIO(scala.reflect.runtime.universe.runtimeMirror(cl)))
-    .memoize.flatten
-    .provideSomeM(classLoader)
+  private val runtimeMirror = effectMemoize(scala.reflect.runtime.universe.runtimeMirror(classLoader))
 
   private val importer: global.Importer { val from: scala.reflect.runtime.universe.type } = global.mkImporter(scala.reflect.runtime.universe)
 
@@ -104,8 +102,7 @@ class ScalaCompiler private (
     for {
       compiled  <- cellCode.compile()
       className  = s"${packageName.encodedName.toString}.${cellCode.assignedTypeName.encodedName.toString}"
-      cl        <- classLoader
-      loadClass  = zio.blocking.effectBlocking(Option(Class.forName(className, false, cl).asInstanceOf[Class[AnyRef]]))
+      loadClass  = zio.blocking.effectBlocking(Option(Class.forName(className, false, classLoader).asInstanceOf[Class[AnyRef]]))
       cls       <- if (cellCode.cellClassSymbol.nonEmpty) loadClass else ZIO.succeed(None)
     } yield cls
 
@@ -421,26 +418,24 @@ class ScalaCompiler private (
       exitingTyper(compilationUnit.body)
     }
 
-    private[ScalaCompiler] def compile() = classLoader.flatMap {
-      cl => ZIO {
-        val run = new Run()
-        compilationUnit.body = wrapped
-        unitOfFile.put(sourceFile.file, compilationUnit)
-        ZIO {
-          reporter.attempt {
-            withContextClassLoader(cl)(run.compileUnits(List(compilationUnit), run.namerPhase))
-            exitingTyper(compilationUnit.body)
-            // materialize these lazy vals now while the run is still active
-            val _1 = cellClassSymbol
-            val _2 = cellClassType
-            val _3 = cellCompanionSymbol
-            val _4 = cellInstSymbol
-            val _5 = cellInstType
-            val _6 = typedOutputs
-          }
-        }.lock(compilerThread).absolve
-      }.flatten
-    }
+    private[ScalaCompiler] def compile() = ZIO {
+      val run = new Run()
+      compilationUnit.body = wrapped
+      unitOfFile.put(sourceFile.file, compilationUnit)
+      ZIO {
+        reporter.attempt {
+          withContextClassLoader(classLoader)(run.compileUnits(List(compilationUnit), run.namerPhase))
+          exitingTyper(compilationUnit.body)
+          // materialize these lazy vals now while the run is still active
+          val _1 = cellClassSymbol
+          val _2 = cellClassType
+          val _3 = cellCompanionSymbol
+          val _4 = cellInstSymbol
+          val _5 = cellInstType
+          val _6 = typedOutputs
+        }
+      }.lock(compilerThread).absolve
+    }.flatten
 
     // compute which inputs (values from previous cells) are actually referenced in the code
     private def usedInputs = {
@@ -525,9 +520,8 @@ class ScalaCompiler private (
         Imports(local.map(_._2.duplicate), external.map(_._2.duplicate))
     }
 
-    private def typedWithContextClassloader = classLoader.flatMap {
-      cl => ZIO(withContextClassLoader(cl)(reporter.attempt(typed))).lock(compilerThread).absolve
-    }
+    private def typedWithContextClassloader =
+      ZIO(withContextClassLoader(classLoader)(reporter.attempt(typed))).lock(compilerThread).absolve
 
     /**
       * Make a new [[CellCode]] that uses a minimal subset of inputs and prior cells.
@@ -562,7 +556,7 @@ class ScalaCompiler private (
 
 object ScalaCompiler {
 
-  def access: ZIO[Provider, Nothing, ScalaCompiler]    = ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
+  def access: ZIO[Provider, Nothing, ScalaCompiler]    = ZIO.access[ScalaCompiler.Provider](_.get)
   def settings: ZIO[Provider, Nothing, Settings]       = access.map(_.global.settings)
   def dependencies: ZIO[Provider, Nothing, List[File]] = access.map(_.dependencies)
 
@@ -570,13 +564,12 @@ object ScalaCompiler {
   private[kernel] def kernelCounter: UIO[Int] = ZIO.effectTotal(_kernelCounter.getAndIncrement())
 
   // Available for testing
-  private[polynote] def apply(settings: Settings, classLoader: Task[AbstractFileClassLoader], notebookPackage: String = "notebook"): Task[ScalaCompiler] =
-    classLoader.memoize.flatMap {
-      classLoader => ZIO {
-        val global = new Global(settings, KernelReporter(settings))
-        new ScalaCompiler(global, notebookPackage, classLoader, Nil, settings.classpath.value.split(File.pathSeparatorChar).toList.map(new File(_)))
-      }
+  private[polynote] def apply(settings: Settings, classLoader: AbstractFileClassLoader, notebookPackage: String = "notebook"): Task[ScalaCompiler] =
+    ZIO {
+      val global = new Global(settings, KernelReporter(settings))
+      new ScalaCompiler(global, notebookPackage, classLoader, Nil, settings.classpath.value.split(File.pathSeparatorChar).toList.map(new File(_)))
     }
+
 
   /**
     * @param dependencyClasspath List of class path entries for direct dependencies. Classes from these entries will be
@@ -600,8 +593,11 @@ object ScalaCompiler {
     global            <- ZIO(new Global(settings, KernelReporter(settings)))
     counter           <- kernelCounter
     notebookPackage    = s"notebook$counter"
-    classLoader       <- makeClassLoader(settings, dependencyClasspath ++ transitiveClasspath).memoize
+    classLoader       <- makeClassLoader(settings, dependencyClasspath ++ transitiveClasspath)
   } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencyClasspath, otherClasspath)
+
+  def apply(dependencyClasspath: List[File], transitiveClasspath: List[File], otherClasspath: List[File]): RIO[Config with System, ScalaCompiler] =
+    apply(dependencyClasspath, transitiveClasspath, otherClasspath, identity[Settings])
 
   def makeClassLoader(settings: Settings, dependencyClasspath: List[File]): RIO[Config, AbstractFileClassLoader] = for {
     dependencyClassLoader <- makeDependencyClassLoader(settings, dependencyClasspath)
@@ -620,19 +616,6 @@ object ScalaCompiler {
       }
     }
   }
-
-  /**
-    * Like [[apply]], but returns the [[ScalaCompiler]] instance already wrapped in a [[Provider]].
-    */
-  def provider(
-    dependencyClasspath: List[File],
-    transitiveClasspath: List[File],
-    otherClasspath: List[File],
-    modifySettings: Settings => Settings
-  ): RIO[Config with System, ScalaCompiler.Provider] = apply(dependencyClasspath, transitiveClasspath, otherClasspath, modifySettings).map(Provider.of)
-
-  def provider(dependencyClasspath: List[File], transitiveClasspath: List[File], otherClasspath: List[File]): RIO[Config with System, ScalaCompiler.Provider] =
-    provider(dependencyClasspath, transitiveClasspath, otherClasspath, identity[Settings])
 
   private def pathAsFile(url: URL): File = url match {
     case url if url.getProtocol == "file" => new File(url.getPath)
@@ -669,14 +652,10 @@ object ScalaCompiler {
     settings
   }
 
-  trait Provider {
-    val scalaCompiler: ScalaCompiler
-  }
+  type Provider = Has[ScalaCompiler]
 
   object Provider {
-    def of(compiler: ScalaCompiler): Provider = new Provider {
-      override val scalaCompiler: ScalaCompiler = compiler
-    }
+    def of(compiler: ScalaCompiler): Provider = Has(compiler)
   }
 
   // Attachment for saving the original position of a tree (before the typer)

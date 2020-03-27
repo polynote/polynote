@@ -12,12 +12,13 @@ import jep.{Jep, JepConfig, JepException, MainInterpreter, NamingConventionClass
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
-import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures, TaskManager}
+import polynote.kernel.task.TaskManager
+import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures}
 import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{RIO, Runtime, Task, UIO, ZIO}
+import zio.{Has, RIO, Runtime, Task, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
@@ -27,7 +28,7 @@ import scala.reflect.{ClassTag, classTag}
 import scala.util.Try
 
 class PythonInterpreter private[python] (
-  compiler: ScalaCompiler,
+  val compiler: ScalaCompiler,
   jepInstance: Jep,
   jepExecutor: Executor,
   jepThread: AtomicReference[Thread],
@@ -45,6 +46,12 @@ class PythonInterpreter private[python] (
       runtime.unsafeRun(effectBlocking(task).lock(jepExecutor).provide(jepBlockingService))
     }
 
+    override def runJep[T](task: Jep => T): T = if (Thread.currentThread() eq jepThread.get()) {
+      task(jepInstance)
+    } else {
+      runtime.unsafeRun(effectBlocking(task(jepInstance)).lock(jepExecutor).provide(jepBlockingService))
+    }
+
     def hasAttribute(obj: PythonObject, name: String): Boolean = run {
       hasAttr(obj.unwrap, name)
     }
@@ -52,7 +59,7 @@ class PythonInterpreter private[python] (
     def asScalaList(obj: PythonObject): List[PythonObject] = run {
       val pyObj = obj.unwrap
       val getItem = pyObj.getAttr("__getitem__", classOf[PyCallable])
-      val length = len(pyObj)
+      val length = pyApi.len(pyObj)
 
       List.tabulate(length)(i => getItem.callAs(classOf[PyObject], Int.box(i))).map(obj => new PythonObject(obj, this))
     }
@@ -66,7 +73,7 @@ class PythonInterpreter private[python] (
       val V = classTag[V].runtimeClass.asInstanceOf[Class[V]]
       val items = dictToItemsList(obj.unwrap)
       val getItem = items.getAttr("__getitem__", classOf[PyCallable])
-      val length = len(items)
+      val length = pyApi.len(items)
       val tuples = List.tabulate(length)(i => getItem.callAs(classOf[PyObject], Int.box(i)))
       val result = tuples.map {
         tup =>
@@ -75,17 +82,52 @@ class PythonInterpreter private[python] (
       }.toMap
       result
     }
+
+    override def asTuple2(obj: PythonObject): (PythonObject, PythonObject) = run {
+      val pyobj = obj.unwrap
+      val getItem = pyobj.getAttr("__getitem__", classOf[PyCallable])
+      val _1 = new PythonObject(getItem.callAs(classOf[PyObject], Int.box(0)), this)
+      val _2 = new PythonObject(getItem.callAs(classOf[PyObject], Int.box(1)), this)
+      (_1, _2)
+    }
+
+    override def asTuple2Of[A: ClassTag, B: ClassTag](obj: PythonObject): (A, B) = run {
+      val pyobj = obj.unwrap
+      val getItem = pyobj.getAttr("__getitem__", classOf[PyCallable])
+      val _1 = getItem.callAs(classTag[A].runtimeClass.asInstanceOf[Class[A]], Int.box(0))
+      val _2 = getItem.callAs(classTag[B].runtimeClass.asInstanceOf[Class[B]], Int.box(1))
+      (_1, _2)
+    }
+
+    override def typeName(obj: PythonObject): String = run(pyApi.typeName(obj.unwrap))
+    override def qualifiedTypeName(obj: PythonObject): String = run(pyApi.qualifiedTypeName(obj.unwrap))
+    override def len(obj: PythonObject): Int = run(pyApi.len(obj.unwrap))
+    override def len64(obj: PythonObject): Long = run(pyApi.len64(obj.unwrap))
+    override def list(obj: AnyRef): PythonObject = new PythonObject(run(pyApi.list(obj)), this)
+    override def listOf(objs: AnyRef*): PythonObject = new PythonObject(run(pyApi.list(objs.map(PythonObject.unwrapArg).toArray)), this)
+    override def tupleOf(objs: AnyRef*): PythonObject = new PythonObject(run(pyApi.tuple(pyApi.list(objs.map(PythonObject.unwrapArg).toArray))), this)
+    override def dictOf(kvs: (AnyRef, AnyRef)*): PythonObject = new PythonObject(run(pyApi.dictOf(kvs: _*)), this)
+    override def str(obj: AnyRef): PythonObject = new PythonObject(run(pyApi.str(obj)), this)
   }
 
   def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
     cell      <- ZIO.succeed(s"Cell${state.id}")
     parsed    <- parse(code, cell)
     compiled  <- compile(parsed, cell)
-    locals    <- eval[PyObject]("{}")
     globals   <- populateGlobals(state)
     _         <- injectGlobals(globals)
-    resState  <- run(compiled, globals, locals, state)
+    resState  <- run(compiled, globals, state)
   } yield resState
+
+  private def extractParams(jep: Jep, jediDefinition: PyObject): List[(String, String)] = {
+    val getParams = jep.getValue("lambda jediDef: list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], jediDef.params))", classOf[PyCallable])
+    getParams.callAs(classOf[java.util.List[java.util.List[String]]], jediDefinition).asScala.map {
+      tup =>
+        val name = tup.get(0)
+        val typeName = if (tup.size > 1) Option(tup.get(1)) else None
+        (name, typeName.getOrElse(""))
+    }.toList
+  }
 
   def completionsAt(code: String, pos: Int, state: State): Task[List[Completion]] = populateGlobals(state).flatMap {
     globals => jep {
@@ -94,19 +136,18 @@ class PythonInterpreter private[python] (
         val lines = code.substring(0, pos).split('\n')
         val lineNo = lines.length
         val col = lines.last.length
-        val pyCompletions = jedi.callAs[PyObject](classOf[PyObject], Array[Object](code, Array(globals)), Map[String, Object]("line" -> Integer.valueOf(lineNo), "column" -> Integer.valueOf(col)).asJava)
-          .getAttr("completions", classOf[PyCallable])
-          .callAs(classOf[Array[PyObject]])
+        val pyCompletions = jedi.callAs[PyObject](classOf[PyObject], code, Array(globals))
+          .getAttr("complete", classOf[PyCallable])
+          .callAs(classOf[Array[PyObject]], Integer.valueOf(lineNo), Integer.valueOf(col))
 
         pyCompletions.map {
           completion =>
             val name = completion.getAttr("name", classOf[String])
             val typ = completion.getAttr("type", classOf[String])
+            // TODO: can we get better type completions?
             val params = typ match {
-              case "function" => List(TinyList(completion.getAttr("params", classOf[Array[PyObject]]).map {
-                  paramObj =>
-                    TinyString(paramObj.getAttr("name", classOf[String])) -> ShortString("")
-                }.toList))
+              case "function" =>
+                List(TinyList(extractParams(jep, completion).map { case (a, b) => (TinyString(a), ShortString(b))}))
               case _ => Nil
             }
             val completionType = typ match {
@@ -132,18 +173,16 @@ class PythonInterpreter private[python] (
           val line = lines.length
           val col = lines.last.length
           val jedi = jep.getValue("jedi.Interpreter", classOf[PyCallable])
-          val sig = jedi.callAs[PyObject](classOf[PyObject], Array[Object](code, Array(globals)), Map[String, Object]("line" -> Integer.valueOf(line), "column" -> Integer.valueOf(col)).asJava)
-            .getAttr("call_signatures", classOf[PyCallable])
-            .callAs(classOf[Array[PyObject]])
+          val sig = jedi.callAs[PyObject](classOf[PyObject], code, Array(globals))
+            .getAttr("get_signatures", classOf[PyCallable])
+            .callAs(classOf[Array[PyObject]], Integer.valueOf(line), Integer.valueOf(col))
             .head
 
           val index = sig.getAttr("index", classOf[java.lang.Long])
-          val getParams = jep.getValue("lambda sig: list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], sig.params))", classOf[PyCallable])
-          val params = getParams.callAs(classOf[java.util.List[java.util.List[String]]], sig).asScala.map {
-            tup =>
-              val name = tup.get(0)
-              val typeName = if (tup.size > 1) Option(tup.get(1)) else None
-              ParameterHint(name, typeName.getOrElse(""), None) // TODO: can we parse per-param docstrings out of the main docstring?
+
+          val params = extractParams(jep, sig).map {
+            case (name, typeName) =>
+              ParameterHint(name, typeName, None) // TODO: can we parse per-param docstrings out of the main docstring?
           }
 
           val docString = Try(sig.getAttr("docstring", classOf[PyCallable]).callAs(classOf[String], java.lang.Boolean.TRUE))
@@ -154,7 +193,7 @@ class PythonInterpreter private[python] (
           val hints = ParameterHints(
             name,
             docString,
-            params.toList
+            params
           )
           Some(Signatures(List(hints), 0, index.byteValue()))
         } catch {
@@ -229,6 +268,66 @@ class PythonInterpreter private[python] (
       |        else:
       |            return node
       |
+      |from collections import UserDict
+      |
+      |class TrackingNamespace(UserDict, dict):
+      |    '''
+      |    A special namespace for Python 3 exec() that provides access to globals while tracking variables added or
+      |    updated in the local namespace.
+      |
+      |    The global namespace is stored in `globals`.
+      |    The local namespace is stored in `locals`.
+      |
+      |    Why this is necessary:
+      |
+      |        When we run user code from a Python cell, we need to provide it access to the global namespace (builtins,
+      |        variables defined in other cells, etc). We also need to keep track of any modifications to the namespace
+      |        made as a result of executing the code (say, the definition/modification of a variable).
+      |
+      |        It would seem that the correct way to do this would be to call `exec` with all three parameters - the code,
+      |        the globals dictionary, and an empty locals dictionary to capture the execution results.
+      |
+      |        In fact, that is what we used to do, until we ran into this:
+      |
+      |           If exec gets two separate objects as globals and locals, the code will be executed as if it were embedded
+      |           in a class definition
+      |           (from https://docs.python.org/3/library/functions.html#exec)
+      |
+      |        Unfortunately, scoping acts a little strangely in class scopes:
+      |
+      |           Names in class scope are not accessible. Names are resolved in the innermost enclosing function scope. If
+      |           a class definition occurs in a chain of nested scopes, the resolution process skips class definitions.
+      |           (from https://www.python.org/dev/peps/pep-0227/#discussion)
+      |
+      |        See also this excellent post https://stackoverflow.com/a/13913933 for more details.
+      |
+      |        The solution to all this is "don't pass in two dictionaries to exec".
+      |
+      |        So, we need another way to provide a single dictionary that can provide the global namespace while still
+      |        tracking the execution result.
+      |
+      |        Luckily, someone else had the same problem, so I was able to grab this class from their solution, which
+      |        can be found at https://stackoverflow.com/a/48720150
+      |    '''
+      |
+      |
+      |    def __init__(self, initial, *args, **kw):
+      |        UserDict.__init__(self, *args, **kw)
+      |        self.globals = initial
+      |
+      |    def __getitem__(self, key):
+      |        try:
+      |            return self.data[key]
+      |        except KeyError:
+      |            return self.globals[key]
+      |
+      |    def __contains__(self, key):
+      |        return key in self.data or key in self.globals
+      |
+      |def __polynote_mkindex__(l1, l2):
+      |    import pandas as pd
+      |    return pd.MultiIndex.from_arrays([[x for x in list(l1)], [x for x in list(l2)]])
+      |
       |def __polynote_parse__(code, cell):
       |    try:
       |        return { 'result': ast.fix_missing_locations(LastExprAssigner().visit(ast.parse(code, cell, 'exec'))) }
@@ -247,16 +346,27 @@ class PythonInterpreter private[python] (
       |        # see https://github.com/ipython/ipython/issues/11590
       |        from ast import Module as OriginalModule
       |        Module = lambda nodelist, ignored: OriginalModule(nodelist)
-      |    return list(map(lambda node: compile(Module([node], []), cell, 'exec'), parsed.body))
       |
-      |def __polynote_run__(compiled, _globals, _locals, kernel):
+      |    result = []
+      |    for tree in parsed.body:
+      |        compiled = compile(Module([tree], []), cell, 'exec')
+      |        isImport = isinstance(tree, ast.Import) or isinstance(tree, ast.ImportFrom)
+      |        result.append([compiled, isImport])
+      |    return result
+      |
+      |def __polynote_run__(compiled, globals, kernel):
       |    try:
       |        sys.stdout = kernel.display
-      |        for stat in compiled:
-      |            exec(stat, _globals, _locals)
-      |            _globals.update(_locals)
-      |        types = { x: type(y).__name__ for x,y in _locals.items() }
-      |        return { 'globals': _globals, 'locals': _locals, 'types': types }
+      |        tracking_ns = TrackingNamespace(globals)
+      |        for stat, isImport in compiled:
+      |            if isImport: # don't track locals if the tree is an import.
+      |                exec(stat, tracking_ns.globals)
+      |            else:
+      |                exec(stat, tracking_ns)
+      |                tracking_ns.globals.update(tracking_ns.data)
+      |
+      |        types = { x: type(y).__name__ for x,y in tracking_ns.data.items() }
+      |        return { 'globals': tracking_ns.globals, 'locals': tracking_ns.data, 'types': types }
       |    except Exception as err:
       |        import traceback
       |
@@ -352,23 +462,32 @@ class PythonInterpreter private[python] (
 
   protected def populateGlobals(state: State): Task[PyObject] = jep {
     jep =>
-      val prevStates = state.takeUntil(_.isInstanceOf[PythonState]).reverse
-      val (globalsDict, rest) = prevStates match {
-        case PythonState(_, _, _, globalsDict) :: rest => (globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject]), rest)
-        case others => (jep.getValue("{}", classOf[PyObject]), others)
+      // grab the nearest Python state (if any) so we can use its globals dict.
+      val maybePrevPyState = state.takeUntil(_.isInstanceOf[PythonState]).reverse
+      val globalsDict = maybePrevPyState match {
+        case PythonState(_, _, _, globalsDict) :: _ => globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject])
+        case _                                      => jep.getValue("{}", classOf[PyObject])
       }
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
 
-      rest.map(_.values).map {
-        values => values.map(v => v.name -> v.value).toMap
-      }.foldLeft(Map.empty[String, Any])(_ ++ _).foreach {
-        case (name, value: PythonObject) => addGlobal.call(name, value.unwrap)
-        case (name, value) => addGlobal.call(name, value.asInstanceOf[AnyRef])
+      val convert = convertToPython(jep) orElse PartialFunction(defaultConvertToPython)
+
+      state.scope.reverse.map(v => v.name -> v.value).foreach {
+        case nv@(name, value) => addGlobal.call(name, convert(nv))
       }
 
       globalsDict
   }
+
+  protected def defaultConvertToPython(nv: (String, Any)): AnyRef = nv._2.asInstanceOf[AnyRef]
+
+  protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = {
+    case (_, value: PythonObject) => value.unwrap
+  }
+
+  protected def convertFromPython(jep: Jep): PartialFunction[(String, PyObject), (compiler.global.Type, Any)] =
+    PartialFunction.empty
 
   protected def parse(code: String, cell: String): Task[PyObject] = jep {
     jep =>
@@ -389,14 +508,14 @@ class PythonInterpreter private[python] (
       compile.callAs(classOf[PyObject], parsed, cell)
   }
 
-  protected def run(compiled: PyObject, globals: PyObject, locals: PyObject, state: State): RIO[CurrentRuntime, State] =
+  protected def run(compiled: PyObject, globals: PyObject, state: State): RIO[CurrentRuntime, State] =
     CurrentRuntime.access.flatMap {
       kernelRuntime => jep {
         jep =>
           val run = jep.getValue("__polynote_run__", classOf[PyCallable])
-          val result = run.callAs(classOf[PyObject], compiled, globals, locals, kernelRuntime)
+          val result = run.callAs(classOf[PyObject], compiled, globals, kernelRuntime)
           val get = result.getAttr("get", classOf[PyCallable])
-
+          val convert = convertFromPython(jep)
           get.callAs(classOf[util.ArrayList[Object]], "stack_trace") match {
             case null =>
               val globals = get.callAs(classOf[PyObject], "globals")
@@ -432,10 +551,15 @@ class PythonInterpreter private[python] (
                         val typ = runtime.unsafeRun(compiler.reflect(jValue)).symbol.info
                         (typ, jValue)
                       case other =>
-                        // should we use the qualified type? It's confusing that both Spark and Pandas have a "DataFrame".
-                        // But in every other case it's just noise.
-                        val typ = appliedType(typeOf[TypedPythonObject[Nothing]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
-                        (typ, new TypedPythonObject[String](valueAs(classOf[PyObject]), runner))
+                        val pyObj = valueAs(classOf[PyObject])
+                        if (convert.isDefinedAt((typeStr, pyObj))) {
+                          convert((typeStr, pyObj))
+                        } else {
+                          // should we use the qualified type? It's confusing that both Spark and Pandas have a "DataFrame".
+                          // But in every other case it's just noise.
+                          val typ = appliedType(typeOf[TypedPythonObject[Nothing]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
+                          (typ, new TypedPythonObject[String](valueAs(classOf[PyObject]), runner))
+                        }
                     }
                     Some(new ResultValue(key, compiler.unsafeFormatType(typ.asInstanceOf[Type]), Nil, state.id, value, typ.asInstanceOf[Type], None))
                   } else None
@@ -473,18 +597,23 @@ class PythonInterpreter private[python] (
     override def withPrev(prev: State): State = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] =
-      ZIO.sequence(values.map(fn)).map(values => copy(values = values))
+      ZIO.collectAll(values.map(fn)).map(values => copy(values = values))
   }
 }
 
 object PythonInterpreter {
 
   private[python] class PythonAPI(jep: Jep) {
+    import PythonObject.unwrapArg
     private val typeFn: PyCallable = jep.getValue("type", classOf[PyCallable])
     private val lenFn: PyCallable = jep.getValue("len", classOf[PyCallable])
     private val listFn: PyCallable = jep.getValue("list", classOf[PyCallable])
+    private val tupleFn: PyCallable = jep.getValue("tuple", classOf[PyCallable])
+    private val dictFn: PyCallable = jep.getValue("dict", classOf[PyCallable])
+    private val zipFn: PyCallable = jep.getValue("zip", classOf[PyCallable])
     private val dictToItemsListFn: PyCallable = jep.getValue("lambda x: list(x.items())", classOf[PyCallable])
     private val hasAttrFn: PyCallable = jep.getValue("hasattr", classOf[PyCallable])
+    private val strFn: PyCallable = jep.getValue("str", classOf[PyCallable])
 
     jep.exec(
       """def __polynote_qualified_type__(o):
@@ -499,8 +628,17 @@ object PythonInterpreter {
     def typeName(obj: PyObject): String = typeFn.callAs(classOf[PyObject], obj).getAttr("__name__", classOf[String])
     def qualifiedTypeName(obj: PyObject): String = qualifiedTypeFn.callAs(classOf[String], obj)
     def len(obj: PyObject): Int = lenFn.callAs(classOf[java.lang.Number], obj).intValue()
-    def list(obj: PyObject): PyObject = listFn.callAs(classOf[PyObject], obj)
+    def len64(obj: PyObject): Long = lenFn.callAs(classOf[java.lang.Number], obj).longValue()
+    def list(obj: AnyRef): PyObject = listFn.callAs(classOf[PyObject], unwrapArg(obj))
+    def tuple(obj: AnyRef): PyObject = tupleFn.callAs(classOf[PyObject], unwrapArg(obj))
     def dictToItemsList(obj: PyObject): PyObject = dictToItemsListFn.callAs(classOf[PyObject], obj)
+    def dictOf(kvs: (AnyRef, AnyRef)*): PyObject = {
+      val (ks, vs) = kvs.unzip
+      dict(zip(ks.map(unwrapArg).toArray, vs.map(unwrapArg).toArray))
+    }
+    def dict(obj: AnyRef): PyObject = dictFn.callAs(classOf[PyObject], unwrapArg(obj))
+    def zip(list1: AnyRef, list2: AnyRef): PyObject = zipFn.callAs(classOf[PyObject], unwrapArg(list1), unwrapArg(list2))
+    def str(obj: AnyRef): PyObject = strFn.callAs(classOf[PyObject], unwrapArg(obj))
     def hasAttr(obj: PyObject, name: String): Boolean = hasAttrFn.callAs(classOf[java.lang.Boolean], obj, name).booleanValue()
   }
 
@@ -526,7 +664,7 @@ object PythonInterpreter {
     }
   }
 
-  private[python] def mkJep(venv: Option[Path]): RIO[ScalaCompiler.Provider, Jep] = ZIO.accessM[ScalaCompiler.Provider](_.scalaCompiler.classLoader).flatMap {
+  private[python] def mkJep(venv: Option[Path]): RIO[ScalaCompiler.Provider, Jep] = ZIO.access[ScalaCompiler.Provider](_.get.classLoader).flatMap {
     classLoader => ZIO {
       val conf = new JepConfig()
         .setClassLoader(classLoader)
@@ -544,17 +682,17 @@ object PythonInterpreter {
     }
   }
 
-  private[python] def mkJepBlocking(jepExecutor: Executor) = new Blocking {
-    val blocking: Blocking.Service[Any] = new Blocking.Service[Any] {
-      def blockingExecutor: ZIO[Any, Nothing, Executor] = ZIO.succeed(jepExecutor)
+  private[python] def mkJepBlocking(jepExecutor: Executor): Blocking = Has {
+    new Blocking.Service {
+      override def blockingExecutor: Executor = jepExecutor
     }
   }
 
   def interpreterDependencies(venv: Option[Path]): ZIO[ScalaCompiler.Provider, Throwable, (ScalaCompiler, Jep, Executor, AtomicReference[Thread], Blocking, Runtime[Any], PythonAPI)] = {
     val jepThread = new AtomicReference[Thread](null)
     for {
-      compiler <- ZIO.access[ScalaCompiler.Provider](_.scalaCompiler)
-      executor <- compiler.classLoader >>= jepExecutor(jepThread)
+      compiler <- ScalaCompiler.access
+      executor <- jepExecutor(jepThread)(compiler.classLoader)
       jep      <- mkJep(venv).lock(executor)
       blocking  = mkJepBlocking(executor)
       api      <- effectBlocking(new PythonAPI(jep)).lock(executor).provide(blocking)

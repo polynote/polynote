@@ -1,6 +1,8 @@
 package polynote.config
 
 import java.io.{File, FileNotFoundException, FileReader}
+import java.net.URI
+import java.nio.file.Path
 import java.util.UUID
 import java.util.regex.Pattern
 
@@ -10,8 +12,15 @@ import io.circe.syntax._
 import io.circe._
 import polynote.kernel.TaskB
 import polynote.kernel.logging.Logging
+import polynote.messages.ShortMap
+import scodec.{Attempt, Codec}
+import scodec.codecs.implicits._
+import scodec.codecs.utf8_32
 import zio.ZIO
 import zio.blocking.effectBlocking
+import shapeless.cachedImplicit
+
+import scala.util.Try
 
 import scala.collection.immutable.Range.Inclusive
 import scala.util.Try
@@ -135,7 +144,7 @@ object Credentials {
 
 final case class SparkPropertySet(
   name: String,
-  properties: Map[String, String] = Map.empty,
+  properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
   sparkSubmitArgs: Option[String] = None,
   distClasspathFilter: Option[Pattern] = None
 )
@@ -143,19 +152,23 @@ final case class SparkPropertySet(
 object SparkPropertySet {
   implicit val decoder: Decoder[SparkPropertySet] = deriveConfigDecoder
   implicit val encoder: Encoder[SparkPropertySet] = deriveEncoder
+  private implicit val patternCodec: Codec[Pattern] = utf8_32.exmap(str => Attempt.fromTry(Try(Pattern.compile(str))), pat => Attempt.fromTry(Try(pat.pattern())))
+  implicit val codec: Codec[SparkPropertySet] = cachedImplicit[Codec[SparkPropertySet]]
 }
 
 final case class SparkConfig(
   properties: Map[String, String],
   sparkSubmitArgs: Option[String] = None,
   distClasspathFilter: Option[Pattern] = None,
-  propertySets: Option[List[SparkPropertySet]] = None
+  propertySets: Option[List[SparkPropertySet]] = None,
+  defaultPropertySet: Option[String] = None
 )
 
 object SparkConfig {
   def fromMap(properties: Map[String, String]): SparkConfig = SparkConfig(
     properties - "sparkSubmitArgs",
     properties.get("sparkSubmitArgs"),
+    None,
     None,
     None
   )
@@ -172,6 +185,16 @@ object SparkConfig {
   implicit val encoder: Encoder[SparkConfig] = deriveEncoder
 }
 
+final case class StaticConfig(
+  path: Option[Path] = None,
+  url: Option[URI] = None
+)
+
+object StaticConfig {
+  implicit val encoder: Encoder[StaticConfig] = deriveEncoder
+  implicit val decoder: Decoder[StaticConfig] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   kernel: Kernel = Kernel(),
@@ -183,7 +206,9 @@ final case class PolynoteConfig(
   behavior: Behavior = Behavior(),
   security: Security = Security(),
   ui: UI = UI(),
-  credentials: Credentials = Credentials()
+  credentials: Credentials = Credentials(),
+  env: Map[String, String] = Map.empty,
+  static: StaticConfig = StaticConfig()
 )
 
 

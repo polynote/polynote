@@ -1,18 +1,22 @@
 package polynote.runtime.python
 
-import jep.JepException
+import java.nio.ByteBuffer
+
+import jep.{Jep, JepException}
 import jep.python.{PyCallable, PyObject}
 import polynote.runtime._
 import polynote.runtime.python.PythonObject.ReturnTypeFor
+import shapeless.Witness
 
 import scala.collection.JavaConverters._
+import scala.collection.immutable.ListMap
 import scala.reflect.{ClassTag, classTag}
 import scala.language.dynamics
 
 /**
   * Just a bit of Scala sugar over [[PyObject]]
   */
-class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
+class PythonObject(obj: PyObject, private[polynote] val runner: PythonObject.Runner) extends Dynamic {
   import PythonObject.unwrapArg
 
   private[polynote] def unwrap: PyObject = obj
@@ -56,9 +60,11 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
   }
 
   def hasAttribute(name: String): Boolean = runner.hasAttribute(this, name)
-  def asScalaList: List[Any] = runner.asScalaList(this)
+  def asScalaList: List[PythonObject] = runner.asScalaList(this)
   def asScalaMap: Map[Any, Any] = runner.asScalaMap(this)
   def asScalaMapOf[K : ClassTag, V : ClassTag]: Map[K, V] = runner.asScalaMapOf[K, V](this)
+  def asTuple2: (PythonObject, PythonObject) = runner.asTuple2(this)
+  def asTuple2Of[A : ClassTag, B : ClassTag]: (A, B) = runner.asTuple2Of[A, B](this)
 
   def selectDynamic[T](name: String)(implicit returnType: ReturnTypeFor[T]): returnType.Out = {
     runner.run {
@@ -67,7 +73,7 @@ class PythonObject(obj: PyObject, runner: PythonObject.Runner) extends Dynamic {
   }
 
   def updateDynamic(name: String)(value: Any): Unit = runner.run {
-    obj.setAttr(name, value)
+    obj.setAttr(name, unwrapArg(value.asInstanceOf[AnyRef]))
   }
 
   def applyDynamic(method: String)(args: Any*): PythonObject =
@@ -101,15 +107,50 @@ object PythonObject {
   // and whichever succeeds we'll use.
   implicit object defaultReprs extends ReprsOf[PythonObject] {
     override def apply(obj: PythonObject): Array[ValueRepr] = {
-      def attemptRepr(mimeType: String, t: => String): Option[MIMERepr] = try Option(t).map(str => MIMERepr(mimeType, str)) catch {
-        case err: Throwable => None
+      def attemptRepr(mimeType: String, t: => PythonObject): Option[MIMERepr] = try Option(t.as[String]).map(str => MIMERepr(mimeType, str)) catch {
+        case err: Throwable =>
+          // According to https://ipython.readthedocs.io/en/stable/config/integrating.html#rich-display it's possible
+          // that _repr_*_ functions return tuple (data, metadata) values. For now, we just drop the metadata values
+          // In future, we might be interested in doing something with them.
+          try Option(t.asTuple2Of[String, Any]).map(tup => MIMERepr(mimeType, tup._1)) catch {
+            case e: Throwable => None
+          }
       }
 
-      val htmlRepr = if (obj.hasAttribute("_repr_html_")) attemptRepr("text/html", obj._repr_html_().as[String]) else None
-      val textRepr = if (obj.hasAttribute("__repr__")) attemptRepr("text/plain", obj.__repr__().as[String]) else None
-      val latexRepr = if (obj.hasAttribute("_repr_latex_")) attemptRepr("application/x-latex", obj._repr_latex_().as[String]) else None
+      // For now, don't bother with classes (in future we might want to do something special?)
+      // TODO: must be a better way to tell if an object is a class...
+      if (obj.hasAttribute("__dict__") && obj.__dict__.hasAttribute("__module__")) {
+        Array.empty
+      } else {
 
-      List(htmlRepr, textRepr, latexRepr).flatten.toArray
+        val basicMimeReprs = Map(
+          "text/html"           -> "_repr_html_",
+          "text/plain"          -> "__repr__",
+          "application/x-latex" -> "_repr_latex_",
+          "image/svg+xml"       -> "_repr_svg_",
+          "image/jpeg"          -> "_repr_jpeg_",
+          "image/png"           -> "_repr_png_"
+        ).flatMap {
+          case (mime, funcName) =>
+            if (obj.hasAttribute(funcName)) attemptRepr(mime, obj.applyDynamic(funcName)()) else None
+        }
+
+        val mimeBundleReprs = if (obj.hasAttribute("_repr_mimebundle_")) {
+          try {
+            obj._repr_mimebundle_().asScalaMapOf[String, String].map { case (k, v) => MIMERepr(k, v) }.toList
+          } catch {
+            case err: Throwable =>
+              // Similarly, _repr_mimebundle_ may also return a tuple of (data, metadata), so we'll do the same as above.
+              try {
+                obj._repr_mimebundle_().asTuple2._1.asScalaMapOf[String, String].map { case (k, v) => MIMERepr(k, v) }.toList
+              } catch {
+                case err: Throwable => List.empty[MIMERepr]
+              }
+          }
+        } else List.empty[MIMERepr]
+
+        (basicMimeReprs ++ mimeBundleReprs).toArray
+      }
     }
   }
 
@@ -153,10 +194,22 @@ object PythonObject {
 
   trait Runner {
     def run[T](task: => T): T
+    def runJep[T](task: Jep => T): T
     def hasAttribute(obj: PythonObject, name: String): Boolean
-    def asScalaList(obj: PythonObject): List[Any]
+    def asScalaList(obj: PythonObject): List[PythonObject]
     def asScalaMap(obj: PythonObject): Map[Any, Any]
     def asScalaMapOf[K : ClassTag, V : ClassTag](obj: PythonObject): Map[K, V]
+    def asTuple2(obj: PythonObject): (PythonObject, PythonObject)
+    def asTuple2Of[A : ClassTag, B : ClassTag](obj: PythonObject): (A, B)
+    def typeName(obj: PythonObject): String
+    def qualifiedTypeName(obj: PythonObject): String
+    def len(obj: PythonObject): Int
+    def len64(obj: PythonObject): Long
+    def list(obj: AnyRef): PythonObject
+    def listOf(objs: AnyRef*): PythonObject
+    def tupleOf(objs: AnyRef*): PythonObject
+    def dictOf(kvs: (AnyRef, AnyRef)*): PythonObject
+    def str(obj: AnyRef): PythonObject
   }
 
 }
@@ -176,7 +229,19 @@ class TypedPythonObject[TN <: String](obj: PyObject, runner: PythonObject.Runner
 }
 
 // TODO: Implement specific reprs for pandas, numpy, etc
-object TypedPythonObject extends AnyPythonReprs
+object TypedPythonObject extends PandasReprs {
+
+}
+
+
+private[runtime] trait PandasReprs extends AnyPythonReprs { self: TypedPythonObject.type =>
+  implicit val dataFrameReprs: ReprsOf[TypedPythonObject[Witness.`"DataFrame"`.T]] = new ReprsOf[TypedPythonObject[Witness.`"DataFrame"`.T]] {
+    override def apply(value: TypedPythonObject[Witness.`"DataFrame"`.T]): Array[ValueRepr] = {
+      // this should be a Pandas DataFrame, as a PySpark DataFrame gets converted to a Scala value and shouldn't be wrapped in Python object.
+      StreamingDataRepr.fromHandle(new pandas.PandasHandle(_, value)) +: PythonObject.defaultReprs(value)
+    }
+  }
+}
 
 private[runtime] trait AnyPythonReprs { self: TypedPythonObject.type =>
 
