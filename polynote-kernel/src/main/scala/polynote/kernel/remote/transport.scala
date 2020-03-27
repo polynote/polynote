@@ -209,12 +209,12 @@ class SocketTransport(
         true
     }
 
-  private def openServerChannel(
-                                 config: PolynoteConfig
-                               ): RIO[Blocking, ServerSocketChannel] = effectBlocking {
+  private def openServerChannel: RIO[Blocking with Config, ServerSocketChannel] = for {
+    config <- Config.access
+  } yield {
     val address = config.kernel.listen.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress)
     val port = config.kernel.portRange.map(range => {
-      Random.shuffle(range.toList).find(port => socketIsFree(address, port)).get
+      Random.shuffle(range.toList).find(availablePort => socketIsFree(address, availablePort)).get
     }).getOrElse(0)
     ServerSocketChannel.open().bind(new InetSocketAddress(address, port))
   }
@@ -235,8 +235,7 @@ class SocketTransport(
   private[polynote] def deployAndServe(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, (TransportServer[InetSocketAddress], SocketTransport.DeployedProcess)] =
     TaskManager.run("RemoteKernel", "Remote kernel", "Starting remote kernel") {
       for {
-        config        <- ZIO.access[Config](_.polynoteConfig)
-        socketServer  <- openServerChannel(config)
+        socketServer  <- openServerChannel
         serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
         process       <- deploy.deployKernel(this, serverAddress)
         _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
