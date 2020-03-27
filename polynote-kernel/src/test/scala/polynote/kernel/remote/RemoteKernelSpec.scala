@@ -32,7 +32,7 @@ class RemoteKernelSpec extends FreeSpec with Matchers with ZIOSpec with BeforeAn
   private val env           = unsafeRun(MockKernelEnv(kernelFactory))
   private val clientRef     = unsafeRun(Ref.make[RemoteKernelClient](null))
   private val deploy        = new InProcessDeploy(kernelFactory, clientRef)
-  private val transport     = new SocketTransport(deploy, Some("127.0.0.1"))
+  private val transport     = new SocketTransport(deploy)
   private val remoteKernel  = unsafeRun(RemoteKernel(transport).provide(env))
 
   "RemoteKernel" - {

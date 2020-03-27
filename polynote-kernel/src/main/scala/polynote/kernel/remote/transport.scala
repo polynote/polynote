@@ -196,8 +196,7 @@ object SocketTransportClient {
   * Requires that spark-submit is a valid executable command on the path.
   */
 class SocketTransport(
-  deploy: SocketTransport.Deploy,
-  forceServerAddress: Option[String] = None
+  deploy: SocketTransport.Deploy
 ) extends Transport[InetSocketAddress] {
 
   private[this] def socketIsFree(host: String, port: Int): Boolean =
