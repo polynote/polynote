@@ -544,7 +544,8 @@ function normalSpec(this: PlotEditor, plotType: string, xField: StructField, yMe
             fold: yMeas.map(measure => measure.agg ? `${measure.agg}(${measure.field.name})` : measure.field.name)
         }];
         spec.encoding.y = {
-            field: 'value'
+            field: 'value',
+            type: 'quantitative'
         };
         spec.encoding.color = {
             field: 'key',
