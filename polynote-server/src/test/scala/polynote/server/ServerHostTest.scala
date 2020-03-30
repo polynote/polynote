@@ -45,11 +45,12 @@ class ServerHostTest extends FreeSpec with Matchers with ConfiguredZIOSpec with 
       val run = server.server("TESTKEY").provideSomeLayer[server.Environment](serverEnv).use {
         server =>
           for {
-            localAddress <- effectBlocking(InetAddress.getLocalHost.getHostAddress)
+            localAddress <- effectBlocking(InetAddress.getLocalHost.getCanonicalHostName)
             _            <- server.awaitUp
             port         <- server.localAddress.map(_.asInstanceOf[InetSocketAddress].getPort)
             _            <- request(s"http://$localAddress:$port/")
             _            <- request(s"http://127.0.0.1:$port/")
+            _            <- server.shutdown()
           } yield ()
       }
 
