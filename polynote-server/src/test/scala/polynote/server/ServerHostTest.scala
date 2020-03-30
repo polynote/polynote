@@ -33,7 +33,7 @@ class ServerHostTest extends FreeSpec with Matchers with ConfiguredZIOSpec with 
 
   "Server" - {
 
-    "listens on all interfaces when given listen=0.0.0.0" in {
+    "listens on all interfaces when given listen=0.0.0.0" ignore {
       val kernel        = mock[Kernel]
       val kernelFactory = Kernel.Factory.const(kernel)
       val server        = new Server(kernelFactory)
