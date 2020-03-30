@@ -139,7 +139,7 @@ package object logging {
             val remotePrefix = s"[REMOTE | $path]\n$remoteIndent"
             printWithPrefix(remotePrefix, remoteIndent, msg)(Location.Empty)
           } else {
-            printWithPrefix("", remoteIndent, msg)(Location.Empty)
+            printWithPrefix(remoteIndent, remoteIndent, msg)(Location.Empty)
           }
         }
       }

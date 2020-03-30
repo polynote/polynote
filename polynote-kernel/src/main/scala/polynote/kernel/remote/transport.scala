@@ -17,7 +17,7 @@ import scodec.Codec
 import scodec.codecs.implicits._
 import scodec.bits.BitVector
 import scodec.stream.decode
-import zio.blocking.{Blocking, effectBlocking}
+import zio.blocking.{Blocking, effectBlocking, effectBlockingInterrupt, effectBlockingCancelable}
 import zio.{Cause, Promise, RIO, Schedule, Task, ZIO}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
@@ -204,13 +204,10 @@ class SocketTransport(
     timeout: ZDuration = 3.minutes
   ): TaskB[FramedSocket] = {
     for {
-      channel <- effectBlocking(server.accept())
+      channel <- effectBlockingCancelable(server.accept())(ZIO.effectTotal(server.close()))
       framed  <- FramedSocket(channel, keepalive = true)
     } yield framed
-  }.timeout(timeout).flatMap {
-    case Some(s) => ZIO.succeed(s)
-    case None    => ZIO.fail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.asScala}"))
-  }
+  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.asScala}"))(timeout)
 
   private[polynote] def deployAndServe(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, (TransportServer[InetSocketAddress], SocketTransport.DeployedProcess)] =
     TaskManager.run("RemoteKernel", "Remote kernel", "Starting remote kernel") {
@@ -218,8 +215,11 @@ class SocketTransport(
         socketServer  <- openServerChannel
         serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
         process       <- deploy.deployKernel(this, serverAddress)
+        monitorProcess = process.exitStatus.doUntil(_.nonEmpty) *>
+          process.exitStatus.flatMap(status => Logging.info(s"Kernel process ended with $status") *> ZIO.fail(SocketTransport.ProcessDied))
+
         _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
-        connection    <- startConnection(socketServer)
+        connection    <- startConnection(socketServer).raceFirst(monitorProcess)
         connection2   <- startConnection(socketServer)
         server        <- SocketTransportServer(socketServer, connection, connection2, process)
       } yield (server, process)
@@ -232,7 +232,7 @@ class SocketTransport(
 }
 
 object SocketTransport {
-
+  case object ProcessDied extends Throwable("Kernel died before starting.")
   case class Channels(
     mainChannel: FramedSocket,
     notebookUpdatesChannel: FramedSocket,
