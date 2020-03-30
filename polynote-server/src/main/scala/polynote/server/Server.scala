@@ -107,30 +107,25 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
           |
           |""".stripMargin
 
-  override def main(args: List[String]): ZIO[Environment, Nothing, Int] = {
-    for {
-      args         <- ZIO.access[MainArgs](_.get)
-      config       <- ZIO.access[Config](_.get)
-      _            <- Logging.info(s"Loaded configuration: $config")
-      address       = config.listen.toSocketAddress
-      wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
-      broadcastAll <- Topic[Task, Option[Message]](None).orDie  // used to broadcast messages to all connected clients
-      _            <- Env.addM[MainArgs with BaseEnv with GlobalEnv with IdentityProvider](NotebookManager(broadcastAll).orDie)
-      loadIndex    <- indexFileContent(wsKey)
-      _            <- Logging.warn(securityWarning)
-      _            <- Logging.info(banner)
-      _            <- server(wsKey, loadIndex, broadcastAll).use {
-        server => server.awaitShutdown
-      }.orDie
-    } yield 0
-  }.provideSomeLayer[Environment] {
-    Server.parseArgs(args) andThen globalEnv
+  override def main(args: List[String]): ZIO[Environment, Nothing, Int] = main.provideSomeLayer[Environment] {
+    Server.parseArgs(args).orDie andThen globalEnv.orDie
   }
 
-  private val globalEnv: ZLayer[BaseEnv with MainArgs, Throwable, GlobalEnv] =
+  def main: ZIO[MainArgs with BaseEnv with ServerEnv, Nothing, Int] = for {
+    config       <- ZIO.access[Config](_.get)
+    _            <- Logging.info(s"Loaded configuration: $config")
+    wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
+    _            <- Logging.warn(securityWarning)
+    _            <- Logging.info(banner)
+    _            <- serve(wsKey).orDie
+  } yield 0
+
+
+  private val globalEnv: ZLayer[BaseEnv with MainArgs, Throwable, ServerEnv] =
     Server.loadConfig andThen (Interpreter.Factories.load ++ ZLayer.succeed(kernelFactory) ++ IdentityProvider.layer)
 
-  type RequestEnv = BaseEnv with GlobalEnv with NotebookManager with IdentityProvider
+  type ServerEnv = GlobalEnv with IdentityProvider
+  type RequestEnv = BaseEnv with ServerEnv with NotebookManager
 
   private def downloadFile(path: String, req: Request): ZIO[RequestEnv, HTTPError, Response] = {
     for {
@@ -143,16 +138,14 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
     } yield rep
   }.orElseFail(NotFound(req.uri.toString))
 
-  def serve(wsKey: String, getIndex: URIO[Blocking, String], broadcastAll: Topic[Task, Option[Message]]): ZIO[RequestEnv with MainArgs, Throwable, Unit] =
-    server(wsKey, getIndex, broadcastAll).use {
+  def serve(wsKey: String): ZIO[BaseEnv with ServerEnv with MainArgs, Throwable, Unit] =
+    server(wsKey).use {
       server => server.awaitShutdown
     }
 
   def server(
-    wsKey: String,
-    getIndex: URIO[Blocking, String],
-    broadcastAll: Topic[Task, Option[Message]]
-  ): ZManaged[RequestEnv with MainArgs, Nothing, uzhttp.server.Server] = Config.access.toManaged_.flatMap { config =>
+    wsKey: String
+  ): ZManaged[BaseEnv with ServerEnv with MainArgs, Throwable, uzhttp.server.Server] = Config.access.toManaged_.flatMap { config =>
     ZManaged.access[MainArgs](_.get.watchUI).flatMap { watchUI =>
       val staticPath = if (watchUI) staticWatchPath else config.static.path.getOrElse(defaultStaticPath)
 
@@ -190,9 +183,12 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
 
       for {
         authRoutes    <- IdentityProvider.authRoutes.toManaged_
-        authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_
-        staticHandler <- staticFiles
-        address       <- ZIO(config.listen.toSocketAddress).orDie.toManaged_
+        broadcastAll  <- Topic[Task, Option[Message]](None).toManaged_  // used to broadcast messages to all connected clients
+        nbManager      = NotebookManager.layer(broadcastAll)
+        authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_.provideSomeLayer[BaseEnv with ServerEnv with MainArgs](nbManager)
+        staticHandler <- staticFiles.provideSomeLayer[BaseEnv with ServerEnv with MainArgs](nbManager)
+        address       <- ZIO(config.listen.toSocketAddress).toManaged_
+        getIndex      <- indexFileContent(wsKey).toManaged_
         server        <- uzhttp.server.Server.builder(address).handleSome {
           case req@Request.WebsocketRequest(_, uri, _, _, inputFrames) =>
             val path = uri.getPath
@@ -215,7 +211,8 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
           .logRequests(ServerLogger.noLogRequests)
           .logErrors((msg, err) => Logging.error(msg, err))
           .logInfo(msg => Logging.info(msg))
-          .serve.orDie
+          .serve
+          .provideSomeLayer[BaseEnv with ServerEnv with MainArgs](nbManager)
       } yield server
     }
   }

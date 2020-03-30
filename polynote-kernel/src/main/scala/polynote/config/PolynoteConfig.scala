@@ -27,13 +27,8 @@ final case class Listen(
   port: Int = 8192,
   host: String = "127.0.0.1"
 ) {
-  lazy val toSocketAddress: InetSocketAddress = {
-    val addr = host match {
-      case "0.0.0.0" => java.net.InetAddress.getLocalHost.getHostAddress
-      case host      => host
-    }
-    new InetSocketAddress(addr, port)
-  }
+  lazy val toSocketAddress: InetSocketAddress = new InetSocketAddress(host, port)
+
 }
 
 object Listen {
