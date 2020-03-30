@@ -138,6 +138,14 @@ object SocketTransportServer {
     }
   }
 
+  private def monitorProcess(process: SocketTransport.DeployedProcess) =
+    for {
+      status <- (ZIO.sleep(ZDuration(1, TimeUnit.SECONDS)) *> process.exitStatus.orDie).doUntil(_.nonEmpty).someOrFail(SocketTransport.ProcessDied)
+      _      <- Logging.info(s"Kernel process ended with $status")
+      _      <- if (status != 0) ZIO.fail(SocketTransport.ProcessDied) else ZIO.succeed(())
+    } yield ()
+
+
   def apply(
     server: ServerSocketChannel,
     channel1: FramedSocket,
@@ -146,6 +154,7 @@ object SocketTransportServer {
   ): TaskB[SocketTransportServer] = for {
     closed   <- Promise.make[Throwable, Unit]
     channels <- selectChannels(channel1, channel2, server.getLocalAddress.asInstanceOf[InetSocketAddress])
+    _        <- monitorProcess(process).onError(_ => channels.close().orDie).to(closed).forkDaemon
     _        <- channel1.awaitClosed.to(closed).forkDaemon
     _        <- channel2.awaitClosed.to(closed).forkDaemon
   } yield new SocketTransportServer(server, channels, process, closed)
@@ -209,17 +218,24 @@ class SocketTransport(
     } yield framed
   }.timeoutFail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.asScala}"))(timeout)
 
+  private def monitorProcess(process: SocketTransport.DeployedProcess) = {
+    val checkExit = ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus.orDie
+    val exited    = for {
+      status <- checkExit.doUntil(_.nonEmpty).get
+      _      <- Logging.info(s"Kernel process ended with $status")
+    } yield ()
+
+    exited.ignore *> ZIO.fail(SocketTransport.ProcessDied)
+  }
+
   private[polynote] def deployAndServe(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, (TransportServer[InetSocketAddress], SocketTransport.DeployedProcess)] =
     TaskManager.run("RemoteKernel", "Remote kernel", "Starting remote kernel") {
       for {
         socketServer  <- openServerChannel
         serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
         process       <- deploy.deployKernel(this, serverAddress)
-        monitorProcess = process.exitStatus.doUntil(_.nonEmpty) *>
-          process.exitStatus.flatMap(status => Logging.info(s"Kernel process ended with $status") *> ZIO.fail(SocketTransport.ProcessDied))
-
         _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
-        connection    <- startConnection(socketServer).raceFirst(monitorProcess)
+        connection    <- startConnection(socketServer).raceFirst(monitorProcess(process))
         connection2   <- startConnection(socketServer)
         server        <- SocketTransportServer(socketServer, connection, connection2, process)
       } yield (server, process)
@@ -232,7 +248,7 @@ class SocketTransport(
 }
 
 object SocketTransport {
-  case object ProcessDied extends Throwable("Kernel died before starting.")
+  case object ProcessDied extends Throwable("Kernel died unexpectedly")
   case class Channels(
     mainChannel: FramedSocket,
     notebookUpdatesChannel: FramedSocket,
