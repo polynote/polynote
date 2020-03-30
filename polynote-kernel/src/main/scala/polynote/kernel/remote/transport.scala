@@ -17,7 +17,7 @@ import scodec.Codec
 import scodec.codecs.implicits._
 import scodec.bits.BitVector
 import scodec.stream.decode
-import zio.blocking.{Blocking, effectBlocking}
+import zio.blocking.{Blocking, effectBlocking, effectBlockingInterrupt, effectBlockingCancelable}
 import zio.{Cause, Promise, RIO, Schedule, Task, ZIO}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
@@ -138,6 +138,14 @@ object SocketTransportServer {
     }
   }
 
+  private def monitorProcess(process: SocketTransport.DeployedProcess) =
+    for {
+      status <- (ZIO.sleep(ZDuration(1, TimeUnit.SECONDS)) *> process.exitStatus.orDie).doUntil(_.nonEmpty).someOrFail(SocketTransport.ProcessDied)
+      _      <- Logging.info(s"Kernel process ended with $status")
+      _      <- if (status != 0) ZIO.fail(SocketTransport.ProcessDied) else ZIO.succeed(())
+    } yield ()
+
+
   def apply(
     server: ServerSocketChannel,
     channel1: FramedSocket,
@@ -146,6 +154,7 @@ object SocketTransportServer {
   ): TaskB[SocketTransportServer] = for {
     closed   <- Promise.make[Throwable, Unit]
     channels <- selectChannels(channel1, channel2, server.getLocalAddress.asInstanceOf[InetSocketAddress])
+    _        <- monitorProcess(process).onError(_ => channels.close().orDie).to(closed).forkDaemon
     _        <- channel1.awaitClosed.to(closed).forkDaemon
     _        <- channel2.awaitClosed.to(closed).forkDaemon
   } yield new SocketTransportServer(server, channels, process, closed)
@@ -204,12 +213,19 @@ class SocketTransport(
     timeout: ZDuration = 3.minutes
   ): TaskB[FramedSocket] = {
     for {
-      channel <- effectBlocking(server.accept())
+      channel <- effectBlockingCancelable(server.accept())(ZIO.effectTotal(server.close()))
       framed  <- FramedSocket(channel, keepalive = true)
     } yield framed
-  }.timeout(timeout).flatMap {
-    case Some(s) => ZIO.succeed(s)
-    case None    => ZIO.fail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.asScala}"))
+  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.asScala}"))(timeout)
+
+  private def monitorProcess(process: SocketTransport.DeployedProcess) = {
+    val checkExit = ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus.orDie
+    val exited    = for {
+      status <- checkExit.doUntil(_.nonEmpty).get
+      _      <- Logging.info(s"Kernel process ended with $status")
+    } yield ()
+
+    exited.ignore *> ZIO.fail(SocketTransport.ProcessDied)
   }
 
   private[polynote] def deployAndServe(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, (TransportServer[InetSocketAddress], SocketTransport.DeployedProcess)] =
@@ -219,7 +235,7 @@ class SocketTransport(
         serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
         process       <- deploy.deployKernel(this, serverAddress)
         _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
-        connection    <- startConnection(socketServer)
+        connection    <- startConnection(socketServer).raceFirst(monitorProcess(process))
         connection2   <- startConnection(socketServer)
         server        <- SocketTransportServer(socketServer, connection, connection2, process)
       } yield (server, process)
@@ -232,7 +248,7 @@ class SocketTransport(
 }
 
 object SocketTransport {
-
+  case object ProcessDied extends Throwable("Kernel died unexpectedly")
   case class Channels(
     mainChannel: FramedSocket,
     notebookUpdatesChannel: FramedSocket,
