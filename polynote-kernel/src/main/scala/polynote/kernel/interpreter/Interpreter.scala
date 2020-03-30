@@ -79,6 +79,7 @@ object Interpreter {
 
   object Factories {
     def layer(factories: Map[String, List[Interpreter.Factory]]): Layer[Nothing, Factories] = ZLayer.succeed(factories)
+    def load: ZLayer[Blocking, Throwable, Factories] = ZLayer.fromEffect(Loader.load)
     def access: ZIO[Factories, Nothing, Map[String, List[Interpreter.Factory]]] = ZIO.access[Factories](_.get)
   }
 

@@ -211,6 +211,8 @@ package object server {
           case None => ZIO.succeed(KernelBusyState(busy = false, alive = false))
           case Some((publisher, _)) => publisher.kernelStatus()
         }
+
+        def close() = ???
       }
     }
 

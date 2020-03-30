@@ -57,6 +57,8 @@ package object auth {
       ZIO.access[Config](_.get.security.auth).get
         .foldM(_ => ZIO.succeed(noneService), config => find(config))
 
+    val layer: ZLayer[BaseEnv with Config, Throwable, IdentityProvider] = ZLayer.fromEffect(load)
+
     def access: URIO[IdentityProvider, Service] = ZIO.access[IdentityProvider](_.get)
 
     def authRoutes: URIO[IdentityProvider, Routes] =
