@@ -58,7 +58,8 @@ trait ZIOSpec extends ZIOSpecBase[Clock with Console with System with Random wit
 
 trait ConfiguredZIOSpec extends ZIOSpecBase[BaseEnv with Config] { this: Suite =>
   def config: PolynoteConfig = PolynoteConfig()
-
+  override lazy val envLayer: ZLayer[zio.ZEnv, Nothing, BaseEnv with Config] =
+    baseLayer ++ ZLayer.succeed(config)
 }
 
 trait ExtConfiguredZIOSpec[Env <: Has[_]] extends ZIOSpecBase[BaseEnv with Config with Env] {

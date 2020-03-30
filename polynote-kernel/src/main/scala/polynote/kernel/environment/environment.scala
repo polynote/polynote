@@ -246,66 +246,22 @@ object Env {
       zio(r).provideSomeLayer[RO](ZLayer.succeedMany(r))
   }
 
-  def addManyM[RO <: Has[_]]: AddManyMPartial[RO] = addManyMPartialInstance.asInstanceOf[AddManyMPartial[RO]]
+  def addLayer[RO <: Has[_], E, R1 <: Has[_]](layer: ZLayer[RO, E, R1]): AddLayer[RO, E, R1] =
+    new AddLayer(layer)
 
-  class AddManyMPartial[RO <: Has[_]] {
-    def apply[RA, E, RB <: Has[_]](rbTask: ZIO[RA, E, RB]): AddManyM[RO, RA, RB, E] = new AddManyM(rbTask)
-  }
-  private val addManyMPartialInstance: AddManyMPartial[Has[Any]] = new AddManyMPartial[Has[Any]]
-
-  class AddManyM[RO <: Has[_], -RA, RB <: Has[_], +E](val rbTask: ZIO[RA, E, RB]) extends AnyVal {
-    def flatMap[E1 >: E, A](zio: RB => ZIO[RO with RB, E1, A])(implicit ev: Tagged[RB]): ZIO[RO with RA, E1, A] =
-      rbTask.flatMap {
-        rb => zio(rb).provideSomeLayer[RO](ZLayer.succeedMany(rb))
-      }
+  class AddLayer[RO <: Has[_], E, R <: Has[_]](val layer: ZLayer[RO, E, R]) extends AnyVal {
+    def flatMap[R1, E1 >: E, A](zio: R => ZIO[R1 with RO with R, E1, A])(implicit ev: Tagged[R]): ZIO[RO with R1, E1, A] =
+      ZIO.environment[R].flatMap(r => zio(r)).provideSomeLayer[RO with R1](layer)
   }
 
+  implicit class LayerOps[RIn <: Has[_], E, ROut <: Has[_]](val self: ZLayer[RIn, E, ROut]) extends AnyVal {
+    def andThen[E1 >: E, ROut1 <: Has[_]](next: ZLayer[RIn with ROut, E1, ROut1])(implicit ev: Tagged[ROut], ev1: Tagged[ROut1]): ZLayer[RIn, E1, ROut with ROut1] = {
+      val RIn = ZLayer.requires[RIn]
+      val ROut = RIn ++ (RIn >>> self)
+      ROut ++ (ROut >>> next)
+    }
+  }
 
-  /**
-    * Enrich A with B, resulting in a value that is both A and B. This is intended for ZIO environments, and as such,
-    * A and B must be traits. It's a good practice for each of these traits to have exactly one abstract method which
-    * provides that environment's aspect.
-    *
-    * The returned value will implement A and B, delegating all of A's methods to the given A and all of B's methods to
-    * the given B. If A already extends B, the methods of B will be replaced to delegate to the given instance of B.
-    *
-    * @see [[Enrich]] for the macro implementation.
-    */
-  //def enrichWith[A, B](a: A, b: B)(implicit enrich: Enrich[A, B]): A with B = enrich(a, b)
 
-  /**
-    * A partially applied enrichment. Provide as a type parameter the type that will be pulled from the ZIO environment
-    * and enriched, and as a value parameter the value that will be added (its type can typically be inferred).
-    *
-    * Example:
-    *     val zio: ZIO[Thing1 with Thing2 with Thing3, Nothing, Int] = ???
-    *     val thing3: Thing3 = ???
-    *     zio.provideSomeM(Env.enrich[Thing1 with Thing2](thing3)) // result: ZIO[Thing1 with Thing2, Nothing, Int]
-    */
-  //def enrich[A]: Enricher[A] = new Enricher()
-
-//  class Enricher[A] {
-//    def apply[B](b: B)(implicit enrich: Enrich[A, B]): ZIO[A, Nothing, A with B] = ZIO.access[A](identity).map(enrichWith[A, B](_, b))
-//  }
-
-  /**
-    * A partially applied enrichment. Provide as a type parameter the type that will be pulled from the ZIO environment
-    * and enriched, and as a value parameter an effect that will produce the value that will be added (its type can
-    * typically be inferred).
-    *
-    * Example:
-    *     val zio: ZIO[Thing1 with Thing2 with Thing3, Nothing, Int] = ???
-    *     val thing3: ZIO[Thing1, Nothing, Thing3] = ???
-    *     zio.provideSomeM(Env.enrichM[Thing1 with Thing2](thing3)) // result: ZIO[Thing1 with Thing2, Nothing, Int]
-    */
-  //def enrichM[A]: MEnricher[A] = new MEnricher
-
-//  class MEnricher[A]() {
-//    def apply[R <: A, E, B](ioB: ZIO[R, E, B])(implicit enrich: Enrich[A, B]): ZIO[R, E, A with B] = ZIO.access[A](identity).flatMap {
-//      a => ioB.map {
-//        b => enrichWith[A, B](a, b)
-//      }
-//    }
-//  }
 
 }

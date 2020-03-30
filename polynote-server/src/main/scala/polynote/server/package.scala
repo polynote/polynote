@@ -22,7 +22,7 @@ import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
-import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Task, UIO, URIO, ZIO}
+import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Task, UIO, URIO, ZIO, ZLayer}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{DurationInt, SECONDS}
@@ -211,6 +211,8 @@ package object server {
           case None => ZIO.succeed(KernelBusyState(busy = false, alive = false))
           case Some((publisher, _)) => publisher.kernelStatus()
         }
+
+        def close() = ???
       }
     }
 
@@ -230,5 +232,8 @@ package object server {
       repository = makeTreeRepository(config.storage.dir, config.storage.mounts, config, blocking.asEC)
       service   <- Service(repository, broadcastAll)
     } yield service
+
+    def layer(broadcastAll: Topic[Task, Option[Message]]): ZLayer[BaseEnv with GlobalEnv, Throwable, NotebookManager] =
+      ZLayer.fromEffect(apply(broadcastAll))
   }
 }

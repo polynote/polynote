@@ -1,7 +1,7 @@
 package polynote.config
 
 import java.io.{File, FileNotFoundException, FileReader}
-import java.net.URI
+import java.net.{InetSocketAddress, URI}
 import java.nio.file.Path
 import java.util.UUID
 import java.util.regex.Pattern
@@ -10,14 +10,15 @@ import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
 import io.circe.syntax._
 import io.circe._
-import polynote.kernel.TaskB
+import polynote.kernel.{BaseEnv, TaskB}
+import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
 import polynote.messages.ShortMap
 import scodec.{Attempt, Codec}
 import scodec.codecs.implicits._
 import scodec.codecs.utf8_32
-import zio.ZIO
-import zio.blocking.effectBlocking
+import zio.{ZIO, ZLayer}
+import zio.blocking.{Blocking, effectBlocking}
 import shapeless.cachedImplicit
 
 import scala.util.Try
@@ -25,7 +26,10 @@ import scala.util.Try
 final case class Listen(
   port: Int = 8192,
   host: String = "127.0.0.1"
-)
+) {
+  lazy val toSocketAddress: InetSocketAddress = new InetSocketAddress(host, port)
+
+}
 
 object Listen {
   implicit val encoder: ObjectEncoder[Listen] = deriveEncoder
@@ -232,7 +236,7 @@ object PolynoteConfig {
       parsedConfig <- ZIO.fromEither(merged.as[PolynoteConfig])
     } yield parsedConfig
 
-    configIO
+    Logging.info(s"Loading configuration from $file") *> configIO
       .catchAll {
         case _: MatchError =>
           ZIO.succeed(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
