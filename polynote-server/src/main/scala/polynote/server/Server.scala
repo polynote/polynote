@@ -1,42 +1,29 @@
 package polynote.server
 
-import java.io.{BufferedReader, ByteArrayOutputStream, File, FileInputStream, FileNotFoundException, InputStream, InputStreamReader, OutputStream}
-import java.net.{InetSocketAddress, URLEncoder}
-import java.nio.CharBuffer
-import java.nio.charset.StandardCharsets
+import java.io.File
+import java.net.URLEncoder
 import java.nio.file.{Path, Paths}
-import java.time.{OffsetDateTime, ZoneOffset}
-import java.time.format.DateTimeFormatter
 import java.util.UUID
-import java.util.concurrent.{ExecutorService, Executors, ThreadFactory, TimeUnit}
-import java.util.zip.GZIPOutputStream
 
-import fs2.{Chunk, Stream}
 import fs2.concurrent.Topic
-import cats.instances.option._
-import cats.syntax.traverse._
 import polynote.buildinfo.BuildInfo
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
 import Env.LayerOps
 import polynote.kernel.logging.Logging
-import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, interpreter}
-import polynote.messages.{Error, Message}
-import polynote.server.auth.{Identity, IdentityProvider, UserIdentity}
+import polynote.kernel.{BaseEnv, GlobalEnv, Kernel}
+import polynote.messages.Message
+import polynote.server.auth.IdentityProvider
 import uzhttp.server.ServerLogger
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.{Forbidden, InternalServerError, NotFound}
 import polynote.kernel.interpreter.Interpreter
 import polynote.server.Server.MainArgs
-import polynote.util.GZip
-import zio.{Cause, Has, IO, Managed, RIO, Schedule, Task, URIO, ZIO, ZLayer, ZManaged}
+import zio.{Has, IO, Task, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
 import sun.net.www.MimeTable
-import zio.duration.Duration
-
-import scala.concurrent.ExecutionContext
 
 class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
   private lazy val currentPath = new File(System.getProperty("user.dir")).toPath
