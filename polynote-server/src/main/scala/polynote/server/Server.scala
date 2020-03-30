@@ -120,7 +120,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
       _            <- Env.addM[BaseEnv with GlobalEnv with NotebookManager](IdentityProvider.load.orDie)
       _            <- Logging.warn(securityWarning)
       _            <- Logging.info(banner)
-      _            <- serve(args.watchUI, wsKey, loadIndex, broadcastAll, uzhttp.server.Server.builder(new InetSocketAddress(host, port))).use {
+      _            <- serve(args.watchUI, wsKey, loadIndex, broadcastAll, uzhttp.server.Server.builder(new InetSocketAddress(address, port))).use {
         server => server.awaitShutdown
       }.orDie
     } yield 0
