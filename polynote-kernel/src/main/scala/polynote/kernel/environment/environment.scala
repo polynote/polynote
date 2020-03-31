@@ -13,7 +13,7 @@ import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
 import zio.internal.Executor
 import zio.interop.catz._
-import zio.{Has, Layer, RIO, Tagged, Task, UIO, URIO, ZIO, ZLayer}
+import zio.{Has, Layer, RIO, Tagged, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
 //import zio.syntax.zioTuple3Syntax
 
 //////////////////////////////////////////////////////////////////////
@@ -246,12 +246,20 @@ object Env {
       zio(r).provideSomeLayer[RO](ZLayer.succeedMany(r))
   }
 
-  def addLayer[RO <: Has[_], E, R1 <: Has[_]](layer: ZLayer[RO, E, R1]): AddLayer[RO, E, R1] =
+  def addLayer[RO <: Has[_], E, R <: Has[_]](layer: ZLayer[RO, E, R]): AddLayer[RO, E, R] =
     new AddLayer(layer)
 
   class AddLayer[RO <: Has[_], E, R <: Has[_]](val layer: ZLayer[RO, E, R]) extends AnyVal {
-    def flatMap[R1, E1 >: E, A](zio: R => ZIO[R1 with RO with R, E1, A])(implicit ev: Tagged[R]): ZIO[RO with R1, E1, A] =
-      ZIO.environment[R].flatMap(r => zio(r)).provideSomeLayer[RO with R1](layer)
+    def flatMap[E1 >: E, A](zio: R => ZIO[RO with R, E1, A])(implicit ev: Tagged[R]): ZIO[RO, E1, A] =
+      ZIO.environment[R].flatMap(r => zio(r)).provideSomeLayer[RO](layer)
+  }
+
+  def addManagedLayer[RO <: Has[_], E, R <: Has[_]](layer: ZLayer[RO, E, R]): AddManagedLayer[RO, E, R] =
+    new AddManagedLayer(layer)
+
+  class AddManagedLayer[RO <: Has[_], E, R <: Has[_]](val layer: ZLayer[RO, E, R]) extends AnyVal {
+    def flatMap[E1 >: E, A](zio: R => ZManaged[RO with R, E1, A])(implicit ev: Tagged[R]): ZManaged[RO, E1, A] =
+      ZManaged.environment[R].flatMap(r => zio(r)).provideSomeLayer[RO](layer)
   }
 
   implicit class LayerOps[RIn <: Has[_], E, ROut <: Has[_]](val self: ZLayer[RIn, E, ROut]) extends AnyVal {

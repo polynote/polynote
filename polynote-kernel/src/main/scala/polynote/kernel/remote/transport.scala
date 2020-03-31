@@ -163,7 +163,9 @@ object SocketTransportServer {
 class SocketTransportClient private (channels: SocketTransport.Channels, closed: Promise[Throwable, Unit]) extends TransportClient {
 
   def logError(fn: Cause[Throwable] => ZIO[Logging, Nothing, Unit]): TaskB ~> TaskB = new ~>[TaskB, TaskB] {
-    override def apply[A](fa: TaskB[A]): TaskB[A] = fa.onError(fn)
+    override def apply[A](fa: TaskB[A]): TaskB[A] = fa.onError {
+      cause => ZIO.when(!cause.interruptedOnly)(fn(cause))
+    }
   }
 
   private val requestStream = channels.mainChannel.bitVectors.interruptAndIgnoreWhen(closed)
@@ -418,7 +420,7 @@ object SocketTransport {
       }
     }
 
-    def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).uninterruptible.catchSome {
+    def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).catchSome {
       case err: ClosedChannelException => Logging.info("Remote peer closed connection") *> close() *> ZIO.succeed(None)
     }.tapError {
       err => closed.fail(err)
@@ -433,7 +435,7 @@ object SocketTransport {
         while (byteBuffer.hasRemaining) {
           socketChannel.write(byteBuffer)
         }
-      }.uninterruptible
+      }
     }.tapError {
       case err: ClosedChannelException => close()
       case err => closed.fail(err) *> close()
@@ -447,10 +449,17 @@ object SocketTransport {
     }
 
     // send a keepalive, but if the channel is already being written, do nothing (don't queue a keepalive)
-    def sendKeepalive(): TaskB[Unit] = ZIO.effectTotal(writeLock.tryAcquire(0, TimeUnit.SECONDS)).bracket(
-      acquired => if (acquired) ZIO.effectTotal(writeLock.release()) else ZIO.unit).apply {
-      acquired => if (acquired) effectBlocking(writeSize(0)) else ZIO.unit
-    }
+    def sendKeepalive(): TaskB[Unit] = ZIO.effectTotal(writeLock.tryAcquire(0, TimeUnit.SECONDS))
+      .bracket(acquired => if (acquired) ZIO.effectTotal(writeLock.release()) else ZIO.unit) {
+        acquired => ZIO.when(acquired) {
+          effectBlocking(writeSize(0))
+        }.catchAll {
+          err => closed.isDone.flatMap {
+            case true => ZIO.unit
+            case false => ZIO.fail(err)
+          }
+        }
+      }
 
     def close(): TaskB[Unit] = closed.succeed(()).flatMap {
       case true =>
@@ -472,6 +481,7 @@ object SocketTransport {
   }
 
   object FramedSocket {
+    private val keepaliveDuration = ZDuration(250, TimeUnit.MILLISECONDS)
     def apply(socketChannel: SocketChannel, keepalive: Boolean = true): TaskB[FramedSocket] = {
       for {
         closed       <- Promise.make[Throwable, Unit]
@@ -479,10 +489,10 @@ object SocketTransport {
         doKeepalive  <- if (keepalive) {
           // This sends a keepalive quite frequently, because it's the only way we can detect if the remote peer dies.
           // It only sends 16 bytes per second, though, and they only send if the channel isn't being written.
-          framedSocket.sendKeepalive().tapError {
+          (ZIO.yieldNow *> framedSocket.sendKeepalive()).retry(Schedule.recurs(2).addDelay(_ => keepaliveDuration)).tapError {
             err =>
               closed.fail(err) *> effectBlocking(socketChannel.close())
-          }.repeat(Schedule.spaced(ZDuration(250, TimeUnit.MILLISECONDS))).forkDaemon
+          }.repeat(Schedule.spaced(keepaliveDuration)).raceFirst(closed.await.ignore).forkDaemon
         } else ZIO.unit
       } yield framedSocket
     }

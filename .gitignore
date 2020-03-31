@@ -15,3 +15,4 @@ metastore_db
 *.log
 tmp
 npm-debug.log.*
+run-jar.sh

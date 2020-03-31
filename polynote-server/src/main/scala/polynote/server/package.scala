@@ -108,6 +108,7 @@ package object server {
       def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
       def copy(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
       def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit]
+      def close(): RIO[BaseEnv, Unit]
     }
 
     object Service {
@@ -212,7 +213,11 @@ package object server {
           case Some((publisher, _)) => publisher.kernelStatus()
         }
 
-        def close() = ???
+        def close(): RIO[BaseEnv, Unit] = openNotebooks.values.flatMap {
+          notebooks => ZIO.foreachPar_(notebooks) {
+            case (publisher, writer) => publisher.close() *> writer.stop()
+          }
+        }
       }
     }
 
@@ -233,7 +238,7 @@ package object server {
       service   <- Service(repository, broadcastAll)
     } yield service
 
-    def layer(broadcastAll: Topic[Task, Option[Message]]): ZLayer[BaseEnv with GlobalEnv, Throwable, NotebookManager] =
-      ZLayer.fromEffect(apply(broadcastAll))
+    def layer[R <: BaseEnv with GlobalEnv](broadcastAll: Topic[Task, Option[Message]]): ZLayer[R, Throwable, NotebookManager] =
+      ZLayer.fromManaged(apply(broadcastAll).toManaged(_.close().orDie))
   }
 }

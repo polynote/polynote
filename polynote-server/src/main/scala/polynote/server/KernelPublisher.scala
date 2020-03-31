@@ -12,9 +12,9 @@ import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.kernel.util.{Publish, RefMap}
 import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.messages.{CellID, CellResult, Error, Message, Notebook, NotebookUpdate, ShortList}
-import polynote.kernel.{BaseEnv, CellEnv, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB}
+import polynote.kernel.{BaseEnv, CellEnv, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskInfo}
 import polynote.util.VersionBuffer
-import zio.{Fiber, Has, Promise, RIO, Semaphore, Task, UIO, ZIO, ZLayer, Ref}
+import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
@@ -44,17 +44,19 @@ class KernelPublisher private (
   private val baseLayer: ZLayer[Any, Nothing, CurrentNotebook with TaskManager with PublishStatus] =
     ZLayer.succeedMany(Has(versionedNotebook: CatsRef[Task, (GlobalVersion, Notebook)]) ++ Has(taskManager) ++ Has(publishStatus))
 
-  private def cellLayer(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, PublishResult] =
-    ZLayer.succeed {
-      val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(cellID, result)))
-      tapResults.fold(publish)(fn => publish.tap(fn))
-    }
+  private def cellLayer(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, PublishResult] = {
+    val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(cellID, result)))
+    val env = tapResults.fold(publish)(fn => publish.tap(fn))
+    ZLayer.succeed(env)
+  }
 
   private def cellEnv(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, CellEnv] =
     baseLayer ++ cellLayer(cellID, tapResults)
 
-  private val kernelFactoryEnv: ZLayer[Any, Nothing, CellEnv with NotebookUpdates] =
-    cellEnv(CellID(-1)) ++ ZLayer.succeed(broadcastUpdates.subscribe(128).unNone.map(_._2))
+  private val kernelFactoryEnv: ZLayer[Any, Nothing, CellEnv with NotebookUpdates] = {
+    val updates = broadcastUpdates.subscribe(128).unNone.map(_._2)
+    cellEnv(CellID(-1)) ++ ZLayer.succeed(updates)
+  }
 
   private val nextSubscriberId = new AtomicInteger(0)
 
@@ -91,8 +93,8 @@ class KernelPublisher private (
     publishUpdate.publish1((subscriberId, update))
 
   private def handleKernelClosed(kernel: Kernel): TaskB[Unit] =
-    kernel.awaitClosed.catchAll {
-      err => publishStatus.publish1(KernelError(err)) *> Logging.error(s"Kernel closed with error", err)
+    kernel.awaitClosed.catchAllCause {
+      err => publishStatus.publish1(KernelError(err.squash)) *> Logging.error(s"Kernel closed with error", err)
     } *> Logging.info("Kernel closed") *> kernelRef.set(None) *> publishStatus.publish1(KernelBusyState(busy = false, alive = false))
 
   val kernel: RIO[BaseEnv with GlobalEnv, Kernel] = kernelRef.get.flatMap {
@@ -179,6 +181,10 @@ class KernelPublisher private (
       _      <- kernel.cancelAll().provideSomeLayer[BaseEnv](baseLayer)
     } yield ()
   }.ignore
+
+  def tasks(): TaskB[List[TaskInfo]] = kernelRef.get.get.flatMap {
+    kernel => kernel.tasks().provideSomeLayer[BaseEnv](baseLayer)
+  } orElse taskManager.list
 
   def subscribe(): RIO[BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = subscribing.withPermit {
     for {
