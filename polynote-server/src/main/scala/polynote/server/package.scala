@@ -120,8 +120,8 @@ package object server {
     object Service {
 
       def apply(repository: NotebookRepository, broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, Service] =
-        repository.initStorage() *> RefMap.empty[String, (KernelPublisher, NotebookWriter)].map {
-          openNotebooks => new Impl(openNotebooks, repository, broadcastAll)
+        repository.initStorage() *> ZIO.mapN(RefMap.empty[String, (KernelPublisher, NotebookWriter)], Semaphore.make(1L)) {
+          (openNotebooks, moveLock) => new Impl(openNotebooks, repository, broadcastAll, moveLock)
         }
 
       private case class NotebookWriter(fiber: Fiber[Throwable, Unit], shutdownSignal: Promise[Throwable, Unit]) {
