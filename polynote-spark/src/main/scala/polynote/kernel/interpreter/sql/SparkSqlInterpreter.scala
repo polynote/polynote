@@ -11,7 +11,7 @@ import polynote.kernel.task.TaskManager
 import polynote.messages.{ShortString, TinyList}
 import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.{RIO, Task, ZIO}
-import zio.blocking.effectBlocking
+import zio.blocking.{Blocking, effectBlocking}
 
 import scala.collection.mutable
 
@@ -61,12 +61,14 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
 
   def parametersAt(code: String, pos: Int, state: State): Task[Option[Signatures]] = ZIO.succeed(None)
 
+  private def loadFunctions: RIO[Blocking, Unit] =
+    effectBlocking(sessionCatalog.listFunctions(sessionCatalog.getCurrentDatabase)).map {
+      fns => functions ++= fns.map(_._1.funcName)
+    }.unit
 
-  private def loadCatalog() = effectBlocking(sessionCatalog.listDatabases()).flatMap {
-    dbs => ZIO.collectAllPar {
-      effectBlocking(sessionCatalog.listFunctions(sessionCatalog.getCurrentDatabase)).map {
-        fns => functions ++= fns.map(_._1.funcName)
-      } :: dbs.toList.map {
+  private def loadCatalog: RIO[Blocking, Unit] = loadFunctions *> effectBlocking(sessionCatalog.listDatabases()).flatMap {
+    dbs =>
+      ZIO.foreachParN_(8)(dbs) {
         db => ZIO(databases.add(db)) *> effectBlocking {
           val tableSet = new mutable.TreeSet[String]()
           tables.put(db, tableSet)
@@ -75,10 +77,9 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
           }
         }
       }
-    }.unit
   }
 
-  def init(state: State): RIO[InterpreterEnv, State] = loadCatalog().forkDaemon.as(state)
+  def init(state: State): RIO[InterpreterEnv, State] = loadCatalog.forkDaemon.as(state)
 
   def shutdown(): Task[Unit] = ZIO.unit
 

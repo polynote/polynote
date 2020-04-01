@@ -45,19 +45,22 @@ object SocketSession {
       }
 
     case CreateNotebook(path, maybeContent) =>
-      checkPermission(Permission.CreateNotebook(path)) *> NotebookManager.create(path, maybeContent).as(None)
+      NotebookManager.assertValidPath(path) *>
+        checkPermission(Permission.CreateNotebook(path)) *> NotebookManager.create(path, maybeContent).as(None)
 
     case RenameNotebook(path, newPath) =>
-      checkPermission(Permission.CreateNotebook(newPath)) *>
-        checkPermission(Permission.DeleteNotebook(path)) *>
+      (NotebookManager.assertValidPath(path) &> NotebookManager.assertValidPath(newPath)) *>
+        checkPermission(Permission.CreateNotebook(newPath)) *> checkPermission(Permission.DeleteNotebook(path)) *>
         NotebookManager.rename(path, newPath).as(None)
 
     case CopyNotebook(path, newPath) =>
-      checkPermission(Permission.CreateNotebook(newPath)) *>
+      (NotebookManager.assertValidPath(path) &> NotebookManager.assertValidPath(newPath)) *>
+        checkPermission(Permission.CreateNotebook(newPath)) *>
         NotebookManager.copy(path, newPath).as(None)
 
     case DeleteNotebook(path) =>
-      checkPermission(Permission.DeleteNotebook(path)) *> NotebookManager.delete(path).as(None)
+      NotebookManager.assertValidPath(path) *>
+        checkPermission(Permission.DeleteNotebook(path)) *> NotebookManager.delete(path).as(None)
 
     case RunningKernels(_) => for {
       paths          <- NotebookManager.listRunning()

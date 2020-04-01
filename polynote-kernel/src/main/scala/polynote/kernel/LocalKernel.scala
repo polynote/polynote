@@ -151,7 +151,7 @@ class LocalKernel private[kernel] (
   override def shutdown(): Task[Unit] = for {
     _            <- busyState.update(_.setBusy)
     interpreters <- interpreters.values
-    _            <- interpreters.map(_.shutdown()).sequence.unit
+    _            <- ZIO.foreachPar_(interpreters)(_.shutdown())
     _            <- busyState.set(KernelBusyState(busy = false, alive = false))
     _            <- closed.succeed(())
   } yield ()

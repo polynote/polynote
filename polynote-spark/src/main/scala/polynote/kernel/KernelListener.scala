@@ -59,13 +59,15 @@ class KernelListener(taskManager: TaskManager.Service, session: SparkSession, ru
     }
   }
 
-  private def cancelJob(jobId: Int): ZIO[Logging, Nothing, Unit] = ZIO.effect {
-    session.sparkContext.cancelJob(jobId)
-  }.catchAll(Logging.error("Unable to cancel job", _))
+  private def cancelJob(jobId: Int): ZIO[Logging, Nothing, Unit] =
+    Logging.info(s"Attempting to cancel Spark Job $jobId") *> ZIO.effect {
+      session.sparkContext.cancelJob(jobId)
+    }.catchAll(Logging.error("Unable to cancel job", _))
 
-  private def cancelStage(stageId: Int): ZIO[Logging, Nothing, Unit] = ZIO.effect {
-    session.sparkContext.cancelStage(stageId)
-  }.catchAll(Logging.error("Unable to cancel stage", _))
+  private def cancelStage(stageId: Int): ZIO[Logging, Nothing, Unit] =
+    Logging.info(s"Attempting to cancel Spark Stage $stageId") *> ZIO.effect {
+      session.sparkContext.cancelStage(stageId)
+    }.catchAll(Logging.error("Unable to cancel stage", _))
 
   private def sparkJobTaskId(jobId: Int) = s"SparkJob$jobId"
   private def sparkStageTaskId(stageId: Int) = s"SparkStage$stageId"

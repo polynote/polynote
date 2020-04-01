@@ -108,16 +108,17 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
 
   private def sendStatus: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] = subscriber.publisher.kernelStatus().flatMap {
     status => PublishMessage(KernelStatus(status)) *> ZIO.when(status.alive) {
-      subscriber.publisher.kernel.flatMap {
-        kernel => kernel.values().flatMap {
-          values => ZIO.foreach_(values.filter(_.sourceCell < 0))(value => PublishMessage(CellResult(value.sourceCell, value)))
-        } *> (kernel.info().map(KernelStatus(_)) >>= PublishMessage)
-      }
+      for {
+        kernel <- subscriber.publisher.kernel
+        values <- kernel.values()
+        _      <- ZIO.foreach(values.filter(_.sourceCell < 0))(value => PublishMessage(CellResult(value.sourceCell, value)))
+        _      <- kernel.info().map(KernelStatus(_)) >>= PublishMessage
+      } yield ()
     }
   }
 
-  private def sendTasks: RIO[PublishMessage, Unit] =
-    subscriber.publisher.taskManager.list.map(tasks => KernelStatus(UpdatedTasks(tasks))) >>= PublishMessage
+  private def sendTasks: RIO[BaseEnv with PublishMessage, Unit] =
+    subscriber.publisher.tasks().map(tasks => KernelStatus(UpdatedTasks(tasks))) >>= PublishMessage
 
   private def sendPresence: RIO[PublishMessage, Unit] = subscriber.publisher.subscribersPresent.flatMap {
     presence =>
@@ -134,6 +135,7 @@ object NotebookSession {
 
   def stream(path: String, input: Stream[Throwable, Frame]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
     for {
+      _                <- NotebookManager.assertValidPath(path)
       publisher        <- NotebookManager.open(path).orElseFail(NotFound(path))
       output           <- ZQueue.unbounded[Take[Nothing, Message]]
       publishMessage   <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])

@@ -2,11 +2,13 @@ package polynote.testing.kernel.remote
 
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel}
 import polynote.kernel.environment.CurrentNotebook
+import polynote.kernel.logging.Logging
 import polynote.kernel.remote.{RemoteKernelClient, SocketTransport}
-import zio.{Fiber, Ref, RIO, ZIO}
+import zio.{Fiber, RIO, Ref, ZIO}
 import zio.duration.Duration
 
 class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref[RemoteKernelClient]) extends SocketTransport.Deploy {

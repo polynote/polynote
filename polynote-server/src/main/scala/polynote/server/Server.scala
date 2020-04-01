@@ -171,9 +171,9 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
       for {
         authRoutes    <- IdentityProvider.authRoutes.toManaged_
         broadcastAll  <- Topic[Task, Option[Message]](None).toManaged_  // used to broadcast messages to all connected clients
-        nbManager      = NotebookManager.layer(broadcastAll)
-        authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_.provideSomeLayer[BaseEnv with ServerEnv with MainArgs](nbManager)
-        staticHandler <- staticFiles.provideSomeLayer[BaseEnv with ServerEnv with MainArgs](nbManager)
+        _             <- Env.addManagedLayer(NotebookManager.layer[BaseEnv with ServerEnv with MainArgs](broadcastAll))
+        authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_
+        staticHandler <- staticFiles
         address       <- ZIO(config.listen.toSocketAddress).toManaged_
         getIndex      <- indexFileContent(wsKey).toManaged_
         server        <- uzhttp.server.Server.builder(address).handleSome {
@@ -181,7 +181,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
             val path = uri.getPath
             val query = uri.getQuery
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
-              path.stripPrefix("/ws") match {
+              path.stripPrefix("/ws").stripPrefix("/") match {
                 case "" => authorize(req, SocketSession(inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output)))
                 case rest => authorize(req, NotebookSession.stream(rest, inputFrames).flatMap(output => Response.websocket(req, output)))
               }
@@ -199,7 +199,6 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
           .logErrors((msg, err) => Logging.error(msg, err))
           .logInfo(msg => Logging.info(msg))
           .serve
-          .provideSomeLayer[BaseEnv with ServerEnv with MainArgs](nbManager)
       } yield server
     }
   }

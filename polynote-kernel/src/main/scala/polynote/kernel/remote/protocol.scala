@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 import polynote.config.PolynoteConfig
-import polynote.kernel.{Completion, KernelBusyState, KernelInfo, KernelStatusUpdate, Result, ResultValue, RuntimeError, Signatures}
+import polynote.kernel.{Completion, KernelBusyState, KernelInfo, KernelStatusUpdate, Result, ResultValue, RuntimeError, Signatures, TaskInfo}
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.codecs.{Discriminated, Discriminator, byte}
@@ -95,6 +95,9 @@ object ModifyStreamRequest extends RemoteRequestCompanion[ModifyStreamRequest](9
 final case class ReleaseHandleRequest(reqId: Int, sessionId: Int, handleType: HandleType, handleId: Int) extends RemoteRequest
 object ReleaseHandleRequest extends RemoteRequestCompanion[ReleaseHandleRequest](10)
 
+final case class ListTasksRequest(reqId: Int) extends RemoteRequest
+object ListTasksRequest extends RemoteRequestCompanion[ListTasksRequest](11)
+
 final case class CancelAllRequest(reqId: Int) extends RemoteRequest
 object CancelAllRequest extends RemoteRequestCompanion[CancelAllRequest](12)
 
@@ -158,6 +161,9 @@ object GetHandleDataResponse extends RemoteResponseCompanion[GetHandleDataRespon
 
 final case class ModifyStreamResponse(reqId: Int, result: Option[StreamingDataRepr]) extends RemoteRequestResponse
 object ModifyStreamResponse extends RemoteResponseCompanion[ModifyStreamResponse](9)
+
+final case class ListTasksResponse(reqId: Int, result: List[TaskInfo]) extends RemoteRequestResponse
+object ListTasksResponse extends RemoteResponseCompanion[ListTasksResponse](11)
 
 final case class KernelInfoResponse(reqId: Int, info: KernelInfo) extends RemoteRequestResponse
 object KernelInfoResponse extends RemoteResponseCompanion[KernelInfoResponse](13)

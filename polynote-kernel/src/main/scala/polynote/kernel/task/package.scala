@@ -4,14 +4,13 @@ import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 
 import scala.collection.JavaConverters._
-
 import cats.effect.concurrent.Ref
 import fs2.concurrent.SignallingRef
 import polynote.kernel.environment.{CurrentTask, PublishStatus}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
 import polynote.messages.TinyString
-import zio.{Cause, Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, ZIO, ZLayer}
+import zio.{Cause, Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.interop.catz._
@@ -163,42 +162,47 @@ package object task {
 
       override def register(id: String, label: String = "", detail: String = "", parent: Option[String], errorWith: DoneStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => ZIO[Logging, Nothing, Unit]): RIO[Blocking with Clock with Logging, Fiber[Throwable, Unit]] =
         for {
+          runtime     <- ZIO.runtime[Any]
           statusRef   <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Running, progress = 0, parent = parent.map(TinyString(_))))
-            updateTasks  = new LinkedBlockingQueue[TaskInfo => TaskInfo]()
-            completed    = new AtomicBoolean(false)
-            updater     <- statusRef.discrete
-              .terminateAfter(_.status.isDone)
-              .through(updates.publish)
-              .compile.drain
-              .uninterruptible
-              .ensuring(ZIO.effectTotal(completed.set(true)))
-              .forkDaemon
-            onUpdate     = (fn: TaskInfo => TaskInfo) => updateTasks.put(fn)
-            cancel       = cancelCallback(onUpdate)
-            process     <- zio.blocking.effectBlocking(updateTasks.take()).flatMap(statusRef.update)
-              .repeat(Schedule.doUntil(_ => completed.get()))
-              .ensuring(ZIO.effectTotal(tasks.remove(id)))
-              .onInterrupt(statusRef.update(_.done(errorWith)).orDie.ensuring(cancel))
-              .forkDaemon
-            descriptor   = (statusRef, process, taskCounter.getAndIncrement())
-            _           <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
+          updateTasks <- Queue.unbounded[TaskInfo => TaskInfo]
+          completed    = new AtomicBoolean(false)
+          updater     <- statusRef.discrete
+            .terminateAfter(_.status.isDone)
+            .through(updates.publish)
+            .compile.drain
+            .uninterruptible
+            .ensuring(ZIO.effectTotal(completed.set(true)))
+            .forkDaemon
+          onUpdate     = (fn: TaskInfo => TaskInfo) => runtime.unsafeRun(updateTasks.offer(fn).unit)
+          cancel       = cancelCallback(onUpdate)
+          process     <- updateTasks.take.flatMap(updater => statusRef.update(updater) *> statusRef.get)
+            .doUntil(_.status.isDone).unit
+            .ensuring(ZIO.effectTotal(tasks.remove(id)))
+            .onInterrupt(statusRef.update(_.done(errorWith)).orDie.ensuring(cancel))
+            .forkDaemon
+          descriptor   = (statusRef, process, taskCounter.getAndIncrement())
+          _           <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
         } yield process
 
       override def cancelAll(): UIO[Unit] = {
-        ZIO.collectAll {tasks.values().asScala.toList.reverse.map {
-          case (status, fiber, _) => fiber.interrupt
-        }} zipPar readyQueue.takeAll.flatMap {
-          brokenPromises => ZIO.collectAll {
-            brokenPromises.map {
-              case (ready, done) => ready.interrupt *> done.interrupt
-            }
-          }
+        val runningFibers    = ZIO.effectTotal(tasks.values().asScala.map(_._2))
+        val interruptRunning = runningFibers.flatMap {
+          fibers => ZIO.foreachPar_(fibers)(_.interruptFork)
         }
-      }.unit
+
+        val interruptQueued = for {
+          promises <- readyQueue.takeAll
+          _        <- ZIO.foreachPar_(promises) {
+            case (ready, done) => ready.interrupt &> done.interrupt
+          }
+        } yield ()
+
+        interruptQueued *> interruptRunning
+      }
 
       override def list: UIO[List[TaskInfo]] = ZIO.collectAll(tasks.values().asScala.toList.sortBy(_._3).map(_._1.get.orDie))
 
-      override def shutdown(): UIO[Unit] = cancelAll() *> process.interrupt.unit
+      override def shutdown(): UIO[Unit] = cancelAll() *> readyQueue.shutdown *> process.interrupt.unit
     }
 
     def apply(
@@ -206,12 +210,17 @@ package object task {
     ): Task[TaskManager.Service] = for {
       queueing <- Semaphore.make(1)
       queue    <- Queue.unbounded[(Promise[Throwable, Unit], Promise[Throwable, Unit])]
-      run      <- queue.take.flatMap {
+      run      <- (ZIO.yieldNow *> ZIO.allowInterrupt *> queue.take).flatMap {
         case (ready, done) => ready.succeed(()) *> done.await
       }.forever.forkDaemon
     } yield new Impl(queueing, statusUpdates, queue, run)
 
-    def layer: ZLayer[PublishStatus, Throwable, TaskManager] = ZLayer.fromEffect(ZIO.access[PublishStatus](_.get) >>= TaskManager.apply)
+    def make: ZManaged[PublishStatus, Throwable, TaskManager.Service] = for {
+      statusUpdates <- ZIO.access[PublishStatus](_.get).toManaged_
+      taskManager   <- apply(statusUpdates).toManaged(_.shutdown())
+    } yield taskManager
+
+    def layer: ZLayer[PublishStatus, Throwable, TaskManager] = ZLayer.fromManaged(make)
 
     def access: RIO[TaskManager, TaskManager.Service] = ZIO.access[TaskManager](_.get)
 

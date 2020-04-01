@@ -735,12 +735,12 @@ export class NotebookUI extends UIMessageTarget {
                         const params = sig.parameters.map(param => {
                             return {
                                 label: param.typeName ? `${param.name}: ${param.typeName}` : param.name,
-                                documentation: param.docString
+                                documentation: param.docString || undefined
                             }
                         });
 
                         return {
-                            documentation: sig.docString,
+                            documentation: sig.docString || undefined,
                             label: sig.name,
                             parameters: params
                         }
