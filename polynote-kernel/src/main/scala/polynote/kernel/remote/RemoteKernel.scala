@@ -136,7 +136,8 @@ class RemoteKernel[ServerAddress](
       alreadyClosed =>
         ZIO.when(!alreadyClosed) {
           request(ShutdownRequest(nextReq)) {
-            case ShutdownResponse(reqId) => done(reqId, ())
+            case ShutdownResponse(reqId) =>
+              done(reqId, ())
           }.timeout(Duration(10, TimeUnit.SECONDS)).flatMap {
             case Some(()) => ZIO.succeed(())
             case None =>
@@ -199,7 +200,6 @@ object RemoteKernel extends Kernel.Factory.Service {
     server  <- transport.serve()
     updates <- NotebookUpdates.access
     kernel   = new RemoteKernel(server, updates, closing, closed)
-    _       <- (server.awaitClosed.to(closed).ensuring(kernel.shutdown().ignore)).forkDaemon
   } yield kernel
 
   override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = apply(
@@ -221,6 +221,7 @@ class RemoteKernelClient(
   requests: Stream[TaskB, RemoteRequest],
   publishResponse: Publish[Task, RemoteResponse],
   cleanup: TaskB[Unit],
+  closed: Promise[Throwable, Unit],
   private[remote] val notebookRef: SignallingRef[Task, (Int, Notebook)] // for testing
 ) {
 
@@ -231,9 +232,15 @@ class RemoteKernelClient(
       .map(handleRequest)
       .map(Stream.eval)
       .parJoinUnbounded
-      .terminateAfter(_.isInstanceOf[ShutdownResponse])
-      .evalMap(publishResponse.publish1)
+      .evalTap(publishResponse.publish1)
+      .evalMap(closeOnShutdown)
+      .terminateWhen(closed)
       .compile.drain.uninterruptible.as(0)
+
+  private def closeOnShutdown(rep: RemoteResponse): URIO[BaseEnv, Unit] = rep match {
+    case _: ShutdownResponse => close()
+    case _ => ZIO.unit
+  }
 
   private def handleRequest(req: RemoteRequest): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, RemoteResponse] = {
       val response = req match {
@@ -281,8 +288,7 @@ class RemoteKernelClient(
       }
     }
 
-  def close(): URIO[BaseEnv, Unit] = cleanup.orDie
-  
+  def close(): URIO[BaseEnv, Unit] = cleanup.to(closed).unit
 }
 
 object RemoteKernelClient extends polynote.app.App {
@@ -307,14 +313,16 @@ object RemoteKernelClient extends polynote.app.App {
       case other                          => ZIO.fail(new RuntimeException(s"Handshake error; expected StartupRequest but found ${other.getClass.getName}"))
     }
     notebookRef     <- SignallingRef[Task, (Int, Notebook)](initial.globalVersion -> initial.notebook)
+    closed          <- Promise.make[Throwable, Unit]
     processUpdates  <- transport.updates.dropWhile(_.globalVersion <= initial.globalVersion)
       .evalMap(update => notebookRef.update { case (ver, notebook) => update.globalVersion -> update.applyTo(notebook) })
+      .interruptAndIgnoreWhen(closed)
       .compile.drain
       .forkDaemon
     interpFactories <- interpreter.Loader.load
     _               <- Env.addLayer(mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config))
     kernel          <- kernelFactory.apply()
-    client           = new RemoteKernelClient(kernel, requests, publishResponse, transport.close(), notebookRef)
+    client           = new RemoteKernelClient(kernel, requests, publishResponse, transport.close(), closed, notebookRef)
     _               <- tapClient.fold(ZIO.unit)(_.set(client))
     _               <- kernel.init()
     _               <- publishResponse.publish1(Announce(initial.reqId, localAddress))

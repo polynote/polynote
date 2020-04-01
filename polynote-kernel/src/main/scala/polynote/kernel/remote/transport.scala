@@ -426,7 +426,7 @@ object SocketTransport {
       err => closed.fail(err)
     }
 
-    def write(msg: BitVector): TaskB[Unit] = ZIO.effectTotal(writeLock.acquire()).bracket(_ => ZIO.effectTotal(writeLock.release())) {
+    def write(msg: BitVector): TaskB[Unit] = effectBlocking(writeLock.acquire()).bracket(_ => ZIO.effectTotal(writeLock.release())) {
       _ => effectBlocking {
         val byteVector = msg.toByteVector
         val size = byteVector.size.toInt
@@ -450,7 +450,7 @@ object SocketTransport {
 
     // send a keepalive, but if the channel is already being written, do nothing (don't queue a keepalive)
     def sendKeepalive(): TaskB[Unit] = ZIO.effectTotal(writeLock.tryAcquire(0, TimeUnit.SECONDS))
-      .bracket(acquired => if (acquired) ZIO.effectTotal(writeLock.release()) else ZIO.unit) {
+      .bracket(acquired => ZIO.when(acquired)(ZIO.effectTotal(writeLock.release()))) {
         acquired => ZIO.when(acquired) {
           effectBlocking(writeSize(0))
         }.catchAll {
@@ -464,7 +464,7 @@ object SocketTransport {
     def close(): TaskB[Unit] = closed.succeed(()).flatMap {
       case true =>
         ZIO.effect { socketChannel.shutdownInput(); socketChannel.shutdownOutput() } *>
-          ZIO.effectTotal(writeLock.acquire()).bracket(_ => ZIO.effectTotal(writeLock.release())) {
+          effectBlocking(writeLock.acquire()).bracket(_ => ZIO.effectTotal(writeLock.release())) {
             _ => effectBlocking(socketChannel.close()).uninterruptible
           }
       case false => ZIO.unit

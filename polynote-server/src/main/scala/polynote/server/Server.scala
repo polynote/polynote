@@ -181,7 +181,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
             val path = uri.getPath
             val query = uri.getQuery
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
-              path.stripPrefix("/ws") match {
+              path.stripPrefix("/ws").stripPrefix("/") match {
                 case "" => authorize(req, SocketSession(inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output)))
                 case rest => authorize(req, NotebookSession.stream(rest, inputFrames).flatMap(output => Response.websocket(req, output)))
               }

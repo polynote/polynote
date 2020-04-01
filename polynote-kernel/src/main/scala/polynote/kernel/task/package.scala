@@ -202,7 +202,7 @@ package object task {
 
       override def list: UIO[List[TaskInfo]] = ZIO.collectAll(tasks.values().asScala.toList.sortBy(_._3).map(_._1.get.orDie))
 
-      override def shutdown(): UIO[Unit] = cancelAll() *> process.interrupt.unit
+      override def shutdown(): UIO[Unit] = cancelAll() *> readyQueue.shutdown *> process.interrupt.unit
     }
 
     def apply(
@@ -210,7 +210,7 @@ package object task {
     ): Task[TaskManager.Service] = for {
       queueing <- Semaphore.make(1)
       queue    <- Queue.unbounded[(Promise[Throwable, Unit], Promise[Throwable, Unit])]
-      run      <- queue.take.flatMap {
+      run      <- (ZIO.yieldNow *> ZIO.allowInterrupt *> queue.take).flatMap {
         case (ready, done) => ready.succeed(()) *> done.await
       }.forever.forkDaemon
     } yield new Impl(queueing, statusUpdates, queue, run)

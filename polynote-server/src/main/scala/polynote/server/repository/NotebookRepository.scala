@@ -13,6 +13,11 @@ import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem}
 import zio.interop.catz._
 import zio.{RIO, ZIO}
 
+/**
+  * A Notebook Repository operates on notebooks stored by path. The path of a notebook should be a forward-slash
+  * separated path with no leading slash. Such paths must be passed wherever paths are expected and returned wherever
+  * paths are returned (including in a [[Notebook]]'s `path` field).
+  */
 trait NotebookRepository {
 
   /**
@@ -78,7 +83,7 @@ class TreeRepository (
     *                      The presence of `maybeBasePath` reflects whether the path has been relativized (in case callers need to de-relativize any results)
     */
   private[repository] def delegate[T](notebookPath: String)(f: (NotebookRepository, String, Option[String]) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
-    val (originalPath, basePath) = extractPath(Paths.get(notebookPath))
+    val (originalPath, basePath) = extractPath(Paths.get(reslash(notebookPath)))
 
     val (repoForPath, relativePath, maybeBasePath) = basePath.flatMap(base => repos.get(base.toString).map(_ -> base)) match {
       case Some((repo, base)) =>
@@ -89,6 +94,10 @@ class TreeRepository (
 
     f(repoForPath, relativePath, maybeBasePath)
   }
+
+  private def reslash(str: String): String = "/" + deslash(str)
+  private def deslash(str: String): String = str.stripPrefix("/")
+  private def normalizePath(notebook: Notebook): Notebook = notebook.copy(path = deslash(notebook.path))
 
   /**
     * Relativizes the path and extracts the base path (the top-most path member in this path)
@@ -115,18 +124,18 @@ class TreeRepository (
     (repo, relativePath, base) =>
      for {
        nb <- repo.loadNotebook(relativePath)
-     } yield base.map(b => nb.copy(path = Paths.get(b, nb.path).toString)).getOrElse(nb)
+     } yield normalizePath(base.map(b => nb.copy(path = Paths.get(b, nb.path).toString)).getOrElse(nb))
   }
 
   override def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = delegate(nb.path) {
-    (repo, relativePath, _) => repo.saveNotebook(nb.copy(path=relativePath))
+    (repo, relativePath, _) => repo.saveNotebook(nb.copy(path = relativePath))
   }
 
   override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
     for {
-      rootNBs <- root.listNotebooks()
+      rootNBs <- root.listNotebooks().map(_.map(deslash))
       mountNbs <- repos.map {
-        case (base, repo) => repo.listNotebooks().map(_.map(nbPath => Paths.get(base, nbPath).toString))
+        case (base, repo) => repo.listNotebooks().map(_.map(nbPath => deslash(Paths.get(base, nbPath).toString)))
       }.toList.sequence
     } yield rootNBs ++ mountNbs.flatten
   }
@@ -135,7 +144,7 @@ class TreeRepository (
     (repo, relativePath, base) =>
         for {
           nbPath <- repo.createNotebook(relativePath, maybeContent)
-        } yield base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath)
+        } yield deslash(base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath))
   }
 
   private def copyOrRename(src: String, dest: String, deletePrevious: Boolean): RIO[BaseEnv with GlobalEnv, String] = {
@@ -154,7 +163,7 @@ class TreeRepository (
               repo.copyNotebook(repoRelativePathStr, relativeDest).map(_ -> base)
             }
         }
-      } yield base.map(b => Paths.get(b, copied).toString).getOrElse(copied)
+      } yield deslash(base.map(b => Paths.get(b, copied).toString).getOrElse(copied))
     } else {
       // If the two paths are on different filesystems, we can't rely on an atomic move or copy, so we need to fall back
       // to handling the creation and deletion ourselves.
@@ -162,7 +171,7 @@ class TreeRepository (
         srcNb                <- delegate(src)((repo, repoRelativePathStr, base) => repo.loadNotebook(repoRelativePathStr))
         (destRepoBase, dest) <- delegate(dest)((repo, repoRelativePathStr, base) => repo.saveNotebook(srcNb.copy(path=repoRelativePathStr)).map(_ => base -> repoRelativePathStr))
         _                    <- if (deletePrevious) delegate(src)((repo, repoRelativePathStr, _) => repo.deleteNotebook(repoRelativePathStr)) else ZIO.unit
-      } yield destRepoBase.map(base => Paths.get(base, dest).toString).getOrElse(dest)
+      } yield deslash(destRepoBase.map(base => Paths.get(base, dest).toString).getOrElse(dest))
     }
   }
 

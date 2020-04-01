@@ -56,6 +56,8 @@ package object kernel {
     def interruptAndIgnoreWhen(signal: Promise[Throwable, Unit])(implicit concurrent: Concurrent[RIO[R, ?]]): Stream[RIO[R, ?], A] =
       stream.interruptWhen(signal.await.either.as(Right(()): Either[Throwable, Unit]))
 
+    def terminateWhen[E <: Throwable, A1](signal: Promise[E, A1])(implicit concurrent: Concurrent[RIO[R, ?]]): Stream[RIO[R, ?], A] =
+      Stream(stream.map(Some(_)), Stream.eval(signal.await: RIO[R, A1]).map(_ => None)).parJoinUnbounded.unNoneTerminate
   }
 
   final implicit class StreamUIOps[A](val stream: Stream[UIO, A]) {

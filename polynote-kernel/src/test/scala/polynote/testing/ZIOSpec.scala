@@ -16,6 +16,12 @@ import zio.random.Random
 import zio.system.System
 import zio.{Has, RIO, Runtime, Tagged, ZIO, ZLayer}
 
+abstract class TestRuntime
+object TestRuntime {
+  val runtime: Runtime.Managed[zio.ZEnv with Logging] = ZIOSpecBase.runtime
+  def fiberDump(): List[zio.Fiber.Dump] = runtime.unsafeRun(zio.Fiber.dumpAll).toList
+}
+
 trait ZIOSpecBase[Env <: Has[_]] {
   import ZIOSpecBase.BaseEnv
   type Environment = Env

@@ -2,7 +2,7 @@ package polynote
 
 import java.io.File
 import java.net.URI
-import java.nio.file.{AccessDeniedException, FileAlreadyExistsException}
+import java.nio.file.{AccessDeniedException, FileAlreadyExistsException, Paths}
 import java.util.concurrent.TimeUnit
 
 import cats.{Applicative, MonadError}
@@ -22,7 +22,7 @@ import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
-import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Task, UIO, URIO, ZIO, ZLayer}
+import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{DurationInt, SECONDS}
@@ -87,6 +87,12 @@ package object server {
 
   object NotebookManager {
 
+    def assertValidPath(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Unit] = ZIO {
+      require(!path.startsWith("/"), "Path must not have a leading slash (/)")
+      val _ = Paths.get(path)
+      ()
+    }
+
     def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
@@ -125,7 +131,8 @@ package object server {
       private class Impl(
         openNotebooks: RefMap[String, (KernelPublisher, NotebookWriter)],
         repository: NotebookRepository,
-        broadcastAll: Topic[Task, Option[Message]]
+        broadcastAll: Topic[Task, Option[Message]],
+        moveLock: Semaphore
       ) extends Service {
 
         private val maxRetryDelay = Duration(8, TimeUnit.SECONDS)
@@ -183,18 +190,20 @@ package object server {
           for {
             realPath <- openNotebooks.get(path).flatMap {
               case None                      => repository.renameNotebook(path, newPath)
-              case Some((publisher, writer)) => repository.notebookExists(newPath).flatMap {
-                case true  => ZIO.fail(new FileAlreadyExistsException(s"File $newPath already exists"))
-                case false => // if the notebook is already open, we have to stop writing, rename, and start writing again
-                  writer.stop() *> repository.renameNotebook(path, newPath).foldM(
-                    err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
-                    realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
-                      writer => openNotebooks.put(newPath, (publisher, writer)) *> openNotebooks.remove(path).as(realPath)
-                    }
-                  )
+              case Some((publisher, writer)) => moveLock.withPermit {
+                repository.notebookExists(newPath).flatMap {
+                  case true  => ZIO.fail(new FileAlreadyExistsException(s"File $newPath already exists"))
+                  case false => // if the notebook is already open, we have to stop writing, rename, and start writing again
+                    writer.stop() *> repository.renameNotebook(path, newPath).foldM(
+                      err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
+                      realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
+                        writer => openNotebooks.put(newPath, (publisher, writer)) *> openNotebooks.remove(path).as(realPath)
+                      }
+                    )
+                }
               }
             }
-              _ <- broadcastMessage(RenameNotebook(path, realPath))
+            _ <- broadcastMessage(RenameNotebook(path, realPath))
           } yield realPath
 
         override def copy(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = for {
