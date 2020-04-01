@@ -1,3 +1,15 @@
+# 0.3.6 (Apr 1, 2020)
+* Fixed regressions:
+  * Cancel button not working
+  * Rename active notebook causes bad state / data loss
+  * Configured `listen` interface was ignored
+  * Crash in SQL interpreter
+  * JavaScript error when attempting parameter hints
+* Fix issue with launcher script
+* Fix multiple series in bar chart (Thanks @JD557!)
+* Surface error if kernel dies before finishing startup
+
+
 # 0.3.5 (Mar 26, 2020)
 * Fixed plugin script
 * Fixed avatar images in commenting UI (when identity supports them)
