@@ -142,7 +142,7 @@ object SocketTransportServer {
     for {
       status <- (ZIO.sleep(ZDuration(1, TimeUnit.SECONDS)) *> process.exitStatus.orDie).doUntil(_.nonEmpty).someOrFail(SocketTransport.ProcessDied)
       _      <- Logging.info(s"Kernel process ended with $status")
-      _      <- if (status != 0) ZIO.fail(SocketTransport.ProcessDied) else ZIO.succeed(())
+      _      <- ZIO.when(status != 0)(ZIO.fail(SocketTransport.ProcessDied))
     } yield ()
 
 
@@ -154,10 +154,12 @@ object SocketTransportServer {
   ): TaskB[SocketTransportServer] = for {
     closed   <- Promise.make[Throwable, Unit]
     channels <- selectChannels(channel1, channel2, server.getLocalAddress.asInstanceOf[InetSocketAddress])
-    _        <- monitorProcess(process).onError(_ => channels.close().orDie).to(closed).forkDaemon
+    _        <- monitorProcess(process).to(closed).forkDaemon
     _        <- channel1.awaitClosed.to(closed).forkDaemon
     _        <- channel2.awaitClosed.to(closed).forkDaemon
-  } yield new SocketTransportServer(server, channels, process, closed)
+    transport = new SocketTransportServer(server, channels, process, closed)
+    _        <- closed.await.ensuring(transport.close().orDie).ignore.forkDaemon
+  } yield transport
 }
 
 class SocketTransportClient private (channels: SocketTransport.Channels, closed: Promise[Throwable, Unit]) extends TransportClient {

@@ -132,18 +132,15 @@ class RemoteKernel[ServerAddress](
     }
 
   def shutdown(): TaskB[Unit] = closing.withPermit {
-    closed.isDone.flatMap {
-      alreadyClosed =>
-        ZIO.when(!alreadyClosed) {
-          request(ShutdownRequest(nextReq)) {
-            case ShutdownResponse(reqId) =>
-              done(reqId, ())
-          }.timeout(Duration(10, TimeUnit.SECONDS)).flatMap {
-            case Some(()) => ZIO.succeed(())
-            case None =>
-              Logging.warn("Waited for remote kernel to shut down for 10 seconds; killing the process")
-          }
-        }
+    ZIO.whenM(ZIO.mapN(closed.isDone, transport.isConnected)(!_ && _)) {
+      request(ShutdownRequest(nextReq)) {
+        case ShutdownResponse(reqId) =>
+          done(reqId, ())
+      }.timeout(Duration(10, TimeUnit.SECONDS)).flatMap {
+        case Some(()) => ZIO.succeed(())
+        case None =>
+          Logging.warn("Waited for remote kernel to shut down for 10 seconds; killing the process")
+      }
     }.ensuring {
       close().orDie
     }
@@ -200,6 +197,7 @@ object RemoteKernel extends Kernel.Factory.Service {
     server  <- transport.serve()
     updates <- NotebookUpdates.access
     kernel   = new RemoteKernel(server, updates, closing, closed)
+    _ <- (server.awaitClosed.to(closed).ensuring(kernel.shutdown().orDie)).forkDaemon
   } yield kernel
 
   override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = apply(

@@ -15,7 +15,7 @@ import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.remote.SocketTransport.DeploySubprocess
 import polynote.kernel.remote.{RemoteKernel, SocketTransport, SocketTransportServer}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployJava
-import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, LocalKernel, LocalKernelFactory, Output}
+import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, KernelStatusUpdate, LocalKernel, LocalKernelFactory, Output}
 import polynote.messages.{CellID, Message, Notebook, NotebookCell, ShortList}
 import polynote.testing.ExtConfiguredZIOSpec
 import zio.duration.Duration
