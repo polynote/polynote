@@ -10,6 +10,7 @@ import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
+import polynote.kernel.networking.Networking
 import polynote.kernel.task.TaskManager
 import polynote.messages.{ByteVector32, Notebook}
 import polynote.runtime.{StreamingDataRepr, TableOp}
@@ -21,7 +22,7 @@ import zio.system.System
 
 package object kernel {
 
-  type BaseEnv = Blocking with Clock with System with Logging
+  type BaseEnv = Blocking with Clock with System with Logging with Networking
 
   // some type aliases jut to avoid env clutter
   type TaskB[+A] = RIO[BaseEnv, A]

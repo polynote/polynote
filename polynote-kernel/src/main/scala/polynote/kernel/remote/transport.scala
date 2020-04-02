@@ -4,7 +4,7 @@ package remote
 import java.io.{BufferedReader, IOException, InputStreamReader}
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
-import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, ServerSocketChannel, SocketChannel}
+import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, Selector, ServerSocketChannel, SocketChannel}
 import java.nio.file.Paths
 import java.util.concurrent.{Semaphore, TimeUnit}
 
@@ -17,7 +17,7 @@ import scodec.Codec
 import scodec.codecs.implicits._
 import scodec.bits.BitVector
 import scodec.stream.decode
-import zio.blocking.{Blocking, effectBlocking, effectBlockingInterrupt, effectBlockingCancelable}
+import zio.blocking.{Blocking, effectBlocking, effectBlockingCancelable, effectBlockingInterrupt}
 import zio.{Cause, Promise, RIO, Schedule, Task, ZIO}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
