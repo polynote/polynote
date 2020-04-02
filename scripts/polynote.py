@@ -4,6 +4,9 @@ from pathlib import Path
 import os
 import shlex
 
+if not os.environ.get('PYTHONHOME'):
+    os.environ['PYTHONHOME'] = sys.prefix
+
 polynote_dir = os.path.dirname(os.path.realpath(__file__))
 os.chdir(polynote_dir)
 
