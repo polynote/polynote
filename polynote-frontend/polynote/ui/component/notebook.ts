@@ -176,13 +176,14 @@ export class NotebookUI extends UIMessageTarget {
             this.kernelUI.presentSymbols(id, ids);
         });
 
-        this.subscribe(ReprDataRequest, (reqHandleType, reqHandleId, reqCount, reqOnComplete, reqOnFail) => {
-            this.socket.listenOnceFor(messages.HandleData, (handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
-                Either.fold(data, err => reqOnFail(err), bufs => reqOnComplete(bufs));
-                return false;
-            });
-            this.socket.send(new messages.HandleData(reqHandleType, reqHandleId, reqCount, Either.right([])));
-        });
+        // TODO: delete this if this isn't used. If it is used somewhere (where??), we should port it over to the new state stuff
+        // this.subscribe(ReprDataRequest, (reqHandleType, reqHandleId, reqCount, reqOnComplete, reqOnFail) => {
+        //     this.socket.listenOnceFor(messages.HandleData, (handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
+        //         Either.fold(data, err => reqOnFail(err), bufs => reqOnComplete(bufs));
+        //         return false;
+        //     });
+        //     this.socket.send(new messages.HandleData(reqHandleType, reqHandleId, reqCount, Either.right([])));
+        // });
 
         this.socket.addMessageListener(messages.NotebookCells, this.onCellsLoaded.bind(this));
 

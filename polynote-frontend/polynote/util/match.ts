@@ -24,6 +24,13 @@ export class Matcher<T> {
         return this;
     }
 
+    whenInstance<C extends (new (...args: any[]) => InstanceType<C>)>(type: C, fn: (inst: InstanceType<C>) => any) {
+        if (this.result === undefined && this.obj instanceof type) {
+            this.result = fn(this.obj) || null;
+        }
+        return this;
+    }
+
     otherwise<U>(value: U) {
         if (this.result !== undefined) {
             return this.result;

@@ -155,6 +155,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
       cell.copy(comments = cell.comments.updated(comment.uuid, comment))
   }
 
+  // TODO: We need to update all child comments if the range has been changed and this is a root comment!
   def updateComment(id: CellID, commentId: CommentID, range: CellRange, content: String): Notebook = updateCell(id) {
     cell =>
       require(cell.comments.contains(commentId), s"Comment with id $commentId does not exist!")
