@@ -22,7 +22,7 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
     case "boolean" => Some(BoolType)
     case "float64" => Some(DoubleType)
     case "float32" => Some(FloatType)
-    case "string" | "category" => Some(StringType)
+    case "string" | "category" | "object" => Some(StringType)
     case _ => None
   }
 
