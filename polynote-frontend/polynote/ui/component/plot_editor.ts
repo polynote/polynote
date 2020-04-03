@@ -352,10 +352,10 @@ export class PlotEditor extends EventTarget {
             if (this.rawFields) {
                 this.yAxisDrop.classList.add('nonempty');
                 const el = span([this.correctYType], [from.field.name]);
-                const target = this.yAxisDrop.querySelector('.label')!;
-                target.insertBefore(el, target.querySelector('input'));
-                this.yAxisDrop.classList.add('nonempty');
-                this.yMeasures.push(measureConfig);
+                const label = this.yAxisDrop.querySelector('.label')!;
+                [...label.querySelectorAll('.numeric, .measure')].forEach(node => node.parentNode!.removeChild(node));
+                label.insertBefore(el, label.querySelector('input'));
+                this.yMeasures = [measureConfig];
 
             }
             else if (from.classList.contains('selected-measure')) {
