@@ -1,5 +1,6 @@
 'use strict';
 
+import * as _ from "lodash";
 
 import {div, button, iconButton, h4, TagElement, icon} from '../util/tags'
 import {
@@ -339,43 +340,45 @@ export class PlotEditor extends EventTarget {
             this.yMeasures = [];
         }
 
-        if (this.rawFields) {
-            this.yAxisDrop.classList.add('nonempty');
-            const el = span([this.correctYType], [from.field.name]);
-            const target = this.yAxisDrop.querySelector('.label')!;
-            target.insertBefore(el, target.querySelector('input'));
-            this.yAxisDrop.classList.add('nonempty');
-            this.yMeasures.push({
-                field: from.field
-            });
+        let measureConfig: MeasureConfig = {
+            field: from.field
+        };
 
-        } else if (from.classList.contains('selected-measure')) {
-            const selector = from.selector;
-            const field = from.field;
-            const measureConfig = {
-                field,
-                agg: selector.value
-            };
+        if (from.classList.contains('selected-measure')) {
+            measureConfig.agg = from.selector.value
+        }
 
-            this.yMeasures.push(measureConfig);
+        if (!_.find(this.yMeasures, measureConfig)) {
+            if (this.rawFields) {
+                this.yAxisDrop.classList.add('nonempty');
+                const el = span([this.correctYType], [from.field.name]);
+                const target = this.yAxisDrop.querySelector('.label')!;
+                target.insertBefore(el, target.querySelector('input'));
+                this.yAxisDrop.classList.add('nonempty');
+                this.yMeasures.push(measureConfig);
 
-            const label = span(
-                ['measure'], [
-                    `${selector.value}(${field.name})`,
-                    iconButton(['remove'], 'Remove', 'times-circle', 'X').click(_ => {
-                        const idx = this.yMeasures.indexOf(measureConfig);
-                        this.yMeasures.splice(idx, 1);
-                        label.parentNode!.removeChild(label);
-                        if (!this.yMeasures.length) {
-                            this.yAxisDrop.classList.remove('nonempty');
-                        }
-                    })
-                ]
-            );
+            }
+            else if (from.classList.contains('selected-measure')) {
+                this.yMeasures.push(measureConfig);
 
-            this.yAxisDrop.classList.add('nonempty');
-            const target = this.yAxisDrop.querySelector('.label')!;
-            target.insertBefore(label, target.querySelector('input'));
+                const label = span(
+                    ['measure'], [
+                        `${from.selector.value}(${from.field.name})`,
+                        iconButton(['remove'], 'Remove', 'times-circle', 'X').click(_ => {
+                            const idx = this.yMeasures.indexOf(measureConfig);
+                            this.yMeasures.splice(idx, 1);
+                            label.parentNode!.removeChild(label);
+                            if (!this.yMeasures.length) {
+                                this.yAxisDrop.classList.remove('nonempty');
+                            }
+                        })
+                    ]
+                );
+
+                this.yAxisDrop.classList.add('nonempty');
+                const target = this.yAxisDrop.querySelector('.label')!;
+                target.insertBefore(label, target.querySelector('input'));
+            }
         }
     }
 
