@@ -156,9 +156,9 @@ export class PlotEditor extends EventTarget {
                     span([],'⨉'),
                     this.plotHeightInput = textbox(['plot-height'], 'Height', "480").change(evt => this.plotOutput.style.height = parseInt((evt.target as TagElement<"input">).value, 10) + 'px')
                 ]),
-                h4(['dimension-title'], ['Dimensions', iconButton(['add', 'add-measure'], 'Add dimension', 'plus-circle', 'Add').click(_ => this.showAddDimension())]),
+                h4(['dimension-title'], ['Dimensions']),
                 div(['dimension-list'], this.listDimensions()),
-                h4(['measure-title'], ['Measures', iconButton(['add', 'add-measure'], 'Add measure', 'plus-circle', 'Add').click(_ => this.showAddMeasure())]),
+                h4(['measure-title'], ['Measures']),
                 div(['measure-list'], this.listMeasures()),
                 h4(['numeric-field-title'], ['Fields']),
                 div(['numeric-field-list'], this.listNumerics()),
@@ -226,14 +226,6 @@ export class PlotEditor extends EventTarget {
     get correctXType() {
         if (this.rawFields) return 'numeric';
         return 'dimension';
-    }
-
-    showAddMeasure() {
-        // TODO - show a UI to let you explore measures you can use in more detail
-    }
-
-    showAddDimension() {
-        // TODO - show a UI to let you
     }
 
     listDimensions() {
