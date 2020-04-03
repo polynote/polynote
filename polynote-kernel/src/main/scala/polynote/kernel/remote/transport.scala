@@ -2,7 +2,7 @@ package polynote.kernel
 package remote
 
 import java.io.{BufferedReader, IOException, InputStreamReader}
-import java.net.InetSocketAddress
+import java.net.{ConnectException, InetSocketAddress, Socket}
 import java.nio.ByteBuffer
 import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, ServerSocketChannel, SocketChannel}
 import java.nio.file.Paths
@@ -28,6 +28,8 @@ import Update.notebookUpdateCodec
 import cats.~>
 import polynote.kernel.task.TaskManager
 import zio.clock.Clock
+
+import scala.util.Random
 
 trait Transport[ServerAddress] {
   def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
@@ -202,14 +204,26 @@ object SocketTransportClient {
   * Requires that spark-submit is a valid executable command on the path.
   */
 class SocketTransport(
-  deploy: SocketTransport.Deploy,
-  forceServerAddress: Option[String] = None
+  deploy: SocketTransport.Deploy
 ) extends Transport[InetSocketAddress] {
 
-  private def openServerChannel: RIO[Blocking, ServerSocketChannel] = effectBlocking {
-    ServerSocketChannel.open().bind(
-      new InetSocketAddress(
-        forceServerAddress.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress), 0))
+  private[this] def socketIsFree(host: String, port: Int): Boolean =
+    try {
+      new Socket(host, port).close()
+      false
+    } catch {
+      case _: ConnectException =>
+        true
+    }
+
+  private def openServerChannel: RIO[Blocking with Config, ServerSocketChannel] = for {
+    config <- Config.access
+  } yield {
+    val address = config.kernel.listen.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress)
+    val port = config.kernel.portRange.map(range => {
+      Random.shuffle(range.toList).find(availablePort => socketIsFree(address, availablePort)).get
+    }).getOrElse(0)
+    ServerSocketChannel.open().bind(new InetSocketAddress(address, port))
   }
 
   private def startConnection(

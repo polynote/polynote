@@ -23,6 +23,9 @@ import shapeless.cachedImplicit
 
 import scala.util.Try
 
+import scala.collection.immutable.Range.Inclusive
+import scala.util.Try
+
 final case class Listen(
   port: Int = 8192,
   host: String = "127.0.0.1"
@@ -41,6 +44,24 @@ final case class Mount(dir: String, mounts: Map[String, Mount] = Map.empty)
 object Mount {
   implicit val encoder: ObjectEncoder[Mount] = deriveEncoder
   implicit val decoder: Decoder[Mount] = deriveConfigDecoder[Mount]
+}
+
+
+
+final case class Kernel(
+  listen: Option[String] = None,
+  portRange: Option[Range] = None
+)
+
+object Kernel {
+  implicit val rangeDecoder: Decoder[Range] = Decoder.decodeString.emapTry { str =>
+    Try(str.split(":") match { case Array(from, to) => Range.inclusive(from.toInt, to.toInt) })
+  }
+  implicit val rangeEncoder: Encoder[Range] = Encoder.encodeString.contramap[Range] { portRange =>
+    portRange.start + ":" + portRange.end
+  }
+  implicit val encoder: ObjectEncoder[Kernel] = deriveEncoder
+  implicit val decoder: Decoder[Kernel] = deriveConfigDecoder[Kernel]
 }
 
 final case class Storage(cache: String = "tmp", dir: String = "notebooks", mounts: Map[String, Mount] = Map.empty)
@@ -180,6 +201,7 @@ object StaticConfig {
 
 final case class PolynoteConfig(
   listen: Listen = Listen(),
+  kernel: Kernel = Kernel(),
   storage: Storage = Storage(),
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,

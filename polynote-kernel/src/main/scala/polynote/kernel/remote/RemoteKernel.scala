@@ -203,8 +203,8 @@ object RemoteKernel extends Kernel.Factory.Service {
   override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = apply(
     new SocketTransport(
       new SocketTransport.DeploySubprocess(
-        new SocketTransport.DeploySubprocess.DeployJava[LocalKernelFactory]),
-      Some("127.0.0.1")))
+        new SocketTransport.DeploySubprocess.DeployJava[LocalKernelFactory])
+    ))
 
   def service[ServerAddress](transport: Transport[ServerAddress]): Kernel.Factory.Service = new Factory.Service {
     override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = RemoteKernel(transport)

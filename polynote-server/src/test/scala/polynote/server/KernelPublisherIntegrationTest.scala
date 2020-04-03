@@ -60,7 +60,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
     "gracefully handles death of kernel" in {
       val deploy          = new DeploySubprocess(new DeployJava[LocalKernelFactory])
-      val transport       = new SocketTransport(deploy, Some("127.0.0.1"))
+      val transport       = new SocketTransport(deploy)
       val notebook        = Notebook("/i/am/fake.ipynb", ShortList(Nil), None)
       val kernelFactory   = RemoteKernel.factory(transport)
       val kernelPublisher = KernelPublisher(notebook, bq).runWith(kernelFactory)
