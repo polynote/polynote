@@ -261,7 +261,7 @@ object CoursierFetcher {
     def delay[A](a: => A): RIO[R, A] = ZIO.effect(a)
     def handle[A](a: RIO[R, A])(f: PartialFunction[Throwable, A]): RIO[R, A] = a.catchSome(f andThen (a => ZIO.succeed(a)))
     def fromAttempt[A](a: Either[Throwable, A]): RIO[R, A] = ZIO.fromEither(a)
-    def gather[A](elems: Seq[RIO[R, A]]): RIO[R, Seq[A]] = Traverse[List].sequence[RIO[R, ?], A](elems.toList)
+    def gather[A](elems: Seq[RIO[R, A]]): RIO[R, Seq[A]] = ZIO.collectAllParN(10)(elems)
     def point[A](a: A): RIO[R, A] = ZIO.succeed(a)
     def bind[A, B](elem: RIO[R, A])(f: A => RIO[R, B]): RIO[R, B] = elem.flatMap(f)
 
