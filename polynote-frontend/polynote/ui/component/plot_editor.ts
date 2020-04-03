@@ -231,36 +231,36 @@ export class PlotEditor extends EventTarget {
     listDimensions() {
         return this.fields.filter(field => isDimension(field.dataType)).map(
             field => {
-              const buttonElement = iconButton(['set', 'set-dimension'], '', 'plus-circle', 'Set')
-              const measureElement = div(['dimension'], [
-                field.name,
-                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`,
-                buttonElement
-              ]).withKey('field', field) as MeasureEl;
-              buttonElement.click(_ => this.setXField(measureElement))
-              return measureElement
-          }
+                const buttonElement = iconButton(['set', 'set-dimension'], '', 'plus-circle', 'Set')
+                const measureElement = div(['dimension'], [
+                    field.name,
+                    ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`,
+                    buttonElement
+                ]).withKey('field', field) as MeasureEl;
+                buttonElement.click(_ => this.setXField(measureElement))
+                return measureElement
+            }
         )
     }
 
     listNumerics() {
         return this.fields.filter(field => field.dataType.isNumeric).map(
             field => {
-              const buttonElement = iconButton(['add', 'add-measure'], '', 'plus-circle', 'Add')
-              const measureElement = div(['numeric'], [
-                field.name,
-                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`,
-                buttonElement
-              ]).withKey('field', field) as MeasureEl;
-              buttonElement.click(_ => this.addYField(measureElement))
-              return measureElement
-          }
+                const buttonElement = iconButton(['add', 'add-measure'], '', 'plus-circle', 'Add')
+                const measureElement = div(['numeric'], [
+                    field.name,
+                    ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`,
+                    buttonElement
+                ]).withKey('field', field) as MeasureEl;
+                buttonElement.click(_ => this.addYField(measureElement))
+                return measureElement
+            }
         )
     }
 
     listMeasures() {
         this.measureSelectors =
-          this.fields.flatMap(field => measures(field, m => this.addYField(m)));
+            this.fields.flatMap(field => measures(field, m => this.addYField(m)));
         return this.measureSelectors;
     }
 
