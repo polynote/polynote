@@ -478,6 +478,16 @@ class ScalaCompiler private (
           // type trees don't get traversed in a useful way by default; traverse its original tree if it has one
           tree match {
             case tree@TypeTree() if tree.original != null => super.traverse(tree.original)
+            case tree@TypeTree() =>
+              // HACKY: check types in type args and search symbol chains to see whether they originate in previous cells.
+              val typeChains = tree.tpe.typeArgs.flatMap(_.prefixChain)
+              typeChains.foreach {
+                tpe =>
+                  val name = tpe.termSymbol.name
+                  if (inputCellSymbolNames.contains(name)) {
+                    used.add(name)
+                  }
+              }
             case _ =>
           }
 

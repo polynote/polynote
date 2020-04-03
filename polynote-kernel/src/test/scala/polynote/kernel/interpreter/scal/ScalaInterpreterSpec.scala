@@ -54,16 +54,37 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
     }
   }
 
-  "bring values from previous cells" in {
-    val test = for {
-      res1 <- interp("val foo = 22")
-      res2 <- interp("val bar = foo + 10")
-    } yield (res1, res2)
+  "bring values from previous cells" - {
+    "when referenced directly" in {
+      val test = for {
+        res1 <- interp("val foo = 22")
+        res2 <- interp("val bar = foo + 10")
+      } yield (res1, res2)
 
-    val (finalState, (res1, res2)) = test.run(cellState).runIO()
+      val (finalState, (res1, res2)) = test.run(cellState).runIO()
 
-    res2.state.values match {
-      case ValueMap(values) => values("bar") shouldEqual 32
+      res2.state.values match {
+        case ValueMap(values) => values("bar") shouldEqual 32
+      }
+    }
+    "when referenced by type only" in {
+      val test = for {
+        res1 <- interp("class Foo")
+        res2 <- interp("val fooCls = classOf[Foo]")
+        res3 <- interp("object Bar { class Baz }")
+        res4 <- interp("val bazCls = classOf[Bar.Baz]")
+//        res5 <- interp("val bar = Bar")
+//        res6 <- interp("val barBazCls = classOf[bar.Baz]")
+      } yield (res2, res4 /* , res6 */)
+
+      val (finalState, res) = test.run(cellState).runIO()
+
+      (res._1.state.values ++ res._2.state.values /* ++ res._3.state.values */) match {
+        case ValueMap(values) =>
+          values("fooCls").toString.contains("$Foo") shouldBe true
+          values("bazCls").toString.contains("$Bar$Baz") shouldBe true
+//          values("barBazCls").toString.contains("$Bar$Baz") shouldBe true
+      }
     }
   }
 
