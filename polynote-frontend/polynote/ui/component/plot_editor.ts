@@ -429,12 +429,21 @@ export class PlotEditor extends EventTarget {
 
         this.spec = spec;
 
+        const normalizeValues = (x: any) => {
+            if (typeof(x) === 'bigint' && x >= Number.MIN_SAFE_INTEGER && x <= Number.MAX_SAFE_INTEGER) {
+              return Number(x)
+            }
+            else {
+              return x;
+            }
+        }
+
         embed(
             this.plotOutput.querySelector('.plot-embed') as HTMLElement,
             spec
         ).then(plot => {
             stream
-                .to(batch => plot.view.insert(this.name, batch).runAsync())
+                .to(batch => plot.view.insert(this.name, _.map(batch, (obj: object) => _.mapValues(obj, normalizeValues))).runAsync())
                 .run()
                 .then(_ => {
                     plot.view.resize().runAsync();
