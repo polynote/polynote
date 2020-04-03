@@ -2,7 +2,7 @@ package polynote.kernel
 package remote
 
 import java.io.{BufferedReader, IOException, InputStreamReader}
-import java.net.InetSocketAddress
+import java.net.{BindException, ConnectException, InetSocketAddress, Socket}
 import java.nio.ByteBuffer
 import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, Selector, ServerSocketChannel, SocketChannel}
 import java.nio.file.Paths
@@ -28,6 +28,8 @@ import Update.notebookUpdateCodec
 import cats.~>
 import polynote.kernel.task.TaskManager
 import zio.clock.Clock
+
+import scala.util.Random
 
 trait Transport[ServerAddress] {
   def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
@@ -202,15 +204,25 @@ object SocketTransportClient {
   * Requires that spark-submit is a valid executable command on the path.
   */
 class SocketTransport(
-  deploy: SocketTransport.Deploy,
-  forceServerAddress: Option[String] = None
+  deploy: SocketTransport.Deploy
 ) extends Transport[InetSocketAddress] {
 
-  private def openServerChannel: RIO[Blocking, ServerSocketChannel] = effectBlocking {
-    ServerSocketChannel.open().bind(
-      new InetSocketAddress(
-        forceServerAddress.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress), 0))
-  }
+  private[remote] def openServerChannel: RIO[Blocking with Config, ServerSocketChannel] =
+    ZIO.mapN(Config.access, ZIO(ServerSocketChannel.open())) {
+      (config, socket) =>
+        val address = config.kernel.listen.getOrElse("127.0.0.1")
+        def bindTo(port: Int) =
+          effectBlocking(socket.bind(new InetSocketAddress(address, port)))
+
+        val bind = config.kernel.portRange match {
+          case None        => bindTo(0)
+          case Some(range) =>
+            ZIO.firstSuccessOf(bindTo(range.head), range.tail.map(bindTo))
+              .orElseFail(new BindException(s"Unable to bind to any port in range ${range.start}-${range.end} on $address"))
+        }
+
+        bind.as(socket)
+    }.flatten
 
   private def startConnection(
     server: ServerSocketChannel,

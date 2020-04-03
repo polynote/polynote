@@ -43,6 +43,29 @@ object Mount {
   implicit val decoder: Decoder[Mount] = deriveConfigDecoder[Mount]
 }
 
+
+
+final case class KernelConfig(
+  listen: Option[String] = None,
+  portRange: Option[Range] = None
+)
+
+object KernelConfig {
+  private implicit val rangeDecoder: Decoder[Range] = Decoder.decodeString.emap {
+    str => str.split(':') match {
+      case Array(from, to) => Either.catchNonFatal(Range.inclusive(from.toInt, to.toInt)).leftMap(_.getMessage)
+      case _               => Left(s"Invalid range $str (must be e.g. 1234:4321)")
+    }
+  }
+
+  private implicit val rangeEncoder: Encoder[Range] = Encoder.encodeString.contramap[Range] { portRange =>
+    portRange.start + ":" + portRange.end
+  }
+
+  implicit val encoder: ObjectEncoder[KernelConfig] = deriveEncoder
+  implicit val decoder: Decoder[KernelConfig] = deriveConfigDecoder[KernelConfig]
+}
+
 final case class Storage(cache: String = "tmp", dir: String = "notebooks", mounts: Map[String, Mount] = Map.empty)
 
 object Storage {
@@ -72,7 +95,7 @@ object KernelIsolation {
 
 final case class Behavior(
   dependencyIsolation: Boolean = true,
-  kernelIsolation: KernelIsolation = KernelIsolation.Always,
+  kernelIsolation: KernelIsolation = KernelIsolation.Always,  // TODO: Should move this to KernelConfig now?
   sharedPackages: List[String] = Nil
 ) {
   private final val defaultShares = "scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j"
@@ -180,6 +203,7 @@ object StaticConfig {
 
 final case class PolynoteConfig(
   listen: Listen = Listen(),
+  kernel: KernelConfig = KernelConfig(),
   storage: Storage = Storage(),
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,
