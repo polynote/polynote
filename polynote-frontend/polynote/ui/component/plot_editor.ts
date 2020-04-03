@@ -119,7 +119,6 @@ export class PlotEditor extends EventTarget {
     readonly xTitle: TagElement<"input">;
     private yAxisDrop: TagElement<"div">;
     readonly yTitle: TagElement<"input">;
-    private draggingEl: MeasureEl | null;
     private rawFields: boolean;
     private measureSelectors: MeasureEl[];
     private xDimension: StructField;
@@ -216,47 +215,6 @@ export class PlotEditor extends EventTarget {
 
         this.plotTypeSelector.addListener(() => this.onPlotTypeChange());
 
-        this.el.addEventListener('dragstart', evt => {
-           // Firefox only allows dragging elements with a set DataTransfer
-           evt?.dataTransfer?.setData('dummy', 'dummy');
-           this.draggingEl = evt.target as MeasureEl;
-        });
-
-        this.el.addEventListener('dragend', evt => {
-           this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-           this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-           this.draggingEl = null;
-        });
-
-        this.el.addEventListener('dragenter', evt => {
-           this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-           this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-        });
-
-        const attachAxisListener = (axisEl: HTMLElement, setField: (from: MeasureEl) => void, axisType: () => string) => {
-            axisEl.addEventListener('dragenter', evt => {
-                evt.stopPropagation();
-                if (this.draggingEl?.classList.contains(axisType())) {
-                    axisEl.classList.add('drop-ok');
-                } else {
-                    axisEl.classList.add('drop-disallowed');
-                }
-            });
-
-            axisEl.addEventListener('dragover', evt => {
-                if (this.draggingEl?.classList.contains(axisType())) {
-                    evt.preventDefault();
-                }
-            });
-
-            axisEl.addEventListener('drop', evt => {
-                if (this.draggingEl) setField(this.draggingEl);
-                axisEl.classList.remove('drop-ok', 'drop-disallowed');
-            });
-        };
-
-        attachAxisListener(this.xAxisDrop, m => this.setXField(m), () => this.correctXType);
-        attachAxisListener(this.yAxisDrop, m => this.addYField(m), () => this.correctYType);
         this.onPlotTypeChange();
     }
 
@@ -280,19 +238,31 @@ export class PlotEditor extends EventTarget {
 
     listDimensions() {
         return this.fields.filter(field => isDimension(field.dataType)).map(
-            field => div(['dimension'], [
+            field => {
+              const buttonElement = iconButton(['set', 'set-dimension'], '', 'plus-circle', 'Set')
+              const measureElement = div(['dimension'], [
                 field.name,
-                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`]
-            ).withKey('field', field).attr('draggable', true)
+                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`,
+                buttonElement
+              ]).withKey('field', field) as MeasureEl;
+              buttonElement.click(_ => this.setXField(measureElement))
+              return measureElement
+          }
         )
     }
 
     listNumerics() {
         return this.fields.filter(field => field.dataType.isNumeric).map(
-            field => div(['numeric'], [
+            field => {
+              const buttonElement = iconButton(['add', 'add-measure'], '', 'plus-circle', 'Add')
+              const measureElement = div(['numeric'], [
                 field.name,
-                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`]
-            ).withKey('field', field).attr('draggable', true)
+                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`,
+                buttonElement
+              ]).withKey('field', field) as MeasureEl;
+              buttonElement.click(_ => this.addYField(measureElement))
+              return measureElement
+          }
         )
     }
 
