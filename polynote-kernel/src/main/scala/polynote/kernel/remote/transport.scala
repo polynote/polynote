@@ -2,7 +2,7 @@ package polynote.kernel
 package remote
 
 import java.io.{BufferedReader, IOException, InputStreamReader}
-import java.net.{ConnectException, InetSocketAddress, Socket}
+import java.net.{BindException, ConnectException, InetSocketAddress, Socket}
 import java.nio.ByteBuffer
 import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, ServerSocketChannel, SocketChannel}
 import java.nio.file.Paths
@@ -17,7 +17,7 @@ import scodec.Codec
 import scodec.codecs.implicits._
 import scodec.bits.BitVector
 import scodec.stream.decode
-import zio.blocking.{Blocking, effectBlocking, effectBlockingInterrupt, effectBlockingCancelable}
+import zio.blocking.{Blocking, effectBlocking, effectBlockingCancelable, effectBlockingInterrupt}
 import zio.{Cause, Promise, RIO, Schedule, Task, ZIO}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
@@ -207,24 +207,22 @@ class SocketTransport(
   deploy: SocketTransport.Deploy
 ) extends Transport[InetSocketAddress] {
 
-  private[this] def socketIsFree(host: String, port: Int): Boolean =
-    try {
-      new Socket(host, port).close()
-      false
-    } catch {
-      case _: ConnectException =>
-        true
-    }
+  private[remote] def openServerChannel: RIO[Blocking with Config, ServerSocketChannel] =
+    ZIO.mapN(Config.access, ZIO(ServerSocketChannel.open())) {
+      (config, socket) =>
+        val address = config.kernel.listen.getOrElse("127.0.0.1")
+        def bindTo(port: Int) =
+          effectBlocking(socket.bind(new InetSocketAddress(address, port)))
 
-  private def openServerChannel: RIO[Blocking with Config, ServerSocketChannel] = for {
-    config <- Config.access
-  } yield {
-    val address = config.kernel.listen.getOrElse(java.net.InetAddress.getLocalHost.getHostAddress)
-    val port = config.kernel.portRange.map(range => {
-      Random.shuffle(range.toList).find(availablePort => socketIsFree(address, availablePort)).get
-    }).getOrElse(0)
-    ServerSocketChannel.open().bind(new InetSocketAddress(address, port))
-  }
+        val bind = config.kernel.portRange match {
+          case None        => bindTo(0)
+          case Some(range) =>
+            ZIO.firstSuccessOf(bindTo(range.head), range.tail.map(bindTo))
+              .orElseFail(new BindException(s"Unable to bind to any port in range ${range.start}-${range.end} on $address"))
+        }
+
+        bind.as(socket)
+    }.flatten
 
   private def startConnection(
     server: ServerSocketChannel,

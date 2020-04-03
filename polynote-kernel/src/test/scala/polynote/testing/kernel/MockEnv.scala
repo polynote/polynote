@@ -65,11 +65,11 @@ case class MockKernelEnv(
   updateTopic: Topic[Task, Option[NotebookUpdate]],
   currentNotebook: SignallingRef[Task, (Int, Notebook)],
   streamingHandles: StreamingHandles.Service,
-  sessionID: Int = 0
+  sessionID: Int = 0,
+  polynoteConfig: PolynoteConfig = PolynoteConfig()
 ) {
 
   val logging: Logging.Service = new Logging.Service.Default(System.err, baseEnv.get[Blocking.Service])
-  val polynoteConfig: PolynoteConfig = PolynoteConfig()
   val notebookUpdates: Stream[Task, NotebookUpdate] = updateTopic.subscribe(128).unNone
 
   val baseLayer: ZLayer[Any, Nothing, MockEnv.Env] =
@@ -82,14 +82,16 @@ case class MockKernelEnv(
 }
 
 object MockKernelEnv {
-  def apply(kernelFactory: Factory.Service, sessionId: Int): RIO[BaseEnv, MockKernelEnv] = for {
+  def apply(kernelFactory: Factory.Service, config: PolynoteConfig, sessionId: Int): RIO[BaseEnv, MockKernelEnv] = for {
     baseEnv         <- ZIO.access[BaseEnv](identity)
     currentNotebook <- SignallingRef[Task, (Int, Notebook)](0 -> Notebook("empty", ShortList(Nil), None))
     updateTopic     <- Topic[Task, Option[NotebookUpdate]](None)
     publishUpdates   = new MockPublish[KernelStatusUpdate]
     taskManager     <- TaskManager(publishUpdates)
     handles         <- StreamingHandles.make(sessionId)
-  } yield new MockKernelEnv(baseEnv, kernelFactory, new MockPublish, publishUpdates, Map.empty, taskManager, updateTopic, currentNotebook, handles, handles.sessionID)
+  } yield new MockKernelEnv(baseEnv, kernelFactory, new MockPublish, publishUpdates, Map.empty, taskManager, updateTopic, currentNotebook, handles, handles.sessionID, config)
 
+  def apply(kernelFactory: Factory.Service, sessionId: Int): RIO[BaseEnv, MockKernelEnv] = apply(kernelFactory, PolynoteConfig(), sessionId)
+  def apply(kernelFactory: Factory.Service, config: PolynoteConfig): RIO[BaseEnv, MockKernelEnv] = apply(kernelFactory, config, 0)
   def apply(kernelFactory: Factory.Service): RIO[BaseEnv, MockKernelEnv] = apply(kernelFactory, 0)
 }
