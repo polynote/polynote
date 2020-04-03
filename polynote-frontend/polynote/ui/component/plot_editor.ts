@@ -68,6 +68,7 @@ function measures(field: StructField, addMeasure: (m: MeasureEl) => void): Measu
         const selector = new FakeSelect(fakeSelectElem(['choose-measure'], [
             button(['selected'], {value: 'mean'}, ['Mean']),
             button([], {value: 'count'}, ['Count']),
+            button([], {value: 'sum'}, ['Sum']),
             button([], {value: 'quartiles'}, ['Quartiles'])
         ]));
 
