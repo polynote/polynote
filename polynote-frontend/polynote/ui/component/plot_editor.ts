@@ -50,7 +50,7 @@ type MeasureConfig = {
     agg?: string
 }
 
-function measures(field: StructField): MeasureEl[] {
+function measures(field: StructField, addMeasure: (m: MeasureEl) => void): MeasureEl[] {
     let dataType = field.dataType;
     if (dataType instanceof OptionalType) {
         dataType = dataType.element;
@@ -70,12 +70,18 @@ function measures(field: StructField): MeasureEl[] {
             button([], {value: 'quartiles'}, ['Quartiles'])
         ]));
 
-        return [div(['measure', 'selected-measure'], [
+        const addElement = iconButton(['add', 'add-measure'], '', 'plus-circle', 'Add')
+        const measureElement = div(['measure', 'selected-measure'], [
             div(['choose-measure'], [
                 selector.element
             ]),
-            span(['measure-name'], field.name)
-        ]).attr('draggable', true).withKey('field', field).withKey('selector', selector) as MeasureEl];
+            span(['measure-name'], field.name),
+            addElement,
+        ]).withKey('field', field).withKey('selector', selector) as MeasureEl;
+
+        addElement.click(_ => addMeasure(measureElement))
+
+        return [measureElement];
     } else return [];
 }
 
@@ -291,7 +297,8 @@ export class PlotEditor extends EventTarget {
     }
 
     listMeasures() {
-        this.measureSelectors = this.fields.flatMap(field => measures(field));
+        this.measureSelectors =
+          this.fields.flatMap(field => measures(field, m => this.addYField(m)));
         return this.measureSelectors;
     }
 
