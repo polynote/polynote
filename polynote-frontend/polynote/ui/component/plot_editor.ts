@@ -384,9 +384,11 @@ export class PlotEditor extends EventTarget {
     }
 
     getSpec(plotType: string) {
+        let measures = this.yMeasures || []
+        if (!measures.length) {throw 'No measures defined';}
+        if (!this.xDimension) {throw `No dimension defined`;}
         if(specialSpecs[plotType]) {
             const specFn = specialSpecs[plotType];
-            let measures = this.yMeasures;
             if (specFn.allowedAggregates) {
                 measures = measures.filter(measure => specFn.allowedAggregates!.indexOf(measure.agg!) >= 0);
             }
@@ -398,71 +400,76 @@ export class PlotEditor extends EventTarget {
             }
             return specFn.call(this, plotType, this.xDimension, measures);
         } else {
-            return normalSpec.call(this, plotType, this.xDimension, this.yMeasures);
+            return normalSpec.call(this, plotType, this.xDimension, measures);
         }
     }
 
     runPlot() {
-        //this.runButton.disabled = true;
-        this.el.classList.add('running');
-        this.saveButton.style.display = 'none';
-        if (this.currentStream) {
-            throw new Error("Plot can't be run when a previous plot stream is already running");
-        }
-
-        const stream = this.currentStream = new DataStream(this.notebook.socket, this.repr, this.getTableOps()).batch(500);
-
-        // TODO: multiple Ys
-        // TODO: encode color
-        // TODO: box plot has to be specially handled in order to pre-aggregate, https://github.com/vega/vega-lite/issues/4343
-        const plotType = this.plotTypeSelector.value;
-
-        const spec = this.getSpec(plotType);
-
-        if (this.plotTitle.value !== '') {
-            spec.title = this.plotTitle.value;
-        }
-
-        spec.autosize = 'fit';
-        spec.width = +(this.plotWidthInput.value);
-        spec.height = +(this.plotHeightInput.value);
-
-        this.spec = spec;
-
-        const normalizeValues = (x: any) => {
-            if (typeof(x) === 'bigint' && x >= Number.MIN_SAFE_INTEGER && x <= Number.MAX_SAFE_INTEGER) {
-              return Number(x)
+        try {
+            //this.runButton.disabled = true;
+            this.el.classList.add('running');
+            this.saveButton.style.display = 'none';
+            if (this.currentStream) {
+                throw new Error("Plot can't be run when a previous plot stream is already running");
             }
-            else {
-              return x;
-            }
-        }
 
-        embed(
-            this.plotOutput.querySelector('.plot-embed') as HTMLElement,
-            spec
-        ).then(plot => {
-            stream
-                .to(batch => plot.view.insert(this.name, _.map(batch, (obj: object) => _.mapValues(obj, normalizeValues))).runAsync())
-                .run()
-                .then(_ => {
-                    plot.view.resize().runAsync();
-                    this.saveButton.style.display = '';
-                    this.plotOutput.style.width = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetWidth + "px";
-                    this.plotOutput.style.height = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetHeight + "px";
-                    this.el.classList.remove('running');
-                    this.plot = plot;
-                    this.currentStream = undefined;
-                    //this.session.send(new ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, repr.handle));
-                }).catch(reason => {
-                    this.handleError(reason);
-                });
-        });
+            const stream = this.currentStream = new DataStream(this.notebook.socket, this.repr, this.getTableOps()).batch(500);
+
+            // TODO: multiple Ys
+            // TODO: encode color
+            // TODO: box plot has to be specially handled in order to pre-aggregate, https://github.com/vega/vega-lite/issues/4343
+            const plotType = this.plotTypeSelector.value;
+
+            const spec = this.getSpec(plotType);
+
+            if (this.plotTitle.value !== '') {
+                spec.title = this.plotTitle.value;
+            }
+
+            spec.autosize = 'fit';
+            spec.width = +(this.plotWidthInput.value);
+            spec.height = +(this.plotHeightInput.value);
+
+            this.spec = spec;
+
+            const normalizeValues = (x: any) => {
+                if (typeof(x) === 'bigint' && x >= Number.MIN_SAFE_INTEGER && x <= Number.MAX_SAFE_INTEGER) {
+                  return Number(x)
+                }
+                else {
+                  return x;
+                }
+            }
+
+            embed(
+                this.plotOutput.querySelector('.plot-embed') as HTMLElement,
+                spec
+            ).then(plot => {
+                stream
+                    .to(batch => plot.view.insert(this.name, _.map(batch, (obj: object) => _.mapValues(obj, normalizeValues))).runAsync())
+                    .run()
+                    .then(_ => {
+                        plot.view.resize().runAsync();
+                        this.saveButton.style.display = '';
+                        this.plotOutput.style.width = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetWidth + "px";
+                        this.plotOutput.style.height = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetHeight + "px";
+                        this.el.classList.remove('running');
+                        this.plot = plot;
+                        this.currentStream = undefined;
+                        //this.session.send(new ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, repr.handle));
+                    }).catch(reason => {
+                        this.handleError(reason);
+                    });
+            });
+        } catch (reason) {
+            this.handleError(reason)
+        };
     }
 
     handleError(err: any) {
         this.abortPlot();
-        // TODO: display error to the user
+        alert(err);
+        // TODO: prettier error display
     }
 
     abortPlot() {
