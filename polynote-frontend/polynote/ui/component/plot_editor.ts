@@ -186,10 +186,10 @@ export class PlotEditor extends EventTarget {
                     ]),
                     this.xAxisDrop = div(['x-axis-drop'], [span(['label'], [
                         this.xTitle = textbox([], 'Enter an axis title', ''),
-                        span(['placeholder'], ['Drop X-axis dimension here'])
+                        span(['placeholder'], ['Choose a X-axis dimension'])
                     ])]),
                     this.yAxisDrop = div(['y-axis-drop'], [span(['label'], [
-                        span(['placeholder'], ['Drop Y-axis measure(s) here']),
+                        span(['placeholder'], ['Choose some Y-axis measure(s)/field(s)']),
                         this.yTitle = textbox([], 'Enter an axis title', '')
                     ])]),
                     div(['plot-embed'], [])
