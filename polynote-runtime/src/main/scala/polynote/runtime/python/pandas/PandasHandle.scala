@@ -40,8 +40,10 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
                     case one :: Nil => Some((one, None, pandasType))
                     case one :: more => Some((one, Some(more.head), pandasType))
                   }
-                case _ =>
+                case "str" =>
                   Some((field.as[String], None, pandasType))
+                case _ =>
+                  Some((df.runner.str(field).as[String], None, pandasType))
               }
           }.toList
       }
