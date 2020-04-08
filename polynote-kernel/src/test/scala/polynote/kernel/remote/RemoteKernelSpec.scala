@@ -22,7 +22,7 @@ import polynote.testing.kernel.remote.InProcessDeploy
 import scodec.bits.ByteVector
 import zio.blocking.effectBlocking
 import zio.duration.Duration
-import zio.{RIO, Ref, Task, ZIO}
+import zio.{Fiber, Promise, RIO, Ref, Task, ZIO}
 import zio.interop.catz._
 
 import scala.concurrent.TimeoutException
@@ -35,15 +35,19 @@ abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec 
   protected def label: String
 
   protected val kernel        = mock[Kernel]
-  protected val kernelFactory = new Factory.LocalService {
-    def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(kernel)
-  }
+  protected val kernelFactory = Factory.const(kernel)
 
   protected val env           = unsafeRun(MockKernelEnv(kernelFactory, config))
   protected val clientRef     = unsafeRun(Ref.make[RemoteKernelClient](null))
   protected val deploy        = new InProcessDeploy(kernelFactory, clientRef)
   protected val transport     = new SocketTransport(deploy)
-  protected val remoteKernel  = unsafeRun(RemoteKernel(transport).provideCustomLayer(env.baseLayer))
+
+  private val remoteKernelPromise = unsafeRun(Promise.make[Nothing, RemoteKernel[InetSocketAddress]])
+  private val mkRemoteKernel = RemoteKernel(transport).provideCustomLayer(env.baseLayer).mapM {
+    k => remoteKernelPromise.succeed(k).as(k)
+  }
+  private val remoteKernelFiber = unsafeRun(mkRemoteKernel.use(_.awaitClosed).forkDaemon)
+  protected val remoteKernel  = unsafeRun(remoteKernelPromise.await)
 
   s"RemoteKernel ($label)" - {
 
@@ -155,7 +159,12 @@ abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec 
 
       "shutdown" in {
         (kernel.shutdown _).expects().returning(ZIO.unit)
+        (kernel.awaitClosed _).expects().returning(ZIO.unit).anyNumberOfTimes()
         unsafeRunTask(remoteKernel.shutdown())
+//        Thread.sleep(1000)
+//        val dump = unsafeRun(remoteKernelFiber.dump)
+//        println(unsafeRun(dump.prettyPrintM))
+        unsafeRun(remoteKernelFiber.join)
       }
     }
 
@@ -179,10 +188,12 @@ class RemoteKernelSpecWithPortRange extends RemoteKernelSpecBase {
 
   "Gets port in correct range" in {
     unsafeRun {
-      transport.openServerChannel.bracket(channel => ZIO.effectTotal(channel.close())) {
-        channel => ZIO.effect {
-          val port = channel.getLocalAddress.asInstanceOf[InetSocketAddress].getPort
-          assert(port >= 9000 && port <= 10000)
+      transport.openServerChannel.use {
+        channel => channel.serverAddress.flatMap {
+          address => ZIO.effect {
+            val port = address.getPort
+            assert(port >= 9000 && port <= 10000)
+          }
         }
       }.provideSomeLayer(env.baseLayer)
     }
@@ -192,15 +203,16 @@ class RemoteKernelSpecWithPortRange extends RemoteKernelSpecBase {
     val uniquePorts = new scala.collection.mutable.HashSet[Int]()
     unsafeRun {
       ZIO.foreachPar(0 until 50) { _ =>
-        transport.openServerChannel.bracket(channel => ZIO.effectTotal(channel.close())) {
+        transport.openServerChannel.use {
           channel =>
-            ZIO.effect(channel.getLocalAddress.asInstanceOf[InetSocketAddress].getPort).flatMap {
-              port => effectBlocking {
-                uniquePorts.synchronized {
-                  uniquePorts += port
-                }
+            channel.serverAddress.flatMap {
+              address =>
+                effectBlocking {
+                  uniquePorts.synchronized {
+                    uniquePorts += address.getPort
+                  }
+                } &> ZIO.sleep(Duration(1, TimeUnit.SECONDS))
             }
-          } &> ZIO.sleep(Duration(1, TimeUnit.SECONDS))
         }
       }.provideSomeLayer(env.baseLayer)
     }

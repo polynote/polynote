@@ -1,6 +1,6 @@
 package polynote.testing.kernel.remote
 
-import java.net.InetSocketAddress
+import java.net.{InetAddress, InetSocketAddress}
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -14,10 +14,10 @@ import zio.duration.Duration
 class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref[RemoteKernelClient]) extends SocketTransport.Deploy {
   def deployKernel(transport: SocketTransport, serverAddress: InetSocketAddress): RIO[BaseEnv with GlobalEnv with CurrentNotebook, SocketTransport.DeployedProcess] = {
     val connectClient = RemoteKernelClient.tapRunThrowable(
-      RemoteKernelClient.Args(
-        Some(serverAddress.getHostString),
-        Some(serverAddress.getPort),
-        Some(kernelFactory)),
+      RemoteKernelClient.Args[cats.Id](
+        serverAddress.getAddress,
+        serverAddress.getPort,
+        kernelFactory),
       Some(clientRef))
 
     connectClient.forkDaemon.map(new InProcessDeploy.Process(_))
@@ -33,7 +33,10 @@ object InProcessDeploy {
     }
 
     def awaitExit(timeout: Long, timeUnit: TimeUnit): RIO[BaseEnv, Option[Int]] = {
-      fiber.join.disconnect.timeout(Duration(timeout, timeUnit))
+      fiber.join.catchAllCause {
+        case cause if cause.interruptedOnly => ZIO.succeed(-1)
+        case cause => Logging.error("Process exited with error", cause).as(-2)
+      }.timeout(Duration(timeout, timeUnit))
     }
 
     def kill(): RIO[BaseEnv, Unit] = fiber.interrupt.unit

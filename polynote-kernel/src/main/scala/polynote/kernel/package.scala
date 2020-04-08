@@ -15,9 +15,10 @@ import polynote.kernel.task.TaskManager
 import polynote.messages.{ByteVector32, Notebook}
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import scodec.bits.ByteVector
-import zio.{Has, Promise, RIO, Semaphore, Task, UIO, ZIO}
+import zio.{Has, IO, Promise, RIO, Semaphore, Task, UIO, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
+import zio.stream.{Take, ZStream}
 import zio.system.System
 
 package object kernel {
@@ -65,6 +66,38 @@ package object kernel {
 
     def interruptAndIgnoreWhen(signal: Promise[Throwable, Unit])(implicit concurrent: Concurrent[UIO]): Stream[UIO, A] =
       stream.interruptWhen(signal.await.either.as(Right(()): Either[Throwable, Unit]))
+  }
+
+  final implicit class ZStreamOps[R, E, A](val stream: ZStream[R, E, A]) extends AnyVal {
+    def terminateAfter(fn: A => Boolean): ZStream[R, E, A] = stream.flatMap {
+      case end if fn(end) => ZStream(Take.Value(end), Take.End)
+      case notEnd         => ZStream(Take.Value(notEnd))
+    }.unTake
+
+    /**
+      * TODO: Remove if ZStream gets this method natively
+      */
+    def interruptWhenIO[E1 >: E, A1](io: IO[E1, A1]): ZStream[R, E1, A] =
+      ZStream {
+        import zio.Ref
+        import zio.stream.ZStream.Pull
+        for {
+          as   <- stream.process
+          done <- Ref.make(false).toManaged_
+          pull = done.get flatMap {
+            if (_) Pull.end
+            else
+              as.raceFirst(
+                io
+                  .asSomeError
+                  .foldCauseM(
+                    c => done.set(true) *> ZIO.halt(c),
+                    _ => done.set(true) *> Pull.end
+                  )
+              )
+          }
+        } yield pull
+      }
   }
 
   /**

@@ -5,7 +5,7 @@ import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates}
 import polynote.kernel.task.TaskManager
 import polynote.messages.{ByteVector32, CellID, HandleType}
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Has, RIO, Task, ZIO}
+import zio.{Has, RIO, RManaged, Task, ZIO, ZManaged}
 
 
 trait Kernel {
@@ -90,19 +90,19 @@ object Kernel {
 
   object Factory {
     trait Service {
-      def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel]
+      def apply(): RManaged[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel]
     }
 
     trait LocalService extends Service {
-      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel]
+      override def apply(): RManaged[BaseEnv with GlobalEnv with CellEnv, Kernel]
     }
 
     def choose(choose: RIO[BaseEnv with GlobalEnv with CellEnv, Service]): Service = new Service {
-      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = choose.flatMap(_.apply())
+      override def apply(): RManaged[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = choose.toManaged_.flatMap(_.apply())
     }
 
-    def const(inst: Kernel): Service = new Service {
-      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(inst)
+    def const(inst: Kernel): LocalService = new LocalService {
+      override def apply(): RManaged[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZManaged.succeed(inst)
     }
 
     def access: RIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.get)

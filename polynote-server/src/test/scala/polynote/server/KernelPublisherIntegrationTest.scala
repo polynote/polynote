@@ -19,7 +19,7 @@ import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, Ke
 import polynote.messages.{CellID, Message, Notebook, NotebookCell, ShortList}
 import polynote.testing.ExtConfiguredZIOSpec
 import zio.duration.Duration
-import zio.{Promise, RIO, Schedule, Tagged, Task, ZIO, ZLayer}
+import zio.{Promise, RIO, RManaged, Schedule, Tagged, Task, ZIO, ZLayer}
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory {
   val tagged: Tagged[Interpreter.Factories] = implicitly
@@ -99,11 +99,11 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
       val failingKernelFactory: Factory.Service = new Factory.Service {
         private var attempted = 0
-        override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] =
+        override def apply(): RManaged[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] =
           ZIO(attempted).bracket(n => ZIO.effectTotal(attempted = n + 1)) {
             case 0 => ZIO.fail(FailedToStart())
             case n => ZIO.succeed(stubKernel)
-          }
+          }.toManaged_
       }
 
       val notebook        = Notebook("/i/am/fake.ipynb", ShortList(Nil), None)
