@@ -22,30 +22,38 @@ import polynote.testing.kernel.remote.InProcessDeploy
 import scodec.bits.ByteVector
 import zio.blocking.effectBlocking
 import zio.duration.Duration
-import zio.{RIO, Ref, Task, ZIO}
+import zio.{Fiber, Promise, RIO, Ref, Task, ZIO, ZLayer}
 import zio.interop.catz._
 
 import scala.concurrent.TimeoutException
 
 // Base to test remote kernel with various configurations
-abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterEach with MockFactory with ScalaCheckDrivenPropertyChecks {
+abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec with BeforeAndAfterEach with BeforeAndAfterAll with MockFactory with ScalaCheckDrivenPropertyChecks {
   import runtime.{unsafeRun, unsafeRunSync, unsafeRunTask}
 
   protected def config: PolynoteConfig
   protected def label: String
 
+  protected val registered = unsafeRun(Promise.make[Nothing, Unit])
+  protected val allDone = unsafeRun(Promise.make[Nothing, Unit])
+
   protected val kernel        = mock[Kernel]
-  protected val kernelFactory = new Factory.LocalService {
-    def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(kernel)
-  }
+  protected val kernelFactory = Factory.const(kernel)
 
   protected val env           = unsafeRun(MockKernelEnv(kernelFactory, config))
   protected val clientRef     = unsafeRun(Ref.make[RemoteKernelClient](null))
   protected val deploy        = new InProcessDeploy(kernelFactory, clientRef)
   protected val transport     = new SocketTransport(deploy)
-  protected val remoteKernel  = unsafeRun(RemoteKernel(transport).provideCustomLayer(env.baseLayer))
 
-  s"RemoteKernel ($label)" - {
+  val runner = unsafeRun {
+    RemoteKernel(transport).use {
+      kernel => ZIO(tests(kernel)) *> registered.succeed(()) *> allDone.await
+    }.provideCustomLayer(env.baseLayer).forkDaemon.flatMap {
+      fiber => registered.await
+    }
+  }
+
+  def tests(remoteKernel: RemoteKernel[InetSocketAddress]): Unit = s"RemoteKernel ($label)" - {
 
     "with real networking" - {
 
@@ -155,6 +163,7 @@ abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec 
 
       "shutdown" in {
         (kernel.shutdown _).expects().returning(ZIO.unit)
+        (kernel.awaitClosed _).expects().returning(ZIO.unit).anyNumberOfTimes()
         unsafeRunTask(remoteKernel.shutdown())
       }
     }
@@ -165,6 +174,8 @@ abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec 
     env.publishResult.reset()
     env.publishStatus.reset()
   }
+
+  override def afterAll(): Unit = unsafeRun(allDone.succeed(()))
 }
 
 class RemoteKernelSpec extends RemoteKernelSpecBase {
@@ -177,37 +188,45 @@ class RemoteKernelSpecWithPortRange extends RemoteKernelSpecBase {
   override protected lazy val config: PolynoteConfig = PolynoteConfig(kernel = KernelConfig(portRange = Some(9000 to 10000)))
   override protected lazy val label: String = "With port range"
 
-  "Gets port in correct range" in {
-    unsafeRun {
-      transport.openServerChannel.bracket(channel => ZIO.effectTotal(channel.close())) {
-        channel => ZIO.effect {
-          val port = channel.getLocalAddress.asInstanceOf[InetSocketAddress].getPort
-          assert(port >= 9000 && port <= 10000)
-        }
-      }.provideSomeLayer(env.baseLayer)
-    }
-  }
+  override def tests(remoteKernel: RemoteKernel[InetSocketAddress]): Unit = {
+    super.tests(remoteKernel)
 
-  "Gets multiple ports in correct range" in {
-    val uniquePorts = new scala.collection.mutable.HashSet[Int]()
-    unsafeRun {
-      ZIO.foreachPar(0 until 50) { _ =>
-        transport.openServerChannel.bracket(channel => ZIO.effectTotal(channel.close())) {
-          channel =>
-            ZIO.effect(channel.getLocalAddress.asInstanceOf[InetSocketAddress].getPort).flatMap {
-              port => effectBlocking {
-                uniquePorts.synchronized {
-                  uniquePorts += port
+    "Gets port in correct range" in {
+      unsafeRun {
+        transport.openServerChannel.use {
+          channel => channel.serverAddress.flatMap {
+            address => ZIO.effect {
+              val port = address.getPort
+              assert(port >= 9000 && port <= 10000)
+            }
+          }
+        }.provideSomeLayer(env.baseLayer)
+      }
+    }
+
+    "Gets multiple ports in correct range" in {
+      val uniquePorts = new scala.collection.mutable.HashSet[Int]()
+      unsafeRun {
+        ZIO.foreachPar(0 until 50) {
+          _ =>
+            transport.openServerChannel.use {
+              channel =>
+                channel.serverAddress.flatMap {
+                  address =>
+                    effectBlocking {
+                      uniquePorts.synchronized {
+                        uniquePorts += address.getPort
+                      }
+                    } &> ZIO.sleep(Duration(1, TimeUnit.SECONDS))
                 }
             }
-          } &> ZIO.sleep(Duration(1, TimeUnit.SECONDS))
-        }
-      }.provideSomeLayer(env.baseLayer)
-    }
+        }.provideSomeLayer(env.baseLayer)
+      }
 
-    assert(uniquePorts.size == 50)
-    uniquePorts.foreach {
-      port => assert(port >= 9000 && port <= 10000)
+      assert(uniquePorts.size == 50)
+      uniquePorts.foreach {
+        port => assert(port >= 9000 && port <= 10000)
+      }
     }
   }
 }

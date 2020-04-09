@@ -57,7 +57,7 @@ trait InterpreterSpec extends ZIOSpec {
 
   case class InterpResult(state: State, env: MockEnv)
 
-  type ITask[A] = RIO[Clock with Console with System with Random with Blocking with Logging, A]
+  type ITask[A] = RIO[ZIOSpecBase.SpecBaseEnv, A]
 
   def interp(code: String): StateT[ITask, State, InterpResult] = StateT[ITask, State, InterpResult] {
     state => MockEnv(state.id).flatMap {

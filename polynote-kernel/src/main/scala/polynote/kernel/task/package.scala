@@ -10,7 +10,7 @@ import polynote.kernel.environment.{CurrentTask, PublishStatus}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
 import polynote.messages.TinyString
-import zio.{Cause, Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, ZIO, ZLayer, ZManaged}
+import zio.{Cause, Fiber, Has, Promise, Queue, RIO, RManaged, Schedule, Semaphore, Task, UIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.interop.catz._
@@ -57,6 +57,11 @@ package object task {
         * @see [[run]]
         */
       def runSubtask[R <: CurrentTask, A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A]): RIO[R, A]
+
+      /**
+        * Run the given Managed task (see [[run]])
+        */
+      def runManaged[R <: CurrentTask, A, R1 >: R <: Has[_]](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo)(task: RManaged[R, A])(implicit ev: R1 with CurrentTask <:< R): RManaged[R1, A]
 
       /**
         * Register an external task for status broadcasting and cancellation, by providing a function which will receive a
@@ -160,6 +165,35 @@ package object task {
             runImpl[R, A, R](id, label, detail, Some(parent), errorWith)(task)
         }
 
+      private def runManagedImpl[R <: CurrentTask, A, R1 >: R <: Has[_]](
+        id: String,
+        label: String,
+        detail: String,
+        parent: Option[TinyString],
+        errorWith: Cause[Throwable] => TaskInfo => TaskInfo)
+        (task: RManaged[R, A])
+        (implicit ev: R1 with CurrentTask <:< R): RManaged[R1, A] =
+        for {
+          statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Running, progress = 0, parent = parent))
+            .toManaged(_.update(_.done(Complete)).ignore)
+          remove         = ZIO.effectTotal(tasks.remove(id))
+          updater       <- statusRef.discrete
+            .terminateAfter(_.status.isDone)
+            .through(updates.publish)
+            .compile.drain.fork.toManaged(_.interruptFork)
+          taskBody       = task.provideSomeLayer[R1](CurrentTask.layer(statusRef))
+          taskFiber     <- taskBody
+            .tapM(_ => statusRef.update(_.completed))
+            .tapCause(cause => statusRef.update(errorWith(cause)).toManaged_)
+            .fork
+          descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
+          _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt.toManaged_).getOrElse(ZManaged.unit)
+          result        <- taskFiber.join.toManaged(_ => remove)
+      } yield result
+
+      override def runManaged[R <: CurrentTask, A, R1 >: R <: Has[_]](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo)(task: RManaged[R, A])(implicit ev: R1 with CurrentTask <:< R): RManaged[R1, A] =
+        runManagedImpl[R, A, R1](id, label, detail, None, errorWith)(task)
+
       override def register(id: String, label: String = "", detail: String = "", parent: Option[String], errorWith: DoneStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => ZIO[Logging, Nothing, Unit]): RIO[Blocking with Clock with Logging, Fiber[Throwable, Unit]] =
         for {
           runtime     <- ZIO.runtime[Any]
@@ -235,6 +269,8 @@ package object task {
     def runSubtask[R <: CurrentTask, A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A]): RIO[R with TaskManager, A] =
       access.flatMap(_.runSubtask[R, A](id, label, detail, errorWith)(task))
 
+    def runManaged[R <: CurrentTask, A, R1 >: R <: Has[_] with TaskManager](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RManaged[R, A])(implicit ev: R1 with CurrentTask <:< R): RManaged[R1, A] =
+      ZManaged.access[TaskManager](_.get).flatMap(_.runManaged[R, A, R1](id, label, detail, errorWith)(task))
   }
 
 }

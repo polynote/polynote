@@ -65,9 +65,11 @@ object Publish {
 
   def apply[F[+_], T](enqueue: Enqueue[F, T]): Publish[F, T] = enqueue
 
-  def fn[F[+_], T](fn: T => F[Unit]): Publish[F, T] = new Publish[F, T] {
+  final case class PublishFunction[F[+_], -T](fn: T => F[Unit]) extends Publish[F, T] {
     override def publish1(t: T): F[Unit] = fn(t)
   }
+
+  def fn[F[+_], T](fn: T => F[Unit]): Publish[F, T] = PublishFunction(fn)
 
   final case class PublishZQueueTake[RA, EA, RB, EB, ET <: EA, A, B](queue: ZQueue[RA, EA, RB, EB, Take[ET, A], B]) extends Publish[ZIO[RA, EA, +?], A] {
     override def publish1(t: A): ZIO[RA, EA, Unit] = queue.offer(Take.Value(t)).doUntil(identity).unit

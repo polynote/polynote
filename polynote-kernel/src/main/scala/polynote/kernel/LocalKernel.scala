@@ -20,7 +20,7 @@ import polynote.kernel.util.RefMap
 import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
 import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr, ValueRepr}
 import scodec.bits.ByteVector
-import zio.{Promise, RIO, Task, ZIO, ZLayer}
+import zio.{Promise, RIO, RManaged, Task, ZIO, ZLayer}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.duration.Duration
@@ -148,13 +148,14 @@ class LocalKernel private[kernel] (
     _             <- interpreterState.set(predefState)
   } yield predefState
 
-  override def shutdown(): Task[Unit] = for {
-    _            <- busyState.update(_.setBusy)
-    interpreters <- interpreters.values
-    _            <- ZIO.foreachPar_(interpreters)(_.shutdown())
-    _            <- busyState.set(KernelBusyState(busy = false, alive = false))
-    _            <- closed.succeed(())
-  } yield ()
+  override def shutdown(): Task[Unit] = ZIO.whenM(closed.succeed(())) {
+    for {
+      _            <- busyState.update(_.setBusy)
+      interpreters <- interpreters.values
+      _            <- ZIO.foreachPar_(interpreters)(_.shutdown())
+      _            <- busyState.set(KernelBusyState(busy = false, alive = false))
+    } yield ()
+  }
 
   override def status(): Task[KernelBusyState] = busyState.get
 
@@ -255,7 +256,7 @@ class LocalKernel private[kernel] (
 
 class LocalKernelFactory extends Kernel.Factory.LocalService {
 
-  def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
+  def make: RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps    <- CoursierFetcher.fetch("scala")
     (main, transitive) = scalaDeps.partition(_._1)
     compiler     <- ScalaCompiler(main.map(_._3), transitive.map(_._3), Nil)
@@ -265,6 +266,8 @@ class LocalKernelFactory extends Kernel.Factory.LocalService {
     interpState  <- Ref[Task].of[State](State.predef(State.Root, State.Root))
     closed       <- Promise.make[Throwable, Unit]
   } yield new LocalKernel(compiler, interpState, interpreters, busyState, closed)
+
+  def apply(): RManaged[BaseEnv with GlobalEnv with CellEnv, Kernel] = make.toManaged(_.shutdown().orDie)
 
 }
 

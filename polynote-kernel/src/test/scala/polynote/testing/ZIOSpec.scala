@@ -8,6 +8,7 @@ import polynote.kernel.environment.{Config, Env, NotebookUpdates}
 import interpreter.Interpreter
 import org.scalatest.{BeforeAndAfterAll, Suite}
 import polynote.kernel.logging.Logging
+import polynote.kernel.networking.Networking
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
@@ -23,23 +24,23 @@ object TestRuntime {
 }
 
 trait ZIOSpecBase[Env <: Has[_]] {
-  import ZIOSpecBase.BaseEnv
+  import ZIOSpecBase.SpecBaseEnv
   type Environment = Env
-  val baseLayer: ZLayer[Any, Nothing, BaseEnv] = ZIOSpecBase.baseLayer
+  val baseLayer: ZLayer[Any, Nothing, SpecBaseEnv] = ZIOSpecBase.baseLayer
   def envLayer: ZLayer[zio.ZEnv with Logging, Nothing, Env]
-  val runtime: Runtime.Managed[BaseEnv] = ZIOSpecBase.runtime
+  val runtime: Runtime.Managed[SpecBaseEnv] = ZIOSpecBase.runtime
 
   // TODO: should test platform behave differently? Isolate per suite?
-  implicit class IORunOps[A](val self: ZIO[BaseEnv, Throwable, A]) {
+  implicit class IORunOps[A](val self: ZIO[SpecBaseEnv, Throwable, A]) {
     def runIO(): A = ZIOSpecBase.this.runIO(self)
   }
 
   implicit class IORunWithOps[R <: Has[_], A](val self: ZIO[R, Throwable, A]) {
     def runWith[R1](env: R1)(implicit ev: Env with Has[R1] <:< R, ev1: Tagged[R1], ev2: Tagged[Has[R1]], ev3: Tagged[Env]): A =
-      ZIOSpecBase.this.runIO(self.provideSomeLayer[Env](ZLayer.succeed(env)).provideSomeLayer[BaseEnv](envLayer))
+      ZIOSpecBase.this.runIO(self.provideSomeLayer[Env](ZLayer.succeed(env)).provideSomeLayer[SpecBaseEnv](envLayer))
   }
 
-  def runIO[A](io: ZIO[BaseEnv, Throwable, A]): A = runtime.unsafeRunSync(io).getOrElse {
+  def runIO[A](io: ZIO[SpecBaseEnv, Throwable, A]): A = runtime.unsafeRunSync(io).getOrElse {
     c => throw c.squash
   }
 
@@ -48,14 +49,15 @@ trait ZIOSpecBase[Env <: Has[_]] {
 
 object ZIOSpecBase {
 
-  type BaseEnv = zio.ZEnv with Logging
-  val baseLayer: ZLayer[Any, Nothing, zio.ZEnv with Logging] = Clock.live ++ Console.live ++ System.live ++ Random.live ++ Blocking.live ++ (Blocking.live >>> Logging.live)
+  type SpecBaseEnv = zio.ZEnv with Logging with Networking
+  val baseLayer: ZLayer[Any, Nothing, SpecBaseEnv] =
+    Clock.live ++ Console.live ++ System.live ++ Random.live ++ Blocking.live ++ (Blocking.live >>> Logging.live) ++ (Blocking.live >>> Networking.live.orDie)
   val platform: Platform = Platform.default
     .withReportFailure(_ => ()) // suppress printing error stack traces by default
-  val runtime: Runtime.Managed[zio.ZEnv with Logging] = Runtime.unsafeFromLayer(baseLayer, platform)
+  val runtime: Runtime.Managed[SpecBaseEnv] = Runtime.unsafeFromLayer(baseLayer, platform)
 }
 
-trait ZIOSpec extends ZIOSpecBase[Clock with Console with System with Random with Blocking with Logging] {
+trait ZIOSpec extends ZIOSpecBase[ZIOSpecBase.SpecBaseEnv] {
   override lazy val envLayer: ZLayer[zio.ZEnv, Nothing, Environment] = baseLayer
   implicit class ConfigIORunOps[A](val self: ZIO[Environment with Config, Throwable, A]) {
     def runWithConfig(config: PolynoteConfig): A = ZIOSpec.this.runIO(self.provideSomeLayer[Environment](ZLayer.succeed(config)))

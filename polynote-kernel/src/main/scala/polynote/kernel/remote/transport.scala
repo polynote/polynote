@@ -4,21 +4,22 @@ package remote
 import java.io.{BufferedReader, IOException, InputStreamReader}
 import java.net.{BindException, ConnectException, InetSocketAddress, Socket}
 import java.nio.ByteBuffer
-import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, ServerSocketChannel, SocketChannel}
+import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, Selector, ServerSocketChannel, SocketChannel}
 import java.nio.file.Paths
 import java.util.concurrent.{Semaphore, TimeUnit}
 
 import fs2.Stream
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
-import polynote.kernel.remote.SocketTransport.FramedSocket
+import polynote.kernel.networking.{FramedSocket, FramedSocketServer, Networking}
+import polynote.kernel.task.TaskManager
 import polynote.messages._
 import scodec.Codec
 import scodec.codecs.implicits._
 import scodec.bits.BitVector
 import scodec.stream.decode
 import zio.blocking.{Blocking, effectBlocking, effectBlockingCancelable, effectBlockingInterrupt}
-import zio.{Cause, Promise, RIO, Schedule, Task, ZIO}
+import zio.{Cause, Promise, RIO, RManaged, Schedule, Task, UIO, ZIO, ZManaged}
 import zio.duration.{durationInt, Duration => ZDuration}
 import zio.interop.catz._
 
@@ -26,14 +27,15 @@ import scala.concurrent.TimeoutException
 import scala.reflect.{ClassTag, classTag}
 import Update.notebookUpdateCodec
 import cats.~>
-import polynote.kernel.task.TaskManager
+import polynote.env.ops.Location
 import zio.clock.Clock
+import zio.stream.ZStream
 
 import scala.util.Random
 
 trait Transport[ServerAddress] {
-  def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
-  def connect(address: ServerAddress): TaskB[TransportClient]
+  def serve(): RManaged[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
+  def connect(address: ServerAddress): RManaged[BaseEnv, TransportClient]
 }
 
 
@@ -41,7 +43,7 @@ trait TransportServer[ServerAddress] {
   /**
     * The responses coming from the client
     */
-  def responses: Stream[TaskB, RemoteResponse]
+  def responses: ZStream[BaseEnv, Throwable, RemoteResponse]
 
   /**
     * Send a request to the client
@@ -74,19 +76,25 @@ trait TransportClient {
   /**
     * The requests coming from the server
     */
-  def requests: Stream[TaskB, RemoteRequest]
+  def requests: ZStream[BaseEnv, Throwable, RemoteRequest]
 
-  def updates: Stream[TaskB, NotebookUpdate]
+  def handshake: Task[StartupRequest]
+
+  def updates: ZStream[BaseEnv, Throwable, NotebookUpdate]
 
   /**
     * Shut down the client
     */
   def close(): TaskB[Unit]
+
+  def closed: Promise[Throwable, Unit]
+
+  def awaitClosed: Task[Unit] = closed.await
 }
 
 // TODO: need some fault tolerance mechanism here, like reconnecting on socket errors
 class SocketTransportServer private (
-  server: ServerSocketChannel,
+  server: FramedSocketServer,
   channels: SocketTransport.Channels,
   private[polynote] val process: SocketTransport.DeployedProcess,
   closed: Promise[Throwable, Unit]
@@ -94,48 +102,44 @@ class SocketTransportServer private (
 
   override def sendRequest(req: RemoteRequest): TaskB[Unit] = for {
     msg     <- ZIO.fromEither(RemoteRequest.codec.encode(req).toEither).mapError(err => new RuntimeException(err.message))
-    _       <- channels.mainChannel.write(msg).onError(cause => Logging.error(s"Remote kernel failed to send request (it will probably die now)", cause))
+    _       <- channels.mainChannel.send(msg.toByteBuffer)
+      .onError(cause => Logging.error(s"Remote kernel failed to send request (it will probably die now)", cause))
   } yield ()
 
-  private val updateCodec = Codec[NotebookUpdate]
 
   override def sendNotebookUpdate(update: NotebookUpdate): TaskB[Unit] = for {
-    msg <- ZIO.fromEither(updateCodec.encode(update).toEither).mapError(err => new RuntimeException(err.message))
-    _   <- channels.notebookUpdatesChannel.write(msg)
+    msg <- ZIO.fromEither(notebookUpdateCodec.encode(update).toEither).mapError(err => new RuntimeException(err.message))
+    _   <- channels.notebookUpdatesChannel.send(msg.toByteBuffer)
   } yield ()
 
-  override val responses: Stream[TaskB, RemoteResponse] =
-        channels.mainChannel.bitVectors
-          .interruptAndIgnoreWhen(closed)
-          .through(scodec.stream.decode.pipe[TaskB, RemoteResponse])
+  override val responses: ZStream[BaseEnv, Throwable, RemoteResponse] = channels.mainChannel.received.haltWhen(closed).mapM {
+    buf => ZIO.fromEither(RemoteResponse.codec.decode(BitVector(buf)).toEither).map(_.value).mapError(err => new RuntimeException(err.message))
+  }
 
-  override def close(): TaskB[Unit] = closed.succeed(()) *> channels.close() *> process.awaitOrKill(30)
+  override def close(): TaskB[Unit] = closed.succeed(()).unit // *> server.close()
 
   override def isConnected: TaskB[Boolean] = ZIO(channels.isConnected)
 
-  override def address: TaskB[InetSocketAddress] = effectBlocking(Option(server.getLocalAddress)).flatMap {
-    case Some(addr: InetSocketAddress) => ZIO.succeed(addr)
-    case _ => ZIO.fail(new RuntimeException("No valid address"))
+  override def address: TaskB[InetSocketAddress] = server.serverAddress.flatMap {
+    case null => ZIO.fail(new RuntimeException("No valid address"))
+    case addr => ZIO.succeed(addr)
   }
 
   override def awaitClosed: Task[Unit] = closed.await
 }
 
 object SocketTransportServer {
-  private def selectChannels(channel1: FramedSocket, channel2: FramedSocket, address: InetSocketAddress): TaskB[SocketTransport.Channels] = {
-    def identify(channel: FramedSocket) = channel.read().repeat {
-      Schedule.doUntil[Option[Option[ByteBuffer]]] {
-        case Some(Some(_)) => true
-        case _ => false
-      }
-    }.flatMap {
-      case Some(Some(buf)) => IdentifyChannel.decodeBuffer(buf)
-      case _               => ZIO.fail(new IllegalStateException("No buffer was received"))
+  private def selectChannels(channel1: FramedSocket, channel2: FramedSocket): TaskB[SocketTransport.Channels] = {
+    def identify(channel: FramedSocket) = channel.takeNext.flatMap {
+      case Some(buf) =>
+        IdentifyChannel.decodeBuffer(buf)
+      case None      =>
+        ZIO.fail(new IllegalStateException("No buffer was received"))
     }
 
     (identify(channel1) zipPar identify(channel2)).flatMap {
-      case (MainChannel, NotebookUpdatesChannel) => ZIO.succeed(SocketTransport.Channels(channel1, channel2, address))
-      case (NotebookUpdatesChannel, MainChannel) => ZIO.succeed(SocketTransport.Channels(channel2, channel1, address))
+      case (MainChannel, NotebookUpdatesChannel) => ZIO.succeed(SocketTransport.Channels(channel1, channel2))
+      case (NotebookUpdatesChannel, MainChannel) => ZIO.succeed(SocketTransport.Channels(channel2, channel1))
       case other => ZIO.fail(new IllegalStateException(s"Illegal channel set: $other"))
     }
   }
@@ -149,138 +153,139 @@ object SocketTransportServer {
 
 
   def apply(
-    server: ServerSocketChannel,
+    server: FramedSocketServer,
     channel1: FramedSocket,
     channel2: FramedSocket,
     process: SocketTransport.DeployedProcess
-  ): TaskB[SocketTransportServer] = for {
-    closed   <- Promise.make[Throwable, Unit]
-    channels <- selectChannels(channel1, channel2, server.getLocalAddress.asInstanceOf[InetSocketAddress])
-    _        <- monitorProcess(process).to(closed).forkDaemon
-    _        <- channel1.awaitClosed.to(closed).forkDaemon
-    _        <- channel2.awaitClosed.to(closed).forkDaemon
-    transport = new SocketTransportServer(server, channels, process, closed)
-    _        <- closed.await.ensuring(transport.close().orDie).ignore.forkDaemon
+  ): RManaged[BaseEnv, SocketTransportServer] = for {
+    closed    <- Promise.make[Throwable, Unit].toManaged(_.interrupt)
+    channels  <- selectChannels(channel1, channel2).toManaged_
+    _         <- monitorProcess(process).raceFirst(closed.await).to(closed).forkDaemon.toManaged_ // propagate errors from process
+    _         <- channel1.awaitClosed.raceFirst(closed.await).to(closed).forkDaemon.toManaged_    // propagate errors from channel
+    _         <- channel2.awaitClosed.raceFirst(closed.await).to(closed).forkDaemon.toManaged_
+    transport <- ZIO.effectTotal(new SocketTransportServer(server, channels, process, closed)).toManaged(_.close().orDie)
   } yield transport
 }
 
-class SocketTransportClient private (channels: SocketTransport.Channels, closed: Promise[Throwable, Unit]) extends TransportClient {
 
-  def logError(fn: Cause[Throwable] => ZIO[Logging, Nothing, Unit]): TaskB ~> TaskB = new ~>[TaskB, TaskB] {
-    override def apply[A](fa: TaskB[A]): TaskB[A] = fa.onError {
-      cause => ZIO.when(!cause.interruptedOnly)(fn(cause))
-    }
+class SocketTransportClient private (channels: SocketTransport.Channels, val closed: Promise[Throwable, Unit], startupRequest: StartupRequest) extends TransportClient {
+
+  def logError(msg: String)(implicit location: Location): Cause[Throwable] => ZStream[Logging, Nothing, Nothing] = {
+    cause => ZStream.fromEffect(ZIO.when(!cause.interruptedOnly)(Logging.error(msg, cause))).drain
   }
 
-  private val requestStream = channels.mainChannel.bitVectors.interruptAndIgnoreWhen(closed)
-    .translate(logError(Logging.error("Remote kernel client's request stream had an networking error (it will probably die now)", _)))
-    .through(decode.pipe[TaskB, RemoteRequest])
+  private lazy val requestStream = channels.mainChannel.received.haltWhen(closed)
+    .mapM(SocketTransportClient.decodeReq)
+    .catchAllCause(logError("Remote kernel client's request stream had an networking error (it will probably die now)"))
 
-  private val updateStream = channels.notebookUpdatesChannel.bitVectors.interruptAndIgnoreWhen(closed)
-    .translate(logError(Logging.error("Remote kernel client's update stream had an networking error (it will probably die now)", _)))
-    .through(decode.pipe[TaskB, NotebookUpdate])
+  private val updateStream = channels.notebookUpdatesChannel.received.haltWhen(closed)
+    .mapM {
+      buf => ZIO.fromEither(notebookUpdateCodec.decodeValue(BitVector(buf)).toEither).mapError(err => new RuntimeException(err.message))
+    }.catchAllCause(logError("Remote kernel client's update stream had an networking error (it will probably die now)"))
 
   def sendResponse(rep: RemoteResponse): TaskB[Unit] = for {
     bytes <- ZIO.fromEither(RemoteResponse.codec.encode(rep).toEither).mapError(err => new RuntimeException(err.message))
-    _     <- channels.mainChannel.write(bytes)
+    _     <- channels.mainChannel.send(bytes.toByteBuffer)
       .onError(Logging.error(s"Remote kernel client had an error sending a response (it will probably die now)", _))
   } yield ()
 
-  override val requests: Stream[TaskB, RemoteRequest] = requestStream.terminateAfter(_.isInstanceOf[ShutdownRequest])
+  override lazy val requests: ZStream[Logging, Nothing, RemoteRequest] = requestStream.terminateAfter(_.isInstanceOf[ShutdownRequest])
 
-  override val updates: Stream[TaskB, NotebookUpdate] = updateStream.interruptAndIgnoreWhen(closed)
+  override val handshake: Task[StartupRequest] = ZIO.succeed(startupRequest)
 
-  def close(): TaskB[Unit] = closed.succeed(()) *> channels.close()
+  override val updates: ZStream[Logging, Nothing, NotebookUpdate] = updateStream
+
+  def close(): TaskB[Unit] =
+    closed.succeed(()) *> channels.close()
+
 }
 
 object SocketTransportClient {
+
+  private def decodeReq(buf: ByteBuffer): Task[RemoteRequest] =
+    ZIO.fromEither(RemoteRequest.codec.decodeValue(BitVector(buf)).toEither).mapError(err => new RuntimeException(err.message))
+
   def apply(channels: SocketTransport.Channels): Task[SocketTransportClient] = for {
-    closed <- Promise.make[Throwable, Unit]
-  } yield new SocketTransportClient(channels, closed)
+    closed     <- Promise.make[Throwable, Unit]
+    startupReq <- channels.mainChannel.takeNext
+      .someOrFail(new RuntimeException("No handshake received"))
+      .flatMap(decodeReq)
+      .flatMap {
+        case req: StartupRequest => ZIO.succeed(req)
+        case other               => ZIO.fail(new RuntimeException(s"Handshake error; expected StartupRequest but found ${other.getClass.getName}"))
+      }
+  } yield new SocketTransportClient(channels, closed, startupReq)
 }
 
 /**
   * A transport that communicates over a socket with a kernel process it's deployed via spark-submit.
   * Requires that spark-submit is a valid executable command on the path.
   */
+
 class SocketTransport(
   deploy: SocketTransport.Deploy
 ) extends Transport[InetSocketAddress] {
+  private[remote] def openServerChannel: RManaged[Blocking with Config with Networking, FramedSocketServer] =
+    ZManaged.access[Config](_.get.kernel).flatMap {
+      kernelConfig =>
+        Networking.makeServer(kernelConfig.listen.getOrElse("127.0.0.1"), kernelConfig.portRange)
+    }
 
-  private[remote] def openServerChannel: RIO[Blocking with Config, ServerSocketChannel] =
-    ZIO.mapN(Config.access, ZIO(ServerSocketChannel.open())) {
-      (config, socket) =>
-        val address = config.kernel.listen.getOrElse("127.0.0.1")
-        def bindTo(port: Int) =
-          effectBlocking(socket.bind(new InetSocketAddress(address, port)))
 
-        val bind = config.kernel.portRange match {
-          case None        => bindTo(0)
-          case Some(range) =>
-            ZIO.firstSuccessOf(bindTo(range.head), range.tail.map(bindTo))
-              .orElseFail(new BindException(s"Unable to bind to any port in range ${range.start}-${range.end} on $address"))
-        }
-
-        bind.as(socket)
-    }.flatten
-
-  private def startConnection(
-    server: ServerSocketChannel,
-    timeout: ZDuration = 3.minutes
-  ): TaskB[FramedSocket] = {
-    for {
-      channel <- effectBlockingCancelable(server.accept())(ZIO.effectTotal(server.close()))
-      framed  <- FramedSocket(channel, keepalive = true)
-    } yield framed
-  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.asScala}"))(timeout)
-
-  private def monitorProcess(process: SocketTransport.DeployedProcess) = {
+  private def monitorProcess(process: SocketTransport.DeployedProcess): ZIO[BaseEnv, SocketTransport.ProcessDied.type, Nothing] = {
     val checkExit = ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus.orDie
     val exited    = for {
       status <- checkExit.doUntil(_.nonEmpty).get
-      _      <- Logging.info(s"Kernel process ended with $status")
+        _      <- Logging.info(s"Kernel process ended with $status")
     } yield ()
 
     exited.ignore *> ZIO.fail(SocketTransport.ProcessDied)
   }
 
-  private[polynote] def deployAndServe(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, (TransportServer[InetSocketAddress], SocketTransport.DeployedProcess)] =
-    TaskManager.run("RemoteKernel", "Remote kernel", "Starting remote kernel") {
+  private def deployAndServe(timeout: ZDuration = ZDuration(3, TimeUnit.MINUTES)): RManaged[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, SocketTransportServer] =
+    TaskManager.runManaged("RemoteKernel", "Remote kernel", "Starting remote kernel") {
       for {
         socketServer  <- openServerChannel
-        serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
+        serverAddress <- socketServer.serverAddress.toManaged_
         process       <- deploy.deployKernel(this, serverAddress)
-        _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
-        connection    <- startConnection(socketServer).raceFirst(monitorProcess(process))
-        connection2   <- startConnection(socketServer)
-        server        <- SocketTransportServer(socketServer, connection, connection2, process)
-      } yield (server, process)
+          .toManaged(_.awaitOrKill(30) orElse Logging.error("Failed to kill kernel process"))
+          .tapM(_ => CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel"))))
+        startConnection = socketServer.acceptM.timeoutFail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.asScala}"))(timeout)
+        connections   <- ZIO.mapN(startConnection, startConnection)(_ <&> _)
+          .raceFirst(monitorProcess(process)).toManaged_.flatten
+        (conn1, conn2) = connections
+        server        <- SocketTransportServer(socketServer, conn1, conn2, process)
+      } yield server
     }
 
-  def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[InetSocketAddress]] =
-    deployAndServe().map(_._1)
+  def serve(): RManaged[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[InetSocketAddress]] =
+    deployAndServe()
 
-  def connect(serverAddress: InetSocketAddress): TaskB[TransportClient] = SocketTransport.connectClient(serverAddress)
+  def connect(serverAddress: InetSocketAddress): RManaged[BaseEnv, TransportClient] = SocketTransport.connectClient(serverAddress)
 }
+
 
 object SocketTransport {
   case object ProcessDied extends Throwable("Kernel died unexpectedly")
   case class Channels(
     mainChannel: FramedSocket,
-    notebookUpdatesChannel: FramedSocket,
-    address: InetSocketAddress
+    notebookUpdatesChannel: FramedSocket
   ) {
     def isConnected: Boolean = mainChannel.isConnected && notebookUpdatesChannel.isConnected
     def close(): TaskB[Unit] = mainChannel.close().zipPar(notebookUpdatesChannel.close()).unit
+    def identify(): Task[Unit] = {
+      val identifyMain = mainChannel.awaitConnected *> (IdentifyChannel.encode(MainChannel) >>= mainChannel.send)
+      val identifyUpdates = notebookUpdatesChannel.awaitConnected *> (IdentifyChannel.encode(NotebookUpdatesChannel) >>= notebookUpdatesChannel.send)
+      identifyMain &> identifyUpdates
+    }
   }
 
-  def connectClient(serverAddress: InetSocketAddress): TaskB[TransportClient] = for {
-    mainChannel    <- effectBlocking(SocketChannel.open(serverAddress)) >>= (FramedSocket(_, keepalive = true))
-    updatesChannel <- effectBlocking(SocketChannel.open(serverAddress)) >>= (FramedSocket(_, keepalive = true))
-    _              <- IdentifyChannel.encode(MainChannel) >>= mainChannel.write
-    _              <- IdentifyChannel.encode(NotebookUpdatesChannel) >>= updatesChannel.write
-    channels        = SocketTransport.Channels(mainChannel, updatesChannel, serverAddress)
-    client         <- SocketTransportClient(channels)
+  def connectClient(serverAddress: InetSocketAddress): RManaged[BaseEnv, TransportClient] = for {
+    mainChannel    <- Networking.makeClient(serverAddress)
+    updatesChannel <- Networking.makeClient(serverAddress)
+    channels        = SocketTransport.Channels(mainChannel, updatesChannel)
+    _              <- channels.identify().toManaged_
+    client         <- SocketTransportClient(channels).toManaged(_.close().orDie)
   } yield client
 
   /**
@@ -311,7 +316,7 @@ object SocketTransport {
 
 
   /**
-    * Deployment implementation which shells out to spark-submit
+    * Deployment implementation which shells out to the command line
     */
   class DeploySubprocess(deployCommand: DeploySubprocess.DeployCommand) extends Deploy {
 
@@ -388,127 +393,6 @@ object SocketTransport {
           None
         }
       }
-    }
-  }
-
-  /**
-    * Produces a stream of [[BitVector]]s from a [[SocketChannel]]. We should be able to use [[scodec.stream.decode.StreamDecoder.decodeChannel]]
-    * instead, but it doesn't seem to emit anything. So this auxiliary class is used instead.
-    *
-    * It reads a framed message into a single [[ByteBuffer]]. The message must be framed by preceeding it with a
-    * signed 32-bit big-endian length, not including the 4 bytes of the length itself.
-    *
-    * It also includes a method to write such a framed message to the channel from a [[BitVector]].
-    */
-  // TODO: Maybe fs2.io.tcp.Socket methods could be made to work, just seems over-complicated for single-client server?
-  // TODO: If this introduces allocation/GC latency, could try to use a shared, reused buffer
-  class FramedSocket(socketChannel: SocketChannel, closed: Promise[Throwable, Unit]) {
-    private val incomingLengthBuffer = ByteBuffer.allocate(4)
-    private val outgoingLengthBuffer = ByteBuffer.allocate(4)
-
-    // using primitive j.u.concurrent Semaphore here, because I need tryAcquire (zio Semaphore doesn't have it)
-    // TODO: When zio Sempaphore has tryAcquire, use that instead
-    private val writeLock = new Semaphore(1)
-
-    private def readBuffer(): Option[Option[ByteBuffer]] = incomingLengthBuffer.synchronized {
-      incomingLengthBuffer.rewind()
-      while(incomingLengthBuffer.hasRemaining) {
-        if(socketChannel.read(incomingLengthBuffer) == -1) {
-          return None
-        }
-      }
-
-      val len = incomingLengthBuffer.getInt(0)
-      if (len < 0) {
-        None
-      } else if (len == 0) {
-        Some(None)
-      } else {
-        val msgBuffer = ByteBuffer.allocate(len)
-        while (msgBuffer.hasRemaining) {
-          socketChannel.read(msgBuffer)
-        }
-
-        msgBuffer.rewind()
-        Some(Some(msgBuffer))
-      }
-    }
-
-    def read(): TaskB[Option[Option[ByteBuffer]]] = effectBlocking(readBuffer()).catchSome {
-      case err: ClosedChannelException => Logging.info("Remote peer closed connection") *> close() *> ZIO.succeed(None)
-    }.tapError {
-      err => closed.fail(err)
-    }
-
-    def write(msg: BitVector): TaskB[Unit] = effectBlocking(writeLock.acquire()).bracket(_ => ZIO.effectTotal(writeLock.release())) {
-      _ => effectBlocking {
-        val byteVector = msg.toByteVector
-        val size = byteVector.size.toInt
-        writeSize(size)
-        val byteBuffer = byteVector.toByteBuffer
-        while (byteBuffer.hasRemaining) {
-          socketChannel.write(byteBuffer)
-        }
-      }
-    }.tapError {
-      case err: ClosedChannelException => close()
-      case err => closed.fail(err) *> close()
-    }
-
-    // MUST SYNCHRONIZE on writeLock to invoke this!
-    private def writeSize(size: Int) = {
-      outgoingLengthBuffer.rewind()
-      outgoingLengthBuffer.putInt(0, size)
-      socketChannel.write(outgoingLengthBuffer)
-    }
-
-    // send a keepalive, but if the channel is already being written, do nothing (don't queue a keepalive)
-    def sendKeepalive(): TaskB[Unit] = ZIO.effectTotal(writeLock.tryAcquire(0, TimeUnit.SECONDS))
-      .bracket(acquired => ZIO.when(acquired)(ZIO.effectTotal(writeLock.release()))) {
-        acquired => ZIO.when(acquired) {
-          effectBlocking(writeSize(0))
-        }.catchAll {
-          err => closed.isDone.flatMap {
-            case true => ZIO.unit
-            case false => ZIO.fail(err)
-          }
-        }
-      }
-
-    def close(): TaskB[Unit] = closed.succeed(()).flatMap {
-      case true =>
-        ZIO.effect { socketChannel.shutdownInput(); socketChannel.shutdownOutput() } *>
-          effectBlocking(writeLock.acquire()).bracket(_ => ZIO.effectTotal(writeLock.release())) {
-            _ => effectBlocking(socketChannel.close()).uninterruptible
-          }
-      case false => ZIO.unit
-    }
-
-    def isConnected: Boolean = socketChannel.isConnected
-
-    def awaitClosed: Task[Unit] = closed.await
-
-    val bitVectors: Stream[TaskB, BitVector] =
-      Stream.repeatEval(read())
-        .unNoneTerminate.unNone
-        .map(BitVector.view)
-  }
-
-  object FramedSocket {
-    private val keepaliveDuration = ZDuration(250, TimeUnit.MILLISECONDS)
-    def apply(socketChannel: SocketChannel, keepalive: Boolean = true): TaskB[FramedSocket] = {
-      for {
-        closed       <- Promise.make[Throwable, Unit]
-        framedSocket  = new FramedSocket(socketChannel, closed)
-        doKeepalive  <- if (keepalive) {
-          // This sends a keepalive quite frequently, because it's the only way we can detect if the remote peer dies.
-          // It only sends 16 bytes per second, though, and they only send if the channel isn't being written.
-          (ZIO.yieldNow *> framedSocket.sendKeepalive()).retry(Schedule.recurs(2).addDelay(_ => keepaliveDuration)).tapError {
-            err =>
-              closed.fail(err) *> effectBlocking(socketChannel.close())
-          }.repeat(Schedule.spaced(keepaliveDuration)).raceFirst(closed.await.ignore).forkDaemon
-        } else ZIO.unit
-      } yield framedSocket
     }
   }
 }
