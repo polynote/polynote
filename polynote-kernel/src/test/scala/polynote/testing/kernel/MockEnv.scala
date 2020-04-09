@@ -52,7 +52,8 @@ object MockEnv {
 
   def layer(cellID: Int): ZLayer[BaseEnv, Nothing, BaseEnv with InterpreterEnv] = ZLayer.fromManagedMany(MockEnv(cellID).toManaged_.flatMap(_.baseLayer.build))
 
-  type Env = BaseEnv with GlobalEnv with CellEnv with StreamingHandles with NotebookUpdates
+  type ExtEnv = GlobalEnv with CellEnv with StreamingHandles with NotebookUpdates
+  type Env = BaseEnv with ExtEnv
 }
 
 case class MockKernelEnv(
@@ -71,12 +72,12 @@ case class MockKernelEnv(
 
   val logging: Logging.Service = new Logging.Service.Default(System.err, baseEnv.get[Blocking.Service])
   val notebookUpdates: Stream[Task, NotebookUpdate] = updateTopic.subscribe(128).unNone
-
+  val extHas: MockEnv.ExtEnv = Has.allOf(kernelFactory, interpreterFactories, taskManager, notebookUpdates, polynoteConfig) ++
+    Has(streamingHandles) ++ Has(publishResult: Publish[Task, Result]) ++ Has(publishStatus: Publish[Task, KernelStatusUpdate]) ++
+    Has(currentNotebook: Ref[Task, (Int, Notebook)])
   val baseLayer: ZLayer[Any, Nothing, MockEnv.Env] =
     ZLayer.succeedMany {
-      baseEnv ++ Has.allOf(kernelFactory, interpreterFactories, taskManager, notebookUpdates, polynoteConfig) ++
-        Has(streamingHandles) ++ Has(publishResult: Publish[Task, Result]) ++ Has(publishStatus: Publish[Task, KernelStatusUpdate]) ++
-        Has(currentNotebook: Ref[Task, (Int, Notebook)])
+      baseEnv ++ extHas
     }
 
 }

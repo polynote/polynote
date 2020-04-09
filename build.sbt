@@ -116,6 +116,8 @@ val `polynote-kernel` = project.settings(
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
     "dev.zio" %% "zio-interop-cats" % versions.zioInterop,
+    "dev.zio" %% "zio-test" % versions.zio % "test",
+    "dev.zio" %% "zio-test-sbt" % versions.zio % "test",
     "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.11.4",
     "org.scodec" %% "scodec-stream" % "1.2.0",
@@ -131,6 +133,7 @@ val `polynote-kernel` = project.settings(
     "net.sf.py4j" % "py4j" % "0.10.7",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
+  testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 

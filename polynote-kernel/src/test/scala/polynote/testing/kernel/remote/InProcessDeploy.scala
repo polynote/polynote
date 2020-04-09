@@ -11,14 +11,16 @@ import polynote.kernel.remote.{RemoteKernelClient, SocketTransport}
 import zio.{Fiber, RIO, Ref, ZIO}
 import zio.duration.Duration
 
-class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref[RemoteKernelClient]) extends SocketTransport.Deploy {
+class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Option[Ref[RemoteKernelClient]]) extends SocketTransport.Deploy {
+  def this(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref[RemoteKernelClient]) = this(kernelFactory, Some(clientRef))
+  def this(kernelFactory: Kernel.Factory.LocalService) = this(kernelFactory, None)
   def deployKernel(transport: SocketTransport, serverAddress: InetSocketAddress): RIO[BaseEnv with GlobalEnv with CurrentNotebook, SocketTransport.DeployedProcess] = {
     val connectClient = RemoteKernelClient.tapRunThrowable(
       RemoteKernelClient.Args[cats.Id](
         serverAddress.getAddress,
         serverAddress.getPort,
         kernelFactory),
-      Some(clientRef))
+      clientRef)
 
     connectClient.forkDaemon.map(new InProcessDeploy.Process(_))
   }
