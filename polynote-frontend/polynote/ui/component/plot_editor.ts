@@ -1,8 +1,7 @@
 'use strict';
 
-import * as _ from "lodash";
-
 import {div, button, iconButton, h4, TagElement, icon} from '../util/tags'
+import {objectEquals, mapValues} from '../util/js_object'
 import {
     BoolType,
     ByteType, DataType,
@@ -349,7 +348,7 @@ export class PlotEditor extends EventTarget {
             measureConfig.agg = from.selector.value
         }
 
-        if (!_.find(this.yMeasures, measureConfig)) {
+        if (this.yMeasures.findIndex(x => objectEquals(measureConfig, x)) === -1) {
             if (this.rawFields) {
                 this.yAxisDrop.classList.add('nonempty');
                 const el = span([this.correctYType], [from.field.name]);
@@ -446,7 +445,7 @@ export class PlotEditor extends EventTarget {
                 spec
             ).then(plot => {
                 stream
-                    .to(batch => plot.view.insert(this.name, _.map(batch, (obj: object) => _.mapValues(obj, normalizeValues))).runAsync())
+                    .to(batch => plot.view.insert(this.name, batch.map((obj: object) => mapValues(obj, normalizeValues))).runAsync())
                     .run()
                     .then(_ => {
                         plot.view.resize().runAsync();
