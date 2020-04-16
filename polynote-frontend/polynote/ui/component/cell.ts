@@ -319,7 +319,11 @@ export function errorDisplay(error: ServerErrorWithCause, currentFile: string, m
     return {el, messageStr, cellLine};
 }
 
-export type CodeCellModel = editor.ITextModel & { cellInstance: CodeCell };
+export type CodeCellModel = editor.ITextModel & {
+    requestCompletion(pos: number): Promise<CompletionList>,
+    requestSignatureHelp(pos: number): Promise<SignatureHelpResult>
+};
+
 export type MIMEElement = TagElement<"div", HTMLDivElement & { rel?: string, "mime-type"?: string}>;
 
 export class CodeCell extends Cell {
@@ -468,7 +472,8 @@ export class CodeCell extends Cell {
 
         this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
-        (this.editor.getModel() as CodeCellModel).cellInstance = this;
+        (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
+        (this.editor.getModel() as CodeCellModel).requestSignatureHelp = this.requestSignatureHelp.bind(this);
 
         this.keyMap = CodeCell.keyMap;
 

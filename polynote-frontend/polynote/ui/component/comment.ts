@@ -54,15 +54,15 @@ export class CommentHandler extends UIMessageTarget {
 
     private _add(comment: CellComment) {
         this.comments[comment.uuid] = comment;
-        const maybeRootId = this.commentRoots[comment.range.asString];
+        const maybeRootId = this.commentRoots[comment.range.toString];
         if (maybeRootId === undefined || this.comments[maybeRootId].createdAt > comment.createdAt) {
-            this.commentRoots[comment.range.asString] = comment.uuid;
+            this.commentRoots[comment.range.toString] = comment.uuid;
         }
     }
 
     add(comment: CellComment) {
         this._add(comment);
-        const maybeUI = this.commentUIs[comment.range.asString];
+        const maybeUI = this.commentUIs[comment.range.toString];
         if (maybeUI) {
             maybeUI.add(comment);
         } else {
@@ -75,15 +75,15 @@ export class CommentHandler extends UIMessageTarget {
         const upd = new CellComment(prev.uuid, range, prev.author, prev.authorAvatarUrl, prev.createdAt, content);
 
         // we need to update some things if the range has been changed and this is a root comment.
-        if (range !== prev.range && this.commentRoots[prev.range.asString] === commentId) {
+        if (range !== prev.range && this.commentRoots[prev.range.toString] === commentId) {
             // of course, we need to reset the comment root
-            delete this.commentRoots[prev.range.asString];
-            this.commentRoots[range.asString] = commentId;
+            delete this.commentRoots[prev.range.toString];
+            this.commentRoots[range.toString] = commentId;
 
             // next, update the comment UIs
-            const ui = this.commentUIs[prev.range.asString];
-            delete this.commentUIs[prev.range.asString];
-            this.commentUIs[range.asString] = ui;
+            const ui = this.commentUIs[prev.range.toString];
+            delete this.commentUIs[prev.range.toString];
+            this.commentUIs[range.toString] = ui;
             ui.range = range;
 
             // finally, update all the other comments.
@@ -99,14 +99,14 @@ export class CommentHandler extends UIMessageTarget {
 
     update(commentId: CommentID, range: PosRange, content: string) {
         const upd = this._update(commentId, range, content);
-        this.commentUIs[upd.range.asString].update(upd);
+        this.commentUIs[upd.range.toString].update(upd);
     }
 
     private _delete(commentId: CommentID) {
         const comment = this.comments[commentId];
         delete this.comments[commentId];
 
-        if (this.commentRoots[comment.range.asString] === commentId) {
+        if (this.commentRoots[comment.range.toString] === commentId) {
             // if this is a root comment, we need to delete all the comments for this range
             Object.values(this.comments).forEach(c => {
                 if (c.range.equals(comment.range)) {
@@ -114,7 +114,7 @@ export class CommentHandler extends UIMessageTarget {
 
                 }
             });
-            delete this.commentRoots[comment.range.asString];
+            delete this.commentRoots[comment.range.toString];
             this.hide(comment.range);
         }
 
@@ -123,33 +123,33 @@ export class CommentHandler extends UIMessageTarget {
 
     delete(commentId: CommentID) {
         const range = this._delete(commentId);
-        const maybeUI = this.commentUIs[range.asString];
+        const maybeUI = this.commentUIs[range.toString];
         if (maybeUI) maybeUI.delete(commentId);
     }
 
     private initializeUI(range: PosRange, cb?: (ui: CommentUI) => void) {
         this.publish(new UIMessageRequest(CurrentIdentity, (name, avatar) => {
             const commentUI = new CommentUI(this.cellId, this.editor, range,  name, avatar).setParent(this);
-            this.commentUIs[range.asString] = commentUI;
+            this.commentUIs[range.toString] = commentUI;
             if (cb) cb(commentUI)
         }));
     }
 
     show(range: PosRange) {
-        if (!this.commentUIs[range.asString]) {
+        if (!this.commentUIs[range.toString]) {
             this.initializeUI(range, ui => ui.focus());
         } else {
-            this.commentUIs[range.asString].show();
+            this.commentUIs[range.toString].show();
         }
     }
 
     hide(range: PosRange) {
-        const found = this.commentUIs[range.asString];
+        const found = this.commentUIs[range.toString];
         if (found) {
             found.hide();
             // if there are no comments for this range, we should remove this UI
-            if (this.commentRoots[found.range.asString] === undefined ){
-                delete this.commentUIs[range.asString];
+            if (this.commentRoots[found.range.toString] === undefined ){
+                delete this.commentUIs[range.toString];
             }
         }
     }

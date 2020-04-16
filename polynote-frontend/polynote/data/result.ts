@@ -209,8 +209,16 @@ export class PosRange {
         return new PosRange(this.end, this.start);
     }
 
-    get asString() {
+    get toString() {
         return `${this.start}-${this.end}`
+    }
+
+    get length() {
+        return Math.abs(this.end - this.start);
+    }
+
+    toMRange(model: monaco.editor.IModel): monaco.Range {
+        return monaco.Range.fromPositions(model.getPositionAt(this.start), model.getPositionAt(this.end))
     }
 
     equals(other: PosRange): Boolean {

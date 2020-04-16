@@ -19,24 +19,6 @@ export interface ServerState {
 class NotebookStatesHandler extends StateHandler<Record<string, NotebookState>> {
     constructor(state: Record<string, NotebookState>) {
         super(state);
-        // FIXME: this doesn't seem to do anything..
-        // this.addObserver(notebooks => {
-        //     const currentStates = this.getState();
-        //     const currentKeys = Object.keys(currentStates);
-        //     const newKeys = Object.keys(notebooks);
-        //
-        //     const [deletedKeys, addedKeys] = diffArray(currentKeys, newKeys);
-        //     deletedKeys.forEach(key => {
-        //         // TODO: do we need to do any cleanup?
-        //         delete currentStates[key];
-        //     });
-        //     addedKeys.forEach(key => {
-        //         this.updateState(s => {
-        //             s[key] = notebooks[key];
-        //             return s
-        //         });
-        //     })
-        // })
     }
 }
 
@@ -47,5 +29,21 @@ export class ServerStateHandler extends StateHandler<ServerState> {
 
         // TODO: what to do when new notebooks are loaded...
         this.currentNotebooks = this.view("notebooks", NotebookStatesHandler);
+    }
+
+    private static inst: ServerStateHandler;
+    static get get() {
+        if (!ServerStateHandler.inst) {
+            ServerStateHandler.inst = new ServerStateHandler({
+                errors: [],
+                notebooks: {},
+                connectionStatus: "disconnected",
+                interpreters: {},
+                serverVersion: "unknown",
+                serverCommit: "unknown",
+                sparkTemplates: []
+            })
+        }
+        return ServerStateHandler.inst;
     }
 }

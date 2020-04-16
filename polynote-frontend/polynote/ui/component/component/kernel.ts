@@ -13,7 +13,7 @@ import {
     TableRowElement,
     TagElement
 } from "../../util/tags";
-import {KernelCommand, Dispatcher, Reconnect} from "../messaging/dispatcher";
+import {KernelCommand, NotebookMessageDispatcher, Reconnect} from "../messaging/dispatcher";
 import {StateHandler} from "../state/state_handler";
 import {ViewPreferences, ViewSizesHandler} from "../state/storage";
 import {TaskInfo, TaskStatus} from "../../../data/messages";
@@ -26,7 +26,8 @@ export class Kernel {
 
     // TODO: this implementation will no longer appear on the welcome screen, which means that errors won't show.
     //       another solution for showing errors on the welcome screen needs to be implemented.
-    constructor(private dispatcher: Dispatcher, private kernelState: KernelStateHandler, private whichPane: keyof ViewPreferences) {
+    constructor(private dispatcher: NotebookMessageDispatcher, private kernelState: KernelStateHandler,
+                private whichPane: keyof ViewPreferences) {
 
         const info = new KernelInfoComponent(kernelState.kernelInfoHandler);
         const symbols = new KernelSymbolsComponent(kernelState.kernelSymbolsHandler);
@@ -245,7 +246,8 @@ class KernelTasksComponent {
         const task = this.tasks[id];
         if (task.parentNode) task.parentNode.removeChild(task);
         this.kernelTasksHandler.updateState(tasks => {
-            return tasks.filter(t => t.id !== task.id)
+            delete tasks[task.id];
+            return tasks
         });
         delete this.tasks[id];
     }

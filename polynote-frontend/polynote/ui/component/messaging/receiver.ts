@@ -71,11 +71,20 @@ class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             req.send(null);
         });
 
-        this.receive(messages.CompletionsAt, (s, cell, pos, completions) => {
-            s.activeCompletionHint = {cell, pos, completions};
+        this.receive(messages.CompletionsAt, (s, cell, offset, completions) => {
+            if (s.activeCompletion) {
+                s.activeCompletion.resolve({cell, offset, completions});
+                s.activeCompletion = undefined;
+            } else {
+                console.warn("Got completion response but there was no activeCompletion, this is a bit odd.", {cell, offset, completions})
+            }
         });
-        this.receive(messages.ParametersAt, (s, cell, pos, signatures) => {
-            s.activeCompletionHint = {cell, pos, signatures};
+        this.receive(messages.ParametersAt, (s, cell, offset, signatures) => {
+            if (s.activeSignature) {
+                s.activeSignature.resolve({cell, offset, signatures})
+            } else {
+                console.warn("Got signature response but there was no activeSignature, this is a bit odd.", {cell, offset, signatures})
+            }
         });
         this.receive(messages.NotebookVersion, (s, path, serverGlobalVersion) => {
             if (s.globalVersion !== serverGlobalVersion){
@@ -108,10 +117,9 @@ class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     s.kernel.info = info;
                 })
                 .when(messages.ExecutionStatus, (id, pos) => {
-                    if (pos) {
-                        s.executionHighlight = {id, pos}
-                    } else {
-                        s.executionHighlight = undefined
+                    const cellIdx = s.cells.findIndex(c => c.id === id);
+                    if (cellIdx > -1) {
+                        s.cells[cellIdx].currentHighlight = pos
                     }
                 })
                 .when(messages.PresenceUpdate, (added, removed) => {
@@ -190,7 +198,7 @@ class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         const idx = s.cells.findIndex(c => c.id === id);
                         if (idx > -1) {
                             const comment = s.cells[idx].comments[commentId];
-                            s.cells[idx].comments[commentId] = new CellComment(commentId, range, comment.author, comment.createdAt, content)
+                            s.cells[idx].comments[commentId] = new CellComment(commentId, range, comment.author, comment.authorAvatarUrl, comment.createdAt, content)
                         }
                     })
                     // TODO: Make sure the server handles the case where a root comment is deleted, since the client
@@ -221,6 +229,9 @@ class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 })
                 .whenInstance(ResultValue, result => {
                     s.kernel.symbols.push(result)
+                    if (idx > -1) {
+                        s.cells[idx].results.push(result)
+                    }
                 })
                 .whenInstance(CompileErrors, result => {
                     if (idx > -1) {

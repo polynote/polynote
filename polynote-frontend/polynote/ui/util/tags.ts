@@ -107,7 +107,7 @@ export function span(classes: string[], content: AsyncContent) {
     return tag('span', classes, undefined, content);
 }
 
-export function img(classes: string[], src: string, alt: string) {
+export function img(classes: string[], src: string, alt?: string) {
     return tag('img', classes, {src, alt}, []);
 }
 

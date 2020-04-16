@@ -8,11 +8,13 @@ import match from "../../../util/match";
 import * as messages from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {Output, PosRange} from "../../../data/result";
-import {UIMessage} from "../../util/ui_event";
 import {StateHandler} from "../state/state_handler";
-import {Message} from "../../../data/messages";
-import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../../../data/content_edit";
+import {ServerStateHandler} from "../state/server_state";
+import {languages} from "monaco-editor";
+import CompletionList = languages.CompletionList;
+import SignatureHelp = languages.SignatureHelp;
 
 
 class MessageDispatcher<S> {
@@ -59,7 +61,9 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 .when(SetCellLanguage, (cellId, language) => {
                     this.socket.send(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
                 })
-                .when(CreateCell, (cellId, cell, prev) => {
+                .when(CreateCell, (language, content, metadata, prev) => {
+                    // TODO: Cell IDs should be generated on the server
+                    const cell = new NotebookCell(-1, language, content, [], metadata);
                     const update = new messages.InsertCell(state.globalVersion, ++state.localVersion, cell, prev);
                     this.socket.send(update);
                     state.editBuffer.push(state.localVersion, update);
@@ -89,17 +93,31 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 .when(CopyNotebook, (oldPath, newPath) => {
                     this.socket.send(new messages.CopyNotebook(oldPath, newPath))
                 })
-                .when(RequestCompletions, (cellId, offset) => {
-                    this.socket.send(new messages.CompletionsAt(cellId, offset, []))
+                .when(RequestCompletions, (cellId, offset, resolve, reject) => {
+                    this.socket.send(new messages.CompletionsAt(cellId, offset, []));
+                    if (state.activeCompletion) {
+                        state.activeCompletion.reject();
+                    }
+                    state.activeCompletion = {resolve, reject};
                 })
-                .when(RequestParameters, (cellId, offset) => {
-                    this.socket.send(new messages.ParametersAt(cellId, offset))
+                .when(RequestSignature, (cellId, offset, resolve, reject) => {
+                    this.socket.send(new messages.ParametersAt(cellId, offset));
+                    if (state.activeSignature) {
+                        state.activeSignature.reject();
+                    }
+                    state.activeSignature = {resolve, reject};
                 })
                 .when(RequestNotebookVersion, version => {
                     this.socket.send(new messages.NotebookVersion(state.path, version))
                 })
-                .when(RequestCellRun, cells => {
-                    this.socket.send(new messages.RunCell(cells))
+                .when(RequestCellRun, cellIds => {
+                    this.socket.send(new messages.RunCell(cellIds));
+                    cellIds.forEach(id => {
+                        const idx = state.cells.findIndex(cell => cell.id === id);
+                        if (idx >= 0) {
+                            state.cells[idx].queued = true;
+                        }
+                    })
                 })
                 .when(RequestCancelTasks, path => {
                     this.socket.send(new messages.CancelTasks(path))
@@ -110,9 +128,27 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 .when(RequestNotebooksList, () => {
                     this.socket.send(new messages.ListNotebooks([]))
                 })
+                .when(SetSelectedCell, selected => {
+                    state.cells.forEach(cell => {
+                        cell.selected = selected.includes(cell.id);
+                    });
+                })
+                .when(CurrentSelection, (cellId, range) => {
+                    state.cells.forEach(cell => {
+                        // todo: what is this used for?
+                        cell.currentSelection = cell.id === cellId ? range : undefined;
+                    });
+                    this.socket.send(new messages.CurrentSelection(cellId, range));
+                })
+                .when(ClearCellEdits, id => {
+                    const idx = state.cells.findIndex(cell => cell.id === id);
+                    if (idx >= 0) {
+                        state.cells[idx].pendingEdits = [];
+                    }
+                })
 
 
-            // TODO: add more actions! basically UIEvents that anything subscribes to should be here I thinkhttps://krebsonsecurity.com/2020/04/war-dialing-tool-exposes-zooms-password-problems/.
+            // TODO: add more actions! basically UIEvents that anything subscribes to should be here I think
 
 
             return state
@@ -177,13 +213,13 @@ export class DeleteComment extends UIAction {
 }
 
 export class CreateCell extends UIAction {
-    constructor(readonly cellId: number, readonly cell: NotebookCell, readonly prev: number) {
+    constructor(readonly language: string, readonly content: string, readonly metadata: CellMetadata, readonly prev: number) {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: CreateCell): ConstructorParameters<typeof CreateCell> {
-        return [inst.cellId, inst.cell, inst.prev];
+        return [inst.language, inst.content, inst.metadata, inst.prev];
     }
 }
 
@@ -298,24 +334,26 @@ export class SetCellLanguage extends UIAction {
 }
 
 export class RequestCompletions extends UIAction {
-    constructor(readonly cellId: number, readonly offset: number) {
+    constructor(readonly cellId: number, readonly offset: number,
+                readonly resolve: (completion: CompletionHint) => void, readonly reject: () => void) {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: RequestCompletions): ConstructorParameters<typeof RequestCompletions> {
-        return [inst.cellId, inst.offset];
+        return [inst.cellId, inst.offset, inst.resolve, inst.reject];
     }
 }
 
-export class RequestParameters extends UIAction {
-    constructor(readonly cellId: number, readonly offset: number) {
+export class RequestSignature extends UIAction {
+    constructor(readonly cellId: number, readonly offset: number,
+                readonly resolve: (value: SignatureHint) => void, readonly reject: () => void) {
         super();
         Object.freeze(this);
     }
 
-    static unapply(inst: RequestParameters): ConstructorParameters<typeof RequestParameters> {
-        return [inst.cellId, inst.offset];
+    static unapply(inst: RequestSignature): ConstructorParameters<typeof RequestSignature> {
+        return [inst.cellId, inst.offset, inst.resolve, inst.reject];
     }
 }
 
@@ -371,5 +409,38 @@ export class RequestNotebooksList extends UIAction {
 
     static unapply(inst: RequestNotebooksList): ConstructorParameters<typeof RequestNotebooksList> {
         return [];
+    }
+}
+
+export class SetSelectedCell extends UIAction {
+    constructor(readonly selected: number[]) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: SetSelectedCell): ConstructorParameters<typeof SetSelectedCell> {
+        return [inst.selected];
+    }
+}
+
+export class CurrentSelection extends UIAction {
+    constructor(readonly cellId: number, readonly range: PosRange) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: CurrentSelection): ConstructorParameters<typeof CurrentSelection> {
+        return [inst.cellId, inst.range];
+    }
+}
+
+export class ClearCellEdits extends UIAction {
+    constructor(readonly cellId: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: ClearCellEdits): ConstructorParameters<typeof ClearCellEdits> {
+        return [inst.cellId];
     }
 }

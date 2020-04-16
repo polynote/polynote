@@ -408,34 +408,34 @@ export class MainUI extends UIMessageTarget {
 monaco.languages.registerCompletionItemProvider('scala', {
   triggerCharacters: ['.'],
   provideCompletionItems: (doc, pos, context, cancelToken) => {
-      return (doc as CodeCellModel).cellInstance.requestCompletion(doc.getOffsetAt(pos));
+      return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
   }
 });
 
 monaco.languages.registerCompletionItemProvider('python', {
   triggerCharacters: ['.', "["],
   provideCompletionItems: (doc, pos, cancelToken, context) => {
-      return (doc as CodeCellModel).cellInstance.requestCompletion(doc.getOffsetAt(pos));
+      return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
   }
 });
 
 monaco.languages.registerSignatureHelpProvider('scala', {
   signatureHelpTriggerCharacters: ['(', ','],
   provideSignatureHelp: (doc, pos, cancelToken, context) => {
-      return (doc as CodeCellModel).cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
+      return (doc as CodeCellModel).requestSignatureHelp(doc.getOffsetAt(pos));
   }
 });
 
 monaco.languages.registerSignatureHelpProvider('python', {
     signatureHelpTriggerCharacters: ['(', ','],
     provideSignatureHelp: (doc, pos, cancelToken, context) => {
-        return (doc as CodeCellModel).cellInstance.requestSignatureHelp(doc.getOffsetAt(pos));
+        return (doc as CodeCellModel).requestSignatureHelp(doc.getOffsetAt(pos));
     }
 });
 
 monaco.languages.registerCompletionItemProvider('sql', {
     triggerCharacters: ['.'],
     provideCompletionItems: (doc, pos, context, cancelToken) => {
-        return (doc as CodeCellModel).cellInstance.requestCompletion(doc.getOffsetAt(pos));
+        return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
     }
 });

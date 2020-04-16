@@ -13,12 +13,12 @@ export class StateHandler<S> {
      * Handle with which to set the state. If the new state is different from the previous state, all observers are notified.
      * If the provided state is the same as the existing state, nothing happens.
      */
-    setState(s: S) {
-        if (!deepEquals(s, this.state)) {
+    setState(newState: S) {
+        if (!deepEquals(newState, this.state)) {
             this.observers.forEach(obs => {
-                obs(s)
+                obs(this.state, newState)
             });
-            this.state = s
+            this.state = newState
         }
     }
 
@@ -46,15 +46,23 @@ export class StateHandler<S> {
     constructor(protected state: S) {}
 
     // methods to add and remove observers.
-    protected readonly observers: ((s: S) => void)[];
-    addObserver(f: (s: S) => void): (s: S) => void {
+    protected observers: Observer<S>[];
+    addObserver(f: Observer<S>): Observer<S> {
         this.observers.push(f);
         return f;
     }
-    removeObserver(f: (s: S) => void): void {
+
+    removeObserver(f: Observer<S>): void {
         const idx = this.observers.indexOf(f);
         if (idx >= 0) {
             this.observers.splice(idx, 1)
         }
     }
+
+    // TODO: would views need to be cleared as well? could they leak?
+    clearObservers(): void {
+        this.observers = [];
+    }
 }
+
+type Observer<S> = (oldS: S, newS: S) => void;
