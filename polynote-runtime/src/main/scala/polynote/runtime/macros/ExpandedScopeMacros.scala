@@ -38,9 +38,17 @@ class ExpandedScopeMacros(val c: whitebox.Context) {
     val typeArgs = A.typeArgs
 
     def loadSubtypes = {
-      val resources = Option(Thread.currentThread().getContextClassLoader).getOrElse(getClass.getClassLoader).getResources(s"$resourceBase/$typeName").asScala.toList
+      val resources = List(Thread.currentThread().getContextClassLoader, getClass.getClassLoader)
+        .flatMap(_.getResources(s"$resourceBase/$typeName").asScala.toList)
+
       resources.flatMap {
-        url => scala.io.Source.fromURL(url).getLines().toList
+        url =>
+          val source = scala.io.Source.fromURL(url)
+          try {
+            source.getLines().toList
+          } finally {
+            source.close()
+          }
       }.flatMap {
         subtypeName =>
           try {
