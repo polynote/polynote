@@ -138,7 +138,7 @@ val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.polynote" %% "uzhttp" % "0.1.3",
+    "org.polynote" %% "uzhttp" % "0.1.4",
     "org.scodec" %% "scodec-core" % "1.10.3",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
