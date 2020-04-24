@@ -5,18 +5,16 @@ import {div, iconButton, span, table, TableElement, tag, TagElement} from "../ut
 import {StructType, ArrayType, StructField, DataType} from "../../data/data_type";
 import {SocketSession} from "../../comms";
 import {NotebookUI} from "./notebook";
+import {displayData} from "./display_content";
 
-function renderData(dataType: DataType, data: any): HTMLElement {
+function renderData(fieldName: string | undefined, dataType: DataType, data: any): HTMLElement {
     // TODO: nicer display
-    let value = '';
     if (dataType instanceof ArrayType || dataType instanceof StructType) {
-        value = JSON.stringify(data);
-    } else if (data !== null) {
-        value = data.toString();
-    } else {
-        value = "<null>";
+        return displayData(data, fieldName);
+    } else if (data !== null && data !== undefined) {
+        return span([], data.toString()).attr('title', data.toString())
     }
-    return span([], value).attr('title', value);
+    return span([], "<null>")
 }
 
 export class TableView {
@@ -80,7 +78,7 @@ export class TableView {
         start = Math.max(start, 0);
         this.table.tBodies.item(0)!.innerHTML = '';
         for (let i = start; i < end && i < this.rows.length; i++) {
-            const row = this.fields.map(field => renderData(field.dataType, this.rows[i][field.name] || this.rows[i]));
+            const row = this.fields.map(field => renderData(field.name, field.dataType, this.rows[i].hasOwnProperty(field.name) ? this.rows[i][field.name] : this.rows[i]));
             this.table.addRow(row);
         }
         this.currentPos = start;

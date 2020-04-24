@@ -2539,8 +2539,8 @@ button.dialog-button {
     th, td {
       text-align: left;
       line-height: 1.2;
-
-      span {
+      vertical-align: top;
+      & > span {
         display: block;
         max-height: 1.2em;
         position: relative;
@@ -2549,7 +2549,7 @@ button.dialog-button {
         word-break: break-all;
       }
 
-      span::after {
+      & > span::after {
         content: attr(title);
         position: absolute;
         left: 0;
