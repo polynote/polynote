@@ -190,8 +190,9 @@ class RemoteKernelSpecWithPortRange extends RemoteKernelSpecBase {
 
   "Gets multiple ports in correct range" in {
     val uniquePorts = new scala.collection.mutable.HashSet[Int]()
+    val numPorts = 5
     unsafeRun {
-      ZIO.foreachPar(0 until 50) { _ =>
+      ZIO.foreachPar(0 until numPorts) { _ =>
         transport.openServerChannel.bracket(channel => ZIO.effectTotal(channel.close())) {
           channel =>
             ZIO.effect(channel.getLocalAddress.asInstanceOf[InetSocketAddress].getPort).flatMap {
@@ -205,7 +206,7 @@ class RemoteKernelSpecWithPortRange extends RemoteKernelSpecBase {
       }.provideSomeLayer(env.baseLayer)
     }
 
-    assert(uniquePorts.size == 50)
+    assert(uniquePorts.size == numPorts)
     uniquePorts.foreach {
       port => assert(port >= 9000 && port <= 10000)
     }
