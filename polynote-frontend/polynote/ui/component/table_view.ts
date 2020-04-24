@@ -80,7 +80,7 @@ export class TableView {
         start = Math.max(start, 0);
         this.table.tBodies.item(0)!.innerHTML = '';
         for (let i = start; i < end && i < this.rows.length; i++) {
-            const row = this.fields.map(field => renderData(field.dataType, this.rows[i][field.name] || this.rows[i]));
+            const row = this.fields.map(field => renderData(field.dataType, this.rows[i].hasOwnProperty(field.name) ? this.rows[i][field.name] : this.rows[i]));
             this.table.addRow(row);
         }
         this.currentPos = start;
