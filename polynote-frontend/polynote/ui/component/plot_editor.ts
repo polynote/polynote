@@ -157,11 +157,11 @@ export class PlotEditor extends EventTarget {
                     span([],'⨉'),
                     this.plotHeightInput = textbox(['plot-height'], 'Height', "480").change(evt => this.plotOutput.style.height = parseInt((evt.target as TagElement<"input">).value, 10) + 'px')
                 ]),
-                h4(['dimension-title'], ['Dimensions']),
+                h4(['dimension-title'], ['X Axis']),
                 div(['dimension-list'], this.listDimensions()),
-                h4(['measure-title'], ['Measures']),
+                h4(['measure-title'], ['Y Axis']),
                 div(['measure-list'], this.listMeasures()),
-                h4(['numeric-field-title'], ['Fields']),
+                h4(['numeric-field-title'], ['Y Axis']),
                 div(['numeric-field-list'], this.listNumerics()),
                 div(['control-buttons'], [
                     this.saveButton = button(['save'], {}, [
