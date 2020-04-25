@@ -360,6 +360,13 @@ export class PlotEditor extends EventTarget {
 
             }
             else if (from.classList.contains('selected-measure')) {
+                if (this.yMeasures.length === 1 && this.yMeasures[0].agg === undefined) {
+                    // There's a raw field in the measures, which must be removed
+                    const label = this.yAxisDrop.querySelector('.label')!;
+                    [...label.querySelectorAll('.numeric, .measure')].forEach(node => node.parentNode!.removeChild(node));
+                    this.yMeasures = [];
+                }
+
                 this.yMeasures.push(measureConfig);
 
                 const label = span(
