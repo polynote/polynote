@@ -1,6 +1,6 @@
 'use strict';
 
-import {div, button, iconButton, h4, TagElement, icon} from '../util/tags'
+import {div, button, iconButton, h4, TagElement, icon, radio} from '../util/tags'
 import {objectEquals, mapValues} from '../util/js_object'
 import {
     BoolType,
@@ -232,14 +232,15 @@ export class PlotEditor extends EventTarget {
     listDimensions() {
         return this.fields.filter(field => isDimension(field.dataType)).map(
             field => {
-                const buttonElement = iconButton(['set', 'set-dimension'], '', 'plus-circle', 'Set')
+                const selected = (this.yMeasures || []).findIndex(x => objectEquals({field: field}, x)) >=0 ;
+                const label =
+                    `${field.name} (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`;
+                const radioElement = radio(['set', 'set-dimension'], label, 'dimension', selected);
                 const measureElement = div(['dimension'], [
-                    field.name,
-                    ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`,
-                    buttonElement
+                    radioElement
                 ]).withKey('field', field) as MeasureEl;
-                buttonElement.click(_ => this.setXField(measureElement))
-                return measureElement
+                radioElement.change(_ => this.setXField(measureElement));
+                return measureElement;
             }
         )
     }
@@ -247,14 +248,14 @@ export class PlotEditor extends EventTarget {
     listNumerics() {
         return this.fields.filter(field => field.dataType.isNumeric).map(
             field => {
-                const buttonElement = iconButton(['add', 'add-measure'], '', 'plus-circle', 'Add')
+                const label =
+                    `${field.name} (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`;
+                const radioElement = radio(['add', 'add-measure'], label, 'numeric', false);
                 const measureElement = div(['numeric'], [
-                    field.name,
-                    ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`,
-                    buttonElement
+                  radioElement
                 ]).withKey('field', field) as MeasureEl;
-                buttonElement.click(_ => this.addYField(measureElement))
-                return measureElement
+                radioElement.change(_ => this.addYField(measureElement));
+                return measureElement;
             }
         )
     }
