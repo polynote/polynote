@@ -107,14 +107,17 @@ object PythonObject {
   // and whichever succeeds we'll use.
   implicit object defaultReprs extends ReprsOf[PythonObject] {
     override def apply(obj: PythonObject): Array[ValueRepr] = {
-      def attemptRepr(mimeType: String, t: => PythonObject): Option[MIMERepr] = try Option(t.as[String]).map(str => MIMERepr(mimeType, str)) catch {
-        case err: Throwable =>
-          // According to https://ipython.readthedocs.io/en/stable/config/integrating.html#rich-display it's possible
-          // that _repr_*_ functions return tuple (data, metadata) values. For now, we just drop the metadata values
-          // In future, we might be interested in doing something with them.
-          try Option(t.asTuple2Of[String, Any]).map(tup => MIMERepr(mimeType, tup._1)) catch {
-            case e: Throwable => None
-          }
+      def attemptRepr(mimeType: String, prepareOpt: Option[String => String], t: => PythonObject): Option[MIMERepr] = {
+        val prepare = prepareOpt.getOrElse(identity[String] _)
+        try Option(t.as[String]).map(str => MIMERepr(mimeType, prepare(str))) catch {
+          case err: Throwable =>
+            // According to https://ipython.readthedocs.io/en/stable/config/integrating.html#rich-display it's possible
+            // that _repr_*_ functions return tuple (data, metadata) values. For now, we just drop the metadata values
+            // In future, we might be interested in doing something with them.
+            try Option(t.asTuple2Of[String, Any]).map(tup => MIMERepr(mimeType, prepare(tup._1))) catch {
+              case e: Throwable => None
+            }
+        }
       }
 
       // For now, don't bother with classes (in future we might want to do something special?)
@@ -124,15 +127,15 @@ object PythonObject {
       } else {
 
         val basicMimeReprs = Map(
-          "text/html"           -> "_repr_html_",
-          "text/plain"          -> "__repr__",
-          "application/x-latex" -> "_repr_latex_",
-          "image/svg+xml"       -> "_repr_svg_",
-          "image/jpeg"          -> "_repr_jpeg_",
-          "image/png"           -> "_repr_png_"
+          "text/html"           -> ("_repr_html_" -> None),
+          "text/plain"          -> ("__repr__" -> None),
+          "application/x-latex" -> ("_repr_latex_" -> Some((str: String) => str.stripPrefix("$").stripSuffix("$"))),
+          "image/svg+xml"       -> ("_repr_svg_" -> None),
+          "image/jpeg"          -> ("_repr_jpeg_" -> None),
+          "image/png"           -> ("_repr_png_" -> None)
         ).flatMap {
-          case (mime, funcName) =>
-            if (obj.hasAttribute(funcName)) attemptRepr(mime, obj.applyDynamic(funcName)()) else None
+          case (mime, (funcName, prepare)) =>
+            if (obj.hasAttribute(funcName)) attemptRepr(mime, prepare, obj.applyDynamic(funcName)()) else None
         }
 
         val mimeBundleReprs = if (obj.hasAttribute("_repr_mimebundle_")) {
