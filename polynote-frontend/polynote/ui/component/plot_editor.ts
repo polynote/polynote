@@ -1,7 +1,7 @@
 'use strict';
 
-
-import {div, button, iconButton, h4, TagElement, icon} from '../util/tags'
+import {div, button, iconButton, h4, TagElement, icon, radio} from '../util/tags'
+import {objectEquals, mapValues} from '../util/js_object'
 import {
     BoolType,
     ByteType, DataType,
@@ -50,7 +50,7 @@ type MeasureConfig = {
     agg?: string
 }
 
-function measures(field: StructField): MeasureEl[] {
+function measures(field: StructField, addMeasure: (m: MeasureEl) => void): MeasureEl[] {
     let dataType = field.dataType;
     if (dataType instanceof OptionalType) {
         dataType = dataType.element;
@@ -67,15 +67,22 @@ function measures(field: StructField): MeasureEl[] {
         const selector = new FakeSelect(fakeSelectElem(['choose-measure'], [
             button(['selected'], {value: 'mean'}, ['Mean']),
             button([], {value: 'count'}, ['Count']),
+            button([], {value: 'sum'}, ['Sum']),
             button([], {value: 'quartiles'}, ['Quartiles'])
         ]));
 
-        return [div(['measure', 'selected-measure'], [
+        const addElement = iconButton(['add', 'add-measure'], '', 'plus-circle', 'Add')
+        const measureElement = div(['measure', 'selected-measure'], [
             div(['choose-measure'], [
                 selector.element
             ]),
-            span(['measure-name'], field.name)
-        ]).attr('draggable', true).withKey('field', field).withKey('selector', selector) as MeasureEl];
+            span(['measure-name'], field.name),
+            addElement,
+        ]).withKey('field', field).withKey('selector', selector) as MeasureEl;
+
+        addElement.click(_ => addMeasure(measureElement))
+
+        return [measureElement];
     } else return [];
 }
 
@@ -113,7 +120,6 @@ export class PlotEditor extends EventTarget {
     readonly xTitle: TagElement<"input">;
     private yAxisDrop: TagElement<"div">;
     readonly yTitle: TagElement<"input">;
-    private draggingEl: MeasureEl | null;
     private rawFields: boolean;
     private measureSelectors: MeasureEl[];
     private xDimension: StructField;
@@ -151,11 +157,11 @@ export class PlotEditor extends EventTarget {
                     span([],'⨉'),
                     this.plotHeightInput = textbox(['plot-height'], 'Height', "480").change(evt => this.plotOutput.style.height = parseInt((evt.target as TagElement<"input">).value, 10) + 'px')
                 ]),
-                h4(['dimension-title'], ['Dimensions', iconButton(['add', 'add-measure'], 'Add dimension', 'plus-circle', 'Add').click(_ => this.showAddDimension())]),
+                h4(['dimension-title'], ['X Axis']),
                 div(['dimension-list'], this.listDimensions()),
-                h4(['measure-title'], ['Measures', iconButton(['add', 'add-measure'], 'Add measure', 'plus-circle', 'Add').click(_ => this.showAddMeasure())]),
+                h4(['measure-title'], ['Y Axis']),
                 div(['measure-list'], this.listMeasures()),
-                h4(['numeric-field-title'], ['Fields']),
+                h4(['numeric-field-title'], ['Y Axis']),
                 div(['numeric-field-list'], this.listNumerics()),
                 div(['control-buttons'], [
                     this.saveButton = button(['save'], {}, [
@@ -179,10 +185,10 @@ export class PlotEditor extends EventTarget {
                     ]),
                     this.xAxisDrop = div(['x-axis-drop'], [span(['label'], [
                         this.xTitle = textbox([], 'Enter an axis title', ''),
-                        span(['placeholder'], ['Drop X-axis dimension here'])
+                        span(['placeholder'], ['Choose a X-axis dimension'])
                     ])]),
                     this.yAxisDrop = div(['y-axis-drop'], [span(['label'], [
-                        span(['placeholder'], ['Drop Y-axis measure(s) here']),
+                        span(['placeholder'], ['Choose some Y-axis measure(s)/field(s)']),
                         this.yTitle = textbox([], 'Enter an axis title', '')
                     ])]),
                     div(['plot-embed'], [])
@@ -210,47 +216,6 @@ export class PlotEditor extends EventTarget {
 
         this.plotTypeSelector.addListener(() => this.onPlotTypeChange());
 
-        this.el.addEventListener('dragstart', evt => {
-           // Firefox only allows dragging elements with a set DataTransfer
-           evt?.dataTransfer?.setData('dummy', 'dummy');
-           this.draggingEl = evt.target as MeasureEl;
-        });
-
-        this.el.addEventListener('dragend', evt => {
-           this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-           this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-           this.draggingEl = null;
-        });
-
-        this.el.addEventListener('dragenter', evt => {
-           this.yAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-           this.xAxisDrop.classList.remove('drop-ok', 'drop-disallowed');
-        });
-
-        const attachAxisListener = (axisEl: HTMLElement, setField: (from: MeasureEl) => void, axisType: () => string) => {
-            axisEl.addEventListener('dragenter', evt => {
-                evt.stopPropagation();
-                if (this.draggingEl?.classList.contains(axisType())) {
-                    axisEl.classList.add('drop-ok');
-                } else {
-                    axisEl.classList.add('drop-disallowed');
-                }
-            });
-
-            axisEl.addEventListener('dragover', evt => {
-                if (this.draggingEl?.classList.contains(axisType())) {
-                    evt.preventDefault();
-                }
-            });
-
-            axisEl.addEventListener('drop', evt => {
-                if (this.draggingEl) setField(this.draggingEl);
-                axisEl.classList.remove('drop-ok', 'drop-disallowed');
-            });
-        };
-
-        attachAxisListener(this.xAxisDrop, m => this.setXField(m), () => this.correctXType);
-        attachAxisListener(this.yAxisDrop, m => this.addYField(m), () => this.correctYType);
         this.onPlotTypeChange();
     }
 
@@ -264,34 +229,40 @@ export class PlotEditor extends EventTarget {
         return 'dimension';
     }
 
-    showAddMeasure() {
-        // TODO - show a UI to let you explore measures you can use in more detail
-    }
-
-    showAddDimension() {
-        // TODO - show a UI to let you
-    }
-
     listDimensions() {
         return this.fields.filter(field => isDimension(field.dataType)).map(
-            field => div(['dimension'], [
-                field.name,
-                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`]
-            ).withKey('field', field).attr('draggable', true)
+            field => {
+                const selected = (this.yMeasures || []).findIndex(x => objectEquals({field: field}, x)) >=0 ;
+                const label =
+                    `${field.name} (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`;
+                const radioElement = radio(['set', 'set-dimension'], label, 'dimension', selected);
+                const measureElement = div(['dimension'], [
+                    radioElement
+                ]).withKey('field', field) as MeasureEl;
+                radioElement.change(_ => this.setXField(measureElement));
+                return measureElement;
+            }
         )
     }
 
     listNumerics() {
         return this.fields.filter(field => field.dataType.isNumeric).map(
-            field => div(['numeric'], [
-                field.name,
-                ` (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`]
-            ).withKey('field', field).attr('draggable', true)
+            field => {
+                const label =
+                    `${field.name} (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`;
+                const radioElement = radio(['add', 'add-measure'], label, 'numeric', false);
+                const measureElement = div(['numeric'], [
+                  radioElement
+                ]).withKey('field', field) as MeasureEl;
+                radioElement.change(_ => this.addYField(measureElement));
+                return measureElement;
+            }
         )
     }
 
     listMeasures() {
-        this.measureSelectors = this.fields.flatMap(field => measures(field));
+        this.measureSelectors =
+            this.fields.flatMap(field => measures(field, m => this.addYField(m)));
         return this.measureSelectors;
     }
 
@@ -370,50 +341,61 @@ export class PlotEditor extends EventTarget {
             this.yMeasures = [];
         }
 
-        if (this.rawFields) {
-            this.yAxisDrop.classList.add('nonempty');
-            const el = span([this.correctYType], [from.field.name]);
-            const target = this.yAxisDrop.querySelector('.label')!;
-            target.insertBefore(el, target.querySelector('input'));
-            this.yAxisDrop.classList.add('nonempty');
-            this.yMeasures.push({
-                field: from.field
-            });
+        let measureConfig: MeasureConfig = {
+            field: from.field
+        };
 
-        } else if (from.classList.contains('selected-measure')) {
-            const selector = from.selector;
-            const field = from.field;
-            const measureConfig = {
-                field,
-                agg: selector.value
-            };
+        if (from.classList.contains('selected-measure')) {
+            measureConfig.agg = from.selector.value
+        }
 
-            this.yMeasures.push(measureConfig);
+        if (this.yMeasures.findIndex(x => objectEquals(measureConfig, x)) === -1) {
+            if (this.rawFields) {
+                this.yAxisDrop.classList.add('nonempty');
+                const el = span([this.correctYType], [from.field.name]);
+                const label = this.yAxisDrop.querySelector('.label')!;
+                [...label.querySelectorAll('.numeric, .measure')].forEach(node => node.parentNode!.removeChild(node));
+                label.insertBefore(el, label.querySelector('input'));
+                this.yMeasures = [measureConfig];
 
-            const label = span(
-                ['measure'], [
-                    `${selector.value}(${field.name})`,
-                    iconButton(['remove'], 'Remove', 'times-circle', 'X').click(_ => {
-                        const idx = this.yMeasures.indexOf(measureConfig);
-                        this.yMeasures.splice(idx, 1);
-                        label.parentNode!.removeChild(label);
-                        if (!this.yMeasures.length) {
-                            this.yAxisDrop.classList.remove('nonempty');
-                        }
-                    })
-                ]
-            );
+            }
+            else if (from.classList.contains('selected-measure')) {
+                if (this.yMeasures.length === 1 && this.yMeasures[0].agg === undefined) {
+                    // There's a raw field in the measures, which must be removed
+                    const label = this.yAxisDrop.querySelector('.label')!;
+                    [...label.querySelectorAll('.numeric, .measure')].forEach(node => node.parentNode!.removeChild(node));
+                    this.yMeasures = [];
+                }
 
-            this.yAxisDrop.classList.add('nonempty');
-            const target = this.yAxisDrop.querySelector('.label')!;
-            target.insertBefore(label, target.querySelector('input'));
+                this.yMeasures.push(measureConfig);
+
+                const label = span(
+                    ['measure'], [
+                        `${from.selector.value}(${from.field.name})`,
+                        iconButton(['remove'], 'Remove', 'times-circle', 'X').click(_ => {
+                            const idx = this.yMeasures.indexOf(measureConfig);
+                            this.yMeasures.splice(idx, 1);
+                            label.parentNode!.removeChild(label);
+                            if (!this.yMeasures.length) {
+                                this.yAxisDrop.classList.remove('nonempty');
+                            }
+                        })
+                    ]
+                );
+
+                this.yAxisDrop.classList.add('nonempty');
+                const target = this.yAxisDrop.querySelector('.label')!;
+                target.insertBefore(label, target.querySelector('input'));
+            }
         }
     }
 
     getSpec(plotType: string) {
+        let measures = this.yMeasures || []
+        if (!measures.length) {throw 'No measures defined';}
+        if (!this.xDimension) {throw `No dimension defined`;}
         if(specialSpecs[plotType]) {
             const specFn = specialSpecs[plotType];
-            let measures = this.yMeasures;
             if (specFn.allowedAggregates) {
                 measures = measures.filter(measure => specFn.allowedAggregates!.indexOf(measure.agg!) >= 0);
             }
@@ -425,62 +407,76 @@ export class PlotEditor extends EventTarget {
             }
             return specFn.call(this, plotType, this.xDimension, measures);
         } else {
-            return normalSpec.call(this, plotType, this.xDimension, this.yMeasures);
+            return normalSpec.call(this, plotType, this.xDimension, measures);
         }
     }
 
     runPlot() {
-        //this.runButton.disabled = true;
-        this.el.classList.add('running');
-        this.saveButton.style.display = 'none';
-        if (this.currentStream) {
-            throw new Error("Plot can't be run when a previous plot stream is already running");
-        }
+        try {
+            //this.runButton.disabled = true;
+            this.el.classList.add('running');
+            this.saveButton.style.display = 'none';
+            if (this.currentStream) {
+                throw new Error("Plot can't be run when a previous plot stream is already running");
+            }
 
-        const stream = this.currentStream = new DataStream(this.notebook.socket, this.repr, this.getTableOps()).batch(500);
+            const stream = this.currentStream = new DataStream(this.notebook.socket, this.repr, this.getTableOps()).batch(500);
 
-        // TODO: multiple Ys
-        // TODO: encode color
-        // TODO: box plot has to be specially handled in order to pre-aggregate, https://github.com/vega/vega-lite/issues/4343
-        const plotType = this.plotTypeSelector.value;
+            // TODO: multiple Ys
+            // TODO: encode color
+            // TODO: box plot has to be specially handled in order to pre-aggregate, https://github.com/vega/vega-lite/issues/4343
+            const plotType = this.plotTypeSelector.value;
 
-        const spec = this.getSpec(plotType);
+            const spec = this.getSpec(plotType);
 
-        if (this.plotTitle.value !== '') {
-            spec.title = this.plotTitle.value;
-        }
+            if (this.plotTitle.value !== '') {
+                spec.title = this.plotTitle.value;
+            }
 
-        spec.autosize = 'fit';
-        spec.width = +(this.plotWidthInput.value);
-        spec.height = +(this.plotHeightInput.value);
+            spec.autosize = 'fit';
+            spec.width = +(this.plotWidthInput.value);
+            spec.height = +(this.plotHeightInput.value);
 
-        this.spec = spec;
+            this.spec = spec;
 
-        embed(
-            this.plotOutput.querySelector('.plot-embed') as HTMLElement,
-            spec
-        ).then(plot => {
-            stream
-                .to(batch => plot.view.insert(this.name, batch).runAsync())
-                .run()
-                .then(_ => {
-                    plot.view.resize().runAsync();
-                    this.saveButton.style.display = '';
-                    this.plotOutput.style.width = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetWidth + "px";
-                    this.plotOutput.style.height = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetHeight + "px";
-                    this.el.classList.remove('running');
-                    this.plot = plot;
-                    this.currentStream = undefined;
-                    //this.session.send(new ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, repr.handle));
-                }).catch(reason => {
-                    this.handleError(reason);
-                });
-        });
+            const normalizeValues = (x: any) => {
+                if (typeof(x) === 'bigint' && x >= Number.MIN_SAFE_INTEGER && x <= Number.MAX_SAFE_INTEGER) {
+                  return Number(x)
+                }
+                else {
+                  return x;
+                }
+            }
+
+            embed(
+                this.plotOutput.querySelector('.plot-embed') as HTMLElement,
+                spec
+            ).then(plot => {
+                stream
+                    .to(batch => plot.view.insert(this.name, batch.map((obj: object) => mapValues(obj, normalizeValues))).runAsync())
+                    .run()
+                    .then(_ => {
+                        plot.view.resize().runAsync();
+                        this.saveButton.style.display = '';
+                        this.plotOutput.style.width = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetWidth + "px";
+                        this.plotOutput.style.height = (this.plotOutput.querySelector('.plot-embed') as HTMLElement).offsetHeight + "px";
+                        this.el.classList.remove('running');
+                        this.plot = plot;
+                        this.currentStream = undefined;
+                        //this.session.send(new ReleaseHandle(this.path, StreamingDataRepr.handleTypeId, repr.handle));
+                    }).catch(reason => {
+                        this.handleError(reason);
+                    });
+            });
+        } catch (reason) {
+            this.handleError(reason)
+        };
     }
 
     handleError(err: any) {
         this.abortPlot();
-        // TODO: display error to the user
+        alert(err);
+        // TODO: prettier error display
     }
 
     abortPlot() {

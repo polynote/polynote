@@ -230,6 +230,14 @@ export function checkbox(classes: string[], label: string, value: boolean = fals
     ]);
 }
 
+export function radio(classes: string[], label: string, name: string, value: boolean = false) {
+    const attrs = {type:'radio', checked: value, name: name};
+    return tag('label', classes, {}, [
+        tag('input', [], attrs, []),
+        span([], [label])
+    ]);
+}
+
 export function h2(classes: string[], content: Content) {
     return tag('h2', classes, {}, content)
 }
