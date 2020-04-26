@@ -297,7 +297,7 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           |    return "<h1>HTML string</h1>"
           |
           |  def _repr_latex_(self):
-          |    return "latex{string}"
+          |    return "$latex{string}$"
           |
           |  def _repr_svg_(self):
           |    return "<svg />"
