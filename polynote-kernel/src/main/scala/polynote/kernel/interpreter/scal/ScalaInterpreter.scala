@@ -160,7 +160,9 @@ class ScalaInterpreter private[scal] (
   /**
     * Run the cell given the loaded compiled class and the input values carried from previous cells (not including
     * prior cell instances themselves). Collects any required prior cell instances (for dependent types and imports)
-    * and constructs the cell class (running the code) in an interruptible task while capturing standard output.
+    * and constructs the cell class (running the code) in an interruptible task while capturing standard output –
+    * standard output is captured because upstream Kernel provides a Blocking environment which does this (as it does
+    * for all Interpreters) by redirecting JVM stdout during the task execution.
     */
   private def runClass(cls: Class[_], code: CellCode, inputValues: List[Any], state: State) = for {
     constructor   <- ZIO(cls.getDeclaredConstructors()(0))
