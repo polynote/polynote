@@ -37,7 +37,7 @@ class LocalStorageHandler<T> extends StateHandler<T> {
 
 export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("RecentNotebooks", []);
 export const NotebookLocationsHandler = new LocalStorageHandler<NotebookLocations>("NotebookLocations", {});
-export const ViewSizesHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
+export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
     leftPane: {
         size: '300px',
         collapsed: false,

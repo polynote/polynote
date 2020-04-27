@@ -42,6 +42,7 @@ export interface NotebookState {
     localVersion: number,
     editBuffer: EditBuffer,
     // ephemeral states
+    activeCell?: CellState,
     activeCompletion?: { resolve: (completion: CompletionHint) => void, reject: () => void },
     activeSignature?: { resolve: (signature: SignatureHint) => void, reject: () => void },
     activePresence: Record<number, { presence: Presence, selection?: { cell: number, range: PosRange}}>

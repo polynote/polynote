@@ -15,13 +15,13 @@ import {
 } from "../../util/tags";
 import {KernelCommand, NotebookMessageDispatcher, Reconnect} from "../messaging/dispatcher";
 import {StateHandler} from "../state/state_handler";
-import {ViewPreferences, ViewSizesHandler} from "../state/storage";
+import {ViewPreferences, ViewPrefsHandler} from "../state/storage";
 import {TaskInfo, TaskStatus} from "../../../data/messages";
 import {ResultValue} from "../../../data/result";
 
 export class Kernel {
     readonly el: TagElement<"div">;
-    private statusEl: TagElement<"h2">;
+    readonly statusEl: TagElement<"h2">;
     private status: TagElement<"span">;
 
     // TODO: this implementation will no longer appear on the welcome screen, which means that errors won't show.
@@ -33,7 +33,7 @@ export class Kernel {
         const symbols = new KernelSymbolsComponent(kernelState.kernelSymbolsHandler);
         const tasks = new KernelTasksComponent(kernelState.kernelTasksHandler);
 
-        this.el = div(['kernel-ui', 'ui-panel'], [
+        this.el = div(['kernel-ui'], [
             this.statusEl = h2(['kernel-status'], [
                 this.status = span(['status'], ['●']),
                 'Kernel',
@@ -72,7 +72,7 @@ export class Kernel {
     }
 
     private collapse() {
-        ViewSizesHandler.updateState(prev => {
+        ViewPrefsHandler.updateState(prev => {
             prev[this.whichPane].collapsed = !prev[this.whichPane].collapsed;
             return prev;
         })

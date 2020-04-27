@@ -73,6 +73,7 @@ export class CellContainerComponent {
     }
 }
 
+// TODO: link up these hotkeys!
 export const cellHotkeys = [
     [monaco.KeyCode.UpArrow, "SelectPrevious", "Move to previous cell."],
     [monaco.KeyCode.DownArrow, "SelectNext", "Move to next cell. If there is no cell below, create it."],
@@ -96,11 +97,12 @@ abstract class CellComponent {
     }
 
     makeActive(){
-        this.dispatcher.dispatch(new SetSelectedCell([this.id]))
+        this.dispatcher.dispatch(new SetSelectedCell(this.id))
     }
 
+    // TODO: if the user clicked on another cell are we sure this will happen before its makeActive?
     blur(){
-        this.dispatcher.dispatch(new SetSelectedCell([]))
+        this.dispatcher.dispatch(new SetSelectedCell(undefined))
     }
 
     // TODO: this should probably be somewhere else.

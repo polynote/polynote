@@ -25,7 +25,7 @@ import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {EditBuffer} from "../../../data/edit_buffer";
 
 class MessageReceiver<S> {
-    constructor(protected socket: SocketSession, private state: StateHandler<S>) {}
+    constructor(protected socket: SocketSession, protected state: StateHandler<S>) {}
 
     receive<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => void) {
         this.socket.addMessageListener(msgType, (...args) => {
@@ -37,7 +37,7 @@ class MessageReceiver<S> {
     }
 }
 
-class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
+export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
     constructor(socket: SocketSession, state: NotebookStateHandler) {
         super(socket, state);
 
@@ -268,20 +268,20 @@ class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
     }
 }
 
-class ServerMessageReceiver extends MessageReceiver<ServerState> {
+export class ServerMessageReceiver extends MessageReceiver<ServerState> {
     public notebooks: Record<string, NotebookMessageReceiver> = {};
 
-    constructor(socket: SocketSession, state: ServerStateHandler) {
-        super(socket, state);
+    constructor() {
+        super(SocketSession.global, ServerStateHandler.get);
 
-        socket.addEventListener('open', evt => {
-            state.updateState(s => {
+        this.socket.addEventListener('open', evt => {
+            this.state.updateState(s => {
                 s.connectionStatus = "connected";
                 return s;
             })
         });
-        socket.addEventListener('close', evt => {
-            state.updateState(s => {
+        this.socket.addEventListener('close', evt => {
+            this.state.updateState(s => {
                 s.connectionStatus = "disconnected";
                 return s;
             })
@@ -291,12 +291,12 @@ class ServerMessageReceiver extends MessageReceiver<ServerState> {
             s.errors.push({code, err});
         });
         this.receive(messages.CreateNotebook, (s, path) => {
-            s.notebooks[path] = this.newNotebookState(path)
+            s.notebooks[path] = ServerStateHandler.newNotebookState(path)
         });
         this.receive(messages.RenameNotebook, (s, oldPath, newPath) => {
             const nbState = s.notebooks[oldPath];
             if (nbState) {
-                nbState.path = newPath;
+                nbState.state.path = newPath;
                 s.notebooks[newPath] = nbState;
                 delete s.notebooks[oldPath];
             }
@@ -306,7 +306,7 @@ class ServerMessageReceiver extends MessageReceiver<ServerState> {
         });
         this.receive(messages.ListNotebooks, (s, notebooks) => {
             notebooks.forEach(path => {
-                s.notebooks[path] = this.newNotebookState(path)
+                s.notebooks[path] = ServerStateHandler.newNotebookState(path)
             })
         });
         this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
@@ -322,43 +322,10 @@ class ServerMessageReceiver extends MessageReceiver<ServerState> {
         });
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {
             kernelStatuses.forEach(kv => {
-                const nbState = s.notebooks[kv.first] ?? this.newNotebookState(kv.first);
+                const nbState = s.notebooks[kv.first]?.state ?? ServerStateHandler.newNotebookState(kv.first).state;
                 nbState.kernel.status = (kv.second.busy && 'busy') || (!kv.second.alive && 'dead') || 'idle';
-                s.notebooks[kv.first] = nbState;
+                s.notebooks[kv.first].state = nbState;
             })
         })
-    }
-
-    /**
-     * Initialize a new NotebookState and create a NotebookMessageReceiver for that notebook.
-     *
-     * @param path
-     * @return NotebookState
-     */
-    private newNotebookState(path: string): NotebookState {
-        const nbState: NotebookState = {
-            path,
-            cells: [],
-            config: NotebookConfig.default,
-            errors: [],
-            kernel: {
-                symbols: [],
-                status: 'disconnected',
-                info: {},
-                tasks: {},
-            },
-            globalVersion: -1,
-            localVersion: -1,
-            editBuffer: new EditBuffer(),
-            activePresence: {}
-        };
-
-        // TODO: how will anything get the nbHandler? where will new views, etc. be created?
-
-        const nbSocket = SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`);
-        const nbHandler = new NotebookStateHandler(nbState);
-        this.notebooks[path] = new NotebookMessageReceiver(nbSocket, nbHandler);
-
-        return nbState
     }
 }

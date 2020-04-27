@@ -1,24 +1,24 @@
 import * as deepEquals from 'fast-deep-equal/es6';
-import {Message} from "../../../data/messages";
+import * as clone from "clone";
 
 // The StateHandler mediates interactions between Components and States
 export class StateHandler<S> {
     // direct retrieval of the current value of S
     getState(): S {
-        return this.state;
+        return clone(this.state);
     }
 
-    // handle with which to set the state. When the state is changed, all observers get notified.
     /**
      * Handle with which to set the state. If the new state is different from the previous state, all observers are notified.
      * If the provided state is the same as the existing state, nothing happens.
      */
     setState(newState: S) {
         if (!deepEquals(newState, this.state)) {
+            const oldState = this.state;
+            this.state = newState;
             this.observers.forEach(obs => {
-                obs(this.state, newState)
+                obs(oldState, newState)
             });
-            this.state = newState
         }
     }
 
@@ -43,10 +43,34 @@ export class StateHandler<S> {
         return view
     }
 
+    // A child 'view' + a transformation.
+    xmapView<K extends keyof S, T>(key: K, toT: (s: S[K]) => T | undefined, fromT: (s: S[K], t: T) => S[K]) {
+        const view = this.view(key);
+        const initialT = toT(view.getState());
+        if (initialT === undefined) {
+            throw new Error("how did this happen...")
+        }
+        const state = new StateHandler<T>(initialT);
+        state.addObserver(t => {
+            view.setState(fromT(view.getState(), t))
+        });
+        const viewObs = view.addObserver((_, newState) => {
+            const t = toT(newState);
+            if (t) {
+                state.setState(t);
+            } else {
+                // hopefully this is all the cleanup we need to do?
+                view.removeObserver(viewObs);
+                state.clearObservers();
+            }
+        });
+        return state;
+    }
+
     constructor(protected state: S) {}
 
     // methods to add and remove observers.
-    protected observers: Observer<S>[];
+    protected observers: Observer<S>[] = [];
     addObserver(f: Observer<S>): Observer<S> {
         this.observers.push(f);
         return f;
@@ -65,4 +89,6 @@ export class StateHandler<S> {
     }
 }
 
-type Observer<S> = (oldS: S, newS: S) => void;
+export type Observer<S> = (oldS: S, newS: S) => void;
+
+export class SimpleStateHandler<S> extends StateHandler<S> {}

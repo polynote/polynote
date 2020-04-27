@@ -11,14 +11,13 @@ import {Output, PosRange} from "../../../data/result";
 import {StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../../../data/content_edit";
-import {ServerStateHandler} from "../state/server_state";
-import {languages} from "monaco-editor";
-import CompletionList = languages.CompletionList;
-import SignatureHelp = languages.SignatureHelp;
+import {ServerState, ServerStateHandler} from "../state/server_state";
 
 
-class MessageDispatcher<S> {
-    constructor(protected socket: SocketSession, protected state: StateHandler<S>) {}
+export abstract class MessageDispatcher<S> {
+    protected constructor(protected socket: SocketSession, protected state: StateHandler<S>) {}
+
+    abstract dispatch(action: UIAction): void
 }
 
 export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
@@ -83,16 +82,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                     this.socket.send(update);
                     state.editBuffer.push(state.localVersion, update);
                 })
-                .when(CreateNotebook, (path, content) => {
-                    // TODO: how to open the newly-created notebook?
-                    this.socket.send(new messages.CreateNotebook(path, content))
-                })
-                .when(RenameNotebook, (oldPath, newPath) => {
-                    this.socket.send(new messages.RenameNotebook(oldPath, newPath))
-                })
-                .when(CopyNotebook, (oldPath, newPath) => {
-                    this.socket.send(new messages.CopyNotebook(oldPath, newPath))
-                })
                 .when(RequestCompletions, (cellId, offset, resolve, reject) => {
                     this.socket.send(new messages.CompletionsAt(cellId, offset, []));
                     if (state.activeCompletion) {
@@ -111,6 +100,12 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                     this.socket.send(new messages.NotebookVersion(state.path, version))
                 })
                 .when(RequestCellRun, cellIds => {
+                    //TODO: what about client interpreters?
+
+                    // empty cellIds means run all of them!
+                    if (cellIds.length === 0) {
+                        cellIds = state.cells.map(cell => cell.id);
+                    }
                     this.socket.send(new messages.RunCell(cellIds));
                     cellIds.forEach(id => {
                         const idx = state.cells.findIndex(cell => cell.id === id);
@@ -119,18 +114,17 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                         }
                     })
                 })
-                .when(RequestCancelTasks, path => {
-                    this.socket.send(new messages.CancelTasks(path))
+                .when(RequestCancelTasks, () => {
+                    this.socket.send(new messages.CancelTasks(state.path))
                 })
                 .when(RequestClearOutput, () => {
                     this.socket.send(new messages.ClearOutput())
                 })
-                .when(RequestNotebooksList, () => {
-                    this.socket.send(new messages.ListNotebooks([]))
-                })
                 .when(SetSelectedCell, selected => {
+                    state.activeCell = state.cells.find(cell => cell.id === selected);
+
                     state.cells.forEach(cell => {
-                        cell.selected = selected.includes(cell.id);
+                        cell.selected = selected === cell.id;
                     });
                 })
                 .when(CurrentSelection, (cellId, range) => {
@@ -146,12 +140,107 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                         state.cells[idx].pendingEdits = [];
                     }
                 })
+                .when(DownloadNotebook, () => {
+                    // TODO download current notebook
+                })
 
 
             // TODO: add more actions! basically UIEvents that anything subscribes to should be here I think
 
-
             return state
+        });
+    }
+
+    // Helper methods
+    /**
+     * Helper for inserting a cell.
+     *
+     * @param direction  Whether to insert below of above the anchor
+     * @param anchor     The anchor. If it is undefined, the anchor is based on the currently selected cell. If none is
+     *                   selected, the anchor is either the first or last cell (depending on the direction supplied).
+     *                   The anchor is used to determine the location, language, and metadata to supply to the new cell.
+     */
+    insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata}) {
+        const currentState = this.state.getState();
+        let currentCell = currentState.activeCell;
+        if (anchor === undefined) {
+            if (currentCell === undefined) {
+                if (direction === 'above') {
+                    currentCell = currentState.cells[0];
+                } else {
+                    currentCell = currentState.cells[currentState.cells.length - 1];
+                }
+            }
+            anchor = {id: currentCell.id, language: currentCell.language, metadata: currentCell.metadata};
+        }
+        const anchorIdx = currentState.cells.findIndex(cell => cell.id === anchor!.id);
+        const prev = direction === 'above' ? anchorIdx - 1 : anchorIdx;
+        this.dispatch(new CreateCell(anchor.language, '', anchor.metadata, prev))
+    }
+
+    deleteCell(id?: number){
+       if (id === undefined) {
+           id = this.state.getState().activeCell?.id;
+       }
+       if (id) {
+           this.dispatch(new DeleteCell(id));
+       }
+    }
+
+    runActiveCell() {
+        const id = this.state.getState().activeCell?.id;
+        if (id) {
+            this.dispatch(new RequestCellRun([id]));
+        }
+    }
+
+    runToActiveCell() {
+        const state = this.state.getState();
+        const id = state.activeCell?.id;
+        const activeIdx = state.cells.findIndex(cell => cell.id === id);
+        const cellsToRun = state.cells.splice(0, activeIdx).map(c => c.id);
+        if (cellsToRun.length > 0) {
+            this.dispatch(new RequestCellRun(cellsToRun))
+        }
+    }
+}
+
+export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
+    constructor() {
+        super(SocketSession.global, ServerStateHandler.get);
+
+    }
+
+    dispatch(action: UIAction): void {
+        this.state.updateState(s => {
+            match(action)
+                .when(RequestNotebooksList, () => {
+                    this.socket.send(new messages.ListNotebooks([]))
+                })
+                .when(LoadNotebook, path => {
+                    s.notebooks[path] = ServerStateHandler.newNotebookState(path, true);
+                    s.currentNotebook = path
+                })
+                .when(CreateNotebook, (path, content) => {
+                    this.socket.send(new messages.CreateNotebook(path, content))
+                })
+                .when(RenameNotebook, (oldPath, newPath) => {
+                    this.socket.send(new messages.RenameNotebook(oldPath, newPath))
+                })
+                .when(CopyNotebook, (oldPath, newPath) => {
+                    this.socket.send(new messages.CopyNotebook(oldPath, newPath))
+                })
+                .when(DeleteNotebook, (path) => {
+                    this.socket.send(new messages.DeleteNotebook(path))
+                })
+                .when(ViewAbout, section => {
+                    //TODO: handle modal viewing
+                })
+                .when(SetSelectedNotebook, path => {
+                    s.currentNotebook = path
+                })
+
+            return s
         });
     }
 }
@@ -255,6 +344,18 @@ export class UpdateConfig extends UIAction {
         return [inst.config];
     }
 }
+
+export class LoadNotebook extends UIAction {
+    constructor(readonly path: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: LoadNotebook): ConstructorParameters<typeof LoadNotebook> {
+        return [inst.path];
+    }
+}
+
 
 export class CreateNotebook extends UIAction {
     constructor(readonly path: string, readonly content?: string) {
@@ -380,13 +481,13 @@ export class RequestCellRun extends UIAction {
 }
 
 export class RequestCancelTasks extends UIAction {
-    constructor(readonly path: string) {
+    constructor() {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: RequestCancelTasks): ConstructorParameters<typeof RequestCancelTasks> {
-        return [inst.path];
+        return [];
     }
 }
 
@@ -413,7 +514,7 @@ export class RequestNotebooksList extends UIAction {
 }
 
 export class SetSelectedCell extends UIAction {
-    constructor(readonly selected: number[]) {
+    constructor(readonly selected: number | undefined) {
         super();
         Object.freeze(this);
     }
@@ -442,5 +543,38 @@ export class ClearCellEdits extends UIAction {
 
     static unapply(inst: ClearCellEdits): ConstructorParameters<typeof ClearCellEdits> {
         return [inst.cellId];
+    }
+}
+
+export class DownloadNotebook extends UIAction {
+    constructor() {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: DownloadNotebook): ConstructorParameters<typeof DownloadNotebook> {
+        return [];
+    }
+}
+
+export class SetSelectedNotebook extends UIAction {
+    constructor(readonly path?: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: SetSelectedNotebook): ConstructorParameters<typeof SetSelectedNotebook> {
+        return [inst.path];
+    }
+}
+
+export class ViewAbout extends UIAction {
+    constructor(readonly section: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: ViewAbout): ConstructorParameters<typeof ViewAbout> {
+        return [inst.section];
     }
 }

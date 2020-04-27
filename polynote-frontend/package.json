@@ -5,6 +5,7 @@
     "@types/tinycon": "0.6.1",
     "@types/uuid": "7.0.0",
     "acorn": "7.1.1",
+    "clone": "2.1.2",
     "event-target-shim": "5.0.1",
     "fast-deep-equal": "3.1.1",
     "idb-keyval": "3.2.0",
