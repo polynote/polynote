@@ -1,24 +1,47 @@
 package polynote
 
-import polynote.config.KernelIsolation
-import polynote.kernel.{Kernel, LocalKernel, LocalSparkKernel}
+import java.io.File
+
+import polynote.app.Environment
+import polynote.config.{KernelIsolation, PolynoteConfig}
+import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, LocalSparkKernel}
 import polynote.kernel.environment.{Config, CurrentNotebook}
+import polynote.kernel.environment.Env.LayerOps
+import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.remote.{RemoteKernel, RemoteSparkKernel}
 import polynote.messages.NotebookConfig
-import polynote.server.Server
+import polynote.server.{AppEnv, Server}
+import polynote.app.{Args, MainArgs, globalEnv}
+import polynote.server.auth.IdentityProvider
+import polynote.server.repository.NotebookRepository
+import polynote.server.repository.fs.FileSystems
+import zio.{Has, ULayer, ZIO, ZLayer}
 
 abstract class Main
-object Main {
-  def main(args: Array[String]): Unit = args.headOption match {
-    case None                            => runServer(args)
-    case Some(arg) if arg startsWith "-" => runServer(args)
-    case Some("server")                  => runServer(args.tail)
-    // TODO: headless run notebook, repl, etc
-    case Some(other) => throw new IllegalArgumentException(s"Unknown command $other")
+object Main extends polynote.app.App {
+
+  val main: ZIO[AppEnv, Nothing, Int] =
+    MainArgs.access.flatMap {
+      args => args.command match {
+        case "server" => new Server().main
+        case "run"    => NotebookRunner.main
+        case other    => ZIO.dieMessage(s"Unknown command $other (expected server)")
+      }
+    }.catchAll {
+      str => ZIO.effectTotal {
+        System.err.println(str)
+        System.err.println()
+      }.as(1)
+    }
+
+  override def main(args: List[String]): ZIO[Environment, Nothing, Int] = main.provideSomeLayer[BaseEnv] {
+    Args.parse(args).orDie andThen
+      ((Config.layer.orDie ++ kernelFactory ++ FileSystems.live) andThen
+        globalEnv.orDie andThen NotebookRepository.live)
   }
 
-  private def runServer(args: Array[String]): Unit = {
-    val kernelFactory = Kernel.Factory.choose {
+  private val kernelFactory: ULayer[Kernel.Factory] = ZLayer.succeed {
+    Kernel.Factory.choose {
       for {
         notebook <- CurrentNotebook.get
         config   <- Config.access
@@ -40,6 +63,6 @@ object Main {
         }
       }
     }
-    new Server(kernelFactory).main(args)
   }
+
 }

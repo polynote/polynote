@@ -2,11 +2,12 @@ package polynote.kernel
 
 import cats.effect.concurrent.Ref
 import fs2.Stream
+import polynote.app.{Args, MainArgs}
 import polynote.config.PolynoteConfig
 import polynote.kernel.util.Publish
 import polynote.messages.{Message, Notebook, NotebookUpdate}
 import polynote.runtime.KernelRuntime
-import zio.{Has, Task}
+import zio.{Has, Task, ZLayer}
 
 package object environment {
 

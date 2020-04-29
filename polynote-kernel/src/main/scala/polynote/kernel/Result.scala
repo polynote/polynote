@@ -10,7 +10,7 @@ import scodec.codecs.implicits._
 import shapeless.cachedImplicit
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
-import polynote.messages.{CellID, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
+import polynote.messages.{CellID, NotebookCell, ShortList, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
 import polynote.runtime.{CellRange, ValueRepr}
 import scodec.bits.BitVector
 
@@ -181,9 +181,30 @@ object ExecutionInfo extends ResultCompanion[ExecutionInfo](5) {
 }
 
 
-sealed trait Result
+sealed trait Result {
+  def toCellUpdate: NotebookCell => NotebookCell = Result.toCellUpdate(this)
+}
 
 object Result {
   implicit val discriminated: Discriminated[Result, Byte] = Discriminated(byte)
   implicit val codec: Codec[Result] = cachedImplicit
+
+  def toCellUpdate(result: Result): NotebookCell => NotebookCell = {
+    // process carriage returns in the string
+    def collapseCrs(str: String): String = str.replaceAll("\\r\\n", "\n").replaceAll("[^\\n]*\\r", "")
+
+    result match {
+      case ClearResults() => _.copy(results = ShortList(Nil))
+      case execInfo@ExecutionInfo(_, _) => cell => cell.copy(results = ShortList(cell.results :+ execInfo), metadata = cell.metadata.copy(executionInfo = Some(execInfo)))
+      case Output(contentType, str) =>
+        cell => {
+          val updatedResults = cell.results.lastOption match {
+            case Some(Output(`contentType`, str1)) => cell.results.dropRight(1) :+ Output(contentType, collapseCrs(str1 + str))
+            case _ => cell.results :+ result
+          }
+          cell.copy(results = ShortList.fromRight(updatedResults))
+        }
+      case result => cell => cell.copy(results = ShortList.fromRight(cell.results :+ result))
+    }
+  }
 }

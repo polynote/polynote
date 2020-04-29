@@ -12,6 +12,7 @@ import cats.instances.list._
 import cats.syntax.traverse._
 import fs2.concurrent.SignallingRef
 import fs2.{Chunk, Pipe, Stream}
+import polynote.app.Environment
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishResult, PublishStatus}
@@ -338,7 +339,7 @@ object RemoteKernelClient extends polynote.app.App {
     val publishStatus = PublishStatus.layer(publishResponse.contramap(KernelStatusResponse.apply))
     val publishRemote: Layer[Nothing, PublishRemoteResponse] = ZLayer.succeed(publishResponse)
 
-    Config.layer(polynoteConfig) ++
+    Config.layerOf(polynoteConfig) ++
       CurrentNotebook.layer(currentNotebook) ++
       Interpreter.Factories.layer(interpreterFactories) ++
       ZLayer.succeed(kernelFactory) ++

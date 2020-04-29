@@ -4,7 +4,6 @@ import polynote.kernel.logging.Logging
 import zio.{Runtime, ZIO}
 
 trait App extends zio.App {
-  type Environment = zio.ZEnv with Logging
   implicit val runtime: Runtime[Any] = this
 
   def main(args: List[String]): ZIO[Environment, Nothing, Int]

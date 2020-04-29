@@ -3,6 +3,7 @@ package polynote.kernel.environment
 import cats.effect.concurrent.Ref
 import fs2.Stream
 import fs2.concurrent.SignallingRef
+import polynote.app.{Args, MainArgs}
 import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
 import polynote.kernel.interpreter.CellExecutor
@@ -13,7 +14,7 @@ import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
 import zio.internal.Executor
 import zio.interop.catz._
-import zio.{Has, Layer, RIO, Tagged, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
+import zio.{Has, Layer, RIO, Tagged, Task, UIO, ULayer, URIO, ZIO, ZLayer, ZManaged}
 //import zio.syntax.zioTuple3Syntax
 
 //////////////////////////////////////////////////////////////////////
@@ -27,7 +28,10 @@ import zio.{Has, Layer, RIO, Tagged, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
 object Config {
   def access: URIO[Config, PolynoteConfig] = ZIO.access[Config](_.get)
   def of(config: PolynoteConfig): Config = Has(config)
-  def layer(config: PolynoteConfig): Layer[Nothing, Config] = ZLayer.succeed(config)
+  def layerOf(config: PolynoteConfig): Layer[Nothing, Config] = ZLayer.succeed(config)
+  val layer: ZLayer[BaseEnv with MainArgs, Throwable, Config] = ZLayer.fromServiceM[Args, BaseEnv, Throwable, PolynoteConfig] {
+    (args: Args) => PolynoteConfig.load(args.configFile)
+  }
 }
 
 /**
@@ -38,7 +42,7 @@ object PublishStatus {
   def apply(statusUpdate: KernelStatusUpdate): RIO[PublishStatus, Unit] =
    access.flatMap(_.publish1(statusUpdate))
 
-  def layer(publishStatus: Publish[Task, KernelStatusUpdate]): Layer[Nothing, PublishStatus] = ZLayer.succeed(publishStatus)
+  def layer(publishStatus: Publish[Task, KernelStatusUpdate]): ULayer[PublishStatus] = ZLayer.succeed(publishStatus)
 }
 
 /**
@@ -53,6 +57,9 @@ object PublishResult {
     access.flatMap {
       pr => Stream.emits(results).through(pr.publish).compile.drain
     }
+
+  def layer(publishResult: Publish[Task, Result]): ULayer[PublishResult] = ZLayer.succeed(publishResult)
+  def ignore: ULayer[PublishResult] = layer(Publish.fn[Task, Result](_ => ZIO.unit))
 }
 
 /**
@@ -130,7 +137,8 @@ object CurrentRuntime {
 // TODO: should separate out a read-only capability for interpreters (they have no business modifying the notebook)
 object CurrentNotebook {
   def of(ref: Ref[Task, (Int, Notebook)]): CurrentNotebook = Has(ref)
-  def layer(ref: Ref[Task, (Int, Notebook)]): Layer[Nothing, CurrentNotebook] = ZLayer.succeed(ref)
+  def layer(ref: Ref[Task, (Int, Notebook)]): ULayer[CurrentNotebook] = ZLayer.succeed(ref)
+  def make(notebook: Notebook): ULayer[CurrentNotebook] = ZLayer.fromEffect(SignallingRef[Task, (Int, Notebook)](0 -> notebook).map(r => r: Ref[Task, (Int, Notebook)])).orDie
   def get: RIO[CurrentNotebook, Notebook] = getVersioned.map(_._2)
   def path: RIO[CurrentNotebook, String] = get.map(_.path)
   def getVersioned: RIO[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.get.get)
@@ -147,6 +155,7 @@ object CurrentNotebook {
   */
 object NotebookUpdates {
   def access: RIO[NotebookUpdates, Stream[Task, NotebookUpdate]] = ZIO.access[NotebookUpdates](_.get)
+  def empty: ULayer[NotebookUpdates] = ZLayer.succeed[Stream[Task, NotebookUpdate]](Stream.empty)
 }
 
 
@@ -262,11 +271,14 @@ object Env {
       ZManaged.environment[R].flatMap(r => zio(r)).provideSomeLayer[RO](layer)
   }
 
-  implicit class LayerOps[RIn <: Has[_], E, ROut <: Has[_]](val self: ZLayer[RIn, E, ROut]) extends AnyVal {
-    def andThen[E1 >: E, ROut1 <: Has[_]](next: ZLayer[RIn with ROut, E1, ROut1])(implicit ev: Tagged[ROut], ev1: Tagged[ROut1]): ZLayer[RIn, E1, ROut with ROut1] = {
-      val RIn = ZLayer.requires[RIn]
-      val ROut = RIn ++ (RIn >>> self)
-      ROut ++ (ROut >>> next)
+  implicit class LayerOps[RIn, E, ROut <: Has[_]](val self: ZLayer[RIn, E, ROut]) extends AnyVal {
+    def andThen[E1 >: E, RIn1 <: Has[_], ROut1 <: Has[_]](
+      next: ZLayer[ROut with RIn1, E1, ROut1]
+    )(implicit ev: Tagged[ROut], ev1: Tagged[ROut1], ev2: Tagged[RIn1]): ZLayer[RIn1 with RIn, E1, ROut with ROut1] = {
+      val next1: ZLayer[RIn with RIn1, E1, ROut1] = (self ++ ZLayer.identity[RIn1]) >>> next
+      self.zipWithPar[E1, RIn with RIn1, ROut, ROut1, ROut with ROut1](next1) {
+        (rOut, rOut1) => rOut.union[ROut1](rOut1)
+      }
     }
   }
 
