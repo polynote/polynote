@@ -1,20 +1,17 @@
 package polynote.kernel.interpreter.python
 
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.kernel.{CompileErrors, Completion, CompletionType, KernelReport, Output, ParameterHint, ParameterHints, Pos, Result, ScalaCompiler, Signatures}
 import polynote.kernel.interpreter.State
+import polynote.kernel.{CompileErrors, Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
 import polynote.messages.TinyList
 import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
-import polynote.testing.kernel.MockEnv
-import polynote.testing.{InterpreterSpec, ZIOSpec}
-import zio.ZIO
+import polynote.testing.InterpreterSpec
 import zio.interop.catz._
 
 class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
   val interpreter: PythonInterpreter = PythonInterpreter(None).provide(ScalaCompiler.Provider.of(compiler)).runIO()
-  interpreter.init(State.Root).provideSomeLayer(MockEnv.init).runIO()
 
   "PythonInterpreter" - {
     "properly return vars declared by python code" in {
@@ -467,4 +464,68 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
     }
   }
 
+  "DelegatingImporter"  - {
+    "should be able to import packages even if they share the same prefix but come from different importers" in {
+      // for this test we'll have two dummy finders who share a namespace.
+      // All they do is translate "shared.dummyXfoo" to "foo", which is imported normally.
+      // The idea is that without the DelegatingFinder the paths provided to the find_module call will conflict.
+      // see DelegatingFinder for more details
+      val code =
+        """
+          |import sys
+          |from importlib.machinery import ModuleSpec
+          |from types import ModuleType
+          |
+          |class DummyFinder(object):
+          |    def __init__(self, pkg):
+          |        self.pkg = pkg
+          |        self.prefix = f"shared.{pkg}"
+          |
+          |    def load_module(self, fullname):
+          |        if fullname == "shared":
+          |            s = ModuleType("shared")
+          |            # this is how the Finder "takes ownership" of the search path
+          |            s.__path__ = [self.prefix]
+          |            sys.modules[s.__name__] = s
+          |
+          |        return sys.modules.get(fullname)
+          |
+          |    def find_spec(self, fullname, path=None, target=None):
+          |        if fullname == "shared":
+          |            m = ModuleSpec("shared", self)
+          |            m.submodule_search_locations = self.prefix
+          |            return m
+          |
+          |        if fullname.startswith(self.prefix) and self.prefix in path:
+          |            name = fullname[len(self.prefix):]
+          |            return ModuleSpec(name, self)
+          |
+          |        return None
+          |
+          |# this is actually what we are trying to do!
+          |sys.meta_path.append(DummyFinder("dummy1"))
+          |sys.meta_path.append(DummyFinder("dummy2"))
+          |
+          |import shared.dummy1datetime
+          |import shared.dummy2datetime
+          |""".stripMargin
+      assertOutput(code) {
+        case (vars, output) =>
+          vars should have size 1
+          output shouldBe empty
+      }
+
+      // demonstrate a failure if DelegatingFinder is not being used
+      try {
+        assertOutput(
+          """
+            |import sys
+            |sys.meta_path = list(filter(lambda f: "DelegatingFinder" not in str(f), sys.meta_path))
+            |""".stripMargin + "\n" + code)  { case _ => }
+      } catch {
+        case e: RuntimeException =>
+          e.getMessage shouldEqual "ModuleNotFoundError: No module named 'shared.dummy2datetime'"
+      }
+    }
+  }
 }
