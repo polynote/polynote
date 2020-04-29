@@ -371,7 +371,7 @@ class PythonInterpreter private[python] (
       |
       |
       |# Put our finder at the front of the path so it's top priority (making sure it only happens once)
-      |if not next(filter(lambda f: isinstance(f, DelegatingFinder), sys.meta_path), None):
+      |if next(filter(lambda f: f.__class__.__name__ == "DelegatingFinder", sys.meta_path), None) is None:
       |    sys.meta_path.insert(0, DelegatingFinder())
       |
       |
