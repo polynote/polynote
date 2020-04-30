@@ -307,8 +307,9 @@ class PythonInterpreter private[python] (
       |        self.imported = defaultdict(list)
       |
       |    def split_finders(self):
-      |        jep_finder = list(filter(lambda p: not isinstance(p, DelegatingFinder) and "Jep" in str(p), sys.meta_path))[0]
-      |        other_finders = filter(lambda p: not isinstance(p, DelegatingFinder) and "Jep" not in str(p), sys.meta_path)
+      |        notThis = lambda finder: "DelegatingFinder" not in finder.__class__.__name__
+      |        jep_finder = list(filter(lambda p: notThis(p) and "Jep" in str(p), sys.meta_path))[0]
+      |        other_finders = filter(lambda p: notThis(p) and "Jep" not in str(p), sys.meta_path)
       |        return jep_finder, other_finders
       |
       |    def find(self, finder, fullname, path, target):
@@ -371,9 +372,8 @@ class PythonInterpreter private[python] (
       |
       |
       |# Put our finder at the front of the path so it's top priority (making sure it only happens once)
-      |if next(filter(lambda f: f.__class__.__name__ == "DelegatingFinder", sys.meta_path), None) is None:
+      |if all("DelegatingFinder" not in f.__class__.__name__ for f in sys.meta_path):
       |    sys.meta_path.insert(0, DelegatingFinder())
-      |
       |
       |class LastExprAssigner(ast.NodeTransformer):
       |
