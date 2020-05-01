@@ -219,7 +219,8 @@ object JupyterCell {
         if (metadata.nonEmpty) Option(JsonObject.fromMap(metadata.toMap)) else None
     }
 
-    val outputs = cell.results.flatMap(JupyterOutput.fromResult(_, executionCount.getOrElse(-1)))
+
+    val outputs = Result.minimize(cell.results).flatMap(JupyterOutput.fromResult(_, executionCount.getOrElse(-1)))
 
     val (streams, others) = outputs.collect {
       case stream@JupyterOutput.Stream(_, _) => Either.left(stream)

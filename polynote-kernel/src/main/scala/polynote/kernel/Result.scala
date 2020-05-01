@@ -189,21 +189,44 @@ object Result {
   implicit val discriminated: Discriminated[Result, Byte] = Discriminated(byte)
   implicit val codec: Codec[Result] = cachedImplicit
 
-  def toCellUpdate(result: Result): NotebookCell => NotebookCell = {
-    // process carriage returns in the string
-    def collapseCrs(str: String): String = str.replaceAll("\\r\\n", "\n").replaceAll("[^\\n]*\\r", "")
+  def minimize(results: List[Result]): List[Result] = results match {
+    case Nil => Nil
+    case first :: rest =>
+      import scala.collection.immutable.Queue
+      // squash all adjacent stdouts into one
+      val (scanned, last) = rest.foldLeft((Queue.empty[Result], first)) {
+        case ((results, focus), next) =>
+          (focus, next) match {
+            case (Output("text/plain; rel=stdout", focusText), Output("text/plain; rel=stdout", nextText)) =>
+              (results, Output("text/plain; rel=stdout", focusText + nextText))
+            case (a, b) =>
+              (results.enqueue(a), b)
+          }
+      }
+      scanned.enqueue(last).view.map {
+        case Output("text/plain; rel=stdout", text) =>
+          // remove erased lines from stdout
+          val lines = text.split('\n')
+          var i = 0
+          while (i < lines.length) {
+            val line = lines(i)
+            line.lastIndexOf('\r') match {
+              case -1 =>
+              case n if n == line.length - 1 => lines(i) = ""
+              case n                         => lines(i) = line.substring(n + 1)
+            }
+            i += 1
+          }
+          val combinedText = if (text.endsWith("\n")) lines.mkString("\n") + "\n" else lines.mkString("\n")
+          Output("text/plain; rel=stdout", combinedText)
+        case other => other
+      }.toList
+  }
 
-    result match {
+  def toCellUpdate(result: Result): NotebookCell => NotebookCell = {
+     result match {
       case ClearResults() => _.copy(results = ShortList(Nil))
       case execInfo@ExecutionInfo(_, _) => cell => cell.copy(results = ShortList(cell.results :+ execInfo), metadata = cell.metadata.copy(executionInfo = Some(execInfo)))
-      case Output(contentType, str) =>
-        cell => {
-          val updatedResults = cell.results.lastOption match {
-            case Some(Output(`contentType`, str1)) => cell.results.dropRight(1) :+ Output(contentType, collapseCrs(str1 + str))
-            case _ => cell.results :+ result
-          }
-          cell.copy(results = ShortList.fromRight(updatedResults))
-        }
       case result => cell => cell.copy(results = ShortList.fromRight(cell.results :+ result))
     }
   }
