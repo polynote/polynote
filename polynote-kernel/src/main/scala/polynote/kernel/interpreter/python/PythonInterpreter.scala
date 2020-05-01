@@ -8,7 +8,7 @@ import java.util.concurrent.{Executors, LinkedBlockingQueue, ThreadFactory}
 import cats.syntax.traverse._
 import cats.instances.list._
 import jep.python.{PyCallable, PyObject}
-import jep.{ClassList, Jep, JepConfig, JepException, MainInterpreter, NamingConventionClassEnquirer, SharedInterpreter, SubInterpreter}
+import jep.{Jep, JepConfig, JepException, MainInterpreter, NamingConventionClassEnquirer, SharedInterpreter, SubInterpreter}
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
@@ -198,7 +198,7 @@ class PythonInterpreter private[python] (
           Some(Signatures(List(hints), 0, index.byteValue()))
         } catch {
           case err: Throwable =>
-//            println(err)
+            println(err)
             None
         }
     }
