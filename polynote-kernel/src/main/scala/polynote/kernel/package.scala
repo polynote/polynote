@@ -29,9 +29,6 @@ package object kernel {
   type TaskG[+A] = RIO[BaseEnv with GlobalEnv, A]
 
   type GlobalEnv = Config with Interpreter.Factories with Kernel.Factory
-  def GlobalEnv(config: PolynoteConfig, interpFactories: Map[String, List[Interpreter.Factory]], kernelFactoryService: Kernel.Factory.Service): GlobalEnv =
-    Has(config) ++ Has(interpFactories) ++ Has(kernelFactoryService)
-
 
   // CellEnv is provided to the kernel by its host when a cell is being run
   type CellEnv = CurrentNotebook with TaskManager with PublishStatus with PublishResult

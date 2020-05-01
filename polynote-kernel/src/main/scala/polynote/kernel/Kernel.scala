@@ -106,6 +106,7 @@ object Kernel {
     }
 
     def access: RIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.get)
+    def newKernel: RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = access.flatMap(_.apply())
   }
 
   case object InterpreterNotStarted extends Throwable

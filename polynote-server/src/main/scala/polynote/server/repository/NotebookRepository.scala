@@ -1,17 +1,18 @@
 package polynote.server.repository
 
-import java.io.FileNotFoundException
+import java.io.{File, FileNotFoundException}
 import java.net.URI
 import java.nio.file.{FileAlreadyExistsException, Path, Paths}
 
 import cats.implicits._
+import polynote.config.{Mount, PolynoteConfig}
 import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages._
 import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem}
+import polynote.server.repository.fs.{FileSystems, LocalFilesystem, NotebookFilesystem}
 import zio.interop.catz._
-import zio.{RIO, ZIO}
+import zio.{Has, RIO, URIO, URLayer, ZIO, ZLayer}
 
 /**
   * A Notebook Repository operates on notebooks stored by path. The path of a notebook should be a forward-slash
@@ -62,6 +63,33 @@ trait NotebookRepository {
     * Initialize the storage for this repository (i.e. create directory if it doesn't exist)
     */
   def initStorage(): RIO[BaseEnv with GlobalEnv, Unit]
+}
+
+object NotebookRepository {
+  val live: URLayer[Config with FileSystems, Has[NotebookRepository]] = ZLayer.fromServiceM {
+    (config: PolynoteConfig) => makeTreeRepository(config.storage.dir, config.storage.mounts, config)
+  }
+
+  def makeTreeRepository(dir: String, mounts: Map[String, Mount], config: PolynoteConfig): URIO[FileSystems, TreeRepository] = {
+    FileSystems.defaultFilesystem.flatMap {
+      fs =>
+        ZIO.collectAllPar {
+          mounts.toSeq.map {
+            case (key, mount) =>
+              makeTreeRepository(mount.dir, mount.mounts, config).map(key -> _)
+          }
+        }.map {
+          repos =>
+            val rootRepo = new FileBasedRepository(new File(System.getProperty("user.dir")).toPath.resolve(dir), fs = fs)
+            new TreeRepository(rootRepo, repos.toMap)
+        }
+
+    }
+  }
+
+  def access: RIO[Has[NotebookRepository], NotebookRepository] = ZIO.access[Has[NotebookRepository]](_.get)
+  def loadNotebook(path: String): RIO[BaseEnv with GlobalEnv with Has[NotebookRepository], Notebook] = access.flatMap(_.loadNotebook(path))
+  def saveNotebook(notebook: Notebook): RIO[BaseEnv with GlobalEnv with Has[NotebookRepository], Unit] = access.flatMap(_.saveNotebook(notebook))
 }
 
 /**

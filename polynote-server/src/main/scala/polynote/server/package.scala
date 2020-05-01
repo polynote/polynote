@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit
 import cats.{Applicative, MonadError}
 import cats.effect.{Concurrent, ConcurrentEffect, ContextShift, Timer}
 import fs2.concurrent.Topic
+import polynote.app.MainArgs
 import polynote.config.{Mount, PolynoteConfig}
 import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.logging.Logging
@@ -15,6 +16,7 @@ import polynote.kernel.util.RefMap
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, TaskB, TaskG}
 import polynote.messages.{CreateNotebook, DeleteNotebook, Error, Message, RenameNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
+import polynote.server.repository.fs.FileSystems
 import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
 import scodec.bits.ByteVector
 import uzhttp.websocket.{Binary, Close, Frame, Ping, Pong}
@@ -29,6 +31,7 @@ import scala.concurrent.duration.{DurationInt, SECONDS}
 
 package object server {
   type SessionEnv = BaseEnv with GlobalEnv with UserIdentity with IdentityProvider
+  type AppEnv = BaseEnv with GlobalEnv with MainArgs with FileSystems with Has[NotebookRepository]
 
   // some cached typeclass instances
   import zio.interop.{catz => interop}
@@ -119,9 +122,12 @@ package object server {
 
     object Service {
 
-      def apply(repository: NotebookRepository, broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, Service] =
-        repository.initStorage() *> ZIO.mapN(RefMap.empty[String, (KernelPublisher, NotebookWriter)], Semaphore.make(1L)) {
-          (openNotebooks, moveLock) => new Impl(openNotebooks, repository, broadcastAll, moveLock)
+      def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv with Has[NotebookRepository], Service] =
+        ZIO.access[Has[NotebookRepository]](_.get[NotebookRepository]).flatMap {
+          repository =>
+            repository.initStorage() *> ZIO.mapN(RefMap.empty[String, (KernelPublisher, NotebookWriter)], Semaphore.make(1L)) {
+              (openNotebooks, moveLock) => new Impl(openNotebooks, repository, broadcastAll, moveLock)
+            }
         }
 
       private case class NotebookWriter(fiber: Fiber[Throwable, Unit], shutdownSignal: Promise[Throwable, Unit]) {
@@ -230,24 +236,11 @@ package object server {
       }
     }
 
-    private def makeTreeRepository(dir: String, mounts: Map[String, Mount], config: PolynoteConfig, ec: ExecutionContext): TreeRepository = {
-      val repoMap = mounts.mapValues {
-        mount =>
-          makeTreeRepository(mount.dir, mount.mounts, config, ec)
-      }
-      val rootRepo = new FileBasedRepository(new File(System.getProperty("user.dir")).toPath.resolve(dir))
-
-      new TreeRepository(rootRepo, repoMap)
-    }
-
-    def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, NotebookManager.Service] = for {
-      config    <- Config.access
-      blocking  <- ZIO.access[Blocking](_.get[Blocking.Service].blockingExecutor)
-      repository = makeTreeRepository(config.storage.dir, config.storage.mounts, config, blocking.asEC)
-      service   <- Service(repository, broadcastAll)
-    } yield service
+    def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, NotebookManager.Service] =
+      Service(broadcastAll).provideSomeLayer[BaseEnv with GlobalEnv](ZLayer.identity[Config] ++ FileSystems.live >>> NotebookRepository.live)
 
     def layer[R <: BaseEnv with GlobalEnv](broadcastAll: Topic[Task, Option[Message]]): ZLayer[R, Throwable, NotebookManager] =
       ZLayer.fromManaged(apply(broadcastAll).toManaged(_.close().orDie))
   }
+
 }

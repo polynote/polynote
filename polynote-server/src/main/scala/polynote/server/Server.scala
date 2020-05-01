@@ -7,6 +7,7 @@ import java.util.UUID
 
 import fs2.concurrent.Topic
 import polynote.buildinfo.BuildInfo
+import polynote.app.{Args, Environment, MainArgs}
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, Env}
 import Env.LayerOps
@@ -18,14 +19,12 @@ import uzhttp.server.ServerLogger
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.{Forbidden, InternalServerError, NotFound}
 import polynote.kernel.interpreter.Interpreter
-import polynote.server.Server.MainArgs
+import polynote.server.repository.NotebookRepository
 import zio.{Has, IO, Task, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
-
-import scala.annotation.tailrec
 import sun.net.www.MimeTable
 
-class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
+class Server {
   private lazy val currentPath = new File(System.getProperty("user.dir")).toPath
   private lazy val staticWatchPath = currentPath.resolve(s"polynote-frontend/dist")
   private lazy val defaultStaticPath = currentPath
@@ -94,25 +93,21 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
           |
           |""".stripMargin
 
-  override def main(args: List[String]): ZIO[Environment, Nothing, Int] = main.provideSomeLayer[Environment] {
-    Server.parseArgs(args).orDie andThen globalEnv.orDie
-  }
 
-  def main: ZIO[MainArgs with BaseEnv with ServerEnv, Nothing, Int] = for {
-    config       <- ZIO.access[Config](_.get)
-    _            <- Logging.info(s"Loaded configuration: $config")
-    wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
-    _            <- Logging.warn(securityWarning)
-    _            <- Logging.info(banner)
-    _            <- serve(wsKey).orDie
-  } yield 0
+  def main: ZIO[AppEnv, String, Int] = {
+    for {
+      config       <- ZIO.access[Config](_.get[PolynoteConfig])
+      _            <- Logging.info(s"Loaded configuration: $config")
+      wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
+      _            <- Logging.warn(securityWarning)
+      _            <- Logging.info(banner)
+      _            <- serve(wsKey).orDie
+    } yield 0
+  }.provideSomeLayer[AppEnv](IdentityProvider.layer.orDie)
 
 
-  private val globalEnv: ZLayer[BaseEnv with MainArgs, Throwable, ServerEnv] =
-    Server.loadConfig andThen (Interpreter.Factories.load ++ ZLayer.succeed(kernelFactory) ++ IdentityProvider.layer)
-
-  type ServerEnv = GlobalEnv with IdentityProvider
-  type RequestEnv = BaseEnv with ServerEnv with NotebookManager
+  type MainEnv = GlobalEnv with IdentityProvider with Has[NotebookRepository]
+  type RequestEnv = BaseEnv with MainEnv with NotebookManager
 
   private def downloadFile(path: String, req: Request): ZIO[RequestEnv, HTTPError, Response] = {
     for {
@@ -125,15 +120,15 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
     } yield rep
   }.orElseFail(NotFound(req.uri.toString))
 
-  def serve(wsKey: String): ZIO[BaseEnv with ServerEnv with MainArgs, Throwable, Unit] =
+  def serve(wsKey: String): ZIO[BaseEnv with MainEnv with MainArgs, Throwable, Unit] =
     server(wsKey).use {
       server => server.awaitShutdown
     }
 
   def server(
     wsKey: String
-  ): ZManaged[BaseEnv with ServerEnv with MainArgs, Throwable, uzhttp.server.Server] = Config.access.toManaged_.flatMap { config =>
-    ZManaged.access[MainArgs](_.get.watchUI).flatMap { watchUI =>
+  ): ZManaged[BaseEnv with MainEnv with MainArgs, Throwable, uzhttp.server.Server] = Config.access.toManaged_.flatMap { config =>
+    ZManaged.access[MainArgs](_.get[Args].watchUI).flatMap { watchUI =>
       val staticPath = if (watchUI) staticWatchPath else config.static.path.getOrElse(defaultStaticPath)
 
       def serveFile(name: String, req: Request) = {
@@ -171,7 +166,7 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
       for {
         authRoutes    <- IdentityProvider.authRoutes.toManaged_
         broadcastAll  <- Topic[Task, Option[Message]](None).toManaged_  // used to broadcast messages to all connected clients
-        _             <- Env.addManagedLayer(NotebookManager.layer[BaseEnv with ServerEnv with MainArgs](broadcastAll))
+        _             <- Env.addManagedLayer(NotebookManager.layer[BaseEnv with MainEnv with MainArgs](broadcastAll))
         authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_
         staticHandler <- staticFiles
         address       <- ZIO(config.listen.toSocketAddress).toManaged_
@@ -207,33 +202,6 @@ class Server(kernelFactory: Kernel.Factory.Service) extends polynote.app.App {
 
 object Server {
   type Routes = PartialFunction[Request, ZIO[BaseEnv with Config, HTTPError, Response]]
-  type MainArgs = Has[Args]
-
-
-  val loadConfig: ZLayer[BaseEnv with MainArgs, Throwable, Config] = ZLayer.fromEffect {
-    ZIO.access[MainArgs](_.get).flatMap {
-      args => PolynoteConfig.load(args.configFile)
-    }
-  }
-
-  case class Args(
-    configFile: File = new File("config.yml"),
-    watchUI: Boolean = false
-  )
-
-  private val serverClass = """polynote.server.(.*)""".r
-
-  private def parseArgs(args: List[String]): ZLayer[BaseEnv, Throwable, MainArgs] = ZLayer.fromEffect(ZIO.fromEither(parseArgsEither(args)))
-
-  @tailrec
-  private def parseArgsEither(args: List[String], current: Args = Args()): Either[Throwable, Args] = args match {
-    case Nil => Right(current)
-    case ("--config" | "-c") :: filename :: rest => parseArgsEither(rest, current.copy(configFile = new File(filename)))
-    case ("--watch"  | "-w") :: rest => parseArgsEither(rest, current.copy(watchUI = true))
-    case serverClass(_) :: rest => parseArgsEither(rest, current) // class name might be arg0 in some circumstances
-    case "--config" :: Nil => Left(new IllegalArgumentException("No config path specified. Usage: `--config path/to/config.yml`"))
-    case other :: rest => Left(new IllegalArgumentException(s"Unknown argument $other"))
-  }
 
   object MimeTypes {
     private val fromSystem = MimeTable.getDefaultTable
