@@ -466,67 +466,129 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
     }
   }
 
-  "DelegatingImporter"  - {
-    "should be able to import packages even if they share the same prefix but come from different importers" in {
-      // for this test we'll have two dummy finders who share a namespace.
-      // All they do is translate "shared.dummyXfoo" to "foo", which is imported normally.
-      // The idea is that without the DelegatingFinder the paths provided to the find_module call will conflict.
-      // see DelegatingFinder for more details
-      val code =
-        """
-          |import sys
-          |from importlib.machinery import ModuleSpec
-          |from types import ModuleType
-          |
-          |class DummyFinder(object):
-          |    def __init__(self, pkg):
-          |        self.pkg = pkg
-          |        self.prefix = f"shared.{pkg}"
-          |
-          |    def load_module(self, fullname):
-          |        if fullname == "shared":
-          |            s = ModuleType("shared")
-          |            # this is how the Finder "takes ownership" of the search path
-          |            s.__path__ = [self.prefix]
-          |            sys.modules[s.__name__] = s
-          |
-          |        return sys.modules.get(fullname)
-          |
-          |    def find_spec(self, fullname, path=None, target=None):
-          |        if fullname == "shared":
-          |            m = ModuleSpec("shared", self)
-          |            m.submodule_search_locations = self.prefix
-          |            return m
-          |
-          |        if fullname.startswith(self.prefix) and self.prefix in path:
-          |            name = fullname[len(self.prefix):]
-          |            return ModuleSpec(name, self)
-          |
-          |        return None
-          |
-          |# this is actually what we are trying to do!
-          |sys.meta_path.append(DummyFinder("dummy1"))
-          |sys.meta_path.append(DummyFinder("dummy2"))
-          |
-          |import shared.dummy1datetime
-          |import shared.dummy2datetime
-          |""".stripMargin
-      assertOutput(code) {
-        case (vars, output) =>
-          vars should have size 1
-          output shouldBe empty
-      }
+  "DelegatingFinder"  - {
+    // create a dummy finder which just translates a module path `<base>.<pkg>foo` to `foo` and just imports that.
+    val defDummyFinder =
+      """
+        |import sys
+        |from importlib.machinery import ModuleSpec
+        |from types import ModuleType
+        |
+        |class DummyFinder(object):
+        |    def __init__(self, base, pkg):
+        |        self.base = base
+        |        self.pkg = pkg
+        |        self.prefix = f"{base}.{pkg}"
+        |
+        |    def load_module(self, fullname):
+        |        if fullname == self.base:
+        |            s = ModuleType(self.base)
+        |            # this is how the Finder "takes ownership" of the search path
+        |            s.__path__ = [self.prefix]
+        |            sys.modules[s.__name__] = s
+        |
+        |        #if fullname.startswith(self.prefix):
+        |        #    name = fullname[len(self.prefix):]
+        |        #    orig_module = sys.modules.get(name)
+        |        #    if orig_module:
+        |        #        sys.modules[fullname] = orig_module
+        |        #        return orig_module
+        |
+        |        return sys.modules.get(fullname)
+        |
+        |    def find_spec(self, fullname, path=None, target=None):
+        |        if fullname == self.base:
+        |            m = ModuleSpec(self.base, self)
+        |            m.submodule_search_locations = self.prefix
+        |            return m
+        |
+        |        if fullname.startswith(self.prefix) and self.prefix in path:
+        |            name = fullname[len(self.prefix):]
+        |            return ModuleSpec(name, self)
+        |
+        |        return None
+        |""".stripMargin
 
-      // demonstrate a failure if DelegatingFinder is not being used
+    // utility to remove DelegatingFinder from the meta path
+    val removeDelegatingFinder =
+      """
+        |import sys
+        |sys.meta_path = list(filter(lambda f: "DelegatingFinder" not in str(f), sys.meta_path))
+        |""".stripMargin
+
+    // utility to add DelegatingFinder to the meta path without needing to reinitialize everything
+    val addDelegatingFinder =
+      """
+        |if all("DelegatingFinder" not in f.__class__.__name__ for f in sys.meta_path):
+        |    sys.meta_path.insert(0, DelegatingFinder())
+        |""".stripMargin
+
+    "should be able to import packages even if they share the same prefix but come from different importers" in {
+      // For this test we'll have two dummy finders who share a namespace.
+      // The idea is that without the DelegatingFinder the paths provided to the find_module call will conflict.
+
+      // first, demonstrate that two DummyFinders will conflict without DelegatingFinder
+      val sharedDummies =
+        """
+          |sys.meta_path.append(DummyFinder("shared", "dummy1"))
+          |sys.meta_path.append(DummyFinder("shared", "dummy2"))
+          |
+          |from shared.dummy1datetime import datetime
+          |print(datetime)
+          |from shared.dummy2datetime import datetime
+          |print(datetime)
+          |""".stripMargin
+
       try {
-        assertOutput(
-          """
-            |import sys
-            |sys.meta_path = list(filter(lambda f: "DelegatingFinder" not in str(f), sys.meta_path))
-            |""".stripMargin + "\n" + code)  { case _ => }
+        assertOutput(removeDelegatingFinder + defDummyFinder + sharedDummies) { case _ => }
       } catch {
         case e: RuntimeException =>
           e.getMessage shouldEqual "ModuleNotFoundError: No module named 'shared.dummy2datetime'"
+      }
+
+      assertOutput(addDelegatingFinder + defDummyFinder + sharedDummies) {
+        case (vars, output) =>
+          vars should have size 1
+          val Array(datetime1, datetime2) = stdOut(output).split("\n")
+          datetime1 shouldEqual "<class 'datetime.datetime'>"
+          datetime2 shouldEqual "<class 'datetime.datetime'>"
+      }
+    }
+
+    "should be able to import python packages even if they conflict with Java packages" in {
+      // In this test, we'll create a DummyFinder who shares a namespace with the Jep importer
+
+      val conflictingDummy =
+        """
+          |sys.meta_path.append(DummyFinder("java", "dummy1"))
+          |
+          |import java
+          |print(java)
+          |from java.dummy1datetime import datetime
+          |print(datetime)
+          |import java.dummy1sys
+          |print(java.dummy1sys)
+          |from java.util import ArrayList
+          |print(ArrayList)
+          |""".stripMargin
+
+      // again, we first demonstrate a failure when the DelegatingFinder is missing
+      try {
+        assertOutput(removeDelegatingFinder + defDummyFinder + conflictingDummy) { case _ => }
+      } catch {
+        case e: RuntimeException =>
+          e.getMessage shouldEqual "ModuleNotFoundError: No module named 'java.dummy1datetime'"
+      }
+
+      // now let's add DelegatingFinder back
+      assertOutput(addDelegatingFinder + defDummyFinder + conflictingDummy) {
+        case (vars, output) =>
+          vars should have size 1
+          val Array(jepModule, datetime, sys, arrayList) = stdOut(output).split("\n")
+          jepModule should startWith("<module 'java' (<jep.java_import_hook.JepJavaImporter")
+          datetime shouldEqual "<class 'datetime.datetime'>"
+          sys shouldEqual "<module 'sys' (built-in)>"
+          arrayList shouldEqual "class java.util.ArrayList"
       }
     }
   }
