@@ -363,7 +363,7 @@ class PythonInterpreter private[python] (
       |            # Deprioritize the jep finder - if there's a direct conflict, we want python imports to take priority.
       |            spec = self.find(jep, fullname, path, target)
       |            if spec:
-      |                self.imported[fullname].append(jep)
+      |                # self.imported[fullname].append(jep)  # We don't add Jep-imported modules here because Jep lies!
       |                return spec
       |
       |            return None

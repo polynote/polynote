@@ -487,13 +487,6 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
         |            s.__path__ = [self.prefix]
         |            sys.modules[s.__name__] = s
         |
-        |        #if fullname.startswith(self.prefix):
-        |        #    name = fullname[len(self.prefix):]
-        |        #    orig_module = sys.modules.get(name)
-        |        #    if orig_module:
-        |        #        sys.modules[fullname] = orig_module
-        |        #        return orig_module
-        |
         |        return sys.modules.get(fullname)
         |
         |    def find_spec(self, fullname, path=None, target=None):
@@ -564,8 +557,13 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           |
           |import java
           |print(java)
-          |from java.dummy1datetime import datetime
-          |print(datetime)
+          |try:
+          |    from java.dummy1datetime import datetime
+          |    print(datetime)
+          |except:
+          |    # clean up this module because jep steals it!
+          |    del sys.modules["java.dummy1datetime"]
+          |    raise
           |import java.dummy1sys
           |print(java.dummy1sys)
           |from java.util import ArrayList
@@ -577,13 +575,13 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
         assertOutput(removeDelegatingFinder + defDummyFinder + conflictingDummy) { case _ => }
       } catch {
         case e: RuntimeException =>
-          e.getMessage shouldEqual "ModuleNotFoundError: No module named 'java.dummy1datetime'"
+          e.getMessage shouldEqual "ImportError: java.lang.ClassNotFoundException: java.dummy1datetime.datetime"
       }
 
       // now let's add DelegatingFinder back
       assertOutput(addDelegatingFinder + defDummyFinder + conflictingDummy) {
         case (vars, output) =>
-          vars should have size 1
+          vars should have size 2
           val Array(jepModule, datetime, sys, arrayList) = stdOut(output).split("\n")
           jepModule should startWith("<module 'java' (<jep.java_import_hook.JepJavaImporter")
           datetime shouldEqual "<class 'datetime.datetime'>"
