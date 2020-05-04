@@ -39,25 +39,6 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
   "KernelPublisher" - {
 
-    "collapses carriage returns in saved notebook" in {
-      val kernel          = mkStubKernel
-      val kernelFactory   = Kernel.Factory.const(kernel)
-      kernel.queueCell _ when (CellID(0)) returns ZIO.environment[CellEnv].map {
-        env =>
-          ZIO.foreach(0 until 100) {
-            i => PublishResult(Output("text/plain; rel=stdout", s"$i\r"))
-          }.flatMap {
-            _ => PublishResult(Output("text/plain; rel=stdout", "end\n"))
-          }.provideLayer(ZLayer.succeedMany(env))
-      }
-      val notebook        = Notebook("/i/am/fake.ipynb", ShortList(List(NotebookCell(CellID(0), "scala", ""))), None)
-      val kernelPublisher = KernelPublisher(notebook, bq).runWith(kernelFactory)
-      kernelPublisher.queueCell(CellID(0)).flatten.runWith(kernelFactory)
-      kernelPublisher.latestVersion.runIO()._2.cells.head.results should contain theSameElementsAs Seq(
-        Output("text/plain; rel=stdout", "end\n")
-      )
-    }
-
     "gracefully handles death of kernel" in {
       val deploy          = new DeploySubprocess(new DeployJava[LocalKernelFactory])
       val transport       = new SocketTransport(deploy)
