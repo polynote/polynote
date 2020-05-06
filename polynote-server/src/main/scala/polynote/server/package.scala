@@ -17,7 +17,7 @@ import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, TaskB, TaskG}
 import polynote.messages.{CreateNotebook, DeleteNotebook, Error, Message, RenameNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
 import polynote.server.repository.fs.FileSystems
-import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
+import polynote.server.repository.{FileBasedRepository, NotebookContent, NotebookRepository, TreeRepository}
 import scodec.bits.ByteVector
 import uzhttp.websocket.{Binary, Close, Frame, Ping, Pong}
 import zio.blocking.Blocking
@@ -25,6 +25,7 @@ import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
 import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
+import polynote.server.repository.format.NotebookFormat
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{DurationInt, SECONDS}
@@ -98,6 +99,7 @@ package object server {
 
     def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
+    def fetch(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, (String, String)] = access.flatMap(_.fetch(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
     def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())
     def listRunning(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.listRunning())
@@ -109,6 +111,7 @@ package object server {
 
     trait Service {
       def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]
+      def fetch(path: String): RIO[BaseEnv with GlobalEnv, (String, String)]
       def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]]
       def list(): RIO[BaseEnv with GlobalEnv, List[String]]
       def listRunning(): RIO[BaseEnv with GlobalEnv, List[String]]
@@ -172,6 +175,14 @@ package object server {
             case true  => open(path)
             case false => ZIO.succeed(publisher)
           }
+        }
+
+        override def fetch(path: String): RIO[BaseEnv with GlobalEnv, (String, String)] = {
+            for {
+              (_, nb)   <- open(path).flatMap(_.latestVersion)
+              fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))
+              rawString <- fmt.encodeNotebook(NotebookContent(nb.cells, nb.config))
+            } yield (fmt.mime, rawString)
         }
 
         override def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = repository.notebookURI(path)
