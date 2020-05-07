@@ -1,6 +1,6 @@
 'use strict';
 
-import { Message } from './data/messages'
+import {Message, NotebookUpdate} from './data/messages'
 import {EventTarget} from 'event-target-shim'
 import {remove} from "vega-lite/build/src/compositemark";
 import {Extractable} from "./util/match";

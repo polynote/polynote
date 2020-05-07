@@ -5,6 +5,7 @@ import { theme } from './ui/monaco/theme'
 import * as monaco from "monaco-editor";
 import * as Tinycon from "tinycon";
 import {MarkdownIt} from "./util/markdown-it";
+import {ClientBackup} from "./ui/component/client_backup";
 
 window.MarkdownIt = MarkdownIt;
 
