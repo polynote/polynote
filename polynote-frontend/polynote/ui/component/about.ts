@@ -225,7 +225,8 @@ export class About extends FullScreenModal {
                 h2([], ["Client-side Backups"]),
                 span([], ["Polynote stores backups of your notebooks in your browser. These backups are intended to be " +
                 "used as a last resort, in case something happened to the physical files on disk. This is not intended " +
-                "to replace a proper version history feature which may be implemented in the future."]),
+                "to replace a proper version history feature which may be implemented in the future. Your browser may " +
+                "chose to delete these backups at any time!"]),
                 tag('br'),
                 button(['about-button'], {}, ['Print Backups to JS Console'])
                     .click(() => {

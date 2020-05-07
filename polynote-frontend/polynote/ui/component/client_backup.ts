@@ -1,11 +1,19 @@
 import {clear, get, keys, set} from 'idb-keyval';
 import {NotebookUpdate} from "../../data/messages";
-import {NotebookCell, NotebookConfig} from "../../data/data";
+import {CellComment, NotebookCell, NotebookConfig} from "../../data/data";
+import * as deepEquals from 'fast-deep-equal/es6';
 
 export class ClientBackup {
     static addNb(path: string, cells: NotebookCell[], config?: NotebookConfig): Promise<Backups> {
-        const clearedCells = cells.map(cell => new NotebookCell(cell.id, cell.language, cell.content, [], cell.metadata, cell.comments));
-        const backup = new Backup(path, clearedCells, config);
+        const clearedCells = cells.map(cell => {
+            const clearedComments: Record<string, Pick<CellComment, any>> = {};
+            Object.entries(cell.comments).forEach(([id, comment]) => {
+                clearedComments[id] = Object.assign({}, {...comment})
+            })
+            return {id: cell.id, content: cell.content, language: cell.language, comments: clearedComments}
+        });
+        const clearedConfig = config && Object.assign({}, {...config});
+        const backup = new Backup(path, clearedCells, clearedConfig);
         return get(path)
             .then((backupsObj?: IBackups) => {
                 const backups: Backups = backupsObj ? Backups.fromI(backupsObj) : new Backups(path);
@@ -80,16 +88,24 @@ function todayTs() {
 }
 
 
-export const BACKUPS_PER_NOTEBOOK = 100;
-export const BACKUPS_PER_DAY = 10;
-
 /**
- * Stores a set of backups for a particular notebook. Stores backups by day for a particular notebook.
- * Uses the above limits to determine how many backups to store.
+ * These limits are used to determine how many backups to store.
  *
  * When the limits are reached:
  *     If the daily limit is reached, the oldest backup saved that day is replaced by the newest one.
  *     If the total limit is reached, the oldest day of backups is removed.
+ */
+export const BACKUPS_PER_NOTEBOOK = 100;
+export const BACKUPS_PER_DAY = 10;
+
+/**
+ * Stores a set of backups for a particular notebook.
+ *
+ * Note that objects stored in the IndexedDB are "Structured Clones" of the objects put in there. This means they can't
+ * have functions, etc. and lose their prototypes, which breaks equality. So, we have [[IBackups]] and [[IBackup]] which
+ * represent the resulting cloned object we get when fetching from the DB.
+ *
+ * See https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm for more about structured cloning.
  */
 interface IBackups {
     readonly path: string,
@@ -143,7 +159,13 @@ class Backups {
     addUpdate(upd: NotebookUpdate) {
         const latest = this.latestBackup();
         if (latest) {
-            latest.addUpdate(upd);
+            const typedUpdate = Object.assign({type: upd.constructor.name}, upd);
+            const latestUpdate = latest.updates[latest.updates.length - 1]?.update;
+            if (! deepEquals(latestUpdate, typedUpdate)) {
+                latest.addUpdate(typedUpdate);
+            } else {
+                console.log("got duplicate update: ", latestUpdate, typedUpdate, deepEquals(latestUpdate, typedUpdate))
+            }
         } else {
             throw new Error(`No backups found for ${this.path}!`)
         }
@@ -169,24 +191,34 @@ class Backups {
  * Stores a particular backup of a notebook and edits to it from a given session.
  * Notebook outputs are not saved; only the content of the notebook is saved.
  */
+// these helper types are needed because the objects saved in the DB are structured clones. See note earlier in this file for more info.
+type Cleaned<T> = Pick<T, any>
+type CleanedCell = Omit<NotebookCell, 'results' | 'metadata' | 'comments'> & {comments: Cleaned<CellComment>};
+type CleanedConfig = Cleaned<NotebookConfig>;
+type TypedUpdate = NotebookUpdate & {type: string}
+function typedUpdate(update: NotebookUpdate): TypedUpdate {
+    return Object.assign({type: update.constructor.name}, update);
+}
+
 interface IBackup {
     readonly path: string,
-    readonly cells: NotebookCell[],
-    readonly config?: NotebookConfig,
+    readonly cells: CleanedCell[],
+    readonly config?: CleanedConfig,
     readonly ts: number,
-    readonly updates: {ts: number, upd: NotebookUpdate}[],
+    readonly updates: {ts: number, update: TypedUpdate}[],
 }
 class Backup {
 
     constructor(readonly path: string,
-                readonly cells: NotebookCell[],
-                readonly config?: NotebookConfig,
+                readonly cells: CleanedCell[],
+                readonly config?: CleanedConfig,
                 readonly ts: number = Date.now(),
-                readonly updates: {ts: number, upd: NotebookUpdate}[] = []) {}
+                readonly updates: {ts: number, update: TypedUpdate}[] = []) {
+    }
 
-    addUpdate(upd: NotebookUpdate) {
+    addUpdate(update: NotebookUpdate) {
         const ts = Date.now();
-        this.updates.push({ts, upd});
+        this.updates.push({ts, update: typedUpdate(update)});
     }
 
     static fromI(iBackup: IBackup): Backup {
@@ -195,9 +227,9 @@ class Backup {
 
     equals(backup: Backup) {
         return this.path === backup.path
-            && this.cells === backup.cells
-            && this.config === backup.config
-            && this.updates === backup.updates
+            && deepEquals(this.cells, backup.cells)
+            && deepEquals(this.config, backup.config)
+            && deepEquals(this.updates, backup.updates)
     }
 }
 

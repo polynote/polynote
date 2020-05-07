@@ -51,7 +51,12 @@ package object kernel {
     def terminateAfterEquals(value: A): Stream[RIO[R, ?], A] = terminateAfter(_ == value)
 
     def interruptAndIgnoreWhen(signal: Promise[Throwable, Unit])(implicit concurrent: Concurrent[RIO[R, ?]]): Stream[RIO[R, ?], A] =
-      stream.interruptWhen(signal.await.either.as(Right(()): Either[Throwable, Unit]))
+      stream.interruptWhen({
+        signal.await.tap(x => ZIO(println(s"InterruptAndIgnoreWhen promise completed with ${x}"))).either.map { e =>
+          println(s"******* $e")
+          Right(): Either[Throwable, Unit]
+        }
+      })
 
     def terminateWhen[E <: Throwable, A1](signal: Promise[E, A1])(implicit concurrent: Concurrent[RIO[R, ?]]): Stream[RIO[R, ?], A] =
       Stream(stream.map(Some(_)), Stream.eval(signal.await: RIO[R, A1]).map(_ => None)).parJoinUnbounded.unNoneTerminate

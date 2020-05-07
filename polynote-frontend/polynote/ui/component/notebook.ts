@@ -199,8 +199,6 @@ export class NotebookUI extends UIMessageTarget {
         this.socket.addEventListener('close', () => this.cellUI.configUI.setKernelState('disconnected'));
 
         this.socket.addMessageListener(messages.NotebookUpdate, (update: messages.NotebookUpdate) => {
-            ClientBackup.updateNb(this.path, update)
-                .catch(err => console.error("Error updating backup", err));
             if (update.globalVersion >= this.globalVersion) {
                 this.globalVersion = update.globalVersion;
 
@@ -273,6 +271,9 @@ export class NotebookUI extends UIMessageTarget {
                 // discard edits before the local version from server – it will handle rebasing at least until that point
                 this.editBuffer.discard(update.localVersion);
 
+                // make sure to update backups.
+                ClientBackup.updateNb(this.path, update)
+                    .catch(err => console.error("Error updating backup", err));
             }
         });
 
