@@ -118,8 +118,8 @@ object JupyterOutput {
 
       List {
         args.get("rel") match {
-          case Some(name) if mime == "text/plain" && name == "stdout" => Stream(name, content.linesWithSeparators.toList)
-          case _ => DisplayData(Map(mime -> Json.arr(content.linesWithSeparators.toSeq.map(_.asJson): _*)), args.get("lang").map(l => Map("lang" -> l).asJsonObject))
+          case Some(name) if mime == "text/plain" && name == "stdout" => Stream(name, content.toList)
+          case _ => DisplayData(Map(mime -> Json.arr(content.map(_.asJson): _*)), args.get("lang").map(l => Map("lang" -> l).asJsonObject))
         }
       }
 
