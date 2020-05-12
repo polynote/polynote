@@ -12,7 +12,7 @@ import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.kernel.util.{Publish, RefMap}
 import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.messages.{CellID, CellResult, Error, Message, Notebook, NotebookUpdate, ShortList}
-import polynote.kernel.{BaseEnv, CellEnv, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskInfo}
+import polynote.kernel.{BaseEnv, CellEnv, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
@@ -23,7 +23,7 @@ import polynote.server.auth.UserIdentity
 import scala.concurrent.duration.FiniteDuration
 
 class KernelPublisher private (
-  val versionedNotebook: SignallingRef[Task, (GlobalVersion, Notebook)],
+  val versionedNotebook: NotebookRef,
   val versionBuffer: VersionBuffer[NotebookUpdate],
   publishUpdate: Publish[Task, (SubscriberId, NotebookUpdate)],
   val broadcastUpdates: Topic[Task, Option[(SubscriberId, NotebookUpdate)]],
@@ -42,7 +42,7 @@ class KernelPublisher private (
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
   private val baseLayer: ZLayer[Any, Nothing, CurrentNotebook with TaskManager with PublishStatus] =
-    ZLayer.succeedMany(Has(versionedNotebook: CatsRef[Task, (GlobalVersion, Notebook)]) ++ Has(taskManager) ++ Has(publishStatus))
+    ZLayer.succeedMany(Has(versionedNotebook) ++ Has(taskManager) ++ Has(publishStatus))
 
   private def cellLayer(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, PublishResult] = {
     val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(cellID, result)))
@@ -60,26 +60,7 @@ class KernelPublisher private (
 
   private val nextSubscriberId = new AtomicInteger(0)
 
-  /**
-    * @return A stream of all discrete versions of the notebook, even if the version number isn't updated. The version
-    *         number is updated only after a content change, while this stream will also contain a notebook for other
-    *         changes (such as results). See [[SignallingRef.discrete]] for the semantics of "discrete".
-    */
-  def notebooks: Stream[Task, Notebook] = versionedNotebook.discrete.map(_._2).interruptAndIgnoreWhen(closed)
-
-  /**
-    * @param duration The minimum delay between notebook versions
-    * @return A stream of notebook versions, which returns no more than one version per specified duration. When the
-    *         notebook is closed, emits one final version with no delay.
-    */
-  def notebooksTimed(duration: FiniteDuration): Stream[Task, Notebook] = {
-    import zio.interop.catz.implicits.ioTimer
-    (Stream.eval(versionedNotebook.get) ++ Stream.fixedDelay[UIO](duration).zipRight(versionedNotebook.continuous)).filterWithPrevious {
-      (previous, current) => !(previous eq current) && previous != current
-    }.map(_._2).interruptAndIgnoreWhen(closed) ++ Stream.eval(versionedNotebook.get.map(_._2))
-  }
-
-  def latestVersion: Task[(GlobalVersion, Notebook)] = versionedNotebook.get
+  def latestVersion: Task[(GlobalVersion, Notebook)] = versionedNotebook.getVersioned
 
   def subscribersPresent: UIO[List[(Presence, Option[PresenceSelection])]] = subscribers.values.flatMap {
     subscribers => subscribers.map {
@@ -134,9 +115,7 @@ class KernelPublisher private (
 
   def queueCell(cellID: CellID): RIO[BaseEnv with GlobalEnv, Task[Unit]] = queueingCell.withPermit {
 
-    def writeResult(result: Result) = versionedNotebook.update {
-      case (ver, nb) => ver -> nb.updateCell(cellID)(result.toCellUpdate)
-    }
+    def writeResult(result: Result) = versionedNotebook.addResult(cellID, result)
 
     for {
       kernel   <- kernel
@@ -196,16 +175,12 @@ class KernelPublisher private (
     } else ZIO.unit
   } yield ()
 
-  def rename(newPath: String): Task[Unit] = for {
-    oldPath <- versionedNotebook.get.map(_._2.path)
-    _       <- versionedNotebook.update(vn => vn._1 -> vn._2.copy(path = newPath))
-  } yield ()
-
   def close(): TaskB[Unit] =
     closed.succeed(()).unit *>
       subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit *>
       kernelRef.get.flatMap(_.fold[TaskB[Unit]](ZIO.unit)(_.shutdown())) *>
-      taskManager.shutdown()
+      taskManager.shutdown() *>
+      versionedNotebook.close()
 
   private def createKernel(): RIO[BaseEnv with GlobalEnv, Kernel] = kernelFactory()
     .provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
@@ -222,44 +197,30 @@ object KernelPublisher {
     * publish the rebased update.
     */
   def applyUpdate(
-    versionRef: CatsRef[Task, (GlobalVersion, Notebook)],
+    versionRef: NotebookRef,
     versions: VersionBuffer[NotebookUpdate],
     publishUpdates: Publish[Task, (SubscriberId, NotebookUpdate)],
     subscriberVersions: ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)])(
     subscriberId: SubscriberId,
     update: NotebookUpdate
-  ): TaskB[Unit] = {
-    versionRef.access.flatMap {
-      case ((globalVersion, notebook), setter) =>
-        ZIO(update.applyTo(notebook))
-          .map((globalVersion + 1, _))
-          .flatMap {
-            res =>
-              setter(res).flatMap {
-                success =>
-                  if (success) {
-                    val newUpdate = update.withVersions(res._1, update.localVersion)
-                    publishUpdates.publish1((subscriberId, newUpdate)) *> ZIO(versions.add(newUpdate.globalVersion, newUpdate))
-                  } else {
-                    // there was a concurrent modification to this ref, so try to access again
-                    Logging.warn("Retrying NotebookUpdate because concurrent access was detected") *> applyUpdate(versionRef, versions, publishUpdates, subscriberVersions)(subscriberId, update)
-                  }
-              }
-
-          }
+  ): TaskG[Unit] =
+    versionRef.updateAndGet(update).flatMap {
+      case (nextVer, notebook) =>
+        val newUpdate = update.withVersions(nextVer, update.localVersion)
+        publishUpdates.publish1((subscriberId, newUpdate)) *> ZIO(versions.add(nextVer, newUpdate))
     }
-  }
 
-  def apply(notebook: Notebook, broadcastMessage: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, KernelPublisher] = for {
+  def apply(versionedRef: NotebookRef, broadcastMessage: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, KernelPublisher] = for {
     kernelFactory    <- Kernel.Factory.access
-    versionedRef     <- SignallingRef[Task, (GlobalVersion, Notebook)]((0, notebook))
     closed           <- Promise.make[Throwable, Unit]
+    // TODO: need to close if the versionedRef closes, hook up e.g. TreeRepository so it cascades
     updates          <- Queue.unbounded[Task, Option[(SubscriberId, NotebookUpdate)]]
+                        // TODO: replace the following with ZTopic
     broadcastUpdates <- Topic[Task, Option[(SubscriberId, NotebookUpdate)]](None)
     broadcastStatus  <- Topic[Task, KernelStatusUpdate](KernelBusyState(busy = false, alive = false))
     broadcastResults <- Topic[Task, Option[CellResult]](None)
     taskManager      <- TaskManager(broadcastStatus)
-    versionBuffer     = new VersionBuffer[NotebookUpdate]
+    versionBuffer     = new VersionBuffer[NotebookUpdate]  // TODO: should NotebookRef capture this instead?
     kernelStarting   <- Semaphore.make(1)
     queueingCell     <- Semaphore.make(1)
     subscribing      <- Semaphore.make(1)
@@ -284,12 +245,12 @@ object KernelPublisher {
       subscribers
     )
     env <- ZIO.environment[BaseEnv]
-    _  <- updates.dequeue.unNoneTerminate
+    _   <- updates.dequeue.unNoneTerminate
       .evalMap((applyUpdate(versionedRef, versionBuffer, Publish(broadcastUpdates).some, subscriberVersions) _).tupled)
       .compile.drain
       .catchAll {
         err =>
-          broadcastMessage.publish1(Option(Error(0, new Exception(s"Catastrophe! An error occurred updating notebook at ${notebook.path}. Editing will now be disabled.", err)))) *> broadcastMessage.publish1(None) *> publisher.close().provide(env)
+          broadcastMessage.publish1(Option(Error(0, new Exception(s"Catastrophe! An error occurred updating notebook. Editing will now be disabled.", err)))) *> broadcastMessage.publish1(None) *> publisher.close().provide(env)
       }
       .forkDaemon
   } yield publisher

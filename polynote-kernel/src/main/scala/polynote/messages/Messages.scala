@@ -207,9 +207,6 @@ object Notebook extends MessageCompanion[Notebook](2)
 final case class RunCell(ids: ShortList[CellID]) extends Message
 object RunCell extends MessageCompanion[RunCell](3)
 
-final case class CellResult(id: CellID, result: Result) extends Message
-object CellResult extends MessageCompanion[CellResult](4)
-
 sealed trait NotebookUpdate extends Message {
   def globalVersion: Int
   def localVersion: Int
@@ -273,6 +270,10 @@ object NotebookUpdate {
 abstract class NotebookUpdateCompanion[T <: NotebookUpdate](msgTypeId: Byte) extends MessageCompanion[T](msgTypeId) {
   implicit final val updateDiscriminator: Discriminator[NotebookUpdate, T, Byte] = Discriminator(msgTypeId)
 }
+
+
+final case class CellResult(id: CellID, result: Result) extends Message
+object CellResult extends MessageCompanion[CellResult](4)
 
 final case class UpdateCell(globalVersion: Int, localVersion: Int, id: CellID, edits: ContentEdits, metadata: Option[CellMetadata]) extends Message with NotebookUpdate
 object UpdateCell extends NotebookUpdateCompanion[UpdateCell](5)

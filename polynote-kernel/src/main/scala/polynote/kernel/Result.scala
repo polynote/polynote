@@ -212,8 +212,9 @@ object Result {
   implicit val codec: Codec[Result] = cachedImplicit
 
   def toCellUpdate(result: Result): NotebookCell => NotebookCell = {
-    // process carriage returns in the string
-    def collapseCrs(line: String): String = line.lastIndexOf('\r') match {
+    // process carriage returns in the line – a carriage return deletes anything before it in the line, unless
+    // it's the last character before the linefeed (which must be the final character)
+    def collapseCrs(line: String): String = line.lastIndexOf('\r', line.length - 3) match {
       case -1 => line
       case n  => line.drop(n + 1)
     }

@@ -64,7 +64,7 @@ object NotebookRunner {
 
   def runNotebook(notebook: Notebook): RIO[AppEnv with PublishStatus, Notebook] =
     runWithEnv.provideSomeLayer[AppEnv with PublishStatus] {
-      CurrentNotebook.make(notebook) ++ TaskManager.layer ++ NotebookUpdates.empty
+      CurrentNotebook.const(notebook) ++ TaskManager.layer ++ NotebookUpdates.empty
     }
 
   def runWithEnv: ZIO[AppEnv with CellBaseEnv with NotebookUpdates, Throwable, Notebook] =

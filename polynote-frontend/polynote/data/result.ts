@@ -30,14 +30,14 @@ export class Result extends CodecContainer {
 }
 
 export class Output extends Result {
-    static codec = combined(str, str).to(Output);
+    static codec = combined(str, arrayCodec(int32, str)).to(Output);
     static get msgTypeId() { return 0; }
 
     static unapply(inst: Output): ConstructorParameters<typeof Output> {
         return [inst.contentType, inst.content];
     }
 
-    constructor(readonly contentType: string, readonly content: string) {
+    constructor(readonly contentType: string, readonly content: string[]) {
         super(contentType, content);
         Object.freeze(this);
     }

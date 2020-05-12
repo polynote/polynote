@@ -235,7 +235,7 @@ export class NotebookUI extends UIMessageTarget {
                         if (cell instanceof CodeCell) {
                             cell.clearResult();
                             if (output) {
-                                cell.addOutput(output.contentType, output.content);
+                                cell.addOutput(output.contentType, output.content.join(''));
                             }
                         }
                     })

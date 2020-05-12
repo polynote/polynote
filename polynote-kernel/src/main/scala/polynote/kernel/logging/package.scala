@@ -21,8 +21,10 @@ package object logging {
     trait Service {
       def error(msg: String)(implicit location: Location): UIO[Unit]
       def error(msg: Option[String], err: Throwable)(implicit location: Location): UIO[Unit]
+      def errorSync(msg: Option[String], err: Throwable)(implicit location: Location): Unit
       def error(msg: Option[String], err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit]
       def warn(msg: String)(implicit location: Location): UIO[Unit]
+      def warnSync(msg: String)(implicit location: Location): Unit
       def info(msg: String)(implicit location: Location): UIO[Unit]
       def remote(path: String, msg: String): UIO[Unit]
     }
@@ -61,25 +63,28 @@ package object logging {
           }
         }.ignore
 
+        override def errorSync(msg: Option[String], err: Throwable)(implicit location: Location): Unit = {
+          out.print(Red)
+          out.print(errorPrefix)
+          msg.foreach(out.print)
+          if (location.file != "")
+            out.println(s" (Logged from ${location.file}:${location.line})")
+          else
+            out.println("")
+          out.print(errorIndent)
+          out.println(err)
+          err.getStackTrace.foreach {
+            el =>
+              out.print(errorIndent)
+              out.println(el)
+          }
+          out.print(Reset)
+        }
 
         override def error(msg: Option[String], err: Throwable)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
           out.synchronized {
             lastRemote.lazySet(null)
-            out.print(Red)
-            out.print(errorPrefix)
-            msg.foreach(out.print)
-            if (location.file != "")
-              out.println(s" (Logged from ${location.file}:${location.line})")
-            else
-              out.println("")
-            out.print(errorIndent)
-            out.println(err)
-            err.getStackTrace.foreach {
-              el =>
-                out.print(errorIndent)
-                out.println(el)
-            }
-            out.print(Reset)
+            errorSync(msg, err)
           }
         }.ignore
 
@@ -110,20 +115,26 @@ package object logging {
           }
         }.ignore
 
+        private def printWithPrefixSync(prefix: String, indent: String, msg: String)(implicit location: Location): Unit = {
+          val lines = new StringOps(msg).lines
+          val firstLine = lines.next()
+          out.print(prefix)
+          out.println(firstLine)
+          lines.foreach {
+            l =>
+              out.print(indent)
+              out.println(l)
+          }
+        }
+
         private def printWithPrefix(prefix: String, indent: String, msg: String)(implicit location: Location): UIO[Unit] =
           blocking.effectBlocking {
             out.synchronized {
-              val lines = new StringOps(msg).lines
-              val firstLine = lines.next()
-              out.print(prefix)
-              out.println(firstLine)
-              lines.foreach {
-                l =>
-                  out.print(indent)
-                  out.println(l)
-              }
+              printWithPrefixSync(prefix, indent, msg)
             }
           }.ignore
+
+        override def warnSync(msg: String)(implicit location: Location): Unit = printWithPrefixSync(warnPrefix, warnIndent, msg)
 
         override def warn(msg: String)(implicit location: Location): UIO[Unit] = {
           lastRemote.lazySet(null)

@@ -34,7 +34,11 @@ class KernelSubscriber private[server] (
   }
 
   def close(): UIO[Unit] = closed.succeed(()).unit *> process.interrupt.unit
-  def update(update: NotebookUpdate): Task[Unit] = publisher.update(id, update) *> ZIO(lastLocalVersion.set(update.localVersion)) *> ZIO(lastGlobalVersion.set(update.globalVersion))
+
+  def update(update: NotebookUpdate): Task[Unit] =
+    ZIO.effectTotal(lastLocalVersion.set(update.localVersion)) *>
+      ZIO.effectTotal(lastGlobalVersion.get()).flatMap(gv => publisher.update(id, update.withVersions(gv, update.localVersion)))
+
   def notebook: Task[Notebook] = publisher.latestVersion.map(_._2)
   def currentPath: Task[String] = notebook.map(_.path)
   def checkPermission(permission: String => Permission): ZIO[SessionEnv, Throwable, Unit] =
@@ -61,20 +65,21 @@ object KernelSubscriber {
         .withVersions(globalVersion, localVersion)
 
     def foreignUpdates(local: AtomicInteger, global: AtomicInteger) =
-      publisher.broadcastUpdates.subscribe(128).unNone.filter(_._1 != id).map(_._2).map {
-        update =>
-          val knownGlobalVersion = global.get()
-          if (update.globalVersion < knownGlobalVersion) {
+      publisher.broadcastUpdates.subscribe(128).unNone.evalMap {
+        case (`id`, update) => ZIO.effectTotal(global.set(update.globalVersion)).as(None)
+        case (_, update)    => ZIO.effectTotal(global.get()).map {
+          case knownGlobalVersion if update.globalVersion < knownGlobalVersion =>
             Some(rebaseUpdate(update, knownGlobalVersion, local.get()))
-          } else if (update.globalVersion > knownGlobalVersion) {
+          case knownGlobalVersion if update.globalVersion > knownGlobalVersion =>
             Some(update.withVersions(update.globalVersion, local.get()))
-          } else None
+          case _ => None
+        }
       }.unNone.evalTap(_ => ZIO(local.incrementAndGet()).unit)
 
     for {
       closed           <- Promise.make[Throwable, Unit]
       identity         <- UserIdentity.access
-      versioned        <- publisher.versionedNotebook.get
+      versioned        <- publisher.versionedNotebook.getVersioned
       (ver, notebook)   = versioned
       lastLocalVersion  = new AtomicInteger(0)
       lastGlobalVersion = new AtomicInteger(ver)

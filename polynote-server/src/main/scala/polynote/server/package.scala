@@ -13,7 +13,7 @@ import polynote.config.{Mount, PolynoteConfig}
 import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.RefMap
-import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, TaskB, TaskG}
+import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, NotebookRef, TaskB, TaskG}
 import polynote.messages.{CreateNotebook, DeleteNotebook, Error, Message, RenameNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
 import polynote.server.repository.fs.FileSystems
@@ -53,7 +53,7 @@ package object server {
     stream.mapM(toFrame)
 
   implicit class FrameStreamOps[R](val self: ZStream[R, Throwable, Frame]) extends AnyVal {
-    def handleMessages[R1 <: R, A](onClose: ZIO[R, Throwable, Any])(fn: Message => ZIO[R1, Throwable, Option[Message]]): ZStream[R1, Throwable, Frame] =
+    def handleMessages[R1 <: Logging with R, A](onClose: ZIO[R, Throwable, Any])(fn: Message => ZIO[R1, Throwable, Option[Message]]): ZStream[R1, Throwable, Frame] =
       self.mapM {
         case Binary(data, true) =>
           Message.decode[Task](ByteVector(data))
@@ -66,7 +66,11 @@ package object server {
         case Close =>
           onClose.as(Some(Close))
         case _ => ZIO.none
-      }.unNone
+      }.unNone.ensuring {
+        onClose.catchAll {
+          err => Logging.error("Websocket close handler failed", err)
+        }
+      }
   }
 
   def closeQueueIf[A](promise: Promise[Throwable, Unit], queue: Queue[Take[Nothing, A]]): UIO[Unit] =
@@ -125,7 +129,7 @@ package object server {
       def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv with Has[NotebookRepository], Service] =
         ZIO.access[Has[NotebookRepository]](_.get[NotebookRepository]).flatMap {
           repository =>
-            repository.initStorage() *> ZIO.mapN(RefMap.empty[String, (KernelPublisher, NotebookWriter)], Semaphore.make(1L)) {
+            repository.initStorage() *> ZIO.mapN(RefMap.empty[String, KernelPublisher], Semaphore.make(1L)) {
               (openNotebooks, moveLock) => new Impl(openNotebooks, repository, broadcastAll, moveLock)
             }
         }
@@ -135,7 +139,7 @@ package object server {
       }
 
       private class Impl(
-        openNotebooks: RefMap[String, (KernelPublisher, NotebookWriter)],
+        openNotebooks: RefMap[String, KernelPublisher],
         repository: NotebookRepository,
         broadcastAll: Topic[Task, Option[Message]],
         moveLock: Semaphore
@@ -143,32 +147,15 @@ package object server {
 
         private val maxRetryDelay = Duration(8, TimeUnit.SECONDS)
 
-        // write the notebook every 1 second, if it's changed.
-        private def startWriter(publisher: KernelPublisher): ZIO[BaseEnv with GlobalEnv, Nothing, NotebookWriter] = for {
-          shutdownSignal <- Promise.make[Throwable, Unit]
-          nbPath          = publisher.latestVersion.map(_._2.path).orDie
-          curPath        <- nbPath
-          fiber          <- Logging.info(s"Starting writer for $curPath") *> publisher.notebooks.debounce(1.second).evalMap {
-            notebook => repository.saveNotebook(notebook)
-              .tapError(Logging.error("Error writing notebook file", _))
-              .retry(Schedule.exponential(Duration(250, TimeUnit.MILLISECONDS)).untilOutput(_ > maxRetryDelay))
-              .tapError(err =>
-                nbPath.flatMap(path => broadcastMessage(Error(0, new Exception(s"Notebook writer for $path is repeatedly failing! Notebook editing will be disabled.", err))) *> publisher.close()))
-              .onInterrupt(nbPath.flatMap(path => Logging.info(s"Stopped writer for $path (interrupted)")))
-          }.interruptAndIgnoreWhen(shutdownSignal).interruptAndIgnoreWhen(publisher.closed).onFinalize {
-            nbPath.flatMap(path => Logging.info(s"Stopped writer for $path (interrupted)"))
-          }.compile.drain.forkDaemon
-        } yield NotebookWriter(fiber, shutdownSignal)
 
         override def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher] = openNotebooks.getOrCreate(path) {
           for {
-            notebook      <- repository.loadNotebook(path)
-            publisher     <- KernelPublisher(notebook, broadcastAll)
-            writer        <- startWriter(publisher)
+            notebookRef   <- repository.openNotebook(path)
+            publisher     <- KernelPublisher(notebookRef, broadcastAll)
             onClose       <- publisher.closed.await.flatMap(_ => openNotebooks.remove(path)).forkDaemon
-          } yield (publisher, writer)
+          } yield publisher
         }.flatMap {
-          case (publisher, writer) => publisher.closed.isDone.flatMap {
+          publisher => publisher.closed.isDone.flatMap {
             case true  => open(path)
             case false => ZIO.succeed(publisher)
           }
@@ -195,17 +182,11 @@ package object server {
         override def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] =
           for {
             realPath <- openNotebooks.get(path).flatMap {
-              case None                      => repository.renameNotebook(path, newPath)
-              case Some((publisher, writer)) => moveLock.withPermit {
+              case None            => repository.renameNotebook(path, newPath)
+              case Some(publisher) => moveLock.withPermit {
                 repository.notebookExists(newPath).flatMap {
                   case true  => ZIO.fail(new FileAlreadyExistsException(s"File $newPath already exists"))
-                  case false => // if the notebook is already open, we have to stop writing, rename, and start writing again
-                    writer.stop() *> repository.renameNotebook(path, newPath).foldM(
-                      err => startWriter(publisher) *> Logging.error("Unable to rename notebook", err) *> ZIO.fail(err),
-                      realPath => publisher.rename(realPath).as(realPath) *> startWriter(publisher).flatMap {
-                        writer => openNotebooks.put(newPath, (publisher, writer)) *> openNotebooks.remove(path).as(realPath)
-                      }
-                    )
+                  case false => publisher.versionedNotebook.rename(newPath)
                 }
               }
             }
@@ -225,12 +206,12 @@ package object server {
 
         override def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState] = openNotebooks.get(path).flatMap {
           case None => ZIO.succeed(KernelBusyState(busy = false, alive = false))
-          case Some((publisher, _)) => publisher.kernelStatus()
+          case Some(publisher) => publisher.kernelStatus()
         }
 
         def close(): RIO[BaseEnv, Unit] = openNotebooks.values.flatMap {
           notebooks => ZIO.foreachPar_(notebooks) {
-            case (publisher, writer) => publisher.close() *> writer.stop()
+            publisher => publisher.close()
           }
         }
       }
