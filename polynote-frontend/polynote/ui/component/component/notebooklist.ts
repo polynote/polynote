@@ -47,7 +47,7 @@ export class NotebookList {
         });
         this.tree = new BranchComponent(dispatcher, treeState);
 
-        this.el = div(['notebooks-list'], [div(['tree-view'], [tag('ul', [], {}, [this.tree.el])])])
+        this.el = div(['notebooks-list'], [div(['tree-view'], [this.tree.el])])
             .listener("contextmenu", evt => this.contextMenu.showFor(evt));
 
         // Drag n' drop!
@@ -63,8 +63,10 @@ export class NotebookList {
         serverStateHandler.view("notebooks").addObserver((oldNotebooks, newNotebooks) => {
             const [removed, added] = diffArray(Object.keys(oldNotebooks), Object.keys(newNotebooks));
 
+            console.log("start updating notebook list")
             added.forEach(path => treeState.addPath(path));
             removed.forEach(path => treeState.removePath(path))
+            console.log("done updating notebook list")
         });
 
         serverStateHandler.addObserver((_, x)=> console.log("got server state update", x));
@@ -123,10 +125,11 @@ class BranchHandler extends StateHandler<Branch> {
 
     addPath(path: string) {
         this.updateState(s => {
+            console.log("adding path to notebook list", path)
             let components = path.split("/");
             let branch = s;
             let i = 0;
-            while (components.length > 1) {
+            while (i < components.length - 1) {
                 if (branch.value === components[i]) {
                     i++;
                 } else {
@@ -148,7 +151,7 @@ class BranchHandler extends StateHandler<Branch> {
             // this last one must be a leaf
             branch.children.push({
                 fullPath: path,
-                value: components[0]
+                value: components[i]
             });
 
             return s;
@@ -178,7 +181,7 @@ class BranchHandler extends StateHandler<Branch> {
 }
 
 class BranchComponent {
-    readonly el: TagElement<"li">;
+    readonly el: TagElement<"li" | "ul">;
     readonly childrenEl: TagElement<"ul">;
     private children: (BranchComponent | LeafComponent)[] = [];
 
@@ -187,14 +190,18 @@ class BranchComponent {
         const initial = state.getState();
         this.childrenEl = tag('ul', [], {}, []);
         initial.children.forEach(child => this.addChild(child));
-        this.el = tag('li', ['branch'], {}, [
-            button(['branch-outer'], {}, [
-                span(['expander'], []),
-                span(['icon'], []),
-                span(['name'], [initial.value])
-            ]),
-            this.childrenEl
-        ]);
+        if (initial.value.length > 0) {
+            this.el = tag('li', ['branch'], {}, [
+                button(['branch-outer'], {}, [
+                    span(['expander'], []),
+                    span(['icon'], []),
+                    span(['name'], [initial.value])
+                ]),
+                this.childrenEl
+            ]);
+        } else {
+            this.el = this.childrenEl;
+        }
         this.el.click(evt => this.el.classList.toggle('expanded'));
 
         state.addObserver((oldNode, newNode) => {
@@ -282,5 +289,8 @@ class LeafComponent {
     }
 }
 
-
+// exports for testing. These should only ever be used in test files! If only there was package private!
+export class __BranchHandler extends BranchHandler {}
+export class __BranchComponent extends BranchComponent {}
+export class __LeafComponent extends LeafComponent {}
 

@@ -58,7 +58,7 @@ class Main {
                     const nbInfo = ServerStateHandler.get.getState().notebooks[path].info;
                     if (nbInfo) {
                         tabs.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.dispatcher, nbInfo.handler).el);
-                        const kernel = new Kernel(nbInfo.dispatcher, nbInfo.handler.view("kernel", KernelStateHandler) as KernelStateHandler, 'rightPane')
+                        const kernel = new Kernel(nbInfo.dispatcher, nbInfo.handler.view("kernel", KernelStateHandler), 'rightPane');
                         this.el.replaceChild(kernel.statusEl, rightPane.header);
                         this.el.replaceChild(kernel.el, rightPane.el);
                         rightPane.header = kernel.statusEl;

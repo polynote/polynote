@@ -3,7 +3,6 @@
  * It knows whether an Action should be translated to a message and then sent on the socket, or if it should be
  * handled by something else.
  */
-import {SocketSession} from "../../../comms";
 import match from "../../../util/match";
 import * as messages from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
@@ -12,16 +11,23 @@ import {StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../../../data/content_edit";
 import {ServerState, ServerStateHandler} from "../state/server_state";
+import {Message} from "../../../data/messages";
 
+// interface for testing / decoupling
+export interface ISocket {
+    addEventListener(evt: string, fn: (evt: Event) => void): void,
+    send(msg: Message): void
+    reconnect(onlyIfClosed: boolean): void
+}
 
 export abstract class MessageDispatcher<S> {
-    protected constructor(protected socket: SocketSession, protected state: StateHandler<S>) {}
+    protected constructor(protected socket: ISocket, protected state: StateHandler<S>) {}
 
     abstract dispatch(action: UIAction): void
 }
 
 export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
-    constructor(socket: SocketSession, state: NotebookStateHandler) {
+    constructor(socket: ISocket, state: NotebookStateHandler) {
         super(socket, state);
         // when the socket is opened, send a KernelStatus message to request the current status from the server.
         socket.addEventListener('open', evt => socket.send(new messages.KernelStatus(new messages.KernelBusyState(false, false))));
@@ -206,8 +212,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
 }
 
 export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
-    constructor() {
-        super(SocketSession.global, ServerStateHandler.get);
+    constructor(socket: ISocket) {
+        super(socket, ServerStateHandler.get);
 
     }
 

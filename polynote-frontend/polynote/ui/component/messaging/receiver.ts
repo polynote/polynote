@@ -22,7 +22,6 @@ import {
 } from "../../../data/result";
 import {StateHandler} from "../state/state_handler";
 import {clientInterpreters} from "../../../interpreter/client_interpreter";
-import {EditBuffer} from "../../../data/edit_buffer";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketSession, protected state: StateHandler<S>) {}

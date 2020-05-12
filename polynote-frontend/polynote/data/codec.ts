@@ -13,6 +13,7 @@ declare global {
 export class DataReader {
     buffer: DataView;
     offset: number;
+    private stringDecoder = new TextDecoder('utf-8');
 
     constructor(buf: ArrayBuffer | DataView) {
         if (buf instanceof ArrayBuffer) {
@@ -99,7 +100,7 @@ export class DataReader {
 
     readStringBytes(len: number) {
         const end = this.offset + len;
-        const str = stringDecoder.decode(this.buffer.buffer.slice(this.offset, end));
+        const str = this.stringDecoder.decode(this.buffer.buffer.slice(this.offset, end));
         this.offset = end;
         return str;
     }
@@ -118,6 +119,8 @@ export class DataWriter {
     buffer: ArrayBuffer;
     dataView: DataView;
     offset: number;
+
+    private stringEncoder = new TextEncoder();
     constructor(chunkSize?: number) {
         this.chunkSize = chunkSize ?? 1024;
         this.buffer = new ArrayBuffer(this.chunkSize);
@@ -190,7 +193,7 @@ export class DataWriter {
         if (value === null) {
             this.writeInt32(-1);
         } else {
-            const bytes = stringEncoder.encode(value);
+            const bytes = this.stringEncoder.encode(value);
             this.ensureBufSize(this.buffer.byteLength + bytes.length + 4);
             this.writeInt32(bytes.length);
             this.writeStrBytes(bytes, 0xFFFFFFFF);
@@ -198,14 +201,14 @@ export class DataWriter {
     }
 
     writeShortString(value: string) {
-        const bytes = stringEncoder.encode(value);
+        const bytes = this.stringEncoder.encode(value);
         this.ensureBufSize(this.buffer.byteLength + bytes.length + 2);
         this.writeUint16(bytes.length);
         this.writeStrBytes(bytes, 0xFFFF);
     }
 
     writeTinyString(value: string) {
-        const bytes = stringEncoder.encode(value);
+        const bytes = this.stringEncoder.encode(value);
         this.ensureBufSize(this.buffer.byteLength + bytes.length + 2);
         this.writeUint8(bytes.length);
         this.writeStrBytes(bytes, 0xFF);
@@ -232,9 +235,6 @@ export class DataWriter {
         return new Uint8Array(this.buffer, 0, this.offset).slice(0, this.offset).buffer;
     }
 }
-
-const stringEncoder = new TextEncoder();
-const stringDecoder = new TextDecoder('utf-8');
 
 export abstract class Codec<T> {
     static map<A, B>(codec: Codec<A>, to: (a: A) => B, from: (b: B) => A) {

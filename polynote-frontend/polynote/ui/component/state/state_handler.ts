@@ -3,6 +3,7 @@ import * as clone from "clone";
 
 // The StateHandler mediates interactions between Components and States
 export class StateHandler<S> {
+    public dispose: () => void = () => {};
     // direct retrieval of the current value of S
     getState(): S {
         return clone(this.state);
@@ -31,16 +32,19 @@ export class StateHandler<S> {
     // Create a child 'view' of this state. Changes to this state will propagate to the view, and changes to the view
     // will be reflected in this state.
     // Optionally, caller can provide the constructor to use to instantiate the view StateHandler.
-    view<K extends keyof S, C extends (new (s: S[K]) => StateHandler<S[K]>)>(key: K, constructor?: C): StateHandler<S[K]> {
+    view<K extends keyof S, C extends StateHandler<S[K]>>(key: K, constructor?: { new(s: S[K]): C}): C {
         const view: StateHandler<S[K]> = constructor ? new constructor(this.state[key]) : new StateHandler(this.state[key]);
-        this.addObserver(s => view.setState(s[key]));
-        view.addObserver(s =>
+        const obs = this.addObserver((_, s) => view.setState(s[key]));
+        view.addObserver((_, s) =>
             this.updateState(st => {
                 st[key] = s;
                 return st
             })
         );
-        return view
+        view.dispose = () => {
+            this.removeObserver(obs);
+        };
+        return view as C
     }
 
     // A child 'view' + a transformation.
@@ -48,23 +52,24 @@ export class StateHandler<S> {
         const view = this.view(key);
         const initialT = toT(view.getState());
         if (initialT === undefined) {
-            throw new Error("how did this happen...")
+            throw new Error("Initial view state is undefined, unable to xmap an undefined view.")
         }
-        const state = new StateHandler<T>(initialT);
-        state.addObserver(t => {
+        const xmapView = new StateHandler<T>(initialT);
+        xmapView.addObserver((_, t) => {
             view.setState(fromT(view.getState(), t))
         });
-        const viewObs = view.addObserver((_, newState) => {
+        view.addObserver((_, newState) => {
             const t = toT(newState);
             if (t) {
-                state.setState(t);
+                xmapView.setState(t);
             } else {
                 // hopefully this is all the cleanup we need to do?
-                view.removeObserver(viewObs);
-                state.clearObservers();
+                view.dispose();
+                view.clearObservers();
+                xmapView.clearObservers();
             }
         });
-        return state;
+        return xmapView;
     }
 
     constructor(protected state: S) {}
@@ -83,7 +88,6 @@ export class StateHandler<S> {
         }
     }
 
-    // TODO: would views need to be cleared as well? could they leak?
     clearObservers(): void {
         this.observers = [];
     }
