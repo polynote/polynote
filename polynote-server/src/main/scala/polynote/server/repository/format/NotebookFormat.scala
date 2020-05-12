@@ -17,7 +17,7 @@ trait NotebookFormat {
     */
   def extension: String
 
-  val mime: String = "application/json"
+  val mime: String
 
   def handlesExt(path: Path): Boolean = path.toString.toLowerCase().endsWith(s".$extension")
 
