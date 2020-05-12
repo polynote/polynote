@@ -1,5 +1,6 @@
 package polynote.server.repository.fs
 
+import java.io.OutputStream
 import java.nio.file.Path
 
 import polynote.kernel.BaseEnv
@@ -15,6 +16,8 @@ trait NotebookFilesystem {
   def readPathAsString(path: Path): RIO[BaseEnv, String]
 
   def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit]
+
+  def createLog(path: Path): RIO[BaseEnv, OutputStream]
 
   def list(path: Path): RIO[BaseEnv, List[Path]]
 

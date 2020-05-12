@@ -1,7 +1,7 @@
 package polynote.server.repository.fs
-import java.io.{FileNotFoundException, InputStream}
+import java.io.{FileNotFoundException, InputStream, OutputStream}
 import java.nio.charset.StandardCharsets
-import java.nio.file.{FileVisitOption, Files, Path}
+import java.nio.file.{FileVisitOption, Files, Path, StandardOpenOption}
 
 import fs2.Chunk
 import polynote.kernel.BaseEnv
@@ -21,6 +21,18 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
     _ <- createDirs(path)
     _ <- effectBlocking(Files.write(path, content.getBytes(StandardCharsets.UTF_8))).uninterruptible
   } yield ()
+
+  override def createLog(path: Path): RIO[BaseEnv, OutputStream] = ZIO.effect {
+    import StandardOpenOption._
+    try {
+      Files.newOutputStream(path, WRITE, CREATE, TRUNCATE_EXISTING)
+    } catch {
+      case err: Throwable =>
+        val x = err
+        println(err)
+        throw err
+    }
+  }
 
   private def readBytes(is: => InputStream): RIO[BaseEnv, Chunk.Bytes] = {
     for {

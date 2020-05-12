@@ -189,6 +189,8 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
       }
   }
 
+  def withoutResults: Notebook = copy(cells = ShortList(cells.map(_.copy(results = ShortList.Nil))))
+
   def setResults(id: CellID, results: List[Result]): Notebook = updateCell(id) {
     cell => cell.copy(results = ShortList(results))
   }

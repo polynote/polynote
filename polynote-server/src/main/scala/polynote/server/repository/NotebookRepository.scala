@@ -1,8 +1,9 @@
 package polynote.server.repository
 
-import java.io.{File, FileNotFoundException}
+import java.io.{File, FileNotFoundException, OutputStream}
 import java.net.URI
 import java.nio.file.{FileAlreadyExistsException, Path, Paths}
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 
@@ -16,6 +17,7 @@ import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.messages._
 import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.fs.{FileSystems, LocalFilesystem, NotebookFilesystem}
+import zio.blocking.effectBlocking
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.interop.catz._
@@ -356,11 +358,12 @@ class FileBasedRepository(
     log: Logging.Service,
     renameLock: Semaphore,
     process: Promise[Nothing, Fiber[Nothing, Unit]],
+    wal: OutputStream,
     saveIntervalMillis: Long = 5000L,
     maxSaveFails: Int = 12
   ) extends NotebookRef {
 
-    // TODO: this would be a good place to implement WAL of updates
+    // TODO: improve WAL
 
     private val needSave = new AtomicBoolean(false)
     private val saveIntervalDuration = Duration(saveIntervalMillis, TimeUnit.MILLISECONDS)
@@ -500,35 +503,63 @@ class FileBasedRepository(
           case None            => ZIO.unit
         }
 
+      val initWAL = get.flatMap {
+        notebook => Message.encode[Task](notebook.withoutResults).flatMap(bytes => effectBlocking(wal.write(bytes.toByteArray)))
+      }.catchAll {
+        err => Logging.error("Unable to initialize WAL", err)
+      }
+
+      def writeWAL(update: NotebookUpdate) =
+        Message.encode[Task](update).flatMap {
+          message => effectBlocking {
+            wal.synchronized {
+              wal.write(message.toByteArray)
+            }
+          }
+        }.catchAll {
+          err => Logging.error("Unable to write update to WAL (this WAL segment will be useless)", err) // TODO: improve this
+        }
+
+      val syncWAL = effectBlocking(wal.synchronized(wal.flush())).catchAll {
+        err => Logging.error("Unable to sync WAL (this WAL segment will be useless)", err)
+      }
+
+      val closeWAL = effectBlocking(wal.close()).catchAll {
+        err => Logging.error("Failed to close WAL", err)
+      }
+
       // process all the submitted updates into the ref in order
       val processPending = pending.take.flatMap {
-        case Take.Value((update, completerOpt)) =>
-          (doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError
+        case Take.Value((update, completerOpt)) => (writeWAL(update).forkDaemon &> doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError
         case Take.End                           => pending.shutdown *> closed.succeed(()).unit <* ZIO.fail(None)
       }.forever.flip
 
       // every interval, check if the notebook needs to be written and do so
       val saveAtInterval =
         get.map(_.path).flatMap(path => Logging.info(s"Will write to $path")) *>
-          save.whenM(effectTotal(needSave.get())).repeat(Schedule.fixed(saveIntervalDuration))
+          (syncWAL &> save).whenM(effectTotal(needSave.get())).repeat(Schedule.fixed(saveIntervalDuration))
 
       // save one more time once closed
       val finalSave = save *> get.map(_.path).flatMap(path => Logging.info(s"Stopped writing to $path")) <* verify
 
-      (processPending.unit.raceFirst(saveAtInterval.unit) *> finalSave).forkDaemon.flatMap(process.succeed).unit
+      initWAL *> processPending.unit.raceFirst(saveAtInterval.unit)
+        .ensuring(finalSave).ensuring(closeWAL)
+        .forkDaemon.flatMap(process.succeed).unit
     }
   }
 
   private object FileNotebookRef {
-
-    def apply(notebook: Notebook): URIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
+    private val timestampFormat = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+    def apply(notebook: Notebook, path: Path): RIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
       log        <- Logging.access
       current    <- Ref.make(0 -> notebook)
       closed     <- Promise.make[Throwable, Unit]
       pending    <- Queue.unbounded[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]]
       renameLock <- Semaphore.make(1L)
       process    <- Promise.make[Nothing, Fiber[Nothing, Unit]]
-      ref         = new FileNotebookRef(current, pending, closed, log, renameLock, process)
+      timeStr    <- ZIO.accessM[Clock](_.get.currentDateTime).flatMap(time => ZIO(time.format(timestampFormat)))
+      wal        <- fs.createLog(path.getParent.resolve(path.getFileName.toString + s".${timeStr}.wal"))
+      ref         = new FileNotebookRef(current, pending, closed, log, renameLock, process, wal)
       _          <- ref.init()
     } yield ref
   }
@@ -540,9 +571,10 @@ class FileBasedRepository(
     nb             <- fmt.decodeNotebook(noExtPath, content)
   } yield nb
 
-  override def openNotebook(path: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
-    nb             <- loadNotebook(path)
-    ref            <- FileNotebookRef(nb)
+  override def openNotebook(pathStr: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
+    nb             <- loadNotebook(pathStr)
+    path            = pathOf(pathStr)
+    ref            <- FileNotebookRef(nb, path)
   } yield ref
 
   private def encodeNotebook(nb: Notebook) = for {

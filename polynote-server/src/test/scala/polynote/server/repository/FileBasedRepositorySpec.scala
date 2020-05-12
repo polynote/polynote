@@ -1,6 +1,6 @@
 package polynote.server.repository
 
-import java.io.File
+import java.io.{ByteArrayOutputStream, File, OutputStream}
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.ConcurrentHashMap
 
@@ -27,6 +27,8 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
     override def readPathAsString(path: Path): RIO[BaseEnv, String] = withKeyContent(path)((_, content) => content)
 
     override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = ZIO(notebooks.put(tmpDir.resolve(path), content))
+
+    override def createLog(path: Path): RIO[BaseEnv, OutputStream] = ZIO.succeed(new ByteArrayOutputStream())
 
     override def list(path: Path): RIO[BaseEnv, List[Path]] = ZIO(notebooks.keys().asScala.toList)
 
