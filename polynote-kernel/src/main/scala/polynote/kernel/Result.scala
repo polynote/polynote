@@ -222,14 +222,16 @@ object Result {
     result match {
       case ClearResults() => _.copy(results = ShortList(Nil))
       case execInfo@ExecutionInfo(_, _) => cell => cell.copy(results = ShortList(cell.results :+ execInfo), metadata = cell.metadata.copy(executionInfo = Some(execInfo)))
-      case Output("text/plain; rel=stdout", lines) =>
+      case Output("text/plain; rel=stdout", lines) if lines.nonEmpty =>
+        val processedTail = lines.tail.map(collapseCrs)
+
         cell => {
           val updatedResults = cell.results.lastOption match {
             case Some(Output("text/plain; rel=stdout", linesPrev)) =>
-              val combinedLines = if (linesPrev.nonEmpty && lines.nonEmpty && !linesPrev.last.endsWith("\n")) {
-                linesPrev.dropRight(1) ++ ((linesPrev.last + lines.head) +: lines.tail).map(collapseCrs)
+              val combinedLines = if (linesPrev.nonEmpty && !linesPrev.last.endsWith("\n")) {
+                linesPrev.dropRight(1) ++ (collapseCrs(linesPrev.last + lines.head) +: processedTail)
               } else {
-                linesPrev ++ lines.map(collapseCrs)
+                linesPrev ++ (collapseCrs(lines.head) +: processedTail)
               }
               cell.results.dropRight(1) :+ Output("text/plain; rel=stdout", combinedLines)
             case _ => cell.results :+ result

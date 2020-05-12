@@ -405,8 +405,10 @@ class FileBasedRepository(
     //       global/local versions for them, which is currently a requirement with NotebookUpdates. That could be
     //       refactored a bit.
     override def addResult(cellID: CellID, result: Result): IO[AlreadyClosed, Unit] = ifOpen {
-      current.update {
-        case (ver, notebook) => ver -> notebook.updateCell(cellID)(result.toCellUpdate)
+      effectTotal(result.toCellUpdate).flatMap {
+        cellUpdate => current.update {
+          case (ver, notebook) => ver -> notebook.updateCell(cellID)(cellUpdate)
+        }
       }
     } <* setNeedSave
 
@@ -577,8 +579,7 @@ class FileBasedRepository(
     }
   }
 
-  val EndsWithNum = """^(.*?)(\d+)
-            }$""".r
+  val EndsWithNum = """^(.*?)(\d+)$""".r
 
   def findUniqueName(path: String): RIO[BaseEnv with GlobalEnv, String] = {
     val (noExtPath, ext) = extractExtension(path)
