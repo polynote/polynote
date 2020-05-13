@@ -23,9 +23,10 @@ object Main extends polynote.app.App {
   val main: ZIO[AppEnv, Nothing, Int] =
     MainArgs.access.flatMap {
       args => args.command match {
-        case "server" => new Server().main
-        case "run"    => NotebookRunner.main
-        case other    => ZIO.dieMessage(s"Unknown command $other (expected server)")
+        case "server"  => new Server().main
+        case "run"     => NotebookRunner.main
+        case "recover" => RecoverLog.main
+        case other     => ZIO.dieMessage(s"Unknown command $other (expected server)")
       }
     }.catchAll {
       str => ZIO.effectTotal {
