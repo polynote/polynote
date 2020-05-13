@@ -5,11 +5,11 @@ import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.file.Path
 
-import polynote.kernel.BaseEnv
+import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.messages.Message
 import scodec.bits.BitVector
 import zio.blocking.Blocking
-import zio.{RIO, Task, ZIO}
+import zio.{RIO, RManaged, Task, ZIO}
 
 /**
   * Encapsulates useful Notebook-related FS stuff.
@@ -19,6 +19,9 @@ import zio.{RIO, Task, ZIO}
 trait NotebookFilesystem {
 
   def readPathAsString(path: Path): RIO[BaseEnv, String]
+
+  // TODO: this really should be Managed
+  def openNotebookFile(path: Path): RIO[BaseEnv with GlobalEnv, NotebookFile]
 
   def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit]
 
@@ -37,4 +40,10 @@ trait NotebookFilesystem {
   def delete(path: Path): RIO[BaseEnv, Unit]
 
   def init(path: Path): RIO[BaseEnv, Unit]
+}
+
+trait NotebookFile {
+  def overwrite(content: String): RIO[BaseEnv, Unit]
+  def readContent(): RIO[BaseEnv, String]
+  def close(): RIO[BaseEnv, Unit]
 }

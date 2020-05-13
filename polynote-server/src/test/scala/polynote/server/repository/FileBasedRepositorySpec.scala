@@ -1,6 +1,6 @@
 package polynote.server.repository
 
-import java.io.{ByteArrayOutputStream, File, OutputStream}
+import java.io.{ByteArrayOutputStream, File, FileNotFoundException, OutputStream}
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.ConcurrentHashMap
@@ -11,8 +11,8 @@ import polynote.kernel.BaseEnv
 import polynote.messages.{Notebook, ShortList}
 import polynote.server.MockServerSpec
 import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.fs.{NotebookFilesystem, WAL}
-import zio.{RIO, ZIO}
+import polynote.server.repository.fs.{NotebookFile, NotebookFilesystem, WAL}
+import zio.{RIO, RManaged, ZIO, ZManaged}
 import zio.blocking.effectBlocking
 
 import scala.collection.JavaConverters._
@@ -25,7 +25,15 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
 
     private val notebooks = new ConcurrentHashMap[Path, String]()
 
+    private class File(path: Path) extends NotebookFile {
+      override def overwrite(content: String): RIO[BaseEnv, Unit] = ZIO.effectTotal(notebooks.put(path, content))
+      override def readContent(): RIO[BaseEnv, String] = ZIO.effectTotal(Option(notebooks.get(path))).someOrFail(new FileNotFoundException())
+      override def close(): RIO[BaseEnv, Unit] = ZIO.unit
+    }
+
     override def readPathAsString(path: Path): RIO[BaseEnv, String] = withKeyContent(path)((_, content) => content)
+
+    override def openNotebookFile(path: Path): RIO[BaseEnv, NotebookFile] = ZIO.succeed(new File(path))
 
     override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = ZIO(notebooks.put(tmpDir.resolve(path), content))
 

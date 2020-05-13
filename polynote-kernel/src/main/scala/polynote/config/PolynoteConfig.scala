@@ -79,6 +79,7 @@ final case class Storage(
   cache: String = "tmp",
   dir: String = "notebooks",
   mounts: Map[String, Mount] = Map.empty,
+  lockNotebooks: Boolean = false,
   wal: Wal = Wal()
 )
 

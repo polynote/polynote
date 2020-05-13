@@ -2,6 +2,7 @@ package polynote.kernel
 
 
 import polynote.messages.{CellID, Notebook, NotebookUpdate}
+import zio.blocking.Blocking
 import zio.{IO, RIO, Task, UIO, ZIO}
 
 /**
@@ -54,7 +55,7 @@ trait NotebookRef {
   /**
     * Close the notebook.
     */
-  def close(): Task[Unit]
+  def close(): RIO[BaseEnv, Unit]
 
   def isOpen: UIO[Boolean]
 
