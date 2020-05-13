@@ -14,7 +14,8 @@ import scala.collection.JavaConverters._
 class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 
   override def readPathAsString(path: Path): RIO[BaseEnv, String] = for {
-    content <- readBytes(Files.newInputStream(path))
+    is      <- effectBlocking(Files.newInputStream(path))
+    content <- readBytes(is).ensuring(ZIO.effectTotal(is.close()))
   } yield new String(content.toArray, StandardCharsets.UTF_8)
 
   override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = for {
