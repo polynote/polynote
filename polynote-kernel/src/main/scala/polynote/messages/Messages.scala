@@ -204,7 +204,9 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
   def cell(id: CellID): NotebookCell = getCell(id).getOrElse(throw new NoSuchElementException(s"Cell $id does not exist"))
 }
 
-object Notebook extends MessageCompanion[Notebook](2)
+object Notebook extends MessageCompanion[Notebook](2) {
+  implicit val codec: Codec[Notebook] = cachedImplicit
+}
 
 final case class RunCell(ids: ShortList[CellID]) extends Message
 object RunCell extends MessageCompanion[RunCell](3)
