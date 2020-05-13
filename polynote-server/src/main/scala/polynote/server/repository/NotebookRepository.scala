@@ -584,7 +584,7 @@ class FileBasedRepository(
 
   // TODO: should make this protected so you must save via NotebookRef? And createNotebook would return a NotebookRef.
   override def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = for {
-    rawString <- encodeNotebook(nb)
+    rawString <- encodeNotebook(nb).filterOrFail(_.nonEmpty)(new IllegalStateException("Encoded notebook is empty!"))
     _         <- fs.writeStringToPath(pathOf(nb.path), rawString)
   } yield ()
 
