@@ -20,7 +20,7 @@ import polynote.server.repository.fs.FileSystems
 import polynote.server.repository.{FileBasedRepository, NotebookContent, NotebookRepository, TreeRepository}
 import scodec.bits.ByteVector
 import uzhttp.websocket.{Binary, Close, Frame, Ping, Pong}
-import zio.blocking.Blocking
+import zio.blocking.effectBlocking
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
@@ -99,7 +99,7 @@ package object server {
 
     def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
-    def fetch(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, (String, String)] = access.flatMap(_.fetch(path))
+    def fetchIfOpen(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[(String, String)]] = access.flatMap(_.fetchIfOpen(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
     def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())
     def listRunning(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.listRunning())
@@ -111,7 +111,7 @@ package object server {
 
     trait Service {
       def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]
-      def fetch(path: String): RIO[BaseEnv with GlobalEnv, (String, String)]
+      def fetchIfOpen(path: String): RIO[BaseEnv with GlobalEnv, Option[(String, String)]]
       def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]]
       def list(): RIO[BaseEnv with GlobalEnv, List[String]]
       def listRunning(): RIO[BaseEnv with GlobalEnv, List[String]]
@@ -177,12 +177,16 @@ package object server {
           }
         }
 
-        override def fetch(path: String): RIO[BaseEnv with GlobalEnv, (String, String)] = {
-            for {
-              (_, nb)   <- open(path).flatMap(_.latestVersion)
-              fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))
-              rawString <- fmt.encodeNotebook(NotebookContent(nb.cells, nb.config))
-            } yield (fmt.mime, rawString)
+        override def fetchIfOpen(path: String): RIO[BaseEnv with GlobalEnv, Option[(String, String)]] = {
+          openNotebooks.get(path).flatMap {
+            case None => ZIO.succeed(None)
+            case Some((pub, _)) =>
+              for {
+                (_, nb)   <- pub.latestVersion
+                fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))
+                rawString <- fmt.encodeNotebook(NotebookContent(nb.cells, nb.config))
+              } yield Some((fmt.mime, rawString))
+          }
         }
 
         override def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = repository.notebookURI(path)

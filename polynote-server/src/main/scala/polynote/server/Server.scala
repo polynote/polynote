@@ -111,9 +111,19 @@ class Server {
   type RequestEnv = BaseEnv with MainEnv with NotebookManager
 
   private def downloadFile(path: String, req: Request): ZIO[RequestEnv, HTTPError, Response] = {
-    for {
-      (mime, content) <- NotebookManager.fetch(path)
-    } yield Response.const(content.getBytes(StandardCharsets.UTF_8), contentType = mime)
+    NotebookManager.fetchIfOpen(path).flatMap {
+      case Some((mime, content)) =>
+        effectBlocking(Response.const(content.getBytes(StandardCharsets.UTF_8), contentType = mime))
+      case None =>
+        for {
+          uri <- NotebookManager.location(path).someOrFail(NotFound(req.uri.toString))
+          loc <- effectBlocking(Paths.get(uri)) // eventually we'll have to deal with other schemes here
+          rep <- Response.fromPath(
+            loc, req,
+            "application/x-ipynb+json",
+            headers = List("Content-Disposition" -> s"attachment; filename=${URLEncoder.encode(loc.getFileName.toString, "utf-8")}"))
+        } yield rep
+    }
   }.orElseFail(NotFound(req.uri.toString))
 
   def serve(wsKey: String): ZIO[BaseEnv with MainEnv with MainArgs, Throwable, Unit] =
