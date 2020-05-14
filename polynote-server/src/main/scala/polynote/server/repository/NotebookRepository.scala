@@ -1,6 +1,6 @@
 package polynote.server.repository
 
-import java.io.{File, FileNotFoundException}
+import java.io.{File, FileNotFoundException, IOException}
 import java.net.URI
 import java.nio.file.{FileAlreadyExistsException, Path, Paths}
 import java.util.concurrent.TimeUnit
@@ -64,6 +64,7 @@ trait NotebookRepository {
     * TODO: Server no longer imports. Need to implement this on the client side.
     */
   def createNotebook(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String]
+  def createAndOpen(path: String, notebook: Notebook, version: Int = 0): RIO[BaseEnv with GlobalEnv, NotebookRef]
 
   def renameNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
 
@@ -176,7 +177,12 @@ class TreeRepository (
             case (newRepo, relativePath, newBasePath) =>
               for {
                 _        <- state.ref.close()
-                newState <- State(newRepo, newBasePath, relativePath, closed)
+                nb       <- state.ref.getVersioned
+                newRef   <- newRepo.createAndOpen(relativePath, nb._2.copy(path = relativePath), nb._1)
+                validate <- loadNotebook(newPath)
+                  .filterOrFail(_.cells.map(_.copy(id = 0)) == nb._2.cells.map(_.copy(id = 0)))(new IOException("Validation error moving notebook across repositories; will not remove from previous location"))
+                  .flatMap(_ => state.repo.deleteNotebook(state.relativePath))
+                newState <- State(newRepo, newRef, newBasePath, relativePath, closed)
                 _        <- currentRef.set(newState)
               } yield pathOf(relativePath, newBasePath)
           }
@@ -190,7 +196,7 @@ class TreeRepository (
   }
 
   private object TreeNotebookRef {
-    private case class State private (repo: NotebookRepository, basePath: Option[String], relativePath: String, ref: NotebookRef) {
+    private case class State private (repo: NotebookRepository, ref: NotebookRef, basePath: Option[String], relativePath: String) {
       def normalizePath(notebook: Notebook): Notebook = TreeRepository.this.normalizePath(
         basePath.map(base => notebook.copy(path = Paths.get(base, notebook.path).toString)).getOrElse(notebook)
       )
@@ -205,16 +211,15 @@ class TreeRepository (
     }
 
     private object State {
-      def apply(repo: NotebookRepository, basePath: Option[String], relativePath: String, closed: Promise[Throwable, Unit]): RIO[BaseEnv with GlobalEnv, State] = for {
-        ref   <- repo.openNotebook(relativePath)
-        state  = new State(repo, basePath, relativePath, ref)
-        _     <- state.closeOnError(closed)
-      } yield state
+      def apply(repo: NotebookRepository, ref: NotebookRef, basePath: Option[String], relativePath: String, closed: Promise[Throwable, Unit]): RIO[BaseEnv with GlobalEnv, State] = {
+        val state = new State(repo, ref, basePath, relativePath)
+        state.closeOnError(closed).as(state)
+      }
     }
 
-    def apply(repo: NotebookRepository, basePath: Option[String], relativePath: String): RIO[BaseEnv with GlobalEnv, TreeNotebookRef] = for {
+    def apply(repo: NotebookRepository, underlying: NotebookRef, basePath: Option[String], relativePath: String): RIO[BaseEnv with GlobalEnv, TreeNotebookRef] = for {
       closed     <- Promise.make[Throwable, Unit]
-      state      <- State(repo, basePath, relativePath, closed)
+      state      <- State(repo, underlying, basePath, relativePath, closed)
       underlying <- Ref.make(state)
       renameLock <- Semaphore.make(Short.MaxValue)
     } yield new TreeNotebookRef(underlying, renameLock, closed)
@@ -276,7 +281,9 @@ class TreeRepository (
   }
 
   override def openNotebook(path: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = delegate(path) {
-    (repo, relativePath, base) => TreeNotebookRef(repo, base, relativePath)
+    (repo, relativePath, base) => repo.openNotebook(relativePath).flatMap {
+      underlying => TreeNotebookRef(repo, underlying, base, relativePath)
+    }
   }
 
   override def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = delegate(nb.path) {
@@ -297,6 +304,14 @@ class TreeRepository (
         for {
           nbPath <- repo.createNotebook(relativePath, maybeContent)
         } yield deslash(base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath))
+  }
+
+  override def createAndOpen(path: String, notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, NotebookRef] = delegate(path) {
+    (repo, relativePath, base) =>
+      for {
+        underlyingRef <- repo.createAndOpen(relativePath, notebook, version)
+        ref           <- TreeNotebookRef(repo, underlyingRef, base, relativePath)
+      } yield ref
   }
 
   private def copyOrRename(src: String, dest: String, deletePrevious: Boolean): RIO[BaseEnv with GlobalEnv, String] = {
@@ -521,9 +536,9 @@ class FileBasedRepository(
 
   private object FileNotebookRef {
 
-    def apply(notebook: Notebook): URIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
+    def apply(notebook: Notebook, version: Int): URIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
       log        <- Logging.access
-      current    <- Ref.make(0 -> notebook)
+      current    <- Ref.make(version -> notebook)
       closed     <- Promise.make[Throwable, Unit]
       pending    <- Queue.unbounded[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]]
       renameLock <- Semaphore.make(1L)
@@ -542,7 +557,7 @@ class FileBasedRepository(
 
   override def openNotebook(path: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
     nb             <- loadNotebook(path)
-    ref            <- FileNotebookRef(nb)
+    ref            <- FileNotebookRef(nb, 0)
   } yield ref
 
   private def encodeNotebook(nb: Notebook) = for {
@@ -627,6 +642,11 @@ class FileBasedRepository(
       _       <- saveNotebook(nb.copy(path = name))
     } yield name
   }
+
+  override def createAndOpen(path: String, notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
+    _   <- saveNotebook(notebook.copy(path = path))
+    ref <- FileNotebookRef(notebook, version)
+  } yield ref
 
   private def withValidatedSrcDest[T](src: String, dest: String)(f: (String, String) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
     val (destNoExt, destExt) = extractExtension(dest.replaceFirst("""^/+""", ""))

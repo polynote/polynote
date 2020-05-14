@@ -117,13 +117,15 @@ package object logging {
 
         private def printWithPrefixSync(prefix: String, indent: String, msg: String)(implicit location: Location): Unit = {
           val lines = new StringOps(msg).lines
-          val firstLine = lines.next()
-          out.print(prefix)
-          out.println(firstLine)
-          lines.foreach {
-            l =>
-              out.print(indent)
-              out.println(l)
+          if (lines.hasNext) {
+            val firstLine = lines.next()
+            out.print(prefix)
+            out.println(firstLine)
+            lines.foreach {
+              l =>
+                out.print(indent)
+                out.println(l)
+            }
           }
         }
 

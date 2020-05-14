@@ -129,7 +129,7 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
 
     "should create empty notebooks" in {
       val name = "my_nb.ipynb"
-      repo.createNotebook(name).runIO shouldEqual name
+      repo.createNotebook(name, None).runIO shouldEqual name
       repo.loadNotebook(name).runIO shouldEqual repo.emptyNotebook(name, "my nb").runIO
     }
 
