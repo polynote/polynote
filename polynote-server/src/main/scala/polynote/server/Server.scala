@@ -101,6 +101,7 @@ class Server {
       wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
       _            <- Logging.warn(securityWarning)
       _            <- Logging.info(banner)
+      _            <- Logging.info(s"Polynote version ${BuildInfo.version}")
       _            <- serve(wsKey).orDie
     } yield 0
   }.provideSomeLayer[AppEnv](IdentityProvider.layer.orDie)
