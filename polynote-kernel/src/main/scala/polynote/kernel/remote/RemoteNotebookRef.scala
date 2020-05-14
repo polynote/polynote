@@ -34,6 +34,10 @@ class RemoteNotebookRef private (
       }
   }
 
+  // this is visible for testing (it can't be seen by the environment, which has NotebookRef type)
+  def set(notebook: Notebook): UIO[Unit] = current.update(_.copy(_2 = notebook))
+  def set(versioned: (Int, Notebook)): UIO[Unit] = current.set(versioned)
+
   // These other things don't matter on the remote kernel.
   override def addResult(cellID: CellID, result: Result): UIO[Unit] = ZIO.unit
   override def clearResults(cellID: CellID): UIO[Unit] = ZIO.unit

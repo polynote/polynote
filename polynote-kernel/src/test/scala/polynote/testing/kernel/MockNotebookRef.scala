@@ -10,6 +10,7 @@ class MockNotebookRef private(
   closed: Promise[Throwable, Unit],
   saveTo: ((Int, Notebook)) => UIO[Unit]
 ) extends NotebookRef {
+  def set(versioned: (Int, Notebook)): UIO[Unit] = current.set(versioned)
   override def getVersioned: UIO[(Int, Notebook)] = current.get
   override def update(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, Unit] = updateAndGet(update).unit
 

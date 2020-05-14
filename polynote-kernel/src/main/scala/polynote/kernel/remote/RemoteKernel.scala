@@ -221,7 +221,7 @@ class RemoteKernelClient(
   publishResponse: Publish[Task, RemoteResponse],
   cleanup: TaskB[Unit],
   closed: Promise[Throwable, Unit],
-  private[remote] val notebookRef: NotebookRef // for testing
+  private[remote] val notebookRef: RemoteNotebookRef // for testing
 ) {
 
   private val sessionHandles = new ConcurrentHashMap[Int, StreamingHandles.Service]()
