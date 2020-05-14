@@ -1,19 +1,21 @@
 package polynote.server.repository.fs
-import java.io.{FileNotFoundException, InputStream, OutputStream}
+import java.io.{FileNotFoundException, IOException, InputStream, OutputStream}
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.{FileVisitOption, Files, Path, StandardOpenOption}
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import fs2.Chunk
-import polynote.kernel.BaseEnv
+import polynote.kernel.{BaseEnv, GlobalEnv}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.interop.catz._
-import zio.{RIO, Semaphore, Task, ZIO}
+import zio.{Fiber, RIO, RManaged, Semaphore, Task, ZIO}
+import zio.ZIO.effect
 
 import scala.collection.JavaConverters._
 import LocalFilesystem.FileChannelWALWriter
+import polynote.kernel.environment.Config
 
 class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 
@@ -21,6 +23,8 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
     is      <- effectBlocking(Files.newInputStream(path))
     content <- readBytes(is).ensuring(ZIO.effectTotal(is.close()))
   } yield new String(content.toArray, StandardCharsets.UTF_8)
+
+  override def openNotebookFile(path: Path): RIO[BaseEnv with GlobalEnv, NotebookFile] = LocalFilesystem.FileChannelNotebookFile(path)
 
   override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = for {
     _ <- createDirs(path)
@@ -65,6 +69,7 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 }
 
 object LocalFilesystem {
+  import StandardOpenOption._
 
   final class FileChannelWALWriter private (mkChannel: => FileChannel, lock: Semaphore) extends WAL.WALWriter {
 
@@ -90,11 +95,56 @@ object LocalFilesystem {
   }
 
   object FileChannelWALWriter {
-    import StandardOpenOption._
     def apply(path: Path): RIO[Blocking, FileChannelWALWriter] = for {
       lock    <- Semaphore.make(1L)
       channel <- effectBlocking(FileChannel.open(path, WRITE, CREATE_NEW))
     } yield new FileChannelWALWriter(channel, lock)
+  }
+
+  final class FileChannelNotebookFile private (channel: FileChannel, writeLock: Semaphore) extends NotebookFile {
+    override def overwrite(content: String): RIO[BaseEnv, Unit] = writeLock.withPermit {
+      val bytes = ByteBuffer.wrap(content.getBytes(StandardCharsets.UTF_8))
+      effect(channel.position(0L)) *>
+        effectBlocking(channel.write(bytes)).doWhile(_ => bytes.hasRemaining) *>
+        effectBlocking(channel.truncate(bytes.position()))
+    }
+
+    override def readContent(): RIO[BaseEnv, String] =
+      effectBlocking {
+        val size = channel.size() match {
+          case s if s > Int.MaxValue => throw new IOException(s"Notebook file size ($s) exceeds limit of 2GB")
+          case s => s.toInt
+        }
+        new Array[Byte](size)
+      }.flatMap {
+        bytes =>
+          val buf = ByteBuffer.wrap(bytes)
+          effectBlocking(channel.read(buf, buf.position())).doWhile(_ => buf.hasRemaining) *>
+            effect(new String(bytes, StandardCharsets.UTF_8))
+      }
+
+    override def close(): RIO[BaseEnv, Unit] = writeLock.withPermit {
+      effectBlocking(channel.force(true)) *> effectBlocking(channel.close())
+    }
+  }
+
+  object FileChannelNotebookFile {
+
+    // TODO: should allow other polynote instances to read the file? We'd need UX for read-only mode.
+    def apply(path: Path): RIO[Blocking with Config, FileChannelNotebookFile] = {
+
+      // file lock will be released when channel is closed
+      def lockFile(channel: FileChannel) =
+        effectBlocking(Option(channel.tryLock(0L, 0L, false)))
+          .someOrFail(new IOException(s"Couldn't obtain a lock on $path – is another instance of Polynote using this file?"))
+          .whenM(Config.access.map(_.storage.lockNotebooks))
+
+      for {
+        channel   <- effectBlocking(FileChannel.open(path, READ, WRITE, CREATE))
+        _         <- lockFile(channel)
+        semaphore <- Semaphore.make(1L)
+      } yield new FileChannelNotebookFile(channel, semaphore)
+    }
   }
 
 }

@@ -15,11 +15,12 @@ import polynote.kernel.logging.Logging
 import polynote.kernel.util.LongRef
 import polynote.messages._
 import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem, WAL}, WAL.WALWriter
+import polynote.server.repository.fs.{LocalFilesystem, NotebookFile, NotebookFilesystem, WAL}
+import WAL.WALWriter
 import scodec.Codec
 import zio.{Fiber, IO, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO}
 import zio.ZIO.effectTotal
-import zio.blocking.effectBlocking
+import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.currentDateTime
 import zio.duration.Duration
 import zio.stream.Take
@@ -41,6 +42,7 @@ class FileBasedRepository(
     log: Logging.Service,
     renameLock: Semaphore,
     process: Promise[Nothing, Fiber[Nothing, Unit]],
+    notebookFile: NotebookFile,
     wal: Task[WALWriter],
     saveIntervalMillis: Long = 5000L,
     maxSaveFails: Int = 12
@@ -52,9 +54,8 @@ class FileBasedRepository(
     private val saveIntervalDuration = Duration(saveIntervalMillis, TimeUnit.MILLISECONDS)
     private val consecutiveSaveFails = LongRef.zeroSync
 
-
     private val setNeedSave = effectTotal(needSave.lazySet(true))
-    private val save = (renameLock.withPermit(get.flatMap(saveNotebook)) *> effectTotal(needSave.lazySet(false)))
+    private val save = (renameLock.withPermit(get >>= encodeNotebook >>= notebookFile.overwrite) *> effectTotal(needSave.lazySet(false)))
       .catchAll {
         err => consecutiveSaveFails.incrementAndGet.flatMap {
           case count if count >= maxSaveFails =>
@@ -128,11 +129,12 @@ class FileBasedRepository(
       } yield newPath
     } <* setNeedSave
 
-    override def close(): Task[Unit] =
+    override def close(): RIO[BaseEnv, Unit] =
       closed.succeed(()) *>
         pending.offer(Take.End) *>
         pending.awaitShutdown *>
         process.await.flatMap(_.join) *>
+        notebookFile.close() *>
         closed.await
 
     override val isOpen: UIO[Boolean] = closed.isDone.map(!_)
@@ -232,8 +234,10 @@ class FileBasedRepository(
         case false => ZIO.succeed(WALWriter.NoWAL)
       }
 
-    def apply(notebook: Notebook, path: Path): RIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
+    def apply(path: String): RIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
       log        <- Logging.access
+      nbFile     <- fs.openNotebookFile(pathOf(path))
+      notebook   <- nbFile.readContent() >>= (decodeNotebook(path, _))
       current    <- Ref.make(0 -> notebook)
       closed     <- Promise.make[Throwable, Unit]
       pending    <- Queue.unbounded[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]]
@@ -241,23 +245,25 @@ class FileBasedRepository(
       process    <- Promise.make[Nothing, Fiber[Nothing, Unit]]
       env        <- ZIO.environment[BaseEnv with GlobalEnv]
       wal        <- openWAL(notebook.path.stripPrefix("/")).tap(_.writeHeader(notebook)).provide(env).memoize
-      ref         = new FileNotebookRef(current, pending, closed, log, renameLock, process, wal)
+      ref         = new FileNotebookRef(current, pending, closed, log, renameLock, process, nbFile, wal)
       _          <- ref.init().onError(_ => ref.close().orDie)
     } yield ref
   }
 
-  override def loadNotebook(path: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
-    fmt            <- NotebookFormat.getFormat(pathOf(path))
-    content        <- fs.readPathAsString(pathOf(path))
-    (noExtPath, _)  = extractExtension(path)
-    nb             <- fmt.decodeNotebook(noExtPath, content)
+  override def loadNotebook(pathStr: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
+    path    <- effectTotal(pathOf(pathStr))
+    content <- fs.readPathAsString(path)
+    nb      <- decodeNotebook(pathStr, content)
   } yield nb
 
-  override def openNotebook(pathStr: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
-    nb             <- loadNotebook(pathStr)
-    path            = pathOf(pathStr)
-    ref            <- FileNotebookRef(nb, path)
-  } yield ref
+  override def openNotebook(pathStr: String): RIO[BaseEnv with GlobalEnv, NotebookRef] =
+    FileNotebookRef(pathStr)
+
+  private def decodeNotebook(path: String, string: String) = for {
+    fmt            <- NotebookFormat.getFormat(Paths.get(path))
+    (noExtPath, _)  = extractExtension(path)
+    nb             <- fmt.decodeNotebook(noExtPath, string)
+  } yield nb
 
   private def encodeNotebook(nb: Notebook) = for {
     fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))

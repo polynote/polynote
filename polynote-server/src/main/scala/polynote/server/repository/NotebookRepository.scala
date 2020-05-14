@@ -174,7 +174,7 @@ class TreeRepository (
         }
       }
 
-    override def close(): Task[Unit] = currentRef.get.flatMap(_.ref.close()) <* closed.succeed(())
+    override def close(): RIO[BaseEnv, Unit] = currentRef.get.flatMap(_.ref.close()) <* closed.succeed(())
 
     override def awaitClosed: Task[Unit] = closed.await
 

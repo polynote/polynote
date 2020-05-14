@@ -147,7 +147,6 @@ package object server {
 
         private val maxRetryDelay = Duration(8, TimeUnit.SECONDS)
 
-
         override def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher] = openNotebooks.getOrCreate(path) {
           for {
             notebookRef   <- repository.openNotebook(path)

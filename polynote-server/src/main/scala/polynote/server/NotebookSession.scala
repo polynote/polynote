@@ -127,7 +127,7 @@ object NotebookSession {
   def stream(path: String, input: Stream[Throwable, Frame]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
     for {
       _                <- NotebookManager.assertValidPath(path)
-      publisher        <- NotebookManager.open(path).orElseFail(NotFound(path))
+      publisher        <- NotebookManager.open(path).tapError(Logging.error(s"Failed to open $path", _))
       output           <- ZQueue.unbounded[Take[Nothing, Message]]
       publishMessage   <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])
       subscriber       <- publisher.subscribe().orDie
