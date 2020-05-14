@@ -186,7 +186,9 @@ package object server {
               case Some(publisher) => moveLock.withPermit {
                 repository.notebookExists(newPath).flatMap {
                   case true  => ZIO.fail(new FileAlreadyExistsException(s"File $newPath already exists"))
-                  case false => publisher.versionedNotebook.rename(newPath)
+                  case false => publisher.versionedNotebook.rename(newPath).flatMap {
+                    newPath => openNotebooks.put(newPath, publisher) *> openNotebooks.remove(path).as(newPath)
+                  }
                 }
               }
             }
