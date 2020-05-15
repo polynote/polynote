@@ -18,6 +18,7 @@ import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployJava
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, KernelStatusUpdate, LocalKernel, LocalKernelFactory, Output}
 import polynote.messages.{CellID, Message, Notebook, NotebookCell, ShortList}
 import polynote.testing.ExtConfiguredZIOSpec
+import polynote.testing.kernel.MockNotebookRef
 import zio.duration.Duration
 import zio.{Promise, RIO, Schedule, Tagged, Task, ZIO, ZLayer}
 
@@ -51,7 +52,8 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
           }.provideLayer(ZLayer.succeedMany(env))
       }
       val notebook        = Notebook("/i/am/fake.ipynb", ShortList(List(NotebookCell(CellID(0), "scala", ""))), None)
-      val kernelPublisher = KernelPublisher(notebook, bq).runWith(kernelFactory)
+      val ref             = MockNotebookRef(notebook).runIO()
+      val kernelPublisher = KernelPublisher(ref, bq).runWith(kernelFactory)
       kernelPublisher.queueCell(CellID(0)).flatten.runWith(kernelFactory)
       kernelPublisher.latestVersion.runIO()._2.cells.head.results should contain theSameElementsAs Seq(
         Output("text/plain; rel=stdout", "end\n")
@@ -62,8 +64,9 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val deploy          = new DeploySubprocess(new DeployJava[LocalKernelFactory])
       val transport       = new SocketTransport(deploy)
       val notebook        = Notebook("/i/am/fake.ipynb", ShortList(Nil), None)
+      val ref             = MockNotebookRef(notebook).runIO()
       val kernelFactory   = RemoteKernel.factory(transport)
-      val kernelPublisher = KernelPublisher(notebook, bq).runWith(kernelFactory)
+      val kernelPublisher = KernelPublisher(ref, bq).runWith(kernelFactory)
       val kernel          = kernelPublisher.kernel.runWith(kernelFactory).asInstanceOf[RemoteKernel[InetSocketAddress]]
       val process         = kernel.transport.asInstanceOf[SocketTransportServer].process
 
@@ -107,7 +110,8 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       }
 
       val notebook        = Notebook("/i/am/fake.ipynb", ShortList(Nil), None)
-      val kernelPublisher = KernelPublisher(notebook, bq).runWith(failingKernelFactory)
+      val ref             = MockNotebookRef(notebook).runIO()
+      val kernelPublisher = KernelPublisher(ref, bq).runWith(failingKernelFactory)
       val stopStatus = Promise.make[Throwable, Unit].runIO()
       val collectStatus = kernelPublisher.status.subscribe(5).interruptWhen(stopStatus.await.either).compile.toList.forkDaemon.runIO()
 

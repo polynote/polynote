@@ -48,13 +48,15 @@ package object messages {
   type ShortList[A] = List[A] @@ ShortTag
   object ShortList {
     def apply[A](list: List[A]): ShortList[A] =
-      if (list.size > Short.MaxValue)
+      if (list != null && list.size > Short.MaxValue)
         throw new RuntimeException("List length exceeds Short.MaxValue")
       else
         list.asInstanceOf[ShortList[A]]
 
     def fromRight[A](list: List[A]): ShortList[A] = list.takeRight(Short.MaxValue).asInstanceOf[ShortList[A]]
     def of[A](elems: A*): ShortList[A] = apply(elems.toList)
+    val Nil: ShortList[Nothing] = apply(List.empty)
+    def empty[A]: ShortList[A] = ShortList(List.empty[A])
   }
 
   implicit def shortListCodec[A](implicit ca: Lazy[Codec[A]]): Codec[ShortList[A]] =

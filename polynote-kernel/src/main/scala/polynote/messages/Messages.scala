@@ -189,6 +189,8 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
       }
   }
 
+  def withoutResults: Notebook = copy(cells = ShortList(cells.map(_.copy(results = ShortList.Nil))))
+
   def setResults(id: CellID, results: List[Result]): Notebook = updateCell(id) {
     cell => cell.copy(results = ShortList(results))
   }
@@ -202,13 +204,12 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
   def cell(id: CellID): NotebookCell = getCell(id).getOrElse(throw new NoSuchElementException(s"Cell $id does not exist"))
 }
 
-object Notebook extends MessageCompanion[Notebook](2)
+object Notebook extends MessageCompanion[Notebook](2) {
+  implicit val codec: Codec[Notebook] = cachedImplicit
+}
 
 final case class RunCell(ids: ShortList[CellID]) extends Message
 object RunCell extends MessageCompanion[RunCell](3)
-
-final case class CellResult(id: CellID, result: Result) extends Message
-object CellResult extends MessageCompanion[CellResult](4)
 
 sealed trait NotebookUpdate extends Message {
   def globalVersion: Int
@@ -273,6 +274,10 @@ object NotebookUpdate {
 abstract class NotebookUpdateCompanion[T <: NotebookUpdate](msgTypeId: Byte) extends MessageCompanion[T](msgTypeId) {
   implicit final val updateDiscriminator: Discriminator[NotebookUpdate, T, Byte] = Discriminator(msgTypeId)
 }
+
+
+final case class CellResult(id: CellID, result: Result) extends Message
+object CellResult extends MessageCompanion[CellResult](4)
 
 final case class UpdateCell(globalVersion: Int, localVersion: Int, id: CellID, edits: ContentEdits, metadata: Option[CellMetadata]) extends Message with NotebookUpdate
 object UpdateCell extends NotebookUpdateCompanion[UpdateCell](5)

@@ -1,18 +1,18 @@
 package polynote.server.repository
 
-import java.io.{File, FileNotFoundException}
+import java.io.{File, FileNotFoundException, IOException}
 import java.net.URI
-import java.nio.file.{FileAlreadyExistsException, Path, Paths}
+import java.nio.file.{Path, Paths}
 
 import cats.implicits._
-import polynote.config.{Mount, PolynoteConfig}
+import polynote.config.{Mount, PolynoteConfig, Wal}
+import polynote.kernel.NotebookRef.AlreadyClosed
 import polynote.kernel.environment.Config
-import polynote.kernel.{BaseEnv, GlobalEnv}
+import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.messages._
-import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.fs.{FileSystems, LocalFilesystem, NotebookFilesystem}
-import zio.interop.catz._
-import zio.{Has, RIO, URIO, URLayer, ZIO, ZLayer}
+import polynote.server.repository.fs.FileSystems
+import zio.{Has, IO, Promise, RIO, Ref, Semaphore, Task, UIO, URIO, URLayer, ZIO, ZLayer}
+
 
 /**
   * A Notebook Repository operates on notebooks stored by path. The path of a notebook should be a forward-slash
@@ -41,6 +41,9 @@ trait NotebookRepository {
     */
   def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit]
 
+
+  def openNotebook(path: String): RIO[BaseEnv with GlobalEnv, NotebookRef]
+
   /**
     * @return A list of notebook paths that exist in this repository
     */
@@ -52,6 +55,7 @@ trait NotebookRepository {
     * TODO: Server no longer imports. Need to implement this on the client side.
     */
   def createNotebook(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String]
+  def createAndOpen(path: String, notebook: Notebook, version: Int = 0): RIO[BaseEnv with GlobalEnv, NotebookRef]
 
   def renameNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
 
@@ -103,6 +107,115 @@ class TreeRepository (
   repos: Map[String, NotebookRepository]
 ) extends NotebookRepository {
 
+  private class TreeNotebookRef private (
+    currentRef: Ref[TreeNotebookRef.State],
+    renameLock: Semaphore,
+    closed: Promise[Throwable, Unit]
+  ) extends NotebookRef {
+    import TreeNotebookRef.State
+    import renameLock.withPermit
+
+    private def withRef[R, E, A](fn: NotebookRef => ZIO[R, E, A]): ZIO[R, E, A] = currentRef.get.flatMap(tup => fn(tup.ref))
+
+    override val isOpen: UIO[Boolean] = ZIO.mapParN(closed.isDone.map(!_), currentRef.get.flatMap(_.ref.isOpen))(_ && _)
+
+    private val failIfClosed = isOpen.flatMap {
+      case true  => ZIO.unit
+      case false => currentRef.get.flatMap {
+        state => ZIO.fail(AlreadyClosed(Some(state.fullPath)))
+      }
+    }
+
+    override def getVersioned: UIO[(Int, Notebook)] = withPermit {
+      currentRef.get.flatMap {
+        state => state.ref.getVersioned.map {
+          case (ver, notebook) => ver -> state.normalizePath(notebook)
+        }
+      }
+    }
+
+    override def update(update: NotebookUpdate): IO[AlreadyClosed, Unit] =
+      withPermit(withRef(_.update(update)))
+
+    override def updateAndGet(update: NotebookUpdate): IO[AlreadyClosed, (Int, Notebook)] = withPermit {
+      currentRef.get.flatMap {
+        state => state.ref.updateAndGet(update).map {
+          case (ver, notebook) =>
+            ver -> state.normalizePath(notebook)
+        }.catchSome {
+          case AlreadyClosed(Some(path)) => ZIO.fail(AlreadyClosed(Some(pathOf(path, state.basePath))))
+        }
+      }
+    }
+
+    override def addResult(cellID: CellID, result: Result): IO[AlreadyClosed, Unit] =
+      withPermit(withRef(_.addResult(cellID, result)))
+
+    override def clearResults(cellID: CellID): IO[AlreadyClosed, Unit] =
+      withPermit(withRef(_.clearResults(cellID)))
+
+    override def clearAllResults(): IO[AlreadyClosed, List[CellID]] =
+      withPermit(withRef(_.clearAllResults()))
+
+    override def rename(newPath: String): RIO[BaseEnv with GlobalEnv, String] =
+      // The semaphore has Short.MaxValue permits so that the other operations can just take one and avoid blocking
+      // each other. This operation takes all of them, to block concurrent renames and any other operations during rename.
+      failIfClosed *> renameLock.withPermits(Short.MaxValue) {
+        currentRef.get.flatMap {
+          state => delegate(newPath) {
+            case (repo, newRelativePath, _) if repo eq state.repo  =>
+              state.ref.rename(deslash(newRelativePath)).map(pathOf(_, state.basePath))
+            case (newRepo, relativePath, newBasePath) =>
+              for {
+                _        <- state.ref.close()
+                nb       <- state.ref.getVersioned
+                newRef   <- newRepo.createAndOpen(relativePath, nb._2.copy(path = relativePath), nb._1)
+                validate <- loadNotebook(newPath)
+                  .filterOrFail(_.cells.map(_.copy(id = 0)) == nb._2.cells.map(_.copy(id = 0)))(new IOException("Validation error moving notebook across repositories; will not remove from previous location"))
+                  .flatMap(_ => state.repo.deleteNotebook(state.relativePath))
+                newState <- State(newRepo, newRef, newBasePath, relativePath, closed)
+                _        <- currentRef.set(newState)
+              } yield pathOf(relativePath, newBasePath)
+          }
+        }
+      }
+
+    override def close(): Task[Unit] = currentRef.get.flatMap(_.ref.close()) <* closed.succeed(())
+
+    override def awaitClosed: Task[Unit] = closed.await
+
+  }
+
+  private object TreeNotebookRef {
+    private case class State private (repo: NotebookRepository, ref: NotebookRef, basePath: Option[String], relativePath: String) {
+      def normalizePath(notebook: Notebook): Notebook = TreeRepository.this.normalizePath(
+        basePath.map(base => notebook.copy(path = Paths.get(base, notebook.path).toString)).getOrElse(notebook)
+      )
+
+      // fail the given promise if the upstream ref fails with an error
+      private def closeOnError(promise: Promise[Throwable, Unit]): UIO[Unit] = ref.awaitClosed
+        .flip
+        .flatMap(err => promise.fail(err))
+        .ignore.forkDaemon.unit
+
+      lazy val fullPath: String = pathOf(relativePath, basePath)
+    }
+
+    private object State {
+      def apply(repo: NotebookRepository, ref: NotebookRef, basePath: Option[String], relativePath: String, closed: Promise[Throwable, Unit]): RIO[BaseEnv with GlobalEnv, State] = {
+        val state = new State(repo, ref, basePath, relativePath)
+        state.closeOnError(closed).as(state)
+      }
+    }
+
+    def apply(repo: NotebookRepository, underlying: NotebookRef, basePath: Option[String], relativePath: String): RIO[BaseEnv with GlobalEnv, TreeNotebookRef] = for {
+      closed     <- Promise.make[Throwable, Unit]
+      state      <- State(repo, underlying, basePath, relativePath, closed)
+      underlying <- Ref.make(state)
+      renameLock <- Semaphore.make(Short.MaxValue)
+    } yield new TreeNotebookRef(underlying, renameLock, closed)
+  }
+
   /**
     * Helper for picking the proper Repository to use for the given notebook path.
     *
@@ -123,9 +236,12 @@ class TreeRepository (
     f(repoForPath, relativePath, maybeBasePath)
   }
 
+
+
   private def reslash(str: String): String = "/" + deslash(str)
   private def deslash(str: String): String = str.stripPrefix("/")
   private def normalizePath(notebook: Notebook): Notebook = notebook.copy(path = deslash(notebook.path))
+  private def pathOf(relativePath: String, basePath: Option[String]): String = deslash(basePath.map(base => Paths.get(base, relativePath).toString).getOrElse(relativePath))
 
   /**
     * Relativizes the path and extracts the base path (the top-most path member in this path)
@@ -155,16 +271,22 @@ class TreeRepository (
      } yield normalizePath(base.map(b => nb.copy(path = Paths.get(b, nb.path).toString)).getOrElse(nb))
   }
 
+  override def openNotebook(path: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = delegate(path) {
+    (repo, relativePath, base) => repo.openNotebook(relativePath).flatMap {
+      underlying => TreeNotebookRef(repo, underlying, base, relativePath)
+    }
+  }
+
   override def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = delegate(nb.path) {
     (repo, relativePath, _) => repo.saveNotebook(nb.copy(path = relativePath))
   }
 
   override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
     for {
-      rootNBs <- root.listNotebooks().map(_.map(deslash))
-      mountNbs <- repos.map {
+      rootNBs  <- root.listNotebooks().map(_.map(deslash))
+      mountNbs <- ZIO.foreach(repos.toList) {
         case (base, repo) => repo.listNotebooks().map(_.map(nbPath => deslash(Paths.get(base, nbPath).toString)))
-      }.toList.sequence
+      }
     } yield rootNBs ++ mountNbs.flatten
   }
 
@@ -173,6 +295,14 @@ class TreeRepository (
         for {
           nbPath <- repo.createNotebook(relativePath, maybeContent)
         } yield deslash(base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath))
+  }
+
+  override def createAndOpen(path: String, notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, NotebookRef] = delegate(path) {
+    (repo, relativePath, base) =>
+      for {
+        underlyingRef <- repo.createAndOpen(relativePath, notebook, version)
+        ref           <- TreeNotebookRef(repo, underlyingRef, base, relativePath)
+      } yield ref
   }
 
   private def copyOrRename(src: String, dest: String, deletePrevious: Boolean): RIO[BaseEnv with GlobalEnv, String] = {
@@ -213,127 +343,6 @@ class TreeRepository (
 
   override def initStorage(): RIO[BaseEnv with GlobalEnv, Unit] = for {
     _ <- root.initStorage()
-    _ <- repos.values.map(_.initStorage()).toList.sequence
+      _ <- ZIO.foreach_(repos.values)(_.initStorage())
   } yield ()
-}
-
-class FileBasedRepository(
-  val path: Path,
-  val chunkSize: Int = 8192,
-  val defaultExtension: String = "ipynb",
-  val fs: NotebookFilesystem = new LocalFilesystem() // TODO: once we support other FS (like S3) we'll want this to be configurable
-) extends NotebookRepository {
-  protected def pathOf(relativePath: String): Path = path.resolve(relativePath)
-
-  override def loadNotebook(path: String): RIO[BaseEnv with GlobalEnv, Notebook] = for {
-    fmt     <- NotebookFormat.getFormat(pathOf(path))
-    content <- fs.readPathAsString(pathOf(path))
-    (noExtPath, _) = extractExtension(path)
-    nb      <- fmt.decodeNotebook(noExtPath, content)
-  } yield nb
-
-  override def saveNotebook(nb: Notebook): RIO[BaseEnv with GlobalEnv, Unit] = for {
-    fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))
-    rawString <- fmt.encodeNotebook(NotebookContent(nb.cells, nb.config))
-    _         <- fs.writeStringToPath(pathOf(nb.path), rawString)
-  } yield ()
-
-  override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
-    for {
-      files <- fs.list(path)
-      isSupported <- NotebookFormat.isSupported
-    } yield files.filter(isSupported).map { relativePath =>
-      path.relativize(relativePath).toString
-    }
-  }
-
-  override def notebookExists(path: String): RIO[BaseEnv with GlobalEnv, Boolean] = fs.exists(pathOf(path))
-
-  override def notebookURI(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = {
-    val repoPath = this.path.resolve(path)
-    notebookExists(path).map {
-      exists =>
-        if (exists) {
-          Option(repoPath.toAbsolutePath.toUri)
-        } else {
-          None
-        }
-    }
-  }
-
-  val EndsWithNum = """^(.*?)(\d+)$""".r
-
-  def findUniqueName(path: String): RIO[BaseEnv with GlobalEnv, String] = {
-    val (noExtPath, ext) = extractExtension(path)
-    notebookExists(path).flatMap {
-      case true =>
-        noExtPath match {
-          case EndsWithNum(base, num) =>
-            findUniqueName(s"$base${num.toInt + 1}.$ext")
-          case _ =>
-            findUniqueName(s"${noExtPath}2.$ext") // start at two because the first one is implicitly #1? Or is that weird?
-        }
-      case false =>
-        ZIO.succeed(path)
-    }
-  }
-
-  def emptyNotebook(path: String, title: String): RIO[BaseEnv with GlobalEnv, Notebook] = Config.access.map {
-    config =>
-      Notebook(
-        path,
-        ShortList.of(NotebookCell(0, "text", s"# $title\n\nThis is a text cell. Start editing!")),
-        Some(NotebookConfig.fromPolynoteConfig(config)))
-  }
-
-  private def extractExtension(path: String) = {
-    path.lastIndexOf('.') match {
-      case -1 => (path, defaultExtension)  // Adds the default extension if none is found.
-      case idx =>
-        (path.substring(0, idx), path.substring(idx + 1))
-    }
-  }
-
-  override def createNotebook(relativePath: String, maybeContent: Option[String] = None): RIO[BaseEnv with GlobalEnv, String] = {
-    val (noExtPath, ext) = extractExtension(relativePath.replaceFirst("""^/+""", ""))
-    val path = s"$noExtPath.$ext"
-
-    for {
-      _       <- fs.validate(Paths.get(relativePath))
-      fmt     <- NotebookFormat.getFormat(Paths.get(path))
-      nb      <- maybeContent.map(content => fmt.decodeNotebook(noExtPath, content)).getOrElse {
-        val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
-        emptyNotebook(path, defaultTitle)
-      }
-      name    <- findUniqueName(nb.path)
-      _       <- saveNotebook(nb.copy(path = name))
-    } yield name
-  }
-
-  private def withValidatedSrcDest[T](src: String, dest: String)(f: (String, String) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
-    val (destNoExt, destExt) = extractExtension(dest.replaceFirst("""^/+""", ""))
-    val withExt = s"$destNoExt.$destExt"
-
-    for {
-      _   <- fs.validate(Paths.get(withExt))
-      _   <- notebookExists(src).filterOrFail(identity)(new FileNotFoundException(s"File $src doesn't exist"))
-      _   <- notebookExists(withExt).filterOrFail(!_)(new FileAlreadyExistsException(s"File $withExt already exists"))
-      res <- f(src, withExt)
-    } yield res
-  }
-
-  override def renameNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = withValidatedSrcDest(path, newPath) {
-    (src, dest) =>
-      fs.move(pathOf(src), pathOf(dest)).as(dest)
-  }
-
-  override def copyNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String] = withValidatedSrcDest(path, newPath) {
-    (src, dest) =>
-      fs.copy(pathOf(src), pathOf(dest)).as(dest)
-  }
-
-  // TODO: should probably have a "trash" or something instead – a way of recovering a file from accidental deletion?
-  override def deleteNotebook(path: String): RIO[BaseEnv with GlobalEnv, Unit] = fs.delete(pathOf(path))
-
-  override def initStorage(): RIO[BaseEnv with GlobalEnv, Unit] = fs.init(path)
 }

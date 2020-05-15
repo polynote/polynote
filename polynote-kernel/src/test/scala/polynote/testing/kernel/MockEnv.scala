@@ -5,12 +5,12 @@ import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
-import polynote.kernel.environment.{CurrentRuntime, NotebookUpdates}
+import polynote.kernel.environment.{CurrentNotebook, CurrentRuntime, NotebookUpdates}
 import polynote.kernel.interpreter.{CellExecutor, Interpreter}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
-import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, InterpreterEnv, KernelStatusUpdate, Result, StreamingHandles, TaskInfo}
+import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, InterpreterEnv, KernelStatusUpdate, NotebookRef, Result, StreamingHandles, TaskInfo}
 import polynote.messages._
 import polynote.runtime.{KernelRuntime, StreamingDataRepr, TableOp}
 import polynote.testing.MockPublish
@@ -63,7 +63,7 @@ case class MockKernelEnv(
   interpreterFactories: Map[String, List[Interpreter.Factory]],
   taskManager: TaskManager.Service,
   updateTopic: Topic[Task, Option[NotebookUpdate]],
-  currentNotebook: SignallingRef[Task, (Int, Notebook)],
+  currentNotebook: MockNotebookRef,
   streamingHandles: StreamingHandles.Service,
   sessionID: Int = 0,
   polynoteConfig: PolynoteConfig = PolynoteConfig()
@@ -75,16 +75,15 @@ case class MockKernelEnv(
   val baseLayer: ZLayer[Any, Nothing, MockEnv.Env] =
     ZLayer.succeedMany {
       baseEnv ++ Has.allOf(kernelFactory, interpreterFactories, taskManager, notebookUpdates, polynoteConfig) ++
-        Has(streamingHandles) ++ Has(publishResult: Publish[Task, Result]) ++ Has(publishStatus: Publish[Task, KernelStatusUpdate]) ++
-        Has(currentNotebook: Ref[Task, (Int, Notebook)])
-    }
+        Has(streamingHandles) ++ Has(publishResult: Publish[Task, Result]) ++ Has(publishStatus: Publish[Task, KernelStatusUpdate])
+    } ++ CurrentNotebook.layer(currentNotebook)
 
 }
 
 object MockKernelEnv {
   def apply(kernelFactory: Factory.Service, config: PolynoteConfig, sessionId: Int): RIO[BaseEnv, MockKernelEnv] = for {
     baseEnv         <- ZIO.access[BaseEnv](identity)
-    currentNotebook <- SignallingRef[Task, (Int, Notebook)](0 -> Notebook("empty", ShortList(Nil), None))
+    currentNotebook <- MockNotebookRef(Notebook("empty", ShortList.Nil, None))
     updateTopic     <- Topic[Task, Option[NotebookUpdate]](None)
     publishUpdates   = new MockPublish[KernelStatusUpdate]
     taskManager     <- TaskManager(publishUpdates)

@@ -7,11 +7,13 @@ import polynote.app.{Args, MainArgs}
 import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
 import polynote.kernel.interpreter.CellExecutor
+import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
-import polynote.kernel.{BaseEnv, CellEnv, ExecutionStatus, GlobalEnv, InterpreterEnv, KernelStatusUpdate, Output, Result, TaskInfo}
+import polynote.kernel.{BaseEnv, CellEnv, ExecutionStatus, GlobalEnv, InterpreterEnv, KernelStatusUpdate, NotebookRef, Output, Result, TaskInfo}
 import polynote.messages.{CellID, Message, Notebook, NotebookCell, NotebookConfig, NotebookUpdate}
 import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
+import zio.clock.Clock
 import zio.internal.Executor
 import zio.interop.catz._
 import zio.{Has, Layer, RIO, Tagged, Task, UIO, ULayer, URIO, ZIO, ZLayer, ZManaged}
@@ -136,12 +138,11 @@ object CurrentRuntime {
   */
 // TODO: should separate out a read-only capability for interpreters (they have no business modifying the notebook)
 object CurrentNotebook {
-  def of(ref: Ref[Task, (Int, Notebook)]): CurrentNotebook = Has(ref)
-  def layer(ref: Ref[Task, (Int, Notebook)]): ULayer[CurrentNotebook] = ZLayer.succeed(ref)
-  def make(notebook: Notebook): ULayer[CurrentNotebook] = ZLayer.fromEffect(SignallingRef[Task, (Int, Notebook)](0 -> notebook).map(r => r: Ref[Task, (Int, Notebook)])).orDie
+  def layer(ref: NotebookRef): ULayer[CurrentNotebook] = ZLayer.succeed(ref)
+  def const(notebook: Notebook): ZLayer[Logging with Clock, Nothing, CurrentNotebook] = ZLayer.succeed(new NotebookRef.Const(notebook))
   def get: RIO[CurrentNotebook, Notebook] = getVersioned.map(_._2)
   def path: RIO[CurrentNotebook, String] = get.map(_.path)
-  def getVersioned: RIO[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.get.get)
+  def getVersioned: RIO[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.get.getVersioned)
 
   def getCell(id: CellID): RIO[CurrentNotebook, NotebookCell] = get.flatMap {
     notebook => ZIO.fromOption(notebook.getCell(id)).mapError(_ => new NoSuchElementException(s"No such cell $id in notebook ${notebook.path}"))

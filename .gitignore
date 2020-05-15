@@ -3,6 +3,7 @@ out
 dist
 node_modules
 /notebooks/
+/notebooks-test-mount/
 libjep.dylib
 .idea
 .DS_Store

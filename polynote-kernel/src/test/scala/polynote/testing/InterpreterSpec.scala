@@ -77,7 +77,7 @@ trait InterpreterSpec extends ZIOSpec {
   }
 
   def stdOut(results: Seq[Result]): String = results.foldLeft("") {
-    case (accum, Output("text/plain; rel=stdout", next)) => accum + next
+    case (accum, Output("text/plain; rel=stdout", next)) => accum + next.mkString
     case (accum, _) => accum
   }
 

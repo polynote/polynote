@@ -82,17 +82,8 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
     case CancelTasks(path) => subscriber.publisher.cancelAll()
 
     case ClearOutput() => for {
-      publish    <- subscriber.publisher.versionedNotebook.modify {
-        case (ver, notebook) =>
-          val (newCells, cellIds) = notebook.cells.foldRight((List.empty[NotebookCell], List.empty[CellID])) {
-            case (cell, (cells, ids)) if cell.results.nonEmpty => (cell.copy(results = ShortList(Nil)) :: cells, cell.id :: ids)
-            case (cell, (cells, ids)) => (cell :: cells, ids)
-          }
-
-          val updates = cellIds.map(id => PublishMessage(CellResult(id, ClearResults()))).sequence.unit
-          (ver -> notebook.copy(cells = ShortList(newCells)), updates)
-      }
-      _          <- publish
+      cells <- subscriber.publisher.versionedNotebook.clearAllResults()
+      _     <- ZIO.foreach_(cells)(id => PublishMessage(CellResult(id, ClearResults())))
     } yield ()
 
     case nv @ NotebookVersion(path, _) => for {
@@ -151,14 +142,14 @@ object NotebookSession {
       toFrames(ZStream.fromQueue(output).unTake),
       input.handleMessages(close) {
         msg => handler.handleMessage(msg).catchAll {
-          err => output.offer(Take.Value(Error(0, err)))
+          err => Logging.error(err) *> output.offer(Take.Value(Error(0, err)))
         }.fork.as(None)
       },
       keepaliveStream(closed)
     ).provide(env)
   }.catchAll {
     case err: HTTPError => ZIO.fail(err)
-    case err => ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
+    case err => Logging.error(err) *> ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
   }
 
   private val sessionId = new AtomicInteger(0)

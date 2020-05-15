@@ -79,6 +79,14 @@ export class NotebookUI extends UIMessageTarget {
         return notebooks[path];
     }
 
+    static renameInstance(oldPath: string, newPath: string): void {
+        if (notebooks[oldPath]) {
+            notebooks[newPath] = notebooks[oldPath];
+            notebooks[newPath].path = newPath;
+            delete notebooks[oldPath];
+        }
+    }
+
     static disableAll() {
         for (const path in Object.keys(notebooks)) {
             notebooks[path].cellUI.setDisabled(true);
@@ -92,7 +100,7 @@ export class NotebookUI extends UIMessageTarget {
     }
 
     // TODO: remove mainUI reference
-    private constructor(eventParent: UIMessageTarget, readonly path: string, readonly mainUI: MainUI) {
+    private constructor(eventParent: UIMessageTarget, public path: string, readonly mainUI: MainUI) {
         super(eventParent);
         this.socket = SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`);
         this.socket.addEventListener("error", err => {
@@ -244,7 +252,7 @@ export class NotebookUI extends UIMessageTarget {
                         if (cell instanceof CodeCell) {
                             cell.clearResult();
                             if (output) {
-                                cell.addOutput(output.contentType, output.content);
+                                cell.addOutput(output.contentType, output.content.join(''));
                             }
                         }
                     })

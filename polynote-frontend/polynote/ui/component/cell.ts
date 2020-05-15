@@ -800,7 +800,7 @@ export class CodeCell extends Cell {
             console.log(result.error);
             this.setRuntimeError(result.error);
         } else if (result instanceof Output) {
-            this.addOutput(result.contentType, result.content);
+            this.addOutput(result.contentType, result.content.join(''));
         } else if (result instanceof ClearResults) {
             this.clearResult();
         } else if (result instanceof ExecutionInfo) {

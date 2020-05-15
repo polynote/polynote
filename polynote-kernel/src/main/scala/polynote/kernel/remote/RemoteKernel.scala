@@ -221,7 +221,7 @@ class RemoteKernelClient(
   publishResponse: Publish[Task, RemoteResponse],
   cleanup: TaskB[Unit],
   closed: Promise[Throwable, Unit],
-  private[remote] val notebookRef: SignallingRef[Task, (Int, Notebook)] // for testing
+  private[remote] val notebookRef: RemoteNotebookRef // for testing
 ) {
 
   private val sessionHandles = new ConcurrentHashMap[Int, StreamingHandles.Service]()
@@ -311,13 +311,8 @@ object RemoteKernelClient extends polynote.app.App {
       case req@StartupRequest(_, _, _, _) => ZIO.succeed(req)
       case other                          => ZIO.fail(new RuntimeException(s"Handshake error; expected StartupRequest but found ${other.getClass.getName}"))
     }
-    notebookRef     <- SignallingRef[Task, (Int, Notebook)](initial.globalVersion -> initial.notebook)
+    notebookRef     <- RemoteNotebookRef(initial.globalVersion -> initial.notebook, transport)
     closed          <- Promise.make[Throwable, Unit]
-    processUpdates  <- transport.updates.dropWhile(_.globalVersion <= initial.globalVersion)
-      .evalMap(update => notebookRef.update { case (ver, notebook) => update.globalVersion -> update.applyTo(notebook) })
-      .interruptAndIgnoreWhen(closed)
-      .compile.drain
-      .forkDaemon
     interpFactories <- interpreter.Loader.load
     _               <- Env.addLayer(mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config))
     kernel          <- kernelFactory.apply()
@@ -329,7 +324,7 @@ object RemoteKernelClient extends polynote.app.App {
   } yield exitCode
 
   def mkEnv(
-    currentNotebook: SignallingRef[Task, (Int, Notebook)],
+    currentNotebook: NotebookRef,
     reqId: Int,
     publishResponse: Publish[Task, RemoteResponse],
     interpreterFactories: Map[String, List[Interpreter.Factory]],

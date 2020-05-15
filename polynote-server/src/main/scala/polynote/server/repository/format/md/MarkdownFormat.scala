@@ -73,7 +73,7 @@ class MarkdownFormat extends NotebookFormat {
     case Output(contentType, content) =>
       val (mimeType, args) = Output.parseContentType(contentType)
       val rel = args.getOrElse("rel", "none")
-      <div class="output" rel={rel} mime-type={mimeType}>{scala.xml.Unparsed(content)}</div>.toString()  // TODO: lose the XML literals
+      <div class="output" rel={rel} mime-type={mimeType}>{scala.xml.Unparsed(content.mkString)}</div>.toString()  // TODO: lose the XML literals
 
     case CompileErrors(reports) =>
       <div class="errors compile-errors">{reports.map {report =>

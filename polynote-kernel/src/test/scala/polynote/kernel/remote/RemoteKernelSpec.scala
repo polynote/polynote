@@ -24,6 +24,7 @@ import zio.blocking.effectBlocking
 import zio.duration.Duration
 import zio.{RIO, Ref, Task, ZIO}
 import zio.interop.catz._
+import zio.stream.ZStream
 
 import scala.concurrent.TimeoutException
 
@@ -125,23 +126,27 @@ abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec 
       }
 
       "handles notebook updates" in {
-        forAll((Generators.genNotebookUpdates _).tupled(unsafeRun(env.currentNotebook.get)), MinSize(4)) {
+        val initial = unsafeRun(env.currentNotebook.getVersioned)
+        forAll((Generators.genNotebookUpdates _).tupled(initial), MinSize(4)) {
           case (finalNotebook, updates) =>
+            unsafeRun(env.currentNotebook.set(initial))
+            unsafeRun(clientRef.get.flatMap(_.notebookRef.set(initial)))
+
             whenever(updates.nonEmpty) {
               val finalVersion = updates.last.globalVersion
               updates.foreach {
                 update => unsafeRun(env.updateTopic.publish1(Some(update)))
               }
 
-              val (remoteVersion, remoteNotebook) = unsafeRun {
+              val remoteNotebook = unsafeRun {
                 clientRef.get.absorb.flatMap {
-                  client => client.notebookRef.discrete.terminateAfter(_._1 == finalVersion).compile[Task, Task, (Int, Notebook)].lastOrError
+                  client => client.notebookRef.getVersioned.doUntil(_._1 == finalVersion)
                 }.timeoutFail(new TimeoutException("timed out waiting for the correct notebook"))(zio.duration.Duration(2, TimeUnit.SECONDS))
               }
-              remoteNotebook shouldEqual finalNotebook
+              remoteNotebook._2 shouldEqual finalNotebook
             }
 
-            unsafeRun(clientRef.get.flatMap(_.notebookRef.set(unsafeRun(env.currentNotebook.get))))
+
         }
       }
 
