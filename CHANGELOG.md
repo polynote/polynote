@@ -1,3 +1,21 @@
+# 0.3.8 (May 15, 2020)
+* **Stability** A bug that could cause data loss has been fixed in this release. 
+* **Backups** Polynote now writes a write-ahead-log (WAL) whenever it gets updates to a notebook. This WAL can be recovered using `polynote.py recover /path/to/wal-file.wal`. This is currently experimental.
+* **Backups** Polynote now saves a copy of opened notebooks into the browser's local database. This can be used in case of catastrophic server-side data loss (but where the client has been working). 
+* **New** Added a "notebook runner", invoked with `polynote.py run [OPTIONS] input-file input-files*` that can run notebooks in headless mode 
+* Lots of fixes to the Plot UI (Thanks @JD557!) 
+* Handle naming collisions between Java and Python package imports. Python packages with JVM-like names no longer get swallowed by the Jep importer. 
+
+
+# 0.3.7 (Apr 26, 2020)
+* Fixed bug: saving plots doesn't work because websocket connection dies for no apparent reason
+* Fixed bug: Value of zero or `false` causes `[object Object]` in table view... *sigh* javascript
+* Fixed issue: Plotting pandas DataFrame fails when column identifiers have non-string type (thanks @Baoqi!)
+* Configurable port range for remote kernel comms (thanks @hadrienk!)
+* Parallel downloads of JVM dependencies
+* Allow complex data structure display in table view
+* Fixed some edge cases in Scala code that defines classes/types/methods and uses them in later cells
+
 # 0.3.6 (Apr 1, 2020)
 * Fixed regressions:
   * Cancel button not working
