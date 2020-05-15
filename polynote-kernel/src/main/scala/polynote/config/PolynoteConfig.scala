@@ -66,7 +66,21 @@ object KernelConfig {
   implicit val decoder: Decoder[KernelConfig] = deriveConfigDecoder[KernelConfig]
 }
 
-final case class Storage(cache: String = "tmp", dir: String = "notebooks", mounts: Map[String, Mount] = Map.empty)
+final case class Wal(
+  enable: Boolean = false
+)
+
+object Wal {
+  implicit val encoder: ObjectEncoder[Wal] = deriveEncoder
+  implicit val decoder: Decoder[Wal] = deriveConfigDecoder[Wal]
+}
+
+final case class Storage(
+  cache: String = "tmp",
+  dir: String = "notebooks",
+  mounts: Map[String, Mount] = Map.empty,
+  wal: Wal = Wal()
+)
 
 object Storage {
   implicit val encoder: ObjectEncoder[Storage] = deriveEncoder

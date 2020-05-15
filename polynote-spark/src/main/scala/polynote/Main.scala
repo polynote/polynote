@@ -2,6 +2,7 @@ package polynote
 
 import java.io.File
 
+import cats.effect.Effect
 import polynote.app.Environment
 import polynote.config.{KernelIsolation, PolynoteConfig}
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, LocalKernel, LocalSparkKernel}
@@ -15,17 +16,19 @@ import polynote.app.{Args, MainArgs, globalEnv}
 import polynote.server.auth.IdentityProvider
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.fs.FileSystems
-import zio.{Has, ULayer, ZIO, ZLayer}
+import zio.{Has, Task, ULayer, ZIO, ZLayer}
 
 abstract class Main
 object Main extends polynote.app.App {
+  private implicit val taskEffect: Effect[Task] = zio.interop.catz.taskEffectInstance
 
   val main: ZIO[AppEnv, Nothing, Int] =
     MainArgs.access.flatMap {
       args => args.command match {
-        case "server" => new Server().main
-        case "run"    => NotebookRunner.main
-        case other    => ZIO.dieMessage(s"Unknown command $other (expected server)")
+        case "server"  => new Server().main
+        case "run"     => NotebookRunner.main
+        case "recover" => RecoverLog.main
+        case other     => ZIO.dieMessage(s"Unknown command $other (expected server)")
       }
     }.catchAll {
       str => ZIO.effectTotal {

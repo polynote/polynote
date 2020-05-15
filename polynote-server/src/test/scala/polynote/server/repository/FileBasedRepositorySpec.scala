@@ -1,6 +1,7 @@
 package polynote.server.repository
 
-import java.io.File
+import java.io.{ByteArrayOutputStream, File, OutputStream}
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.ConcurrentHashMap
 
@@ -10,7 +11,7 @@ import polynote.kernel.BaseEnv
 import polynote.messages.{Notebook, ShortList}
 import polynote.server.MockServerSpec
 import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.fs.NotebookFilesystem
+import polynote.server.repository.fs.{NotebookFilesystem, WAL}
 import zio.{RIO, ZIO}
 import zio.blocking.effectBlocking
 
@@ -27,6 +28,8 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
     override def readPathAsString(path: Path): RIO[BaseEnv, String] = withKeyContent(path)((_, content) => content)
 
     override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = ZIO(notebooks.put(tmpDir.resolve(path), content))
+
+    override def createLog(path: Path): RIO[BaseEnv, WAL.WALWriter] = ZIO.succeed(WAL.WALWriter.NoWAL)
 
     override def list(path: Path): RIO[BaseEnv, List[Path]] = ZIO(notebooks.keys().asScala.toList)
 

@@ -1,26 +1,34 @@
 package polynote.server.repository.fs
-import java.io.{FileNotFoundException, InputStream}
+import java.io.{FileNotFoundException, InputStream, OutputStream}
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
-import java.nio.file.{FileVisitOption, Files, Path}
+import java.nio.file.{FileVisitOption, Files, Path, StandardOpenOption}
+import java.util.concurrent.atomic.AtomicBoolean
 
 import fs2.Chunk
 import polynote.kernel.BaseEnv
 import zio.blocking.{Blocking, effectBlocking}
 import zio.interop.catz._
-import zio.{RIO, Task, ZIO}
+import zio.{RIO, Semaphore, Task, ZIO}
 
 import scala.collection.JavaConverters._
+import LocalFilesystem.FileChannelWALWriter
 
 class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 
   override def readPathAsString(path: Path): RIO[BaseEnv, String] = for {
-    content <- readBytes(Files.newInputStream(path))
+    is      <- effectBlocking(Files.newInputStream(path))
+    content <- readBytes(is).ensuring(ZIO.effectTotal(is.close()))
   } yield new String(content.toArray, StandardCharsets.UTF_8)
 
   override def writeStringToPath(path: Path, content: String): RIO[BaseEnv, Unit] = for {
     _ <- createDirs(path)
     _ <- effectBlocking(Files.write(path, content.getBytes(StandardCharsets.UTF_8))).uninterruptible
   } yield ()
+
+  override def createLog(path: Path): RIO[BaseEnv, WAL.WALWriter] =
+    effectBlocking(path.getParent.toFile.mkdirs()) *> FileChannelWALWriter(path)
 
   private def readBytes(is: => InputStream): RIO[BaseEnv, Chunk.Bytes] = {
     for {
@@ -54,4 +62,39 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
     }
 
   override def init(path: Path): RIO[BaseEnv, Unit] = createDirs(path)
+}
+
+object LocalFilesystem {
+
+  final class FileChannelWALWriter private (mkChannel: => FileChannel, lock: Semaphore) extends WAL.WALWriter {
+
+    // lazily open the channel, to avoid creating a WAL just from reading a notebook
+    private val channelOpened = new AtomicBoolean(false)
+    private lazy val channel: FileChannel = {
+      channelOpened.set(true)
+      mkChannel
+    }
+
+    override protected def append(bytes: ByteBuffer): RIO[Blocking, Unit] = lock.withPermit {
+      val buf = bytes.duplicate()
+      effectBlocking {
+        channel.write(buf)
+      }.doWhile(_ => buf.hasRemaining).unit
+    }
+
+    override def close(): RIO[Blocking, Unit] = lock.withPermit {
+      effectBlocking(channel.close())
+    }.when(channelOpened.get())
+
+    override def sync(): RIO[Blocking, Unit] = effectBlocking(channel.force(false))
+  }
+
+  object FileChannelWALWriter {
+    import StandardOpenOption._
+    def apply(path: Path): RIO[Blocking, FileChannelWALWriter] = for {
+      lock    <- Semaphore.make(1L)
+      channel <- effectBlocking(FileChannel.open(path, WRITE, CREATE_NEW))
+    } yield new FileChannelWALWriter(channel, lock)
+  }
+
 }
