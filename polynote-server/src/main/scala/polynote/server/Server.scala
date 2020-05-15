@@ -2,6 +2,7 @@ package polynote.server
 
 import java.io.File
 import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.nio.file.{Path, Paths}
 import java.util.UUID
 
@@ -111,14 +112,19 @@ class Server {
   type RequestEnv = BaseEnv with MainEnv with NotebookManager
 
   private def downloadFile(path: String, req: Request): ZIO[RequestEnv, HTTPError, Response] = {
-    for {
-      uri <- NotebookManager.location(path).someOrFail(NotFound(req.uri.toString))
-      loc <- effectBlocking(Paths.get(uri)) // eventually we'll have to deal with other schemes here
-      rep <- Response.fromPath(
-        loc, req,
-        "application/x-ipynb+json",
-        headers = List("Content-Disposition" -> s"attachment; filename=${URLEncoder.encode(loc.getFileName.toString, "utf-8")}"))
-    } yield rep
+    NotebookManager.fetchIfOpen(path).flatMap {
+      case Some((mime, content)) =>
+        effectBlocking(Response.const(content.getBytes(StandardCharsets.UTF_8), contentType = mime))
+      case None =>
+        for {
+          uri <- NotebookManager.location(path).someOrFail(NotFound(req.uri.toString))
+          loc <- effectBlocking(Paths.get(uri)) // eventually we'll have to deal with other schemes here
+          rep <- Response.fromPath(
+            loc, req,
+            "application/x-ipynb+json",
+            headers = List("Content-Disposition" -> s"attachment; filename=${URLEncoder.encode(loc.getFileName.toString, "utf-8")}"))
+        } yield rep
+    }
   }.orElseFail(NotFound(req.uri.toString))
 
   def serve(wsKey: String): ZIO[BaseEnv with MainEnv with MainArgs, Throwable, Unit] =
@@ -184,9 +190,9 @@ class Server {
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {
           case req if req.uri.getPath == "/" || req.uri.getPath == "" => getIndex.map(Response.html(_))
-          case req if req.uri.getPath startsWith "/notebook" =>
+          case req if req.uri.getPath startsWith "/notebook/" =>
             req.uri.getQuery match {
-              case "download=true" => downloadFile(req.uri.getPath.stripPrefix("/notebook"), req)
+              case "download=true" => downloadFile(req.uri.getPath.stripPrefix("/notebook/"), req)
               case _ => getIndex.map(Response.html(_))
             }
         } .handleSome(staticHandler)

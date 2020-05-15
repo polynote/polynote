@@ -17,6 +17,8 @@ trait NotebookFormat {
     */
   def extension: String
 
+  val mime: String
+
   def handlesExt(path: Path): Boolean = path.toString.toLowerCase().endsWith(s".$extension")
 
   def decodeNotebook(noExtPath: String, rawContent: String): RIO[BaseEnv with GlobalEnv, Notebook]
