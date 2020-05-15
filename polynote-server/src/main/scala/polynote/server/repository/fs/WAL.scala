@@ -2,6 +2,7 @@ package polynote.server
 package repository.fs
 
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 
 import polynote.messages.{Message, Notebook}
@@ -17,9 +18,8 @@ import scala.util.Try
 
 object WAL {
 
-  val WALMagicNumber: Array[Byte] = Array(0x50, 0x4E, 0x57, 0x41, 0x4C) // PNWAL
+  val WALMagicNumber: Array[Byte] = "PNWAL".getBytes(StandardCharsets.US_ASCII)
   val WALVersion: Short = 1
-  val WALVersionBytes: Array[Byte] = Array((WALVersion >> 8).toByte, (WALVersion & 0xFF).toByte)
 
   // Timestamp for each update is stored in 32 bits unsigned, epoch UTC seconds.
   // So we'll have to change the format by February of 2106. Apologies to my great-great-great grandchildren.
@@ -56,7 +56,7 @@ object WAL {
 
     def writeHeader(notebook: Notebook): RIO[Blocking with Clock, Unit] =
       append(WALMagicNumber) *>
-        append(WALVersionBytes) *>
+        append(BitVector.fromShort(WALVersion)) *>
         appendMessage(notebook.withoutResults)
 
     def appendMessage(message: Message): RIO[Blocking with Clock, Unit] = for {
