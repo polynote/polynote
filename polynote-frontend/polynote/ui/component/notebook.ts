@@ -70,6 +70,13 @@ export class NotebookUI extends UIMessageTarget {
         return notebooks[path];
     }
 
+    static renameInstance(oldPath: string, newPath: string): void {
+        if (notebooks[oldPath]) {
+            notebooks[newPath] = notebooks[oldPath]
+            delete notebooks[oldPath];
+        }
+    }
+
     static disableAll() {
         for (const path in Object.keys(notebooks)) {
             notebooks[path].cellUI.setDisabled(true);

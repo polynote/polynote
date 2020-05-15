@@ -46,10 +46,12 @@ package object server {
   implicit val rioApplicativeGlobal: Applicative[TaskG] = interop.taskConcurrentInstance[BaseEnv with GlobalEnv]
   implicit val rioApplicativePublishMessage: Applicative[RIO[PublishMessage, ?]] = interop.taskConcurrentInstance[PublishMessage]
 
-  def toFrame(message: Message): ZIO[Any, Throwable, Binary] =
-    Message.encode[Task](message).map(bits => Binary(bits.toByteArray))
+  def toFrame(message: Message): ZIO[Logging, Throwable, Binary] =
+    Message.encode[Task](message).map(bits => Binary(bits.toByteArray)).onError {
+      err => Logging.error(err)
+    }
 
-  def toFrames[R](stream: ZStream[R, Throwable, Message]): ZStream[R, Throwable, Binary] =
+  def toFrames[R](stream: ZStream[R, Throwable, Message]): ZStream[R with Logging, Throwable, Binary] =
     stream.mapM(toFrame)
 
   implicit class FrameStreamOps[R](val self: ZStream[R, Throwable, Frame]) extends AnyVal {
@@ -66,6 +68,8 @@ package object server {
         case Close =>
           onClose.as(Some(Close))
         case _ => ZIO.none
+      }.catchAll {
+        err => ZStream.fromEffect(Logging.error(err)).drain
       }.unNone.ensuring {
         onClose.catchAll {
           err => Logging.error("Websocket close handler failed", err)
@@ -152,7 +156,7 @@ package object server {
           for {
             notebookRef   <- repository.openNotebook(path)
             publisher     <- KernelPublisher(notebookRef, broadcastAll)
-            onClose       <- publisher.closed.await.flatMap(_ => openNotebooks.remove(path)).forkDaemon
+            onClose       <- publisher.closed.await.flatMap(_ => publisher.versionedNotebook.path.flatMap(openNotebooks.remove)).forkDaemon
           } yield publisher
         }.flatMap {
           publisher => publisher.closed.isDone.flatMap {

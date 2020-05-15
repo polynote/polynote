@@ -142,14 +142,14 @@ object NotebookSession {
       toFrames(ZStream.fromQueue(output).unTake),
       input.handleMessages(close) {
         msg => handler.handleMessage(msg).catchAll {
-          err => output.offer(Take.Value(Error(0, err)))
+          err => Logging.error(err) *> output.offer(Take.Value(Error(0, err)))
         }.fork.as(None)
       },
       keepaliveStream(closed)
     ).provide(env)
   }.catchAll {
     case err: HTTPError => ZIO.fail(err)
-    case err => ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
+    case err => Logging.error(err) *> ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
   }
 
   private val sessionId = new AtomicInteger(0)

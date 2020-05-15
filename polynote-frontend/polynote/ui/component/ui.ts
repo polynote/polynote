@@ -324,6 +324,7 @@ export class MainUI extends UIMessageTarget {
         this.browseUI.renameItem(oldPath, newPath);
         const newName =  newPath.split(/\//g).pop();
         this.tabUI.renameTab(oldPath, newPath, newName);
+        NotebookUI.renameInstance(oldPath, newPath);
 
         storage.update<{name: string, path: string}[]>('recentNotebooks', recentNotebooks => {
             return recentNotebooks.map(nb => {
