@@ -13,7 +13,15 @@ import {clientInterpreters} from "../../interpreter/client_interpreter";
 import {CellMetadata, NotebookCell, NotebookConfig} from "../../data/data";
 import {SocketSession} from "../../comms";
 import {MainUI} from "./ui";
-import {CompletionCandidate, Message, Presence, Signatures, TaskInfo, TaskStatus} from "../../data/messages";
+import {
+    CompletionCandidate,
+    Message,
+    NotebookUpdate,
+    Presence,
+    Signatures,
+    TaskInfo,
+    TaskStatus
+} from "../../data/messages";
 import {languages, Range} from "monaco-editor";
 import {ContentEdit} from "../../data/content_edit";
 import {Either, Left, Right} from "../../data/types";
@@ -24,6 +32,7 @@ import {CurrentSelection} from "../../data/messages";
 import {CurrentNotebook} from "./current_notebook";
 import {notificationsEnabled} from "../util/notifications";
 import container from "vega-embed/build/src/container";
+import {ClientBackup} from "./client_backup";
 
 const notebooks: Record<string, NotebookUI> = {};
 
@@ -269,6 +278,9 @@ export class NotebookUI extends UIMessageTarget {
                 // discard edits before the local version from server – it will handle rebasing at least until that point
                 this.editBuffer.discard(update.localVersion);
 
+                // make sure to update backups.
+                ClientBackup.updateNb(this.path, update)
+                    .catch(err => console.error("Error updating backup", err));
             }
         });
 
@@ -571,6 +583,11 @@ export class NotebookUI extends UIMessageTarget {
 
     onCellsLoaded(path: string, cells: NotebookCell[], config?: NotebookConfig) {
         console.log(`Loaded ${path}`);
+
+        ClientBackup.addNb(path, cells, config)
+            // .then(backups => console.log("Added new backup. All backups for this notebook:", backups))
+            .catch(err => console.error("Error adding backup", err));
+
         if (path === this.path) {
             if (config) {
                 this.cellUI.configUI.setConfig(config);
@@ -631,7 +648,7 @@ export class NotebookUI extends UIMessageTarget {
 
         const prevCell = this.cellUI.getCellBefore(insertedCell);
         const update = new messages.InsertCell(this.globalVersion, ++this.localVersion, notebookCell, prevCell?.id ?? -1);
-        this.socket.send(update);
+        this.sendUpdate(update);
         this.editBuffer.push(this.localVersion, update);
 
         if (postInsertCb) {
@@ -646,7 +663,7 @@ export class NotebookUI extends UIMessageTarget {
         if (deleteCellId !== undefined) {
             this.cellUI.deleteCell(deleteCellId, () => {
                 const update = new messages.DeleteCell(this.globalVersion, ++this.localVersion, deleteCellId);
-                this.socket.send(update);
+                this.sendUpdate(update);
                 this.editBuffer.push(this.localVersion, update);
 
             });
@@ -684,7 +701,7 @@ export class NotebookUI extends UIMessageTarget {
 
     handleContentChange(cellId: number, edits: ContentEdit[], metadata?: CellMetadata) {
         const update = new messages.UpdateCell(this.globalVersion, ++this.localVersion, cellId, edits, metadata);
-        this.socket.send(update);
+        this.sendUpdate(update);
         this.editBuffer.push(this.localVersion, update);
     }
 
@@ -764,6 +781,12 @@ export class NotebookUI extends UIMessageTarget {
         const update = new messages.UpdateConfig(this.globalVersion, ++this.localVersion, conf);
         this.editBuffer.push(this.localVersion, update);
         this.kernelUI.tasks.clear(); // old tasks no longer relevant with new config.
-        this.socket.send(update);
+        this.sendUpdate(update);
+    }
+
+    private sendUpdate(upd: NotebookUpdate) {
+        this.socket.send(upd);
+        ClientBackup.updateNb(this.path, upd)
+            .catch(err => console.error("Error backing up update", err))
     }
 }

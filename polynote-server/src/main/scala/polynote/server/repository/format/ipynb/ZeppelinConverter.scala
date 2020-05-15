@@ -20,6 +20,7 @@ import scala.collection.immutable.StringOps
   */
 class ZeppelinToIpynbFormat extends NotebookFormat {
   override val extension: String = "json"
+  override val mime: String = "application/json"
 
   override def decodeNotebook(noExtPath: String, rawContent: String): RIO[BaseEnv with GlobalEnv, Notebook] = {
     for {
