@@ -162,7 +162,8 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     }
 
     def mkSpark(
-      sparkConfig: Map[String, String]
+      sparkConfig: Map[String, String],
+      notebookPath: String
     ): RIO[Blocking with Config with Logging, SparkSession] = ZIO {
       val outputPath = org.apache.spark.repl.Main.outputDir.toPath
       val conf = org.apache.spark.repl.Main.conf
@@ -179,7 +180,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       conf
         .setJars(jars)
         .set("spark.repl.class.outputDir", outputPath.toString)
-        .setIfMissing("spark.app.name", s"Polynote ${BuildInfo.version} session")
+        .setIfMissing("spark.app.name", s"Polynote ${BuildInfo.version}: $notebookPath")
 
       org.apache.spark.repl.Main.createSparkSession()
     }
@@ -209,8 +210,9 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       for {
         config         <- Config.access
         notebookConfig <- CurrentNotebook.config
+        path           <- CurrentNotebook.path
         executor       <- mkExecutor()
-        session        <- mkSpark(config.spark.map(SparkConfig.toMap).getOrElse(Map.empty) ++ notebookConfig.sparkConfig.getOrElse(Map.empty)).lock(executor)
+        session        <- mkSpark(config.spark.map(SparkConfig.toMap).getOrElse(Map.empty) ++ notebookConfig.sparkConfig.getOrElse(Map.empty), path).lock(executor)
         _              <- ensureJars(session).lock(executor)
         _              <- ZIO(SparkEnv.get.serializer.setDefaultClassLoader(classLoader)).lock(executor)
         _              <- attachListener(session)

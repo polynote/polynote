@@ -26,6 +26,7 @@ import zio.stream.Take
 import zio.interop.catz._
 
 
+
 class FileBasedRepository(
   val path: Path,
   val chunkSize: Int = 8192,
@@ -79,8 +80,8 @@ class FileBasedRepository(
     override def updateAndGet(update: NotebookUpdate): IO[AlreadyClosed, (Int, Notebook)] = ifOpen {
       for {
         completer <- Promise.make[Nothing, (Int, Notebook)]
-          _         <- pending.offer(Take.Value((update, Some(completer))))
-          result    <- completer.await
+        _         <- pending.offer(Take.Value((update, Some(completer))))
+        result    <- completer.await
       } yield result
     }
 
@@ -187,7 +188,7 @@ class FileBasedRepository(
         }
 
       def writeWAL(update: NotebookUpdate): RIO[BaseEnv, Unit] = wal.flatMap(_.appendMessage(update)).catchAll {
-        err => Logging.error("Unable to write update to WAL (this WAL segment will be useless)", err) // TODO: improve this
+        err => Logging.error("Unable to write update to WAL", err) // TODO: improve this
       }.uninterruptible
 
       val syncWAL = wal.flatMap(_.sync()).catchAll {
@@ -232,9 +233,9 @@ class FileBasedRepository(
         case false => ZIO.succeed(WALWriter.NoWAL)
       }
 
-    def apply(notebook: Notebook, path: Path): RIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
+    def apply(notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
       log        <- Logging.access
-      current    <- Ref.make(0 -> notebook)
+      current    <- Ref.make(version -> notebook)
       closed     <- Promise.make[Throwable, Unit]
       pending    <- Queue.unbounded[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]]
       renameLock <- Semaphore.make(1L)
@@ -253,10 +254,9 @@ class FileBasedRepository(
     nb             <- fmt.decodeNotebook(noExtPath, content)
   } yield nb
 
-  override def openNotebook(pathStr: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
-    nb             <- loadNotebook(pathStr)
-    path            = pathOf(pathStr)
-    ref            <- FileNotebookRef(nb, path)
+  override def openNotebook(path: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
+    nb             <- loadNotebook(path)
+    ref            <- FileNotebookRef(nb, 0)
   } yield ref
 
   private def encodeNotebook(nb: Notebook) = for {
@@ -341,6 +341,11 @@ class FileBasedRepository(
       _       <- saveNotebook(nb.copy(path = name))
     } yield name
   }
+
+  override def createAndOpen(path: String, notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
+    _   <- saveNotebook(notebook.copy(path = path))
+    ref <- FileNotebookRef(notebook, version)
+  } yield ref
 
   private def withValidatedSrcDest[T](src: String, dest: String)(f: (String, String) => RIO[BaseEnv with GlobalEnv, T]): RIO[BaseEnv with GlobalEnv, T] = {
     val (destNoExt, destExt) = extractExtension(dest.replaceFirst("""^/+""", ""))

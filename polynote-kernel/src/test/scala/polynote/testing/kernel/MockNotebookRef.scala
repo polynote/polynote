@@ -56,8 +56,8 @@ class MockNotebookRef private(
 }
 
 object MockNotebookRef {
-  def apply(notebook: Notebook, saveTo: ((Int, Notebook)) => UIO[Unit] = _ => ZIO.unit): UIO[MockNotebookRef] = for {
-    current <- Ref.make(0 -> notebook)
+  def apply(notebook: Notebook, saveTo: ((Int, Notebook)) => UIO[Unit] = _ => ZIO.unit, version: Int = 0): UIO[MockNotebookRef] = for {
+    current <- Ref.make(version -> notebook)
     closed  <- Promise.make[Throwable, Unit]
   } yield new MockNotebookRef(current, closed, saveTo)
 }

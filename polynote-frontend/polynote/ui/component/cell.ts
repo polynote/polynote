@@ -645,20 +645,24 @@ export class CodeCell extends Cell {
 
         this.container.classList.add('error');
 
-        if (cellLine !== null && cellLine >= 0) {
-            const model = this.editor.getModel()!;
-            monaco.editor.setModelMarkers(
-                model,
-                this.id.toString(),
-                [{
-                    message: messageStr,
-                    startLineNumber: cellLine,
-                    endLineNumber: cellLine,
-                    startColumn: model.getLineMinColumn(cellLine),
-                    endColumn: model.getLineMaxColumn(cellLine),
-                    severity: 8
-                }]
-            );
+        try {
+            if (cellLine !== null && cellLine >= 0) {
+                const model = this.editor.getModel()!;
+                monaco.editor.setModelMarkers(
+                    model,
+                    this.id.toString(),
+                    [{
+                        message: messageStr,
+                        startLineNumber: cellLine,
+                        endLineNumber: cellLine,
+                        startColumn: model.getLineMinColumn(cellLine),
+                        endColumn: model.getLineMaxColumn(cellLine),
+                        severity: 8
+                    }]
+                );
+            }
+        } catch(err) {
+            // location of error is missing.
         }
     }
 

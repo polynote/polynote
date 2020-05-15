@@ -162,18 +162,20 @@ class KernelPublisher private (
     } yield subscriber
   }
 
-  private def removeSubscriber(id: Int) = for {
-    subscriber <- subscribers.get(id).get.mapError(_ => new NoSuchElementException(s"Subscriber $id does not exist"))
-    isDone     <- subscriber.closed.isDone
-    _          <- if (isDone) ZIO.unit else ZIO.fail(new IllegalStateException(s"Attempting to remove subscriber $id, which is not closed."))
-    _          <- subscribers.remove(id)
-    allClosed  <- subscribers.isEmpty
-    kernel     <- kernelRef.get
-    _          <- status.publish1(PresenceUpdate(Nil, List(id)))
-    _          <- if (allClosed && kernel.isEmpty) {
-      latestVersion.map(_._2.path).flatMap(path => Logging.info(s"Closing $path (idle with no more subscribers)")) *> close()
-    } else ZIO.unit
-  } yield ()
+  private def removeSubscriber(id: Int) = subscribing.withPermit {
+    for {
+      subscriber <- subscribers.get(id).get.mapError(_ => new NoSuchElementException(s"Subscriber $id does not exist"))
+      isDone     <- subscriber.closed.isDone
+      _          <- if (isDone) ZIO.unit else ZIO.fail(new IllegalStateException(s"Attempting to remove subscriber $id, which is not closed."))
+      _          <- subscribers.remove(id)
+      allClosed  <- subscribers.isEmpty
+      kernel     <- kernelRef.get
+      _          <- status.publish1(PresenceUpdate(Nil, List(id)))
+      _          <- if (allClosed && kernel.isEmpty) {
+        latestVersion.map(_._2.path).flatMap(path => Logging.info(s"Closing $path (idle with no more subscribers)")) *> close()
+      } else ZIO.unit
+    } yield ()
+  }
 
   def close(): TaskB[Unit] =
     closed.succeed(()).unit *>

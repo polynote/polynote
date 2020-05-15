@@ -6,7 +6,7 @@ import java.time.Instant
 
 import polynote.messages.{Message, Notebook}
 import scodec.bits.{BitVector, ByteVector}
-import scodec.{Attempt, codecs}
+import scodec.{Attempt, Codec, codecs}
 import scodec.stream.decode
 import scodec.stream.decode.StreamDecoder
 import zio.{RIO, Task, ZIO}
@@ -32,12 +32,13 @@ object WAL {
     ZIO.fromEither(instantCodec.encode(instant).toEither)
       .mapError(err => new RuntimeException(err.message))
 
+  val messageCodec: Codec[(Instant, Message)] = codecs.variableSizeBytes(codecs.int32, instantCodec ~ Message.codec)
+
   val decoder: StreamDecoder[(Instant, Message)] = {
     val readMagic = decode.once(codecs.constant(ByteVector(WALMagicNumber)))
     val readVersion = decode.once(codecs.int16)
-    val readMessage = instantCodec ~ Message.codec
     def readMessages(version: Int): StreamDecoder[(Instant, Message)] = version match {
-      case 1 => decode.many(readMessage)
+      case 1 => decode.many(messageCodec)
       case v => decode.raiseError(new Exception(s"Unknown WAL version $v"))
     }
 
@@ -59,9 +60,9 @@ object WAL {
         appendMessage(notebook.withoutResults)
 
     def appendMessage(message: Message): RIO[Blocking with Clock, Unit] = for {
-      ts    <- currentDateTime.map(_.toInstant) >>= encodeTimestamp
-      bytes <- Message.encode[Task](message)
-      _     <- append(ts ++ bytes)
+      ts    <- currentDateTime.map(_.toInstant)
+      bytes <- ZIO.fromEither(messageCodec.encode((ts, message)).toEither).mapError(err => new RuntimeException(err.message))
+      _     <- append(bytes)
     } yield ()
 
     def sync(): RIO[Blocking, Unit]

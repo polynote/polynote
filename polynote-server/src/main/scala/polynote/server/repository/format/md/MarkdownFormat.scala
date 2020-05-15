@@ -23,6 +23,7 @@ class MarkdownFormat extends NotebookFormat {
   private lazy val printer = Printer.spaces2.copy(dropNullKeys = true)
 
   override val extension: String = "md"
+  override val mime: String = "text/markdown"
 
   private def textCell(content: String, i: Int) =
     NotebookCell(i, TinyString("text"), Rope(content), ShortList(Nil))

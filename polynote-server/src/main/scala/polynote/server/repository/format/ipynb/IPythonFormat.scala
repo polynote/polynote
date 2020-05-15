@@ -14,6 +14,8 @@ class IPythonFormat extends NotebookFormat {
 
   override val extension: String = "ipynb"
 
+  override val mime: String = "application/x-ipynb+json"
+
   override def decodeNotebook(noExtPath: String, rawContent: String): RIO[Any, Notebook] = for {
     parsed  <- ZIO.fromEither(parse(rawContent))
     staged  <- ZIO.fromEither(parsed.as[JupyterNotebookStaged])

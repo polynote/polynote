@@ -17,14 +17,15 @@ import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, NotebookRef, TaskB,
 import polynote.messages.{CreateNotebook, DeleteNotebook, Error, Message, RenameNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
 import polynote.server.repository.fs.FileSystems
-import polynote.server.repository.{FileBasedRepository, NotebookRepository, TreeRepository}
+import polynote.server.repository.{FileBasedRepository, NotebookContent, NotebookRepository, TreeRepository}
 import scodec.bits.ByteVector
 import uzhttp.websocket.{Binary, Close, Frame, Ping, Pong}
-import zio.blocking.Blocking
+import zio.blocking.effectBlocking
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
 import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
+import polynote.server.repository.format.NotebookFormat
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{DurationInt, SECONDS}
@@ -46,10 +47,12 @@ package object server {
   implicit val rioApplicativeGlobal: Applicative[TaskG] = interop.taskConcurrentInstance[BaseEnv with GlobalEnv]
   implicit val rioApplicativePublishMessage: Applicative[RIO[PublishMessage, ?]] = interop.taskConcurrentInstance[PublishMessage]
 
-  def toFrame(message: Message): ZIO[Any, Throwable, Binary] =
-    Message.encode[Task](message).map(bits => Binary(bits.toByteArray))
+  def toFrame(message: Message): ZIO[Logging, Throwable, Binary] =
+    Message.encode[Task](message).map(bits => Binary(bits.toByteArray)).onError {
+      err => Logging.error(err)
+    }
 
-  def toFrames[R](stream: ZStream[R, Throwable, Message]): ZStream[R, Throwable, Binary] =
+  def toFrames[R](stream: ZStream[R, Throwable, Message]): ZStream[R with Logging, Throwable, Binary] =
     stream.mapM(toFrame)
 
   implicit class FrameStreamOps[R](val self: ZStream[R, Throwable, Frame]) extends AnyVal {
@@ -66,6 +69,8 @@ package object server {
         case Close =>
           onClose.as(Some(Close))
         case _ => ZIO.none
+      }.catchAll {
+        err => ZStream.fromEffect(Logging.error(err)).drain
       }.unNone.ensuring {
         onClose.catchAll {
           err => Logging.error("Websocket close handler failed", err)
@@ -102,6 +107,7 @@ package object server {
 
     def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
+    def fetchIfOpen(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[(String, String)]] = access.flatMap(_.fetchIfOpen(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
     def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())
     def listRunning(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.listRunning())
@@ -113,6 +119,7 @@ package object server {
 
     trait Service {
       def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]
+      def fetchIfOpen(path: String): RIO[BaseEnv with GlobalEnv, Option[(String, String)]]
       def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]]
       def list(): RIO[BaseEnv with GlobalEnv, List[String]]
       def listRunning(): RIO[BaseEnv with GlobalEnv, List[String]]
@@ -152,12 +159,24 @@ package object server {
           for {
             notebookRef   <- repository.openNotebook(path)
             publisher     <- KernelPublisher(notebookRef, broadcastAll)
-            onClose       <- publisher.closed.await.flatMap(_ => openNotebooks.remove(path)).forkDaemon
+            onClose       <- publisher.closed.await.flatMap(_ => publisher.versionedNotebook.path.flatMap(openNotebooks.remove)).forkDaemon
           } yield publisher
         }.flatMap {
           publisher => publisher.closed.isDone.flatMap {
             case true  => open(path)
             case false => ZIO.succeed(publisher)
+          }
+        }
+
+        override def fetchIfOpen(path: String): RIO[BaseEnv with GlobalEnv, Option[(String, String)]] = {
+          openNotebooks.get(path).flatMap {
+            case None => ZIO.succeed(None)
+            case Some(pub) =>
+              for {
+                (_, nb)   <- pub.latestVersion
+                fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))
+                rawString <- fmt.encodeNotebook(NotebookContent(nb.cells, nb.config))
+              } yield Some((fmt.mime, rawString))
           }
         }
 
@@ -186,7 +205,9 @@ package object server {
               case Some(publisher) => moveLock.withPermit {
                 repository.notebookExists(newPath).flatMap {
                   case true  => ZIO.fail(new FileAlreadyExistsException(s"File $newPath already exists"))
-                  case false => publisher.versionedNotebook.rename(newPath)
+                  case false => publisher.versionedNotebook.rename(newPath).flatMap {
+                    newPath => openNotebooks.put(newPath, publisher) *> openNotebooks.remove(path).as(newPath)
+                  }
                 }
               }
             }
