@@ -171,7 +171,7 @@ package object server {
         override def fetchIfOpen(path: String): RIO[BaseEnv with GlobalEnv, Option[(String, String)]] = {
           openNotebooks.get(path).flatMap {
             case None => ZIO.succeed(None)
-            case Some((pub, _)) =>
+            case Some(pub) =>
               for {
                 (_, nb)   <- pub.latestVersion
                 fmt       <- NotebookFormat.getFormat(Paths.get(nb.path))
