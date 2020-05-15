@@ -24,6 +24,7 @@ object DeploySparkSubmit extends DeployCommand {
   def build(
     config: PolynoteConfig,
     nbConfig: NotebookConfig,
+    notebookPath: String,
     mainClass: String = classOf[RemoteKernelClient].getName,
     jarLocation: String = getClass.getProtectionDomain.getCodeSource.getLocation.getPath,
     serverArgs: List[String] = Nil
@@ -59,7 +60,7 @@ object DeploySparkSubmit extends DeployCommand {
 
     val additionalJars = pathOf(classOf[SparkReprsOf[_]]) :: pathOf(classOf[KernelRuntime]) :: Nil
 
-    val appName = sparkConfig.getOrElse("spark.app.name", s"Polynote ${BuildInfo.version} session")
+    val appName = sparkConfig.getOrElse("spark.app.name", s"Polynote ${BuildInfo.version}: $notebookPath")
 
     Seq("spark-submit", "--class", mainClass, "--name", appName) ++
       Seq("--driver-java-options", allDriverOptions) ++
@@ -72,9 +73,11 @@ object DeploySparkSubmit extends DeployCommand {
   override def apply(serverAddress: InetSocketAddress): RIO[Config with CurrentNotebook, Seq[String]] = for {
     config   <- Config.access
     nbConfig <- CurrentNotebook.config
+    path     <- CurrentNotebook.path
   } yield build(
     config,
     nbConfig,
+    path,
     serverArgs =
       "--address" :: serverAddress.getAddress.getHostAddress ::
       "--port" :: serverAddress.getPort.toString ::
