@@ -48,6 +48,10 @@ export const VegaInterpreter = {
 
 };
 
+function splitOutput(outputStr) {
+    return outputStr.match(/[^\n]+\n?/g);
+}
+
 export class VegaClientResult extends ClientResult {
     constructor(spec) {
         super();
@@ -103,25 +107,16 @@ export class VegaClientResult extends ClientResult {
             img.setAttribute('src', dataURL);
             el.appendChild(img);
             const html = el.innerHTML;
-            return new Output("text/html", html);
+            return new Output("text/html", splitOutput(html));
         };
 
         return plot.view.toCanvas()
             .then(canvas => canvas.toDataURL("image/png"))
             .then(fromDataURL)
-            .catch(_ => plot.toSVG().then(svgStr => new Output("image/svg+xml", svgStr)))
+            .catch(_ => plot.toSVG().then(svgStr => new Output("image/svg+xml", splitOutput(svgStr))))
     }
 
     toOutput() {
-        const fromDataURL = (dataURL) => {
-            const el = document.createElement('div');
-            const img = document.createElement('img');
-            img.setAttribute('src', dataURL);
-            el.appendChild(img);
-            const html = el.innerHTML;
-            return new Output("text/html", html);
-        };
-
         return this.run().then(VegaClientResult.plotToOutput);
     }
 }
