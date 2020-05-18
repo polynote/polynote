@@ -33,8 +33,7 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
       // it's not great to use an exception for normal flow control, but I don't think there's another way to avoid a
       // race condition here (e.g. if we checked that the file doesn't exist, but then it does by the time we go to
       // write to it)
-      Files.createFile(path)
-      Files.write(path, content)
+      Files.write(path, content, StandardOpenOption.CREATE_NEW)
     } catch {
       case _: FileAlreadyExistsException =>
         // the file already exists, so we're going to write to a temporary file next to it and then swap it.
