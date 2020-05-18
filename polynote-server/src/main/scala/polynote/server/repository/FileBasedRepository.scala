@@ -50,12 +50,14 @@ class FileBasedRepository(
     // TODO: improve WAL
 
     private val needSave = new AtomicBoolean(false)
-    private val saveIntervalDuration = Duration(saveIntervalMillis, TimeUnit.MILLISECONDS)
-    private val consecutiveSaveFails = LongRef.zeroSync
-
-
+    private val saveNeeded = effectTotal(needSave.get())
     private val setNeedSave = effectTotal(needSave.lazySet(true))
-    private val save = (renameLock.withPermit(get.flatMap(saveNotebook)) *> effectTotal(needSave.lazySet(false)))
+    private val saveIntervalDuration = Duration(saveIntervalMillis, TimeUnit.MILLISECONDS)
+
+
+    private val consecutiveSaveFails = LongRef.zeroSync
+    private val saveSucceeded = effectTotal(needSave.lazySet(false)) *> effectTotal(consecutiveSaveFails.set(0L))
+    private val save = (renameLock.withPermit(get.flatMap(saveNotebook)) *> saveSucceeded)
       .catchAll {
         err => consecutiveSaveFails.incrementAndGet.flatMap {
           case count if count >= maxSaveFails =>
@@ -206,13 +208,15 @@ class FileBasedRepository(
         case Take.Fail(_)                       => ZIO.dieMessage("Unreachable state")  // Scala 2.11 exhaustivity check doesn't realize
       }.forever.flip
 
+      val doSave = syncWAL &> save.whenM(saveNeeded)
+
       // every interval, check if the notebook needs to be written and do so
       val saveAtInterval =
         get.map(_.path).flatMap(path => Logging.info(s"Will write to $path")) *>
-          (syncWAL &> save).whenM(effectTotal(needSave.get())).repeat(Schedule.fixed(saveIntervalDuration))
+          doSave.repeat(Schedule.fixed(saveIntervalDuration))
 
       // save one more time once closed
-      val finalSave = save *> get.map(_.path).flatMap(path => Logging.info(s"Stopped writing to $path")) <* verify
+      val finalSave = doSave *> get.map(_.path).flatMap(path => Logging.info(s"Stopped writing to $path")) <* verify
 
       processPending.unit.raceFirst(saveAtInterval.unit)
         .ensuring(finalSave).ensuring(closeWAL)
