@@ -56,7 +56,8 @@ class FileBasedRepository(
 
 
     private val consecutiveSaveFails = LongRef.zeroSync
-    private val save = (renameLock.withPermit(get.flatMap(saveNotebook)) *> effectTotal(needSave.lazySet(false)))
+    private val saveSucceeded = effectTotal(needSave.lazySet(false)) *> effectTotal(consecutiveSaveFails.set(0L))
+    private val save = (renameLock.withPermit(get.flatMap(saveNotebook)) *> saveSucceeded)
       .catchAll {
         err => consecutiveSaveFails.incrementAndGet.flatMap {
           case count if count >= maxSaveFails =>
