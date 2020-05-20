@@ -1,7 +1,6 @@
 package polynote.server
 
 import org.scalamock.scalatest.MockFactory
-import polynote.env.ops.Enrich
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel}
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.environment.NotebookUpdates

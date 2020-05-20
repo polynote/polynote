@@ -1,7 +1,6 @@
 package polynote.testing
 
 import polynote.config.PolynoteConfig
-import polynote.env.ops.Enrich
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, ResultValue, interpreter}
 import polynote.kernel.environment.{Config, Env, NotebookUpdates}
@@ -14,7 +13,7 @@ import zio.console.Console
 import zio.internal.Platform
 import zio.random.Random
 import zio.system.System
-import zio.{Has, RIO, Runtime, Tagged, ZIO, ZLayer}
+import zio.{Has, RIO, Runtime, Tag, ZIO, ZLayer}
 
 abstract class TestRuntime
 object TestRuntime {
@@ -35,7 +34,7 @@ trait ZIOSpecBase[Env <: Has[_]] {
   }
 
   implicit class IORunWithOps[R <: Has[_], A](val self: ZIO[R, Throwable, A]) {
-    def runWith[R1](env: R1)(implicit ev: Env with Has[R1] <:< R, ev1: Tagged[R1], ev2: Tagged[Has[R1]], ev3: Tagged[Env]): A =
+    def runWith[R1](env: R1)(implicit ev: Env with Has[R1] <:< R, ev1: Tag[R1], ev2: Tag[Has[R1]], ev3: Tag[Env]): A =
       ZIOSpecBase.this.runIO(self.provideSomeLayer[Env](ZLayer.succeed(env)).provideSomeLayer[BaseEnv](envLayer))
   }
 
@@ -69,10 +68,10 @@ trait ConfiguredZIOSpec extends ZIOSpecBase[BaseEnv with Config] { this: Suite =
 }
 
 trait ExtConfiguredZIOSpec[Env <: Has[_]] extends ZIOSpecBase[BaseEnv with Config with Env] {
-  def tagged: Tagged[Env]
+  def tagged: Tag[Env]
   def configuredEnvLayer: ZLayer[zio.ZEnv with Config, Nothing, Env]
 
-  private implicit def _tagged: Tagged[Env] = tagged
+  private implicit def _tagged: Tag[Env] = tagged
 
   def config: PolynoteConfig = PolynoteConfig()
   lazy val configLayer: ZLayer[Any, Nothing, Config] = ZLayer.succeed(config)

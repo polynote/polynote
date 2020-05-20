@@ -23,7 +23,7 @@ import uzhttp.websocket.{Binary, Close, Frame, Ping, Pong}
 import zio.blocking.effectBlocking
 import zio.clock.Clock
 import zio.duration.Duration
-import zio.stream.{Take, ZStream}
+import zio.stream.ZStream, ZStream.Take
 import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
 import polynote.server.repository.format.NotebookFormat
 
@@ -71,7 +71,9 @@ package object server {
         case _ => ZIO.none
       }.catchAll {
         err => ZStream.fromEffect(Logging.error(err)).drain
-      }.unNone.ensuring {
+      }.collect {
+        case Some(frame) => frame
+      }.ensuring {
         onClose.catchAll {
           err => Logging.error("Websocket close handler failed", err)
         }
@@ -91,9 +93,9 @@ package object server {
     ZStream.fromSchedule(Schedule.fixed(zio.duration.Duration(10, SECONDS)).as(Ping)).interruptWhen(closed)
 
   def parallelStreams[R, E, A](streams: ZStream[R, E, A]*): ZStream[R, E, A] =
-    ZStream.flattenPar(streams.size)(ZStream(streams: _*)).catchAllCause(_ => ZStream.empty)
+    ZStream(streams: _*).flattenPar(streams.size).catchAllCause(_ => ZStream.empty)
 
-  def streamEffects[R, E, A](effects: ZIO[R, E, A]*): ZStream[R, E, A] = ZStream.flatten(ZStream(effects.map(e => ZStream.fromEffect(e)): _*))
+  def streamEffects[R, E, A](effects: ZIO[R, E, A]*): ZStream[R, E, A] = ZStream(effects.map(e => ZStream.fromEffect(e)): _*).flatten
 
   type NotebookManager = Has[NotebookManager.Service]
 

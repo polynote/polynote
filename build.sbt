@@ -12,8 +12,7 @@ val versions = new {
   val fs2        = "1.0.5"
   val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC2-6"
-  val zio        = "1.0.0-RC18-2"
-  val zioInterop = "2.0.0.0-RC12"
+  val zio        = "1.0.0-RC19-2"
 }
 
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
@@ -102,7 +101,6 @@ val `polynote-env` = project.settings(
   commonSettings,
   scalacOptions += "-language:experimental.macros",
   libraryDependencies ++= Seq(
-    "dev.zio" %% "zio-interop-cats" % versions.zioInterop % "provided",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
   )
 )
@@ -113,9 +111,9 @@ val `polynote-kernel` = project.settings(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
     "org.typelevel" %% "cats-effect" % versions.catsEffect,
+    "org.typelevel" %% "cats-mtl-core" % "0.7.0", // TODO: remove me
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
-    "dev.zio" %% "zio-interop-cats" % versions.zioInterop,
     "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.11.4",
     "org.scodec" %% "scodec-stream" % "1.2.0",
@@ -138,7 +136,7 @@ val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.polynote" %% "uzhttp" % "0.1.4",
+    "org.polynote" %% "uzhttp" % "0.2.2",
     "org.scodec" %% "scodec-core" % "1.10.3",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",

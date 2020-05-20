@@ -14,10 +14,10 @@ import uzhttp.HTTPError
 import HTTPError.NotFound
 import polynote.kernel.logging.Logging
 import uzhttp.websocket.Frame
-import zio.stream.{Stream, Take}
-import zio.ZQueue
+import zio.stream.{Stream, ZStream}
+import ZStream.Take
+import zio.{Chunk, Exit, Promise, RIO, Task, UIO, ZIO, ZLayer, ZQueue}
 import zio.stream.ZStream
-import zio.{Promise, RIO, Task, UIO, ZIO, ZLayer}
 
 
 class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingHandles.Service) {
@@ -139,10 +139,10 @@ object NotebookSession {
       close             = closeQueueIf(closed, output) *> subscriber.close()
       _                <- handler.sendNotebookInfo
     } yield parallelStreams(
-      toFrames(ZStream.fromQueue(output).unTake),
+      toFrames(ZStream.fromQueue(output).collectWhileSuccess.flattenChunks),
       input.handleMessages(close) {
         msg => handler.handleMessage(msg).catchAll {
-          err => Logging.error(err) *> output.offer(Take.Value(Error(0, err)))
+          err => Logging.error(err) *> output.offer(Exit.Success(Chunk.single(Error(0, err))))
         }.fork.as(None)
       },
       keepaliveStream(closed)

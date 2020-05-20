@@ -15,14 +15,15 @@ import polynote.kernel.logging.Logging
 import polynote.kernel.util.LongRef
 import polynote.messages._
 import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem, WAL}, WAL.WALWriter
+import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem, WAL}
+import WAL.WALWriter
 import scodec.Codec
-import zio.{Fiber, IO, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO}
+import zio.{Chunk, Exit, Fiber, IO, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO}
 import zio.ZIO.effectTotal
 import zio.blocking.effectBlocking
 import zio.clock.currentDateTime
 import zio.duration.Duration
-import zio.stream.Take
+import zio.stream.ZStream.Take
 import zio.interop.catz._
 
 
@@ -77,12 +78,12 @@ class FileBasedRepository(
     override def getVersioned: UIO[(Int, Notebook)] = current.get
 
     override def update(update: NotebookUpdate): IO[AlreadyClosed, Unit] =
-      ifOpen(pending.offer(Take.Value((update, None)))).unit
+      ifOpen(pending.offer(Exit.Success(Chunk.single((update, None))))).unit
 
     override def updateAndGet(update: NotebookUpdate): IO[AlreadyClosed, (Int, Notebook)] = ifOpen {
       for {
         completer <- Promise.make[Nothing, (Int, Notebook)]
-        _         <- pending.offer(Take.Value((update, Some(completer))))
+        _         <- pending.offer(Exit.Success(Chunk.single((update, Some(completer)))))
         result    <- completer.await
       } yield result
     }
@@ -203,9 +204,11 @@ class FileBasedRepository(
 
       // process all the submitted updates into the ref in order
       val processPending = pending.take.flatMap {
-        case Take.Value((update, completerOpt)) => (writeWAL(update).forkDaemon &> doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError
-        case Take.End                           => pending.shutdown *> closed.succeed(()).unit <* ZIO.fail(None)
-        case Take.Fail(_)                       => ZIO.dieMessage("Unreachable state")  // Scala 2.11 exhaustivity check doesn't realize
+        case Exit.Success(chunk) => ZIO.foreach_(chunk) {
+          case (update, completerOpt) => (writeWAL(update).forkDaemon &> doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError
+        }
+        case Take.End            => pending.shutdown *> closed.succeed(()).unit <* ZIO.fail(None)
+        case Exit.Failure(_)     => ZIO.dieMessage("Unreachable state")  // Scala 2.11 exhaustivity check doesn't realize
       }.forever.flip
 
       val doSave = syncWAL &> save.whenM(saveNeeded)

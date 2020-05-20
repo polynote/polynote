@@ -20,10 +20,10 @@ import polynote.messages.{CellID, Message, Notebook, NotebookCell, ShortList}
 import polynote.testing.ExtConfiguredZIOSpec
 import polynote.testing.kernel.MockNotebookRef
 import zio.duration.Duration
-import zio.{Promise, RIO, Schedule, Tagged, Task, ZIO, ZLayer}
+import zio.{Promise, RIO, Schedule, Tag, Task, ZIO, ZLayer}
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory {
-  val tagged: Tagged[Interpreter.Factories] = implicitly
+  val tagged: Tag[Interpreter.Factories] = implicitly
 
   override lazy val configuredEnvLayer: ZLayer[zio.ZEnv with Config, Nothing, Interpreter.Factories] = ZLayer.succeed(Map.empty)
 

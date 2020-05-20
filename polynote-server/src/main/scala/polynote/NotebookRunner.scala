@@ -20,7 +20,7 @@ import zio.{Has, IO, Queue, RIO, Ref, Task, UIO, URIO, URLayer, ZIO, ZLayer}
 import ZIO.{effect, effectTotal}
 import zio.clock, clock.Clock
 import zio.interop.catz._
-import zio.stream.Take
+import zio.stream.ZStream.Take
 
 import scala.annotation.tailrec
 

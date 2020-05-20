@@ -14,7 +14,7 @@ import polynote.server.auth.IdentityProvider.checkPermission
 import polynote.server.auth.{IdentityProvider, Permission, UserIdentity}
 import uzhttp.websocket.Frame
 import zio.stream.ZStream
-import zio.stream.{Stream, Take}
+import zio.stream.{Stream, ZStream}, ZStream.Take
 import zio.Queue
 import zio.{Promise, RIO, Task, URIO, ZIO}
 
@@ -31,7 +31,7 @@ object SocketSession {
       _               <- broadcastAll.subscribe(32).unNone.interruptAndIgnoreWhen(closed).through(publishMessage.publish).compile.drain.forkDaemon
       close            = closeQueueIf(closed, output)
     } yield parallelStreams(
-        toFrames(ZStream.fromEffect(handshake) ++ Stream.fromQueue(output).unTake),
+        toFrames(ZStream.fromEffect(handshake) ++ Stream.fromQueue(output).collectWhileSuccess.flattenChunks),
         in.handleMessages(close)(handler andThen errorHandler) ++ closeStream(closed, output),
         keepaliveStream(closed)).provide(env).catchAllCause {
       cause =>

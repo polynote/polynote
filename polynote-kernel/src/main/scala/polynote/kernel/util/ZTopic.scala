@@ -2,8 +2,10 @@ package polynote.kernel.util
 
 import java.util.concurrent.atomic.AtomicLong
 
-import zio.stream.{Take, ZStream}
-import zio.{Cause, IO, Managed, Promise, Queue, Ref, Semaphore, UIO, UManaged, ZIO, ZQueue}
+import zio.stream.ZStream
+import ZStream.Take
+import zio.Exit.{Failure, Success}
+import zio.{Cause, Chunk, IO, Managed, Promise, Queue, Ref, Semaphore, UIO, UManaged, ZIO, ZQueue}
 
 sealed trait ZTopic[-RA, +EA, -RB, +EB, -A, +B] {
   /**
@@ -173,7 +175,7 @@ object ZTopic {
 
     private class Subscriber[-R, +E, In, Out](
       val id: Long,
-      queue: ZQueue[Any, Nothing, R, E, Take[Nothing, In], Take[Nothing, Out]]
+      queue: ZQueue[Any, R, Nothing, E, Take[Nothing, In], Take[Nothing, Out]]
     ) extends ZTopic.Subscriber[R, E, Out] with ZTopic.SubscriberWrite[R, E, In] {
       override def offer(value: Take[Nothing, In]): UIO[Unit] = {
         val send = queue.offer(value).doUntil(identity).unit
@@ -192,14 +194,13 @@ object ZTopic {
         case true => ZIO.succeed(Take.End)
       }
 
-      override lazy val stream: ZStream[R, E, Out] = ZStream.fromQueueWithShutdown(queue).unTake
-      override def map[B](fn: Out => B): ZTopic.Subscriber[R, E, B] = new Subscriber(id, queue.map(_.map(fn)))
+      override lazy val stream: ZStream[R, E, Out] = ZStream.fromQueueWithShutdown(queue).collectWhileSuccess.flattenChunks
+      override def map[B](fn: Out => B): ZTopic.Subscriber[R, E, B] = new Subscriber(id, queue.map(_.map(_.map(fn))))
       override def mapM[R1 <: R, E1 >: E, B](fn: Out => ZIO[R1, E1, B]): ZTopic.Subscriber[R1, E1, B] = new Subscriber(
         id,
         queue.mapM {
-          case Take.Value(a) => fn(a).map(Take.Value(_))
-          case Take.End => ZIO.succeed(Take.End)
-          case Take.Fail(err) => ZIO.halt(err)
+          case Success(chunk) => chunk.mapM(fn).map(Success(_))
+          case Failure(cause) => ZIO.halt(cause).run
         }
       )
 
@@ -225,7 +226,7 @@ object ZTopic {
         }
     }
 
-    def publish(value: A): UIO[Unit] = ifNotClosed(publishTake(Take.Value(value)))
+    def publish(value: A): UIO[Unit] = ifNotClosed(publishTake(Success(Chunk.single(value))))
 
     private def mkSubscriber: UIO[Subscriber[Any, Nothing, A, A]] = for {
       queue <- mkQueue
