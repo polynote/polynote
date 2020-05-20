@@ -2,8 +2,7 @@
  * The MessageReceiver is used to translate external events into state changes.
  * So far, the only external events are socket messages.
  */
-import {SocketSession} from "../../../comms";
-import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import * as messages from "../../../data/messages";
 import {TaskInfo} from "../../../data/messages";
@@ -22,12 +21,13 @@ import {
 } from "../../../data/result";
 import {StateHandler} from "../state/state_handler";
 import {clientInterpreters} from "../../../interpreter/client_interpreter";
+import {SocketStateHandler} from "../state/socket_state";
 
 class MessageReceiver<S> {
-    constructor(protected socket: SocketSession, protected state: StateHandler<S>) {}
+    constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
 
     receive<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => void) {
-        this.socket.addMessageListener(msgType, (...args) => {
+        this.socket.addMessageListener(msgType, args => {
             this.state.updateState(s => {
                 fn(s, ...args);
                 return s
@@ -37,38 +37,17 @@ class MessageReceiver<S> {
 }
 
 export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
-    constructor(socket: SocketSession, state: NotebookStateHandler) {
+    constructor(socket: SocketStateHandler, state: NotebookStateHandler) {
         super(socket, state);
 
-        socket.addEventListener('close', evt => {
-            state.updateState(s => {
-                s.kernel.status = "disconnected";
-                return s
-            })
-        });
-        socket.addEventListener('error', evt => {
-            const url = new URL(socket.url.toString());
-            url.protocol = document.location.protocol;
-            const req = new XMLHttpRequest();
-            req.responseType = "arraybuffer";
-            req.addEventListener("readystatechange", evt => {
-                if (req.readyState == 4) {
-                    if (req.response instanceof ArrayBuffer && req.response.byteLength > 0) {
-                        const msg = Message.decode(req.response);
-                        if (msg instanceof messages.Error) {
-                            this.socket.close();
-                            state.updateState(s => {
-                                s.errors.push(msg.error);
-                                s.kernel.status = "disconnected";
-                                return s
-                            })
-                        }
-                    }
-                }
-            });
-            req.open("GET", url.toString());
-            req.send(null);
-        });
+        socket.view("status").addObserver(status => {
+            if (status === "disconnected") {
+                state.updateState(s => {
+                    s.kernel.status = status;
+                    return s
+                })
+            }
+        })
 
         this.receive(messages.CompletionsAt, (s, cell, offset, completions) => {
             if (s.activeCompletion) {
@@ -271,17 +250,11 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
     public notebooks: Record<string, NotebookMessageReceiver> = {};
 
     constructor() {
-        super(SocketSession.global, ServerStateHandler.get);
+        super(SocketStateHandler.global, ServerStateHandler.get);
 
-        this.socket.addEventListener('open', evt => {
+        this.socket.view("status").addObserver(status => {
             this.state.updateState(s => {
-                s.connectionStatus = "connected";
-                return s;
-            })
-        });
-        this.socket.addEventListener('close', evt => {
-            this.state.updateState(s => {
-                s.connectionStatus = "disconnected";
+                s.connectionStatus = status;
                 return s;
             })
         });

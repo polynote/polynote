@@ -5,7 +5,6 @@ import {StateHandler} from "../state/state_handler";
 import {CellMetadata, NotebookConfig} from "../../../data/data";
 import {diffArray} from "../../../util/functions";
 import {CellContainerComponent} from "./cell";
-import {languages} from "monaco-editor";
 
 export class Notebook {
     readonly el: TagElement<"div">;
@@ -21,7 +20,7 @@ export class Notebook {
         this.el = div(['notebook-cells'], [config.el, this.newCellDivider()]);
 
         // we use views to watch for state changes we care about
-        notebookState.view("cells").addObserver((oldCells, newCells) => {
+        notebookState.view("cells").addObserver((newCells, oldCells) => {
             const [removed, added] = diffArray(oldCells, newCells, (o, n) => o.id === n.id);
 
             added.forEach(state => {

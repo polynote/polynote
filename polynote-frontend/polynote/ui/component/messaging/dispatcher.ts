@@ -12,25 +12,30 @@ import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from
 import {ContentEdit} from "../../../data/content_edit";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import {Message} from "../../../data/messages";
+import {SocketStateHandler} from "../state/socket_state";
 
 // interface for testing / decoupling
-export interface ISocket {
-    addEventListener(evt: string, fn: (evt: Event) => void): void,
-    send(msg: Message): void
-    reconnect(onlyIfClosed: boolean): void
-}
+// export interface ISocket {
+//     addEventListener(evt: string, fn: (evt: Event) => void): void,
+//     send(msg: Message): void
+//     reconnect(onlyIfClosed: boolean): void
+// }
 
 export abstract class MessageDispatcher<S> {
-    protected constructor(protected socket: ISocket, protected state: StateHandler<S>) {}
+    protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
 
     abstract dispatch(action: UIAction): void
 }
 
 export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
-    constructor(socket: ISocket, state: NotebookStateHandler) {
+    constructor(socket: SocketStateHandler, state: NotebookStateHandler) {
         super(socket, state);
         // when the socket is opened, send a KernelStatus message to request the current status from the server.
-        socket.addEventListener('open', evt => socket.send(new messages.KernelStatus(new messages.KernelBusyState(false, false))));
+        socket.view("status").addObserver(next => {
+            if (next === "connected") {
+                socket.send(new messages.KernelStatus(new messages.KernelBusyState(false, false)))
+            }
+        });
     }
 
     dispatch(action: UIAction) {
@@ -212,7 +217,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
 }
 
 export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
-    constructor(socket: ISocket) {
+    constructor(socket: SocketStateHandler) {
         super(socket, ServerStateHandler.get);
 
     }
@@ -225,7 +230,8 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 })
                 .when(LoadNotebook, path => {
                     s.notebooks[path] = ServerStateHandler.newNotebookState(path, true);
-                    s.currentNotebook = path
+                    s.currentNotebook = path;
+                    this.socket.send(new messages.LoadNotebook(path))
                 })
                 .when(CreateNotebook, (path, content) => {
                     this.socket.send(new messages.CreateNotebook(path, content))

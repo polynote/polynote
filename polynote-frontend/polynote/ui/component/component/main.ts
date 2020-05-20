@@ -4,7 +4,7 @@ import {scala, vega} from "../../monaco/languages";
 import * as monaco from "monaco-editor";
 import {theme} from "../../monaco/theme";
 import * as Tinycon from "tinycon";
-import {SocketSession} from "../../../comms";
+import {SocketSession} from "../messaging/comms";
 import {ServerMessageReceiver} from "../messaging/receiver";
 import {LoadNotebook, ServerMessageDispatcher} from "../messaging/dispatcher";
 import {ToolbarComponent} from "./toolbar";
@@ -15,6 +15,7 @@ import {Notebook} from "./notebook";
 import {Kernel} from "./kernel";
 import {KernelStateHandler} from "../state/kernel_state";
 import {NotebookList} from "./notebooklist";
+import {SocketStateHandler} from "../state/socket_state";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -24,10 +25,10 @@ class Main {
     public el: TagElement<"div">;
     private receiver: ServerMessageReceiver;
 
-    private constructor() {
+    private constructor(socket: SocketStateHandler) {
 
         this.receiver = new ServerMessageReceiver();
-        const dispatcher = new ServerMessageDispatcher();
+        const dispatcher = new ServerMessageDispatcher(socket);
 
         // serverDispatcher.dispatch(new RequestNotebooksList()) // TODO: notebook list component should do this in its constructor!
 
@@ -49,7 +50,7 @@ class Main {
             dispatcher.dispatch(new LoadNotebook(path.substring(notebookBase.length)))
         }
 
-        ServerStateHandler.get.view("currentNotebook").addObserver((_, path) => {
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             if (path) {
 
                 // TODO: set the page title here
@@ -74,7 +75,7 @@ class Main {
     private static inst: Main;
     static get get() {
         if (!Main.inst) {
-            Main.inst = new Main()
+            Main.inst = new Main(SocketStateHandler.global)
         }
         return Main.inst;
     }

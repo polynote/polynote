@@ -54,7 +54,7 @@ export class CellContainerComponent {
         let cell = this.cellFor(cellState.getState().language);
         this.el = div(['cell-component'], [cell.el]);
         this.el.click(evt => cell.makeActive());
-        cellState.view("language").addObserver((oldLang, newLang) => {
+        cellState.view("language").addObserver((newLang, oldLang) => {
             // Need to create a whole new cell if the language switches between code and text
             if (oldLang === "text" || newLang === "text") {
                 const newCell = this.cellFor(newLang);
@@ -238,12 +238,12 @@ class CodeCellComponent extends CellComponent {
         (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
         (this.editor.getModel() as CodeCellModel).requestSignatureHelp = this.requestSignatureHelp.bind(this);
 
-        cellState.view("language").addObserver((oldLang, newLang) => {
+        cellState.view("language").addObserver((newLang, oldLang) => {
             this.el.classList.replace(oldLang, newLang);
             langSelector.setSelectedValue(newLang);
         });
 
-        cellState.view("results").addObserver((_, results) => {
+        cellState.view("results").addObserver(results => {
             this.updateCellOutputState(outputHandler, results);
             if (results) {
                 results.forEach(result => {
@@ -264,7 +264,7 @@ class CodeCellComponent extends CellComponent {
         });
 
         this.setMetadata(cellState.getState().metadata);
-        cellState.view("metadata").addObserver((_, metadata) => {
+        cellState.view("metadata").addObserver(metadata => {
             if (metadata.hideSource) {
                 this.el.classList.add("hide-code")
             } else {
@@ -284,14 +284,14 @@ class CodeCellComponent extends CellComponent {
         });
 
 
-        cellState.view("pendingEdits").addObserver((_, edits) => {
+        cellState.view("pendingEdits").addObserver(edits => {
             if (edits) {
                 this.applyEdits(edits);
                 dispatcher.dispatch(new ClearCellEdits(this.id));
             }
         });
 
-        cellState.view("selected").addObserver((_, selected) => {
+        cellState.view("selected").addObserver(selected => {
             if (selected) {
                 this.el.classList.add("active");
                 if (!document.location.hash.includes(this.cellId)) {
@@ -302,7 +302,7 @@ class CodeCellComponent extends CellComponent {
             }
         });
 
-        cellState.view("error").addObserver((_, error) => {
+        cellState.view("error").addObserver(error => {
             if (error) {
                 this.el.classList.add("error");
             } else {
@@ -310,7 +310,7 @@ class CodeCellComponent extends CellComponent {
             }
         });
 
-        cellState.view("running").addObserver((_, running) => {
+        cellState.view("running").addObserver(running => {
             if (running) {
                 this.el.classList.add("running");
             } else {
@@ -318,7 +318,7 @@ class CodeCellComponent extends CellComponent {
             }
         });
 
-        cellState.view("queued").addObserver((_, queued) => {
+        cellState.view("queued").addObserver(queued => {
             if (queued) {
                 this.el.classList.add("queued");
             } else {
@@ -326,7 +326,7 @@ class CodeCellComponent extends CellComponent {
             }
         });
 
-        cellState.view("currentHighlight").addObserver((_, pos) => {
+        cellState.view("currentHighlight").addObserver(pos => {
             if (pos) {
                 const oldExecutionPos = this.highlightDecorations ?? [];
                 const model = this.editor.getModel()!;
@@ -686,19 +686,19 @@ class CodeCellOutput {
             ]),
         ]);
 
-        outputHandler.view("results").addObserver((_, results) => {
+        outputHandler.view("results").addObserver(results => {
             results.forEach(this.displayResult)
         });
 
-        outputHandler.view("compileErrors").addObserver((_, errors) => {
+        outputHandler.view("compileErrors").addObserver(errors => {
             if (errors.length) this.setErrors(errors)
         });
 
-        outputHandler.view("runtimeError").addObserver((_, error) => {
+        outputHandler.view("runtimeError").addObserver(error => {
             if (error) this.setRuntimeError(error)
         });
 
-        outputHandler.view("output").addObserver((_, output) => {
+        outputHandler.view("output").addObserver(output => {
             output.forEach(o => {
                 this.addOutput(o.contentType, o.content)
             })

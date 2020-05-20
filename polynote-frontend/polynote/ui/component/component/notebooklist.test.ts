@@ -1,21 +1,20 @@
-import {mocked} from "ts-jest/utils";
 import {__LeafComponent} from "./notebooklist";
 import {StateHandler} from "../state/state_handler";
 import {ServerMessageDispatcher} from "../messaging/dispatcher";
-import {fireEvent, queryHelpers} from "@testing-library/dom";
-// jest.mock("../messaging/dispatcher", () => {
-//     return {
-//         ServerMessageDispatcher: jest.fn().mockImplementation(() => {
-//
-//         })
-//     }
-// });
+import {fireEvent, queryHelpers, waitFor} from "@testing-library/dom";
+import { LoadNotebook } from "../../../data/messages";
+import {ServerStateHandler} from "../state/server_state";
+import {SocketStateHandler} from "../state/socket_state";
+import {SocketSession} from "../messaging/comms";
 
-test('A LeafComponent should dispatch a LoadNotebook when clicked', () => {
-    const mockDispatch = jest.fn();
-    const dispatcher = mocked(ServerMessageDispatcher, true).mockImplementation(() => {
-        return {dispatch: mockDispatch} as any as ServerMessageDispatcher
-    }) as any as ServerMessageDispatcher;
+jest.mock("../messaging/comms");
+
+test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
+
+    const mockSocket = SocketSession.fromRelativeURL("notebookpath");
+    const socketHandler = new SocketStateHandler(mockSocket);
+
+    const dispatcher = new ServerMessageDispatcher(socketHandler);
     const leaf = {
         fullPath: "foo/bar/baz",
         value: "baz"
@@ -23,6 +22,10 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', () => {
     const comp = new __LeafComponent(dispatcher, new StateHandler(leaf));
     const leafEl  = comp.el.querySelector("a.name")!;
     expect(leafEl).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
-    expect(dispatcher.dispatch).toHaveBeenCalledTimes(1)
-    fireEvent(leafEl, new MouseEvent('click'))
+    fireEvent(leafEl, new MouseEvent('click'));
+    waitFor(() => {
+        expect(mockSocket.send).toHaveBeenCalledWith(new LoadNotebook(leaf.fullPath))
+    }).then(() => {
+        expect(ServerStateHandler.get.getState().currentNotebook).toEqual(leaf.fullPath)
+    }).then(done)
 })

@@ -23,7 +23,7 @@ export class CommentHandler {
                 editor: editor.ICodeEditor,
                 cellId: number) {
 
-       commentsState.addObserver((oldComments, currentComments) => {
+       commentsState.addObserver((currentComments, oldComments) => {
            const [removed, added] = diffArray(Object.keys(oldComments), Object.keys(currentComments));
 
            // For added and removed comments, we only need to update the comment roots here.
@@ -71,7 +71,7 @@ export class CommentHandler {
        
        let commentButton: CommentButtonComponent | undefined = undefined;
 
-       currentSelection.addObserver((_, currentSelection) => {
+       currentSelection.addObserver(currentSelection => {
            const model = editor.getModel();
            if (currentSelection && currentSelection.length > 0 && model) {
                const maybeEquals = Object.keys(this.commentRoots)
@@ -153,7 +153,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
                 cellId: number) {
         super(editor, rootState.getState().range);
         this.setHighlight();
-        currentSelection.addObserver((_, __) => {
+        currentSelection.addObserver(() => {
             this.setHighlight();
         });
 
@@ -162,7 +162,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         let root = new CommentComponent(dispatcher, cellId, rootState.getState());
         const commentList = div(['comments-list'], [root.el]);
         this.el.appendChild(commentList);
-        rootState.addObserver((_, changedRoot) => {
+        rootState.addObserver(changedRoot => {
             const newRoot = new CommentComponent(dispatcher, cellId, changedRoot);
             commentList.replaceChild(newRoot.el, root.el);
             root = newRoot;
@@ -173,7 +173,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
             .forEach(comment => {
                 this.el.appendChild(new CommentComponent(dispatcher, cellId, comment).el);
             });
-        childrenState.addObserver((_, newChildren) => {
+        childrenState.addObserver(newChildren => {
             // replace all the children. if this causes perf issues, we will need to do something more granular.
             commentList.innerHTML = "";
             commentList.appendChild(root.el);

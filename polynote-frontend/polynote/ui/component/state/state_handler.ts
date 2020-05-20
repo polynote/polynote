@@ -4,7 +4,7 @@ import * as clone from "clone";
 // The StateHandler mediates interactions between Components and States
 export class StateHandler<S> {
     public dispose: () => void = () => {};
-    // direct retrieval of the current value of S
+    // the current value of S, cloned to ensure the state can't be modified
     getState(): S {
         return clone(this.state);
     }
@@ -18,7 +18,7 @@ export class StateHandler<S> {
             const oldState = this.state;
             this.state = newState;
             this.observers.forEach(obs => {
-                obs(oldState, newState)
+                obs(newState, oldState)
             });
         }
     }
@@ -34,8 +34,8 @@ export class StateHandler<S> {
     // Optionally, caller can provide the constructor to use to instantiate the view StateHandler.
     view<K extends keyof S, C extends StateHandler<S[K]>>(key: K, constructor?: { new(s: S[K]): C}): C {
         const view: StateHandler<S[K]> = constructor ? new constructor(this.state[key]) : new StateHandler(this.state[key]);
-        const obs = this.addObserver((_, s) => view.setState(s[key]));
-        view.addObserver((_, s) =>
+        const obs = this.addObserver(s => view.setState(s[key]));
+        view.addObserver(s =>
             this.updateState(st => {
                 st[key] = s;
                 return st
@@ -55,10 +55,10 @@ export class StateHandler<S> {
             throw new Error("Initial view state is undefined, unable to xmap an undefined view.")
         }
         const xmapView = new StateHandler<T>(initialT);
-        xmapView.addObserver((_, t) => {
+        xmapView.addObserver(t => {
             view.setState(fromT(view.getState(), t))
         });
-        view.addObserver((_, newState) => {
+        view.addObserver(newState => {
             const t = toT(newState);
             if (t) {
                 xmapView.setState(t);
@@ -93,6 +93,6 @@ export class StateHandler<S> {
     }
 }
 
-export type Observer<S> = (oldS: S, newS: S) => void;
+export type Observer<S> = (currentS: S, previousS: S) => void;
 
 export class SimpleStateHandler<S> extends StateHandler<S> {}

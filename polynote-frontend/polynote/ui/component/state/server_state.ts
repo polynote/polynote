@@ -4,9 +4,10 @@ import {NotebookState, NotebookStateHandler} from "./notebook_state";
 import {NotebookConfig, SparkPropertySet} from "../../../data/data";
 import {Identity} from "../../../data/messages";
 import {EditBuffer} from "../../../data/edit_buffer";
-import {SocketSession} from "../../../comms";
+import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {SocketStateHandler} from "./socket_state";
 
 export type NotebookInfo = {
     state: NotebookState,
@@ -81,7 +82,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         // Note: the server will start sending notebook data on this socket automatically after it connects
         let info: NotebookInfo["info"] = undefined;
         if (doLoad) {
-            const nbSocket = SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`);
+            const nbSocket = new SocketStateHandler(SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`));
             const handler = new NotebookStateHandler(state);
             const receiver =  new NotebookMessageReceiver(nbSocket, handler);
             const dispatcher =  new NotebookMessageDispatcher(nbSocket, handler);

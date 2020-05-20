@@ -1,7 +1,7 @@
 'use strict';
 
-import {Message, NotebookUpdate} from './data/messages'
 import {EventTarget} from 'event-target-shim'
+import {Message} from "../../../data/messages";
 
 export class PolynoteMessageEvent<T extends Message> extends CustomEvent<any> {
     constructor(readonly message: T) {

@@ -44,7 +44,7 @@ export class TabComponent {
 
             // watch for renames of this notebook.
             const handler = this.serverStateHandler.getState().notebooks[path].info!.handler;
-            const obs = handler.view("path").addObserver((oldPath, newPath) => {
+            const obs = handler.view("path").addObserver((newPath, oldPath) => {
                 const tab = this.tabs[oldPath];
                 delete this.tabs[oldPath];
                 this.tabs[newPath] = tab;

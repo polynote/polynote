@@ -55,12 +55,12 @@ export class NotebookList {
             this.el.addEventListener(evt, this.fileHandler.bind(this), false)
         });
 
-        serverStateHandler.view("connectionStatus").addObserver((_, status)=> {
+        serverStateHandler.view("connectionStatus").addObserver(status=> {
             const disabled = status === "disconnected";
             [...this.el.querySelectorAll('.buttons button')].forEach((button: HTMLButtonElement) => button.disabled = disabled);
         });
 
-        serverStateHandler.view("notebooks").addObserver((oldNotebooks, newNotebooks) => {
+        serverStateHandler.view("notebooks").addObserver((newNotebooks, oldNotebooks) => {
             const [removed, added] = diffArray(Object.keys(oldNotebooks), Object.keys(newNotebooks));
 
             console.log("start updating notebook list")
@@ -69,7 +69,7 @@ export class NotebookList {
             console.log("done updating notebook list")
         });
 
-        serverStateHandler.addObserver((_, x)=> console.log("got server state update", x));
+        serverStateHandler.addObserver(x=> console.log("got server state update", x));
 
         // we're ready to request the notebooks list now!
         dispatcher.dispatch(new RequestNotebooksList())
@@ -204,7 +204,7 @@ class BranchComponent {
         }
         this.el.click(evt => this.el.classList.toggle('expanded'));
 
-        state.addObserver((oldNode, newNode) => {
+        state.addObserver((newNode, oldNode) => {
             const [removed, added] = diffArray(oldNode.children, newNode.children);
             removed.forEach(child => {
                 const idx = this.children.findIndex(c => c.path === child.fullPath);
@@ -266,7 +266,7 @@ class LeafComponent {
         this.el = tag('li', ['leaf'], {}, [this.leafEl]);
         this.el.click(evt => this.el.classList.toggle('expanded'));
 
-        state.addObserver((_, leaf) => {
+        state.addObserver(leaf => {
             const newEl = this.getEl(leaf);
             this.el.replaceChild(newEl, this.leafEl);
             this.leafEl = newEl;

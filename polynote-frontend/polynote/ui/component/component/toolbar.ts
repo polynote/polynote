@@ -35,11 +35,11 @@ export class ToolbarComponent {
         let currentNotebookHandler: NotebookStateHandler | undefined;
 
         // Change the toolbar to reflect the currently selected notebook and cell
-        ServerStateHandler.get.view("currentNotebook").addObserver((_, path) => {
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             if (path) {
                 const nbInfo = ServerStateHandler.get.getState().notebooks[path].info;
                 if (nbInfo) {
-                    const newListener = nbInfo.handler.addObserver((_, state) => {
+                    const newListener = nbInfo.handler.addObserver(state => {
                         if (state.activeCell) {
                             if (state.activeCell.language === "text") {
                                 this.el.classList.remove('editing-code');
@@ -85,7 +85,7 @@ abstract class ToolbarElement {
     el: TagElement<"div">;
 
     protected constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
-        connectionStatus.addObserver((_, status) => {
+        connectionStatus.addObserver(status => {
             this.setDisabled(status === "disconnected")
         })
     }

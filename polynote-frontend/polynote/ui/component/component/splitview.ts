@@ -98,7 +98,7 @@ export class SplitViewComponent {
 
         this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
 
-        ViewPrefsHandler.addObserver((_, prefs) => {
+        ViewPrefsHandler.addObserver(prefs => {
             if (prefs.leftPane.collapsed) {
                 this.el.classList.add('left-collapsed');
             } else {
