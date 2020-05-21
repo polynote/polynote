@@ -420,7 +420,6 @@ export class CodeCell extends Cell {
             minimap: { enabled: false },
             parameterHints: {enabled: true},
             scrollBeyondLastLine: false,
-            theme: 'polynote',
             fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
             fontSize: 15,
             fontLigatures: true,

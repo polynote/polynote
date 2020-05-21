@@ -1,6 +1,6 @@
 "use strict";
 
-import {button, div, dropdown, h2, h3, iconButton, span, table, tag} from "../util/tags";
+import {button, div, dropdown, h2, h3, iconButton, polynoteLogo, span, table, tag} from "../util/tags";
 import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
@@ -24,7 +24,7 @@ export class About extends FullScreenModal {
     aboutMain() {
         const el = div(["about-display"], [
             div([], [
-                tag('img', [], {src: "static/style/polynote.svg", alt:"Polynote"}, []),
+                polynoteLogo(),
                 h2([], ["About this Polynote Server"])
             ])
         ]);

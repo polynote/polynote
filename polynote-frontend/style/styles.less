@@ -26,39 +26,7 @@
   src: url(fonts/Hasklig-BoldIt.otf) format("opentype");
 }
 
-@ui-background:                rgb(245, 245, 245);
-@ui-background-bright:         lighten(@ui-background, 20%);
-@ui-background-dark:           darken(@ui-background, 20%);
-@ui-background-accent:         rgb(198, 207, 223);
-@ui-sidebar-header:            rgb(226, 230, 236);
-@ui-border:                    rgb(225, 225, 225);
-@ui-border-light:              #efefef;
-@ui-border-dark:               darken(@ui-border, 20%);
-@ui-selected:                  rgb(67, 104, 234);
-@ui-text:                      rgb(50, 60, 68);
-@code-fonts:                   'Hasklig', 'Fira Code', 'Menlo', fixed;
-
-@toolbar-height:               68px;
-@cell-margin-width:            6em;
-@cell-left-border-width:       8px;
-@tab-view-height:              1.5em;
-@tab-view-height-plus-padding: 2.5em;
-
-@line-highlight-color:         rgba(253, 246, 227, 1.0);
-
-
-/*
-  Presence colors (other people's cursors) – taken mostly from https://vega.github.io/vega/docs/schemes/ (various schemes mix & match)
- */
-@presence0: #ff7f0e;
-@presence1: #2ca02c;
-@presence2: #d62728;
-@presence3: #9467bd;
-@presence4: #f2cf5b;
-@presence5: #e377c2;
-@presence6: #ff9da6;
-@presence7: #bcbd22;
-@presence8: #17becf;
+@import "common";
 
 body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
@@ -73,9 +41,8 @@ body {
 
 .toolbar-container {
   height: @toolbar-height;
-  background: @ui-background;
-  border-bottom: 1px solid @ui-border;
-  color: @ui-text;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
   z-index: 2;
 
   user-select: none;
@@ -105,14 +72,14 @@ body {
     float: right;
   }
 
-  .floating-menu {
+  /*.floating-menu {
     border: 1px #c2c2c2 solid;
     background: white;
     position: absolute;
     display: none;
     padding: 4px;
     user-select: text;
-  }
+  }*/
 
   .toolbar {
     //min-width: 120px;
@@ -121,7 +88,9 @@ body {
     margin: 8px 0;
     padding: 0 12px;
 
-    border-right: 1px solid @ui-border;
+    border-right-width: 1px;
+    border-right-style: solid;
+
     &:last-child {
       border-right: none;
     }
@@ -134,9 +103,7 @@ body {
       line-height: 1em;
       height: 1em;
       margin: 0;
-      color: @ui-text;
       opacity: 0.6;
-      text-shadow: black;
       text-transform: capitalize;
 
       select {
@@ -198,7 +165,8 @@ body {
       left: 0;
       top: 6px;
       bottom: 0;
-      border-left: 1px solid @ui-border;
+      border-left-width: 1px;
+      border-left-style: solid;
     }
 
     .tool-group:first-of-type::before {
@@ -214,7 +182,6 @@ body {
   grid-template-columns: 1fr;
 
   &.open {
-    background-color: white;
     border-radius: 4px;
   }
 
@@ -238,8 +205,6 @@ body {
     display: block;
     border-width: 0 1px;
     font-size: 12px;
-    background: white;
-    border-color: transparent @ui-border;
     border-radius: 0;
   }
 
@@ -256,23 +221,19 @@ body {
 
   button.selected, button:hover {
     border-radius: 4px;
-    border-color: @ui-border;
   }
 
   &.open button:enabled {
     border-radius: 0;
-    border-color: transparent @ui-border;
 
     &:first-of-type, &.first-visible {
       border-top-left-radius: 4px;
       border-top-right-radius: 4px;
-      border-top-color: @ui-border;
     }
 
     &:last-of-type, &.last-visible {
       border-bottom-left-radius: 4px;
       border-bottom-right-radius: 4px;
-      border-bottom-color: @ui-border;
     }
   }
 
@@ -280,10 +241,6 @@ body {
     display: none;
   }
 
-  &.open button:hover {
-    background-color: @ui-selected;
-    color: white;
-  }
 }
 
 .new-cell-divider {
@@ -292,15 +249,11 @@ body {
   line-height: 0.5em;
   padding-top: 1px; // correct '+' location
   white-space: pre;
-  font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+  font-family: @code-fonts;
   margin-left: @cell-left-border-width;
 
-  &:hover {
-    background: rgba(48, 113, 169, 0.09); // zep's color ;-)
-
-    &:after {
-      content: '+';
-    }
+  &:hover:after {
+    content: '+';
   }
 }
 
@@ -312,38 +265,25 @@ body {
 
   &.selected, &.active {
     border-radius: 6px;
-    border: 1px solid @ui-selected;
+    border-width: 1px;
+    border-style: solid;
     border-left-width: 8px;
     //box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
   }
 
-  &.running {
-    border-color: green;
-  }
-
-  &.queued {
-    border-color: gray;
-  }
-
-  &.error {
-    border-color: #ba0000;
-  }
-
   .cell-input {
     position: relative;
-
     grid-area: input;
 
-
     .cell-input-tools {
-      background: @ui-background;
       box-sizing: border-box;
       display: grid;
       font-size: 11pt;
       grid-template-areas: "button label lang options exec-info";
       grid-template-columns: min-content 10ch min-content 2fr 1fr;
       grid-template-rows: min-content;
-      border-bottom: 1px solid @ui-border;
+      border-bottom-width: 1px;
+      border-bottom-style: solid;
 
       button {
         line-height: 1;
@@ -402,7 +342,6 @@ body {
         text-align: right;
         font-style: italic;
         font-size: 8pt;
-        color: #808080;
         padding: 5.5pt;
         line-height: 11pt;
         display: none;
@@ -442,7 +381,8 @@ body {
       padding: 2px 4px 2px 4px;
       line-height: 1.5;
       font-size: 11pt;
-      border-top: 1px dashed @ui-border;
+      border-top-width: 1px;
+      border-top-style: dashed;
     }
 
     .vim-status {
@@ -464,13 +404,15 @@ body {
   }
 
   &.code-cell .cell-input {
-    border-left: 1px solid @ui-border;
-    border-right: 1px solid @ui-border;
-    border-top: 1px solid @ui-border;
+    border-width: 1px;
+    border-bottom-width: 0;
+    border-style: solid;
+    border-bottom-style: none;
   }
 
   &.code-cell .cell-output {
-    border: 1px solid @ui-border;
+    border-width: 1px;
+    border-style: solid;
   }
 
   &.code-cell .cell-input .cell-input-editor {
@@ -500,8 +442,8 @@ body {
     }
 
     .toggle-code {
-      border: 1px solid @ui-border;
-      background-color: white;
+      border-width: 1px;
+      border-style: solid;
     }
   }
 
@@ -511,20 +453,14 @@ body {
     }
 
     .cell-input .toggle-output {
-      border: 1px solid @ui-border;
-      background-color: white;
+      border-width: 1px;
+      border-style: solid;
     }
   }
 
   &.text-cell {
 
     &.active {
-      .cell-input {
-        border-left-color: #f5f5f5;
-        .markdown-body {
-          border-left-color: #e1e1e1;
-        }
-      }
 
       .cell-input-tools {
         display: none;
@@ -562,68 +498,11 @@ body {
       -ms-text-size-adjust: 100%;
       -webkit-text-size-adjust: 100%;
       line-height: 1.5;
-      color: #24292e;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
       font-size: 16px;
       word-wrap: break-word;
       border-left: 1px solid transparent;
       outline: none;
-    }
-
-    .markdown-body .pl-c {
-      color: #6a737d;
-    }
-
-    .markdown-body .pl-c1,
-    .markdown-body .pl-s .pl-v {
-      color: #005cc5;
-    }
-
-    .markdown-body .pl-e,
-    .markdown-body .pl-en {
-      color: #6f42c1;
-    }
-
-    .markdown-body .pl-smi,
-    .markdown-body .pl-s .pl-s1 {
-      color: #24292e;
-    }
-
-    .markdown-body .pl-ent {
-      color: #22863a;
-    }
-
-    .markdown-body .pl-k {
-      color: #d73a49;
-    }
-
-    .markdown-body .pl-s,
-    .markdown-body .pl-pds,
-    .markdown-body .pl-s .pl-pse .pl-s1,
-    .markdown-body .pl-sr,
-    .markdown-body .pl-sr .pl-cce,
-    .markdown-body .pl-sr .pl-sre,
-    .markdown-body .pl-sr .pl-sra {
-      color: #032f62;
-    }
-
-    .markdown-body .pl-v,
-    .markdown-body .pl-smw {
-      color: #e36209;
-    }
-
-    .markdown-body .pl-bu {
-      color: #b31d28;
-    }
-
-    .markdown-body .pl-ii {
-      color: #fafbfc;
-      background-color: #b31d28;
-    }
-
-    .markdown-body .pl-c2 {
-      color: #fafbfc;
-      background-color: #d73a49;
     }
 
     .markdown-body .pl-c2::before {
@@ -632,66 +511,28 @@ body {
 
     .markdown-body .pl-sr .pl-cce {
       font-weight: bold;
-      color: #22863a;
-    }
-
-    .markdown-body .pl-ml {
-      color: #735c0f;
     }
 
     .markdown-body .pl-mh,
     .markdown-body .pl-mh .pl-en,
     .markdown-body .pl-ms {
       font-weight: bold;
-      color: #005cc5;
     }
 
     .markdown-body .pl-mi {
       font-style: italic;
-      color: #24292e;
     }
 
     .markdown-body .pl-mb {
       font-weight: bold;
-      color: #24292e;
-    }
-
-    .markdown-body .pl-md {
-      color: #b31d28;
-      background-color: #ffeef0;
-    }
-
-    .markdown-body .pl-mi1 {
-      color: #22863a;
-      background-color: #f0fff4;
-    }
-
-    .markdown-body .pl-mc {
-      color: #e36209;
-      background-color: #ffebda;
-    }
-
-    .markdown-body .pl-mi2 {
-      color: #f6f8fa;
-      background-color: #005cc5;
     }
 
     .markdown-body .pl-mdr {
       font-weight: bold;
-      color: #6f42c1;
-    }
-
-    .markdown-body .pl-ba {
-      color: #586069;
-    }
-
-    .markdown-body .pl-sg {
-      color: #959da5;
     }
 
     .markdown-body .pl-corl {
       text-decoration: underline;
-      color: #032f62;
     }
 
     .markdown-body .octicon {
@@ -764,7 +605,6 @@ body {
     }
 
     .markdown-body a {
-      color: #0366d6;
       text-decoration: none;
     }
 
@@ -782,7 +622,8 @@ body {
       overflow: hidden;
       background: transparent;
       border: 0;
-      border-bottom: 1px solid #dfe2e5;
+      border-bottom-width: 1px;
+      border-bottom-style: solid;
     }
 
     .markdown-body hr::before {
@@ -972,14 +813,13 @@ body {
       height: 0.25em;
       padding: 0;
       margin: 24px 0;
-      background-color: #e1e4e8;
       border: 0;
     }
 
     .markdown-body blockquote {
       padding: 0 1em;
-      color: #6a737d;
-      border-left: 0.25em solid #dfe2e5;
+      border-left-width: 0.25em;
+      border-left-style: solid;
     }
 
     .markdown-body blockquote>:first-child {
@@ -995,13 +835,10 @@ body {
       padding: 3px 5px;
       font-size: 11px;
       line-height: 10px;
-      color: #444d56;
       vertical-align: middle;
-      background-color: #fafbfc;
-      border: solid 1px #c6cbd1;
-      border-bottom-color: #959da5;
       border-radius: 3px;
-      box-shadow: inset 0 -1px 0 #959da5;
+      border-width: 1px;
+      border-style: solid;
     }
 
     .markdown-body h1,
@@ -1022,7 +859,6 @@ body {
     .markdown-body h4 .octicon-link,
     .markdown-body h5 .octicon-link,
     .markdown-body h6 .octicon-link {
-      color: #1b1f23;
       vertical-align: middle;
       visibility: hidden;
     }
@@ -1048,13 +884,15 @@ body {
     .markdown-body h1 {
       padding-bottom: 0.3em;
       font-size: 2em;
-      border-bottom: 1px solid #eaecef;
+      border-bottom-width: 1px;
+      border-bottom-style: solid;
     }
 
     .markdown-body h2 {
       padding-bottom: 0.3em;
       font-size: 1.5em;
-      border-bottom: 1px solid #eaecef;
+      border-bottom-width: 1px;
+      border-bottom-style: solid;
     }
 
     .markdown-body h3 {
@@ -1071,7 +909,6 @@ body {
 
     .markdown-body h6 {
       font-size: 0.85em;
-      color: #6a737d;
     }
 
     .markdown-body ul,
@@ -1129,22 +966,19 @@ body {
     .markdown-body table th,
     .markdown-body table td {
       padding: 6px 13px;
-      border: 1px solid #dfe2e5;
+      border-width: 1px;
+      border-style: solid;
     }
 
     .markdown-body table tr {
       background-color: #fff;
-      border-top: 1px solid #c6cbd1;
-    }
-
-    .markdown-body table tr:nth-child(2n) {
-      background-color: #f6f8fa;
+      border-top-width: 1px;
+      border-top-style: solid;
     }
 
     .markdown-body img {
       max-width: 100%;
       box-sizing: content-box;
-      background-color: #fff;
     }
 
     .markdown-body img[align=right] {
@@ -1159,7 +993,6 @@ body {
       padding: 0.2em 0.4em;
       margin: 0;
       font-size: 85%;
-      background-color: rgba(27,31,35,0.05);
       border-radius: 3px;
     }
 
@@ -1192,7 +1025,6 @@ body {
       overflow: auto;
       font-size: 85%;
       line-height: 1.45;
-      background-color: #f6f8fa;
       border-radius: 3px;
     }
 
@@ -1208,29 +1040,25 @@ body {
       border: 0;
     }
 
-    .markdown-body .full-commit .btn-outline:not(:disabled):hover {
-      color: #005cc5;
-      border-color: #005cc5;
-    }
-
     .markdown-body kbd {
       display: inline-block;
       padding: 3px 5px;
       font: 11px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
       line-height: 10px;
-      color: #444d56;
       vertical-align: middle;
-      background-color: #fafbfc;
-      border: solid 1px #d1d5da;
-      border-bottom-color: #c6cbd1;
       border-radius: 3px;
+      border-style: solid;
+      border-width: 1px;
+      border-color: #d1d5da;
+      color: #444d56;
+      background-color: #fafbfc;
+      border-bottom-color: #c6cbd1;
       box-shadow: inset 0 -1px 0 #c6cbd1;
     }
 
     .markdown-body :checked+.radio-label {
       position: relative;
       z-index: 1;
-      border-color: #0366d6;
     }
 
     .markdown-body .task-list-item {
@@ -1246,18 +1074,10 @@ body {
       vertical-align: middle;
     }
 
-    .markdown-body hr {
-      border-bottom-color: #eee;
-    }
-
   }
 
   .cell-output {
     grid-area: output;
-
-    .cell-output-margin {
-      background: @ui-background;
-    }
 
     .cell-output-block {
       display: block; // must be block for performance reasons.
@@ -1281,10 +1101,6 @@ body {
       font-variant-ligatures: none;
     }
 
-    .output[rel='stderr'] {
-      color: #884444
-    }
-
     .output[rel='stdout'] {
 
       details {
@@ -1300,7 +1116,6 @@ body {
 
           span::after {
             content: "(" attr(line-count) " lines hidden; click to show)";
-            color: gray;
           }
         }
       }
@@ -1316,10 +1131,6 @@ body {
           }
         }
       }
-    }
-
-    .cell-result-margin {
-      background: @ui-background;
     }
 
     .cell-output-tools {
@@ -1350,10 +1161,10 @@ body {
     }
 
     .out-ident {
-      color: #D84315;
+      border-bottom-width: 1px;
+      border-bottom-style: solid;
       font-family: @code-fonts;
       font-size: 11pt;
-      border-bottom: 1px solid @ui-border;
       padding: .25em 0 .25em 32pt;
       position: relative;
     }
@@ -1377,54 +1188,8 @@ body {
         padding-right: 1em;
       }
 
-      ul.stack-trace {
-        margin: 0 0 0 .5em;
-
-        li {
-          list-style: none;
-        }
-
-        li.irrelevant {
-          display: none;
-        }
-
-        li::before {
-          content: 'at ';
-        }
-      }
     }
   }
-}
-
-.error-report {
-  /*background: url(icons/error.png) no-repeat 1em 1em;*/
-  background-color: #ffeef0;
-  border-radius: 4px;
-  border: 1px solid #cc0000;
-  padding: 1em;
-  margin: 1em 0;
-  .severity {
-    &:after {
-      content: ': '
-    }
-    font-weight: bold;
-  }
-
-  .message {
-    padding-right: 1em;
-  }
-
-  .error-link {
-    color: #005cc5;
-    text-decoration: underline;
-    cursor: pointer;
-  }
-}
-
-.error-report.Warning {
-  color: #8a6d3b;
-  background-color: #fcf8e3;
-  border-color: #faebcc;
 }
 
 .vim-enabled.cell-container.code-cell .cell-input .cell-footer {
@@ -1449,23 +1214,16 @@ button {
   opacity: 0.7;
 
   &:hover, &:focus, &.selected, &.active {
-    border-color: @ui-border;
-    background-color: @ui-background-bright;
     outline: 0;
     opacity: 1.0;
   }
 
   &:active {
-    background-color: @ui-background-dark;
-    border-color: @ui-border-dark;
     outline: 0;
   }
 
   &:disabled {
     pointer-events:none;
-    .icon {
-      color: gray;
-    }
   }
 }
 
@@ -1486,14 +1244,6 @@ button.inspect.icon-button {
   opacity: 1.0;
 }
 
-.run-cell .icon {
-  //font-size: 16px;
-  color: green;
-}
-
-.stop-cell .icon {
-  color: #aa0000;
-}
 
 .dependencies .icon {
   transform: scale(1, -1);
@@ -1513,17 +1263,9 @@ button.inspect.icon-button {
   //}
 }
 
-.insert-cell-above .icon {
-  border-top: 3px solid green;
-}
-
-.insert-cell-below .icon {
-  border-bottom: 3px solid green;
-
-  &:after {
-    top: auto;
-    bottom: -6px;
-  }
+.insert-cell-below .icon:after {
+  top: auto;
+  bottom: -6px;
 }
 
 .notebook-ui {
@@ -1537,9 +1279,10 @@ button.inspect.icon-button {
 .notebook-content {
   overflow-y: auto;
   padding: 2px;
-  border-left: 1px solid @ui-border;
-  border-right: 1px solid @ui-border;
-  border-bottom: 1px solid @ui-border;
+  border-width: 1px;
+  border-style: solid;
+  border-top-width: 0;
+  border-top-style: none;
 }
 
 @keyframes fadeOut {
@@ -1564,7 +1307,6 @@ button.inspect.icon-button {
   }
 
   & > h2 {
-    background-color: @ui-sidebar-header;
     grid-area: head;
     position: relative;
     .buttons {
@@ -1594,11 +1336,6 @@ button.inspect.icon-button {
     }
   }
 
-  h3 {
-    background-color: @ui-background-dark;
-  }
-
-
   grid-template-areas: "head" "body";
   grid-template-rows: 2em 1fr;
   display: grid;
@@ -1612,9 +1349,6 @@ button.inspect.icon-button {
 }
 
 .kernel-ui {
-  background-color: @ui-background;
-  border-left: 1px solid @ui-border;
-
   max-height: 100%;
   width: 100%;
 
@@ -1636,13 +1370,12 @@ button.inspect.icon-button {
   .kernel-tasks {
     grid-area: tasks;
     .task {
-      border: 1px solid #eeeeee;
+      border-width: 1px;
+      border-style: solid;
       border-radius: 6px;
-      box-shadow: 1px 1px 3px rgba(0,0,0,0.4);
       box-sizing: border-box;
       padding: 8px;
       margin: 4px 0;
-      background: white;
       white-space: pre-line;
 
       h4 {
@@ -1650,12 +1383,10 @@ button.inspect.icon-button {
       }
 
       .progress {
-        background: #eeeeee;
         height: 4px;
         margin-top: 1em;
 
         .progress-bar {
-          background-color: #005cc5;
           height: 4px;
         }
       }
@@ -1682,9 +1413,6 @@ button.inspect.icon-button {
           display: none;
         }
 
-        background-color: #ffeef0;
-        border: 1px solid #cc0000;
-
         .close-button {
           display: block;
           position: absolute;
@@ -1698,7 +1426,8 @@ button.inspect.icon-button {
         }
         padding: .5em 0 0;
         margin-top: .5em;
-        border-top: 1px dotted @ui-border-light;
+        border-top-width: 1px;
+        border-top-style: dotted;
 
         .task {
           display: none;
@@ -1771,18 +1500,9 @@ button.inspect.icon-button {
       cursor: pointer;
     }
 
-    .collapsed {
-      background-color: lightgrey;
-    }
-
     .info-container {
-      background-color: white;
       width: 100%;
       table-layout: fixed;
-
-      tbody {
-        background: white;
-      }
 
       td {
         text-align: left;
@@ -1804,7 +1524,6 @@ button.inspect.icon-button {
 
 .kernel-status {
   .status {
-    color: gray;
     font-size: 200%;
     line-height: 0.5;
     vertical-align: middle;
@@ -1812,30 +1531,18 @@ button.inspect.icon-button {
   }
 
   &.idle {
-    .status {
-      color: green;
-    }
-
     .connect, .start {
       display: none !important;
     }
   }
 
   &.busy {
-    .status {
-      color: gold;
-    }
-
     .connect, .start {
       display: none !important;
     }
   }
 
   &.dead {
-    .status {
-      color: #AA0000;
-    }
-
     .connect, .kill {
       display: none !important;
     }
@@ -1854,7 +1561,8 @@ button.inspect.icon-button {
 
 .drag-handle {
   position: relative;
-  border-left: 1px solid @ui-background;
+  border-left-style: solid;
+  border-left-width: 1px;
   .inner {
     position: absolute;
     left: -2px;
@@ -1871,10 +1579,6 @@ button.inspect.icon-button {
   padding: 1em;
   /*margin: 1em;*/
   color: @ui-background-dark;
-
-  &.open {
-    color: #333333;
-  }
 
   h2 {
     font-size: 100%;
@@ -1911,7 +1615,8 @@ button.inspect.icon-button {
 
   .notebook-config-section {
     border-radius: 4px;
-    border: 1px solid @ui-border;
+    border-width: 1px;
+    border-style: solid;
     border-left-width: 6px;
     padding: 1em;
     margin: 1em 0;
@@ -1976,13 +1681,7 @@ button.inspect.icon-button {
     }
   }
 
-  .add .icon {
-    color: green;
-    font-size: 16px;
-  }
-
-  .remove .icon {
-    color: red;
+  .icon {
     font-size: 16px;
   }
 }
@@ -1997,7 +1696,6 @@ button {
   display: flex;
   flex-direction: row;
   position: relative;
-  background-color: @ui-background;
 }
 
 .split-view {
@@ -2023,9 +1721,6 @@ button {
         transform: translateY(-100%) rotate(90deg);
         transform-origin: bottom left;
         width: fit-content;
-        &:hover {
-          background-color: @ui-background-accent;
-        }
 
         .buttons {
           display: none;
@@ -2042,7 +1737,6 @@ button {
     }
 
     .grid-shell.right {
-      background-color: @ui-sidebar-header;
       width: unset !important;
     }
   }
@@ -2060,10 +1754,6 @@ button {
           transform: translateY(-100%) rotate(90deg);
           transform-origin: bottom left;
           width: fit-content;
-
-          &:hover {
-            background-color: @ui-background-accent;
-          }
 
           .buttons {
             display: none;
@@ -2083,7 +1773,6 @@ button {
     }
 
     .grid-shell.left {
-      background-color: @ui-sidebar-header;
       width: unset !important;
     }
   }
@@ -2102,12 +1791,11 @@ button {
     flex-direction: row;
     flex-wrap: nowrap;
     justify-content: flex-start;
-    //border: 1px solid @ui-border;
-    background: @ui-background;
     padding-top: 2px;
 
     &:last-child:after {
-      border-bottom: 1px solid @ui-border;
+      border-bottom-width: 1px;
+      border-bottom-style: solid;
       content: "";
       width: 100%;
     }
@@ -2117,11 +1805,10 @@ button {
     }
 
     .tab {
-      border-right: 1px solid @ui-border;
-      border-bottom: 1px solid @ui-border;
-      border-top: 1px solid @ui-border;
-
-      background: @ui-background-dark;
+      border-width: 1px;
+      border-left-width: 0;
+      border-style: solid;
+      border-left-style: none;
       display: grid;
       grid-template-columns: 1fr 1.5em;
       flex-shrink: 0;
@@ -2138,15 +1825,12 @@ button {
       }
 
       &:first-child {
-        border-left: 1px solid@ui-border;
-      }
-      &:last-child {
-        border-right: 1px solid @ui-border;
+        border-left-width: 1px;
+        border-left-style: solid;
       }
     }
 
     .tab.active {
-      background: white;
       border-bottom: none;
     }
   }
@@ -2172,7 +1856,8 @@ button {
         display: none;
 
         li {
-          border-left: 1px solid @ui-border-dark;
+          border-left-width: 1px;
+          border-left-style: solid;
         }
 
         li::before {
@@ -2180,7 +1865,8 @@ button {
           top: 10px;
           height: 0;
           width: 10px;
-          border-bottom: 1px solid @ui-border-dark;
+          border-bottom-width: 1px;
+          border-bottom-style: solid;
           content: '';
         }
 
@@ -2191,7 +1877,8 @@ button {
         li:last-child::before {
           top: 0;
           height: 10px;
-          border-left: 1px solid @ui-border-dark;
+          border-left-width: 1px;
+          border-left-style: solid;
           content: '';
         }
 
@@ -2199,7 +1886,6 @@ button {
 
       span, a {
         white-space: nowrap;
-        color: @ui-text;
         text-decoration: none;
       }
     }
@@ -2211,18 +1897,12 @@ button {
       outline: none;
     }
 
-    li.leaf a:focus span {
-      background-color: @ui-selected;
-      color: white;
-    }
-
     li.branch {
       position: relative;
       .branch-outer {
         padding: 0;
         border: none;
         opacity: 1;
-        color: @ui-text;
         font-size: 100%;
         line-height: 22px;
         background: transparent;
@@ -2253,9 +1933,8 @@ button {
 
         &:focus {
           .name {
-            background-color: @ui-selected;
-            color: white;
-            outline: 1px dotted black;
+            outline-width: 1px;
+            outline-style: dotted;
           }
         }
       }
@@ -2275,20 +1954,18 @@ button {
 
 .notebooks-list {
   position: relative;
-  border: 1px solid @ui-border;
+  border-width: 1px;
+  border-style: solid;
   overflow: auto;
 
   .tree-view {
     padding: .5em 0 1.5em;
   }
 
-  .ui-panel-content {
-    background: white;
-  }
-
   &.highlight {
     .tree-view {
-      border: 5px dashed green;
+      border-width: 5px;
+      border-style: dashed;
       border-radius: 10px;
       transition: border 200ms;
       ul {
@@ -2302,9 +1979,8 @@ button {
 
 .notebook-list-context-menu {
   position: absolute;
-  background: @ui-background;
-  border: 1px solid @ui-border;
-  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+  border-width: 1px;
+  border-style: solid;
 
   ul {
     list-style: none;
@@ -2313,12 +1989,7 @@ button {
 
     li {
       padding: .5em 1em;
-      color: @ui-text;
       cursor: default;
-      &:hover {
-        background: @ui-selected;
-        color: white;
-      }
     }
 
     li.only-item {
@@ -2348,21 +2019,17 @@ button {
 }
 
 button.dialog-button {
-  border-color: @ui-border;
-  background-color: @ui-background;
   opacity: 1;
   border-radius: 3pt;
   user-select: none;
   &:active {
-    background-color: @ui-background-dark;
     padding: 9px 7px 7px 9px;
-    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.2);
   }
 }
 
 .input-dialog {
-  background: @ui-background;
-  border: 1px solid @ui-border;
+  border-width: 1px;
+  border-style: solid;
   min-width: 30em;
   padding: 1em;
 
@@ -2374,7 +2041,6 @@ button.dialog-button {
   .buttons {
     text-align: right;
     padding: .5em 0;
-
   }
 }
 
@@ -2382,9 +2048,6 @@ button.dialog-button {
   overflow: visible;
 }
 
-.create-notebook {
-  color: green;
-}
 
 .notebook-cells {
   position: relative;
@@ -2397,13 +2060,10 @@ button.dialog-button {
 
   .pointer {
     position: absolute;
-    border-left: 10px solid transparent;
-    border-right: 10px solid transparent;
-    border-bottom: 10px solid #6a737d;
+    border: 10px solid transparent;
   }
 
   .bubble {
-    background: #6a737d;
     position: absolute;
     top: 10px;
     border-radius: 12px;
@@ -2415,9 +2075,9 @@ button.dialog-button {
     padding: 1em;
 
     .tex-display {
-      background: white;
       padding: 1em;
-      border: 1px solid black;
+      border-width: 1px;
+      border-style: solid;
       border-radius: 2px;
     }
 
@@ -2433,43 +2093,6 @@ button.dialog-button {
   user-select: all;
 }
 
-.result {
-  caption {
-    padding: 10px;
-    caption-side: bottom;
-  }
-
-  table {
-    border-collapse: collapse;
-    border: 2px solid rgb(200, 200, 200);
-    letter-spacing: 1px;
-    font-family: sans-serif;
-    font-size: .8rem;
-  }
-
-  td,
-  th {
-    border: 1px solid rgb(190, 190, 190);
-    padding: 7px 5px;
-  }
-
-  th {
-    background-color: rgb(235, 235, 235);
-  }
-
-  td {
-    text-align: center;
-  }
-
-  tr:nth-child(even) td {
-    background-color: rgb(250, 250, 250);
-  }
-
-  tr:nth-child(odd) td {
-    background-color: rgb(240, 240, 240);
-  }
-
-}
 
 .welcome-page {
   font-size: 12pt;
@@ -2478,7 +2101,6 @@ button.dialog-button {
 
   .recent-notebooks li {
     span {
-      color: blue;
       text-decoration: underline;
       cursor: pointer;
     }
@@ -2492,7 +2114,8 @@ button.dialog-button {
   border-width: 1px 0;
 
   th, td {
-    border: 1px solid @ui-border;
+    border-width: 1px;
+    border-style: solid;
     padding: 0.25em;
     font-weight: normal;
   }
@@ -2507,17 +2130,16 @@ button.dialog-button {
 
   thead {
     th {
-      background: @ui-background;
       text-align: left;
     }
   }
   tbody {
     &.results {
-      border-bottom: 2pt solid black;
+      border-bottom-width: 2pt;
+      border-bottom-style: solid;
     }
 
     overflow-y: auto;
-    background: white;
 
     tr {
       animation: highlight 2s;
@@ -2530,8 +2152,6 @@ button.dialog-button {
         height: 10em;
         span {
           display: inline;
-          color: black;
-
         }
       }
     }
@@ -2558,7 +2178,6 @@ button.dialog-button {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        color: black;
       }
     }
 
@@ -2569,9 +2188,9 @@ button.dialog-button {
 }
 
 .plot-editor {
-  background: @ui-background;
   display: grid;
-  border: 1px solid @ui-border;
+  border-width: 1px;
+  border-style: solid;
   grid-template-areas: "controls plot";
   grid-template-columns: 1fr 4fr;
   padding: 8px;
@@ -2616,7 +2235,6 @@ button.dialog-button {
       position: relative;
 
       button.add {
-        color: green;
         position: absolute;
         right: 0;
         bottom: 4px;
@@ -2656,8 +2274,8 @@ button.dialog-button {
 
     .dimension-list {
       grid-area: dimension-list;
-      border: 1px solid @ui-border;
-      background: white;
+      border-width: 1px;
+      border-style: solid;
 
       .dimension {
         clear: left;
@@ -2673,8 +2291,8 @@ button.dialog-button {
     }
 
     .measure-list, .numeric-field-list {
-      border: 1px solid @ui-border;
-      background: white;
+      border-width: 1px;
+      border-style: solid;
 
       .measure, .numeric {
         clear: left;
@@ -2689,17 +2307,12 @@ button.dialog-button {
         font-size: inherit;
       }
 
-      button.plot .icon {
-        color: green;
+      button.plot .icon, button.cancel .icon {
         margin-right: 2pt;
       }
 
       button.cancel {
         display: none;
-        .icon {
-          color: red;
-          margin-right: 2pt;
-        }
       }
     }
 
@@ -2720,8 +2333,8 @@ button.dialog-button {
     width: auto;
     margin: 2pt;
     padding: 2pt;
-    border: 1px solid @ui-border;
-    background: @ui-background;
+    border-width: 1px;
+    border-style: solid;
   }
 
   .measure .measure-name {
@@ -2749,7 +2362,8 @@ button.dialog-button {
       margin: 2px auto;
       background: transparent;
       border: none;
-      border-bottom: 1px dotted @ui-border;
+      border-bottom-width: 1px;
+      border-bottom-style: dotted;
       padding: 4px;
     }
 
@@ -2803,29 +2417,20 @@ button.dialog-button {
           button {
             padding: 1pt;
             margin-left: 2pt;
-            color: red;
           }
         }
       }
     }
 
     .plot-output {
-      background: white;
-      border: 1px solid @ui-border;
+      border-width: 1px;
+      border-style: solid;
       margin: 0 auto;
       position: relative;
 
       .plot-embed {
         margin: 0 auto;
       }
-    }
-
-    .drop-ok {
-      background: #eeffee;
-    }
-
-    .drop-disallowed {
-      background: #ffeeee;
     }
   }
 
@@ -2846,12 +2451,10 @@ button.dialog-button {
 .undo-delete {
   padding: .5em;
   text-align: center;
-  background: rgb(253, 246, 228);
   border-radius: 1em;
   position: relative;
 
   .undo-link {
-    color: #268bd2;
     font-weight: bold;
     text-decoration: underline;
     cursor: pointer;
@@ -2864,13 +2467,6 @@ button.dialog-button {
   }
 }
 
-.currently-executing {
-  background-color: #d9edf7;
-}
-
-.link-highlight {
-  background-color: @line-highlight-color;
-}
 
 .modal-container {
   position: fixed;
@@ -2885,7 +2481,6 @@ button.dialog-button {
   z-index: 99;
 
   .modal-background {
-    background-color: rgba(0, 0, 0, 0.3);
     position: absolute;
     bottom: 0;
     left: 0;
@@ -2909,7 +2504,8 @@ button.dialog-button {
       padding: .5em;
       border-top-left-radius: 5pt;
       border-top-right-radius: 5pt;
-      border: 1px solid @ui-border;
+      border-width: 1px;
+      border-style: solid;
       background: linear-gradient(0, @ui-background-dark, @ui-background-bright);
       position: relative;
 
@@ -2919,7 +2515,6 @@ button.dialog-button {
         top: 0;
 
         .modal-close {
-          color: red;
           margin: 6px;
           border: none;
           background: transparent;
@@ -2929,8 +2524,8 @@ button.dialog-button {
     }
 
     .modal-content {
-      border: 1px solid @ui-border;
-      background: @ui-background;
+      border-width: 1px;
+      border-style: solid;
       display: contents;
     }
   }
@@ -2969,28 +2564,6 @@ button.dialog-button {
   }
 }
 
-.result-name-and-type {
-  font-family: @code-fonts;
-  font-weight: 400;
-  margin: 0;
-  button {
-    padding: 2px;
-    font-size: 10pt;
-  }
-  button:first-of-type {
-    margin-left: 10pt;
-  }
-}
-
-.schema-display {
-
-  .object-fields .object-field {
-    .field-name::after {
-      content: none;
-    }
-  }
-
-}
 
 .tab-nav {
   display: grid;
@@ -2998,8 +2571,8 @@ button.dialog-button {
   overflow: auto;
 
   .tab-nav-items {
-    background: @ui-background;
-    border-right: 1px solid @ui-border;
+    border-right-width: 1px;
+    border-right-style: solid;
 
     .tab-nav-item {
       padding: 1em 2em;
@@ -3011,90 +2584,15 @@ button.dialog-button {
     }
 
     .tab-nav-item.active {
-      background: white;
-      border-right: 1px solid white;
-      border-top: 1px solid @ui-border;
-      border-bottom: 1px solid @ui-border;
-    }
-
-    .tab-nav-item.active:first-child {
-      border-top: 1px solid white;
+      border-width: 1px;
+      border-left-width: 0;
+      border-style: solid;
+      border-left-style: none;
     }
   }
 
-  .tab-nav-content {
-    background: white;
-  }
 }
 
-.object-display {
-  font-family: @code-fonts;
-
-  .object-summary {
-
-    .summary-content {
-      &::before {
-        content: '{ ';
-      }
-
-      &::after {
-        content: ' }';
-      }
-
-      span::after {
-        content: ', ';
-      }
-
-      span.string::after {
-        content: '", ';
-      }
-
-      span:last-child::after {
-        content: none;
-      }
-
-      span.string:last-child::after {
-        content: '"';
-      }
-    }
-  }
-
-  .field-name {
-    color: #892093;
-    font-weight: bold;
-  }
-
-  .field-name::after {
-    content: ': ';
-  }
-
-  .string {
-    color: #c42426;
-  }
-
-  .null {
-    color: #888888;
-    font-style: italic;
-  }
-
-  .string::before, .string::after {
-    color: #c42426;
-    content: '"';
-  }
-  .number, .boolean {
-    color: #2321CC;
-  }
-
-  ul {
-    list-style: none;
-    margin: 0;
-    padding: 0 0 0 2em;
-
-    summary {
-      text-indent: -1em;
-    }
-  }
-}
 
 .modal-window.about {
   line-height: 2;
@@ -3117,18 +2615,13 @@ button.dialog-button {
 
   button.about-button {
     opacity: inherit;
-    border: 1px solid @ui-background-dark;
+    border: 1px solid;
 
     margin-top: 1em;
-
-    &:hover {
-      background: @ui-background;
-    }
   }
 
   .preferences-storage {
     .storage {
-      background: @ui-background;
       border-radius: 6px;
       padding: 1em;
 
@@ -3204,35 +2697,29 @@ img.icon {
 }
 
 // comments
-.comment-highlight {
-  background-color: rgba(255, 237, 158, 0.7);
-}
 
-.comment-highlight-strong {
-  background-color: rgba(255, 206, 111, 0.7);
-}
 
 .new-comment-button {
   width: 3ex; // why ex? dunno, it works..
   height: 3ex;
   border-radius: 100%;
-  background: white url(icons/fa/comment-plus.svg) no-repeat 50% 50%;
+  background-image: url(icons/fa/comment-plus.svg);
+  background-repeat: no-repeat;
+  background-position: 50% 50%;
 }
 
 .comment-container {
   .comments-list {
-    border: 1px solid @ui-border;
-    box-shadow: @ui-border 0px 2px 6px 2px;
-    background-color: white;
+    border-width: 1px;
+    border-style: solid;
 
     .comment:first-child .header {
       border-top: none;
     }
 
     .comment .header {
-      background: @ui-background;
-      border-top: 1px solid @ui-border;
-      border-bottom: 1px solid @ui-border;
+      border-top: 1px solid;
+      border-bottom: 1px solid;
       font-size: 14px;
       font-weight: normal;
       display: flex;
@@ -3240,7 +2727,9 @@ img.icon {
 
       .actions {
         display: flex;
-        background: @ui-background url(icons/fa/triple-dots-vert.svg) no-repeat 50% 50%;
+        background-image: url(icons/fa/triple-dots-vert.svg);
+        background-repeat: no-repeat;
+        background-position: 50% 50%;
         width: 2em;
         height: 1.5em;
         margin-left: 1em;
@@ -3250,31 +2739,24 @@ img.icon {
         }
 
         ul {
-          border: 1px solid @ui-border;
-          box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+          border-width: 1px;
+          border-style: solid;
           list-style: none;
           margin: 1.75em 1em;
           padding: 0;
           height: fit-content;
           width: fit-content;
-          background: white;
           z-index: 1;
 
           li {
             padding: .5em 1em;
-            color: @ui-text;
             cursor: default;
-
-            &:hover {
-              background: @ui-selected;
-              color: white;
-            }
           }
         }
       }
 
       .avatar:empty {
-        background: white url(icons/fa/user.svg) no-repeat 50% 50%;
+        background: @avatar-bg url(icons/fa/user.svg) no-repeat 50% 50%;
         border: 2px solid darkgray;
         border-radius: 100%;
         width: 2em;
@@ -3301,7 +2783,8 @@ img.icon {
 
     .create-comment {
       &:not(:first-child) {
-        border-top: 1px solid darkgray;
+        border-top-width: 1px;
+        border-top-style: solid;
       }
       margin-top: 8px;
       padding-top: 8px;
@@ -3337,3 +2820,14 @@ img.icon {
   }
 }
 
+.polynote-logo {
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
+  width: 325px;
+  height: 78px;
+
+  span { display: none; }
+}
+
+@import "content";

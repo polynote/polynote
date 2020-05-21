@@ -1,7 +1,7 @@
 import { SocketSession } from './comms'
 import { MainUI } from './ui/component/ui'
 import { scala, vega } from './ui/monaco/languages'
-import { theme } from './ui/monaco/theme'
+import { themes } from './ui/monaco/themes'
 import * as monaco from "monaco-editor";
 import * as Tinycon from "tinycon";
 import {MarkdownIt} from "./util/markdown-it";
@@ -19,7 +19,10 @@ monaco.languages.setMonarchTokensProvider('vega', vega.definition);
 monaco.languages.setLanguageConfiguration('vega', vega.config);
 
 // use our theme
-monaco.editor.defineTheme('polynote', theme);
+monaco.editor.defineTheme('polynote-light', themes.light);
+monaco.editor.defineTheme('polynote-dark', themes.dark);
+
+monaco.editor.setTheme('polynote-light');
 
 // open the global socket for control messages
 SocketSession.global;
@@ -38,3 +41,11 @@ if (path.startsWith(notebookBase)) {
 Tinycon.setOptions({
     background: '#308b24'
 });
+
+(window as any).setTheme = (theme: string) => {
+    const el = document.getElementById("polynote-color-theme");
+    if (el) {
+        el.setAttribute("href", `static/style/colors-${theme}.css`);
+    }
+    monaco.editor.setTheme(`polynote-${theme}`);
+}
