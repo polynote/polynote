@@ -1,9 +1,17 @@
 'use strict';
 
-type ContentElement = (Node | string | undefined)
-export type Content = ContentElement | ContentElement[]
+import {loadIcon} from "./icons";
 
-function appendContent(el: Node, content: Content) {
+type ContentElement = (Node | string | undefined)
+export type Content = ContentElement | ContentElement[];
+export type AsyncContent = Content | Promise<ContentElement>
+
+function appendContent(el: Node, content: AsyncContent) {
+    if (content instanceof Promise) {
+        content.then(c => appendContent(el, c));
+        return;
+    }
+
     if (!(content instanceof Array)) {
         content = [content];
     }
@@ -35,7 +43,7 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
     name: T,
     classes: string[] = [],
     attributes?: AllowedElAttrs<HTMLElementTagNameMap[T]>,
-    content: Content = []): TagElement<T> {
+    content: AsyncContent = []): TagElement<T> {
 
     const el: TagElement<T> = Object.assign(document.createElement(name), {
         attr(a: keyof HTMLElementTagNameMap[T], v: string | boolean) {
@@ -95,7 +103,7 @@ export function para(classes: string[], content: Content) {
     return tag('p', classes, undefined, content);
 }
 
-export function span(classes: string[], content: Content) {
+export function span(classes: string[], content: AsyncContent) {
     return tag('span', classes, undefined, content);
 }
 
@@ -104,7 +112,15 @@ export function img(classes: string[], src: string, alt: string) {
 }
 
 export function icon(classes: string[], iconName: string, alt?: string) {
-    return span(classes, img(['icon'], `static/style/icons/fa/${iconName}.svg`, alt || iconName))
+    const icon = loadIcon(iconName).then(svgEl => {
+        const el = svgEl.cloneNode(true) as SVGElement;
+        el.setAttribute('class', 'icon');
+        if (alt) {
+            el.setAttribute('alt', alt);
+        }
+        return el;
+    });
+    return span(classes, icon);
 }
 
 export function a(classes: string[], href: string, contentOrPreventNavigate: Content | boolean, contentWhenPreventNavigate?: Content) {

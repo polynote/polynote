@@ -22,7 +22,7 @@ monaco.languages.setLanguageConfiguration('vega', vega.config);
 monaco.editor.defineTheme('polynote-light', themes.light);
 monaco.editor.defineTheme('polynote-dark', themes.dark);
 
-monaco.editor.setTheme('polynote-light');
+monaco.editor.setTheme('polynote-dark');
 
 // open the global socket for control messages
 SocketSession.global;

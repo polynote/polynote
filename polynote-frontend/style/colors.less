@@ -1,6 +1,10 @@
 body {
-  background: @base-background;
+  background: @notebook-background;
   color: @base-color;
+}
+
+button {
+  color: @ui-text;
 }
 
 .toolbar-container {
@@ -68,7 +72,7 @@ body {
 
 
   &.running {
-    border-color: green;
+    border-color: @icon-green;
   }
 
   &.queued {
@@ -360,20 +364,20 @@ button {
 
 
 .run-cell .icon {
-  color: green;
+  color: @icon-green;
 }
 
 .stop-cell .icon {
-  color: #aa0000;
+  color: @icon-red;
 }
 
 
 .insert-cell-above .icon {
-  border-top: 3px solid green;
+  border-top: 3px solid @icon-green;
 }
 
 .insert-cell-below .icon {
-  border-bottom: 3px solid green;
+  border-bottom: 3px solid @icon-green;
 }
 
 .notebook-content {
@@ -442,19 +446,24 @@ button {
   border-left-color: @ui-background;
 }
 
+.notebook-config {
+  background-color: @ui-background;
+  color: fade(@ui-text, 30%);
+}
+
 .notebook-config.open {
-  color: #333333;
+  color: @ui-text;
 
   .notebook-config-section {
     border-color: @ui-border;
   }
 
   .add .icon {
-    color: green;
+    color: @icon-green;
   }
 
   .remove .icon {
-    color: red;
+    color: @icon-green;
   }
 }
 
@@ -484,7 +493,7 @@ button {
       background: @ui-background-dark;
 
       &.active {
-        background: @selected-tab-bg;
+        background: @notebook-background;
       }
     }
 
@@ -579,7 +588,7 @@ button.dialog-button {
 }
 
 .create-notebook {
-  color: green;
+  color: @icon-green;
 }
 
 .latex-editor {
@@ -635,8 +644,8 @@ button.dialog-button {
   background: @ui-background;
   border-color: @ui-border;
 
-  button.add {
-    color: green;
+  button.add .icon, button.plot .icon {
+    color: @icon-green;
   }
 
   .dimension-list, .measure-list, .numeric-field-list  {
@@ -644,12 +653,8 @@ button.dialog-button {
     background: @ui-panel-bg;
   }
 
-  button.plot .icon {
-    color: green;
-  }
-
   button.cancel .icon {
-    color: red;
+    color: @icon-red;
   }
 
   .measure, .dimension, .numeric {
@@ -666,7 +671,7 @@ button.dialog-button {
       .label {
         .measure, .numeric {
           button {
-            color: red;
+            color: @icon-red;
           }
         }
       }
