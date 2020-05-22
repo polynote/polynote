@@ -22,8 +22,6 @@ monaco.languages.setLanguageConfiguration('vega', vega.config);
 monaco.editor.defineTheme('polynote-light', themes.light);
 monaco.editor.defineTheme('polynote-dark', themes.dark);
 
-monaco.editor.setTheme('polynote-dark');
-
 // open the global socket for control messages
 SocketSession.global;
 
@@ -42,10 +40,14 @@ Tinycon.setOptions({
     background: '#308b24'
 });
 
-(window as any).setTheme = (theme: string) => {
+function setTheme(theme: string) {
     const el = document.getElementById("polynote-color-theme");
     if (el) {
         el.setAttribute("href", `static/style/colors-${theme}.css`);
     }
     monaco.editor.setTheme(`polynote-${theme}`);
 }
+
+(window as any).setTheme = setTheme;
+
+setTheme('light');
