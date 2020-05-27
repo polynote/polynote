@@ -71,7 +71,8 @@ export const htmlToMarkdown = (function () {
 
                     case 'img':
                         const img = node as HTMLImageElement;
-                        accum += '![' + img.getAttribute('alt') + '](' + img.src + ')';
+                        //accum += '![' + img.getAttribute('alt') + '](' + img.src + ')';
+                        accum += img.outerHTML;
                         break;
 
                     case 'code':
