@@ -1,3 +1,5 @@
+@import 'common';
+
 body {
   background: @notebook-background;
   color: @base-color;
@@ -121,15 +123,6 @@ button {
   }
 
   &.text-cell {
-    &.active {
-      .cell-input {
-        border-left-color: #f5f5f5;
-        .markdown-body {
-          border-left-color: #e1e1e1;
-        }
-      }
-    }
-
     .markdown-body {
       color: @md-text-color;
     }
@@ -437,6 +430,28 @@ button {
 
 }
 
+.result {
+  table {
+    border-color: @content-table-border;
+  }
+
+  th, td {
+    border-color: @content-table-th-border;
+  }
+
+  th {
+    background-color: @content-table-th-bg;
+  }
+
+  tr:nth-child(even) td {
+    background-color: @content-table-td-even-bg
+  }
+
+  tr:nth-child(odd) td {
+    background-color: @content-table-td-odd-bg;
+  }
+}
+
 .kernel-status .status { color: gray; }
 .kernel-status.idle .status { color: green;}
 .kernel-status.busy .status { color: gold; }
@@ -631,11 +646,11 @@ button.dialog-button {
     background: @ui-table-bg;
 
     tr.initial-msg td span {
-      color: black;
+      color: @base-color;
     }
 
     th, td > span::after {
-      color: black;
+      color: @base-color;
     }
   }
 }
@@ -716,7 +731,7 @@ button.dialog-button {
   .modal-window {
     .modal-titlebar {
       border-color: @ui-border;
-
+      background: linear-gradient(0, @ui-background-dark, @ui-background-bright);
       .modal-titlebar-controls {
         .modal-close {
           color: red;
@@ -809,5 +824,29 @@ button.dialog-button {
     &:not(:first-child) {
       border-top-color: @ui-border;
     }
+  }
+}
+
+.presence0 { .presence-color(@presence0) }
+.presence1 { .presence-color(@presence1) }
+.presence2 { .presence-color(@presence2) }
+.presence3 { .presence-color(@presence3) }
+.presence4 { .presence-color(@presence4) }
+.presence5 { .presence-color(@presence5) }
+.presence6 { .presence-color(@presence6) }
+.presence7 { .presence-color(@presence7) }
+.presence8 { .presence-color(@presence8) }
+
+@keyframes highlight {
+  from {
+    background-color: @line-highlight-color;
+  }
+
+  50% {
+    background-color: @line-highlight-color;
+  }
+
+  to {
+    background-color: @line-highlight-color-noalpha;
   }
 }

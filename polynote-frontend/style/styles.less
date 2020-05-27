@@ -2504,7 +2504,6 @@ button.dialog-button {
       border-top-right-radius: 5pt;
       border-width: 1px;
       border-style: solid;
-      background: linear-gradient(0, @ui-background-dark, @ui-background-bright);
       position: relative;
 
       .modal-titlebar-controls {
@@ -2638,51 +2637,6 @@ button.dialog-button {
   }
 }
 
-/*
-  Presence colors (other people's cursors) – taken from https://vega.github.io/vega/docs/schemes/#pastel1
- */
-.presence-color(@color) {
-  background-color: fadeout(@color, 70%);
-
-  &.ppc { // presence point cursor – where their cursor actually is (at the end of the selection)
-    width: 1pt !important;
-    margin-left: -.5pt;
-    background-color: @color;
-    &:after {
-      content: ' ';
-      position: absolute;
-      top: -2pt;
-      left: -1.5pt;
-      width: 4pt;
-      height: 4pt;
-      background-color: @color
-    }
-  }
-}
-
-.presence0 { .presence-color(@presence0) }
-.presence1 { .presence-color(@presence1) }
-.presence2 { .presence-color(@presence2) }
-.presence3 { .presence-color(@presence3) }
-.presence4 { .presence-color(@presence4) }
-.presence5 { .presence-color(@presence5) }
-.presence6 { .presence-color(@presence6) }
-.presence7 { .presence-color(@presence7) }
-.presence8 { .presence-color(@presence8) }
-
-@keyframes highlight {
-  from {
-    background-color: @line-highlight-color;
-  }
-
-  50% {
-    background-color: @line-highlight-color;
-  }
-
-  to {
-    background-color: rgba(253, 246, 227, 0.0);
-  }
-}
 
 img.icon, svg.icon {
   height: 1em;
@@ -2754,7 +2708,7 @@ img.icon, svg.icon {
       }
 
       .avatar:empty {
-        background: @avatar-bg url(icons/fa/user.svg) no-repeat 50% 50%;
+        background: white url(icons/fa/user.svg) no-repeat 50% 50%;
         border: 2px solid darkgray;
         border-radius: 100%;
         width: 2em;

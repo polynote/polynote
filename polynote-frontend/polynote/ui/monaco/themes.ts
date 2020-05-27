@@ -19,7 +19,9 @@ export const themes: Record<string, IStandaloneThemeData> = {
   "dark": {
     base: 'vs-dark',
     inherit: true,
-    rules: [],
+    rules: [
+      { token: 'keyword', fontStyle: 'bold' }
+    ],
     colors: {}
   }
 };

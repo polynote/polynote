@@ -25,7 +25,7 @@ function appendContent(el: Node, content: AsyncContent) {
     }
 }
 
-type AllowedElAttrs<T extends HTMLElement> = Partial<Record<keyof T, string | boolean>>
+export type AllowedElAttrs<T extends HTMLElement> = Partial<Record<keyof T, string | boolean>>
 
 export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> = HTMLElementTagNameMap[K] & {
     attr(a: keyof T, b: string | boolean): TagElement<K, T>
