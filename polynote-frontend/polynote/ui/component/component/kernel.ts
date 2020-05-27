@@ -73,8 +73,13 @@ export class Kernel {
 
     private collapse() {
         ViewPrefsHandler.updateState(prev => {
-            prev[this.whichPane].collapsed = !prev[this.whichPane].collapsed;
-            return prev;
+            return {
+                ...prev,
+                [this.whichPane]: {
+                    ...prev[this.whichPane],
+                    collapsed: !prev[this.whichPane].collapsed
+                }
+            }
         })
     }
 
@@ -84,7 +89,7 @@ export class Kernel {
             this.statusEl.classList.add(state);
             this.status.title = state;
             if (state === 'dead') {
-                this.kernelState.kernelInfoHandler.setState({})
+                this.kernelState.kernelInfoHandler.updateState(() => ({}))
             }
         } else {
             throw "State must be one of [busy, idle, dead, disconnected]";
@@ -246,6 +251,7 @@ class KernelTasksComponent {
         const task = this.tasks[id];
         if (task.parentNode) task.parentNode.removeChild(task);
         this.kernelTasksHandler.updateState(tasks => {
+            tasks = {...tasks}
             delete tasks[task.id];
             return tasks
         });

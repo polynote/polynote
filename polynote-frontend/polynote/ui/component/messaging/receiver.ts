@@ -2,35 +2,36 @@
  * The MessageReceiver is used to translate external events into state changes.
  * So far, the only external events are socket messages.
  */
-import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import * as messages from "../../../data/messages";
 import {TaskInfo} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
-import match from "../../../util/match";
-import {Message} from "../../../data/messages";
+import {purematch} from "../../../util/match";
 import {ContentEdit} from "../../../data/content_edit";
 import {
-    ClearResults, ClientResult,
+    ClearResults,
+    ClientResult,
     CompileErrors,
     ExecutionInfo,
     Output,
     PosRange,
+    Result,
     ResultValue,
     RuntimeError
 } from "../../../data/result";
 import {StateHandler} from "../state/state_handler";
 import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {SocketStateHandler} from "../state/socket_state";
+import {EditBuffer} from "../../../data/edit_buffer";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
 
-    receive<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => void) {
-        this.socket.addMessageListener(msgType, args => {
+    receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => S | undefined) {
+        this.socket.addMessageListener(msgType, (...args: ConstructorParameters<typeof msgType>) => {
             this.state.updateState(s => {
-                fn(s, ...args);
-                return s
+                return fn(s, ...args) ?? undefined
             })
         })
     }
@@ -43,8 +44,13 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
         socket.view("status").addObserver(status => {
             if (status === "disconnected") {
                 state.updateState(s => {
-                    s.kernel.status = status;
-                    return s
+                    return {
+                        ...s,
+                        kernel: {
+                            ...s.kernel,
+                            status: status
+                        }
+                    }
                 })
             }
         })
@@ -52,16 +58,25 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
         this.receive(messages.CompletionsAt, (s, cell, offset, completions) => {
             if (s.activeCompletion) {
                 s.activeCompletion.resolve({cell, offset, completions});
-                s.activeCompletion = undefined;
+                return {
+                    ...s,
+                    activeCompletion: undefined
+                }
             } else {
                 console.warn("Got completion response but there was no activeCompletion, this is a bit odd.", {cell, offset, completions})
+                return undefined
             }
         });
         this.receive(messages.ParametersAt, (s, cell, offset, signatures) => {
             if (s.activeSignature) {
                 s.activeSignature.resolve({cell, offset, signatures})
+                return {
+                    ...s,
+                    activeSignature: undefined
+                }
             } else {
                 console.warn("Got signature response but there was no activeSignature, this is a bit odd.", {cell, offset, signatures})
+                return undefined
             }
         });
         this.receive(messages.NotebookVersion, (s, path, serverGlobalVersion) => {
@@ -69,6 +84,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 // this means we must have been disconnected for a bit and the server state has changed.
                 document.location.reload() // is it ok to trigger the reload here?
             }
+            return undefined;
         });
         this.receive(messages.NotebookCells, (s: NotebookState, path: string, cells: NotebookCell[], config?: NotebookConfig) => {
             const cellStates = cells.map(cell => {
@@ -77,171 +93,349 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     pendingEdits: [],
                 };
             });
-            s.path = path;
-            s.cells = cellStates;
-            s.config = config ?? NotebookConfig.default;
+            return {
+                ...s,
+                path: path,
+                cells: cellStates,
+                config: config ?? NotebookConfig.default
+            }
         });
         this.receive(messages.KernelStatus, (s, update) => {
-            match(update)
+            return purematch<messages.KernelStatusUpdate, NotebookState>(update)
                 .when(messages.UpdatedTasks, tasks => {
-                    tasks.forEach((task: TaskInfo) => {
-                        s.kernel.tasks[task.id] = task
-                    });
+                    const taskMap = tasks.reduce<Record<string, TaskInfo>>((acc, next) => {
+                        acc[next.id] = next
+                        return acc
+                    }, {})
+                    return {
+                        ...s,
+                        kernel: {
+                            ...s.kernel,
+                            tasks: {
+                                ...s.kernel.tasks,
+                                ...taskMap,
+                            }
+                        }
+                    }
                 })
                 .when(messages.KernelBusyState, (busy, alive) => {
-                    s.kernel.status = (busy && 'busy') || (!alive && 'dead') || 'idle';
+                    return {
+                        ...s,
+                        kernel: {
+                            ...s.kernel,
+                            status: (busy && 'busy') || (!alive && 'dead') || 'idle'
+                        }
+                    }
                 })
                 .when(messages.KernelInfo, info => {
-                    s.kernel.info = info;
+                    return {
+                        ...s,
+                        kernel: {
+                            ...s.kernel,
+                            info: info
+                        }
+                    }
                 })
                 .when(messages.ExecutionStatus, (id, pos) => {
                     const cellIdx = s.cells.findIndex(c => c.id === id);
                     if (cellIdx > -1) {
-                        s.cells[cellIdx].currentHighlight = pos
-                    }
+                        return {
+                            ...s,
+                            cells: {
+                                ...s.cells,
+                                [cellIdx]: {
+                                    ...s.cells[cellIdx],
+                                    currentHighlight: pos
+                                }
+                            }
+                        }
+                    } else return null
                 })
                 .when(messages.PresenceUpdate, (added, removed) => {
-                    added.forEach(p => s.activePresence[p.id] = {presence: p});
-                    removed.forEach(id => delete s.activePresence[id]);
+                    const activePresence = {...s.activePresence}
+                    added.forEach(p => activePresence[p.id] = {presence: p});
+                    removed.forEach(id => delete activePresence[id]);
+
+                    return {
+                        ...s,
+                        activePresence: activePresence
+                    }
                 })
                 .when(messages.PresenceSelection, (id, cell, range) => {
                     if (s.activePresence[id]) {
-                        s.activePresence[id].selection = {cell, range};
-                    }
+                        return {
+                            ...s,
+                            activePresence: {
+                                ...s.activePresence,
+                                [id]: {
+                                    ...s.activePresence[id],
+                                    selection: {cell, range}
+                                }
+                            }
+                        }
+                    } else return null
                 })
                 .when(messages.KernelError, (err) => {
-                    s.errors.push(err);
-                });
+                    return {
+                        ...s,
+                        errors: [...s.errors, err]
+                    }
+                })
+                .otherwiseThrow || undefined
         });
         this.receive(messages.NotebookUpdate, (s: NotebookState, update: messages.NotebookUpdate) => {
             if (update.globalVersion >= s.globalVersion) {
-                s.globalVersion = update.globalVersion;
+                const globalVersion = update.globalVersion
+                const localVersion = s.localVersion + 1
+
                 if (update.localVersion < s.localVersion) {
                     const prevUpdates = s.editBuffer.range(update.localVersion, s.localVersion);
                     update = messages.NotebookUpdate.rebase(update, prevUpdates)
                 }
 
-                s.localVersion++;
-
-                match(update)
+                const res = purematch<messages.NotebookUpdate, NotebookState>(update)
                     .when(messages.UpdateCell, (g, l, id: number, edits: ContentEdit[], metadata?: CellMetadata) => {
-                        const cellIdx = s.cells.findIndex(c => c.id === id);
-                        if (cellIdx > -1) {
-                            const cell = s.cells[cellIdx];
-                            cell.pendingEdits = edits;
-                            if (metadata) cell.metadata = metadata;
-                            s.cells[cellIdx] = cell;
+                        return {
+                            ...s,
+                            cells: s.cells.map(c => {
+                                if (c.id === id){
+                                    return <CellState>{
+                                        ...c,
+                                        pendingEdits: edits,
+                                        metadata: metadata || c.metadata,
+                                    }
+                                } else return c
+                            })
                         }
                     })
                     .when(messages.InsertCell, (g, l, cell: NotebookCell, after: number) => {
                         const newCell = {...cell, pendingEdits: []};
                         const insertIdx = s.cells.findIndex(c => c.id === after);
                         if (insertIdx > -1) {
-                            s.cells.splice(insertIdx, 0, newCell)
+                            return {
+                                ...s,
+                                cells: [...s.cells.slice(0, insertIdx), newCell, ...s.cells.slice(insertIdx + 1)]
+                            }
                         } else {
-                            s.cells.push(newCell)
+                            return {
+                                ...s,
+                                cells: [...s.cells, newCell]
+                            }
                         }
                     })
                     .when(messages.DeleteCell, (g, l, id: number) => {
                         const idx = s.cells.findIndex(c => c.id === id);
                         if (idx > -1) {
-                            s.cells.splice(idx, 1);
-                        }
+                            return {
+                                ...s,
+                                cells: [...s.cells.slice(0, idx), ...s.cells.slice(idx + 1)]
+                            }
+                        } else return null
                     })
                     .when(messages.UpdateConfig, (g, l, config: NotebookConfig) => {
-                        s.config = config;
+                        return {
+                            ...s,
+                            config
+                        }
                     })
                     .when(messages.SetCellLanguage, (g, l, id: number, language: string) => {
-                        const idx = s.cells.findIndex(c => c.id === id);
-                        if (idx > -1) {
-                            s.cells[idx].language = language;
+                        return {
+                            ...s,
+                            cells: s.cells.map(c => {
+                                if (c.id === id) {
+                                    return {...c, language}
+                                } else return c
+                            })
                         }
                     })
                     .when(messages.SetCellOutput, (g, l, id: number, output?: Output) => {
                         // is `output` ever undefined??
                         if (output) {
-                            const idx = s.cells.findIndex(c => c.id === id);
-                            if (idx > -1) {
-                                s.cells[idx].results = [output]
+                            return {
+                                ...s,
+                                cells: s.cells.map(c => {
+                                    if (c.id === id) {
+                                        return {...c, results: [output]}
+                                    } else return c
+                                })
                             }
-                        }
+                        } else return null
                     })
                     .when(messages.CreateComment, (g, l, id: number, comment: CellComment) => {
-                        const idx = s.cells.findIndex(c => c.id === id);
-                        if (idx > -1) {
-                            s.cells[idx].comments[comment.uuid] = comment
+                        return {
+                            ...s,
+                            cells: s.cells.map(c => {
+                                if (c.id === id){
+                                    return {
+                                        ...c,
+                                        comments: {
+                                            ...c.comments,
+                                            [comment.uuid]: comment // we're trusting the server to be correct here.
+                                        }
+                                    }
+                                } else return c
+                            })
                         }
                     })
                     .when(messages.UpdateComment, (g, l, id: number, commentId: string, range: PosRange, content: string) => {
-                        const idx = s.cells.findIndex(c => c.id === id);
-                        if (idx > -1) {
-                            const comment = s.cells[idx].comments[commentId];
-                            s.cells[idx].comments[commentId] = new CellComment(commentId, range, comment.author, comment.authorAvatarUrl, comment.createdAt, content)
+                        return {
+                            ...s,
+                            cells: s.cells.map(c => {
+                                if (c.id === id) {
+                                    const comment = c.comments[commentId];
+                                    return {
+                                        ...c,
+                                        comments: {
+                                            ...c.comments,
+                                            [commentId]: new CellComment(commentId, range, comment.author, comment.authorAvatarUrl, comment.createdAt, content)
+                                        }
+                                    }
+                                } else return c
+                            })
                         }
                     })
                     // TODO: Make sure the server handles the case where a root comment is deleted, since the client
                     //       will need to be told to delete all child comments.
                     .when(messages.DeleteComment, (g, l, id: number, commentId: string) => {
-                        const idx = s.cells.findIndex(c => c.id === id);
-                        if (idx > -1) {
-                            delete s.cells[idx].comments[commentId];
+                        return {
+                            ...s,
+                            cells: s.cells.map(c => {
+                                if (c.id === id) {
+                                    const comments = {...c.comments}
+                                    delete comments[commentId]
+                                    return {
+                                        ...c,
+                                        comments,
+                                    }
+                                } else return c
+                            })
                         }
-                    });
+                    }).otherwiseThrow ?? s;
 
                 // discard edits before the local version from server – it will handle rebasing at least until that point
-                s.editBuffer.discard(update.localVersion);
+                // TODO: perhaps refactor EditBuffer to provide an immutable interface
+                const remainingVersions = s.editBuffer.versions.filter(v => v.version > update.localVersion)
+
+                return {
+                    ...res,
+                    editBuffer: new EditBuffer(remainingVersions),
+                    localVersion,
+                    globalVersion,
+                }
             } else {
                 console.warn(
                     "Ignoring NotebookUpdate with globalVersion", update.globalVersion,
                     "that is less than our globalVersion", s.globalVersion,
                     ". This might mean something is wrong.", update)
+                return undefined
             }
         });
         this.receive(messages.CellResult, (s, id, result) => {
-            const idx = s.cells.findIndex(c => c.id === id);
-            match(result)
+            return purematch<Result, NotebookState>(result)
                 .when(ClearResults, () => {
-                    if (idx > -1) {
-                        s.cells[idx].results = []
+                    return {
+                        ...s,
+                        cells: s.cells.map(c => {
+                            if (c.id === id) {
+                                return {...c, results: []}
+                            } else return c
+                        })
                     }
                 })
                 .whenInstance(ResultValue, result => {
-                    s.kernel.symbols.push(result)
-                    if (idx > -1) {
-                        s.cells[idx].results.push(result)
+                    return {
+                        ...s,
+                        cells: s.cells.map(c => {
+                            if (c.id === id) {
+                                return {
+                                    ...c,
+                                    results: [...c.results, result]
+                                }
+                            } else return c
+                        }),
+                        kernel: {
+                            ...s.kernel,
+                            symbols: [...s.kernel.symbols, result]
+                        }
                     }
+
                 })
                 .whenInstance(CompileErrors, result => {
-                    if (idx > -1) {
-                        s.cells[idx].results.push(result)
-                    } else {
-                        // TODO: should somehow save this state somewhere!!
+                    if (id === -1) { // from a predef cell
+                        // TODO: should somehow save this state somewhere!! Maybe this should also go into s.errors?
                         console.warn("Something went wrong compiling a predef cell", result)
+                        return null
+                    }
+                    return {
+                        ...s,
+                        cells: s.cells.map(c => {
+                            if (c.id === id) {
+                                return {
+                                    ...c,
+                                    results: [...c.results, result]
+                                }
+                            } else return c
+                        })
                     }
                 })
                 .whenInstance(RuntimeError, result => {
-                    if (idx > -1) {
-                        s.cells[idx].results.push(result)
-                    } else {
-                        // this means there was an error executing a predef cell
-                        s.errors.push(result.error)
+                    if (id === -1) { // from a predef cell
+                        return {
+                            ...s,
+                            errors: [...s.errors, result.error]
+                        }
+                    }
+                    return {
+                        ...s,
+                        cells: s.cells.map(c => {
+                            if (c.id === id) {
+                                return {
+                                    ...c,
+                                    results: [...c.results, result]
+                                }
+                            } else return c
+                        })
                     }
                 })
                 .whenInstance(Output, result => {
-                    if (idx > -1) {
-                        s.cells[idx].results.push(result)
+                    return {
+                        ...s,
+                        cells: s.cells.map(c => {
+                            if (c.id === id) {
+                                return {
+                                    ...c,
+                                    results: [...c.results, result]
+                                }
+                            } else return c
+                        })
                     }
                 })
                 .whenInstance(ExecutionInfo, result => {
-                    if (idx > -1) {
-                        s.cells[idx].metadata = s.cells[idx].metadata.copy({executionInfo: result});
+                    return {
+                        ...s,
+                        cells: s.cells.map(c => {
+                            if (c.id === id) {
+                                return {
+                                    ...c,
+                                    metadata: c.metadata.copy({executionInfo: result})
+                                }
+                            } else return c
+                        })
                     }
                 })
                 .whenInstance(ClientResult, result => {
-                    if (idx > -1) {
-                        s.cells[idx].results.push(result)
+                    return {
+                        ...s,
+                        cells: s.cells.map(c => {
+                            if (c.id === id) {
+                                return {
+                                    ...c,
+                                    results: [...c.results, result]
+                                }
+                            } else return c
+                        })
                     }
-                })
+                }).otherwiseThrow || undefined
         });
     }
 }
@@ -254,50 +448,72 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
 
         this.socket.view("status").addObserver(status => {
             this.state.updateState(s => {
-                s.connectionStatus = status;
-                return s;
+                return {
+                    ...s, connectionStatus: status
+                }
             })
         });
 
         this.receive(messages.Error, (s, code, err) => {
-            s.errors.push({code, err});
-        });
-        this.receive(messages.CreateNotebook, (s, path) => {
-            s.notebooks[path] = ServerStateHandler.newNotebookState(path)
-        });
-        this.receive(messages.RenameNotebook, (s, oldPath, newPath) => {
-            const nbState = s.notebooks[oldPath];
-            if (nbState) {
-                nbState.state.path = newPath;
-                s.notebooks[newPath] = nbState;
-                delete s.notebooks[oldPath];
+            return {
+                ...s,
+                errors: [...s.errors, {code, err}]
             }
         });
-        this.receive(messages.DeleteNotebook, (s, path) => {
-            delete s.notebooks[path];
+        this.receive(messages.CreateNotebook, (s, path) => {
+            return {
+                ...s,
+                notebooks: {
+                    ...s.notebooks,
+                    [path]: ServerStateHandler.newNotebookState(path)
+                }
+            }
         });
-        this.receive(messages.ListNotebooks, (s, notebooks) => {
-            notebooks.forEach(path => {
-                s.notebooks[path] = ServerStateHandler.newNotebookState(path)
+        this.receive(messages.RenameNotebook, (s, oldPath, newPath) => {
+            const notebooks = {...s.notebooks}
+            const nbState = notebooks[oldPath];
+            if (nbState) {
+                nbState.state.path = newPath;
+                notebooks[newPath] = nbState;
+                delete notebooks[oldPath];
+            }
+            return { ...s, notebooks }
+        });
+        this.receive(messages.DeleteNotebook, (s, path) => {
+            const notebooks = {...s.notebooks}
+            delete notebooks[path];
+            return { ...s, notebooks }
+        });
+        this.receive(messages.ListNotebooks, (s, paths) => {
+            const notebooks = {...s.notebooks}
+            paths.forEach(path => {
+                notebooks[path] = ServerStateHandler.newNotebookState(path)
             })
+            return { ...s, notebooks }
         });
         this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
-            // make sure to add the client interpreters as well.
+            // inject the client interpreters here as well.
             Object.keys(clientInterpreters).forEach(key => {
                 interpreters[key] = clientInterpreters[key].languageTitle
             });
-            s.interpreters = interpreters;
-            s.serverVersion = serverVersion;
-            s.serverCommit = serverCommit;
-            s.identity = identity ?? undefined;
-            s.sparkTemplates = sparkTemplates;
+
+            return {
+                ...s,
+                interpreters: interpreters,
+                serverVersion: serverVersion,
+                serverCommit: serverCommit,
+                identity: identity ?? undefined,
+                sparkTemplates: sparkTemplates,
+            }
         });
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {
+            const notebooks = {...s.notebooks}
             kernelStatuses.forEach(kv => {
-                const nbState = s.notebooks[kv.first]?.state ?? ServerStateHandler.newNotebookState(kv.first).state;
+                const nbState = notebooks[kv.first]?.state ?? ServerStateHandler.newNotebookState(kv.first).state;
                 nbState.kernel.status = (kv.second.busy && 'busy') || (!kv.second.alive && 'dead') || 'idle';
-                s.notebooks[kv.first].state = nbState;
+                notebooks[kv.first].state = nbState;
             })
+            return { ...s, notebooks}
         })
     }
 }

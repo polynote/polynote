@@ -43,15 +43,13 @@ export class SocketStateHandler extends StateHandler<SocketState> {
 
         socket.addEventListener('open', evt => {
             this.updateState(s => {
-                s.status = "connected";
-                return s
+                return { ...s, status: "connected" }
             })
         });
 
         socket.addEventListener('close', evt => {
             this.updateState(s => {
-                s.status = "disconnected";
-                return s
+                return { ...s, status: "disconnected" }
             })
         });
         socket.addEventListener('error', evt => {
@@ -66,9 +64,11 @@ export class SocketStateHandler extends StateHandler<SocketState> {
                         if (msg instanceof messages.Error) {
                             socket.close();
                             this.updateState(s => {
-                                s.errors.push(msg.error);
-                                s.status = "disconnected";
-                                return s
+                                return {
+                                    ...s,
+                                    errors: [...s.errors, msg.error],
+                                    status: "disconnected"
+                                }
                             })
                         }
                     }

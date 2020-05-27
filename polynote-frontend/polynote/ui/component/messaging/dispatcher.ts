@@ -13,6 +13,7 @@ import {ContentEdit} from "../../../data/content_edit";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import {Message} from "../../../data/messages";
 import {SocketStateHandler} from "../state/socket_state";
+import {arrReplace} from "../../../util/functions";
 
 // interface for testing / decoupling
 // export interface ISocket {
@@ -39,7 +40,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
     }
 
     dispatch(action: UIAction) {
-        this.state.updateState(state => {
+        this.state.updateState(s => {
+            let state = {...s};
             match(action)
                 .when(Reconnect, (onlyIfClosed: boolean) => {
                     this.socket.reconnect(onlyIfClosed)
@@ -119,10 +121,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                     }
                     this.socket.send(new messages.RunCell(cellIds));
                     cellIds.forEach(id => {
-                        const idx = state.cells.findIndex(cell => cell.id === id);
-                        if (idx >= 0) {
-                            state.cells[idx].queued = true;
-                        }
+                        state.cells = state.cells.map(cell => {
+                            if (cell.id === id) {
+                                return { ...cell, queued: true }
+                            } else return cell
+                        })
                     })
                 })
                 .when(RequestCancelTasks, () => {
@@ -133,23 +136,26 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 })
                 .when(SetSelectedCell, selected => {
                     state.activeCell = state.cells.find(cell => cell.id === selected);
-
-                    state.cells.forEach(cell => {
+                    state.cells = state.cells.map(cell => {
                         cell.selected = selected === cell.id;
+                        return cell
                     });
                 })
                 .when(CurrentSelection, (cellId, range) => {
-                    state.cells.forEach(cell => {
+                    state.cells = state.cells.map(cell => {
                         // todo: what is this used for?
                         cell.currentSelection = cell.id === cellId ? range : undefined;
+                        return cell
                     });
                     this.socket.send(new messages.CurrentSelection(cellId, range));
                 })
                 .when(ClearCellEdits, id => {
-                    const idx = state.cells.findIndex(cell => cell.id === id);
-                    if (idx >= 0) {
-                        state.cells[idx].pendingEdits = [];
-                    }
+                    state.cells = state.cells.map(cell => {
+                        if (cell.id === id) {
+                            cell.pendingEdits = []
+                            return cell
+                        } else return cell
+                    })
                 })
                 .when(DownloadNotebook, () => {
                     // TODO download current notebook
@@ -224,13 +230,20 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
 
     dispatch(action: UIAction): void {
         this.state.updateState(s => {
+            let newS: ServerState | undefined = undefined;
             match(action)
                 .when(RequestNotebooksList, () => {
                     this.socket.send(new messages.ListNotebooks([]))
                 })
                 .when(LoadNotebook, path => {
-                    s.notebooks[path] = ServerStateHandler.newNotebookState(path, true);
-                    s.currentNotebook = path;
+                    newS = {
+                        ...s,
+                        notebooks: {
+                            ...s.notebooks,
+                            [path]:  ServerStateHandler.newNotebookState(path, true)
+                        }
+                    };
+                    newS.currentNotebook = path;
                     this.socket.send(new messages.LoadNotebook(path))
                 })
                 .when(CreateNotebook, (path, content) => {
@@ -249,10 +262,14 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     //TODO: handle modal viewing
                 })
                 .when(SetSelectedNotebook, path => {
-                    s.currentNotebook = path
+                    newS = {
+                        ...s,
+                        currentNotebook: path
+                    }
                 })
 
-            return s
+            if (newS) return newS
+            else return s
         });
     }
 }

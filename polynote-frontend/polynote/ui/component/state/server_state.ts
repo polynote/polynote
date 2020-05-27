@@ -59,6 +59,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
      * @param doLoad            Whether to actually open a socket and load the notebook. False by default.
      * @return NotebookState
      */
+    // TODO: We shouldn't be storing these complex objects in the State object!
     static newNotebookState(path: string, doLoad: boolean = false): NotebookInfo {
         const state: NotebookState = {
             path,

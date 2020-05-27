@@ -65,7 +65,7 @@ export class Notebook {
                     this.cellOrder[idx] = cell.id;
                     this.el.appendChild(this.cells[cell.id].cell.el);
                 }
-                this.cells[cell.id].handler.setState(cell);
+                this.cells[cell.id].handler.updateState(() => cell);
             })
         });
     }

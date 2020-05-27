@@ -346,7 +346,8 @@ class CodeCellComponent extends CellComponent {
     }
 
     private updateCellOutputState(handler: StateHandler<CellOutputState>, results: Result[]) {
-        handler.updateState(s => {
+        handler.updateState(state => {
+            let s = {...state}
             results.forEach(result => {
                 match(result)
                     .when(CompileErrors, reports => {
@@ -700,7 +701,7 @@ class CodeCellOutput {
 
         outputHandler.view("output").addObserver(output => {
             output.forEach(o => {
-                this.addOutput(o.contentType, o.content)
+                this.addOutput(o.contentType, o.content.join(''))
             })
         })
     }

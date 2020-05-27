@@ -2,8 +2,10 @@ import {a, button, div, h2, iconButton, span, tag, TagElement} from "../../util/
 import {CreateNotebook, LoadNotebook, RequestNotebooksList, ServerMessageDispatcher} from "../messaging/dispatcher";
 import {ImportNotebook} from "../../util/ui_event";
 import {ServerStateHandler} from "../state/server_state";
-import {diffArray} from "../../../util/functions";
+import {diffArray, removeKey} from "../../../util/functions";
 import {StateHandler} from "../state/state_handler";
+import * as deepEquals from 'fast-deep-equal/es6';
+import * as clone from "clone";
 
 export class NotebookListContextMenuComponent {
     readonly el: TagElement<"div">;
@@ -43,7 +45,7 @@ export class NotebookList {
         const treeState = new BranchHandler({
             fullPath: "",
             value: "",
-            children: []
+            children: {}
         });
         this.tree = new BranchComponent(dispatcher, treeState);
 
@@ -63,13 +65,13 @@ export class NotebookList {
         serverStateHandler.view("notebooks").addObserver((newNotebooks, oldNotebooks) => {
             const [removed, added] = diffArray(Object.keys(oldNotebooks), Object.keys(newNotebooks));
 
-            console.log("start updating notebook list")
+            console.log("start updating notebook list", added, removed)
             added.forEach(path => treeState.addPath(path));
             removed.forEach(path => treeState.removePath(path))
             console.log("done updating notebook list")
         });
 
-        serverStateHandler.addObserver(x=> console.log("got server state update", x));
+        // serverStateHandler.addObserver(x=> console.log("got server state update", x));
 
         // we're ready to request the notebooks list now!
         dispatcher.dispatch(new RequestNotebooksList())
@@ -110,86 +112,208 @@ export class NotebookList {
     }
 }
 
-type Leaf = {
+export type Leaf = {
     fullPath: string,
     value: string
 }
-type Branch = Leaf & {
-    children: (Branch | Leaf)[]
+export type Branch = Leaf & {
+    children: Record<string, (Branch | Leaf)>
 };
 
-class BranchHandler extends StateHandler<Branch> {
+export class BranchHandler extends StateHandler<Branch> {
     constructor(state: Branch) {
         super(state);
     }
 
     addPath(path: string) {
+        function go(remainingPath: string, components: string[], parent: Branch): Branch {
+            if (remainingPath.split("/").length === 1) {
+                const fullPath = components.concat(remainingPath).join("/")
+                return {
+                    ...parent,
+                    children: {
+                        ...parent.children,
+                        [fullPath]: {
+                            value: remainingPath,
+                            fullPath,
+                        }
+                    }
+                }
+            } else {
+                const comps = remainingPath.split("/")
+                const childPath = comps.slice(1).join("/");
+                const currentVal = comps.slice(0, 1)[0];
+                const childComponents = [...components, currentVal];
+                const intermediatePath = childComponents.join("/")
+                const maybeChild = parent.children[intermediatePath]
+                return {
+                    ...parent,
+                    children: {
+                        ...parent.children,
+                        [intermediatePath]: go(childPath, childComponents, maybeChild && "children" in maybeChild ? maybeChild : {
+                            fullPath: intermediatePath,
+                            value: currentVal,
+                            children: {}
+                        })
+                    }
+                }
+            }
+        }
         this.updateState(s => {
-            console.log("adding path to notebook list", path)
+            return go(path, [], s)
+        })
+    }
+
+    addPath3(path: string) {
+        // console.time("bh_add")
+        this.updateState(s => {
+            // console.log("adding path to notebook list", path);
             let components = path.split("/");
-            let branch = s;
+            const state = clone(s);
+            let branch = state;
             let i = 0;
             while (i < components.length - 1) {
                 if (branch.value === components[i]) {
                     i++;
                 } else {
-                    const maybeChild = branch.children.find(b => b.value === components[i]);
+                    const childPath = components.slice(0, i + 1).join("/");
+                    const maybeChild = branch.children[childPath];
                     if (maybeChild && "children" in maybeChild) {
                         branch = maybeChild;
                     } else {
                         const newChild = {
-                            fullPath: components.slice(0, i).join("/"),
+                            fullPath: childPath,
                             value: components[i],
-                            children: []
+                            children: {}
                         };
-                        branch.children.push(newChild);
+                        branch.children[newChild.fullPath] = newChild;
                         branch = newChild;
                     }
                 }
             }
 
             // this last one must be a leaf
-            branch.children.push({
+            branch.children[path] = {
                 fullPath: path,
                 value: components[i]
-            });
+            };
 
-            return s;
+            return state;
         })
+        // console.timeEnd("bh_add")
+    }
+
+    addPath2(path: string) {
+        // console.time("bh_add")
+        this.updateState(s => {
+            // console.log("adding path to notebook list", path);
+            let components = path.split("/");
+            let state = {...s}
+            let branch = state;
+            let i = 0;
+            while (i < components.length - 1) {
+                if (branch.value === components[i]) {
+                    i++;
+                } else {
+                    const childPath = components.slice(0, i + 1).join("/");
+                    const maybeChild = {...branch.children[childPath]};
+                    if (maybeChild && "children" in maybeChild) {
+                        branch.children = {
+                            ...branch.children,
+                            [childPath]: maybeChild
+                        }
+                        branch = maybeChild
+                    } else {
+                        const newChild = {
+                            fullPath: childPath,
+                            value: components[i],
+                            children: {}
+                        };
+                        branch.children = {
+                            ...branch.children,
+                            [newChild.fullPath]: newChild
+                        };
+                        branch = newChild;
+                    }
+                }
+            }
+
+            // this last one must be a leaf
+            branch.children = {
+                ...branch.children,
+                [path]: {
+                    fullPath: path,
+                    value: components[i]
+                }
+            };
+            return state;
+        })
+        // console.timeEnd("bh_add")
     }
 
     removePath(path: string) {
+        function go(path: string, parent: Branch) {
+            const maybeChild = parent.children[path]
+            if (maybeChild) {
+                return {
+                    ...parent,
+                    children: removeKey(parent.children, path)
+                }
+            } else {
+                return {
+                    ...parent,
+                    children: Object.keys(parent.children).reduce((acc, key)  => {
+                        const branchOrLeaf = parent.children[key];
+                        if ("children" in branchOrLeaf) {
+                            acc[key] = go(path, branchOrLeaf) // 'tis a branch
+                        } else {
+                            acc[key] = branchOrLeaf // 'tis a leaf!
+                        }
+                        return acc
+                    }, {} as Record<string, Branch | Leaf>)
+                }
+            }
+        }
+        this.updateState(s => {
+            return go(path, s)
+        })
+    }
+
+    removePath2(path: string) {
         this.updateState(s => {
             let components = path.split("/");
-            let branch = s;
+            const state = clone(s);
+            let branch = state;
             while(components.length > 0) {
                 if (branch.value === components[0]) {
                     components.shift()
                 } else {
-                    const idx = branch.children.findIndex(b => b.value === components[0]);
-                    const maybeChild = branch.children[idx];
+                    // console.log("components", components)
+                    const maybeChild = branch.children[components[0]];
                     if (maybeChild && "children" in maybeChild) {
                         branch = maybeChild
                     } else {
-                        branch.children.splice(idx, 1);
+                        delete branch.children[path];
+                        break
                     }
                 }
             }
-            return s;
+            return state;
         })
     }
 }
 
-class BranchComponent {
+export class BranchComponent {
     readonly el: TagElement<"li" | "ul">;
     readonly childrenEl: TagElement<"ul">;
     private children: (BranchComponent | LeafComponent)[] = [];
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateHandler<Branch>) {
-
         const initial = state.getState();
         this.childrenEl = tag('ul', [], {}, []);
-        initial.children.forEach(child => this.addChild(child));
+        Object.values(initial.children).forEach(child => this.addChild(child));
+
+        // if `initial.value` is empty, this is the root node so there's no outer `li`.
         if (initial.value.length > 0) {
             this.el = tag('li', ['branch'], {}, [
                 button(['branch-outer'], {}, [
@@ -205,15 +329,15 @@ class BranchComponent {
         this.el.click(evt => this.el.classList.toggle('expanded'));
 
         state.addObserver((newNode, oldNode) => {
-            const [removed, added] = diffArray(oldNode.children, newNode.children);
+            const [removed, added] = diffArray(Object.keys(oldNode.children), Object.keys(newNode.children));
             removed.forEach(child => {
-                const idx = this.children.findIndex(c => c.path === child.fullPath);
+                const idx = this.children.findIndex(c => c.path === oldNode.children[child].fullPath);
                 const childEl = this.children[idx].el;
                 childEl.parentElement?.removeChild(childEl);
                 this.children.splice(idx, 1);
             });
             added.forEach(child => {
-                this.addChild(child);
+                this.addChild(newNode.children[child]);
             })
         })
     }
@@ -224,19 +348,23 @@ class BranchComponent {
 
     private addChild(node: Branch | Leaf) {
         let child;
-        const childStateHandler =
-            this.state.xmapView("children",
-            (children: Branch[]) => children.find(c => c.fullPath === node.fullPath),
-            (children: Branch[], node: Branch) => {
-                const idx = children.findIndex(c => c.fullPath === node.fullPath);
-                if (idx) {
-                    children[idx] = node;
-                }
-                return children;
-            });
+        // This is really slow - is it necessary?
+        // const childStateHandler =
+        //     this.state.xmapView("children",
+        //     (children: Record<string, Branch>) => children[node.fullPath],
+        //     (children: Record<string, Branch>, node: Branch) => {
+        //         children[node.fullPath] = node;
+        //         return children;
+        //     });
+
+        // TODO: Creation of views seems to be a tad expensive, so we might need to revisit this as it creates 2 views for every node in the notebook list!
+        const childStateHandler = this.state.view("children").view(node.fullPath);
+        // childStateHandler.addObserver((next, prev) => console.log("child state changed for", node.fullPath, ":", prev, next))
         if ("children" in node) {
-            child = new BranchComponent(this.dispatcher, childStateHandler);
+            // const childStateHandler = new StateHandler(node)
+            child = new BranchComponent(this.dispatcher, childStateHandler as StateHandler<Branch>);
         } else {
+            // const childStateHandler = new StateHandler(node)
             child = new LeafComponent(this.dispatcher, childStateHandler);
         }
 
@@ -255,7 +383,7 @@ class BranchComponent {
     }
 }
 
-class LeafComponent {
+export class LeafComponent {
     readonly el: TagElement<"li">;
     private leafEl: TagElement<"a">;
 
@@ -264,7 +392,6 @@ class LeafComponent {
         const initial = state.getState();
         this.leafEl = this.getEl(initial);
         this.el = tag('li', ['leaf'], {}, [this.leafEl]);
-        this.el.click(evt => this.el.classList.toggle('expanded'));
 
         state.addObserver(leaf => {
             const newEl = this.getEl(leaf);
@@ -288,9 +415,4 @@ class LeafComponent {
             )
     }
 }
-
-// exports for testing. These should only ever be used in test files! If only there was package private!
-export class __BranchHandler extends BranchHandler {}
-export class __BranchComponent extends BranchComponent {}
-export class __LeafComponent extends LeafComponent {}
 

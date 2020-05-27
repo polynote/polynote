@@ -54,7 +54,7 @@ export class CommentHandler {
                const root = this.commentRoots[comment.range.toString];
                if (comment.uuid === root.uuid) {
                    // If this is the root comment, we set its state.
-                   root.rootState.setState(comment);
+                   root.rootState.updateState(() => comment);
                } else {
                    // Otherwise, it's a child comment so we collect it up here.
                    rootChildren[root.range.toString] = [...rootChildren[root.uuid] ?? [], comment];
@@ -64,7 +64,7 @@ export class CommentHandler {
            // Finally, we update all the root children
            Object.entries(rootChildren).forEach(([rootRange, children]) => {
                const root = this.commentRoots[rootRange];
-               root.childrenState.setState(children);
+               root.childrenState.updateState(() => children);
 
            })
        });

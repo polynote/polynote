@@ -16,8 +16,13 @@ export class SplitViewComponent {
             div(['ui-panel'], [
                 leftPane.header.click(evt => {
                     ViewPrefsHandler.updateState(s => {
-                        s.leftPane.collapsed = !s.leftPane.collapsed;
-                        return s
+                        return {
+                            ...s,
+                            leftPane: {
+                                ...s.leftPane,
+                                collapsed: !s.leftPane.collapsed
+                            }
+                        }
                     })
                 }),
                 div(['ui-panel-content'], [leftPane.el])])]);
@@ -26,8 +31,13 @@ export class SplitViewComponent {
             div(['ui-panel'], [
                 rightPane.header.click(evt => {
                     ViewPrefsHandler.updateState(s => {
-                        s.rightPane.collapsed = !s.rightPane.collapsed;
-                        return s
+                        return {
+                            ...s,
+                            rightPane: {
+                                ...s.rightPane,
+                                collapsed: !s.rightPane.collapsed
+                            }
+                        }
                     })
                 }),
                 div(['ui-panel-content'], [rightPane.el])])]);
@@ -60,8 +70,13 @@ export class SplitViewComponent {
         });
         leftDragger.addEventListener('dragend', () => {
             ViewPrefsHandler.updateState(s => {
-                s.leftPane.size = left.style.width;
-                return s
+                return {
+                    ...s,
+                    leftPane: {
+                        ...s.leftPane,
+                        size: left.style.width
+                    }
+                }
             });
         });
 
@@ -91,8 +106,13 @@ export class SplitViewComponent {
         });
         rightDragger.addEventListener('dragend', evt => {
             ViewPrefsHandler.updateState(s => {
-                s.rightPane.size = right.style.width;
-                return s
+                return {
+                    ...s,
+                    rightPane: {
+                        ...s.rightPane,
+                        size: right.style.width
+                    }
+                }
             });
         });
 
