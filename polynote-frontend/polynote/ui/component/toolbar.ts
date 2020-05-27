@@ -286,7 +286,7 @@ class TextToolbarUI extends UIMessageTarget {
 
 class SettingsToolbarUI extends UIMessageTarget {
     readonly el: TagElement<"div">;
-    //private floatingMenu: TagElement<"div">;
+
     constructor(parent?: UIMessageTarget) {
         super(parent);
         this.el = toolbarElem("about", [[
@@ -297,9 +297,5 @@ class SettingsToolbarUI extends UIMessageTarget {
                 .click(() => this.publish(new ViewAbout("Hotkeys")))
                 .withKey('neverDisabled', true),
         ]]);
-
-        //this.floatingMenu = div(['floating-menu'], []);
-
-        //this.el.appendChild(this.floatingMenu)
     }
 }
