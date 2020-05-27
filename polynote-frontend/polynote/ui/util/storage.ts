@@ -73,9 +73,10 @@ type PreferenceListener = (oldValue: Preference, newValue: Preference) => void
 export class Preferences {
     private readonly preferencesKey = "preferences";
     private preferences: Record<string, Preference> = {};
+    private preferenceOptions: Record<string, Record<string, any>> = {};
     public listeners: [PreferenceListener, StorageListener][];
 
-constructor() {
+    constructor() {
         const rawPrefs: Record<string, Preference> = storage.get(this.preferencesKey) || {};
         this.preferences = this.parseRaw(rawPrefs);
 
@@ -107,7 +108,15 @@ constructor() {
     }
 
     // register a preference (only if it doesn't already exist)
-    register(name: string, initialValue: any, description?: string) {
+    register(name: string, initialValue: any, description?: string, options?: Record<string, any>) {
+        if (typeof initialValue === 'boolean' && !options) {
+            options = {"true": true, "false": false};
+        }
+
+        if (options) {
+            this.preferenceOptions[name] = options;
+        }
+
         if (!this.get(name)) {
             this.preferences[name] = new Preference(initialValue, description || "An unknown description!");
             this.sync();
@@ -115,11 +124,10 @@ constructor() {
         return name;
     }
 
-    set(name: string, newValue: any, description?: string) {
+    set(name: string, newValue: any) {
         const pref = this.get(name);
         if (pref) {
             pref.value = newValue;
-            if (description) pref.description = description;
             this.preferences[name] = pref;
             this.sync();
         } else {
@@ -129,6 +137,10 @@ constructor() {
 
     get(name: string): Preference {
         return this.preferences[name];
+    }
+
+    getOptions(name: string): Record<string, any> | undefined {
+        return this.preferenceOptions[name];
     }
 
     clear() {
@@ -162,7 +174,7 @@ constructor() {
 
 // Preferences are just values with a description which is used for display purposes
 export class Preference {
-    constructor(public value: any, public description: string) {}
+    constructor(public value: any, readonly description: string) {}
 }
 
 export const preferences = new Preferences();

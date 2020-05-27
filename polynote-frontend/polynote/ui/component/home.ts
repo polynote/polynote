@@ -1,7 +1,7 @@
 "use strict";
 
 import {LoadNotebook, UIMessage, UIMessageTarget} from "../util/ui_event";
-import {div, span, tag, TagElement} from "../util/tags";
+import {div, polynoteLogo, span, tag, TagElement} from "../util/tags";
 import {storage} from "../util/storage";
 
 export class HomeUI extends UIMessageTarget {
@@ -10,7 +10,6 @@ export class HomeUI extends UIMessageTarget {
         super();
         this.el = div(['welcome-page'], []);
         this.el.innerHTML = `
-          <img src="static/style/polynote.svg" alt="Polynote" />
           <h2>Home</h2>
           
           <p>
@@ -21,6 +20,8 @@ export class HomeUI extends UIMessageTarget {
           <h3>Recent notebooks</h3>
           <ul class="recent-notebooks"></ul>  
         `;
+
+        this.el.insertBefore(polynoteLogo(), this.el.firstChild);
 
         const recent = this.el.querySelector('.recent-notebooks');
         (storage.get('recentNotebooks') ?? []).forEach((nb: {name: string, path: string}) => {

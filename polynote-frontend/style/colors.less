@@ -1,0 +1,852 @@
+@import 'common';
+
+body {
+  background: @notebook-background;
+  color: @base-color;
+}
+
+button {
+  color: @ui-text;
+}
+
+.toolbar-container {
+  background: @ui-background;
+  border-bottom-color: @ui-border;
+  color: @ui-text;
+
+  .toolbar {
+    border-right-color: @ui-border;
+
+    h3 {
+      color: @ui-text;
+      text-shadow: @ui-text;
+    }
+
+    .tool-group::before {
+      border-left-color: @ui-border;
+    }
+  }
+}
+
+.dropdown {
+  &.open {
+    background-color: @dropdown-bg;
+  }
+
+  button {
+    background: @button-bg;
+    border-color: transparent @ui-border;
+    color: @ui-text;
+  }
+
+  button.selected, button:hover {
+    border-color: @ui-border;
+  }
+
+  &.open button:enabled {
+    border-color: transparent @ui-border;
+
+    &:first-of-type, &.first-visible {
+      border-top-color: @ui-border;
+    }
+
+    &:last-of-type, &.last-visible {
+      border-bottom-color: @ui-border;
+    }
+  }
+
+  &.open button:hover {
+    background-color: @ui-selected;
+    color: @ui-selected-fg;
+  }
+}
+
+.new-cell-divider {
+  &:hover {
+    background-color: @new-cell-divider-hover-bg;
+  }
+}
+
+.cell-container {
+  &.selected, &.active {
+    border-color: @ui-selected;
+  }
+
+
+  &.running {
+    border-color: @icon-green;
+  }
+
+  &.queued {
+    border-color: gray;
+  }
+
+  &.error {
+    border-color: #ba0000;
+  }
+
+  .cell-input {
+    .cell-input-tools {
+      background: @ui-background;
+      border-bottom-color: @ui-border;
+
+      .exec-info {
+        color: #808080;
+      }
+    }
+
+    .cell-footer {
+      border-top-color: @ui-border;
+    }
+  }
+
+  &.code-cell .cell-input {
+    border-color: @ui-border;
+  }
+
+  &.code-cell .cell-output {
+    border-color: @ui-border;
+  }
+
+  &.hide-code .cell-input {
+    .toggle-code {
+      border-color: @ui-border;
+      background-color: @button-bg;
+    }
+  }
+
+  &.hide-output {
+    .cell-input .toggle-output {
+      border-color: @ui-border;
+      background-color: @button-bg;
+    }
+  }
+
+  &.text-cell {
+    .markdown-body {
+      color: @md-text-color;
+    }
+
+    .markdown-body .pl-c {
+      color: #6a737d;
+    }
+
+    .markdown-body .pl-c1,
+    .markdown-body .pl-s .pl-v {
+      color: #005cc5;
+    }
+
+    .markdown-body .pl-e,
+    .markdown-body .pl-en {
+      color: #6f42c1;
+    }
+
+    .markdown-body .pl-smi,
+    .markdown-body .pl-s .pl-s1 {
+      color: @md-text-color;
+    }
+
+    .markdown-body .pl-ent {
+      color: #22863a;
+    }
+
+    .markdown-body .pl-k {
+      color: #d73a49;
+    }
+
+    .markdown-body .pl-s,
+    .markdown-body .pl-pds,
+    .markdown-body .pl-s .pl-pse .pl-s1,
+    .markdown-body .pl-sr,
+    .markdown-body .pl-sr .pl-cce,
+    .markdown-body .pl-sr .pl-sre,
+    .markdown-body .pl-sr .pl-sra {
+      color: #032f62;
+    }
+
+    .markdown-body .pl-v,
+    .markdown-body .pl-smw {
+      color: #e36209;
+    }
+
+    .markdown-body .pl-bu {
+      color: #b31d28;
+    }
+
+    .markdown-body .pl-ii {
+      color: #fafbfc;
+      background-color: #b31d28;
+    }
+
+    .markdown-body .pl-c2 {
+      color: #fafbfc;
+      background-color: #d73a49;
+    }
+    .markdown-body .pl-sr .pl-cce {
+      color: #22863a;
+    }
+
+    .markdown-body .pl-ml {
+      color: #735c0f;
+    }
+
+    .markdown-body .pl-mh,
+    .markdown-body .pl-mh .pl-en,
+    .markdown-body .pl-ms {
+      color: #005cc5;
+    }
+
+    .markdown-body .pl-mi {
+      color: @md-text-color;
+    }
+
+    .markdown-body .pl-mb {
+      color: @md-text-color;
+    }
+
+    .markdown-body .pl-md {
+      color: #b31d28;
+      background-color: #ffeef0;
+    }
+
+    .markdown-body .pl-mi1 {
+      color: #22863a;
+      background-color: #f0fff4;
+    }
+
+    .markdown-body .pl-mc {
+      color: #e36209;
+      background-color: #ffebda;
+    }
+
+    .markdown-body .pl-mi2 {
+      color: #f6f8fa;
+      background-color: #005cc5;
+    }
+
+    .markdown-body .pl-mdr {
+      color: #6f42c1;
+    }
+
+    .markdown-body .pl-ba {
+      color: #586069;
+    }
+
+    .markdown-body .pl-sg {
+      color: #959da5;
+    }
+
+    .markdown-body .pl-corl {
+      color: #032f62;
+    }
+
+    .markdown-body a {
+      color: #0366d6;
+    }
+
+    .markdown-body hr {
+      border-bottom-color: #eee;
+      background-color: #e1e4e8;
+    }
+
+    .markdown-body blockquote {
+      color: #6a737d;
+      border-left-color: #dfe2e5;
+    }
+
+    .markdown-body h1 .octicon-link,
+    .markdown-body h2 .octicon-link,
+    .markdown-body h3 .octicon-link,
+    .markdown-body h4 .octicon-link,
+    .markdown-body h5 .octicon-link,
+    .markdown-body h6 .octicon-link {
+      color: #1b1f23;
+    }
+
+    .markdown-body h1, .markdown-body h2 {
+      border-bottom-color: #eaecef;
+    }
+
+    .markdown-body h6 {
+      color: #6a737d;
+    }
+
+    .markdown-body table th,
+    .markdown-body table td {
+      border-color: #dfe2e5;
+    }
+
+    .markdown-body table tr {
+      border-top-color: #c6cbd1;
+    }
+
+    .markdown-body table tr:nth-child(2n) {
+      background-color: #f6f8fa;
+    }
+
+    .markdown-body img {
+      background-color: #fff;
+    }
+
+    .markdown-body code {
+      background-color: rgba(27,31,35,0.05);
+    }
+
+    .markdown-body .highlight pre,
+    .markdown-body pre {
+      background-color: #f6f8fa;
+    }
+
+    .markdown-body .full-commit .btn-outline:not(:disabled):hover {
+      color: #005cc5;
+      border-color: #005cc5;
+    }
+
+    .markdown-body kbd {
+      border-color: #d1d5da;
+      color: #444d56;
+      background-color: #fafbfc;
+      border-bottom-color: #c6cbd1;
+      box-shadow: inset 0 -1px 0 #c6cbd1;
+    }
+
+    .markdown-body :checked+.radio-label {
+      border-color: #0366d6;
+    }
+  }
+
+  .cell-output {
+    .cell-output-margin {
+      background: @ui-background;
+    }
+
+    .output[rel='stderr'] {
+      color: #884444
+    }
+
+    .output[rel='stdout'] details summary span::after {
+      color: gray;
+    }
+
+    .cell-result-margin {
+      background: @ui-background;
+    }
+
+    .out-ident {
+      color: #D84315;
+      border-bottom-color: @ui-border;
+    }
+  }
+}
+
+button {
+  &:hover, &:focus, &.selected {
+    border-color: @ui-border;
+    background-color: @ui-background-bright;
+  }
+
+  &:active {
+    background-color: @ui-background-dark;
+    border-color: @ui-border-dark;
+  }
+
+  &:disabled .icon {
+    color: gray;
+  }
+}
+
+
+.run-cell .icon {
+  color: @icon-green;
+}
+
+.stop-cell .icon {
+  color: @icon-red;
+}
+
+
+.insert-cell-above .icon {
+  border-top: 3px solid @icon-green;
+}
+
+.insert-cell-below .icon {
+  border-bottom: 3px solid @icon-green;
+}
+
+.notebook-content {
+  border-color: @ui-border;
+}
+
+.ui-panel {
+  & > h2 {
+    background-color: @ui-sidebar-header;
+  }
+
+  h3 {
+    background-color: @ui-background-dark;
+  }
+}
+
+.kernel-ui {
+  background-color: @ui-background;
+  border-left: 1px solid @ui-border;
+
+  .kernel-tasks {
+    .task {
+      background-color: @task-bg;
+      border-color: #eeeeee;
+      box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4);
+      .progress {
+        background: #eeeeee;
+        .progress-bar {
+          background-color: #005cc5;
+        }
+      }
+
+      &.error {
+        background-color: #ffeef0;
+        border: 1px solid #cc0000;
+      }
+
+      .child-tasks {
+        border-top-color: @ui-border-light;
+      }
+    }
+  }
+
+  .kernel-info {
+    .collapsed {
+      background-color: lightgrey;
+    }
+
+    .info-container {
+      background-color: @ui-table-bg;
+
+      tbody {
+        background: @ui-table-bg;
+      }
+    }
+  }
+
+}
+
+.result {
+  table {
+    border-color: @content-table-border;
+  }
+
+  th, td {
+    border-color: @content-table-th-border;
+  }
+
+  th {
+    background-color: @content-table-th-bg;
+  }
+
+  tr:nth-child(even) td {
+    background-color: @content-table-td-even-bg
+  }
+
+  tr:nth-child(odd) td {
+    background-color: @content-table-td-odd-bg;
+  }
+}
+
+.kernel-status .status { color: gray; }
+.kernel-status.idle .status { color: green;}
+.kernel-status.busy .status { color: gold; }
+.kernel-status.dead .status { color: #AA0000; }
+
+.drag-handle {
+  border-left-color: @ui-background;
+}
+
+.notebook-config {
+  background-color: @ui-background;
+  color: fade(@ui-text, 30%);
+}
+
+.notebook-config.open {
+  color: @ui-text;
+
+  .notebook-config-section {
+    border-color: @ui-border;
+  }
+
+  .add .icon {
+    color: @icon-green;
+  }
+
+  .remove .icon {
+    color: @icon-green;
+  }
+}
+
+.grid-shell {
+  background-color: @ui-background;
+}
+
+.split-view.right-collapsed .right .ui-panel h2:hover,
+.split-view.left-collapsed .left .ui-panel h2:hover{
+  background-color: @ui-background-accent;
+}
+
+.split-view.right-collapsed .grid-shell.right,
+.split-view.left-collapsed .grid-shell.left {
+  background-color: @ui-sidebar-header;
+}
+
+.tab-view {
+  .tab-container {
+    background: @ui-background;
+    &:last-child:after {
+      border-bottom-color: @ui-border;
+    }
+
+    .tab {
+      border-color: @ui-border;
+      background: @ui-background-dark;
+
+      &.active {
+        background: @notebook-background;
+      }
+    }
+
+
+  }
+}
+
+.tree-view {
+  ul {
+    li {
+      ul {
+        li {
+          border-left-color: @ui-border-dark;
+        }
+
+        li::before {
+          border-bottom-color: @ui-border-dark;
+        }
+
+        li:last-child::before {
+          border-left-color: @ui-border-dark;
+        }
+      }
+
+      span, a {
+        color: @ui-text;
+      }
+    }
+
+    li.leaf a:focus span {
+      background-color: @ui-selected;
+      color: @ui-selected-fg;
+    }
+
+    li.branch {
+      .branch-outer {
+        color: @ui-text;
+        &:focus {
+          .name {
+            background-color: @ui-selected;
+            color: @ui-selected-fg;
+            outline-color: black;
+          }
+        }
+      }
+    }
+  }
+}
+
+.notebooks-list {
+  border-color: @ui-border;
+
+  .ui-panel-content {
+    background: @ui-panel-bg;
+  }
+
+  &.highlight {
+    .tree-view {
+      border-color: green;
+    }
+  }
+}
+
+.notebook-list-context-menu {
+  background: @ui-background;
+  border-color: @ui-border;
+  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+
+  ul {
+    li {
+      color: @ui-text;
+      &:hover {
+        background: @ui-selected;
+        color: @ui-selected-fg;
+      }
+    }
+  }
+}
+
+button.dialog-button {
+  border-color: @ui-border;
+  background-color: @ui-background;
+  &:active {
+    background-color: @ui-background-dark;
+    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.2);
+  }
+}
+
+.input-dialog {
+  background: @ui-background;
+  border-color: @ui-border;
+}
+
+.create-notebook {
+  color: @icon-green;
+}
+
+.latex-editor {
+  .pointer {
+    border-bottom-color: #6a737d;
+  }
+
+  .bubble {
+    background: #6a737d;
+    .tex-display {
+      background: @ui-panel-bg;
+      border-color: black;
+    }
+  }
+}
+
+.welcome-page {
+  .recent-notebooks li span {
+    color: @default-link-color;
+  }
+}
+
+.kernel-ui .kernel-symbols table,
+.table-view table {
+  th, td {
+    border-color: @ui-border;
+  }
+
+  thead {
+    th {
+      background: @ui-background;
+    }
+  }
+
+  tbody {
+    &.results {
+      border-bottom-color: black;
+    }
+
+    background: @ui-table-bg;
+
+    tr.initial-msg td span {
+      color: @base-color;
+    }
+
+    th, td > span::after {
+      color: @base-color;
+    }
+  }
+}
+
+.plot-editor {
+  background: @ui-background;
+  border-color: @ui-border;
+
+  button.add .icon, button.plot .icon {
+    color: @icon-green;
+  }
+
+  .dimension-list, .measure-list, .numeric-field-list  {
+    border-color: @ui-border;
+    background: @ui-panel-bg;
+  }
+
+  button.cancel .icon {
+    color: @icon-red;
+  }
+
+  .measure, .dimension, .numeric {
+    border-color: @ui-border;
+    background: @ui-background;
+  }
+
+  .plot-area {
+    input {
+      border-bottom-color: @ui-border;
+    }
+
+    .y-axis-drop {
+      .label {
+        .measure, .numeric {
+          button {
+            color: @icon-red;
+          }
+        }
+      }
+    }
+
+    .plot-output {
+      background: @ui-panel-bg;
+      border-color: @ui-border;
+    }
+
+    .drop-ok {
+      background: #eeffee;
+    }
+
+    .drop-disallowed {
+      background: #ffeeee;
+    }
+  }
+}
+
+.undo-delete {
+  background: rgb(253, 246, 228);
+
+  .undo-link {
+    color: #268bd2;
+  }
+}
+
+.currently-executing {
+  background-color: #d9edf7;
+}
+
+.link-highlight {
+  background-color: @line-highlight-color;
+}
+
+.modal-container {
+  .modal-background {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  .modal-window {
+    .modal-titlebar {
+      border-color: @ui-border;
+      background: linear-gradient(0, @ui-background-dark, @ui-background-bright);
+      .modal-titlebar-controls {
+        .modal-close {
+          color: @icon-red;
+        }
+      }
+    }
+
+    .modal-content {
+      border-color: @ui-border;
+      background: @ui-background;
+    }
+  }
+}
+
+.tab-nav {
+  .tab-nav-items {
+    background: @ui-background;
+    border-right-color: @ui-border;
+
+    .tab-nav-item.active {
+      background: @ui-panel-bg;
+      border-color: @ui-border;
+      border-right-color: @ui-panel-bg;
+    }
+
+    .tab-nav-item.active:first-child {
+      border-top: 1px solid @ui-panel-bg;
+    }
+  }
+
+  .tab-nav-content {
+    background: @ui-panel-bg;
+  }
+}
+
+.modal-window.about {
+  button.about-button {
+    border-color: @ui-background-dark;
+
+    &:hover {
+      background: @ui-background;
+    }
+  }
+
+  .preferences-storage .storage {
+    background: @ui-background;
+  }
+}
+
+.comment-highlight {
+  background-color: rgba(255, 237, 158, 0.7);
+}
+
+.comment-highlight-strong {
+  background-color: rgba(255, 206, 111, 0.7);
+}
+
+.new-comment-button {
+  background-color: @button-bg;
+}
+
+.comment-container .comments-list {
+  border-color: @ui-border;
+  box-shadow: @ui-border 0px 2px 6px 2px;
+  background-color: @ui-panel-bg;
+
+  .comment .header {
+    background: @ui-background;
+    border-color: @ui-border;
+    .actions {
+      background-color: @ui-background;
+      ul {
+        border-color: @ui-border;
+        background: @ui-panel-bg;
+        box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+
+        li {
+          color: @ui-text;
+        }
+
+        li:hover {
+          background: @ui-selected;
+          color: @ui-selected-fg;
+        }
+      }
+    }
+  }
+
+  .create-comment {
+    &:not(:first-child) {
+      border-top-color: @ui-border;
+    }
+  }
+}
+
+.presence0 { .presence-color(@presence0) }
+.presence1 { .presence-color(@presence1) }
+.presence2 { .presence-color(@presence2) }
+.presence3 { .presence-color(@presence3) }
+.presence4 { .presence-color(@presence4) }
+.presence5 { .presence-color(@presence5) }
+.presence6 { .presence-color(@presence6) }
+.presence7 { .presence-color(@presence7) }
+.presence8 { .presence-color(@presence8) }
+
+@keyframes highlight {
+  from {
+    background-color: @line-highlight-color;
+  }
+
+  50% {
+    background-color: @line-highlight-color;
+  }
+
+  to {
+    background-color: @line-highlight-color-noalpha;
+  }
+}

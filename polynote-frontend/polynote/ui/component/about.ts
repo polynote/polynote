@@ -1,6 +1,6 @@
 "use strict";
 
-import {button, div, dropdown, h2, h3, iconButton, span, table, tag} from "../util/tags";
+import {AllowedElAttrs, button, div, dropdown, h2, h3, iconButton, polynoteLogo, span, table, tag} from "../util/tags";
 import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
@@ -24,7 +24,7 @@ export class About extends FullScreenModal {
     aboutMain() {
         const el = div(["about-display"], [
             div([], [
-                tag('img', [], {src: "static/style/polynote.svg", alt:"Polynote"}, []),
+                polynoteLogo(),
                 h2([], ["About this Polynote Server"])
             ])
         ]);
@@ -108,16 +108,30 @@ export class About extends FullScreenModal {
         for (const [k, preference] of Object.entries(preferences.show())) {
             const value = preference.value;
             let valueEl;
-            if (typeof value === "boolean") {
-                valueEl = dropdown([], {true: "true", false: "false"}).change(evt => {
+            const prefOptions = preferences.getOptions(k);
+            if (prefOptions) {
+                const options = Object.entries(prefOptions).map(
+                    ([label, optValue]) => {
+                        const attributes: AllowedElAttrs<HTMLOptionElement> = {value: optValue.toString()};
+                        if (optValue === value) {
+                            attributes.selected = 'selected';
+                        }
+                        return tag("option", [], attributes, [label]).withKey("valueData", optValue)
+                    }
+                );
+
+                valueEl = tag('select', [], {}, options).change(evt => {
                     const self = evt.currentTarget;
                     if (! self || ! (self instanceof HTMLSelectElement)) {
                         throw new Error(`Unexpected Event target for event ${JSON.stringify(evt)}! Expected \`currentTarget\` to be an HTMLSelectElement but instead got ${JSON.stringify(self)}`)
                     }
-                    const value = self.options[self.selectedIndex].value === "true";
-                    preferences.set(k, value)
-                });
-                valueEl.value = value.toString();
+                    const option = self.options[self.selectedIndex];
+                    let value: any = option.value;
+                    if (typeof (option as any).valueData !== 'undefined') {
+                        value = (option as any).valueData;
+                    }
+                    preferences.set(k, value);
+                })
             }
             prefsTable.addRow({
                 key: k,

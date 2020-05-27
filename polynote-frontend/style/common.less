@@ -1,0 +1,29 @@
+@code-fonts:                   'Hasklig', 'Fira Code', 'Menlo', fixed;
+@toolbar-height:               68px;
+@cell-margin-width:            6em;
+@cell-left-border-width:       8px;
+@tab-view-height:              1.5em;
+@tab-view-height-plus-padding: 2.5em;
+
+
+/*
+  Presence colors (other people's cursors) – taken from https://vega.github.io/vega/docs/schemes/#pastel1
+ */
+.presence-color(@color) {
+  background-color: fadeout(@color, 70%);
+
+  &.ppc { // presence point cursor – where their cursor actually is (at the end of the selection)
+    width: 1pt !important;
+    margin-left: -.5pt;
+    background-color: @color;
+    &:after {
+      content: ' ';
+      position: absolute;
+      top: -2pt;
+      left: -1.5pt;
+      width: 4pt;
+      height: 4pt;
+      background-color: @color
+    }
+  }
+}
