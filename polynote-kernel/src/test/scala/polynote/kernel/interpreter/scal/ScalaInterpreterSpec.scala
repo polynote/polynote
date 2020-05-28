@@ -421,6 +421,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
     "from class indexer" - {
       "imports" in {
         val code = "import HashM"
+        interpreter.awaitIndexer.runIO()
         val completions = completionsMap(code, code.length, State.id(1))
         val expected = Completion("HashMap", Nil, Nil, "scala.c.immutable", CompletionType.Unknown, Some("scala.collection.immutable.HashMap"))
         completions("HashMap") should contain (expected)

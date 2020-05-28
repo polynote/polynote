@@ -19,7 +19,7 @@ import scala.reflect.internal.util.{AbstractFileClassLoader, NoSourceFile, Posit
 import scala.reflect.io.VirtualDirectory
 import scala.reflect.runtime.universe
 import scala.tools.nsc.Settings
-import scala.tools.nsc.interactive.Global
+import scala.tools.nsc.interactive.{Global, NscThief}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import ScalaCompiler.OriginalPos
 
@@ -416,6 +416,18 @@ class ScalaCompiler private (
       global.globalPhase = run.typerPhase // make sure globalPhase matches run phase
       run.typerPhase.asInstanceOf[global.GlobalPhase].apply(compilationUnit)
       exitingTyper(compilationUnit.body)
+    }
+
+    private[kernel] def typedTreeAt(pos: Int) = zio.blocking.effectBlocking {
+      val run = new Run()
+      compilationUnit.body = wrapped
+      compilationUnit.lastBody = wrapped
+      unitOfFile.put(sourceFile.file, compilationUnit)
+      // this does a targeted-typecheck, which is more tolerant of errors. But, we have to make sure it's past the
+      // namer first or it will go through the parser which will throw position validation errors.
+      enteringPhase(currentRun.namerPhase)(currentRun.namerPhase.asInstanceOf[GlobalPhase].applyPhase(unitOfFile(sourceFile.file)))
+      compilationUnit.status = JustParsed
+      NscThief.typedTreeAt(global, Position.offset(sourceFile, pos))
     }
 
     private[ScalaCompiler] def compile() = ZIO {

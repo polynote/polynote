@@ -22,6 +22,7 @@ trait ClassIndexer {
     */
   def findMatches(name: String): UIO[Map[String, List[(Int, String)]]]
 
+  def await: UIO[Unit]
 }
 
 object ClassIndexer {
@@ -29,11 +30,12 @@ object ClassIndexer {
     SimpleClassIndexer()
 }
 
-class SimpleClassIndexer(ref: AtomicReference[TreeMap[String, List[(Int, String)]]]) extends ClassIndexer {
+class SimpleClassIndexer(ref: AtomicReference[TreeMap[String, List[(Int, String)]]], process: Fiber[Throwable, Any]) extends ClassIndexer {
 
   override def findMatches(name: String): UIO[Map[String, List[(Int, String)]]] =
     ZIO.effectTotal(ref.get).map(_.range(name, name + Char.MaxValue))
 
+  override def await: UIO[Unit] = process.await.unit
 }
 
 object SimpleClassIndexer {
@@ -77,6 +79,6 @@ object SimpleClassIndexer {
       priorities = new File(pathOf(classOf[List[_]]).toURI) :: javaLibraryPath.toList ::: deps
       indexRef   = new AtomicReference[TreeMap[String, List[(Int, String)]]](new TreeMap)
       process   <- buildIndex(priorities.toArray, classPath, indexRef).forkDaemon
-    } yield new SimpleClassIndexer(indexRef)
+    } yield new SimpleClassIndexer(indexRef, process)
   }
 }
