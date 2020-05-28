@@ -135,7 +135,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
 
 
-    (effectBlocking(cellCode.typed) *> effectBlocking(locateTree(position)).flatMap(completeTree)).catchAll {
+    cellCode.typedTreeAt(pos).flatMap(completeTree).catchAll {
       case NonFatal(err) => ZIO.succeed(Nil)
     }
   }
@@ -150,57 +150,61 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
   }
 
-  def paramHints(cellCode: compiler.CellCode, pos: Int): UIO[Option[Signatures]] = effect {
-    applyTreeAt(cellCode.typed, pos).map {
-      case a@Apply(fun, args) =>
-        val (paramList, prevArgs, outerApply) = whichParamList(a, 0, 0)
-        val whichArg = args.size
 
-        def methodHints(method: MethodSymbol) = {
-          val paramsStr = method.paramLists.map {
-            pl => "(" + pl.map {
-              param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(a.tpe).finalResultType.toString}"
-            }.mkString(", ") + ")"
-          }.mkString
+  def paramHints(cellCode: compiler.CellCode, pos: Int): URIO[Blocking, Option[Signatures]] = cellCode.typedTreeAt(pos).flatMap {
+    typedCode =>
+      effect {
+        applyTreeAt(typedCode, pos).map {
+          case a@Apply(fun, args) =>
+            val (paramList, prevArgs, outerApply) = whichParamList(a, 0, 0)
+            val whichArg = args.size
 
-          val params = method.paramLists.flatMap {
-            pl => pl.map {
-              param => ParameterHint(
-                TinyString(param.name.decodedName.toString),
-                TinyString(param.typeSignatureIn(fun.tpe).finalResultType.toString),
-                None  // TODO
-              )
-            }
-          }
+            def methodHints(method: MethodSymbol) = {
+              val paramsStr = method.paramLists.map {
+                pl => "(" + pl.map {
+                  param => s"${param.name.decodedName.toString}: ${param.typeSignatureIn(a.tpe).finalResultType.toString}"
+                }.mkString(", ") + ")"
+              }.mkString
 
-          List(ParameterHints(
-            method.name.decodedName.toString + paramsStr,
-            None,
-            params
-          ))
-        }
-
-        val hints = fun.symbol match {
-          case null => Nil
-          case err if err.isError =>
-            fun match {
-              case Select(qual, name) if !qual.isErrorTyped => qual.tpe.member(name) match {
-                case sym if sym.isMethod =>
-                  methodHints(sym.asMethod)
-                case sym if sym.isTerm && sym.isOverloaded =>
-                  sym.asTerm.alternatives.collect {
-                    case sym if sym.isMethod => methodHints(sym.asMethod)
-                  }.flatten
-                case other =>
-                  Nil
+              val params = method.paramLists.flatMap {
+                pl => pl.map {
+                  param => ParameterHint(
+                    TinyString(param.name.decodedName.toString),
+                    TinyString(param.typeSignatureIn(fun.tpe).finalResultType.toString),
+                    None  // TODO
+                  )
+                }
               }
-              case other =>
-                Nil
+
+              List(ParameterHints(
+                method.name.decodedName.toString + paramsStr,
+                None,
+                params
+              ))
             }
-          case method if method.isMethod => methodHints(method.asMethod)
-          case _ => Nil
+
+            val hints = fun.symbol match {
+              case null => Nil
+              case err if err.isError =>
+                fun match {
+                  case Select(qual, name) if !qual.isErrorTyped => qual.tpe.member(name) match {
+                    case sym if sym.isMethod =>
+                      methodHints(sym.asMethod)
+                    case sym if sym.isTerm && sym.isOverloaded =>
+                      sym.asTerm.alternatives.collect {
+                        case sym if sym.isMethod => methodHints(sym.asMethod)
+                      }.flatten
+                    case other =>
+                      Nil
+                  }
+                  case other =>
+                    Nil
+                }
+              case method if method.isMethod => methodHints(method.asMethod)
+              case _ => Nil
+            }
+            Signatures(hints, 0, (prevArgs + whichArg).toByte)
         }
-        Signatures(hints, 0, (prevArgs + whichArg).toByte)
     }
   }.option.map(_.flatten)
 
@@ -212,19 +216,6 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 
   private def isVisibleSymbol(sym: Symbol) =
     sym.isPublic && !sym.isSynthetic && !sym.isConstructor && !sym.isOmittablePrefix && !sym.name.decodedName.containsChar('$')
-
-  private def deepestSubtreeEndingAt(stats: List[Tree], pos: Position): Option[Tree] = {
-    val candidate = stats.filterNot(tree => tree.pos == null || !tree.pos.isDefined || tree.pos.isTransparent || !tree.pos.properlyIncludes(pos))
-      .headOption
-
-    candidate.flatMap {
-      baseTree => baseTree.collect {
-        case tree if tree.pos != null && tree.pos.isDefined && tree.pos.end == pos.point =>
-          val a = tree.attachments.get[OriginalPos]
-          tree
-      }.lastOption
-    }
-  }
 
   // the compiler's completionsAt method has a bug; it causes an exception if the name is empty
   // (e.g. `foo.`) which is a pretty common case. So there will be a fair amount of copypasta here,
@@ -337,16 +328,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
   private def applyTreeAt(tree: Tree, offset: Int): Option[Apply] = tree.collect {
     case a: Apply if a.pos != null && a.pos.isOpaqueRange && a.pos.start <= offset && a.pos.end >= offset =>
       a
-  }.headOption
-
-  private def treesAt(tree: Tree, targetPos: Position): List[Tree] = if (tree.pos.properlyIncludes(targetPos)) {
-    tree.children.collect {
-      case t if t.pos.properlyIncludes(targetPos) => treesAt(t, targetPos)
-    }.flatten match {
-      case Nil => List(tree)
-      case trees => trees
-    }
-  } else Nil
+  }.lastOption
 
   def completionType(sym: Symbol): CompletionType =
     if (sym.isAccessor)
