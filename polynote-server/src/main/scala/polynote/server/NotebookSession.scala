@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import cats.instances.list._
 import cats.syntax.either._
 import cats.syntax.traverse._
-import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, PresenceUpdate, StreamThrowableOps, StreamingHandles, UpdatedTasks}
+import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, PresenceUpdate, Running, StreamThrowableOps, StreamingHandles, TaskInfo, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.util.Publish
 import polynote.messages._
@@ -117,8 +117,37 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
         ZIO.foreach_(presence.flatMap(_._2.toList).map(sel => KernelStatus(sel)))(PublishMessage)
   }
 
+  // Send the results, along with some progress updates based on how many results there are
+  private def sendCellResults(results: List[CellResult], taskInfo: TaskInfo): ZIO[PublishMessage, Throwable, Unit] = {
+    val sendResults = ZIO.when(results.nonEmpty) {
+      (results.size / 10) match {
+        case 0 => ZIO.foreach_(results)(PublishMessage)
+        case chunkSize =>
+          val chunks = results.sliding(chunkSize, chunkSize).toList
+          val messages = chunks.head ::: chunks.tail.zipWithIndex.flatMap {
+            case (chunk, index) => KernelStatus(UpdatedTasks(List(taskInfo.progress(0.5 + 0.05 * index)))) :: chunk
+          }
+
+          ZIO.foreach_(messages)(PublishMessage)
+      }
+    }
+    sendResults *> PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo.completed))))
+  }
+
+  // First send the notebook without any results (because they're large) and then send the individual results
+  // to make notebook loading more incremental.
+  private def sendNotebook: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] = for {
+    nb      <- subscriber.notebook
+    taskInfo = TaskInfo(nb.path, s"Loading notebook", s"Loading ${nb.path}", Running)
+    _       <- PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo))))
+    _       <- PublishMessage(nb.withoutResults)
+    _       <- PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo.progress(0.5)))))
+    results  = nb.cells.flatMap(cell => cell.results.map(CellResult(cell.id, _)))
+    _       <- sendCellResults(results, taskInfo)
+  } yield ()
+
   def sendNotebookInfo: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] =
-    (subscriber.notebook >>= PublishMessage) *> sendStatus *> sendTasks *> sendPresence
+    sendNotebook *> sendStatus *> sendTasks *> sendPresence
 
 }
 
