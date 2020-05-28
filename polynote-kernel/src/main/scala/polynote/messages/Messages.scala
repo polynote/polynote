@@ -189,7 +189,15 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
       }
   }
 
+  /**
+    * @return A copy of this notebook without any results
+    */
   def withoutResults: Notebook = copy(cells = ShortList(cells.map(_.copy(results = ShortList.Nil))))
+
+  /**
+    * @return All of the results in this notebook, in order, as [[CellResult]]s.
+    */
+  def results: List[CellResult] = cells.flatMap(cell => cell.results.map(CellResult(cell.id, _)))
 
   def setResults(id: CellID, results: List[Result]): Notebook = updateCell(id) {
     cell => cell.copy(results = ShortList(results))
