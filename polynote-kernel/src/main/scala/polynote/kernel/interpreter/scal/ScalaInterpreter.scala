@@ -95,6 +95,9 @@ class ScalaInterpreter private[scal] (
 
   private val completer = ScalaCompleter(scalaCompiler, indexer)
 
+  // for testing reliably
+  private[scal] def awaitIndexer = indexer.await
+
   // create the parameter that's used to inject the `kernel` value into cell scope
   private def runtimeValDef = ValDef(Modifiers(global.Flag.IMPLICIT), TermName("kernel"), tq"polynote.runtime.KernelRuntime", EmptyTree)
 

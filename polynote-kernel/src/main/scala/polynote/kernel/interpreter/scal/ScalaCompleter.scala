@@ -151,13 +151,17 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
   }
 
 
+  // TODO: using the typedTreeAt() is an improvement overall, but there's still an issue where the signature help will
+  //       disappear when you have a valid tree in parameter position (because now the smallest tree is that tree, not)
+  //       the apply). Should try to back up and locate the smallest apply tree instead, when that fails. Compilation
+  //       unit should contain the typed trees necessary to do it.
   def paramHints(cellCode: compiler.CellCode, pos: Int): URIO[Blocking, Option[Signatures]] = cellCode.typedTreeAt(pos).flatMap {
     typedCode =>
       effect {
         applyTreeAt(typedCode, pos).map {
           case a@Apply(fun, args) =>
             val (paramList, prevArgs, outerApply) = whichParamList(a, 0, 0)
-            val whichArg = args.size
+            val whichArg = math.max(args.size - 1, 0)
 
             def methodHints(method: MethodSymbol) = {
               val paramsStr = method.paramLists.map {

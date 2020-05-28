@@ -12,8 +12,9 @@ object NscThief {
   }
 
   def typedTreeAt(global: Global, pos: Position): global.Tree = {
-    val prevGlobalPhase = global.globalPhase
-    global.globalPhase = global.currentRun.typerPhase
+    import global._
+    val prevGlobalPhase = globalPhase
+    global.globalPhase = currentRun.typerPhase
     val result = global.typedTreeAt(pos)
     global.globalPhase = prevGlobalPhase
     result

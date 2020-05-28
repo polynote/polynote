@@ -423,6 +423,10 @@ class ScalaCompiler private (
       compilationUnit.body = wrapped
       compilationUnit.lastBody = wrapped
       unitOfFile.put(sourceFile.file, compilationUnit)
+      // this does a targeted-typecheck, which is more tolerant of errors. But, we have to make sure it's past the
+      // namer first or it will go through the parser which will throw position validation errors.
+      enteringPhase(currentRun.namerPhase)(currentRun.namerPhase.asInstanceOf[GlobalPhase].applyPhase(unitOfFile(sourceFile.file)))
+      compilationUnit.status = JustParsed
       try {
         val result = NscThief.typedTreeAt(global, Position.offset(sourceFile, pos))
         result
