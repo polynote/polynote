@@ -142,8 +142,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
     _       <- PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo))))
     _       <- PublishMessage(nb.withoutResults)
     _       <- PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo.progress(0.5)))))
-    results  = nb.cells.flatMap(cell => cell.results.map(CellResult(cell.id, _)))
-    _       <- sendCellResults(results, taskInfo)
+    _       <- sendCellResults(nb.results, taskInfo)
   } yield ()
 
   def sendNotebookInfo: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] =
