@@ -427,15 +427,7 @@ class ScalaCompiler private (
       // namer first or it will go through the parser which will throw position validation errors.
       enteringPhase(currentRun.namerPhase)(currentRun.namerPhase.asInstanceOf[GlobalPhase].applyPhase(unitOfFile(sourceFile.file)))
       compilationUnit.status = JustParsed
-      try {
-        val result = NscThief.typedTreeAt(global, Position.offset(sourceFile, pos))
-        result
-      } catch {
-        case err: Throwable =>
-          val e = err
-          e.printStackTrace()
-          throw e
-      }
+      NscThief.typedTreeAt(global, Position.offset(sourceFile, pos))
     }
 
     private[ScalaCompiler] def compile() = ZIO {
