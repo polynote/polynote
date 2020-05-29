@@ -428,7 +428,7 @@ class ScalaCompiler private (
       enteringPhase(currentRun.namerPhase)(currentRun.namerPhase.asInstanceOf[GlobalPhase].applyPhase(unitOfFile(sourceFile.file)))
       compilationUnit.status = JustParsed
       NscThief.typedTreeAt(global, Position.offset(sourceFile, pos))
-    }
+    }.lock(compilerThread)
 
     private[ScalaCompiler] def compile() = ZIO {
       val run = new Run()
