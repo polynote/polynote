@@ -19,12 +19,12 @@ import polynote.server.auth.{IdentityProvider, UserIdentity}
 import polynote.server.repository.fs.FileSystems
 import polynote.server.repository.{FileBasedRepository, NotebookContent, NotebookRepository, TreeRepository}
 import scodec.bits.ByteVector
-import uzhttp.websocket.{Binary, Close, Frame, Ping, Pong}
+import uzhttp.websocket.{Binary, Close, Continuation, Frame, Ping, Pong}
 import zio.blocking.effectBlocking
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
-import zio.{Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
+import zio.{Chunk, Fiber, Has, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
 import polynote.server.repository.format.NotebookFormat
 
 import scala.concurrent.ExecutionContext
@@ -57,24 +57,36 @@ package object server {
 
   implicit class FrameStreamOps[R](val self: ZStream[R, Throwable, Frame]) extends AnyVal {
     def handleMessages[R1 <: Logging with R, A](onClose: ZIO[R, Throwable, Any])(fn: Message => ZIO[R1, Throwable, Option[Message]]): ZStream[R1, Throwable, Frame] =
-      self.mapM {
-        case Binary(data, true) =>
-          Message.decode[Task](ByteVector(data))
-          .flatMap(fn).flatMap {
-            case Some(msg) => toFrame(msg).asSome
-            case None => ZIO.none
+      ZStream.fromEffect(Ref.make[ByteVector](ByteVector.empty)).flatMap {
+        buf =>
+          self.mapM {
+            case Binary(data, true) =>
+              Message.decode[Task](ByteVector(data))
+                .flatMap(fn).flatMap {
+                case Some(msg) => toFrame(msg).asSome
+                case None => ZIO.none
+              }
+            case Binary(data, false) => buf.set(ByteVector(data)).as(None)
+            case Continuation(data, false) => buf.update(_ ++ ByteVector(data)).as(None)
+            case Continuation(data, true) =>
+              buf.getAndSet(ByteVector.empty).flatMap {
+                buffered => Message.decode[Task](buffered ++ ByteVector(data)).flatMap(fn).flatMap {
+                  case Some(msg) => toFrame(msg).asSome
+                  case None => ZIO.none
+                }
+              }
+            case Ping => ZIO.some(Pong)
+            case Pong => ZIO.none
+            case Close =>
+              onClose.as(Some(Close))
+            case _ => ZIO.none
+          }.catchAll {
+            err => ZStream.fromEffect(Logging.error(err)).drain
+          }.unNone.ensuring {
+            onClose.catchAll {
+              err => Logging.error("Websocket close handler failed", err)
+            }
           }
-        case Ping => ZIO.succeed(Some(Pong))
-        case Pong => ZIO.none
-        case Close =>
-          onClose.as(Some(Close))
-        case _ => ZIO.none
-      }.catchAll {
-        err => ZStream.fromEffect(Logging.error(err)).drain
-      }.unNone.ensuring {
-        onClose.catchAll {
-          err => Logging.error("Websocket close handler failed", err)
-        }
       }
   }
 
