@@ -6,6 +6,7 @@ import cats.syntax.either._
 import zio.{Fiber, RIO, Schedule, Task, UIO, URIO, ZIO}
 import ZIO.{effect, effectTotal}
 import polynote.kernel.ScalaCompiler.OriginalPos
+import polynote.kernel.interpreter.scal.ScalaCompleter.NoTree
 import zio.blocking.{Blocking, effectBlocking}
 
 import scala.annotation.tailrec
@@ -135,7 +136,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
 
 
-    cellCode.typedTreeAt(pos).retry(Schedule.recurs(2)).flatMap(completeTree).catchAll {
+    cellCode.typedTreeAt(pos).filterOrFail(_ != EmptyTree)(NoTree).retry(Schedule.recurs(2)).flatMap(completeTree).catchAll {
       case NonFatal(err) => ZIO.succeed(Nil)
     }
   }
@@ -355,5 +356,6 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 }
 
 object ScalaCompleter {
+  object NoTree extends Throwable("No typed tree found")
   def apply(compiler: ScalaCompiler, indexer: ClassIndexer): ScalaCompleter[compiler.type] = new ScalaCompleter(compiler, indexer)
 }
