@@ -97,7 +97,7 @@ export class SocketStateHandler extends StateHandler<SocketState> {
 }
 
 /**
- * Singleton class holding references to all the sockets. This is a bit ugly, we need this in order to prevent the State
- * from including Sockets which are uncloneable.
+ * References to all sockets live here. We store sockets here in order to prevent the State from including Sockets
+ * which are uncloneable.
  */
 export const Sockets = new Map<string, SocketSession>();

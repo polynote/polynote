@@ -140,7 +140,8 @@ class Server {
 
       def serveFile(name: String, req: Request) = {
         val mimeType = Server.MimeTypes.get(name)
-        val gzipped = staticFilePath(s"$name.gz", staticPath).flatMap {
+
+        val gzipped = if (watchUI) ZIO.fail(()) else staticFilePath(s"$name.gz", staticPath).flatMap {
           path => Response.fromPath(path, req, contentType = mimeType, headers = List("Content-Encoding" -> "gzip")).map(_.withCacheControl)
         }
 

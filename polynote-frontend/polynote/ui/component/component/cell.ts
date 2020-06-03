@@ -44,6 +44,10 @@ import * as deepEquals from 'fast-deep-equal/es6';
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import { CommentHandler } from "./comment";
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
+import {RichTextEditor} from "../text_editor";
+import {Diff} from "../../../util/diff";
+import {CurrentNotebook} from "../current_notebook";
+import {CellResult} from "../../../data/messages";
 
 export class CellContainerComponent {
     readonly el: TagElement<"div">;
@@ -122,6 +126,9 @@ abstract class CellComponent {
         window.history.replaceState(window.history.state, document.title, currentURL.href)
     }
 
+    protected get state() {
+        return this.cellState.getState()
+    }
 }
 
 class CodeCellComponent extends CellComponent {
@@ -134,32 +141,28 @@ class CodeCellComponent extends CellComponent {
 
     constructor(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>) {
         super(dispatcher, cellState);
-        const currentCell = cellState.getState();
 
         const langSelector = dropdown(['lang-selector'], ServerStateHandler.get.getState().interpreters);
-        langSelector.setSelectedValue(currentCell.language);
+        langSelector.setSelectedValue(this.state.language);
         langSelector.addEventListener("input", evt => {
             const selectedLang = langSelector.getSelectedValue();
-            if (selectedLang !== cellState.getState().language) {
+            if (selectedLang !== this.state.language) {
                 dispatcher.dispatch(new SetCellLanguage(this.id, selectedLang))
             }
         });
 
-        const commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
-
         const outputHandler = new StateHandler<CellOutputState>({output: [], results: [], compileErrors: []});
         let cellOutput = new CodeCellOutput(dispatcher, outputHandler);
-        this.updateCellOutputState(outputHandler, cellState.getState().results);
 
         const execInfoEl = div(["exec-info"], []);
 
-        this.el = div(['cell-container', currentCell.language, 'code-cell'], [
+        this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
                 div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
-                        dispatcher.dispatch(new RequestCellRun([this.cellState.getState().id]))
+                        dispatcher.dispatch(new RequestCellRun([this.state.id]))
                     }),
-                    div(['cell-label'], []),
+                    div(['cell-label'], [this.state.id.toString()]),
                     div(['lang-selector'], [langSelector]),
                     execInfoEl,
                     div(["options"], [
@@ -175,11 +178,12 @@ class CodeCellComponent extends CellComponent {
             cellOutput.el
         ]);
 
-        const highlightLanguage = clientInterpreters[currentCell.language]?.highlightLanguage ?? currentCell.language;
+        const highlightLanguage = clientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
-            value: this.cellState.getState().content,
+            value: this.state.content,
             language: highlightLanguage,
+            automaticLayout: true, // this used to poll but it looks like it doesn't any more? https://github.com/microsoft/vscode/pull/90111/files
             codeLens: false,
             dragAndDrop: true,
             minimap: { enabled: false },
@@ -243,7 +247,7 @@ class CodeCellComponent extends CellComponent {
             langSelector.setSelectedValue(newLang);
         });
 
-        cellState.view("results").addObserver(results => {
+        const updateResults = (results: Result[]) => {
             this.updateCellOutputState(outputHandler, results);
             if (results) {
                 results.forEach(result => {
@@ -256,15 +260,16 @@ class CodeCellComponent extends CellComponent {
                     }
                 });
             } else {
-                // We can clear the results by just crearing a new CodeCellOutput instance.
+                // We can clear the results by just creating a new CodeCellOutput instance.
                 const cleanOutput = new CodeCellOutput(dispatcher, outputHandler);
                 this.el.replaceChild(cleanOutput.el, cellOutput.el);
                 cellOutput = cleanOutput;
             }
-        });
+        }
+        updateResults(this.state.results);
+        cellState.view("results").addObserver(results => updateResults(results));
 
-        this.setMetadata(cellState.getState().metadata);
-        cellState.view("metadata").addObserver(metadata => {
+        const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
                 this.el.classList.add("hide-code")
             } else {
@@ -281,7 +286,10 @@ class CodeCellComponent extends CellComponent {
             if (metadata.executionInfo) {
                 this.setExecutionInfo(execInfoEl, metadata.executionInfo)
             }
-        });
+        }
+        updateMetadata(this.state.metadata);
+        cellState.view("metadata").addObserver(metadata => updateMetadata(metadata));
+        cellState.addObserver((current, prev) => console.log("*****cell state updated", current, prev, deepEquals(current, prev)))
 
 
         cellState.view("pendingEdits").addObserver(edits => {
@@ -291,7 +299,7 @@ class CodeCellComponent extends CellComponent {
             }
         });
 
-        cellState.view("selected").addObserver(selected => {
+        const updateSelected = (selected: boolean | undefined) => {
             if (selected) {
                 this.el.classList.add("active");
                 if (!document.location.hash.includes(this.cellId)) {
@@ -300,33 +308,41 @@ class CodeCellComponent extends CellComponent {
             } else {
                 this.el.classList.remove("active");
             }
-        });
+        }
+        updateSelected(this.state.selected)
+        cellState.view("selected").addObserver(selected => updateSelected(selected));
 
-        cellState.view("error").addObserver(error => {
+        const updateError = (error: boolean | undefined) => {
             if (error) {
                 this.el.classList.add("error");
             } else {
                 this.el.classList.remove("error");
             }
-        });
+        }
+        updateError(this.state.error)
+        cellState.view("error").addObserver(error => updateError(error));
 
-        cellState.view("running").addObserver(running => {
+        const updateRunning = (running: boolean | undefined) => {
             if (running) {
                 this.el.classList.add("running");
             } else {
                 this.el.classList.remove("running");
             }
-        });
+        }
+        updateRunning(this.state.running)
+        cellState.view("running").addObserver(running => updateRunning(running));
 
-        cellState.view("queued").addObserver(queued => {
+        const updateQueued = (queued: boolean | undefined) => {
             if (queued) {
                 this.el.classList.add("queued");
             } else {
                 this.el.classList.remove("queued");
             }
-        });
+        }
+        updateQueued(this.state.queued)
+        cellState.view("queued").addObserver(queued => updateQueued(queued));
 
-        cellState.view("currentHighlight").addObserver(pos => {
+        const updateHighlight = (pos: PosRange | undefined) => {
             if (pos) {
                 const oldExecutionPos = this.highlightDecorations ?? [];
                 const model = this.editor.getModel()!;
@@ -342,7 +358,12 @@ class CodeCellComponent extends CellComponent {
                 this.editor.deltaDecorations(this.highlightDecorations, []);
                 this.highlightDecorations = [];
             }
-        })
+        }
+        updateHighlight(this.state.currentHighlight)
+        cellState.view("currentHighlight").addObserver(pos => updateHighlight(pos))
+
+        // make sure to create the comment handler.
+        const commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
     }
 
     private updateCellOutputState(handler: StateHandler<CellOutputState>, results: Result[]) {
@@ -406,11 +427,15 @@ class CodeCellComponent extends CellComponent {
                         if (!this.el.classList.contains('error')) {
                             this.el.classList.add('success');
                         }
-                        s.output.push(output)
+                        s.output = [...s.output, output]
                     })
                     .when(ClearResults, () => s = {output: [], results: [], compileErrors: []})
-                    .whenInstance(ResultValue, result => s.results.push(result))
-                    .whenInstance(ClientResult, result => s.results.push(result));
+                    .whenInstance(ResultValue, result => {
+                        s.results = [...s.results, result]
+                    })
+                    .whenInstance(ClientResult, result => {
+                        s.results = [...s.results, result]
+                    });
             });
             return s
         })
@@ -514,16 +539,15 @@ class CodeCellComponent extends CellComponent {
     }
 
     private toggleCode() {
-        const prevMetadata = this.cellState.getState().metadata;
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], prevMetadata.copy({hideSource: !prevMetadata.hideSource})))
+        const prevMetadata = this.state.metadata;
+        const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideSource})
+        this.dispatcher.dispatch(new UpdateCell(this.id, [], newMetadata))
     }
 
     private toggleOutput() {
-        const prevMetadata = this.cellState.getState().metadata;
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})))
-    }
-
-    private setMetadata(metadata: CellMetadata) {
+        const prevMetadata = this.state.metadata;
+        const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideOutput})
+        this.dispatcher.dispatch(new UpdateCell(this.id, [], newMetadata))
     }
 
     private layout() {
@@ -687,23 +711,31 @@ class CodeCellOutput {
             ]),
         ]);
 
-        outputHandler.view("results").addObserver(results => {
-            results.forEach(this.displayResult)
-        });
+        const handleResults = (results: (ClientResult | ResultValue)[]) => {
+            results.forEach(res => this.displayResult(res))
+        }
+        handleResults(outputHandler.getState().results)
+        outputHandler.view("results").addObserver(results => handleResults(results));
 
-        outputHandler.view("compileErrors").addObserver(errors => {
+        const handleErrors = (errors: CellErrorMarkers[]) => {
             if (errors.length) this.setErrors(errors)
-        });
+        }
+        handleErrors(outputHandler.getState().compileErrors)
+        outputHandler.view("compileErrors").addObserver(errors => handleErrors(errors));
 
-        outputHandler.view("runtimeError").addObserver(error => {
+        const handleRuntimeError = (error?: ServerErrorTrace) => {
             if (error) this.setRuntimeError(error)
-        });
+        }
+        handleRuntimeError(outputHandler.getState().runtimeError)
+        outputHandler.view("runtimeError").addObserver(error => handleRuntimeError(error));
 
-        outputHandler.view("output").addObserver(output => {
+        const handleOutput = (output: Output[]) => {
             output.forEach(o => {
                 this.addOutput(o.contentType, o.content.join(''))
             })
-        })
+        }
+        handleOutput(outputHandler.getState().output)
+        outputHandler.view("output").addObserver(output => handleOutput(output))
     }
 
     private displayResult(result: ResultValue | ClientResult) {
@@ -930,8 +962,66 @@ class CodeCellOutput {
 
 
 class TextCellComponent extends CellComponent {
+    private editor: RichTextEditor;
+    private lastContent: string;
 
     constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<CellState>) {
         super(dispatcher, stateHandler)
+
+        const editorEl = div(['cell-input-editor', 'markdown-body'], [])
+
+        const content = stateHandler.getState().content;
+        this.editor = new RichTextEditor(editorEl, content)
+        this.lastContent = content;
+
+        this.el = div(['cell-container', 'text-cell'], [
+            div(['cell-input'], [editorEl])
+        ])
+
+
+        this.editor.element.addEventListener('focus', () => {
+            this.makeActive();
+        });
+
+        this.editor.element.addEventListener('blur', () => {
+            this.blur();
+        });
+
+        // this.editor.element.addEventListener('keydown', (evt: KeyboardEvent) => this.onKeyDown(evt));
+
+        this.editor.element.addEventListener('input', (evt: KeyboardEvent) => this.onInput());
+    }
+
+    private onInput() {
+        const newContent = this.editor.markdownContent;
+        const diff = Diff.diff(this.lastContent, newContent);
+        const edits = [];
+        let i = 0;
+        let pos = 0;
+        while (i < diff.length) {
+            // skip through any untouched pieces
+            while (i < diff.length && !diff[i].added && !diff[i].removed) {
+                pos += diff[i].value.length;
+                i++;
+            }
+
+            if (i < diff.length) {
+                const d = diff[i];
+                const text = d.value;
+                if (d.added) {
+                    edits.push(new Insert(pos, text));
+                    pos += text.length;
+                } else if (d.removed) {
+                    edits.push(new Delete(pos, text.length));
+                }
+                i++;
+            }
+        }
+        this.lastContent = newContent;
+
+        if (edits.length > 0) {
+            //console.log(edits);
+            this.dispatcher.dispatch(new UpdateCell(this.id, edits))
+        }
     }
 }

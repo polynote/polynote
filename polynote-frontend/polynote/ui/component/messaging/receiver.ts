@@ -23,7 +23,7 @@ import {
 import {StateHandler} from "../state/state_handler";
 import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {SocketStateHandler} from "../state/socket_state";
-import {EditBuffer} from "../../../data/edit_buffer";
+import {EditBuffer} from "../state/edit_buffer";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -313,12 +313,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     }).otherwiseThrow ?? s;
 
                 // discard edits before the local version from server – it will handle rebasing at least until that point
-                // TODO: perhaps refactor EditBuffer to provide an immutable interface
-                const remainingVersions = s.editBuffer.versions.filter(v => v.version > update.localVersion)
+                const editBuffer = s.editBuffer.discard(update.localVersion);
 
                 return {
                     ...res,
-                    editBuffer: new EditBuffer(remainingVersions),
+                    editBuffer,
                     localVersion,
                     globalVersion,
                 }
@@ -465,29 +464,22 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 ...s,
                 notebooks: {
                     ...s.notebooks,
-                    [path]: ServerStateHandler.newNotebookState(path)
+                    [path]: ServerStateHandler.getOrCreateNotebook(path).loaded
                 }
             }
         });
         this.receive(messages.RenameNotebook, (s, oldPath, newPath) => {
-            const notebooks = {...s.notebooks}
-            const nbState = notebooks[oldPath];
-            if (nbState) {
-                nbState.state.path = newPath;
-                notebooks[newPath] = nbState;
-                delete notebooks[oldPath];
-            }
-            return { ...s, notebooks }
+            ServerStateHandler.renameNotebook(oldPath, newPath)
+            return undefined // `renameNotebook` already takes care of updating the state.
         });
         this.receive(messages.DeleteNotebook, (s, path) => {
-            const notebooks = {...s.notebooks}
-            delete notebooks[path];
-            return { ...s, notebooks }
+            ServerStateHandler.deleteNotebook(path)
+            return undefined // `deleteNotebook` already takes care of updating the state.
         });
         this.receive(messages.ListNotebooks, (s, paths) => {
             const notebooks = {...s.notebooks}
             paths.forEach(path => {
-                notebooks[path] = ServerStateHandler.newNotebookState(path)
+                notebooks[path] = ServerStateHandler.getOrCreateNotebook(path).loaded
             })
             return { ...s, notebooks }
         });
@@ -509,9 +501,19 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {
             const notebooks = {...s.notebooks}
             kernelStatuses.forEach(kv => {
-                const nbState = notebooks[kv.first]?.state ?? ServerStateHandler.newNotebookState(kv.first).state;
-                nbState.kernel.status = (kv.second.busy && 'busy') || (!kv.second.alive && 'dead') || 'idle';
-                notebooks[kv.first].state = nbState;
+                const path = kv.first;
+                const status = kv.second;
+                const nbInfo = ServerStateHandler.getOrCreateNotebook(path)
+                nbInfo.handler.updateState(nbState => {
+                    return {
+                        ...nbState,
+                        kernel: {
+                            ...nbState.kernel,
+                            status: (status.busy && 'busy') || (!status.alive && 'dead') || 'idle'
+                        }
+                    }
+                })
+                notebooks[path] = nbInfo.loaded
             })
             return { ...s, notebooks}
         })

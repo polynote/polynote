@@ -11,16 +11,7 @@ import {StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../../../data/content_edit";
 import {ServerState, ServerStateHandler} from "../state/server_state";
-import {Message} from "../../../data/messages";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrReplace} from "../../../util/functions";
-
-// interface for testing / decoupling
-// export interface ISocket {
-//     addEventListener(evt: string, fn: (evt: Event) => void): void,
-//     send(msg: Message): void
-//     reconnect(onlyIfClosed: boolean): void
-// }
 
 export abstract class MessageDispatcher<S> {
     protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -78,22 +69,22 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                     const cell = new NotebookCell(-1, language, content, [], metadata);
                     const update = new messages.InsertCell(state.globalVersion, ++state.localVersion, cell, prev);
                     this.socket.send(update);
-                    state.editBuffer.push(state.localVersion, update);
+                    state.editBuffer = state.editBuffer.push(state.localVersion, update);
                 })
                 .when(UpdateCell, (cellId, edits, metadata) => {
                     const update = new messages.UpdateCell(state.globalVersion, ++state.localVersion, cellId, edits, metadata);
                     this.socket.send(update);
-                    state.editBuffer.push(state.localVersion, update);
+                    state.editBuffer = state.editBuffer.push(state.localVersion, update);
                 })
                 .when(DeleteCell, (cellId) => {
                     const update = new messages.DeleteCell(state.globalVersion, ++state.localVersion, cellId);
                     this.socket.send(update);
-                    state.editBuffer.push(state.localVersion, update);
+                    state.editBuffer = state.editBuffer.push(state.localVersion, update);
                 })
                 .when(UpdateConfig, conf => {
                     const update = new messages.UpdateConfig(state.globalVersion, ++state.localVersion, conf);
                     this.socket.send(update);
-                    state.editBuffer.push(state.localVersion, update);
+                    state.editBuffer = state.editBuffer.push(state.localVersion, update);
                 })
                 .when(RequestCompletions, (cellId, offset, resolve, reject) => {
                     this.socket.send(new messages.CompletionsAt(cellId, offset, []));
@@ -137,23 +128,29 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 .when(SetSelectedCell, selected => {
                     state.activeCell = state.cells.find(cell => cell.id === selected);
                     state.cells = state.cells.map(cell => {
-                        cell.selected = selected === cell.id;
-                        return cell
+                        return {
+                            ...cell,
+                            selects: selected === cell.id
+                        }
                     });
                 })
                 .when(CurrentSelection, (cellId, range) => {
                     state.cells = state.cells.map(cell => {
                         // todo: what is this used for?
-                        cell.currentSelection = cell.id === cellId ? range : undefined;
-                        return cell
+                        return {
+                            ...cell,
+                            currentSelection: cell.id === cellId ? range : undefined
+                        }
                     });
                     this.socket.send(new messages.CurrentSelection(cellId, range));
                 })
                 .when(ClearCellEdits, id => {
                     state.cells = state.cells.map(cell => {
                         if (cell.id === id) {
-                            cell.pendingEdits = []
-                            return cell
+                            return {
+                                ...cell,
+                                pendingEdits: []
+                            }
                         } else return cell
                     })
                 })
@@ -236,15 +233,15 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     this.socket.send(new messages.ListNotebooks([]))
                 })
                 .when(LoadNotebook, path => {
+                    let notebooks = s.notebooks
+                    if (! s.notebooks[path])  {
+                        notebooks = {...notebooks, [path]: ServerStateHandler.loadNotebook(path).loaded}
+                    }
                     newS = {
                         ...s,
-                        notebooks: {
-                            ...s.notebooks,
-                            [path]:  ServerStateHandler.newNotebookState(path, true)
-                        }
+                        currentNotebook: path,
+                        notebooks: notebooks
                     };
-                    newS.currentNotebook = path;
-                    this.socket.send(new messages.LoadNotebook(path))
                 })
                 .when(CreateNotebook, (path, content) => {
                     this.socket.send(new messages.CreateNotebook(path, content))

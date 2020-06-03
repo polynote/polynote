@@ -49,10 +49,10 @@
     "webpack-cli": "3.3.11"
   },
   "scripts": {
-    "clean": "rm dist/static/*.js dist/static/*.map dist/static/*.gz || echo Nothing to clean",
-    "build": "webpack --config webpack.config.js && ./build_style",
-    "dist": "rm -r dist/; webpack --config webpack.config.js --mode production && ./build_style && gzip -r -q dist && gunzip dist/static/index.html",
-    "watch": "webpack --config webpack.config.js --watch",
+    "clean": "rm dist/static/*.js dist/static/*.map dist/static/*.gz dist/static/style/*.gz || echo Nothing to clean",
+    "build": "webpack --config webpack.config.js && node_modules/.bin/lessc style/styles.less dist/static/style/styles.css",
+    "dist": "rm -r dist/; webpack --config webpack.config.js --mode production && node_modules/.bin/lessc style/styles.less dist/static/style/styles.css && gzip -r -q dist && gunzip dist/static/index.html",
+    "watch": "webpack --config webpack.config.js --watch & node_modules/.bin/less-watch-compiler style dist/static/style styles.less",
     "test": "jest"
   }
 }

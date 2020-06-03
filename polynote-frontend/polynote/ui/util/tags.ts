@@ -201,6 +201,7 @@ export function textarea(classes: string[], placeholder: string, value: string =
 export interface DropdownElement extends TagElement<"select"> {
     setSelectedValue(value: string): void
     getSelectedValue(): string
+    addValue(key: string, val: string): void
 }
 
 export function dropdown(classes: string[], options: Record<string, string>, value?: string): DropdownElement {
@@ -222,7 +223,12 @@ export function dropdown(classes: string[], options: Record<string, string>, val
         },
         getSelectedValue() {
             return select.options[select.selectedIndex].value;
-        }
+        },
+        addValue(key: string, val: string) {
+            const opt = tag('option', [], {value: key}, [val]);
+            dropdown.add(opt);
+            opts.push(opt)
+        },
     });
 
     if (value) dropdown.setSelectedValue(value);

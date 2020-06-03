@@ -6,8 +6,18 @@ import {
 
 import match from "../util/match"
 
-import * as messages from "./messages"
-import {CancelTasks, GroupAgg, HandleData, Message, ModifyStream, QuantileBin, Select, TableOp} from "./messages";
+import {
+    CancelTasks,
+    GroupAgg,
+    HandleData,
+    Message,
+    ModifyStream,
+    QuantileBin,
+    ReleaseHandle,
+    Select,
+    TableOp,
+    Error as ErrorMsg
+} from "./messages";
 import {MessageListener, SocketSession} from "../comms";
 import {DataType, DoubleType, LongType, NumericTypes, StructField, StructType} from "./data_type";
 import {Either, Left, Right} from "./types";
@@ -193,7 +203,7 @@ export class DataStream extends EventTarget {
     kill() {
         this.terminated = true;
         if (this.repr.handle != this.originalRepr.handle) {
-            this.socket.send(new messages.ReleaseHandle(StreamingDataRepr.handleTypeId, this.repr.handle))
+            this.socket.send(new ReleaseHandle(StreamingDataRepr.handleTypeId, this.repr.handle))
         }
 
         if (this.listener) {
@@ -313,7 +323,7 @@ export class DataStream extends EventTarget {
         if (!this.socketListener) {
             const decodeValues = (data: ArrayBuffer[]) => data.map(buf => this.repr.dataType.decodeBuffer(new DataReader(buf)));
 
-            this.socketListener = this.socket.addMessageListener(HandleData, (handleType, handleId, count, data: Left<messages.Error> | Right<ArrayBuffer[]>) => {
+            this.socketListener = this.socket.addMessageListener(HandleData, (handleType, handleId, count, data: Left<ErrorMsg> | Right<ArrayBuffer[]>) => {
                 if (handleType === StreamingDataRepr.handleTypeId && handleId === this.repr.handle) {
                     const succeed = (data: ArrayBuffer[]) => {
                         const batch = decodeValues(data);
@@ -329,7 +339,7 @@ export class DataStream extends EventTarget {
                         }
                     };
 
-                    const fail = (err: messages.Error) => this._onError(err);
+                    const fail = (err: ErrorMsg) => this._onError(err);
 
                     Either.fold(data, fail, succeed);
                 }

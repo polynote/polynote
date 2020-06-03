@@ -21,15 +21,40 @@ test("updating the state updates observers", done => {
 });
 
 test("views are updated by parent state changes", done => {
-    const sh = new StateHandler({key: 1});
-    const shV = sh.view("key");
-    shV.addObserver((next: number, prev: number) => {
-        expect(prev).toBe(1);
-        expect(next).toBe(2);
-        done()
-    });
-    sh.updateState(() => ({key: 2}));
-    expect(shV.getState()).toBe(sh.getState().key)
+    const sh = new StateHandler({key: 1, otherKey: "something"});
+    const viewKey = sh.view("key");
+    const viewOtherKey = sh.view("otherKey")
+    const gotOtherKey = new Promise(resolve => {
+        viewOtherKey.addObserver((next, prev) => {
+            expect(prev).toBe("something");
+            expect(next).toBe("nothing");
+            resolve()
+        })
+    })
+    sh.updateState(s => {
+        return {
+            ...s,
+            otherKey: "nothing"
+        }
+    })
+    gotOtherKey.then(_ => {
+        const promise = new Promise(resolve => {
+            viewKey.addObserver((next: number, prev: number) => {
+                expect(prev).toBe(1);
+                expect(next).toBe(2);
+                resolve()
+            });
+        })
+        sh.updateState(s => {
+            return {
+                ...s,
+                key: 2
+            }
+        })
+        return promise
+    }).then(_ => {
+        expect(viewKey.getState()).toBe(sh.getState().key)
+    }).then(_ => done())
 });
 
 test("views can update parent state", done => {

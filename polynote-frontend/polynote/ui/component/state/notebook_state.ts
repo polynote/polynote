@@ -3,8 +3,8 @@ import {KernelReport, PosRange, Result, ServerErrorWithCause} from "../../../dat
 import {CompletionCandidate, Presence, Signatures} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {KernelState} from "./kernel_state";
-import {EditBuffer} from "../../../data/edit_buffer";
 import {ContentEdit} from "../../../data/content_edit";
+import {EditBuffer} from "./edit_buffer";
 
 export interface CellState {
     id: number,

@@ -44,20 +44,11 @@ export class StateHandler<S> {
         const view: StateHandler<S[K]> = constructor ? new constructor(this.state[key]) : new StateHandler(this.state[key]);
         const obs = this.addObserver(s => {
             const observedVal = s[key];
-            if (observedVal !== undefined) {
-                // if (!deepEquals(observedVal, view.getState())) {
-                if (observedVal !== view.getState()) {
-                    view.setState(observedVal)
-                }
-                // }
-            } else {
-                // the key being viewed no longer exists, clean up the view.
-                view.dispose();
-                view.clearObservers();
+            if (observedVal !== view.getState()) {
+                view.setState(observedVal)
             }
         });
         view.addObserver(s => {
-            // if (! deepEquals(s, this.getState()[key])) {
             if (s !== this.getState()[key]) {
                 this.updateState(st => {
                     return {

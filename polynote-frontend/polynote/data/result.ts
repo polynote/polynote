@@ -2,18 +2,16 @@
 
 import {
     Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, optional,
-    str, shortStr, tinyStr, uint8, uint16, int32, ior, CodecContainer
+    str, shortStr, tinyStr, uint8, uint16, int32, ior, CodecContainer, int16, int64
 } from './codec'
 
 import {ValueRepr, StringRepr, MIMERepr, StreamingDataRepr, DataRepr, LazyDataRepr, DataStream} from './value_repr'
-import {int16, int64} from "./codec";
 import {Cell, CodeCell} from "../ui/component/cell";
 import {displayData, displaySchema} from "../ui/component/display_content";
 import {div, h4, iconButton, span} from "../ui/util/tags";
 import * as monaco from "monaco-editor";
 import {ValueInspector} from "../ui/component/value_inspector";
 import {StructType} from "./data_type";
-import {SocketSession} from "../comms";
 
 export class Result extends CodecContainer {
     static codec: Codec<Result>;

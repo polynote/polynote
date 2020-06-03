@@ -33,25 +33,24 @@ export class Kernel {
         const symbols = new KernelSymbolsComponent(kernelState.kernelSymbolsHandler);
         const tasks = new KernelTasksComponent(kernelState.kernelTasksHandler);
 
-        this.el = div(['kernel-ui'], [
-            this.statusEl = h2(['kernel-status'], [
-                this.status = span(['status'], ['●']),
-                'Kernel',
-                span(['buttons'], [
-                    iconButton(['connect'], 'Connect to server', 'plug', 'Connect').click(evt => this.connect(evt)),
-                    iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
-                    iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(evt => this.killKernel(evt))
-                ])
-            ]).click(evt => this.collapse()),
-            div(['ui-panel-content'], [
-                info.el,
-                symbols?.el,
-                tasks.el
+        this.statusEl = h2(['kernel-status'], [
+            this.status = span(['status'], ['●']),
+            'Kernel',
+            span(['buttons'], [
+                iconButton(['connect'], 'Connect to server', 'plug', 'Connect').click(evt => this.connect(evt)),
+                iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
+                iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(evt => this.killKernel(evt))
             ])
+        ]).click(evt => this.collapse())
+
+        this.el = div(['kernel-ui'], [
+            info.el,
+            symbols?.el,
+            tasks.el
         ]);
 
-        kernelState.addObserver(kernelState => {
-            this.setKernelStatus(kernelState.status)
+        kernelState.kernelStatusHandler.addObserver(status => {
+            this.setKernelStatus(status)
         })
 
     }
@@ -115,7 +114,7 @@ class KernelInfoComponent {
         ]);
 
         this.renderInfo(kernelInfoHandler.getState());
-        kernelInfoHandler.addObserver(this.renderInfo);
+        kernelInfoHandler.addObserver(info => this.renderInfo(info));
     }
 
     private toggleCollapse() {
@@ -130,7 +129,7 @@ class KernelInfoComponent {
     }
 
     renderInfo(info?: KernelInfo) {
-        if (info) {
+        if (info && Object.keys(info).length > 0) {
             this.el.style.display = "block";
             Object.entries(info).forEach(([k, v]) => {
                 const el = div([], []);

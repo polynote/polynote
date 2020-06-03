@@ -34,9 +34,10 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
 
     expect(leafEl()).toHaveAttribute('href', `notebooks/${newPath}`);
 
+    const spy = jest.spyOn(SocketSession, 'fromRelativeURL')
     fireEvent(leafEl(), new MouseEvent('click'));
     waitFor(() => {
-        expect(mockSocket.send).toHaveBeenCalledWith(new messages.LoadNotebook(newPath))
+        expect(spy).toHaveBeenCalledWith('ws/' + encodeURIComponent(newPath))
     }).then(() => {
         const x = ServerStateHandler.get.getState().currentNotebook
         expect(ServerStateHandler.get.getState().currentNotebook).toEqual(newPath)
@@ -210,7 +211,7 @@ test("stress test", () => {
 });
 
 test("NotebookList e2e test", done => {
-    const nbList = new NotebookList(dispatcher, ServerStateHandler.get);
+    const nbList = new NotebookList(dispatcher);
     expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
     expect(nbList.el.querySelector('.tree-view > ul')).toBeEmpty();
 
@@ -234,18 +235,12 @@ test("NotebookList e2e test", done => {
     })
     .then(() => {
         const path = `notebooks/${paths[0]}`;
-        // console.log(path)
         expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmpty()
         SocketSession.global.send(new messages.DeleteNotebook(paths[0]))
-        const x = nbList.el.outerHTML;
-        // console.log(x)
-        const y = nbList.el.querySelector(`[href='${path}']`);
-        // console.log(y)
         waitFor(() => {
             expect(nbList.el.querySelector(`[href='${path}']`)).toBeNull()
-        })
-            .then(done)
-    })//.then(done)
+        }).then(done)
+    })
 })
 
 

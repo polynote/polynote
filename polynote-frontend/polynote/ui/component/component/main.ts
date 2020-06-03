@@ -16,6 +16,8 @@ import {Kernel} from "./kernel";
 import {KernelStateHandler} from "../state/kernel_state";
 import {NotebookList} from "./notebooklist";
 import {SocketStateHandler} from "../state/socket_state";
+import {NotebookCellsUI} from "../nb_cells";
+import {CurrentNotebook} from "../current_notebook";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -32,11 +34,11 @@ class Main {
 
         // serverDispatcher.dispatch(new RequestNotebooksList()) // TODO: notebook list component should do this in its constructor!
 
-        const nbList = new NotebookList(dispatcher, ServerStateHandler.get)
+        const nbList = new NotebookList(dispatcher)
         const leftPane = { header: nbList.header, el: nbList.el };
-        const tabs = new TabComponent(dispatcher, ServerStateHandler.get);
+        const tabs = new TabComponent(dispatcher);
         const center = tabs.el;
-        const rightPane = { header: h2([], []), el: div([], [])}; // TODO: need a better placeholder here...
+        const rightPane = { header: h2(['right-header'], []), el: div(['right-el'], [])}; // TODO: need a better placeholder here...
 
         this.el = div(['main-ui'], [
             div(['header'], [new ToolbarComponent(dispatcher).el]),
@@ -44,25 +46,21 @@ class Main {
             div(['footer'], []) // no footer yet!
         ]);
 
-        const path = unescape(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
-        const notebookBase = 'notebook/';
-        if (path.startsWith(notebookBase)) {
-            dispatcher.dispatch(new LoadNotebook(path.substring(notebookBase.length)))
-        }
-
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             if (path) {
 
-                // TODO: set the page title here
+                this.setTitle(path)
 
                 if(tabs.getTab(path) === undefined) {
-                    const nbInfo = ServerStateHandler.get.getState().notebooks[path].info;
-                    if (nbInfo) {
-                        tabs.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.dispatcher, nbInfo.handler).el);
-                        const kernel = new Kernel(nbInfo.dispatcher, nbInfo.handler.view("kernel", KernelStateHandler), 'rightPane');
-                        this.el.replaceChild(kernel.statusEl, rightPane.header);
-                        this.el.replaceChild(kernel.el, rightPane.el);
+                    const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
+                    if (nbInfo && nbInfo.info) {
+                        tabs.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
+                        const kernel = new Kernel(nbInfo.info.dispatcher, nbInfo.handler.view("kernel", KernelStateHandler), 'rightPane');
+
+                        rightPane.header.replaceWith(kernel.statusEl);
                         rightPane.header = kernel.statusEl;
+
+                        rightPane.el.replaceWith(kernel.el);
                         rightPane.el = kernel.el;
                     }
                 } else {
@@ -70,6 +68,34 @@ class Main {
                 }
             }
         })
+
+        const path = unescape(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
+        const notebookBase = 'notebook/';
+        if (path.startsWith(notebookBase)) {
+            dispatcher.dispatch(new LoadNotebook(path.substring(notebookBase.length)))
+        }
+    }
+
+    private setTitle(path?: string) {
+        if (path) {
+            const tabUrl = new URL(`notebook/${encodeURIComponent(path)}`, document.baseURI);
+
+            const href = window.location.href;
+            const hash = window.location.hash;
+            const title = `${path.split(/\//g).pop()} | Polynote`;
+            document.title = title; // looks like chrome ignores history title so we need to be explicit here.
+
+            // handle hashes and ensure scrolling works
+            if (hash && window.location.href === (tabUrl.href + hash)) {
+                window.history.pushState({notebook: path}, title, href);
+            } else {
+                window.history.pushState({notebook: path}, title, tabUrl.href);
+            }
+        } else {
+            const title = 'Polynote';
+            window.history.pushState({notebook: name}, title, document.baseURI);
+            document.title = title;
+        }
     }
 
     private static inst: Main;

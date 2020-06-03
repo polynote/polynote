@@ -10,7 +10,7 @@ export class TabComponent {
     private tabContainer: TagElement<"div">;
     private currentTab?: string;
 
-    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly serverStateHandler: ServerStateHandler) {
+    constructor(private readonly dispatcher: ServerMessageDispatcher) {
         this.el = div(['tab-view'], [
             this.tabContainer = div(['tabbed-pane', 'tab-container'], [])]
         );
@@ -43,7 +43,7 @@ export class TabComponent {
             this.tabContainer.appendChild(tab);
 
             // watch for renames of this notebook.
-            const handler = this.serverStateHandler.getState().notebooks[path].info!.handler;
+            const handler = ServerStateHandler.getOrCreateNotebook(path).handler;
             const obs = handler.view("path").addObserver((newPath, oldPath) => {
                 const tab = this.tabs[oldPath];
                 delete this.tabs[oldPath];

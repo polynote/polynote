@@ -37,8 +37,8 @@ export class ToolbarComponent {
         // Change the toolbar to reflect the currently selected notebook and cell
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             if (path) {
-                const nbInfo = ServerStateHandler.get.getState().notebooks[path].info;
-                if (nbInfo) {
+                const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
+                if (nbInfo && nbInfo.info) {
                     const newListener = nbInfo.handler.addObserver(state => {
                         if (state.activeCell) {
                             if (state.activeCell.language === "text") {
@@ -54,9 +54,9 @@ export class ToolbarComponent {
                         currentNotebookHandler.removeObserver(cellSelectionListener);
                         cellSelectionListener = newListener;
                         currentNotebookHandler = nbInfo.handler;
-                        nb.enable(nbInfo.dispatcher);
-                        cell.enable(nbInfo.dispatcher);
-                        code.enable(nbInfo.dispatcher);
+                        nb.enable(nbInfo.info.dispatcher);
+                        cell.enable(nbInfo.info.dispatcher);
+                        code.enable(nbInfo.info.dispatcher);
                         text.enable();
                         settings.enable(dispatcher);
                     }
