@@ -12,6 +12,7 @@ import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from
 import {ContentEdit} from "../../../data/content_edit";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import {SocketStateHandler} from "../state/socket_state";
+import {EphemeralStateHandler} from "../state/ephemeral_state";
 
 export abstract class MessageDispatcher<S> {
     protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -114,7 +115,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                     cellIds.forEach(id => {
                         state.cells = state.cells.map(cell => {
                             if (cell.id === id) {
-                                return { ...cell, queued: true }
+                                return { ...cell, queued: true, results: [], error: false }
                             } else return cell
                         })
                     })
@@ -130,7 +131,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                     state.cells = state.cells.map(cell => {
                         return {
                             ...cell,
-                            selects: selected === cell.id
+                            selected: selected === cell.id
                         }
                     });
                 })
@@ -256,7 +257,12 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     this.socket.send(new messages.DeleteNotebook(path))
                 })
                 .when(ViewAbout, section => {
-                    //TODO: handle modal viewing
+                    EphemeralStateHandler.get.updateState(e => {
+                        return {
+                            ...e,
+                            about: section
+                        }
+                    })
                 })
                 .when(SetSelectedNotebook, path => {
                     newS = {
@@ -540,7 +546,13 @@ export class RequestNotebooksList extends UIAction {
 }
 
 export class SetSelectedCell extends UIAction {
-    constructor(readonly selected: number | undefined) {
+    /**
+     * Change the currently selected cell.
+     *
+     * @param selected  The ID of the cell to select OR the ID of the anchor cell for `relative`
+     * @param relative  If set, select the cell either above or below the one with ID specified by `selected`
+     */
+    constructor(readonly selected: number | undefined, relative?: "above" | "below") {
         super();
         Object.freeze(this);
     }

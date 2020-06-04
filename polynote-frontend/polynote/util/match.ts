@@ -48,7 +48,7 @@ export class Matcher<T> {
     }
 }
 
-// Match methods in a PureMatcher must return a value.
+// Match methods in a PureMatcher must return a value and are ideally not effectful.
 export function purematch<T, R>(obj: T) {
     return new PureMatcher<T, R>(obj);
 }
@@ -69,5 +69,29 @@ export class PureMatcher<T, R> extends Matcher<T> {
 
     get otherwiseThrow(): R | null {
         return super.otherwiseThrow
+    }
+}
+
+// just a little helper which is more ergonomic than `switch` statements. No more forgetting to `break;`!
+export function matchS<R>(obj: string) {
+    return new StringMatcher<R>(obj)
+}
+export class StringMatcher<R> {
+    constructor(private obj: string) {}
+    private result: R | null;
+
+    when(str: string, fn: () => R | void): StringMatcher<R> {
+        if (this.obj === str) {
+            this.result = fn() || null;
+        }
+        return this
+    }
+
+    get otherwiseThrow(): R | null {
+        if (this.result !== undefined) {
+            return this.result
+        } else {
+            throw new MatchError(this.obj)
+        }
     }
 }

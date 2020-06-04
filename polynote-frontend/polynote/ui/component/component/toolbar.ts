@@ -26,7 +26,7 @@ export class ToolbarComponent {
         let cell = new CellToolbar(connectionStatus);
         let code = new CodeToolbar(connectionStatus);
         let text = new TextToolbar(connectionStatus);
-        const settings = new SettingsToolbar(connectionStatus);
+        const settings = new SettingsToolbar(dispatcher, connectionStatus);
 
         this.el = div(['toolbar-container'], [nb.el, cell.el, code.el, text.el, settings.el])
             .listener('mousedown', (evt: Event) => evt.preventDefault());
@@ -35,11 +35,12 @@ export class ToolbarComponent {
         let currentNotebookHandler: NotebookStateHandler | undefined;
 
         // Change the toolbar to reflect the currently selected notebook and cell
-        ServerStateHandler.get.view("currentNotebook").addObserver(path => {
+        const updateToolbar = (path?: string) => {
             if (path) {
                 const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
                 if (nbInfo && nbInfo.info) {
-                    const newListener = nbInfo.handler.addObserver(state => {
+                    currentNotebookHandler = nbInfo.handler
+                    const newListener = currentNotebookHandler.addObserver(state => {
                         if (state.activeCell) {
                             if (state.activeCell.language === "text") {
                                 this.el.classList.remove('editing-code');
@@ -50,15 +51,14 @@ export class ToolbarComponent {
                             }
                         }
                     });
-                    if (currentNotebookHandler && cellSelectionListener) {
-                        currentNotebookHandler.removeObserver(cellSelectionListener);
+                    if (currentNotebookHandler) {
+                        if (cellSelectionListener) currentNotebookHandler.removeObserver(cellSelectionListener);
                         cellSelectionListener = newListener;
                         currentNotebookHandler = nbInfo.handler;
                         nb.enable(nbInfo.info.dispatcher);
                         cell.enable(nbInfo.info.dispatcher);
                         code.enable(nbInfo.info.dispatcher);
                         text.enable();
-                        settings.enable(dispatcher);
                     }
                 }
             } else {
@@ -70,9 +70,10 @@ export class ToolbarComponent {
                 cell.disable();
                 code.disable();
                 text.disable();
-                settings.disable();
             }
-        })
+        }
+        updateToolbar(ServerStateHandler.get.getState().currentNotebook)
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => updateToolbar(path))
     }
 }
 
@@ -366,21 +367,20 @@ class TextToolbar extends ToolbarElement {
 }
 
 class SettingsToolbar extends ToolbarElement {
-    private dispatcher?: ServerMessageDispatcher;
     private floatingMenu: TagElement<"div">;
 
-    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+    constructor(private dispatcher: ServerMessageDispatcher, connectionStatus: StateHandler<"disconnected" | "connected">) {
         super(connectionStatus);
 
         this.el = this.toolbarElem("about", [[
             iconButton(["preferences"], "View UI Preferences", "cogs", "Preferences")
                 .click(() => {
-                    if (this.dispatcher) this.dispatcher.dispatch(new ViewAbout("Preferences"))
+                    this.dispatcher.dispatch(new ViewAbout("Preferences"))
                 })
                 .withKey('neverDisabled', true),
             iconButton(["help"], "help", "question", "Help")
                 .click(() => {
-                    if (this.dispatcher) this.dispatcher.dispatch(new ViewAbout("Hotkeys"))
+                    this.dispatcher.dispatch(new ViewAbout("Hotkeys"))
                 })
                 .withKey('neverDisabled', true),
         ]]);
@@ -388,15 +388,15 @@ class SettingsToolbar extends ToolbarElement {
         this.floatingMenu = div(['floating-menu'], []);
 
         this.el.appendChild(this.floatingMenu)
+
+        this.enable();
     }
 
-    enable(dispatcher: ServerMessageDispatcher) {
-        this.dispatcher = dispatcher;
+    enable() {
         this.setDisabled(false);
     }
 
     disable() {
-        this.dispatcher = undefined;
         this.setDisabled(true);
     }
 }

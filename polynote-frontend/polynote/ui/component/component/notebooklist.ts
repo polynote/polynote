@@ -6,6 +6,7 @@ import {diffArray, removeKey} from "../../../util/functions";
 import {StateHandler} from "../state/state_handler";
 import * as deepEquals from 'fast-deep-equal/es6';
 import * as clone from "clone";
+import {DialogModal} from "./modal";
 
 export class NotebookListContextMenuComponent {
     readonly el: TagElement<"div">;
@@ -37,7 +38,7 @@ export class NotebookList {
             span(['buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
-                    //TODO: open modal dialog
+                    new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create', path => dispatcher.dispatch(new CreateNotebook(path))).show()
                 })
             ])
         ]);

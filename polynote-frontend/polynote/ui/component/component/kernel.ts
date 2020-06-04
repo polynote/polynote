@@ -71,12 +71,12 @@ export class Kernel {
     }
 
     private collapse() {
-        ViewPrefsHandler.updateState(prev => {
+        ViewPrefsHandler.updateState(state => {
             return {
-                ...prev,
+                ...state,
                 [this.whichPane]: {
-                    ...prev[this.whichPane],
-                    collapsed: !prev[this.whichPane].collapsed
+                    ...state[this.whichPane],
+                    collapsed: !state[this.whichPane].collapsed
                 }
             }
         })

@@ -20,18 +20,17 @@ import {
     ResultValue,
     RuntimeError
 } from "../../../data/result";
-import {StateHandler} from "../state/state_handler";
+import {NoUpdate, StateHandler} from "../state/state_handler";
 import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {SocketStateHandler} from "../state/socket_state";
-import {EditBuffer} from "../state/edit_buffer";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
 
-    receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => S | undefined) {
+    receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => S | typeof NoUpdate) {
         this.socket.addMessageListener(msgType, (...args: ConstructorParameters<typeof msgType>) => {
             this.state.updateState(s => {
-                return fn(s, ...args) ?? undefined
+                return fn(s, ...args) ?? NoUpdate
             })
         })
     }
@@ -64,7 +63,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 }
             } else {
                 console.warn("Got completion response but there was no activeCompletion, this is a bit odd.", {cell, offset, completions})
-                return undefined
+                return NoUpdate
             }
         });
         this.receive(messages.ParametersAt, (s, cell, offset, signatures) => {
@@ -76,7 +75,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 }
             } else {
                 console.warn("Got signature response but there was no activeSignature, this is a bit odd.", {cell, offset, signatures})
-                return undefined
+                return NoUpdate
             }
         });
         this.receive(messages.NotebookVersion, (s, path, serverGlobalVersion) => {
@@ -84,14 +83,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 // this means we must have been disconnected for a bit and the server state has changed.
                 document.location.reload() // is it ok to trigger the reload here?
             }
-            return undefined;
+            return NoUpdate
         });
         this.receive(messages.NotebookCells, (s: NotebookState, path: string, cells: NotebookCell[], config?: NotebookConfig) => {
             const cellStates = cells.map(cell => {
-                return {
-                    ...cell,
-                    pendingEdits: [],
-                };
+                return this.cellToState(cell)
             });
             return {
                 ...s,
@@ -101,7 +97,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             }
         });
         this.receive(messages.KernelStatus, (s, update) => {
-            return purematch<messages.KernelStatusUpdate, NotebookState>(update)
+            return purematch<messages.KernelStatusUpdate, NotebookState | typeof NoUpdate>(update)
                 .when(messages.UpdatedTasks, tasks => {
                     const taskMap = tasks.reduce<Record<string, TaskInfo>>((acc, next) => {
                         acc[next.id] = next
@@ -137,19 +133,17 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     }
                 })
                 .when(messages.ExecutionStatus, (id, pos) => {
-                    const cellIdx = s.cells.findIndex(c => c.id === id);
-                    if (cellIdx > -1) {
-                        return {
-                            ...s,
-                            cells: {
-                                ...s.cells,
-                                [cellIdx]: {
-                                    ...s.cells[cellIdx],
+                    return {
+                        ...s,
+                        cells: s.cells.map(c => {
+                            if (c.id === id) {
+                                return <CellState>{
+                                    ...c,
                                     currentHighlight: pos
                                 }
-                            }
-                        }
-                    } else return null
+                            } else return c
+                        })
+                    }
                 })
                 .when(messages.PresenceUpdate, (added, removed) => {
                     const activePresence = {...s.activePresence}
@@ -173,7 +167,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                 }
                             }
                         }
-                    } else return null
+                    } else return NoUpdate
                 })
                 .when(messages.KernelError, (err) => {
                     return {
@@ -181,7 +175,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         errors: [...s.errors, err]
                     }
                 })
-                .otherwiseThrow || undefined
+                .otherwiseThrow || NoUpdate
         });
         this.receive(messages.NotebookUpdate, (s: NotebookState, update: messages.NotebookUpdate) => {
             if (update.globalVersion >= s.globalVersion) {
@@ -209,7 +203,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         }
                     })
                     .when(messages.InsertCell, (g, l, cell: NotebookCell, after: number) => {
-                        const newCell = {...cell, pendingEdits: []};
+                        const newCell = this.cellToState(cell);
                         const insertIdx = s.cells.findIndex(c => c.id === after);
                         if (insertIdx > -1) {
                             return {
@@ -230,7 +224,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                 ...s,
                                 cells: [...s.cells.slice(0, idx), ...s.cells.slice(idx + 1)]
                             }
-                        } else return null
+                        } else return s
                     })
                     .when(messages.UpdateConfig, (g, l, config: NotebookConfig) => {
                         return {
@@ -255,11 +249,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                 ...s,
                                 cells: s.cells.map(c => {
                                     if (c.id === id) {
-                                        return {...c, results: [output]}
+                                        return {...c, output: [output]}
                                     } else return c
                                 })
                             }
-                        } else return null
+                        } else return s
                     })
                     .when(messages.CreateComment, (g, l, id: number, comment: CellComment) => {
                         return {
@@ -326,116 +320,82 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     "Ignoring NotebookUpdate with globalVersion", update.globalVersion,
                     "that is less than our globalVersion", s.globalVersion,
                     ". This might mean something is wrong.", update)
-                return undefined
+                return NoUpdate
             }
         });
         this.receive(messages.CellResult, (s, id, result) => {
-            return purematch<Result, NotebookState>(result)
+            if (id === -1) { // from a predef cell
+                return purematch<Result, NotebookState | typeof NoUpdate>(result)
+                    .whenInstance(CompileErrors, result => {
+                        // TODO: should somehow save this state somewhere!! Maybe this should also go into s.errors?
+                        console.warn("Something went wrong compiling a predef cell", result)
+                        return NoUpdate
+                    })
+                    .whenInstance(RuntimeError, result => {
+                        return {...s, errors: [...s.errors, result.error]}
+                    })
+                    .otherwiseThrow ?? NoUpdate
+            } else {
+                return {
+                    ...s,
+                    cells: s.cells.map(c => {
+                        if (c.id === id) {
+                            return this.parseResults(c, [result])
+                        } else return c
+                    }),
+                    kernel: result instanceof ResultValue ? {...s.kernel, symbols: [...s.kernel.symbols, result]} : s.kernel
+                }
+            }
+        });
+    }
+
+    private cellToState(cell: NotebookCell): CellState {
+        return this.parseResults({
+            id: cell.id,
+            language: cell.language,
+            content: cell.content,
+            metadata: cell.metadata,
+            comments: cell.comments,
+            output: [],
+            results: [],
+            compileErrors: [],
+            pendingEdits: [],
+        }, cell.results);
+    }
+
+    private parseResults(cell: CellState, results: Result[]): CellState {
+        return results.reduce<CellState>((cell, result) => {
+            return purematch<Result, CellState>(result)
                 .when(ClearResults, () => {
-                    return {
-                        ...s,
-                        cells: s.cells.map(c => {
-                            if (c.id === id) {
-                                return {...c, results: []}
-                            } else return c
-                        })
-                    }
+                    return {...cell, output: [], results: [], compileErrors: [], runtimeError: undefined, error: false}
                 })
                 .whenInstance(ResultValue, result => {
-                    return {
-                        ...s,
-                        cells: s.cells.map(c => {
-                            if (c.id === id) {
-                                return {
-                                    ...c,
-                                    results: [...c.results, result]
-                                }
-                            } else return c
-                        }),
-                        kernel: {
-                            ...s.kernel,
-                            symbols: [...s.kernel.symbols, result]
-                        }
-                    }
+                    return {...cell, results: [...cell.results, result]}
 
                 })
                 .whenInstance(CompileErrors, result => {
-                    if (id === -1) { // from a predef cell
-                        // TODO: should somehow save this state somewhere!! Maybe this should also go into s.errors?
-                        console.warn("Something went wrong compiling a predef cell", result)
-                        return null
-                    }
-                    return {
-                        ...s,
-                        cells: s.cells.map(c => {
-                            if (c.id === id) {
-                                return {
-                                    ...c,
-                                    results: [...c.results, result]
-                                }
-                            } else return c
-                        })
-                    }
+                    return {...cell, compileErrors: [...cell.compileErrors, result], error: true}
                 })
                 .whenInstance(RuntimeError, result => {
-                    if (id === -1) { // from a predef cell
-                        return {
-                            ...s,
-                            errors: [...s.errors, result.error]
-                        }
-                    }
-                    return {
-                        ...s,
-                        cells: s.cells.map(c => {
-                            if (c.id === id) {
-                                return {
-                                    ...c,
-                                    results: [...c.results, result]
-                                }
-                            } else return c
-                        })
-                    }
+                    return {...cell, runtimeError: result, error: true}
                 })
                 .whenInstance(Output, result => {
-                    return {
-                        ...s,
-                        cells: s.cells.map(c => {
-                            if (c.id === id) {
-                                return {
-                                    ...c,
-                                    results: [...c.results, result]
-                                }
-                            } else return c
-                        })
-                    }
+                    return {...cell, output: [result]}
                 })
                 .whenInstance(ExecutionInfo, result => {
                     return {
-                        ...s,
-                        cells: s.cells.map(c => {
-                            if (c.id === id) {
-                                return {
-                                    ...c,
-                                    metadata: c.metadata.copy({executionInfo: result})
-                                }
-                            } else return c
-                        })
+                        ...cell,
+                        metadata: cell.metadata.copy({executionInfo: result}),
+                        output: result.endTs === undefined ? [] : cell.output, // clear output when the cell starts running
+                        queued: false, // we are certain the cell is no longer queued when we get Exec Info.
+                        running: result.endTs === undefined ? cell.running : false, // if we got an endTs we know the cell stopped running.
+                        error: result.endTs === undefined ? false : cell.error, // if the cell just started running we clear any error marker
                     }
                 })
                 .whenInstance(ClientResult, result => {
-                    return {
-                        ...s,
-                        cells: s.cells.map(c => {
-                            if (c.id === id) {
-                                return {
-                                    ...c,
-                                    results: [...c.results, result]
-                                }
-                            } else return c
-                        })
-                    }
-                }).otherwiseThrow || undefined
-        });
+                    return {...cell, results: [...cell.results, result]}
+                }).otherwiseThrow || cell
+        }, cell)
     }
 }
 
@@ -470,11 +430,11 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         });
         this.receive(messages.RenameNotebook, (s, oldPath, newPath) => {
             ServerStateHandler.renameNotebook(oldPath, newPath)
-            return undefined // `renameNotebook` already takes care of updating the state.
+            return NoUpdate // `renameNotebook` already takes care of updating the state.
         });
         this.receive(messages.DeleteNotebook, (s, path) => {
             ServerStateHandler.deleteNotebook(path)
-            return undefined // `deleteNotebook` already takes care of updating the state.
+            return NoUpdate // `deleteNotebook` already takes care of updating the state.
         });
         this.receive(messages.ListNotebooks, (s, paths) => {
             const notebooks = {...s.notebooks}

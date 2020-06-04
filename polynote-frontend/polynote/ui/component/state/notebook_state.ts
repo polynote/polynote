@@ -1,5 +1,13 @@
 import {StateHandler} from "./state_handler";
-import {KernelReport, PosRange, Result, ServerErrorWithCause} from "../../../data/result";
+import {
+    ClientResult, CompileErrors,
+    KernelReport,
+    Output,
+    PosRange,
+    Result,
+    ResultValue, RuntimeError,
+    ServerErrorWithCause
+} from "../../../data/result";
 import {CompletionCandidate, Presence, Signatures} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {KernelState} from "./kernel_state";
@@ -10,9 +18,12 @@ export interface CellState {
     id: number,
     language: string,
     content: string,
-    results: Result[],
     metadata: CellMetadata,
     comments: Record<string, CellComment>,
+    output: Output[],
+    results: (ResultValue | ClientResult)[],
+    compileErrors: CompileErrors[],
+    runtimeError?: RuntimeError,
     // ephemeral states
     pendingEdits: ContentEdit[],
     // TODO: Cell running state is never set. Maybe the server should send a message when a cell starts running?

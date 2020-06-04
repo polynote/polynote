@@ -18,6 +18,7 @@ import {NotebookList} from "./notebooklist";
 import {SocketStateHandler} from "../state/socket_state";
 import {NotebookCellsUI} from "../nb_cells";
 import {CurrentNotebook} from "../current_notebook";
+import {About} from "./about";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -49,7 +50,7 @@ class Main {
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             if (path) {
 
-                this.setTitle(path)
+                Main.setTitle(path)
 
                 if(tabs.getTab(path) === undefined) {
                     const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
@@ -74,9 +75,12 @@ class Main {
         if (path.startsWith(notebookBase)) {
             dispatcher.dispatch(new LoadNotebook(path.substring(notebookBase.length)))
         }
+
+        // make sure to start About
+        const about = new About(dispatcher)
     }
 
-    private setTitle(path?: string) {
+    private static setTitle(path?: string) {
         if (path) {
             const tabUrl = new URL(`notebook/${encodeURIComponent(path)}`, document.baseURI);
 

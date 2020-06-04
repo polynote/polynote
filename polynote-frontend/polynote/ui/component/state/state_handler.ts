@@ -2,6 +2,8 @@ import * as deepEquals from 'fast-deep-equal/es6';
 import * as clone from "clone";
 import {deepFreeze, isObject} from "../../../util/functions";
 
+export const NoUpdate: unique symbol = Symbol()
+
 // The StateHandler mediates interactions between Components and States
 export class StateHandler<S> {
     public dispose: () => void = () => {};
@@ -27,10 +29,10 @@ export class StateHandler<S> {
     }
 
     // handle with which to modify the state, given the old state. All observers get notified of the new state.
-    updateState(f: (s: S) => S | undefined) {
+    updateState(f: (s: S) => S | typeof NoUpdate) {
         const currentState = this.getState()
         const newState = f(currentState);
-        if (newState) {
+        if (newState !== NoUpdate) {
             const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
             this.setState(frozenState)
         }
@@ -94,6 +96,7 @@ export class StateHandler<S> {
     // }
 
     // A child 'view' + a transformation.
+    // TODO: revisit this to use NoUpdate. Also, mapView might supersede it
     xmapView<K extends keyof S, T>(key: K, toT: (s: S[K]) => T | undefined, fromT: (s: S[K], t: T) => S[K]) {
         const view = this.view(key);
         const initialT = toT(view.getState());
@@ -109,6 +112,7 @@ export class StateHandler<S> {
         });
         view.addObserver(newState => {
             const t = toT(newState);
+            // TODO: is it necessary to check `if (t)`? this is problematic if `undefined` is a legitimate value.
             if (t) {
                 if (! deepEquals(t, xmapView.getState())) {
                     xmapView.updateState(() => t);
@@ -128,6 +132,29 @@ export class StateHandler<S> {
             xmapView.clearObservers()
         }
         return xmapView;
+    }
+
+    // a child view and a one-way transformation.
+    mapView<K extends keyof S, T>(key: K, toT: (s: S[K]) => T | typeof NoUpdate) {
+        const view = this.view(key);
+        const initialT = toT(view.getState());
+        const mapView = new StateHandler<T | undefined>(initialT === NoUpdate ? undefined : initialT);
+        view.addObserver(newState => {
+            const t = toT(newState);
+            if (t !== NoUpdate) {
+                if (! deepEquals(t, mapView.getState())) {
+                    mapView.updateState(() => t);
+                }
+            }
+        });
+        const oldDispose = view.dispose
+        view.dispose = () => {
+            oldDispose()
+            view.clearObservers()
+            mapView.dispose()
+            mapView.clearObservers()
+        }
+        return mapView;
     }
 
     constructor(state: S) {

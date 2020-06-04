@@ -13,11 +13,23 @@ export interface ViewPreferences {
         collapsed: boolean
     },
 }
+export type Preference<T> = {name: string, value: T, description: string}
+export interface UserPreferences {
+    vim: Preference<boolean>,
+    notifications: Preference<boolean>,
+    // theme: Preference<"Light" | "Dark">
+}
 
-
-class LocalStorageHandler<T> extends StateHandler<T> {
-    constructor(private key: string, private initial: T) {
+export class LocalStorageHandler<T> extends StateHandler<T> {
+    constructor(readonly key: string, private initial: T) {
         super(initial);
+
+        // watch storage to detect when it was cleared
+        storage.addStorageListener(this.key, (prev, next) => {
+            if (next === null) { // cleared
+                this.setState(initial)
+            } // we don't do anything else because storage shouldn't change underneath us.
+        })
     }
     getState(): T {
         const recent = storage.get(this.key);
@@ -35,6 +47,11 @@ class LocalStorageHandler<T> extends StateHandler<T> {
     }
 }
 
+export function clearStorage() {
+    storage.clear()
+    location.reload();
+}
+
 export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("RecentNotebooks", []);
 export const NotebookLocationsHandler = new LocalStorageHandler<NotebookLocations>("NotebookLocations", {});
 export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
@@ -47,3 +64,12 @@ export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPr
         collapsed: false,
     }
 });
+export const UserPreferences = new LocalStorageHandler<UserPreferences>("UserPreferences", {
+    vim: {name: "VIM", value: false, description: "Whether VIM input mode is enabled for Code cells"},
+    notifications: {
+        name: "Notifications",
+        value: false,
+        description: "Whether to allow Polynote to send you browser notifications. " +
+            "Toggling this to `true` for the first time will prompt your browser to request your permission."},
+    // theme: {}
+})

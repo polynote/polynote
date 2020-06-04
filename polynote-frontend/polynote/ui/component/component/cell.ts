@@ -13,7 +13,18 @@ import {
 import {StateHandler} from "../state/state_handler";
 import {CellState, CompletionHint, SignatureHint} from "../state/notebook_state";
 import * as monaco from "monaco-editor";
-import {editor, languages, MarkerSeverity, Range, SelectionDirection} from "monaco-editor";
+// @ts-ignore (ignore use of non-public monaco api)
+import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
+import {
+    editor,
+    IKeyboardEvent,
+    IPosition,
+    IRange,
+    languages,
+    MarkerSeverity,
+    Range,
+    SelectionDirection
+} from "monaco-editor";
 import {
     ClearResults,
     ClientResult,
@@ -29,25 +40,21 @@ import {
 import {ServerStateHandler} from "../state/server_state";
 import {CellMetadata} from "../../../data/data";
 import {clientInterpreters} from "../../../interpreter/client_interpreter";
-import {FoldingController} from "../../monaco/extensions";
+import {FoldingController, SuggestController} from "../../monaco/extensions";
 import {ContentEdit, Delete, Insert} from "../../../data/content_edit";
 import {CodeCellModel, MIMEElement} from "../cell";
 import {displayContent, parseContentType, prettyDuration} from "../display_content";
-import match from "../../../util/match";
+import match, {matchS} from "../../../util/match";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 import SignatureHelpResult = languages.SignatureHelpResult;
 import EditorOption = editor.EditorOption;
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
-import * as deepEquals from 'fast-deep-equal/es6';
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import { CommentHandler } from "./comment";
-import TrackedRangeStickiness = editor.TrackedRangeStickiness;
-import {RichTextEditor} from "../text_editor";
+import {RichTextEditor} from "./text_editor";
 import {Diff} from "../../../util/diff";
-import {CurrentNotebook} from "../current_notebook";
-import {CellResult} from "../../../data/messages";
 
 export class CellContainerComponent {
     readonly el: TagElement<"div">;
@@ -78,17 +85,19 @@ export class CellContainerComponent {
 }
 
 // TODO: link up these hotkeys!
-export const cellHotkeys = [
-    [monaco.KeyCode.UpArrow, "SelectPrevious", "Move to previous cell."],
-    [monaco.KeyCode.DownArrow, "SelectNext", "Move to next cell. If there is no cell below, create it."],
-    [monaco.KeyMod.Shift | monaco.KeyCode.Enter, "RunAndSelectNext", "Run cell and select the next cell. If there is no cell, create one."],
-    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, "RunAndInsertBelow", "Run cell and insert a new cell below it."],
-    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp, "SelectPrevious", "Move to previous."],
-    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown, "SelectNext", "Move to next cell. If there is no cell below, create it."],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A, "InsertAbove", "Insert a cell above this cell"],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B, "InsertBelow", "Insert a cell below this cell"],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D, "Delete", "Delete this cell"],
-];
+export const cellHotkeys = {
+    [monaco.KeyCode.UpArrow]: ["MoveUp", "Move to previous cell."],
+    [monaco.KeyCode.DownArrow]: ["MoveDown", "Move to next cell. If there is no cell below, create it."],
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: ["RunAndSelectNext", "Run cell and select the next cell. If there is no cell, create one."],
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: ["RunAndInsertBelow", "Run cell and insert a new cell below it."],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: ["SelectPrevious", "Move to previous."],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: ["SelectNext", "Move to next cell. If there is no cell below, create it."],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A]: ["InsertAbove", "Insert a cell above this cell"],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B]: ["InsertBelow", "Insert a cell below this cell"],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D]: ["Delete", "Delete this cell"],
+    [monaco.KeyMod.Shift | monaco.KeyCode.F10]: ["RunAll", "Run all cells."],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: ["RunToCursor", "Run to cursor."],
+};
 
 abstract class CellComponent {
     protected id: number;
@@ -129,6 +138,35 @@ abstract class CellComponent {
     protected get state() {
         return this.cellState.getState()
     }
+
+    protected onKeyDown(evt: IKeyboardEvent | KeyboardEvent) {
+        let keybinding;
+        if (evt instanceof StandardKeyboardEvent) {
+            keybinding = (evt as typeof StandardKeyboardEvent)._asKeybinding;
+        } else {
+            keybinding = new StandardKeyboardEvent(evt)._asKeybinding;
+        }
+        const hotkey = cellHotkeys[keybinding]
+        if (hotkey) {
+            const key = hotkey[0];
+            const pos = this.getPosition();
+            const range = this.getRange();
+            const selection = this.getCurrentSelection();
+
+            const preventDefault = this.keyAction(key, pos, range, selection)
+            if (preventDefault) {
+                evt.stopPropagation();
+                evt.preventDefault();
+            }
+        }
+    }
+    protected abstract keyAction(key: string, pos: IPosition, range: IRange, selection: string): boolean | undefined
+
+    protected abstract getPosition(): IPosition
+
+    protected abstract getRange(): IRange
+
+    protected abstract getCurrentSelection(): string
 }
 
 class CodeCellComponent extends CellComponent {
@@ -151,32 +189,9 @@ class CodeCellComponent extends CellComponent {
             }
         });
 
-        const outputHandler = new StateHandler<CellOutputState>({output: [], results: [], compileErrors: []});
-        let cellOutput = new CodeCellOutput(dispatcher, outputHandler);
-
         const execInfoEl = div(["exec-info"], []);
 
-        this.el = div(['cell-container', this.state.language, 'code-cell'], [
-            div(['cell-input'], [
-                div(['cell-input-tools'], [
-                    iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
-                        dispatcher.dispatch(new RequestCellRun([this.state.id]))
-                    }),
-                    div(['cell-label'], [this.state.id.toString()]),
-                    div(['lang-selector'], [langSelector]),
-                    execInfoEl,
-                    div(["options"], [
-                        button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
-                        iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput())
-                    ])
-                ]),
-                this.editorEl = div(['cell-input-editor'], []),
-                div(['cell-footer'], [
-                    div(["vim-status", "hide"], [])
-                ])
-            ]),
-            cellOutput.el
-        ]);
+        this.editorEl = div(['cell-input-editor'], [])
 
         const highlightLanguage = clientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
         // set up editor and content
@@ -242,32 +257,92 @@ class CodeCellComponent extends CellComponent {
         (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
         (this.editor.getModel() as CodeCellModel).requestSignatureHelp = this.requestSignatureHelp.bind(this);
 
+        // NOTE: this uses some private monaco APIs. If this ever ends up breaking after we update monaco it's a signal
+        //       we'll need to rethink this stuff.
+        this.editor.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
+
+        const compileErrorsState = cellState.mapView<"compileErrors", CellErrorMarkers[][]>("compileErrors", (errors: CompileErrors[]) => {
+            if (errors) {
+                return errors.map(error => {
+                    const model = this.editor.getModel()!;
+                    const reportInfos = error.reports.map((report) => {
+                        const startPos = model.getPositionAt(report.position.start);
+                        const endPos = model.getPositionAt(report.position.end);
+                        const severity = report.severity * 4;
+                        return {
+                            message: report.message,
+                            startLineNumber: startPos.lineNumber,
+                            startColumn: startPos.column,
+                            endLineNumber: endPos.lineNumber,
+                            endColumn: endPos.column,
+                            severity: severity,
+                            originalSeverity: report.severity
+                        };
+                    });
+
+                    monaco.editor.setModelMarkers(
+                        model,
+                        this.id.toString(),
+                        reportInfos
+                    );
+
+                    return reportInfos
+                })
+            } else return []
+        })
+        const runtimeErrorState = cellState.mapView<"runtimeError", ServerErrorTrace | undefined>("runtimeError", (runtimeError?: RuntimeError) => {
+            if (runtimeError) {
+                const err = this.unrollServerError(runtimeError.error)
+                const cellLine = err.errorLine;
+                if (cellLine !== undefined && cellLine >= 0) {
+                    const model = this.editor.getModel()!;
+                    monaco.editor.setModelMarkers(
+                        model,
+                        this.id.toString(),
+                        [{
+                            message: err.summary.message,
+                            startLineNumber: cellLine,
+                            endLineNumber: cellLine,
+                            startColumn: model.getLineMinColumn(cellLine),
+                            endColumn: model.getLineMaxColumn(cellLine),
+                            severity: 8
+                        }]
+                    );
+                }
+                return err
+            } else {
+                monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), []);
+                return undefined
+            }
+        })
+        let cellOutput = new CodeCellOutput(dispatcher, cellState.view("output"), cellState.view("results"), compileErrorsState, runtimeErrorState);
+
+        this.el = div(['cell-container', this.state.language, 'code-cell'], [
+            div(['cell-input'], [
+                div(['cell-input-tools'], [
+                    iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
+                        dispatcher.dispatch(new RequestCellRun([this.state.id]))
+                    }),
+                    div(['cell-label'], [this.state.id.toString()]),
+                    div(['lang-selector'], [langSelector]),
+                    execInfoEl,
+                    div(["options"], [
+                        button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
+                        iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput())
+                    ])
+                ]),
+                this.editorEl,
+                div(['cell-footer'], [
+                    div(["vim-status", "hide"], [])  // TODO: vim!
+                ])
+            ]),
+            cellOutput.el
+        ]);
+
         cellState.view("language").addObserver((newLang, oldLang) => {
             this.el.classList.replace(oldLang, newLang);
             langSelector.setSelectedValue(newLang);
         });
-
-        const updateResults = (results: Result[]) => {
-            this.updateCellOutputState(outputHandler, results);
-            if (results) {
-                results.forEach(result => {
-                    if (result instanceof ExecutionInfo) {
-                        this.setExecutionInfo(execInfoEl, result)
-                    } else if (! (result instanceof Output)) {
-                        // any other result means the cell has stopped running, so we can stop updating the execution time
-                        window.clearInterval(this.execDurationUpdater);
-                        delete this.execDurationUpdater;
-                    }
-                });
-            } else {
-                // We can clear the results by just creating a new CodeCellOutput instance.
-                const cleanOutput = new CodeCellOutput(dispatcher, outputHandler);
-                this.el.replaceChild(cleanOutput.el, cellOutput.el);
-                cellOutput = cleanOutput;
-            }
-        }
-        updateResults(this.state.results);
-        cellState.view("results").addObserver(results => updateResults(results));
 
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
@@ -289,8 +364,6 @@ class CodeCellComponent extends CellComponent {
         }
         updateMetadata(this.state.metadata);
         cellState.view("metadata").addObserver(metadata => updateMetadata(metadata));
-        cellState.addObserver((current, prev) => console.log("*****cell state updated", current, prev, deepEquals(current, prev)))
-
 
         cellState.view("pendingEdits").addObserver(edits => {
             if (edits) {
@@ -364,81 +437,6 @@ class CodeCellComponent extends CellComponent {
 
         // make sure to create the comment handler.
         const commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
-    }
-
-    private updateCellOutputState(handler: StateHandler<CellOutputState>, results: Result[]) {
-        handler.updateState(state => {
-            let s = {...state}
-            results.forEach(result => {
-                match(result)
-                    .when(CompileErrors, reports => {
-                        const model = this.editor.getModel()!;
-                        const reportInfos = reports.map((report) => {
-                            const startPos = model.getPositionAt(report.position.start);
-                            const endPos = model.getPositionAt(report.position.end);
-                            const severity = report.severity * 4;
-                            return {
-                                message: report.message,
-                                startLineNumber: startPos.lineNumber,
-                                startColumn: startPos.column,
-                                endLineNumber: endPos.lineNumber,
-                                endColumn: endPos.column,
-                                severity: severity,
-                                originalSeverity: report.severity
-                            };
-                        });
-
-                        // clear the display if there was a compile error
-                        if (reportInfos.find(report => report.originalSeverity > 1)) {
-                            s = {output: [], results: [], compileErrors: []};
-                            this.el.classList.add('error');
-                        }
-
-                        monaco.editor.setModelMarkers(
-                            model,
-                            this.id.toString(),
-                            reportInfos
-                        );
-
-                        s.compileErrors = reportInfos
-                    })
-                    .when(RuntimeError, error => {
-                        s.runtimeError = this.unrollServerError(error);
-
-                        this.el.classList.add('error');
-                        const cellLine = s.runtimeError.errorLine;
-                        if (cellLine !== undefined && cellLine >= 0) {
-                            const model = this.editor.getModel()!;
-                            monaco.editor.setModelMarkers(
-                                model,
-                                this.id.toString(),
-                                [{
-                                    message: s.runtimeError.summary.message,
-                                    startLineNumber: cellLine,
-                                    endLineNumber: cellLine,
-                                    startColumn: model.getLineMinColumn(cellLine),
-                                    endColumn: model.getLineMaxColumn(cellLine),
-                                    severity: 8
-                                }]
-                            );
-                        }
-                    })
-                    .whenInstance(Output, output => {
-                        if (!this.el.classList.contains('error')) {
-                            this.el.classList.add('success');
-                        }
-                        s.output = [...s.output, output]
-                    })
-                    .when(ClearResults, () => s = {output: [], results: [], compileErrors: []})
-                    .whenInstance(ResultValue, result => {
-                        s.results = [...s.results, result]
-                    })
-                    .whenInstance(ClientResult, result => {
-                        s.results = [...s.results, result]
-                    });
-            });
-            return s
-        })
     }
 
     // TODO: comment markers need to be updated here.
@@ -554,10 +552,7 @@ class CodeCellComponent extends CellComponent {
         const lineCount = this.editor.getModel()!.getLineCount();
         const lastPos = this.editor.getTopForLineNumber(lineCount);
         const lineHeight = this.editor.getOption(EditorOption.lineHeight);
-        const lastLineTop = this.editor.getTopForLineNumber(this.editor.getModel()!.getLineCount());
-        if (lastPos !== lastLineTop) {
-            this.editorEl.style.height = (lastPos + lineHeight) + "px";
-        }
+        this.editorEl.style.height = (lastPos + lineHeight) + "px";
         this.editor.layout();
     }
 
@@ -663,6 +658,76 @@ class CodeCellComponent extends CellComponent {
         }
         // this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
     }
+
+    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
+        const ifNoSuggestion = (fun: () => void) => () => {
+            // this is really ugly, is there a better way to tell whether the widget is visible??
+            const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController).widget._value.suggestWidgetVisible.get();
+            if (!suggestionsVisible) { // don't do stuff when suggestions are visible
+                fun()
+            }
+        }
+        return matchS<boolean>(key)
+            .when("MoveUp", ifNoSuggestion(() => {
+                if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "above"))
+                }
+            }))
+            .when("MoveDown", ifNoSuggestion(() => {
+                let lastColumn = range.endColumn;
+                // TODO: add vim support
+                // if (this.usesVim && !this.inInsertMode) { // in normal/visual mode, the last column is never selected.
+                //     lastColumn -= 1
+                // }
+                if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                }
+            }))
+            .when("RunAndSelectNext", () => {
+                this.dispatcher.runActiveCell()
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                return true // preventDefault
+            })
+            .when("RunAndInsertBelow", () => {
+                this.dispatcher.runActiveCell()
+                this.dispatcher.insertCell("below")
+                return true // preventDefault
+            })
+            .when("SelectPrevious", ifNoSuggestion(() => {
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, "above"))
+            }))
+            .when("SelectNext", ifNoSuggestion(() => {
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+            }))
+            .when("InsertAbove", ifNoSuggestion(() => {
+                this.dispatcher.insertCell("above")
+            }))
+            .when("InsertBelow", ifNoSuggestion(() => {
+                this.dispatcher.insertCell("below")
+            }))
+            .when("Delete", ifNoSuggestion(() => {
+                this.dispatcher.deleteCell()
+            }))
+            .when("RunAll", ifNoSuggestion(() => {
+                this.dispatcher.dispatch(new RequestCellRun([]))
+            }))
+            .when("RunToCursor", ifNoSuggestion(() => {
+                this.dispatcher.runToActiveCell()
+            }))
+            .otherwiseThrow ?? undefined
+    }
+
+    getPosition() {
+        return this.editor.getPosition()!;
+    }
+
+    getRange() {
+        return this.editor.getModel()!.getFullModelRange();
+    }
+
+    getCurrentSelection() {
+        return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
+    }
 }
 
 type CellErrorMarkers = editor.IMarkerData & { originalSeverity: MarkerSeverity}
@@ -678,13 +743,6 @@ type ServerErrorTrace = {
     errorLine?: number
 }
 
-interface CellOutputState {
-    output: Output[],
-    results: (ResultValue | ClientResult)[],
-    compileErrors: CellErrorMarkers[],
-    runtimeError?: ServerErrorTrace
-}
-
 class CodeCellOutput {
     readonly el: TagElement<"div">;
     private stdOutEl: MIMEElement | null;
@@ -695,7 +753,12 @@ class CodeCellOutput {
     private readonly cellOutputTools: TagElement<"div">;
     private readonly resultTabs: TagElement<"div">;
 
-    constructor(dispatcher: NotebookMessageDispatcher, outputHandler: StateHandler<CellOutputState>) {
+    constructor(
+        dispatcher: NotebookMessageDispatcher,
+        outputHandler: StateHandler<Output[]>,
+        resultsHandler: StateHandler<(ResultValue | ClientResult)[]>,
+        compileErrorsHandler: StateHandler<CellErrorMarkers[][] | undefined>,
+        runtimeErrorHandler: StateHandler<ServerErrorTrace | undefined>) {
 
         this.el = div(['cell-output'], [
             div(['cell-output-margin'], []),
@@ -714,28 +777,28 @@ class CodeCellOutput {
         const handleResults = (results: (ClientResult | ResultValue)[]) => {
             results.forEach(res => this.displayResult(res))
         }
-        handleResults(outputHandler.getState().results)
-        outputHandler.view("results").addObserver(results => handleResults(results));
+        handleResults(resultsHandler.getState())
+        resultsHandler.addObserver(results => handleResults(results));
 
-        const handleErrors = (errors: CellErrorMarkers[]) => {
-            if (errors.length) this.setErrors(errors)
-        }
-        handleErrors(outputHandler.getState().compileErrors)
-        outputHandler.view("compileErrors").addObserver(errors => handleErrors(errors));
+        compileErrorsHandler.addObserver(errors => this.setErrors(errors));
 
         const handleRuntimeError = (error?: ServerErrorTrace) => {
-            if (error) this.setRuntimeError(error)
+            this.setRuntimeError(error)
         }
-        handleRuntimeError(outputHandler.getState().runtimeError)
-        outputHandler.view("runtimeError").addObserver(error => handleRuntimeError(error));
+        handleRuntimeError(runtimeErrorHandler.getState())
+        runtimeErrorHandler.addObserver(error => handleRuntimeError(error));
 
         const handleOutput = (output: Output[]) => {
-            output.forEach(o => {
-                this.addOutput(o.contentType, o.content.join(''))
-            })
+            if (output.length > 0) {
+                output.forEach(o => {
+                    this.addOutput(o.contentType, o.content.join(''))
+                })
+            } else {
+                this.clearOutput()
+            }
         }
-        handleOutput(outputHandler.getState().output)
-        outputHandler.view("output").addObserver(output => handleOutput(output))
+        handleOutput(outputHandler.getState())
+        outputHandler.addObserver(output => handleOutput(output))
     }
 
     private displayResult(result: ResultValue | ClientResult) {
@@ -783,56 +846,75 @@ class CodeCellOutput {
         }
     }
 
-    private setErrors(reportInfos: CellErrorMarkers[]) {
-        this.cellOutputDisplay.classList.add('errors');
-        this.cellOutputDisplay.appendChild(
-            div(
-                ['errors'],
-                reportInfos.map((report) => {
-                    const severity = (['Info', 'Warning', 'Error'])[report.originalSeverity];
-                    return blockquote(['error-report', severity], [
-                        span(['severity'], [severity]),
-                        span(['message'], [report.message]),
-                        ' ',
-                        span(['error-link'], [`(Line ${report.startLineNumber})`])
-                    ]);
-                })
-            )
-        );
+    private setErrors(errors?: CellErrorMarkers[][]) {
+        if (errors && errors.length > 0 && errors[0].length > 0 ) {
+            errors.forEach(reportInfos => {
+                if (reportInfos) {
+                    this.cellOutputDisplay.classList.add('errors');
+                    this.cellOutputDisplay.appendChild(
+                        div(
+                            ['errors'],
+                            reportInfos.map((report) => {
+                                const severity = (['Info', 'Warning', 'Error'])[report.originalSeverity];
+                                return blockquote(['error-report', severity], [
+                                    span(['severity'], [severity]),
+                                    span(['message'], [report.message]),
+                                    ' ',
+                                    span(['error-link'], [`(Line ${report.startLineNumber})`])
+                                ]);
+                            })
+                        )
+                    );
+                }
+            })
+        } else { // clear errors
+            this.clearErrors()
+        }
     }
 
-    setRuntimeError(error: ServerErrorTrace) {
+    setRuntimeError(error?: ServerErrorTrace) {
+        if (error) {
+            function rollupError(err: ServerErrorTrace): TagElement<"div" | "details"> {
+                const traceItems = err.trace.items.map(item => {
+                    if (item.type === "link") {
+                        return tag('li', [], {}, [span(['error-link'], [item.content])])
+                    } else if (item.type === "irrelevant") {
+                        return tag('li', ['irrelevant'], {}, [item.content])
+                    } else {
+                        return tag('li', [], {}, [item.content])
+                    }
+                });
 
-        function rollupError(err: ServerErrorTrace): TagElement<"div" | "details"> {
-            const traceItems = err.trace.items.map(item => {
-                if (item.type === "link") {
-                    return tag('li', [], {}, [span(['error-link'], [item.content])])
-                } else if (item.type === "irrelevant") {
-                    return tag('li', ['irrelevant'], {}, [item.content])
+                const causeEl = err.trace.cause && rollupError(err.trace.cause);
+                const summaryContent = [span(['severity'], [err.summary.label]), span(['message'], [err.summary.message])];
+                if (traceItems.length) {
+                    const traceContent = [tag('ul', ['stack-trace'], {}, traceItems), causeEl];
+                    return details([], summaryContent, traceContent)
                 } else {
-                    return tag('li', [], {}, [item.content])
+                    return div([], summaryContent)
                 }
-            });
-
-            const causeEl = err.trace.cause && rollupError(err.trace.cause);
-            const summaryContent = [span(['severity'], [err.summary.label]), span(['message'], [err.summary.message])];
-            if (traceItems.length) {
-                const traceContent = [tag('ul', ['stack-trace'], {}, traceItems), causeEl];
-                return details([], summaryContent, traceContent)
-            } else {
-                return div([], summaryContent)
             }
+
+            const el = rollupError(error);
+
+            this.cellOutputDisplay.classList.add('errors');
+            this.cellOutputDisplay.appendChild(
+                div(['errors'], [
+                    blockquote(['error-report', 'Error'], [el])
+                ])
+            );
+        } else {
+            this.clearErrors()
         }
+    }
 
-        const el = rollupError(error);
+    private clearOutput() {
+        this.cellOutputDisplay.innerHTML = "";
+    }
 
-        this.cellOutputDisplay.classList.add('errors');
-        this.cellOutputDisplay.appendChild(
-            div(['errors'], [
-                blockquote(['error-report', 'Error'], [el])
-            ])
-        );
-
+    private clearErrors() {
+        this.cellOutputDisplay.classList.remove('errors');
+        this.clearOutput() // TODO: should we just clear errors?
     }
 
     private mimeEl(mimeType: string, args: Record<string, string>, content: string): MIMEElement {
@@ -961,7 +1043,7 @@ class CodeCellOutput {
 }
 
 
-class TextCellComponent extends CellComponent {
+export class TextCellComponent extends CellComponent {
     private editor: RichTextEditor;
     private lastContent: string;
 
@@ -971,7 +1053,7 @@ class TextCellComponent extends CellComponent {
         const editorEl = div(['cell-input-editor', 'markdown-body'], [])
 
         const content = stateHandler.getState().content;
-        this.editor = new RichTextEditor(editorEl, content)
+        this.editor = new RichTextEditor(this, editorEl, content)
         this.lastContent = content;
 
         this.el = div(['cell-container', 'text-cell'], [
@@ -987,12 +1069,13 @@ class TextCellComponent extends CellComponent {
             this.blur();
         });
 
-        // this.editor.element.addEventListener('keydown', (evt: KeyboardEvent) => this.onKeyDown(evt));
+        this.editor.element.addEventListener('keydown', (evt: KeyboardEvent) => this.onKeyDown(evt));
 
         this.editor.element.addEventListener('input', (evt: KeyboardEvent) => this.onInput());
     }
 
-    private onInput() {
+    // not private because it is also used by latex-editor
+    onInput() {
         const newContent = this.editor.markdownContent;
         const diff = Diff.diff(this.lastContent, newContent);
         const edits = [];
@@ -1023,5 +1106,98 @@ class TextCellComponent extends CellComponent {
             //console.log(edits);
             this.dispatcher.dispatch(new UpdateCell(this.id, edits))
         }
+    }
+
+    getContentNodes() {
+        return Array.from(this.editor.element.childNodes)
+            // there are a bunch of text nodes with newlines we don't care about.
+            .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
+    }
+
+    // Note: lines in contenteditable are inherently weird, don't rely on this for anything aside from beginning and end
+    getPosition() {
+        // get selection
+        const selection = document.getSelection()!;
+        // ok, now we just care about the current cursor location
+        let selectedNode = selection.focusNode;
+        let selectionCol = selection.focusOffset;
+        if (selectedNode === this.editor.element) { // this means we need to find the selected node using the offset
+            selectedNode = this.editor.element.childNodes[selectionCol];
+            selectionCol = 0;
+        }
+        // ok, now which line number?
+        let selectionLineNum = -1;
+        const contentNodes = this.getContentNodes();
+        contentNodes.forEach((node, idx) => {
+            if (node === selectedNode || node.contains(selectedNode)) {
+                selectionLineNum = idx;
+            }
+        });
+        return {
+            lineNumber: selectionLineNum + 1, // lines start at 1 like Monaco
+            column: selectionCol
+        };
+    }
+
+    getRange() {
+        const contentLines = this.getContentNodes();
+
+        const lastLine = contentLines[contentLines.length - 1]?.textContent || "";
+
+        return {
+            startLineNumber: 1, // start at 1 like Monaco
+            startColumn: 0,
+            endLineNumber: contentLines.length,
+            endColumn: lastLine.length
+        };
+
+    }
+
+    getCurrentSelection() {
+        return document.getSelection()!.toString()
+    }
+
+    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
+        return matchS<boolean>(key)
+            .when("MoveUp", () => {
+                if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "above"))
+                }
+            })
+            .when("MoveDown", () => {
+                if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                }
+            })
+            .when("RunAndSelectNext", () => {
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                return true // preventDefault
+            })
+            .when("RunAndInsertBelow", () => {
+                this.dispatcher.insertCell("below")
+                return true // preventDefault
+            })
+            .when("SelectPrevious", () => {
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, "above"))
+            })
+            .when("SelectNext", () => {
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+            })
+            .when("InsertAbove", () => {
+                this.dispatcher.insertCell("above")
+            })
+            .when("InsertBelow", () => {
+                this.dispatcher.insertCell("below")
+            })
+            .when("Delete", () => {
+                this.dispatcher.deleteCell()
+            })
+            .when("RunAll", () => {
+                this.dispatcher.dispatch(new RequestCellRun([]))
+            })
+            .when("RunToCursor", () => {
+                this.dispatcher.runToActiveCell()
+            })
+            .otherwiseThrow ?? undefined
     }
 }

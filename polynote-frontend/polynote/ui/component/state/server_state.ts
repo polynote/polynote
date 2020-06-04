@@ -1,6 +1,6 @@
 import {StateHandler} from "./state_handler";
 import {ServerErrorWithCause} from "../../../data/result";
-import {Identity} from "../../../data/messages";
+import {Identity, KernelBusyState} from "../../../data/messages";
 import {NotebookState, NotebookStateHandler} from "./notebook_state";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
@@ -9,6 +9,7 @@ import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../../../data/data";
 import {removeKey} from "../../../util/functions";
 import {EditBuffer} from "./edit_buffer";
+import {KernelState} from "./kernel_state";
 
 export type NotebookInfo = {
     // state: NotebookState,
@@ -172,6 +173,14 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 }
             }
         })
+    }
+
+    static get runningNotebooks(): [string, NotebookInfo][] {
+        return Object.entries(ServerStateHandler.notebooks).reduce<[string, NotebookInfo][]>((acc, [path, info]) => {
+            if (info.loaded) {
+                return [...acc, [path, info]]
+            } else return acc
+        }, [])
     }
 }
 
