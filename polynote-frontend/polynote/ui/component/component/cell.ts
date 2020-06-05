@@ -366,7 +366,7 @@ class CodeCellComponent extends CellComponent {
         cellState.view("metadata").addObserver(metadata => updateMetadata(metadata));
 
         cellState.view("pendingEdits").addObserver(edits => {
-            if (edits) {
+            if (edits.length > 0) {
                 this.applyEdits(edits);
                 dispatcher.dispatch(new ClearCellEdits(this.id));
             }

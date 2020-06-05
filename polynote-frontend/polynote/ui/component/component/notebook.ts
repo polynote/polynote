@@ -33,7 +33,7 @@ export class Notebook {
             removed.forEach(cell => {
                 this.cells[cell.id].cell.delete();
                 const cellEl = this.cells[cell.id].el;
-                if (cellEl) this.el.removeChild(cellEl);
+                if (cellEl) cellsEl.removeChild(cellEl);
                 delete this.cells[cell.id];
 
                 // clean up cell order

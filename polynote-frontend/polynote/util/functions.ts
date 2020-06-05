@@ -50,9 +50,15 @@ export function removeKey<T>(obj: T, k: keyof T): T {
 }
 
 export function arrInsert<T>(arr: T[], idx: number, t: T) {
-    return [...arr.slice(0, idx), t, ...arr.slice(idx)]
+    if (idx > -1) {
+        return [...arr.slice(0, idx), t, ...arr.slice(idx)]
+    } else return [t, ...arr]
 }
 
 export function arrReplace<T>(arr: T[], idx: number, t: T) {
     return [...arr.slice(0, idx), t, ...arr.slice(idx + 1)]
+}
+
+export function arrDelete<T>(arr: T[], idx: number) {
+    return [...arr.slice(0, idx), ...arr.slice(idx + 1)]
 }

@@ -6,7 +6,7 @@ import fs2.concurrent.{SignallingRef, Topic}
 import fs2.Stream
 import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection, StreamThrowableOps, StreamUIOps}
-import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate, TinyString}
+import polynote.messages.{CellID, InsertCell, KernelStatus, Notebook, NotebookUpdate, TinyString}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.logging.Logging
 import polynote.runtime.CellRange
@@ -66,7 +66,10 @@ object KernelSubscriber {
 
     def foreignUpdates(local: AtomicInteger, global: AtomicInteger) =
       publisher.broadcastUpdates.subscribe(128).unNone.evalMap {
-        case (`id`, update) => ZIO.effectTotal(global.set(update.globalVersion)).as(None)
+        case (`id`, update @ InsertCell(_, _, _, _)) =>  // we echo InsertCell messages
+          ZIO.effectTotal(global.set(update.globalVersion)) *> ZIO.succeed(Some(update))
+        case (`id`, update) => // update was unchanged, so don't echo it back
+          ZIO.effectTotal(global.set(update.globalVersion)).as(None)
         case (_, update)    => ZIO.effectTotal(global.get()).map {
           case knownGlobalVersion if update.globalVersion < knownGlobalVersion =>
             Some(rebaseUpdate(update, knownGlobalVersion, local.get()))

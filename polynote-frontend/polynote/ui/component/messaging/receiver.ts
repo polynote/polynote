@@ -23,6 +23,7 @@ import {
 import {NoUpdate, StateHandler} from "../state/state_handler";
 import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {SocketStateHandler} from "../state/socket_state";
+import {arrDelete, arrInsert} from "../../../util/functions";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -204,17 +205,10 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     })
                     .when(messages.InsertCell, (g, l, cell: NotebookCell, after: number) => {
                         const newCell = this.cellToState(cell);
-                        const insertIdx = s.cells.findIndex(c => c.id === after);
-                        if (insertIdx > -1) {
-                            return {
-                                ...s,
-                                cells: [...s.cells.slice(0, insertIdx), newCell, ...s.cells.slice(insertIdx + 1)]
-                            }
-                        } else {
-                            return {
-                                ...s,
-                                cells: [...s.cells, newCell]
-                            }
+                        const insertIdx = s.cells.findIndex(c => c.id === after) + 1;
+                        return {
+                            ...s,
+                            cells: arrInsert(s.cells, insertIdx, newCell)
                         }
                     })
                     .when(messages.DeleteCell, (g, l, id: number) => {
@@ -222,7 +216,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         if (idx > -1) {
                             return {
                                 ...s,
-                                cells: [...s.cells.slice(0, idx), ...s.cells.slice(idx + 1)]
+                                cells: arrDelete(s.cells, idx)
                             }
                         } else return s
                     })

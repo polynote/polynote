@@ -66,8 +66,9 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                     this.socket.send(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
                 })
                 .when(CreateCell, (language, content, metadata, prev) => {
-                    // TODO: Cell IDs should be generated on the server
-                    const cell = new NotebookCell(-1, language, content, [], metadata);
+                    // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
+                    const maxId = state.cells.reduce((acc, cell) => acc > cell.id ? acc : cell.id, -1)
+                    const cell = new NotebookCell(maxId + 1, language, content, [], metadata);
                     const update = new messages.InsertCell(state.globalVersion, ++state.localVersion, cell, prev);
                     this.socket.send(update);
                     state.editBuffer = state.editBuffer.push(state.localVersion, update);
