@@ -66,10 +66,8 @@ export class NotebookList {
         ServerStateHandler.get.view("notebooks").addObserver((newNotebooks, oldNotebooks) => {
             const [removed, added] = diffArray(Object.keys(oldNotebooks), Object.keys(newNotebooks));
 
-            console.log("start updating notebook list", added, removed)
             added.forEach(path => treeState.addPath(path));
             removed.forEach(path => treeState.removePath(path))
-            console.log("done updating notebook list")
         });
 
         // serverStateHandler.addObserver(x=> console.log("got server state update", x));

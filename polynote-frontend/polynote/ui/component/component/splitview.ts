@@ -64,7 +64,7 @@ export class SplitViewComponent {
         });
         leftDragger.addEventListener('drag', (evt) => {
             evt.preventDefault();
-            if (evt.clientX) {
+            if (evt.clientX > 0) {
                 left.style.width = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX)) + "px";
             }
         });
@@ -100,7 +100,7 @@ export class SplitViewComponent {
         });
         rightDragger.addEventListener('drag', (evt) => {
             evt.preventDefault();
-            if (evt.clientX) {
+            if (evt.clientX > 0) {
                 right.style.width = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
             }
         });

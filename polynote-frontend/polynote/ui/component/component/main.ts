@@ -54,7 +54,7 @@ class Main {
 
                 if(tabs.getTab(path) === undefined) {
                     const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
-                    if (nbInfo && nbInfo.info) {
+                    if (nbInfo?.info) {
                         tabs.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
                         const kernel = new Kernel(nbInfo.info.dispatcher, nbInfo.handler.view("kernel", KernelStateHandler), 'rightPane');
 

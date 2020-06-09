@@ -1,5 +1,5 @@
-import {div, TagElement} from "../../util/tags";
-import {CreateCell, NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {div, icon, span, TagElement} from "../../util/tags";
+import {CreateCell, NotebookMessageDispatcher, SetSelectedCell} from "../messaging/dispatcher";
 import {CellState, NotebookStateHandler} from "../state/notebook_state";
 import {StateHandler} from "../state/state_handler";
 import {CellMetadata} from "../../../data/data";
@@ -10,7 +10,7 @@ import {NotebookConfigComponent} from "./notebookconfig";
 export class Notebook {
     readonly el: TagElement<"div">;
     readonly cells: Record<number, {cell: CellContainerComponent, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
-    readonly cellOrder: Record<number, number> = {}; // index => cell id;
+    cellOrder: Record<number, number> = {}; // index => cell id;
     // private pendingHint?: {
     //     type: "completion" | "signature",
     //     resolve: (hint: CompletionList | (SignatureHelp | undefined)) => void,
@@ -32,20 +32,38 @@ export class Notebook {
             });
             removed.forEach(cell => {
                 this.cells[cell.id].cell.delete();
-                const cellEl = this.cells[cell.id].el;
-                if (cellEl) cellsEl.removeChild(cellEl);
+                const cellEl = this.cells[cell.id].el!;
+
+                const prevCellId = this.getPreviousCellId(cell.id) ?? -1
+                const undoEl = div(['undo-delete'], [
+                    icon(['close-button'], 'times', 'close icon').click(evt => {
+                        undoEl.parentNode!.removeChild(undoEl)
+                    }),
+                    span(['undo-message'], [
+                        'Cell deleted. ',
+                        span(['undo-link'], ['Undo']).click(evt => {
+                            this.insertCell(prevCellId, cell.language, cell.content, cell.metadata)
+
+                            undoEl.parentNode!.removeChild(undoEl);
+                        })
+                    ])
+                ])
+
+                cellEl.replaceWith(undoEl)
                 delete this.cells[cell.id];
 
                 // clean up cell order
-                const deletedIdx = Object.entries(this.cellOrder).find((idx, id) => id === cell.id);
-                if (deletedIdx) {
-                    const [idxStr, id] = deletedIdx;
-                    let idx = parseInt(idxStr); // Object.entries casts the idx to string
-                    let nextId = this.cellOrder[idx+1];
-                    while (nextId) {
+                const deletedIdx = this.getCellIndex(cell.id)
+                if (deletedIdx !== undefined) {
+                    let idx = deletedIdx;
+                    let nextId = this.cellOrder[idx + 1];
+                    while (nextId !== undefined) {
                         this.cellOrder[idx] = nextId;
                         idx += 1;
-                        nextId = this.cellOrder[idx];
+                        nextId = this.cellOrder[idx + 1];
+                    }
+                    if (idx === Object.entries(this.cellOrder).length) {
+                        delete this.cellOrder[idx]
                     }
                 }
             });
@@ -69,7 +87,17 @@ export class Notebook {
                 }
                 this.cells[cell.id].handler.updateState(() => cell);
             })
+            this.cellOrder = newCells.reduce<Record<number, number>>((acc, next, idx) => {
+                acc[idx] = next.id
+                return acc
+            }, {})
         });
+
+
+        console.log("initial active cell ", this.notebookState.getState().activeCell)
+        this.notebookState.view("activeCell").addObserver(cell => {
+            console.log("activeCell = ", cell)
+        })
     }
 
     /**
@@ -90,6 +118,31 @@ export class Notebook {
 
     private insertCell(prev: number, language: string, content: string, metadata?: CellMetadata) {
         this.dispatcher.dispatch(new CreateCell(language, content, metadata ?? new CellMetadata(), prev))
+        this.dispatcher.dispatch(new SetSelectedCell(prev, "below"))
+    }
+
+    /**
+     * Get the ordering index of the cell with the provided id.
+     */
+    private getCellIndex(cellId: number): number | undefined {
+        const anchorIdxStr = Object.entries(this.cellOrder).find(([idx, id]) => id === cellId)?.[0];
+        return anchorIdxStr ? parseInt(anchorIdxStr) : undefined
+    }
+
+    /**
+     * Get the cell above the one with the provided id
+     */
+    private getPreviousCellId(anchorId: number): number | undefined {
+        const anchorIdx = this.getCellIndex(anchorId)
+        return anchorIdx ? this.cellOrder[anchorIdx - 1] : undefined
+    }
+
+    /**
+     * Get the cell below the one with the provided id
+     */
+    private getNextCellId(anchorId: number): number | undefined {
+        const anchorIdx = this.getCellIndex(anchorId)
+        return anchorIdx ? this.cellOrder[anchorIdx + 1] : undefined
     }
 
     dispose() {

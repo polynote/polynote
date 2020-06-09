@@ -64,7 +64,7 @@ export class CellContainerComponent {
         this.cellId = `Cell${cellState.getState().id}`;
         let cell = this.cellFor(cellState.getState().language);
         this.el = div(['cell-component'], [cell.el]);
-        this.el.click(evt => cell.makeActive());
+        this.el.click(evt => cell.focus());
         cellState.view("language").addObserver((newLang, oldLang) => {
             // Need to create a whole new cell if the language switches between code and text
             if (oldLang === "text" || newLang === "text") {
@@ -109,14 +109,32 @@ abstract class CellComponent {
         this.cellId = `Cell${this.id}`;
     }
 
-    makeActive(){
+    // causes the cell to be focused
+    focus(){
         this.dispatcher.dispatch(new SetSelectedCell(this.id))
     }
 
     // TODO: if the user clicked on another cell are we sure this will happen before its makeActive?
+    // causes the cell to blur (lose focus)
     blur(){
-        this.dispatcher.dispatch(new SetSelectedCell(undefined))
+        if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
+            this.dispatcher.dispatch(new SetSelectedCell(undefined))
+        }
     }
+
+    // react to cell becoming focused.
+    protected onFocus() {
+        this.el.classList.add("active");
+        if (!document.location.hash.includes(this.cellId)) {
+            this.setUrl();
+        }
+    }
+
+    // react to cell becoming blurred
+    protected onBlur() {
+        this.el.classList.remove("active");
+    }
+
 
     // TODO: this should probably be somewhere else.
     protected setUrl(maybeSelection?: monaco.Range) {
@@ -147,7 +165,7 @@ abstract class CellComponent {
             keybinding = new StandardKeyboardEvent(evt)._asKeybinding;
         }
         const hotkey = cellHotkeys[keybinding]
-        if (hotkey) {
+        if (hotkey && hotkey.length > 0) {
             const key = hotkey[0];
             const pos = this.getPosition();
             const range = this.getRange();
@@ -175,7 +193,7 @@ class CodeCellComponent extends CellComponent {
     private readonly editorEl: TagElement<"div">;
     private applyingServerEdits: boolean;
     private execDurationUpdater: number;
-    private highlightDecorations: string[];
+    private highlightDecorations: string[] = [];
 
     constructor(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>) {
         super(dispatcher, cellState);
@@ -226,7 +244,7 @@ class CodeCellComponent extends CellComponent {
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
-            this.makeActive();
+            this.focus();
         });
         this.editor.onDidBlurEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "none" });
@@ -262,7 +280,7 @@ class CodeCellComponent extends CellComponent {
         this.editor.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
 
         const compileErrorsState = cellState.mapView<"compileErrors", CellErrorMarkers[][]>("compileErrors", (errors: CompileErrors[]) => {
-            if (errors) {
+            if (errors.length > 0) {
                 return errors.map(error => {
                     const model = this.editor.getModel()!;
                     const reportInfos = error.reports.map((report) => {
@@ -374,12 +392,9 @@ class CodeCellComponent extends CellComponent {
 
         const updateSelected = (selected: boolean | undefined) => {
             if (selected) {
-                this.el.classList.add("active");
-                if (!document.location.hash.includes(this.cellId)) {
-                    this.setUrl();
-                }
+                this.onFocus()
             } else {
-                this.el.classList.remove("active");
+                this.onBlur()
             }
         }
         updateSelected(this.state.selected)
@@ -427,7 +442,7 @@ class CodeCellComponent extends CellComponent {
                         options: { className: "currently-executing" }
                     }
                 ]);
-            } else if (this.highlightDecorations) {
+            } else if (this.highlightDecorations.length > 0) {
                 this.editor.deltaDecorations(this.highlightDecorations, []);
                 this.highlightDecorations = [];
             }
@@ -449,11 +464,11 @@ class CodeCellComponent extends CellComponent {
         // TODO: there might be non-error markers, or might otherwise want to be smarter about clearing markers
         monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), []);
         const edits = event.changes.flatMap((contentChange) => {
-            if (contentChange.rangeLength && contentChange.text.length) {
+            if (contentChange.rangeLength > 0 && contentChange.text.length > 0) {
                 return [new Delete(contentChange.rangeOffset, contentChange.rangeLength), new Insert(contentChange.rangeOffset, contentChange.text)];
-            } else if (contentChange.rangeLength) {
+            } else if (contentChange.rangeLength > 0) {
                 return [new Delete(contentChange.rangeOffset, contentChange.rangeLength)];
-            } else if (contentChange.text.length) {
+            } else if (contentChange.text.length > 0) {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
@@ -569,12 +584,12 @@ class CodeCellComponent extends CellComponent {
         el.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
         el.appendChild(span(['exec-duration'], [prettyDuration(duration)]));
         el.classList.add('output');
-        if (executionInfo.endTs) {
+        if (executionInfo.endTs !== undefined) {
             el.classList.remove("running");
         } else {
             el.classList.add("running");
             // update exec info every so often
-            if (!this.execDurationUpdater) {
+            if (this.execDurationUpdater !== undefined) {
                 this.execDurationUpdater = window.setInterval(() => this.setExecutionInfo(el, executionInfo), 333)
             }
         }
@@ -587,11 +602,11 @@ class CodeCellComponent extends CellComponent {
 
         let reachedIrrelevant = false;
 
-        if (error.stackTrace?.length) {
+        if (error.stackTrace?.length > 0) {
             error.stackTrace.forEach((traceEl, i) => {
                 if (traceEl.file === this.cellId && traceEl.line >= 0) {
                     if (errorLine === undefined)
-                        errorLine = traceEl.line;
+                        errorLine = traceEl.line ?? undefined;
                     items.push({content: `(Line ${traceEl.line})`, type: "link"});
                 } else {
                     if (traceEl.className === 'sun.reflect.NativeMethodAccessorImpl') { // TODO: seems hacky, maybe this logic fits better on the backend?
@@ -728,6 +743,11 @@ class CodeCellComponent extends CellComponent {
     getCurrentSelection() {
         return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
     }
+
+    protected onFocus() {
+        super.onFocus()
+        this.editor.focus()
+    }
 }
 
 type CellErrorMarkers = editor.IMarkerData & { originalSeverity: MarkerSeverity}
@@ -809,7 +829,7 @@ class CodeCellOutput {
             if (result.name !== "Out" && result.reprs.length > 1) {
                 // TODO: hover for result text?
                 //       Note: tried a "content widget" to bring up the value inspector. It just kinda got in the way.
-            } else if (result.reprs.length) {
+            } else if (result.reprs.length > 0) {
                 let inspectIcon: TagElement<"button">[] = [];
                 if (result.reprs.length > 1) {
                     inspectIcon = [
@@ -849,7 +869,7 @@ class CodeCellOutput {
     private setErrors(errors?: CellErrorMarkers[][]) {
         if (errors && errors.length > 0 && errors[0].length > 0 ) {
             errors.forEach(reportInfos => {
-                if (reportInfos) {
+                if (reportInfos.length > 0) {
                     this.cellOutputDisplay.classList.add('errors');
                     this.cellOutputDisplay.appendChild(
                         div(
@@ -887,7 +907,7 @@ class CodeCellOutput {
 
                 const causeEl = err.trace.cause && rollupError(err.trace.cause);
                 const summaryContent = [span(['severity'], [err.summary.label]), span(['message'], [err.summary.message])];
-                if (traceItems.length) {
+                if (traceItems.length > 0) {
                     const traceContent = [tag('ul', ['stack-trace'], {}, traceItems), causeEl];
                     return details([], summaryContent, traceContent)
                 } else {
@@ -1031,7 +1051,7 @@ class CodeCellOutput {
                 const scripts = el.querySelectorAll('script');
                 scripts.forEach(script => {
                     const clone = document.createElement('script');
-                    while (script.childNodes.length) {
+                    while (script.childNodes.length > 0) {
                         clone.appendChild(script.removeChild(script.childNodes[0]));
                     }
                     [...script.attributes].forEach(attr => clone.setAttribute(attr.name, attr.value));
@@ -1062,7 +1082,7 @@ export class TextCellComponent extends CellComponent {
 
 
         this.editor.element.addEventListener('focus', () => {
-            this.makeActive();
+            this.focus();
         });
 
         this.editor.element.addEventListener('blur', () => {

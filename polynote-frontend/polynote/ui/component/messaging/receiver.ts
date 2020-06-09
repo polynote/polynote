@@ -214,9 +214,38 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     .when(messages.DeleteCell, (g, l, id: number) => {
                         const idx = s.cells.findIndex(c => c.id === id);
                         if (idx > -1) {
+                            const cells = s.cells.reduce<[CellState[], CellState | null]>(([acc, prev], next, idx) => {
+                                // Upon deletion, we want to set the selected cell to be the cell below the deleted one, if present. Otherwise, we want to select the cell above.
+                                if (next.id === id) {
+                                    if (idx === s.cells.length - 1) {
+                                        // deleting the last cell, so try to select the previous cell
+                                        const maybePrevious = acc[acc.length - 1];
+                                        if (maybePrevious) {
+                                            // if the previous cell exists, select it
+                                            const selectPrevious: CellState = {...maybePrevious, selected: true}
+                                            return [[...acc.slice(0, acc.length - 1), selectPrevious], next]
+                                        } else {
+                                            // there's no previous cell, which means this is the last cell... nothing to select.
+                                            return [acc, next]
+                                        }
+                                    } else {
+                                        // not deleting the last cell. we will select the next cell in the next iteration.
+                                        return [acc, next]
+                                    }
+                                } else if (prev && prev.id === id) {
+                                    // the previous cell was deleted, so select this one.
+                                    const selectedNext = {...next, selected: true}
+                                    return [[...acc, selectedNext], selectedNext]
+                                } else {
+                                    return [[...acc, next], next]
+                                }
+                            }, [[], null])[0]
+
+
                             return {
                                 ...s,
-                                cells: arrDelete(s.cells, idx)
+                                cells: cells,
+                                activeCell: cells.find(cell => cell.selected === true)
                             }
                         } else return s
                     })

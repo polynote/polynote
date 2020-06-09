@@ -212,7 +212,7 @@ class KernelTasksComponent {
     private updateTask(id: string, label: string, detail: Content, status: number, progress: number, parent?: string) {
         let task = this.tasks[id];
 
-        if (!task) {
+        if (task === undefined) {
             if (status > TaskStatus.Complete) {
                 this.addTask(id, label, detail, status, progress, parent);
             }
@@ -248,7 +248,7 @@ class KernelTasksComponent {
 
     private removeTask(id: string) {
         const task = this.tasks[id];
-        if (task.parentNode) task.parentNode.removeChild(task);
+        if (task?.parentNode) task.parentNode.removeChild(task);
         this.kernelTasksHandler.updateState(tasks => {
             tasks = {...tasks}
             delete tasks[task.id];
@@ -326,7 +326,7 @@ class KernelSymbolsComponent {
         const cellId = resultValue.sourceCell;
         const name = resultValue.name;
 
-        if (!this.symbols[cellId]) {
+        if (this.symbols[cellId] === undefined) {
             this.symbols[cellId] = {};
         }
         const cellSymbols = this.symbols[cellId];
@@ -392,7 +392,7 @@ class KernelSymbolsComponent {
         this.resultSymbols.innerHTML = "";
 
         // add all results for the current cell
-        if (this.symbols[id]) {
+        if (this.symbols[id] !== undefined) {
             const cellSymbols = this.symbols[id];
             for (const name in cellSymbols) {
                 if (cellSymbols.hasOwnProperty(name)) {
@@ -404,7 +404,7 @@ class KernelSymbolsComponent {
 
     private removeSymbol(name: string) {
         const existing = this.tableEl.findRowsBy(row => row.name === name);
-        if (existing.length) {
+        if (existing.length > 0) {
             existing.forEach(tr => tr.parentNode!.removeChild(tr));
         }
     }

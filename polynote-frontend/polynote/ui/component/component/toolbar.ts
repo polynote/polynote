@@ -38,7 +38,7 @@ export class ToolbarComponent {
         const updateToolbar = (path?: string) => {
             if (path) {
                 const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
-                if (nbInfo && nbInfo.info) {
+                if (nbInfo?.info) {
                     currentNotebookHandler = nbInfo.handler
                     const newListener = currentNotebookHandler.addObserver(state => {
                         if (state.activeCell) {
@@ -52,7 +52,7 @@ export class ToolbarComponent {
                         }
                     });
                     if (currentNotebookHandler) {
-                        if (cellSelectionListener) currentNotebookHandler.removeObserver(cellSelectionListener);
+                        if (cellSelectionListener !== undefined) currentNotebookHandler.removeObserver(cellSelectionListener);
                         cellSelectionListener = newListener;
                         currentNotebookHandler = nbInfo.handler;
                         nb.enable(nbInfo.info.dispatcher);
@@ -344,7 +344,7 @@ class TextToolbar extends ToolbarElement {
 
             let state = button.getState();
 
-            if (state && state !== 'false') {
+            if (state !== 'false') {
                 button.classList.add('active');
             } else {
                 button.classList.remove('active');

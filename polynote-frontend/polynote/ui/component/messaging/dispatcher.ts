@@ -32,139 +32,191 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
     }
 
     dispatch(action: UIAction) {
-        this.state.updateState(s => {
-            let state = {...s};
-            match(action)
-                .when(Reconnect, (onlyIfClosed: boolean) => {
-                    this.socket.reconnect(onlyIfClosed)
-                })
-                .when(KernelCommand, (command: string) => {
-                    if (command === "start") {
-                        this.socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
-                    } else if (command === "kill") {
-                        if (confirm("Kill running kernel? State will be lost.")) {
-                            this.socket.send(new messages.StartKernel(messages.StartKernel.Kill));
-                        }
+        match(action)
+            .when(Reconnect, (onlyIfClosed: boolean) => {
+                this.socket.reconnect(onlyIfClosed)
+            })
+            .when(KernelCommand, (command: string) => {
+                if (command === "start") {
+                    this.socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
+                } else if (command === "kill") {
+                    if (confirm("Kill running kernel? State will be lost.")) {
+                        this.socket.send(new messages.StartKernel(messages.StartKernel.Kill));
                     }
-                })
-                .when(CreateComment, (cellId, comment) => {
-                    this.socket.send(new messages.CreateComment(state.globalVersion, state.localVersion, cellId, comment))
-                })
-                .when(UpdateComment, (cellId, commentId, range, content) => {
-                    this.socket.send(new messages.UpdateComment(state.globalVersion, state.localVersion, cellId, commentId, range, content))
-                })
-                .when(DeleteComment, (cellId, commentId) => {
-                    this.socket.send(new messages.DeleteComment(state.globalVersion, state.localVersion, cellId, commentId))
-                })
-                .when(SetCurrentSelection, (cellId, range) => {
-                    this.socket.send(new messages.CurrentSelection(cellId, range))
-                })
-                .when(SetCellOutput, (cellId, output) => {
-                    this.socket.send(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
-                })
-                .when(SetCellLanguage, (cellId, language) => {
-                    this.socket.send(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
-                })
-                .when(CreateCell, (language, content, metadata, prev) => {
+                }
+            })
+            .when(CreateComment, (cellId, comment) => {
+                const state = this.state.getState()
+                this.socket.send(new messages.CreateComment(state.globalVersion, state.localVersion, cellId, comment))
+            })
+            .when(UpdateComment, (cellId, commentId, range, content) => {
+                const state = this.state.getState()
+                this.socket.send(new messages.UpdateComment(state.globalVersion, state.localVersion, cellId, commentId, range, content))
+            })
+            .when(DeleteComment, (cellId, commentId) => {
+                const state = this.state.getState()
+                this.socket.send(new messages.DeleteComment(state.globalVersion, state.localVersion, cellId, commentId))
+            })
+            .when(SetCurrentSelection, (cellId, range) => {
+                this.socket.send(new messages.CurrentSelection(cellId, range))
+            })
+            .when(SetCellOutput, (cellId, output) => {
+                const state = this.state.getState()
+                this.socket.send(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
+            })
+            .when(SetCellLanguage, (cellId, language) => {
+                const state = this.state.getState()
+                this.socket.send(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
+            })
+            .when(CreateCell, (language, content, metadata, prev) => {
+                this.state.updateState(state => {
                     // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
+                    state = {...state}
                     const maxId = state.cells.reduce((acc, cell) => acc > cell.id ? acc : cell.id, -1)
                     const cell = new NotebookCell(maxId + 1, language, content, [], metadata);
                     const update = new messages.InsertCell(state.globalVersion, ++state.localVersion, cell, prev);
                     this.socket.send(update);
                     state.editBuffer = state.editBuffer.push(state.localVersion, update);
+                    return state
                 })
-                .when(UpdateCell, (cellId, edits, metadata) => {
+            })
+            .when(UpdateCell, (cellId, edits, metadata) => {
+                this.state.updateState(state => {
+                    state = {...state}
                     const update = new messages.UpdateCell(state.globalVersion, ++state.localVersion, cellId, edits, metadata);
                     this.socket.send(update);
-                    state.editBuffer = state.editBuffer.push(state.localVersion, update);
+                    state.editBuffer = state.editBuffer.push(state.localVersion, update)
+                    return state
                 })
-                .when(DeleteCell, (cellId) => {
+            })
+            .when(DeleteCell, (cellId) => {
+                this.state.updateState(state => {
+                    state = {...state}
                     const update = new messages.DeleteCell(state.globalVersion, ++state.localVersion, cellId);
                     this.socket.send(update);
-                    state.editBuffer = state.editBuffer.push(state.localVersion, update);
+                    state.editBuffer = state.editBuffer.push(state.localVersion, update)
+                    return state
                 })
-                .when(UpdateConfig, conf => {
+            })
+            .when(UpdateConfig, conf => {
+                this.state.updateState(state => {
+                    state = {...state}
                     const update = new messages.UpdateConfig(state.globalVersion, ++state.localVersion, conf);
                     this.socket.send(update);
-                    state.editBuffer = state.editBuffer.push(state.localVersion, update);
+                    state.editBuffer = state.editBuffer.push(state.localVersion, update)
+                    return state
                 })
-                .when(RequestCompletions, (cellId, offset, resolve, reject) => {
-                    this.socket.send(new messages.CompletionsAt(cellId, offset, []));
+            })
+            .when(RequestCompletions, (cellId, offset, resolve, reject) => {
+                this.socket.send(new messages.CompletionsAt(cellId, offset, []));
+                this.state.updateState(state => {
                     if (state.activeCompletion) {
                         state.activeCompletion.reject();
                     }
-                    state.activeCompletion = {resolve, reject};
+                    return {
+                        ...state,
+                        activeCompletion: {resolve, reject}
+                    }
                 })
-                .when(RequestSignature, (cellId, offset, resolve, reject) => {
-                    this.socket.send(new messages.ParametersAt(cellId, offset));
+            })
+            .when(RequestSignature, (cellId, offset, resolve, reject) => {
+                this.socket.send(new messages.ParametersAt(cellId, offset));
+                this.state.updateState(state => {
                     if (state.activeSignature) {
                         state.activeSignature.reject();
                     }
-                    state.activeSignature = {resolve, reject};
+                    return {
+                        ...state,
+                        activeSignature: {resolve, reject}
+                    }
                 })
-                .when(RequestNotebookVersion, version => {
-                    this.socket.send(new messages.NotebookVersion(state.path, version))
-                })
-                .when(RequestCellRun, cellIds => {
-                    //TODO: what about client interpreters?
-
+            })
+            .when(RequestNotebookVersion, version => {
+                const state = this.state.getState()
+                this.socket.send(new messages.NotebookVersion(state.path, version))
+            })
+            .when(RequestCellRun, cellIds => {
+                //TODO: what about client interpreters?
+                this.state.updateState(state => {
                     // empty cellIds means run all of them!
                     if (cellIds.length === 0) {
                         cellIds = state.cells.map(cell => cell.id);
                     }
                     this.socket.send(new messages.RunCell(cellIds));
-                    cellIds.forEach(id => {
-                        state.cells = state.cells.map(cell => {
-                            if (cell.id === id) {
+                    return {
+                        ...state,
+                        cells: state.cells.map(cell => {
+                            if (cellIds.includes(cell.id)) {
                                 return { ...cell, queued: true, results: [], error: false }
                             } else return cell
                         })
-                    })
+                    }
                 })
-                .when(RequestCancelTasks, () => {
-                    this.socket.send(new messages.CancelTasks(state.path))
-                })
-                .when(RequestClearOutput, () => {
-                    this.socket.send(new messages.ClearOutput())
-                })
-                .when(SetSelectedCell, selected => {
-                    state.activeCell = state.cells.find(cell => cell.id === selected);
-                    state.cells = state.cells.map(cell => {
-                        return {
-                            ...cell,
-                            selected: selected === cell.id
-                        }
-                    });
-                })
-                .when(CurrentSelection, (cellId, range) => {
-                    state.cells = state.cells.map(cell => {
-                        // todo: what is this used for?
-                        return {
-                            ...cell,
-                            currentSelection: cell.id === cellId ? range : undefined
-                        }
-                    });
-                    this.socket.send(new messages.CurrentSelection(cellId, range));
-                })
-                .when(ClearCellEdits, id => {
-                    state.cells = state.cells.map(cell => {
-                        if (cell.id === id) {
+            })
+            .when(RequestCancelTasks, () => {
+                const state = this.state.getState()
+                this.socket.send(new messages.CancelTasks(state.path))
+            })
+            .when(RequestClearOutput, () => {
+                this.socket.send(new messages.ClearOutput())
+            })
+            .when(SetSelectedCell, (selected, relative) => {
+                this.state.updateState(state => {
+                    let id = selected;
+                    if (relative === "above")  {
+                        const anchorIdx = state.cells.findIndex(cell => cell.id === id);
+                        id = state.cells[anchorIdx - 1]?.id;
+                    } else if (relative === "below") {
+                        const anchorIdx = state.cells.findIndex(cell => cell.id === id);
+                        id = state.cells[anchorIdx + 1]?.id;
+                    }
+                    id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
+                    return {
+                        ...state,
+                        activeCell: state.cells.find(cell => cell.id === id),
+                        cells: state.cells.map(cell => {
                             return {
                                 ...cell,
-                                pendingEdits: []
+                                selected: cell.id === selected
                             }
-                        } else return cell
-                    })
+                        })
+                    }
                 })
-                .when(DownloadNotebook, () => {
-                    // TODO download current notebook
+            })
+            .when(CurrentSelection, (cellId, range) => {
+                this.socket.send(new messages.CurrentSelection(cellId, range));
+                this.state.updateState(state => {
+                    return {
+                        ...state,
+                        cells: state.cells.map(cell => {
+                            // todo: what is this used for?
+                            return {
+                                ...cell,
+                                currentSelection: cell.id === cellId ? range : undefined
+                            }
+                        })
+                    }
                 })
-
-
-            // TODO: add more actions! basically UIEvents that anything subscribes to should be here I think
-
-            return state
-        });
+            })
+            .when(ClearCellEdits, id => {
+                this.state.updateState(state => {
+                    return {
+                        ...state,
+                        cells: state.cells.map(cell => {
+                            if (cell.id === id) {
+                                return {
+                                    ...cell,
+                                    pendingEdits: []
+                                }
+                            } else return cell
+                        })
+                    }
+                })
+            })
+            .when(DownloadNotebook, () => {
+                // TODO download current notebook
+            })
+        // TODO: add more actions! basically UIEvents that anything subscribes to should be here I think
     }
 
     // Helper methods
@@ -190,22 +242,23 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
             anchor = {id: currentCell.id, language: currentCell.language, metadata: currentCell.metadata};
         }
         const anchorIdx = currentState.cells.findIndex(cell => cell.id === anchor!.id);
-        const prev = direction === 'above' ? anchorIdx - 1 : anchorIdx;
-        this.dispatch(new CreateCell(anchor.language, '', anchor.metadata, prev))
+        const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
+        const maybePrev = currentState.cells[prevIdx];
+        this.dispatch(new CreateCell(anchor.language, '', anchor.metadata, maybePrev.id))
     }
 
     deleteCell(id?: number){
        if (id === undefined) {
            id = this.state.getState().activeCell?.id;
        }
-       if (id) {
+       if (id !== undefined) {
            this.dispatch(new DeleteCell(id));
        }
     }
 
     runActiveCell() {
         const id = this.state.getState().activeCell?.id;
-        if (id) {
+        if (id !== undefined) {
             this.dispatch(new RequestCellRun([id]));
         }
     }
@@ -550,16 +603,16 @@ export class SetSelectedCell extends UIAction {
     /**
      * Change the currently selected cell.
      *
-     * @param selected  The ID of the cell to select OR the ID of the anchor cell for `relative`
+     * @param selected  The ID of the cell to select OR the ID of the anchor cell for `relative`. If `undefined`, deselects cells.
      * @param relative  If set, select the cell either above or below the one with ID specified by `selected`
      */
-    constructor(readonly selected: number | undefined, relative?: "above" | "below") {
+    constructor(readonly selected: number | undefined, readonly relative?: "above" | "below") {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: SetSelectedCell): ConstructorParameters<typeof SetSelectedCell> {
-        return [inst.selected];
+        return [inst.selected, inst.relative];
     }
 }
 

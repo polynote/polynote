@@ -43,7 +43,7 @@ export class TabNav {
 
         newLabel.classList.add('active');
 
-        while (this.content.childNodes.length) {
+        while (this.content.childNodes.length > 0) {
             this.content.removeChild(this.content.childNodes[0]);
         }
 
