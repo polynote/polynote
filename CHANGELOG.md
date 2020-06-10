@@ -1,11 +1,22 @@
-# 0.3.8 (May 15, 2020)
+# 0.3.11 (Jun 10, 2020)
+* Fix a regression which stopped certain error types from appearing in the UI
+* Check Notebook read permission when loading a notebook. 
+
+# 0.3.10 (May 29, 2020)
+* New experimental Dark Mode (feedback welcome!)
+* Ability to directly paste images into text cells (image button on toolbar still doesn't do anything, but at least now it's possible to insert an image without it having to already have a URL)
+* Notebooks are loaded incrementally (better responsiveness for large notebook files)
+* Some tweaks/fixes for Scala completions and signature help
+* Handle case when the browser generates continuation frames over the websocket
+
+# 0.3.9 (May 18, 2020)
+* Replaces `0.3.8`, which was retracted after we found a few issues in it that weren't caught. 
 * **Stability** A bug that could cause data loss has been fixed in this release. 
 * **Backups** Polynote now writes a write-ahead-log (WAL) whenever it gets updates to a notebook. This WAL can be recovered using `polynote.py recover /path/to/wal-file.wal`. This is currently experimental.
 * **Backups** Polynote now saves a copy of opened notebooks into the browser's local database. This can be used in case of catastrophic server-side data loss (but where the client has been working). 
 * **New** Added a "notebook runner", invoked with `polynote.py run [OPTIONS] input-file input-files*` that can run notebooks in headless mode 
 * Lots of fixes to the Plot UI (Thanks @JD557!) 
 * Handle naming collisions between Java and Python package imports. Python packages with JVM-like names no longer get swallowed by the Jep importer. 
-
 
 # 0.3.7 (Apr 26, 2020)
 * Fixed bug: saving plots doesn't work because websocket connection dies for no apparent reason
@@ -26,7 +37,6 @@
 * Fix issue with launcher script
 * Fix multiple series in bar chart (Thanks @JD557!)
 * Surface error if kernel dies before finishing startup
-
 
 # 0.3.5 (Mar 26, 2020)
 * Fixed plugin script
