@@ -202,7 +202,10 @@ export class NotebookUI extends UIMessageTarget {
                 removed.forEach(id => { this.removePresenceSelection(id); delete this.otherUsers[id] });
             })
             .when(messages.PresenceSelection, (id, cellId, range) => this.setPresenceSelection(id, cellId, range))
-            .when(messages.KernelError, (err) => console.log(err)) // TODO: need a general UI treatment for kernel-level errors
+            .when(messages.KernelError, (err) => {
+                this.kernelUI.errorDisplay(0, err)
+                console.log(err)
+            })
         );
         this.socket.addEventListener('close', () => this.cellUI.configUI.setKernelState('disconnected'));
 

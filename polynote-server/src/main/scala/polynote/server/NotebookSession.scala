@@ -145,9 +145,10 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
     _       <- sendCellResults(nb.results, taskInfo)
   } yield ()
 
-  def sendNotebookInfo: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] =
-    sendNotebook *> sendStatus *> sendTasks *> sendPresence
-
+  def sendNotebookInfo: RIO[SessionEnv with PublishMessage, Unit] =
+    subscriber.checkPermission(Permission.ReadNotebook).flatMap { _ =>
+      sendNotebook *> sendStatus *> sendTasks *> sendPresence
+    }.catchAll(err => PublishMessage(Error(0, err)))
 }
 
 object NotebookSession {
