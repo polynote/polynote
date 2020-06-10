@@ -472,7 +472,7 @@ class CodeCellComponent extends CellComponent {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        this.dispatcher.dispatch(new UpdateCell(this.id, edits));
+        this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.getValue()));
     }
 
     requestCompletion(pos: number): Promise<CompletionList> {
@@ -554,13 +554,13 @@ class CodeCellComponent extends CellComponent {
     private toggleCode() {
         const prevMetadata = this.state.metadata;
         const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideSource})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], newMetadata))
+        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
     }
 
     private toggleOutput() {
         const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideOutput})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], newMetadata))
+        const newMetadata = prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})
+        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
     }
 
     private layout() {
@@ -1124,7 +1124,7 @@ export class TextCellComponent extends CellComponent {
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.dispatcher.dispatch(new UpdateCell(this.id, edits))
+            this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.markdownContent))
         }
     }
 

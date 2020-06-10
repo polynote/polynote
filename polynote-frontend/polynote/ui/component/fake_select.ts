@@ -10,6 +10,8 @@ class SelectionChange {
     get oldValue() { return this.changedFromEl.value }
 }
 
+// Fake Select is like a select dropdown but it doesn't steal focus, which is useful for interacting with the rich
+// text editor and other components that need to stay in focus for things to work properly.
 export class FakeSelect extends UIMessageTarget {
     options: TagElement<"button">[];
     value: string;

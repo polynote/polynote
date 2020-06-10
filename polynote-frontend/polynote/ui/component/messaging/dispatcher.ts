@@ -65,28 +65,46 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 this.socket.send(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
             })
             .when(SetCellLanguage, (cellId, language) => {
-                const state = this.state.getState()
-                this.socket.send(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
+                this.state.updateState(state => {
+                    this.socket.send(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
+                    return {
+                        ...state,
+                        cells: state.cells.map(cell => {
+                            if (cell.id === cellId) {
+                                return {...cell, language: language}
+                            } else return cell
+                        })
+                    }
+                })
             })
             .when(CreateCell, (language, content, metadata, prev) => {
                 this.state.updateState(state => {
+                    let localVersion = state.localVersion + 1;
                     // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
-                    state = {...state}
                     const maxId = state.cells.reduce((acc, cell) => acc > cell.id ? acc : cell.id, -1)
                     const cell = new NotebookCell(maxId + 1, language, content, [], metadata);
-                    const update = new messages.InsertCell(state.globalVersion, ++state.localVersion, cell, prev);
+                    const update = new messages.InsertCell(state.globalVersion, localVersion, cell, prev);
                     this.socket.send(update);
-                    state.editBuffer = state.editBuffer.push(state.localVersion, update);
-                    return state
+                    return {
+                        ...state,
+                        editBuffer: state.editBuffer.push(state.localVersion, update)
+                    }
                 })
             })
-            .when(UpdateCell, (cellId, edits, metadata) => {
+            .when(UpdateCell, (cellId, edits, newContent, metadata) => {
                 this.state.updateState(state => {
-                    state = {...state}
-                    const update = new messages.UpdateCell(state.globalVersion, ++state.localVersion, cellId, edits, metadata);
+                    let localVersion = state.localVersion + 1;
+                    const update = new messages.UpdateCell(state.globalVersion, localVersion, cellId, edits, metadata);
                     this.socket.send(update);
-                    state.editBuffer = state.editBuffer.push(state.localVersion, update)
-                    return state
+                    return {
+                        ...state,
+                        editBuffer: state.editBuffer.push(state.localVersion, update),
+                        cells: state.cells.map(cell => {
+                            if (cell.id === cellId) {
+                                return {...cell, content: newContent ?? cell.content, metadata: metadata ?? cell.metadata}
+                            } else return cell
+                        })
+                    }
                 })
             })
             .when(DeleteCell, (cellId) => {
@@ -399,13 +417,13 @@ export class CreateCell extends UIAction {
 }
 
 export class UpdateCell extends UIAction {
-    constructor(readonly cellId: number, readonly edits: ContentEdit[], readonly metadata?: CellMetadata) {
+    constructor(readonly cellId: number, readonly edits: ContentEdit[], readonly newContent?: string, readonly metadata?: CellMetadata) {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: UpdateCell): ConstructorParameters<typeof UpdateCell> {
-        return [inst.cellId, inst.edits, inst.metadata];
+        return [inst.cellId, inst.edits, inst.newContent, inst.metadata];
     }
 }
 

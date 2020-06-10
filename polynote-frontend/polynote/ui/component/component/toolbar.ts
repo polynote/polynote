@@ -3,12 +3,12 @@ import {
     NotebookMessageDispatcher, RequestCancelTasks,
     RequestCellRun,
     RequestClearOutput,
-    ServerMessageDispatcher, UIAction, ViewAbout
+    ServerMessageDispatcher, SetCellLanguage, UIAction, ViewAbout
 } from "../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../../util/tags";
 import {ServerStateHandler} from "../state/server_state";
 import {Observer, StateHandler} from "../state/state_handler";
-import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {LaTeXEditor} from "../latex_editor";
 import {FakeSelect} from "../fake_select";
 
@@ -56,7 +56,7 @@ export class ToolbarComponent {
                         cellSelectionListener = newListener;
                         currentNotebookHandler = nbInfo.handler;
                         nb.enable(nbInfo.info.dispatcher);
-                        cell.enable(nbInfo.info.dispatcher);
+                        cell.enable(nbInfo.info.dispatcher, currentNotebookHandler.view("activeCell"));
                         code.enable(nbInfo.info.dispatcher);
                         text.enable();
                     }
@@ -165,6 +165,8 @@ class NotebookToolbar extends ToolbarElement {
 
 class CellToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
+    private activeCellHandler?: StateHandler<CellState>;
+    private langSelector: FakeSelect;
     constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
         super(connectionStatus);
 
@@ -191,15 +193,45 @@ class CellToolbar extends ToolbarElement {
                 //     .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
             ]
         ]);
+
+        this.langSelector = new FakeSelect(selectEl);
+        const updateSelectorLanguages = (langs: Record<string, string>) => {
+            const langEntries = Object.entries(langs)
+            if (langEntries.length > 0) {
+                // clear all but option 0, which we set earlier to be 'Text'
+                while (this.langSelector.options.length > 1) {
+                    this.langSelector.removeOption(this.langSelector.options[1]);
+                }
+                langEntries.forEach(([lang, id]) => {
+                    this.langSelector.addOption(id, lang)
+                });
+            }
+        }
+        updateSelectorLanguages(ServerStateHandler.get.getState().interpreters)
+        ServerStateHandler.get.view("interpreters").addObserver(langs => updateSelectorLanguages(langs))
+
+        this.langSelector.addListener(change => {
+            if (this.dispatcher && this.activeCellHandler) {
+                const id = this.activeCellHandler.getState().id;
+                this.dispatcher.dispatch(new SetCellLanguage(id, change.newValue))
+            }
+        })
     }
 
-    enable(dispatcher: NotebookMessageDispatcher) {
+    enable(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>) {
         this.dispatcher = dispatcher;
+        this.activeCellHandler = cellState;
+        this.activeCellHandler.addObserver(cell => {
+            if (cell) this.langSelector.setState(cell.language)
+        })
         this.setDisabled(false);
     }
 
     disable() {
         this.dispatcher = undefined;
+        this.activeCellHandler?.clearObservers()
+        this.activeCellHandler?.dispose()
+        this.activeCellHandler = undefined;
         this.setDisabled(true);
     }
 }

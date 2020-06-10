@@ -18,20 +18,23 @@ import {StateHandler} from "../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../state/storage";
 import {TaskInfo, TaskStatus} from "../../../data/messages";
 import {ResultValue} from "../../../data/result";
+import {CellState, NotebookStateHandler} from "../state/notebook_state";
 
 export class Kernel {
     readonly el: TagElement<"div">;
     readonly statusEl: TagElement<"h2">;
     private status: TagElement<"span">;
+    private kernelState: KernelStateHandler;
 
     // TODO: this implementation will no longer appear on the welcome screen, which means that errors won't show.
     //       another solution for showing errors on the welcome screen needs to be implemented.
-    constructor(private dispatcher: NotebookMessageDispatcher, private kernelState: KernelStateHandler,
-                private whichPane: keyof ViewPreferences) {
+    constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler, private whichPane: keyof ViewPreferences) {
 
-        const info = new KernelInfoComponent(kernelState.kernelInfoHandler);
-        const symbols = new KernelSymbolsComponent(kernelState.kernelSymbolsHandler);
-        const tasks = new KernelTasksComponent(kernelState.kernelTasksHandler);
+        this.kernelState = notebookState.view("kernel", KernelStateHandler);
+
+        const info = new KernelInfoComponent(this.kernelState.kernelInfoHandler);
+        const symbols = new KernelSymbolsComponent(notebookState);
+        const tasks = new KernelTasksComponent(this.kernelState.kernelTasksHandler);
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -49,7 +52,7 @@ export class Kernel {
             tasks.el
         ]);
 
-        kernelState.kernelStatusHandler.addObserver(status => {
+        this.kernelState.kernelStatusHandler.addObserver(status => {
             this.setKernelStatus(status)
         })
 
@@ -276,7 +279,7 @@ class KernelSymbolsComponent {
     private presentedCell: number = 0;
     private visibleCells: number[] = [];
 
-    constructor(kernelSymbolsHandler: StateHandler<KernelSymbols>) {
+    constructor(notebookState: NotebookStateHandler) {
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
             this.tableEl = table(['kernel-symbols-table'], {
@@ -289,8 +292,19 @@ class KernelSymbolsComponent {
         this.resultSymbols = (this.tableEl.tBodies[0] as TagElement<"tbody">).addClass('results');
         this.scopeSymbols = this.tableEl.addBody().addClass('scope-symbols');
 
-        kernelSymbolsHandler.addObserver(symbols => {
-            symbols.forEach(this.addSymbol)
+        notebookState.view("kernel", KernelStateHandler).kernelSymbolsHandler.addObserver(symbols => {
+            symbols.forEach(s => this.addSymbol(s))
+        })
+
+        notebookState.view("activeCell").addObserver(cell => {
+            if (cell === undefined) {
+                // only show predef
+            } else {
+                const cells = notebookState.getState().cells;
+                const idx = cells.indexOf(cell);
+                const cellsBefore = cells.slice(0, cell.id).map(cell => cell.id)
+                this.presentFor(cell.id, cellsBefore)
+            }
         })
     }
 
