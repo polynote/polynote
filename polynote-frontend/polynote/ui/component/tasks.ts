@@ -46,7 +46,7 @@ export class KernelTasksUI {
             taskEl.attr('title', detail);
         }
 
-        const container = (typeof parent !== "undefined" && (this.tasks[parent]?.querySelector('.child-tasks'))) ?? this.taskContainer;
+        const container = (parent && this.tasks[parent]?.querySelector('.child-tasks')) ?? this.taskContainer;
 
         if (container) {
             KernelTasksUI.setProgress(taskEl, progress);
