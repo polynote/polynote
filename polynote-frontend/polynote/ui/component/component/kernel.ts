@@ -299,10 +299,11 @@ class KernelSymbolsComponent {
         notebookState.view("activeCell").addObserver(cell => {
             if (cell === undefined) {
                 // only show predef
+                this.presentFor(-1, [])
             } else {
                 const cells = notebookState.getState().cells;
-                const idx = cells.indexOf(cell);
-                const cellsBefore = cells.slice(0, cell.id).map(cell => cell.id)
+                const idx = cells.findIndex(c => c.id === cell.id);
+                const cellsBefore = cells.slice(0, idx).map(cell => cell.id)
                 this.presentFor(cell.id, cellsBefore)
             }
         })

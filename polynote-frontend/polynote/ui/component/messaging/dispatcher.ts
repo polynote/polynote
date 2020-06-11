@@ -195,7 +195,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                         cells: state.cells.map(cell => {
                             return {
                                 ...cell,
-                                selected: cell.id === selected
+                                selected: cell.id === id
                             }
                         })
                     }

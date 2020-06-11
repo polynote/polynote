@@ -107,6 +107,16 @@ abstract class CellComponent {
     protected constructor(protected dispatcher: NotebookMessageDispatcher, protected cellState: StateHandler<CellState>) {
         this.id = cellState.getState().id;
         this.cellId = `Cell${this.id}`;
+
+        const updateSelected = (selected: boolean | undefined) => {
+            if (selected) {
+                this.onFocus()
+            } else {
+                this.onBlur()
+            }
+        }
+        updateSelected(this.state.selected)
+        cellState.view("selected").addObserver(selected => updateSelected(selected));
     }
 
     // causes the cell to be focused
@@ -114,17 +124,18 @@ abstract class CellComponent {
         this.dispatcher.dispatch(new SetSelectedCell(this.id))
     }
 
-    // TODO: if the user clicked on another cell are we sure this will happen before its makeActive?
     // causes the cell to blur (lose focus)
     blur(){
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
-            this.dispatcher.dispatch(new SetSelectedCell(undefined))
+            if (this.cellState.getState().selected) { // prevent blurring a different cell
+                this.dispatcher.dispatch(new SetSelectedCell(undefined))
+            }
         }
     }
 
     // react to cell becoming focused.
     protected onFocus() {
-        this.el.classList.add("active");
+        this.el?.classList.add("active");
         if (!document.location.hash.includes(this.cellId)) {
             this.setUrl();
         }
@@ -132,7 +143,7 @@ abstract class CellComponent {
 
     // react to cell becoming blurred
     protected onBlur() {
-        this.el.classList.remove("active");
+        this.el?.classList.remove("active");
     }
 
 
@@ -389,16 +400,6 @@ class CodeCellComponent extends CellComponent {
                 dispatcher.dispatch(new ClearCellEdits(this.id));
             }
         });
-
-        const updateSelected = (selected: boolean | undefined) => {
-            if (selected) {
-                this.onFocus()
-            } else {
-                this.onBlur()
-            }
-        }
-        updateSelected(this.state.selected)
-        cellState.view("selected").addObserver(selected => updateSelected(selected));
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
@@ -1219,5 +1220,10 @@ export class TextCellComponent extends CellComponent {
                 this.dispatcher.runToActiveCell()
             })
             .otherwiseThrow ?? undefined
+    }
+
+    protected onFocus() {
+        super.onFocus()
+        this.editor.focus()
     }
 }

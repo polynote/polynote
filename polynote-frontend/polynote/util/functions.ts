@@ -62,3 +62,11 @@ export function arrReplace<T>(arr: T[], idx: number, t: T) {
 export function arrDelete<T>(arr: T[], idx: number) {
     return [...arr.slice(0, idx), ...arr.slice(idx + 1)]
 }
+
+export function unzip<A, B>(arr: [A, B][]): [A[], B[]] {
+    return arr.reduce<[A[], B[]]>(([as, bs], [a, b]) => {
+        as.push(a)
+        bs.push(b)
+        return [as, bs]
+    }, [[], []])
+}

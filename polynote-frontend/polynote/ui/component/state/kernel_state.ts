@@ -1,9 +1,9 @@
-import {ResultValue} from "../../../data/result";
+import {ClientResult, ResultValue} from "../../../data/result";
 import {StateHandler} from "./state_handler";
 import {TaskInfo} from "../../../data/messages";
 
 // TODO: KernelSymbols needs to keep track of the cell source of each symbol doesn't it?
-export type KernelSymbols = ResultValue[];
+export type KernelSymbols = (ResultValue)[];
 export type KernelStatus = 'busy' | 'idle' | 'dead' | 'disconnected';
 export type KernelInfo = Record<string, string>;
 export type KernelTasks = Record<string, TaskInfo>;

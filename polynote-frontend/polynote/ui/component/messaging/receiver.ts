@@ -23,7 +23,7 @@ import {
 import {NoUpdate, StateHandler} from "../state/state_handler";
 import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrDelete, arrInsert} from "../../../util/functions";
+import {arrDelete, arrInsert, unzip} from "../../../util/functions";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -87,14 +87,24 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             return NoUpdate
         });
         this.receive(messages.NotebookCells, (s: NotebookState, path: string, cells: NotebookCell[], config?: NotebookConfig) => {
-            const cellStates = cells.map(cell => {
-                return this.cellToState(cell)
-            });
+            const [cellStates, results] = unzip(cells.map(cell => {
+                const cellState = this.cellToState(cell)
+                // unfortunately, this can't be an anonymous function if we want TS to correctly narrow the type.
+                function isRV(maybe: ResultValue | ClientResult): maybe is ResultValue {
+                    return maybe instanceof ResultValue
+                }
+                const resultsValues = cellState.results.filter(isRV)
+                return [cellState, resultsValues]
+            }));
             return {
                 ...s,
                 path: path,
                 cells: cellStates,
-                config: config ?? NotebookConfig.default
+                config: config ?? NotebookConfig.default,
+                kernel: {
+                    ...s.kernel,
+                    symbols: [...s.kernel.symbols, ...results.flat()]
+                }
             }
         });
         this.receive(messages.KernelStatus, (s, update) => {
