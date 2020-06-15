@@ -2,6 +2,10 @@
 
 import * as deepEquals from 'fast-deep-equal/es6';
 
+//*********************
+//* Object helpers
+//*********************
+
 // Checks if variable is an object (and not an array, even though arrays are technically objects). Maybe there's a more correct name for this method.
 export function isObject(obj: any): obj is object {
     return obj && typeof obj === "object" && !Array.isArray(obj)
@@ -39,6 +43,14 @@ export function deepFreeze<T>(obj: T) {
     return go(obj)
 }
 
+export function equalsByKey<A, B>(a: A, b: B, keys: (keyof A & keyof B)[]): boolean {
+    return keys.every(k => {
+        if (k in a && k in b) {
+            return deepEquals(a[k], b[k])
+        } else return false
+    })
+}
+
 export function removeKey<T>(obj: T, k: keyof T): T {
     return Object.keys(obj).reduce((acc: T, key: string) => {
         if (key !== k) {
@@ -48,6 +60,14 @@ export function removeKey<T>(obj: T, k: keyof T): T {
         return acc
     }, {} as T)
 }
+
+export function mapValues<V, U>(obj:{ [K in PropertyKey]: V }, f: (x: V) => U): { [K in PropertyKey]: U } {
+    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, f(v)]))
+}
+
+//*********************
+//* Array helpers
+//*********************
 
 export function arrInsert<T>(arr: T[], idx: number, t: T) {
     if (idx > -1) {

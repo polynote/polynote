@@ -13,12 +13,8 @@ import {ServerStateHandler} from "../state/server_state";
 import {TabComponent} from "./tab";
 import {Notebook} from "./notebook";
 import {Kernel} from "./kernel";
-import {KernelStateHandler} from "../state/kernel_state";
 import {NotebookList} from "./notebooklist";
 import {SocketStateHandler} from "../state/socket_state";
-import {NotebookCellsUI} from "../nb_cells";
-import {CurrentNotebook} from "../current_notebook";
-import {About} from "./about";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -78,9 +74,6 @@ class Main {
         if (path.startsWith(notebookBase)) {
             dispatcher.dispatch(new LoadNotebook(path.substring(notebookBase.length)))
         }
-
-        // make sure to start About
-        const about = new About(dispatcher)
     }
 
     private static setTitle(path?: string) {
@@ -138,3 +131,13 @@ Tinycon.setOptions({
     background: '#308b24'
 });
 
+
+// TODO LIST ****************************************************************************************************************************
+//      - Notifications support
+//      - VIM support
+//      - Completions and Params
+//      - Notebook download
+//      - Client interpreters
+//      - Welcome/Home screen
+//      - Comments
+//      - Update kernel on changed tab

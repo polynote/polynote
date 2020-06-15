@@ -1,4 +1,4 @@
-import {blockquote, button, details, div, dropdown, iconButton, span, tag, TagElement} from "../../util/tags";
+import {blockquote, button, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../util/tags";
 import {
     ClearCellEdits,
     CurrentSelection,
@@ -8,7 +8,7 @@ import {
     RequestSignature,
     SetCellLanguage,
     SetSelectedCell,
-    UpdateCell
+    UpdateCell, ShowValueInspector
 } from "../messaging/dispatcher";
 import {StateHandler} from "../state/state_handler";
 import {CellState, CompletionHint, SignatureHint} from "../state/notebook_state";
@@ -43,7 +43,7 @@ import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {FoldingController, SuggestController} from "../../monaco/extensions";
 import {ContentEdit, Delete, Insert} from "../../../data/content_edit";
 import {CodeCellModel, MIMEElement} from "../cell";
-import {displayContent, parseContentType, prettyDuration} from "../display_content";
+import {displayContent, displayData, displaySchema, parseContentType, prettyDuration} from "../display_content";
 import match, {matchS} from "../../../util/match";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import CompletionList = languages.CompletionList;
@@ -55,6 +55,9 @@ import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import { CommentHandler } from "./comment";
 import {RichTextEditor} from "./text_editor";
 import {Diff} from "../../../util/diff";
+import {DataRepr, MIMERepr, StreamingDataRepr} from "../../../data/value_repr";
+import {DataReader} from "../../../data/codec";
+import {StructType} from "../../../data/data_type";
 
 export class CellContainerComponent {
     readonly el: TagElement<"div">;
@@ -69,7 +72,7 @@ export class CellContainerComponent {
             // Need to create a whole new cell if the language switches between code and text
             if (oldLang === "text" || newLang === "text") {
                 const newCell = this.cellFor(newLang);
-                this.el.replaceChild(newCell.el, cell.el);
+                cell.el.replaceWith(newCell.el);
                 cell = newCell;
             }
         });
@@ -344,7 +347,7 @@ class CodeCellComponent extends CellComponent {
                 return undefined
             }
         })
-        let cellOutput = new CodeCellOutput(dispatcher, cellState.view("output"), cellState.view("results"), compileErrorsState, runtimeErrorState);
+        let cellOutput = new CodeCellOutput(dispatcher, cellState, compileErrorsState, runtimeErrorState);
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
@@ -775,11 +778,13 @@ class CodeCellOutput {
     private readonly resultTabs: TagElement<"div">;
 
     constructor(
-        dispatcher: NotebookMessageDispatcher,
-        outputHandler: StateHandler<Output[]>,
-        resultsHandler: StateHandler<(ResultValue | ClientResult)[]>,
+        private dispatcher: NotebookMessageDispatcher,
+        private cellState: StateHandler<CellState>,
         compileErrorsHandler: StateHandler<CellErrorMarkers[][] | undefined>,
         runtimeErrorHandler: StateHandler<ServerErrorTrace | undefined>) {
+
+        const outputHandler = cellState.view("output");
+        const resultsHandler = cellState.view("results");
 
         this.el = div(['cell-output'], [
             div(['cell-output-margin'], []),
@@ -836,7 +841,7 @@ class CodeCellOutput {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
                             evt => {
-                                // TODO: ValueInspector goes here
+                                this.dispatcher.dispatch(new ShowValueInspector(result))
                             }
                         )
                     ]
@@ -847,17 +852,14 @@ class CodeCellOutput {
                 this.cellResultMargin.appendChild(outLabel);
 
 
-                // TODO: use `result.displayRepr` here instead.
-                //       We can probably do the Promise trick to do this relatively cleanly (like completions).
-                this.resultTabs.appendChild(span([], [result.valueText]))
-                // result.displayRepr(this, ValueInspector.get().setParent(this)).then(display => {
-                //     const [mime, content] = display;
-                //     const [mimeType, args] = parseContentType(mime);
-                //     this.buildOutput(mime, args, content).then((el: MIMEElement) => {
-                //         this.resultTabs.appendChild(el);
-                //         this.cellOutputTools.classList.add('output');
-                //     })
-                // });
+                this.displayRepr(result).then(display => {
+                    const [mime, content] = display;
+                    const [mimeType, args] = parseContentType(mime);
+                    this.buildOutput(mime, args, content).then((el: MIMEElement) => {
+                        this.resultTabs.appendChild(el);
+                        this.cellOutputTools.classList.add('output');
+                    })
+                })
             }
         } else {
             this.cellOutputTools.classList.add('output');
@@ -865,6 +867,85 @@ class CodeCellOutput {
             // TODO: add support for ClientResults!
             // result.display(this.resultTabs, this);
         }
+    }
+
+    // TODO: move this back to `ResultValue`
+    private displayRepr(result: ResultValue): Promise<[string, string | DocumentFragment]> {
+        // We're searching for the best MIME type and representation for this result by going in order of most to least
+        // useful (kind of arbitrarily defined...)
+        // TODO: make this smarter
+        // TODO: for lazy data repr, inform that it can't be displayed immediately
+
+        let index = -1;
+
+        // First, check to see if there's a special DataRepr or StreamingDataRepr
+        index = result.reprs.findIndex(repr => repr instanceof DataRepr);
+        if (index >= 0) {
+            return monaco.editor.colorize(result.typeName, "scala", {}).then(typeHTML => {
+                const dataRepr = result.reprs[index] as DataRepr;
+                const frag = document.createDocumentFragment();
+                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                resultType.innerHTML = typeHTML;
+                frag.appendChild(div([], [
+                    h4(['result-name-and-type'], [span(['result-name'], [result.name]), ': ', resultType]),
+                    displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
+                ]));
+                return ["text/html", frag];
+            })
+        }
+
+        index = result.reprs.findIndex(repr => repr instanceof StreamingDataRepr);
+        if (index >= 0) {
+            const repr = result.reprs[index] as StreamingDataRepr;
+            // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
+            return monaco.editor.colorize(result.typeName, this.cellState.getState().language, {}).then(typeHTML => {
+                const streamingRepr = result.reprs[index] as StreamingDataRepr;
+                const frag = document.createDocumentFragment();
+                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+                resultType.innerHTML = typeHTML;
+                // Why do they put a <br> in there?
+                [...resultType.getElementsByTagName("br")].forEach(br => {
+                    br?.parentNode?.removeChild(br)
+                });
+
+                const el = div([], [
+                    h4(['result-name-and-type'], [
+                        span(['result-name'], [result.name]), ': ', resultType,
+                        iconButton(['view-data'], 'View data', 'table', '[View]')
+                            .click(_ => this.dispatcher.dispatch(new ShowValueInspector(result, 'View data'))),
+                        repr.dataType instanceof StructType
+                            ? iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
+                                .click(_ => {
+                                    this.dispatcher.dispatch(new ShowValueInspector(result, 'Plot data'))
+                                })
+                            : undefined
+                    ]),
+                    repr.dataType instanceof StructType ? displaySchema(streamingRepr.dataType) : undefined
+                ]);
+                frag.appendChild(el);
+                return ["text/html", frag];
+            })
+        }
+
+        // next, if it's a MIMERepr we want to follow this order
+        const mimeOrder = [
+            "image/",
+            "application/x-latex",
+            "text/html",
+            "text/",
+        ];
+
+        for (const partialMime of mimeOrder) {
+            index = result.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith(partialMime));
+            if (index >= 0) return Promise.resolve(MIMERepr.unapply(result.reprs[index] as MIMERepr));
+        }
+
+        // ok, maybe there's some other mime type we didn't expect?
+        index = result.reprs.findIndex(repr => repr instanceof MIMERepr);
+        if (index >= 0) return Promise.resolve(MIMERepr.unapply(result.reprs[index] as MIMERepr));
+
+        // just give up and show some plaintext...
+        return Promise.resolve(["text/plain", result.valueText]);
     }
 
     private setErrors(errors?: CellErrorMarkers[][]) {
@@ -1056,7 +1137,7 @@ class CodeCellOutput {
                         clone.appendChild(script.removeChild(script.childNodes[0]));
                     }
                     [...script.attributes].forEach(attr => clone.setAttribute(attr.name, attr.value));
-                    script.parentNode!.replaceChild(clone, script);
+                    script.replaceWith(clone);
                 });
             })
         }

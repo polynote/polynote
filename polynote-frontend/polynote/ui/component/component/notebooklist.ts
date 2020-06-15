@@ -291,7 +291,7 @@ export class LeafComponent {
         state.addObserver(leaf => {
             if (leaf) {
                 const newEl = this.getEl(leaf);
-                this.el.replaceChild(newEl, this.leafEl);
+                this.leafEl.replaceWith(newEl);
                 this.leafEl = newEl;
             } else {
                 // this leaf was removed

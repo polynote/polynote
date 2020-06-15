@@ -1,4 +1,5 @@
 // Helper methods to manipulate Javascript objects
+// TODO: remove (superseded by functions.ts)
 
 'use strict';
 

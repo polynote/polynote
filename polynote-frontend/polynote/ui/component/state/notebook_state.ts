@@ -8,7 +8,7 @@ import {
     ResultValue, RuntimeError,
     ServerErrorWithCause
 } from "../../../data/result";
-import {CompletionCandidate, Presence, Signatures} from "../../../data/messages";
+import {CompletionCandidate, HandleData, ModifyStream, Presence, Signatures} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../../../data/content_edit";
@@ -52,11 +52,13 @@ export interface NotebookState {
     globalVersion: number,
     localVersion: number,
     editBuffer: EditBuffer,
-    // ephemeral states
+    // ephemeral states  TODO: should these live somewhere else?
     activeCell?: CellState,
     activeCompletion?: { resolve: (completion: CompletionHint) => void, reject: () => void },
     activeSignature?: { resolve: (signature: SignatureHint) => void, reject: () => void },
-    activePresence: Record<number, { presence: Presence, selection?: { cell: number, range: PosRange}}>
+    activePresence: Record<number, { presence: Presence, selection?: { cell: number, range: PosRange}}>,
+    // map of handle ID to message received.
+    activeStreams: Record<number, (HandleData | ModifyStream)[]>
 }
 
 export class NotebookStateHandler extends StateHandler<NotebookState> {

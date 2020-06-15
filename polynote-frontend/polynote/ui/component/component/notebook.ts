@@ -43,7 +43,6 @@ export class Notebook {
                         'Cell deleted. ',
                         span(['undo-link'], ['Undo']).click(evt => {
                             this.insertCell(prevCellId, cell.language, cell.content, cell.metadata)
-
                             undoEl.parentNode!.removeChild(undoEl);
                         })
                     ])
@@ -117,8 +116,10 @@ export class Notebook {
     }
 
     private insertCell(prev: number, language: string, content: string, metadata?: CellMetadata) {
-        this.dispatcher.dispatch(new CreateCell(language, content, metadata ?? new CellMetadata(), prev))
-        this.dispatcher.dispatch(new SetSelectedCell(prev, "below"))
+        this.dispatcher.insertCell("below", {id: prev, language, content, metadata: metadata ?? new CellMetadata()})
+            .then(newCellId => {
+                this.dispatcher.dispatch(new SetSelectedCell(newCellId))
+            })
     }
 
     /**

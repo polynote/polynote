@@ -14,21 +14,26 @@ import {Observer, StateHandler} from "../state/state_handler";
 import {KernelCommand, ServerMessageDispatcher, SetSelectedNotebook} from "../messaging/dispatcher";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
-import {EphemeralStateHandler} from "../state/ephemeral_state";
 
 export class About extends FullScreenModal {
     readonly observers: [StateHandler<any>, Observer<any>][] = []
-    constructor(private serverMessageDispatcher: ServerMessageDispatcher) {
+    private constructor(private serverMessageDispatcher: ServerMessageDispatcher) {
         super(
             div([], []),
             { windowClasses: ['about'] }
         );
+    }
 
-        EphemeralStateHandler.get.view("about").addObserver(section => {
-            if (section) {
-                this.show(section)
-            } else this.hide()
-        })
+    private static inst: About;
+    private static get(dispatcher: ServerMessageDispatcher) {
+        if (!About.inst || About.inst.serverMessageDispatcher !== dispatcher) {
+            About.inst = new About(dispatcher);
+        }
+        return About.inst
+    }
+
+    static show(dispatcher: ServerMessageDispatcher, section?: string) {
+        About.get(dispatcher).show(section)
     }
 
     aboutMain() {
@@ -223,7 +228,7 @@ export class About extends FullScreenModal {
             this.observers.push([info.handler, obs])
 
             if (content.firstChild !== tableEl) {
-                content.replaceChild(tableEl, content.firstChild!);
+                content.firstChild?.replaceWith(tableEl);
             }
         })
         return el;
@@ -307,7 +312,7 @@ export class About extends FullScreenModal {
             'Client-side Backups': this.clientBackups.bind(this),
         };
         const tabnav = new TabNav(tabs);
-        this.content.replaceChild(tabnav.el, this.content.firstChild!);
+        this.content.firstChild?.replaceWith(tabnav.el);
         if (section) tabnav.showItem(section);
 
         super.show();
@@ -315,7 +320,6 @@ export class About extends FullScreenModal {
 
     hide() {
         this.observers.forEach(([handler, obs]) => handler.removeObserver(obs));
-        EphemeralStateHandler.get.updateState(s => ({ ...s, about: undefined }))
         super.hide()
     }
 }

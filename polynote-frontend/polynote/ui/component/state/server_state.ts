@@ -9,10 +9,8 @@ import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../../../data/data";
 import {removeKey} from "../../../util/functions";
 import {EditBuffer} from "./edit_buffer";
-import {KernelState} from "./kernel_state";
 
 export type NotebookInfo = {
-    // state: NotebookState,
     handler: NotebookStateHandler,
     loaded: boolean,
     info?: {
@@ -121,7 +119,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     globalVersion: -1,
                     localVersion: -1,
                     editBuffer: new EditBuffer(),
-                    activePresence: {}
+                    activePresence: {},
+                    activeStreams: {}
                 }),
                 loaded: false,
                 info: undefined,

@@ -164,7 +164,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         this.el.appendChild(commentList);
         rootState.addObserver(changedRoot => {
             const newRoot = new CommentComponent(dispatcher, cellId, changedRoot);
-            commentList.replaceChild(newRoot.el, root.el);
+            root.el.replaceWith(newRoot.el);
             root = newRoot;
         });
 
@@ -261,7 +261,7 @@ class CommentButtonComponent extends MonacoRightGutterOverlay{
             evt.stopPropagation();
             evt.preventDefault();
 
-            this.el.replaceChild(new NewCommentComponent(dispatcher, range, cellId).el, button);
+            button.replaceWith(new NewCommentComponent(dispatcher, range, cellId).el);
         });
         this.el.appendChild(button);
     }

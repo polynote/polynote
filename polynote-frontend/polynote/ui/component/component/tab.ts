@@ -63,7 +63,7 @@ export class TabComponent {
             const tab = this.tabs[path];
             const current = this.currentTab && this.tabs[this.currentTab];
             if (current) {
-                this.el.replaceChild(tab.content, current.content);
+                current.content.replaceWith(tab.content);
                 current.tab.classList.remove("active");
             } else {
                 this.el.appendChild(tab.content)

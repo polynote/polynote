@@ -6,13 +6,17 @@
 import match from "../../../util/match";
 import * as messages from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
-import {Output, PosRange} from "../../../data/result";
+import {ClientResult, Output, PosRange, ResultValue} from "../../../data/result";
 import {StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../../../data/content_edit";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import {SocketStateHandler} from "../state/socket_state";
-import {EphemeralStateHandler} from "../state/ephemeral_state";
+import {About} from "../component/about";
+import {ValueInspector} from "../component/value_inspector";
+import {equalsByKey} from "../../../util/functions";
+import {HandleData, ModifyStream, ReleaseHandle, TableOp} from "../../../data/messages";
+import {Either} from "../../../data/types";
 
 export abstract class MessageDispatcher<S> {
     protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -61,8 +65,34 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 this.socket.send(new messages.CurrentSelection(cellId, range))
             })
             .when(SetCellOutput, (cellId, output) => {
-                const state = this.state.getState()
-                this.socket.send(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
+                    if (output instanceof Output) {
+                        this.state.updateState(state => {
+                            this.socket.send(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
+                            return {
+                                ...state,
+                                cells: state.cells.map(cell => {
+                                    if (cell.id === cellId) {
+                                        return {...cell, output: [output]}
+                                    } else return cell
+                                })
+                            }
+                        })
+                    } else {
+                        // ClientResults are special. The Client treats them like a Result, but the Server treats them like an Output.
+                        output.toOutput().then(o => {
+                            this.state.updateState(state => {
+                                this.socket.send(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
+                                return {
+                                    ...state,
+                                    cells: state.cells.map(cell => {
+                                        if (cell.id === cellId) {
+                                            return {...cell, results: [...cell.results, output], output: [o]}
+                                        } else return cell
+                                    })
+                                }
+                            })
+                        })
+                    }
             })
             .when(SetCellLanguage, (cellId, language) => {
                 this.state.updateState(state => {
@@ -234,6 +264,21 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
             .when(DownloadNotebook, () => {
                 // TODO download current notebook
             })
+            .when(ShowValueInspector, (result, tab) => {
+                ValueInspector.get.inspect(this, this.state, result, tab)
+            })
+            .when(HideValueInspector, () => {
+                ValueInspector.get.hide()
+            })
+            .when(RequestDataBatch, (handleType, handleId, size) => {
+                this.socket.send(new HandleData(handleType, handleId, size, Either.right([])))
+            })
+            .when(ModifyDataStream, (handleId, mods) => {
+                this.socket.send(new ModifyStream(handleId, mods))
+            })
+            .when(StopDataStream, (handleType, handleId) => {
+                this.socket.send(new ReleaseHandle(handleType, handleId))
+            })
         // TODO: add more actions! basically UIEvents that anything subscribes to should be here I think
     }
 
@@ -245,8 +290,9 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
      * @param anchor     The anchor. If it is undefined, the anchor is based on the currently selected cell. If none is
      *                   selected, the anchor is either the first or last cell (depending on the direction supplied).
      *                   The anchor is used to determine the location, language, and metadata to supply to the new cell.
+     * @return           A Promise that resolves with the inserted cell's id.
      */
-    insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata}) {
+    insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string}): Promise<number> {
         const currentState = this.state.getState();
         let currentCell = currentState.activeCell;
         if (anchor === undefined) {
@@ -262,7 +308,23 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
         const anchorIdx = currentState.cells.findIndex(cell => cell.id === anchor!.id);
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
         const maybePrev = currentState.cells[prevIdx];
-        this.dispatch(new CreateCell(anchor.language, '', anchor.metadata, maybePrev.id))
+        const createMsg = new CreateCell(anchor.language, anchor.content ?? '', anchor.metadata, maybePrev.id)
+        this.dispatch(createMsg)
+        return new Promise((resolve, reject) => {
+            const obs = this.state.addObserver(state => {
+                const anchorCellIdx = state.cells.findIndex(cell => cell.id === maybePrev.id)
+                const didInsert = state.cells.find((cell, idx) => {
+                    const below = idx > anchorCellIdx;
+                    const newer = cell.id > maybePrev.id;
+                    const matches = equalsByKey(cell, createMsg, ["language", "content", "metadata"]);
+                    return below && newer && matches
+                });
+                if (didInsert !== undefined) {
+                    this.state.removeObserver(obs);
+                    resolve(didInsert.id)
+                }
+            })
+        })
     }
 
     deleteCell(id?: number){
@@ -329,12 +391,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     this.socket.send(new messages.DeleteNotebook(path))
                 })
                 .when(ViewAbout, section => {
-                    EphemeralStateHandler.get.updateState(e => {
-                        return {
-                            ...e,
-                            about: section
-                        }
-                    })
+                    About.show(this, section)
                 })
                 .when(SetSelectedNotebook, path => {
                     newS = {
@@ -350,6 +407,9 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
 }
 
 export class UIAction {
+    // All empty classes are equivalent in typescript (because structural typing), so we need a dummy parameter here for typing.
+    private __UIAction = undefined
+
     static unapply(inst: UIAction): any[] {return []}
 
     constructor(...args: any[]) {}
@@ -517,7 +577,7 @@ export class SetCurrentSelection extends UIAction {
 }
 
 export class SetCellOutput extends UIAction {
-    constructor(readonly cellId: number, readonly output: Output) {
+    constructor(readonly cellId: number, readonly output: (Output | ClientResult)) {
         super();
         Object.freeze(this);
     }
@@ -686,5 +746,60 @@ export class ViewAbout extends UIAction {
 
     static unapply(inst: ViewAbout): ConstructorParameters<typeof ViewAbout> {
         return [inst.section];
+    }
+}
+
+export class ShowValueInspector extends UIAction {
+    constructor(readonly result: ResultValue, readonly tab?: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: ShowValueInspector): ConstructorParameters<typeof ShowValueInspector> {
+        return [inst.result, inst.tab];
+    }
+}
+
+export class HideValueInspector extends UIAction {
+    constructor() {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: HideValueInspector): ConstructorParameters<typeof HideValueInspector> {
+        return [];
+    }
+}
+
+export class RequestDataBatch extends UIAction {
+    constructor(readonly handleType: number, readonly handleId: number, readonly size: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: RequestDataBatch): ConstructorParameters<typeof RequestDataBatch> {
+        return [inst.handleType, inst.handleId, inst.size]
+    }
+}
+
+export class ModifyDataStream extends UIAction {
+    constructor(readonly handleId: number, readonly mods: TableOp[]) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: ModifyDataStream): ConstructorParameters<typeof ModifyDataStream> {
+        return [inst.handleId, inst.mods]
+    }
+}
+
+export class StopDataStream extends UIAction {
+    constructor(readonly handleType: number, readonly handleId: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: StopDataStream): ConstructorParameters<typeof StopDataStream> {
+        return [inst.handleType, inst.handleId]
     }
 }

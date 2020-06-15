@@ -380,6 +380,27 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 }
             }
         });
+
+        //************* Streaming Messages ****************
+        this.receive(messages.HandleData, (s, handlerType, handleId, count, data) => {
+            return {
+                ...s,
+                activeStreams: {
+                    ...s.activeStreams,
+                    [handleId]: [...(s.activeStreams[handleId] || []), new messages.HandleData(handlerType, handleId, count, data)]
+                }
+            }
+        })
+
+        this.receive(messages.ModifyStream, (s, fromHandle, ops, newRepr) => {
+            return {
+                ...s,
+                activeStreams: {
+                    ...s.activeStreams,
+                    [fromHandle]: [...(s.activeStreams[fromHandle] || []), new messages.ModifyStream(fromHandle, ops, newRepr)]
+                }
+            }
+        })
     }
 
     private cellToState(cell: NotebookCell): CellState {

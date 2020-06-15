@@ -13,7 +13,7 @@ import {
     TableRowElement,
     TagElement
 } from "../../util/tags";
-import {KernelCommand, NotebookMessageDispatcher, Reconnect} from "../messaging/dispatcher";
+import {KernelCommand, NotebookMessageDispatcher, Reconnect, ShowValueInspector} from "../messaging/dispatcher";
 import {StateHandler} from "../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../state/storage";
 import {TaskInfo, TaskStatus} from "../../../data/messages";
@@ -33,7 +33,7 @@ export class Kernel {
         this.kernelState = notebookState.view("kernel", KernelStateHandler);
 
         const info = new KernelInfoComponent(this.kernelState.kernelInfoHandler);
-        const symbols = new KernelSymbolsComponent(notebookState);
+        const symbols = new KernelSymbolsComponent(dispatcher, notebookState);
         const tasks = new KernelTasksComponent(this.kernelState.kernelTasksHandler);
 
         this.statusEl = h2(['kernel-status'], [
@@ -279,7 +279,7 @@ class KernelSymbolsComponent {
     private presentedCell: number = 0;
     private visibleCells: number[] = [];
 
-    constructor(notebookState: NotebookStateHandler) {
+    constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
             this.tableEl = table(['kernel-symbols-table'], {
@@ -319,9 +319,10 @@ class KernelSymbolsComponent {
             name: resultValue.name,
             type: span([], [resultValue.typeName]).attr('title', resultValue.typeName)
         }, whichBody) as ResultRow;
-        tr.onclick = (evt) => {
-            console.log("Should create a ValueInspector here")
-            // TODO: create value inspector!!
+        tr.onmousedown = (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            this.dispatcher.dispatch(new ShowValueInspector(tr.resultValue))
         };
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;
