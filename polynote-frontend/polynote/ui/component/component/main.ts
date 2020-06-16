@@ -3,7 +3,6 @@ import {MarkdownIt} from "../../../util/markdown-it";
 import {scala, vega} from "../../monaco/languages";
 import * as monaco from "monaco-editor";
 import {theme} from "../../monaco/theme";
-import * as Tinycon from "tinycon";
 import {SocketSession} from "../messaging/comms";
 import {ServerMessageReceiver} from "../messaging/receiver";
 import {LoadNotebook, ServerMessageDispatcher} from "../messaging/dispatcher";
@@ -127,10 +126,6 @@ SocketSession.global;
 const mainEl = document.getElementById('Main');
 mainEl?.appendChild(Main.get.el);
 
-Tinycon.setOptions({
-    background: '#308b24'
-});
-
 
 // TODO LIST ****************************************************************************************************************************
 //      - Notifications support
@@ -141,3 +136,4 @@ Tinycon.setOptions({
 //      - Welcome/Home screen
 //      - Comments
 //      - Update kernel on changed tab
+//      - Scroll to selected tab

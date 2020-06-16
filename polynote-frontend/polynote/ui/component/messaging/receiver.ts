@@ -437,12 +437,15 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     return {...cell, output: [result]}
                 })
                 .whenInstance(ExecutionInfo, result => {
+                    const isRunning = cell.running
+                        ? result.endTs === undefined  // if the cell is already running, it stays running as long as we didn't get an endTs.
+                        : cell.queued === true        // if the cell is not yet running but it is currently queued, we know it started to run once we get the initial execution info.
                     return {
                         ...cell,
                         metadata: cell.metadata.copy({executionInfo: result}),
                         output: result.endTs === undefined ? [] : cell.output, // clear output when the cell starts running
                         queued: false, // we are certain the cell is no longer queued when we get Exec Info.
-                        running: result.endTs === undefined ? cell.running : false, // if we got an endTs we know the cell stopped running.
+                        running: isRunning,
                         error: result.endTs === undefined ? false : cell.error, // if the cell just started running we clear any error marker
                     }
                 })

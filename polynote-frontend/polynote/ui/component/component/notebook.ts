@@ -6,6 +6,10 @@ import {CellMetadata} from "../../../data/data";
 import {diffArray} from "../../../util/functions";
 import {CellContainerComponent} from "./cell";
 import {NotebookConfigComponent} from "./notebookconfig";
+import {FaviconHandler} from "../state/favicon_handler";
+import {UserPreferences} from "../state/storage";
+import {CodeCell} from "../cell";
+import {FocusCell} from "../../util/ui_event";
 
 export class Notebook {
     readonly el: TagElement<"div">;
@@ -27,7 +31,7 @@ export class Notebook {
 
             added.forEach(state => {
                 const handler = new StateHandler(state);
-                const cell = new CellContainerComponent(dispatcher, handler);
+                const cell = new CellContainerComponent(dispatcher, handler, notebookState.getState().path);
                 this.cells[state.id] = {cell, handler, el: div(['cell-and-divider'], [cell.el, this.newCellDivider()])}
             });
             removed.forEach(cell => {
@@ -85,6 +89,23 @@ export class Notebook {
                     cellsEl.appendChild(cellEl);
                 }
                 this.cells[cell.id].handler.updateState(() => cell);
+                //
+                // //update queued cell count and notifications
+                // const oldCell = oldCells.find(c => c.id === cell.id);
+                // if (cell.queued && ! oldCell?.queued) {
+                //     // cell just got queued
+                //     FaviconHandler.get.inc()
+                // } else if (! cell.queued && oldCell?.queued) {
+                //     // cell no longer queued
+                //     FaviconHandler.get.dec()
+                // }
+                // if (! cell.running && oldCell?.running) {
+                //     // cell just started running
+                //     FaviconHandler.get.inc()
+                // } else if (! cell.running && oldCell?.running) {
+                //     // cell no longer running
+                //     FaviconHandler.get.dec()
+                // }
             })
             this.cellOrder = newCells.reduce<Record<number, number>>((acc, next, idx) => {
                 acc[idx] = next.id
@@ -92,7 +113,7 @@ export class Notebook {
             }, {})
         });
 
-
+        // TODO: this is for debugging; remove before merging
         console.log("initial active cell ", this.notebookState.getState().activeCell)
         this.notebookState.view("activeCell").addObserver(cell => {
             console.log("activeCell = ", cell)

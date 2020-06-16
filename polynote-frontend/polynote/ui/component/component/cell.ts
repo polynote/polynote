@@ -58,12 +58,14 @@ import {Diff} from "../../../util/diff";
 import {DataRepr, MIMERepr, StreamingDataRepr} from "../../../data/value_repr";
 import {DataReader} from "../../../data/codec";
 import {StructType} from "../../../data/data_type";
+import {FaviconHandler} from "../state/favicon_handler";
+import {NotificationHandler} from "../state/notification_handler";
 
 export class CellContainerComponent {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateHandler<CellState>) {
+    constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateHandler<CellState>, private path: string) {
         this.cellId = `Cell${cellState.getState().id}`;
         let cell = this.cellFor(cellState.getState().language);
         this.el = div(['cell-component'], [cell.el]);
@@ -79,7 +81,7 @@ export class CellContainerComponent {
     }
 
     private cellFor(lang: string) {
-        return lang === "text" ? new TextCellComponent(this.dispatcher, this.cellState) : new CodeCellComponent(this.dispatcher, this.cellState);
+        return lang === "text" ? new TextCellComponent(this.dispatcher, this.cellState, this.path) : new CodeCellComponent(this.dispatcher, this.cellState, this.path);
     }
 
     delete() {
@@ -209,7 +211,7 @@ class CodeCellComponent extends CellComponent {
     private execDurationUpdater: number;
     private highlightDecorations: string[] = [];
 
-    constructor(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>) {
+    constructor(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>, private path: string) {
         super(dispatcher, cellState);
 
         const langSelector = dropdown(['lang-selector'], ServerStateHandler.get.getState().interpreters);
@@ -414,25 +416,37 @@ class CodeCellComponent extends CellComponent {
         updateError(this.state.error)
         cellState.view("error").addObserver(error => updateError(error));
 
-        const updateRunning = (running: boolean | undefined) => {
+        const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
                 this.el.classList.add("running");
             } else {
                 this.el.classList.remove("running");
+                if (previously) {
+                    const status = this.state.error ? "Error" : "Complete"
+                    NotificationHandler.get.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
+                        this.dispatcher.dispatch(new SetSelectedCell(this.id))
+                    })
+                }
             }
         }
         updateRunning(this.state.running)
-        cellState.view("running").addObserver(running => updateRunning(running));
+        cellState.view("running").addObserver((curr, prev) => updateRunning(curr, prev));
 
-        const updateQueued = (queued: boolean | undefined) => {
+        const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
             if (queued) {
                 this.el.classList.add("queued");
+                if (!previously) {
+                    FaviconHandler.inc()
+                }
             } else {
                 this.el.classList.remove("queued");
+                if (previously) {
+                    FaviconHandler.dec()
+                }
             }
         }
         updateQueued(this.state.queued)
-        cellState.view("queued").addObserver(queued => updateQueued(queued));
+        cellState.view("queued").addObserver((curr, prev) => updateQueued(curr, prev));
 
         const updateHighlight = (pos: PosRange | undefined) => {
             if (pos) {
@@ -1149,7 +1163,7 @@ export class TextCellComponent extends CellComponent {
     private editor: RichTextEditor;
     private lastContent: string;
 
-    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<CellState>) {
+    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<CellState>, private path: string) {
         super(dispatcher, stateHandler)
 
         const editorEl = div(['cell-input-editor', 'markdown-body'], [])
