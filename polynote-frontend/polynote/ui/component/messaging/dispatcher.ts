@@ -64,6 +64,21 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
             .when(SetCurrentSelection, (cellId, range) => {
                 this.socket.send(new messages.CurrentSelection(cellId, range))
             })
+            .when(SetCellHighlight, (cellId, range, className) => {
+                this.state.updateState(state => {
+                    return {
+                        ...state,
+                        cells: state.cells.map(cell => {
+                            if (cell.id === cellId) {
+                                return {
+                                    ...cell,
+                                    currentHighlight: {range, className}
+                                }
+                            } else return cell
+                        })
+                    }
+                })
+            })
             .when(SetCellOutput, (cellId, output) => {
                     if (output instanceof Output) {
                         this.state.updateState(state => {
@@ -208,15 +223,29 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
             .when(RequestClearOutput, () => {
                 this.socket.send(new messages.ClearOutput())
             })
-            .when(SetSelectedCell, (selected, relative) => {
+            .when(SetSelectedCell, (selected, relative, skipHiddenCode) => {
                 this.state.updateState(state => {
                     let id = selected;
                     if (relative === "above")  {
                         const anchorIdx = state.cells.findIndex(cell => cell.id === id);
-                        id = state.cells[anchorIdx - 1]?.id;
+                        let prevIdx = anchorIdx - 1;
+                        id = state.cells[prevIdx]?.id;
+                        if (skipHiddenCode) {
+                            while (state.cells[prevIdx]?.metadata.hideSource) {
+                                --prevIdx;
+                            }
+                            id = state.cells[prevIdx]?.id;
+                        }
                     } else if (relative === "below") {
                         const anchorIdx = state.cells.findIndex(cell => cell.id === id);
-                        id = state.cells[anchorIdx + 1]?.id;
+                        let nextIdx = anchorIdx + 1
+                        id = state.cells[nextIdx]?.id;
+                        if (skipHiddenCode) {
+                            while (state.cells[nextIdx]?.metadata.hideSource) {
+                                ++nextIdx;
+                            }
+                            id = state.cells[nextIdx]?.id;
+                        }
                     }
                     id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
                     return {
@@ -228,6 +257,22 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                                 selected: cell.id === id
                             }
                         })
+                    }
+                })
+            })
+            .when(DeselectCell, cellId => {
+                this.state.updateState(state => {
+                    return {
+                        ...state,
+                        cells: state.cells.map(cell => {
+                            if (cell.id === cellId) {
+                                return {
+                                    ...cell,
+                                    selected: false
+                                }
+                            } else return cell
+                        }),
+                        activeCell: state.activeCell?.id === cellId ? undefined : state.activeCell
                     }
                 })
             })
@@ -681,16 +726,28 @@ export class SetSelectedCell extends UIAction {
     /**
      * Change the currently selected cell.
      *
-     * @param selected  The ID of the cell to select OR the ID of the anchor cell for `relative`. If `undefined`, deselects cells.
-     * @param relative  If set, select the cell either above or below the one with ID specified by `selected`
+     * @param selected        The ID of the cell to select OR the ID of the anchor cell for `relative`. If `undefined`, deselects cells.
+     * @param relative        If set, select the cell either above or below the one with ID specified by `selected`
+     * @param skipHiddenCode  If set alongside a relative cell selection, cells with hidden code blocks should be skipped.
      */
-    constructor(readonly selected: number | undefined, readonly relative?: "above" | "below") {
+    constructor(readonly selected: number | undefined, readonly relative?: "above" | "below", readonly skipHiddenCode: boolean = false) {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: SetSelectedCell): ConstructorParameters<typeof SetSelectedCell> {
-        return [inst.selected, inst.relative];
+        return [inst.selected, inst.relative, inst.skipHiddenCode];
+    }
+}
+
+export class DeselectCell extends UIAction {
+    constructor(readonly cellId: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: DeselectCell): ConstructorParameters<typeof DeselectCell> {
+        return [inst.cellId]
     }
 }
 
@@ -702,6 +759,17 @@ export class CurrentSelection extends UIAction {
 
     static unapply(inst: CurrentSelection): ConstructorParameters<typeof CurrentSelection> {
         return [inst.cellId, inst.range];
+    }
+}
+
+export class SetCellHighlight extends UIAction {
+    constructor(readonly cellId: number, readonly range: PosRange, readonly className: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: SetCellHighlight): ConstructorParameters<typeof SetCellHighlight> {
+        return [inst.cellId, inst.range, inst.className];
     }
 }
 

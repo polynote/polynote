@@ -1,4 +1,3 @@
-
 import {KeyCode} from "monaco-editor";
 
 // The following Monaco imports don't have proper types as they're directly using implementation code in a bit of a
@@ -23,9 +22,11 @@ export function getHotkeys() {
     const hotkeys: Record<string, string> = {};
 
     Object.entries(cellHotkeys).forEach(([code, [key, desc]]) => {
-        const simpleKeybinding: Keybinding = createSimpleKeybinding(code, OS);
-        const keyCombo = keybindingToString(simpleKeybinding);
-        hotkeys[keyCombo] = desc;
+        if (desc.length > 0) {
+            const simpleKeybinding: Keybinding = createSimpleKeybinding(code, OS);
+            const keyCombo = keybindingToString(simpleKeybinding);
+            hotkeys[keyCombo] = desc;
+        }
     })
 
     return hotkeys;

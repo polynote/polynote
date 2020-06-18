@@ -55,7 +55,7 @@ export class StateHandler<S> {
                 this.updateState(st => {
                     return {
                         ...st,
-                        key: s
+                        [key]: s
                     }
                 })
             }

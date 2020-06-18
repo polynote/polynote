@@ -94,4 +94,12 @@ export class StringMatcher<R> {
             throw new MatchError(this.obj)
         }
     }
+
+    otherwise<U>(value: U) {
+        if (this.result !== undefined) {
+            return this.result;
+        } else {
+            return value;
+        }
+    }
 }

@@ -227,6 +227,12 @@ export class PosRange {
         const [start, end] = serialized.split("-");
         return new PosRange(parseInt(start), parseInt(end));
     }
+
+    static fromRange(range: monaco.Range, model: monaco.editor.IModel) {
+        const start = model.getOffsetAt(range.getStartPosition());
+        const end = model.getOffsetAt(range.getEndPosition());
+        return new PosRange(start, end)
+    }
 }
 
 

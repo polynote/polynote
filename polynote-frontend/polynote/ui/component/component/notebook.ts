@@ -1,15 +1,14 @@
 import {div, icon, span, TagElement} from "../../util/tags";
-import {CreateCell, NotebookMessageDispatcher, SetSelectedCell} from "../messaging/dispatcher";
+import {CreateCell, NotebookMessageDispatcher, SetCellHighlight, SetSelectedCell} from "../messaging/dispatcher";
 import {CellState, NotebookStateHandler} from "../state/notebook_state";
 import {StateHandler} from "../state/state_handler";
 import {CellMetadata} from "../../../data/data";
 import {diffArray} from "../../../util/functions";
 import {CellContainerComponent} from "./cell";
 import {NotebookConfigComponent} from "./notebookconfig";
-import {FaviconHandler} from "../state/favicon_handler";
-import {UserPreferences} from "../state/storage";
-import {CodeCell} from "../cell";
-import {FocusCell} from "../../util/ui_event";
+import {VimStatus} from "./vim_status";
+import {Position} from "monaco-editor";
+import {PosRange} from "../../../data/result";
 
 export class Notebook {
     readonly el: TagElement<"div">;
@@ -23,7 +22,7 @@ export class Notebook {
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         const config = new NotebookConfigComponent(dispatcher, notebookState.view("config"), notebookState.view("kernel").view("status"));
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
-        this.el = div(['notebook-content'], [cellsEl]);
+        this.el = div(['notebook-content'], [cellsEl, VimStatus.get.el]);
 
         // we use views to watch for state changes we care about
         notebookState.view("cells").addObserver((newCells, oldCells) => {
@@ -89,23 +88,6 @@ export class Notebook {
                     cellsEl.appendChild(cellEl);
                 }
                 this.cells[cell.id].handler.updateState(() => cell);
-                //
-                // //update queued cell count and notifications
-                // const oldCell = oldCells.find(c => c.id === cell.id);
-                // if (cell.queued && ! oldCell?.queued) {
-                //     // cell just got queued
-                //     FaviconHandler.get.inc()
-                // } else if (! cell.queued && oldCell?.queued) {
-                //     // cell no longer queued
-                //     FaviconHandler.get.dec()
-                // }
-                // if (! cell.running && oldCell?.running) {
-                //     // cell just started running
-                //     FaviconHandler.get.inc()
-                // } else if (! cell.running && oldCell?.running) {
-                //     // cell no longer running
-                //     FaviconHandler.get.dec()
-                // }
             })
             this.cellOrder = newCells.reduce<Record<number, number>>((acc, next, idx) => {
                 acc[idx] = next.id
@@ -113,10 +95,28 @@ export class Notebook {
             }, {})
         });
 
-        // TODO: this is for debugging; remove before merging
         console.log("initial active cell ", this.notebookState.getState().activeCell)
         this.notebookState.view("activeCell").addObserver(cell => {
             console.log("activeCell = ", cell)
+            if (cell === undefined) {
+                VimStatus.get.hide()
+            }
+        })
+
+        // select cell + highlight based on the current hash
+        const hash = document.location.hash;
+        // the hash can (potentially) have two parts: the selected cell and selected position.
+        // for example: #Cell2,6-12 would mean Cell2, positions at offset 6 to 12
+        const [hashId, pos] = hash.slice(1).split(",");
+        const cellId = parseInt(hashId.slice("Cell".length))
+        // cell might not yet be loaded, so be sure to wait for it
+        this.waitForCell(cellId).then(() => {
+            this.dispatcher.dispatch(new SetSelectedCell(cellId))
+
+            if (pos) {
+                const pr = PosRange.fromString(pos)
+                this.dispatcher.dispatch(new SetCellHighlight(cellId, pr, "link-highlight"))
+            }
         })
     }
 
@@ -165,6 +165,27 @@ export class Notebook {
     private getNextCellId(anchorId: number): number | undefined {
         const anchorIdx = this.getCellIndex(anchorId)
         return anchorIdx ? this.cellOrder[anchorIdx + 1] : undefined
+    }
+
+    /**
+     * Wait for a specific cell to be loaded. Since we load cells lazily, we might get actions for certain cells
+     * (e.g., highlighting them) before they have been loaded by the page.
+     *
+     * Resolves during the next animation frame, which ensures that the cell has been painted, etc.
+     *
+     * @returns the id of the cell, useful if you pass this Promise somewhere else.
+     */
+    private waitForCell(cellId: number): Promise<number> {
+        return new Promise(resolve => {
+            const wait = this.notebookState.addObserver(state => {
+                if (state.cells.find(cell => cell.id === cellId)) {
+                    this.notebookState.removeObserver(wait)
+                    requestAnimationFrame(() => {
+                        resolve(cellId)
+                    })
+                }
+            })
+        })
     }
 
     dispose() {

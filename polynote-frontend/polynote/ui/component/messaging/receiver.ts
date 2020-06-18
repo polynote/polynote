@@ -150,7 +150,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                             if (c.id === id) {
                                 return <CellState>{
                                     ...c,
-                                    currentHighlight: pos
+                                    currentHighlight: { range: pos, className: "currently-executing" }
                                 }
                             } else return c
                         })

@@ -45,7 +45,7 @@ class Main {
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             if (path) {
 
-                Main.setTitle(path)
+                Main.handlePath(path)
 
                 if(tabs.getTab(path) === undefined) {
                     const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
@@ -75,7 +75,7 @@ class Main {
         }
     }
 
-    private static setTitle(path?: string) {
+    private static handlePath(path?: string) {
         if (path) {
             const tabUrl = new URL(`notebook/${encodeURIComponent(path)}`, document.baseURI);
 
@@ -84,7 +84,6 @@ class Main {
             const title = `${path.split(/\//g).pop()} | Polynote`;
             document.title = title; // looks like chrome ignores history title so we need to be explicit here.
 
-            // handle hashes and ensure scrolling works
             if (hash && window.location.href === (tabUrl.href + hash)) {
                 window.history.pushState({notebook: path}, title, href);
             } else {
@@ -128,12 +127,13 @@ mainEl?.appendChild(Main.get.el);
 
 
 // TODO LIST ****************************************************************************************************************************
-//      - Notifications support
-//      - VIM support
 //      - Completions and Params
 //      - Notebook download
+//      - Right-click menu for notebook list
 //      - Client interpreters
 //      - Welcome/Home screen
 //      - Comments
 //      - Update kernel on changed tab
-//      - Scroll to selected tab
+//      - Reconnect / reload after disconnect
+//      - Remember scroll positions when switching notebooks
+//      - Presence

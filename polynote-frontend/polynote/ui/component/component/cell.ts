@@ -8,7 +8,7 @@ import {
     RequestSignature,
     SetCellLanguage,
     SetSelectedCell,
-    UpdateCell, ShowValueInspector
+    UpdateCell, ShowValueInspector, DeselectCell
 } from "../messaging/dispatcher";
 import {StateHandler} from "../state/state_handler";
 import {CellState, CompletionHint, SignatureHint} from "../state/notebook_state";
@@ -60,22 +60,24 @@ import {DataReader} from "../../../data/codec";
 import {StructType} from "../../../data/data_type";
 import {FaviconHandler} from "../state/favicon_handler";
 import {NotificationHandler} from "../state/notification_handler";
+import {VimStatus} from "./vim_status";
 
 export class CellContainerComponent {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
+    private cell: CellComponent;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateHandler<CellState>, private path: string) {
         this.cellId = `Cell${cellState.getState().id}`;
-        let cell = this.cellFor(cellState.getState().language);
-        this.el = div(['cell-component'], [cell.el]);
-        this.el.click(evt => cell.focus());
+        this.cell = this.cellFor(cellState.getState().language);
+        this.el = div(['cell-component'], [this.cell.el]);
+        this.el.click(evt => this.cell.doSelect());
         cellState.view("language").addObserver((newLang, oldLang) => {
             // Need to create a whole new cell if the language switches between code and text
             if (oldLang === "text" || newLang === "text") {
                 const newCell = this.cellFor(newLang);
-                cell.el.replaceWith(newCell.el);
-                cell = newCell;
+                this.cell.el.replaceWith(newCell.el);
+                this.cell = newCell;
             }
         });
     }
@@ -86,10 +88,10 @@ export class CellContainerComponent {
 
     delete() {
         this.cellState.clearObservers();
+        this.cell.delete()
     }
 }
 
-// TODO: link up these hotkeys!
 export const cellHotkeys = {
     [monaco.KeyCode.UpArrow]: ["MoveUp", "Move to previous cell."],
     [monaco.KeyCode.DownArrow]: ["MoveDown", "Move to next cell. If there is no cell below, create it."],
@@ -102,6 +104,9 @@ export const cellHotkeys = {
     [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D]: ["Delete", "Delete this cell"],
     [monaco.KeyMod.Shift | monaco.KeyCode.F10]: ["RunAll", "Run all cells."],
     [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: ["RunToCursor", "Run to cursor."],
+    // Special hotkeys to support VIM movement across cells. They are not displayed in the hotkey list
+    [monaco.KeyCode.KEY_J]: ["MoveDownJ", ""],
+    [monaco.KeyCode.KEY_K]: ["MoveUpK", ""],
 };
 
 abstract class CellComponent {
@@ -113,58 +118,72 @@ abstract class CellComponent {
         this.id = cellState.getState().id;
         this.cellId = `Cell${this.id}`;
 
-        const updateSelected = (selected: boolean | undefined) => {
-            if (selected) {
-                this.onFocus()
-            } else {
-                this.onBlur()
+        const updateSelected = (selected: boolean | undefined, prevSelected?: boolean) => {
+            if (selected && ! prevSelected) {
+                this.onSelected()
+            } else if (! selected && prevSelected){
+                this.onDeselected()
             }
         }
         updateSelected(this.state.selected)
-        cellState.view("selected").addObserver(selected => updateSelected(selected));
+        cellState.view("selected").addObserver((selected, prevSelected) => updateSelected(selected, prevSelected));
     }
 
-    // causes the cell to be focused
-    focus(){
+    doSelect(){
         this.dispatcher.dispatch(new SetSelectedCell(this.id))
     }
 
-    // causes the cell to blur (lose focus)
-    blur(){
+    doDeselect(){
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
             if (this.cellState.getState().selected) { // prevent blurring a different cell
-                this.dispatcher.dispatch(new SetSelectedCell(undefined))
+                this.dispatcher.dispatch(new DeselectCell(this.id))
             }
         }
     }
 
-    // react to cell becoming focused.
-    protected onFocus() {
+    protected onSelected() {
         this.el?.classList.add("active");
+        this.el.focus()
+        this.scroll()
         if (!document.location.hash.includes(this.cellId)) {
             this.setUrl();
         }
     }
 
-    // react to cell becoming blurred
-    protected onBlur() {
+    protected onDeselected() {
         this.el?.classList.remove("active");
     }
 
+    protected scroll() {
+        const viewport = this.el.closest('.notebook-cells');
+        if (viewport instanceof HTMLElement) {
+            const viewportScrollTop = viewport.scrollTop;
+            const viewportScrollBottom = viewportScrollTop + viewport.clientHeight;
 
-    // TODO: this should probably be somewhere else.
-    protected setUrl(maybeSelection?: monaco.Range) {
+            const elTop = this.el.offsetTop - viewport.offsetTop;
+            const elBottom = elTop + this.el.offsetHeight;
+
+            const needToScrollUp = elTop < viewportScrollTop;
+            const needToScrollDown = elBottom > viewportScrollBottom;
+
+            if (needToScrollUp && !needToScrollDown) {
+                this.el.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
+                console.log("scrolled up")
+            } else if(!needToScrollUp && needToScrollDown) {
+                this.el.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
+                console.log("scrolled down")
+            }
+        }
+    }
+
+    protected calculateHash(maybeSelection?: monaco.Range): URL {
         const currentURL = new URL(document.location.toString());
 
         currentURL.hash = `${this.cellId}`;
-
-        if (maybeSelection && !maybeSelection.isEmpty()) {
-            if (maybeSelection.startLineNumber === maybeSelection.endLineNumber) {
-                currentURL.hash += `,${maybeSelection.startLineNumber}`;
-            } else {
-                currentURL.hash += `,${maybeSelection.startLineNumber}-${maybeSelection.endLineNumber}`;
-            }
-        }
+        return currentURL
+    }
+    protected setUrl(maybeSelection?: monaco.Range) {
+        const currentURL = this.calculateHash(maybeSelection)
 
         window.history.replaceState(window.history.state, document.title, currentURL.href)
     }
@@ -201,6 +220,8 @@ abstract class CellComponent {
     protected abstract getRange(): IRange
 
     protected abstract getCurrentSelection(): string
+
+    delete() {}
 }
 
 class CodeCellComponent extends CellComponent {
@@ -210,6 +231,7 @@ class CodeCellComponent extends CellComponent {
     private applyingServerEdits: boolean;
     private execDurationUpdater: number;
     private highlightDecorations: string[] = [];
+    private vim?: any;
 
     constructor(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>, private path: string) {
         super(dispatcher, cellState);
@@ -260,11 +282,10 @@ class CodeCellComponent extends CellComponent {
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
-            this.focus();
         });
         this.editor.onDidBlurEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "none" });
-            this.blur();
+            this.doDeselect();
         });
         this.editor.onDidChangeCursorSelection(evt => {
             // deep link - we only care if the user has selected more than a single character
@@ -365,10 +386,7 @@ class CodeCellComponent extends CellComponent {
                         iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput())
                     ])
                 ]),
-                this.editorEl,
-                div(['cell-footer'], [
-                    div(["vim-status", "hide"], [])  // TODO: vim!
-                ])
+                this.editorEl
             ]),
             cellOutput.el
         ]);
@@ -448,16 +466,16 @@ class CodeCellComponent extends CellComponent {
         updateQueued(this.state.queued)
         cellState.view("queued").addObserver((curr, prev) => updateQueued(curr, prev));
 
-        const updateHighlight = (pos: PosRange | undefined) => {
-            if (pos) {
+        const updateHighlight = (h: { range: PosRange , className: string} | undefined) => {
+            if (h) {
                 const oldExecutionPos = this.highlightDecorations ?? [];
                 const model = this.editor.getModel()!;
-                const startPos = model.getPositionAt(pos.start);
-                const endPos = model.getPositionAt(pos.end);
+                const startPos = model.getPositionAt(h.range.start);
+                const endPos = model.getPositionAt(h.range.end);
                 this.highlightDecorations = this.editor.deltaDecorations(oldExecutionPos, [
                     {
                         range: monaco.Range.fromPositions(startPos, endPos),
-                        options: { className: "currently-executing" }
+                        options: { className: h.className }
                     }
                 ]);
             } else if (this.highlightDecorations.length > 0) {
@@ -466,7 +484,7 @@ class CodeCellComponent extends CellComponent {
             }
         }
         updateHighlight(this.state.currentHighlight)
-        cellState.view("currentHighlight").addObserver(pos => updateHighlight(pos))
+        cellState.view("currentHighlight").addObserver(h => updateHighlight(h))
 
         // make sure to create the comment handler.
         const commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
@@ -703,17 +721,16 @@ class CodeCellComponent extends CellComponent {
         return matchS<boolean>(key)
             .when("MoveUp", ifNoSuggestion(() => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "above"))
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "above", true))
                 }
             }))
             .when("MoveDown", ifNoSuggestion(() => {
                 let lastColumn = range.endColumn;
-                // TODO: add vim support
-                // if (this.usesVim && !this.inInsertMode) { // in normal/visual mode, the last column is never selected.
-                //     lastColumn -= 1
-                // }
+                if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
+                    lastColumn -= 1
+                }
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "below", true))
                 }
             }))
             .when("RunAndSelectNext", () => {
@@ -747,6 +764,21 @@ class CodeCellComponent extends CellComponent {
             .when("RunToCursor", ifNoSuggestion(() => {
                 this.dispatcher.runToActiveCell()
             }))
+            .when("MoveUpK", ifNoSuggestion(() => {
+                if (!this.vim?.state.vim.insertMode) {
+                    if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
+                        this.dispatcher.dispatch(new SetSelectedCell(this.id, "above", true))
+                    }
+                }
+            }))
+            .when("MoveDownJ", ifNoSuggestion(() => {
+                if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
+                    let lastColumn = range.endColumn - 1;
+                    if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
+                        this.dispatcher.dispatch(new SetSelectedCell(this.id, "below", true))
+                    }
+                }
+            }))
             .otherwiseThrow ?? undefined
     }
 
@@ -762,9 +794,26 @@ class CodeCellComponent extends CellComponent {
         return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
     }
 
-    protected onFocus() {
-        super.onFocus()
+    protected onSelected() {
+        super.onSelected()
+        this.vim = VimStatus.get.activate(this.editor)
         this.editor.focus()
+    }
+
+    delete() {
+        super.delete()
+        VimStatus.get.deactivate(this.editor.getId())
+    }
+
+    protected calculateHash(maybeSelection?: Range): URL {
+        const currentURL = super.calculateHash(maybeSelection);
+
+        const model = this.editor.getModel()
+        if (model && maybeSelection && !maybeSelection.isEmpty()) {
+            const pos = PosRange.fromRange(maybeSelection, model)
+            currentURL.hash += `,${pos.toString}`
+        }
+        return currentURL
     }
 }
 
@@ -1178,11 +1227,11 @@ export class TextCellComponent extends CellComponent {
 
 
         this.editor.element.addEventListener('focus', () => {
-            this.focus();
+            this.doSelect();
         });
 
         this.editor.element.addEventListener('blur', () => {
-            this.blur();
+            this.doDeselect();
         });
 
         this.editor.element.addEventListener('keydown', (evt: KeyboardEvent) => this.onKeyDown(evt));
@@ -1314,11 +1363,11 @@ export class TextCellComponent extends CellComponent {
             .when("RunToCursor", () => {
                 this.dispatcher.runToActiveCell()
             })
-            .otherwiseThrow ?? undefined
+            .otherwise(null) ?? undefined
     }
 
-    protected onFocus() {
-        super.onFocus()
+    protected onSelected() {
+        super.onSelected()
         this.editor.focus()
     }
 }

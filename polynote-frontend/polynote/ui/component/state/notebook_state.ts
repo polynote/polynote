@@ -33,7 +33,7 @@ export interface CellState {
     running?: boolean
     queued?: boolean,
     currentSelection?: PosRange,
-    currentHighlight?: PosRange,
+    currentHighlight?: { range: PosRange, className: string}
 }
 
 export type CompletionHint = { cell: number, offset: number; completions: CompletionCandidate[] }

@@ -25,11 +25,19 @@ export class LocalStorageHandler<T> extends StateHandler<T> {
         super(initial);
 
         // watch storage to detect when it was cleared
-        storage.addStorageListener(this.key, (prev, next) => {
+        const handleStorageChange = (next: T | null | undefined) => {
             if (next === null) { // cleared
                 this.setState(initial)
-            } // we don't do anything else because storage shouldn't change underneath us.
-        })
+            } else {
+                if (next !== undefined) {
+                    super.setState(next)
+                } else {
+                    super.setState(initial)
+                }
+            }
+        }
+        handleStorageChange(storage.get(this.key))
+        storage.addStorageListener(this.key, (prev, next) => handleStorageChange(next))
     }
     getState(): T {
         const recent = storage.get(this.key);
