@@ -127,7 +127,6 @@ mainEl?.appendChild(Main.get.el);
 
 
 // TODO LIST ****************************************************************************************************************************
-//      - Completions and Params
 //      - Notebook download
 //      - Right-click menu for notebook list
 //      - Client interpreters
@@ -136,4 +135,3 @@ mainEl?.appendChild(Main.get.el);
 //      - Update kernel on changed tab
 //      - Reconnect / reload after disconnect
 //      - Remember scroll positions when switching notebooks
-//      - Presence

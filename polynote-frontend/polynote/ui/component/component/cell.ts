@@ -61,6 +61,7 @@ import {StructType} from "../../../data/data_type";
 import {FaviconHandler} from "../state/favicon_handler";
 import {NotificationHandler} from "../state/notification_handler";
 import {VimStatus} from "./vim_status";
+import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 
 export class CellContainerComponent {
     readonly el: TagElement<"div">;
@@ -485,6 +486,39 @@ class CodeCellComponent extends CellComponent {
         }
         updateHighlight(this.state.currentHighlight)
         cellState.view("currentHighlight").addObserver(h => updateHighlight(h))
+
+        const presenceMarkers: Record<number, string[]> = {};
+        const updatePresence = (id: number, name: string, color: string, range: PosRange) => {
+            const model = this.editor.getModel();
+            if (model) {
+                const old = presenceMarkers[id] ?? [];
+                const startPos = model.getPositionAt(range.start);
+                const endPos = model.getPositionAt(range.end);
+                const newDecorations = [
+                    {
+                        range: monaco.Range.fromPositions(endPos, endPos),
+                        options: {
+                            className: `ppc ${color}`,
+                            stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                            hoverMessage: { value: name }
+                        }
+                    }
+                ];
+                if (range.start != range.end) {
+                    newDecorations.unshift({
+                        range: monaco.Range.fromPositions(startPos, endPos),
+                        options: {
+                            className: `${color}`,
+                            stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                            hoverMessage: { value: name }
+                        }
+                    });
+                }
+                presenceMarkers[id] = this.editor.deltaDecorations(old, newDecorations);
+            }
+        }
+        cellState.getState().presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
+        cellState.view("presence").addObserver(presence => presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range)))
 
         // make sure to create the comment handler.
         const commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);

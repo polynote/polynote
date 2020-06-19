@@ -148,9 +148,16 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         ...s,
                         cells: s.cells.map(c => {
                             if (c.id === id) {
-                                return <CellState>{
-                                    ...c,
-                                    currentHighlight: { range: pos, className: "currently-executing" }
+                                if (pos) {
+                                    return {
+                                        ...c,
+                                        currentHighlight: { range: pos, className: "currently-executing" }
+                                    }
+                                } else {
+                                    return {
+                                        ...c,
+                                        currentHighlight: undefined
+                                    }
                                 }
                             } else return c
                         })
@@ -158,7 +165,12 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 })
                 .when(messages.PresenceUpdate, (added, removed) => {
                     const activePresence = {...s.activePresence}
-                    added.forEach(p => activePresence[p.id] = {presence: p});
+                    added.forEach(p => {
+                        if (activePresence[p.id] === undefined) {
+                            const color = Object.keys(activePresence).length % 8;
+                            activePresence[p.id] = {id: p.id, name: p.name, color: `presence${color}`, avatar: p.avatar}
+                        }
+                    });
                     removed.forEach(id => delete activePresence[id]);
 
                     return {
@@ -166,17 +178,31 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         activePresence: activePresence
                     }
                 })
-                .when(messages.PresenceSelection, (id, cell, range) => {
-                    if (s.activePresence[id]) {
+                .when(messages.PresenceSelection, (id, cellId, range) => {
+                    const maybePresence = s.activePresence[id]
+                    if (maybePresence) {
                         return {
                             ...s,
                             activePresence: {
                                 ...s.activePresence,
                                 [id]: {
-                                    ...s.activePresence[id],
-                                    selection: {cell, range}
+                                    ...maybePresence,
+                                    selection: {cellId, range}
                                 }
-                            }
+                            },
+                            cells: s.cells.map(cell => {
+                                if (cell.id === cellId) {
+                                    return {
+                                        ...cell,
+                                        presence: [...cell.presence, {
+                                            id: maybePresence.id,
+                                            name: maybePresence.name,
+                                            color: maybePresence.color,
+                                            range: range
+                                        }]
+                                    }
+                                } else return cell
+                            })
                         }
                     } else return NoUpdate
                 })
@@ -414,6 +440,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             results: [],
             compileErrors: [],
             pendingEdits: [],
+            presence: []
         }, cell.results);
     }
 

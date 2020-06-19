@@ -26,7 +26,8 @@ export interface CellState {
     runtimeError?: RuntimeError,
     // ephemeral states
     pendingEdits: ContentEdit[],
-    // TODO: Cell running state is never set. Maybe the server should send a message when a cell starts running?
+    presence: {id: number, name: string, color: string, range: PosRange, avatar?: string}[];
+    // TODO: Cell running state is never set explicitly. Maybe the server should send a message when a cell starts running?
     //       Currently we piggyback off Tasks but that seems not great.
     selected?: boolean,
     error?: boolean,
@@ -56,7 +57,7 @@ export interface NotebookState {
     activeCell?: CellState,
     activeCompletion?: { resolve: (completion: CompletionHint) => void, reject: () => void },
     activeSignature?: { resolve: (signature: SignatureHint) => void, reject: () => void },
-    activePresence: Record<number, { presence: Presence, selection?: { cell: number, range: PosRange}}>,
+    activePresence: Record<number, { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}}>,
     // map of handle ID to message received.
     activeStreams: Record<number, (HandleData | ModifyStream)[]>
 }
