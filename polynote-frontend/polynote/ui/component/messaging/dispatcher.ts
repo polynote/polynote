@@ -17,6 +17,7 @@ import {ValueInspector} from "../component/value_inspector";
 import {equalsByKey} from "../../../util/functions";
 import {HandleData, ModifyStream, ReleaseHandle, TableOp} from "../../../data/messages";
 import {Either} from "../../../data/types";
+import {DialogModal} from "../component/modal";
 
 export abstract class MessageDispatcher<S> {
     protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -307,7 +308,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 })
             })
             .when(DownloadNotebook, () => {
-                // TODO download current notebook
+                const path = window.location.pathname + "?download=true"
+                const link = document.createElement('a');
+                link.setAttribute("href", path);
+                link.setAttribute("download", this.state.getState().path);
+                link.click()
             })
             .when(ShowValueInspector, (result, tab) => {
                 ValueInspector.get.inspect(this, this.state, result, tab)
@@ -424,13 +429,31 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     };
                 })
                 .when(CreateNotebook, (path, content) => {
-                    this.socket.send(new messages.CreateNotebook(path, content))
+                    if (path) {
+                        this.socket.send(new messages.CreateNotebook(path, content))
+                    } else {
+                        new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create').show().then(newPath => {
+                            this.socket.send(new messages.CreateNotebook(newPath, content))
+                        })
+                    }
                 })
                 .when(RenameNotebook, (oldPath, newPath) => {
-                    this.socket.send(new messages.RenameNotebook(oldPath, newPath))
+                    if (newPath) {
+                        this.socket.send(new messages.RenameNotebook(oldPath, newPath))
+                    } else {
+                        new DialogModal('Rename Notebook', oldPath, 'Rename').show().then(newPath => {
+                            this.socket.send(new messages.RenameNotebook(oldPath, newPath))
+                        })
+                    }
                 })
                 .when(CopyNotebook, (oldPath, newPath) => {
-                    this.socket.send(new messages.CopyNotebook(oldPath, newPath))
+                    if (newPath) {
+                        this.socket.send(new messages.CopyNotebook(oldPath, newPath))
+                    } else {
+                        new DialogModal('Copy Notebook', oldPath, 'Copy').show().then(newPath => {
+                            this.socket.send(new messages.CopyNotebook(oldPath, newPath))
+                        })
+                    }
                 })
                 .when(DeleteNotebook, (path) => {
                     this.socket.send(new messages.DeleteNotebook(path))
@@ -567,7 +590,7 @@ export class LoadNotebook extends UIAction {
 
 
 export class CreateNotebook extends UIAction {
-    constructor(readonly path: string, readonly content?: string) {
+    constructor(readonly path?: string, readonly content?: string) {
         super();
         Object.freeze(this);
     }
@@ -578,7 +601,7 @@ export class CreateNotebook extends UIAction {
 }
 
 export class RenameNotebook extends UIAction {
-    constructor(readonly oldPath: string, readonly newPath: string) {
+    constructor(readonly oldPath: string, readonly newPath?: string) {
         super();
         Object.freeze(this);
     }
@@ -589,7 +612,7 @@ export class RenameNotebook extends UIAction {
 }
 
 export class CopyNotebook extends UIAction {
-    constructor(readonly oldPath: string, readonly newPath: string) {
+    constructor(readonly oldPath: string, readonly newPath?: string) {
         super();
         Object.freeze(this);
     }

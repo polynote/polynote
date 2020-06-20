@@ -1,22 +1,114 @@
 import {a, button, div, h2, iconButton, span, tag, TagElement} from "../../util/tags";
-import {CreateNotebook, LoadNotebook, RequestNotebooksList, ServerMessageDispatcher} from "../messaging/dispatcher";
-import {ImportNotebook} from "../../util/ui_event";
+import {
+    CopyNotebook,
+    CreateNotebook, DeleteNotebook,
+    LoadNotebook, RenameNotebook,
+    RequestNotebooksList,
+    ServerMessageDispatcher
+} from "../messaging/dispatcher";
 import {ServerStateHandler} from "../state/server_state";
 import {diffArray, removeKey} from "../../../util/functions";
 import {StateHandler} from "../state/state_handler";
-import * as deepEquals from 'fast-deep-equal/es6';
-import * as clone from "clone";
 import {DialogModal} from "./modal";
 
 export class NotebookListContextMenuComponent {
     readonly el: TagElement<"div">;
+    private targetItem?: string;
 
-    constructor(dispatcher: ServerMessageDispatcher) {
+    private listener = () => this.hide()
 
+    private constructor(private dispatcher: ServerMessageDispatcher) {
+        const item = (label: string, classes?: string[]) => tag('li', classes, {}, [label]);
+        const onlyItem = ['only-item'];
+        const onlyFile = ['only-item', 'only-file'];
+        const onlyDir  = ['only-item', 'only-dir'];
+        const noFile   = ['no-file'];
+
+        this.el = div(['notebook-list-context-menu'], [
+            tag('ul', [], {}, [
+                item('New notebook', noFile).click(evt => this.create(evt)),
+                item('Rename', onlyFile).click(evt => this.rename(evt)),
+                item('Copy', onlyFile).click(evt => this.copy(evt)),
+                item('Delete', onlyFile).click(evt => this.delete(evt))
+            ])
+        ]).listener("mousedown", evt => { evt.stopPropagation(); });
     }
 
-    showFor(evt: Event) {
+    private delete(evt?: Event) {
+        if (evt) {
+            evt.stopPropagation();
+        }
+        this.hide();
+        if (this.targetItem) {
+            this.dispatcher.dispatch(new DeleteNotebook(this.targetItem))
+        }
+    }
 
+    private rename(evt?: Event) {
+        if (evt) {
+            evt.stopPropagation();
+        }
+        this.hide();
+        if (this.targetItem) {
+            this.dispatcher.dispatch(new RenameNotebook(this.targetItem))
+        }
+    }
+
+    private copy(evt?: Event) {
+        if (evt) {
+            evt.stopPropagation();
+        }
+        this.hide();
+        if (this.targetItem) {
+            this.dispatcher.dispatch(new CopyNotebook(this.targetItem))
+        }
+    }
+
+    private create(evt?: Event) {
+        if (evt) {
+            evt.stopPropagation();
+        }
+        this.hide();
+        this.dispatcher.dispatch(new CreateNotebook())
+    }
+
+    showFor(evt: Event, targetItem?: LeafComponent | BranchComponent) {
+        if (evt instanceof MouseEvent) {
+            this.el.style.left = `${evt.clientX}px`;
+            this.el.style.top = `${evt.clientY}px`;
+        }
+        evt.preventDefault();
+        evt.stopPropagation();
+
+        this.el.classList.remove('for-file', 'for-dir', 'for-item');
+
+        if (targetItem) {
+            this.el.classList.add('for-item');
+            this.targetItem = targetItem.path;
+            if (targetItem instanceof LeafComponent) {
+                this.el.classList.add('for-file');
+            } else {
+                this.el.classList.add('for-dir');
+            }
+        }
+
+        document.body.appendChild(this.el);
+        document.body.addEventListener("mousedown", this.listener);
+    }
+
+    hide() {
+        if (this.el.parentNode) {
+            this.el.parentNode.removeChild(this.el);
+            document.body.removeEventListener("mousedown", this.listener);
+        }
+    }
+
+    private static inst: NotebookListContextMenuComponent;
+    static get(dispatcher: ServerMessageDispatcher) {
+        if (! NotebookListContextMenuComponent.inst) {
+            NotebookListContextMenuComponent.inst = new NotebookListContextMenuComponent(dispatcher)
+        }
+        return NotebookListContextMenuComponent.inst
     }
 }
 
@@ -24,21 +116,17 @@ export class NotebookList {
     readonly el: TagElement<"div">;
     readonly header: TagElement<"h2">;
 
-    private contextMenu: NotebookListContextMenuComponent;
-
     private dragEnter: EventTarget | null;
     private tree: BranchComponent;
 
     constructor(readonly dispatcher: ServerMessageDispatcher) {
-
-        this.contextMenu = new NotebookListContextMenuComponent(dispatcher);
 
         this.header = h2([], [
             'Notebooks',
             span(['buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
-                    new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create', path => dispatcher.dispatch(new CreateNotebook(path))).show()
+                    dispatcher.dispatch(new CreateNotebook())
                 })
             ])
         ]);
@@ -51,7 +139,7 @@ export class NotebookList {
         this.tree = new BranchComponent(dispatcher, treeState);
 
         this.el = div(['notebooks-list'], [div(['tree-view'], [this.tree.el])])
-            .listener("contextmenu", evt => this.contextMenu.showFor(evt));
+            .listener("contextmenu", evt => NotebookListContextMenuComponent.get(dispatcher).showFor(evt));
 
         // Drag n' drop!
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
@@ -69,8 +157,6 @@ export class NotebookList {
             added.forEach(path => treeState.addPath(path));
             removed.forEach(path => treeState.removePath(path))
         });
-
-        // serverStateHandler.addObserver(x=> console.log("got server state update", x));
 
         // we're ready to request the notebooks list now!
         dispatcher.dispatch(new RequestNotebooksList())
@@ -196,10 +282,11 @@ export class BranchHandler extends StateHandler<Branch> {
 export class BranchComponent {
     readonly el: TagElement<"li" | "ul">;
     readonly childrenEl: TagElement<"ul">;
+    private readonly branchEl: TagElement<"button">;
     private children: (BranchComponent | LeafComponent)[] = [];
     readonly path: string;
 
-    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateHandler<Branch>) {
+    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateHandler<Branch>, private parent?: BranchComponent) {
         const initial = state.getState();
         this.childrenEl = tag('ul', [], {}, []);
         this.path = this.state.getState().fullPath;
@@ -209,7 +296,7 @@ export class BranchComponent {
         // if `initial.value` is empty, this is the root node so there's no outer `li`.
         if (initial.value.length > 0) {
             this.el = tag('li', ['branch'], {}, [
-                button(['branch-outer'], {}, [
+                this.branchEl = button(['branch-outer'], {}, [
                     span(['expander'], []),
                     span(['icon'], []),
                     span(['name'], [initial.value])
@@ -222,7 +309,7 @@ export class BranchComponent {
         this.el.click(evt => {
             evt.stopPropagation();
             evt.preventDefault();
-            this.el.classList.toggle('expanded')
+            this.expanded = !this.expanded;
         });
 
         state.addObserver((newNode, oldNode) => {
@@ -239,8 +326,24 @@ export class BranchComponent {
         })
     }
 
+    get expanded() {
+        return this.el.classList.contains("expanded")
+    }
+
+    set expanded(expand: boolean) {
+        if (expand) {
+            this.el.classList.add("expanded");
+        } else {
+            this.el.classList.remove("expanded");
+        }
+    }
+
+    focus() {
+        this.branchEl.focus()
+    }
+
     private addChild(node: Branch | Leaf) {
-        let child;
+        let child: BranchComponent | LeafComponent;
         // This is really slow - is it necessary?
         // const childStateHandler =
         //     this.state.xmapView("children",
@@ -255,7 +358,7 @@ export class BranchComponent {
         // childStateHandler.addObserver((next, prev) => console.log("child state changed for", node.fullPath, ":", prev, next))
         if ("children" in node) {
             // const childStateHandler = new StateHandler(node)
-            child = new BranchComponent(this.dispatcher, childStateHandler as StateHandler<Branch>);
+            child = new BranchComponent(this.dispatcher, childStateHandler as StateHandler<Branch>, this);
         } else {
             // const childStateHandler = new StateHandler(node)
             child = new LeafComponent(this.dispatcher, childStateHandler);
@@ -273,6 +376,71 @@ export class BranchComponent {
             this.childrenEl.appendChild(child.el)
         }
         this.children.splice(i, 0, child);
+
+        // add handlers
+        child.el
+            .listener("contextmenu", evt => NotebookListContextMenuComponent.get(this.dispatcher).showFor(evt, child))
+            .listener(
+                "keydown", (evt: KeyboardEvent) => {
+                    switch (evt.key) {
+                        case 'ArrowUp':    this.movePrev(child.path); evt.stopPropagation(); evt.preventDefault(); break;
+                        case 'ArrowDown':  this.moveNext(child.path); evt.stopPropagation(); evt.preventDefault(); break;
+                        case 'ArrowRight': this.expandFolder(child.path); evt.stopPropagation(); evt.preventDefault(); break;
+                        case 'ArrowLeft':  this.collapseFolder(child.path); evt.stopPropagation(); evt.preventDefault(); break;
+                    }
+                }
+            )
+    }
+
+    private lastExpandedChild(child: BranchComponent | LeafComponent): BranchComponent | LeafComponent {
+        if (child instanceof LeafComponent) {
+            return child
+        } else {
+            if (child.expanded) {
+                const lastChild = child.children[child.children.length - 1]
+                return this.lastExpandedChild(lastChild)
+            } else return child
+        }
+    }
+
+    private movePrev(path: string) {
+        const currentIdx = this.children.findIndex(c => c.path === path)
+        if (currentIdx > 0) {
+            const prev = this.children[currentIdx - 1];
+            this.lastExpandedChild(prev).focus()
+        } else {
+            this.focus()
+        }
+    }
+
+    private moveNext(path: string, skipChildren: boolean = false) {
+        const currentIdx = this.children.findIndex(c => c.path === path)
+
+        const current = this.children[currentIdx];
+        if (!skipChildren && current instanceof BranchComponent && current.expanded && current.children.length > 0) {
+            current.children[0].focus()
+        } else {
+            if (currentIdx < this.children.length - 1) {
+                const next = this.children[currentIdx + 1];
+                next.focus()
+            } else if (this.parent) {
+                this.parent.moveNext(this.path, true)
+            }
+        }
+    }
+
+    private expandFolder(path: string) {
+        const current = this.children.find(c => c.path === path)
+        if (current instanceof BranchComponent) {
+            current.expanded = true;
+        }
+    }
+
+    private collapseFolder(path: string) {
+        const current = this.children.find(c => c.path === path)
+        if (current instanceof BranchComponent) {
+            current.expanded = false;
+        }
     }
 }
 
@@ -300,15 +468,13 @@ export class LeafComponent {
         })
     }
 
+    focus() {
+        this.leafEl.focus()
+    }
+
     private getEl(leaf: Leaf) {
         return a(['name'], `notebooks/${leaf.fullPath}`, true, [span([], [leaf.value])])
             .click(evt => this.dispatcher.dispatch(new LoadNotebook(leaf.fullPath)))
-            // TODO: show context menu here? This used to do that but might fit better somewhere else.
-            .listener(
-                "keydown", (evt: KeyboardEvent) => {
-                    // TODO: handle keypress
-                }
-            )
     }
 }
 

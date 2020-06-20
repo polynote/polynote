@@ -69,10 +69,10 @@ export class FullScreenModal extends Modal {
 }
 
 export class DialogModal extends Modal {
-    private readonly onSubmit: (path: string) => void;
     private pathInput: TagElement<"input">;
+    private onSubmit: (value: string) => void;
 
-    constructor(title: string, inputPlaceholder: string, okButtonText: string, onSubmit: (path: string) => void) {
+    constructor(title: string, inputPlaceholder: string, okButtonText: string) {
         const input = textbox([], inputPlaceholder)
         input.addEventListener('Accept', evt => this.submit());
         input.addEventListener('Cancel', evt => this.hide());
@@ -86,17 +86,19 @@ export class DialogModal extends Modal {
         ]);
         super(wrapper, { title });
 
-        this.onSubmit = onSubmit
         this.pathInput = input;
     }
 
-    show() {
+    show(): Promise<string> {
         super.show();
-        this.pathInput.focus();
+        return new Promise(resolve => {
+            this.pathInput.focus();
+            this.onSubmit = resolve
+        })
     }
 
     private submit() {
-        this.onSubmit(this.pathInput.value)
         this.hide()
+        this.onSubmit(this.pathInput.value)
     }
 }

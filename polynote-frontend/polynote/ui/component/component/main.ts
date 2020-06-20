@@ -127,8 +127,6 @@ mainEl?.appendChild(Main.get.el);
 
 
 // TODO LIST ****************************************************************************************************************************
-//      - Notebook download
-//      - Right-click menu for notebook list
 //      - Client interpreters
 //      - Welcome/Home screen
 //      - Comments
