@@ -16,7 +16,7 @@ export class NotificationHandler {
         const handlePref = (pref: UserPreferences["notifications"]) => {
             if (pref.value) {
                 Notification.requestPermission().then((result) => {
-                    console.log(`Requested notification permission and got ${result}`)
+                    console.log(`Requested notification permission and got: '${result}'`)
                 });
             }
             this.enabled = pref.value;

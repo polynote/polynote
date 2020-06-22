@@ -59,9 +59,9 @@ class LocalKernel private[kernel] (
             initialState   = State.id(id, prevState)                                                                    // run the cell while capturing outputs
             resultState   <- (interpreter.run(cell.content.toString, initialState).provideSomeLayer(CellExecutor.layer(scalaCompiler.classLoader)) >>= updateValues)
               .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
-            _             <- publishEndTime
             _             <- updateState(resultState)
             _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
+            _             <- publishEndTime // TODO: client relies on this to know when the cell has finished execution. Maybe we should use an explicit message though.
             _             <- busyState.update(_.setIdle)
           } yield ()
 

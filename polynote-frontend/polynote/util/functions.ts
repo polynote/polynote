@@ -90,3 +90,22 @@ export function unzip<A, B>(arr: [A, B][]): [A[], B[]] {
         return [as, bs]
     }, [[], []])
 }
+
+export function collect<T, U>(arr: T[], fun: (t: T) => U | undefined | null): U[] {
+    return arr.flatMap(t => {
+        const newT = fun(t)
+        if (newT) {
+            return [newT]
+        } else return []
+    })
+}
+
+export function partition<T>(arr: T[], fun: (t: T) => boolean): [T[], T[]] {
+    return arr.reduce<[T[], T[]]>((acc, next) => {
+        if (fun(next)) {
+            return [[...acc[0], next], acc[1]]
+        } else {
+            return [acc[0], [...acc[1], next]]
+        }
+    }, [[], []])
+}

@@ -5,7 +5,7 @@
 import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import * as messages from "../../../data/messages";
-import {TaskInfo} from "../../../data/messages";
+import {Message, TaskInfo} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {purematch} from "../../../util/match";
 import {ContentEdit} from "../../../data/content_edit";
@@ -21,9 +21,9 @@ import {
     RuntimeError
 } from "../../../data/result";
 import {NoUpdate, StateHandler} from "../state/state_handler";
-import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {SocketStateHandler} from "../state/socket_state";
 import {arrDelete, arrInsert, unzip} from "../../../util/functions";
+import {ClientInterpreters} from "../component/interpreter/client_interpreter";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -34,6 +34,11 @@ class MessageReceiver<S> {
                 return fn(s, ...args) ?? NoUpdate
             })
         })
+    }
+
+    // Handle a message as if it were received on the wire. Useful for short-circuiting or simulating server messages.
+    inject(msg: Message) {
+        this.socket.handleMessage(msg)
     }
 }
 
@@ -382,8 +387,8 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 return NoUpdate
             }
         });
-        this.receive(messages.CellResult, (s, id, result) => {
-            if (id === -1) { // from a predef cell
+        this.receive(messages.CellResult, (s, cellId, result) => {
+            if (cellId === -1) { // from a predef cell
                 return purematch<Result, NotebookState | typeof NoUpdate>(result)
                     .whenInstance(CompileErrors, result => {
                         // TODO: should somehow save this state somewhere!! Maybe this should also go into s.errors?
@@ -398,7 +403,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 return {
                     ...s,
                     cells: s.cells.map(c => {
-                        if (c.id === id) {
+                        if (c.id === cellId) {
                             return this.parseResults(c, [result])
                         } else return c
                     }),
@@ -529,8 +534,8 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         });
         this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
             // inject the client interpreters here as well.
-            Object.keys(clientInterpreters).forEach(key => {
-                interpreters[key] = clientInterpreters[key].languageTitle
+            Object.keys(ClientInterpreters).forEach(key => {
+                interpreters[key] = ClientInterpreters[key].languageTitle
             });
 
             return {

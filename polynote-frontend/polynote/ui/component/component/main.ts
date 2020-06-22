@@ -133,3 +133,4 @@ mainEl?.appendChild(Main.get.el);
 //      - Update kernel on changed tab
 //      - Reconnect / reload after disconnect
 //      - Remember scroll positions when switching notebooks
+//      - Client Backup

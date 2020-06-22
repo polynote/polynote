@@ -115,24 +115,27 @@ export class SocketSession extends EventTarget {
         }
     }
 
+    handleMessage(msg: Message) {
+        for (const handler of this.messageListeners) {
+            const msgType = handler[0];
+            const listenerCB = handler[1];
+            const removeWhenFalse = handler[2];
+
+            if (msg instanceof msgType) { // check not redundant even though IntelliJ complains.
+                const result = listenerCB.apply(null, msgType.unapply(msg));
+                if (removeWhenFalse && (result === false || result === undefined)) {
+                    this.removeMessageListener(handler);
+                }
+            }
+        }
+    }
+
     receive(event: Event) {
         if (event instanceof MessageEvent) {
             if (event.data instanceof ArrayBuffer) {
                 const msg = Message.decode(event.data);
                 this.dispatchEvent(new PolynoteMessageEvent(msg)); // this is how `request` works.
-
-                for (const handler of this.messageListeners) {
-                    const msgType = handler[0];
-                    const listenerCB = handler[1];
-                    const removeWhenFalse = handler[2];
-
-                    if (msg instanceof msgType) { // check not redundant even though IntelliJ complains.
-                        const result = listenerCB.apply(null, msgType.unapply(msg));
-                        if (removeWhenFalse && (result === false || result === undefined)) {
-                            this.removeMessageListener(handler);
-                        }
-                    }
-                }
+                this.handleMessage(msg)
             } else {
                 //console.log(event.data);
             }

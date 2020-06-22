@@ -84,6 +84,8 @@ export class SocketStateHandler extends StateHandler<SocketState> {
         if (socket) return socket;
         else throw new Error(`Unable to find socket with key ${this.socketKey}`);
     }
+
+
     // delegates
     public addMessageListener(...args: Parameters<SocketSession["addMessageListener"]>): ReturnType<SocketSession["addMessageListener"]> {
         return this.socket.addMessageListener(...args)
@@ -93,6 +95,9 @@ export class SocketStateHandler extends StateHandler<SocketState> {
     }
     public reconnect(...args: Parameters<SocketSession["reconnect"]>): ReturnType<SocketSession["reconnect"]> {
         return this.socket.reconnect(...args)
+    }
+    public handleMessage(...args: Parameters<SocketSession["handleMessage"]>): ReturnType<SocketSession["handleMessage"]> {
+        return this.socket.handleMessage(...args)
     }
 }
 

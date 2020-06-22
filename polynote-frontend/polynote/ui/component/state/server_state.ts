@@ -9,6 +9,7 @@ import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../../../data/data";
 import {removeKey} from "../../../util/functions";
 import {EditBuffer} from "./edit_buffer";
+import {ClientInterpreterComponent} from "../component/interpreter/client_interpreter";
 
 export type NotebookInfo = {
     handler: NotebookStateHandler,
@@ -85,8 +86,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         } else {
             // Note: the server will start sending notebook data on this socket automatically after it connects
             const nbSocket = new SocketStateHandler(SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`));
-            const receiver =  new NotebookMessageReceiver(nbSocket, nbInfo.handler);
-            const dispatcher =  new NotebookMessageDispatcher(nbSocket, nbInfo.handler);
+            const receiver = new NotebookMessageReceiver(nbSocket, nbInfo.handler);
+            const dispatcher = new NotebookMessageDispatcher(nbSocket, nbInfo.handler, new ClientInterpreterComponent(nbInfo.handler, receiver));
             nbInfo.info = {receiver, dispatcher};
             nbInfo.loaded = true;
             ServerStateHandler.notebooks[path] = nbInfo;
@@ -96,8 +97,6 @@ export class ServerStateHandler extends StateHandler<ServerState> {
 
     /**
      * Initialize a new NotebookState and create a NotebookMessageReceiver for that notebook.
-     *
-     * @param path
      */
     static getOrCreateNotebook(path: string): NotebookInfo {
         const maybeExists = ServerStateHandler.notebooks[path]

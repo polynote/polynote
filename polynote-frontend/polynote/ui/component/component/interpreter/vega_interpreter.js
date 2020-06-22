@@ -1,9 +1,9 @@
 "use strict";
 
 import * as acorn from "acorn"
-import {Position, KernelReport, CompileErrors, Output, ServerErrorWithCause, RuntimeError, ClientResult} from "../../../../data/result";
-import {DataStream, MIMERepr} from "../../../../data/value_repr";
+import {Position, KernelReport, CompileErrors, Output, RuntimeError, ClientResult} from "../../../../data/result";
 import embed from "vega-embed";
+import {DataStream} from "../../messaging/datastream";
 
 export const VegaInterpreter = {
 
@@ -38,8 +38,9 @@ export const VegaInterpreter = {
                 spec["$schema"] = 'https://vega.github.io/schema/vega-lite/v3.json';
             }
 
-            return [new VegaClientResult(spec)];
+            return [new VegaClientResult(Promise.resolve(spec))];
         } catch (err) {
+            console.log(err)
             return [RuntimeError.fromJS(err)];
         }
     }
@@ -51,10 +52,16 @@ function splitOutput(outputStr) {
     return outputStr.match(/[^\n]+\n?/g);
 }
 
+/**
+ * Wrapper around a Vega plot result.
+ *
+ * Since the Vega result isn't serializable, the constructor takes in Promise<the Vega Result> rather than the Vega Result
+ * itself
+ */
 export class VegaClientResult extends ClientResult {
-    constructor(spec) {
+    constructor(specPromise) {
         super();
-        this.spec = spec;
+        this.specPromise = specPromise;
     }
 
     setPlot(plot) {
@@ -66,37 +73,33 @@ export class VegaClientResult extends ClientResult {
     }
 
     run(targetEl) {
-        const spec = this.spec;
+        return this.specPromise.then(spec => {
+            if (this.running) {
+                return this.running;
+            }
 
-        if (this.running) {
+            let dataStream;
+
+            if (spec.data.values instanceof DataStream) {
+                dataStream = spec.data.values;
+                delete spec.data.values;
+            }
+
+            if (dataStream) {
+                this.running = embed(targetEl, spec).then(plot =>
+                    dataStream
+                        .batch(500)
+                        .to(batch => plot.view.insert(spec.data.name, batch).runAsync())
+                        .run()
+                        .then(_ => plot.view.resize().runAsync())
+                        .then(_ => plot)
+                )
+            } else {
+                this.running = embed(targetEl, spec);
+            }
+
             return this.running;
-        }
-
-        let dataStream;
-
-        if (spec.data.values instanceof DataStream) {
-            dataStream = spec.data.values;
-            delete spec.data.values;
-        }
-
-        if (dataStream) {
-            this.running = embed(targetEl, spec).then(plot =>
-                dataStream
-                    .batch(500)
-                    .to(batch => plot.view.insert(spec.data.name, batch).runAsync())
-                    .run()
-                    .then(_ => plot.view.resize().runAsync())
-                    .then(_ => plot)
-            )
-        } else {
-            this.running = embed(targetEl, spec);
-        }
-
-        return this.running;
-    }
-
-    display(targetEl, cell) {
-        this.run(targetEl).catch(err => cell.setRuntimeError(RuntimeError.fromJS(err)));
+        });
     }
 
     static plotToOutput(plot) {
@@ -116,7 +119,8 @@ export class VegaClientResult extends ClientResult {
     }
 
     toOutput() {
-        return this.run().then(VegaClientResult.plotToOutput);
+        const el = document.createElement("div");
+        return this.run(el).then(VegaClientResult.plotToOutput);
     }
 }
 

@@ -39,7 +39,6 @@ import {
 } from "../../../data/result";
 import {ServerStateHandler} from "../state/server_state";
 import {CellMetadata} from "../../../data/data";
-import {clientInterpreters} from "../../../interpreter/client_interpreter";
 import {FoldingController, SuggestController} from "../../monaco/extensions";
 import {ContentEdit, Delete, Insert} from "../../../data/content_edit";
 import {CodeCellModel, MIMEElement} from "../cell";
@@ -62,6 +61,7 @@ import {FaviconHandler} from "../state/favicon_handler";
 import {NotificationHandler} from "../state/notification_handler";
 import {VimStatus} from "./vim_status";
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
+import {ClientInterpreters} from "./interpreter/client_interpreter";
 
 export class CellContainerComponent {
     readonly el: TagElement<"div">;
@@ -250,7 +250,7 @@ class CodeCellComponent extends CellComponent {
 
         this.editorEl = div(['cell-input-editor'], [])
 
-        const highlightLanguage = clientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
+        const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
             value: this.state.content,

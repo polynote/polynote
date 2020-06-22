@@ -14,10 +14,11 @@ import {ServerState, ServerStateHandler} from "../state/server_state";
 import {SocketStateHandler} from "../state/socket_state";
 import {About} from "../component/about";
 import {ValueInspector} from "../component/value_inspector";
-import {equalsByKey} from "../../../util/functions";
+import {collect, equalsByKey, partition} from "../../../util/functions";
 import {HandleData, ModifyStream, ReleaseHandle, TableOp} from "../../../data/messages";
 import {Either} from "../../../data/types";
 import {DialogModal} from "../component/modal";
+import {ClientInterpreterComponent, ClientInterpreters} from "../component/interpreter/client_interpreter";
 
 export abstract class MessageDispatcher<S> {
     protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -26,7 +27,7 @@ export abstract class MessageDispatcher<S> {
 }
 
 export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
-    constructor(socket: SocketStateHandler, state: NotebookStateHandler) {
+    constructor(socket: SocketStateHandler, state: NotebookStateHandler, private clientInterpreter: ClientInterpreterComponent) {
         super(socket, state);
         // when the socket is opened, send a KernelStatus message to request the current status from the server.
         socket.view("status").addObserver(next => {
@@ -102,7 +103,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                                     ...state,
                                     cells: state.cells.map(cell => {
                                         if (cell.id === cellId) {
-                                            return {...cell, results: [...cell.results, output], output: [o]}
+                                            if (cell.results.includes(output)) {
+                                                return {...cell, output: [o]}
+                                            } else {
+                                                return {...cell, results: [...cell.results, output], output: [o]}
+                                            }
                                         } else return cell
                                     })
                                 }
@@ -200,13 +205,23 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 this.socket.send(new messages.NotebookVersion(state.path, version))
             })
             .when(RequestCellRun, cellIds => {
-                //TODO: what about client interpreters?
                 this.state.updateState(state => {
                     // empty cellIds means run all of them!
                     if (cellIds.length === 0) {
-                        cellIds = state.cells.map(cell => cell.id);
+                        cellIds = collect(state.cells, cell => cell.language !== "text" ? cell.id : undefined)
                     }
-                    this.socket.send(new messages.RunCell(cellIds));
+
+                    const [clientCells, serverCells] = partition(cellIds, id => {
+                        const cell = state.cells.find(c => c.id === id)
+                        if (cell) {
+                            return Object.keys(ClientInterpreters).includes(cell.language)
+                        } else {
+                            console.warn("Run requested for cell with ID", id, "but a cell with that ID was not found in", state.cells)
+                            return true // should this fail?
+                        }
+                    })
+                    clientCells.forEach(id => this.clientInterpreter.runCell(id, this))
+                    this.socket.send(new messages.RunCell(serverCells));
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
@@ -397,7 +412,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
         const state = this.state.getState();
         const id = state.activeCell?.id;
         const activeIdx = state.cells.findIndex(cell => cell.id === id);
-        const cellsToRun = state.cells.splice(0, activeIdx).map(c => c.id);
+        const cellsToRun = state.cells.slice(0, activeIdx + 1).map(c => c.id);
         if (cellsToRun.length > 0) {
             this.dispatch(new RequestCellRun(cellsToRun))
         }

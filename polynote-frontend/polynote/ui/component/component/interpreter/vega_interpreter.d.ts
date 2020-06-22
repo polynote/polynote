@@ -1,6 +1,6 @@
 import {ClientInterpreter} from "./client_interpreter";
 import {Result as VegaResult } from "vega-embed";
-import {Output} from "../data/result";
+import {Output} from "../../../../data/result";
 
 export const VegaInterpreter: ClientInterpreter;
 
