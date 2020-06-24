@@ -12,6 +12,7 @@ import polynote.messages._
 import polynote.server.auth.Permission
 import uzhttp.HTTPError
 import HTTPError.NotFound
+import fs2.concurrent.Topic
 import polynote.kernel.logging.Logging
 import uzhttp.websocket.Frame
 import zio.stream.{Stream, Take}
@@ -20,11 +21,11 @@ import zio.stream.ZStream
 import zio.{Promise, RIO, Task, UIO, ZIO, ZLayer}
 
 
-class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingHandles.Service) {
+class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingHandles.Service, broadcastAll: Topic[Task, Option[Message]]) {
 
   private val streamingHandlesLayer = ZLayer.succeed(streamingHandles)
 
-  val handleMessage: Message => RIO[SessionEnv with PublishMessage, Unit] = {
+  val handleMessage: Message => RIO[SessionEnv with PublishMessage with NotebookManager, Unit] = {
     case upConfig @ UpdateConfig(_, _, config) =>
       for {
         _ <- subscriber.checkPermission(Permission.ModifyNotebook)
@@ -56,10 +57,10 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
       _      <- PublishMessage(KernelStatus(status))
     } yield ()
 
-    case StartKernel(StartKernel.NoRestart)   => subscriber.publisher.kernel.unit
+    case StartKernel(StartKernel.NoRestart)   => subscriber.publisher.kernel.unit *> sendRunningKernels
     case StartKernel(StartKernel.WarmRestart) => ??? // TODO
-    case StartKernel(StartKernel.ColdRestart) => subscriber.publisher.restartKernel(true)
-    case StartKernel(StartKernel.Kill)        => subscriber.publisher.killKernel()
+    case StartKernel(StartKernel.ColdRestart) => subscriber.publisher.restartKernel(true) *> sendRunningKernels
+    case StartKernel(StartKernel.Kill)        => subscriber.publisher.killKernel() *> sendRunningKernels
 
     case req@HandleData(handleType, handle, count, _) => for {
       kernel <- subscriber.publisher.kernel
@@ -134,6 +135,9 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
     sendResults *> PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo.completed))))
   }
 
+  private def sendRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, Unit]  =
+    SocketSession.getRunningKernels.flatMap(broadcastAll.publish1) *> broadcastAll.publish1(None)
+
   // First send the notebook without any results (because they're large) and then send the individual results
   // to make notebook loading more incremental.
   private def sendNotebook: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] = for {
@@ -153,7 +157,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
 
 object NotebookSession {
 
-  def stream(path: String, input: Stream[Throwable, Frame]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
+  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: Topic[Task, Option[Message]]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
     for {
       _                <- NotebookManager.assertValidPath(path)
       publisher        <- NotebookManager.open(path).orElseFail(NotFound(path))
@@ -163,7 +167,7 @@ object NotebookSession {
       sessionId        <- nextSessionId
       streamingHandles <- StreamingHandles.make(sessionId).orDie
       closed           <- Promise.make[Throwable, Unit]
-      handler           = new NotebookSession(subscriber, streamingHandles)
+      handler           = new NotebookSession(subscriber, streamingHandles, broadcastAll)
       env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
       close             = closeQueueIf(closed, output) *> subscriber.close()
       _                <- handler.sendNotebookInfo

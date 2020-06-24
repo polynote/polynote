@@ -14,6 +14,8 @@ import {Notebook} from "./notebook";
 import {Kernel} from "./kernel";
 import {NotebookList} from "./notebooklist";
 import {SocketStateHandler} from "../state/socket_state";
+import {Home} from "./home";
+import {RecentNotebooksHandler} from "../state/storage";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -32,7 +34,8 @@ class Main {
 
         const nbList = new NotebookList(dispatcher)
         const leftPane = { header: nbList.header, el: nbList.el };
-        const tabs = new TabComponent(dispatcher);
+        const home = new Home(dispatcher)
+        const tabs = new TabComponent(dispatcher, home.el);
         const center = tabs.el;
         const rightPane = { header: h2(['right-header'], []), el: div(['right-el'], [])}; // TODO: need a better placeholder here...
 
@@ -76,7 +79,7 @@ class Main {
     }
 
     private static handlePath(path?: string) {
-        if (path) {
+        if (path && path !== "home") {
             const tabUrl = new URL(`notebook/${encodeURIComponent(path)}`, document.baseURI);
 
             const href = window.location.href;
@@ -89,6 +92,16 @@ class Main {
             } else {
                 window.history.pushState({notebook: path}, title, tabUrl.href);
             }
+
+            RecentNotebooksHandler.updateState(recents => {
+                const maybeExists = recents.find(r => r.path === path);
+                if (maybeExists) {
+                    return [maybeExists, ...recents.filter(r => r.path !== path)];
+                } else {
+                    const name = path.split(/\//g).pop()!;
+                    return [{path, name}, ...recents];
+                }
+            })
         } else {
             const title = 'Polynote';
             window.history.pushState({notebook: name}, title, document.baseURI);
@@ -127,10 +140,10 @@ mainEl?.appendChild(Main.get.el);
 
 
 // TODO LIST ****************************************************************************************************************************
-//      - Client interpreters
-//      - Welcome/Home screen
+//      - Kernel UI doesn't update after being selected in About for some reason...
 //      - Comments
 //      - Update kernel on changed tab
 //      - Reconnect / reload after disconnect
 //      - Remember scroll positions when switching notebooks
 //      - Client Backup
+//      - How to deal with disposed StateHandlers? Check for memory leaks?

@@ -62,11 +62,7 @@ object SocketSession {
       NotebookManager.assertValidPath(path) *>
         checkPermission(Permission.DeleteNotebook(path)) *> NotebookManager.delete(path).as(None)
 
-    case RunningKernels(_) => for {
-      paths          <- NotebookManager.listRunning()
-      statuses       <- ZIO.collectAllPar(paths.map(NotebookManager.status))
-      kernelStatuses  = paths.zip(statuses).map { case (p, s) => ShortString(p) -> s }
-    } yield Some(RunningKernels(kernelStatuses))
+    case RunningKernels(_) => getRunningKernels
 
     case other =>
       ZIO.succeed(None)
@@ -89,4 +85,10 @@ object SocketSession {
       identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString))),
       sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil)
     )
+
+  def getRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, Option[RunningKernels]] = for {
+    paths          <- NotebookManager.listRunning()
+    statuses       <- ZIO.collectAllPar(paths.map(NotebookManager.status))
+    kernelStatuses  = paths.zip(statuses).map { case (p, s) => ShortString(p) -> s }
+  } yield Some(RunningKernels(kernelStatuses))
 }

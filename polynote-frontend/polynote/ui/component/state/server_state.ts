@@ -4,7 +4,7 @@ import {Identity, KernelBusyState} from "../../../data/messages";
 import {NotebookState, NotebookStateHandler} from "./notebook_state";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
-import {NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {CloseNotebook, NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../../../data/data";
 import {removeKey} from "../../../util/functions";
@@ -159,6 +159,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     }
 
     static deleteNotebook(path: string) {
+        ServerStateHandler.closeNotebook(path)
+
         // update our notebooks dictionary
         delete ServerStateHandler.notebooks[path]
 
@@ -173,9 +175,23 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         })
     }
 
+    static closeNotebook(path: string) {
+        const maybeNb = ServerStateHandler.notebooks[path];
+        if (maybeNb) {
+            maybeNb.handler.dispose()
+            maybeNb.info?.dispatcher.dispatch(new CloseNotebook(path))
+
+            // reset the entry for this notebook.
+            delete ServerStateHandler.notebooks[path]
+            ServerStateHandler.getOrCreateNotebook(path)
+        }
+    }
+
     static get runningNotebooks(): [string, NotebookInfo][] {
         return Object.entries(ServerStateHandler.notebooks).reduce<[string, NotebookInfo][]>((acc, [path, info]) => {
             if (info.loaded) {
+                return [...acc, [path, info]]
+            } else if (info.handler.getState().kernel.status !== "disconnected") {
                 return [...acc, [path, info]]
             } else return acc
         }, [])

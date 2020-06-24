@@ -99,6 +99,9 @@ export class SocketStateHandler extends StateHandler<SocketState> {
     public handleMessage(...args: Parameters<SocketSession["handleMessage"]>): ReturnType<SocketSession["handleMessage"]> {
         return this.socket.handleMessage(...args)
     }
+    public close(...args: Parameters<SocketSession["close"]>): ReturnType<SocketSession["close"]> {
+        return this.socket.close(...args)
+    }
 }
 
 /**

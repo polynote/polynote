@@ -6,7 +6,9 @@ export const NoUpdate: unique symbol = Symbol()
 
 // The StateHandler mediates interactions between Components and States
 export class StateHandler<S> {
-    public dispose: () => void = () => {};
+    public dispose: () => void = () => {
+        this.clearObservers()
+    };
 
     protected state: S
 
@@ -60,7 +62,9 @@ export class StateHandler<S> {
                 })
             }
         });
+        const oldDispose = view.dispose
         view.dispose = () => {
+            oldDispose();
             this.removeObserver(obs);
         };
         return view as C

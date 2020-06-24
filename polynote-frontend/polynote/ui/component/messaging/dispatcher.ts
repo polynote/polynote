@@ -344,6 +344,9 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
             .when(StopDataStream, (handleType, handleId) => {
                 this.socket.send(new ReleaseHandle(handleType, handleId))
             })
+            .when(CloseNotebook, (path) => {
+                this.socket.close()
+            })
         // TODO: add more actions! basically UIEvents that anything subscribes to should be here I think
     }
 
@@ -473,6 +476,16 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 .when(DeleteNotebook, (path) => {
                     this.socket.send(new messages.DeleteNotebook(path))
                 })
+                .when(CloseNotebook, (path) => {
+                    ServerStateHandler.closeNotebook(path)
+                    newS = {
+                        ...s,
+                        notebooks: {
+                            ...s.notebooks,
+                            [path]: false
+                        }
+                    }
+                })
                 .when(ViewAbout, section => {
                     About.show(this, section)
                 })
@@ -481,6 +494,9 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                         ...s,
                         currentNotebook: path
                     }
+                })
+                .when(RequestRunningKernels, () => {
+                    this.socket.send(new messages.RunningKernels([]))
                 })
 
             if (newS) return newS
@@ -603,7 +619,6 @@ export class LoadNotebook extends UIAction {
     }
 }
 
-
 export class CreateNotebook extends UIAction {
     constructor(readonly path?: string, readonly content?: string) {
         super();
@@ -644,6 +659,17 @@ export class DeleteNotebook extends UIAction {
     }
 
     static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
+        return [inst.path];
+    }
+}
+
+export class CloseNotebook extends UIAction {
+    constructor(readonly path: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: CloseNotebook): ConstructorParameters<typeof CloseNotebook> {
         return [inst.path];
     }
 }
@@ -819,6 +845,17 @@ export class ClearCellEdits extends UIAction {
 
     static unapply(inst: ClearCellEdits): ConstructorParameters<typeof ClearCellEdits> {
         return [inst.cellId];
+    }
+}
+
+export class RequestRunningKernels extends UIAction {
+    constructor() {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: RequestRunningKernels): ConstructorParameters<typeof RequestRunningKernels> {
+        return [];
     }
 }
 

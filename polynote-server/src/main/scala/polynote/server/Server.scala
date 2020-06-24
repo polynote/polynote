@@ -186,7 +186,7 @@ class Server {
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
               path.stripPrefix("/ws").stripPrefix("/") match {
                 case "" => authorize(req, SocketSession(inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output)))
-                case rest => authorize(req, NotebookSession.stream(rest, inputFrames).flatMap(output => Response.websocket(req, output)))
+                case rest => authorize(req, NotebookSession.stream(rest, inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output)))
               }
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {

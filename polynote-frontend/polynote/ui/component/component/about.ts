@@ -2,7 +2,7 @@ import {FullScreenModal} from "./modal";
 import {button, div, dropdown, h2, h3, iconButton, span, table, tag} from "../../util/tags";
 import * as monaco from "monaco-editor";
 import {ClientBackup} from "../client_backup";
-import {ServerStateHandler} from "../state/server_state";
+import {NotebookInfo, ServerStateHandler} from "../state/server_state";
 import {
     clearStorage,
     LocalStorageHandler,
@@ -11,7 +11,12 @@ import {
     UserPreferences, ViewPrefsHandler
 } from "../state/storage";
 import {Observer, StateHandler} from "../state/state_handler";
-import {KernelCommand, ServerMessageDispatcher, SetSelectedNotebook} from "../messaging/dispatcher";
+import {
+    KernelCommand, LoadNotebook,
+    RequestRunningKernels,
+    ServerMessageDispatcher,
+    SetSelectedNotebook
+} from "../messaging/dispatcher";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
 
@@ -193,44 +198,53 @@ export class About extends FullScreenModal {
             ])
         ]);
 
-        const tableEl = table(['kernels'], {
-            header: ['path', 'status', 'actions'],
-            classes: ['path', 'status', 'actions'],
-            rowHeading: false,
-            addToTop: false
-        });
+        const onNotebookUpdate = () => {
 
-        ServerStateHandler.runningNotebooks.forEach(([path, info]) => {
-            const status = info.handler.getState().kernel.status;
-            const statusEl = span([], [
-                span(['status'], [status]),
-            ]);
-            const actions = div([], [
-                iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
-                    info.info!.dispatcher.dispatch(new KernelCommand("start"))
-                }),
-                iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
-                    info.info!.dispatcher.dispatch(new KernelCommand("kill"))
-                }),
-                iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
-                    this.serverMessageDispatcher.dispatch(new SetSelectedNotebook(path))
-                    this.hide();
+            const tableEl = table(['kernels'], {
+                header: ['path', 'status', 'actions'],
+                classes: ['path', 'status', 'actions'],
+                rowHeading: false,
+                addToTop: false
+            });
+
+            ServerStateHandler.runningNotebooks.forEach(([path, info]) => {
+                const status = info.handler.getState().kernel.status;
+                const statusEl = span([], [
+                    span(['status'], [status]),
+                ]);
+                const actions = div([], [
+                    iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
+                        info.info!.dispatcher.dispatch(new KernelCommand("start"))
+                    }),
+                    iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
+                        info.info!.dispatcher.dispatch(new KernelCommand("kill"))
+                    }),
+                    iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
+                        this.serverMessageDispatcher.dispatch(new LoadNotebook(path))
+                        this.hide();
+                    })
+                ]);
+
+                const rowEl = tableEl.addRow({ path, status: statusEl, actions });
+                rowEl.classList.add('kernel-status', status)
+                const obs = info.handler.addObserver((state, prev) => {
+                    const status = state.kernel.status;
+                    rowEl.classList.replace(prev.kernel.status, status)
+                    statusEl.innerText = status;
                 })
-            ]);
+                this.observers.push([info.handler, obs])
 
-            const rowEl = tableEl.addRow({ path, status: statusEl, actions });
-            rowEl.classList.add('kernel-status', status)
-            const obs = info.handler.addObserver((state, prev) => {
-                const status = state.kernel.status;
-                rowEl.classList.replace(prev.kernel.status, status)
-                statusEl.innerText = status;
+                if (content.firstChild !== tableEl) {
+                    content.firstChild?.replaceWith(tableEl);
+                }
             })
-            this.observers.push([info.handler, obs])
+        }
+        this.serverMessageDispatcher.dispatch(new RequestRunningKernels())
+        onNotebookUpdate()
+        const nbs = ServerStateHandler.get.view("notebooks")
+        const watcher = nbs.addObserver(() => onNotebookUpdate())
+        this.observers.push([nbs, watcher])
 
-            if (content.firstChild !== tableEl) {
-                content.firstChild?.replaceWith(tableEl);
-            }
-        })
         return el;
     }
 

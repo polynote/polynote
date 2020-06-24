@@ -32,6 +32,7 @@ export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElem
     attrs(obj: AllowedElAttrs<HTMLElementTagNameMap[K]>): TagElement<K, T>
     withId(id: string): TagElement<K, T>
     click(handler: EventListenerOrEventListenerObject): TagElement<K, T>
+    mousedown(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     change(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     listener(name: string, handler: EventListenerOrEventListenerObject): TagElement<K, T>
     withKey(key: string, value: any): TagElement<K, T>
@@ -68,6 +69,9 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
         },
         click(handler: EventListenerOrEventListenerObject) {
             return el.listener('click', handler);
+        },
+        mousedown(handler: EventListenerOrEventListenerObject) {
+            return el.listener('mousedown', handler);
         },
         change(handler: EventListenerOrEventListenerObject) {
             return el.listener('change', handler);
