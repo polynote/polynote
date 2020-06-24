@@ -19,6 +19,51 @@ import {ViewPreferences, ViewPrefsHandler} from "../state/storage";
 import {TaskInfo, TaskStatus} from "../../../data/messages";
 import {ResultValue} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../state/notebook_state";
+import {ServerStateHandler} from "../state/server_state";
+
+export class KernelPane {
+    el: TagElement<"div">;
+    header: TagElement<"div">;
+
+    constructor() {
+        const placeholderEl = div(['kernel-ui-placeholder'], []);
+        const placeholderHeader = div(["kernel-header-placeholder"], []);
+        this.el = placeholderEl;
+        this.header = placeholderHeader;
+
+        const handleCurrentNotebook = (path?: string) => {
+            if (path && path !== "home") {
+                const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
+                // the notebook should already be loaded
+                if (nbInfo?.info) {
+                    const kernel = new Kernel(
+                        nbInfo.info.dispatcher,
+                        nbInfo.handler,
+                        'rightPane');
+
+                    this.el.replaceWith(kernel.el);
+                    this.el = kernel.el
+
+                    this.header.replaceWith(kernel.statusEl);
+                    this.header = kernel.statusEl;
+                } else {
+                    console.warn("Requested notebook at path", path, "but it wasn't loaded. This is unexpected...")
+                }
+            } else {
+                // no notebook selected
+                // TODO: keep task component around for errors?
+                this.el.replaceWith(placeholderEl);
+                this.el = placeholderEl
+
+                this.header.replaceWith(placeholderHeader);
+                this.header = placeholderHeader;
+            }
+        }
+        handleCurrentNotebook(ServerStateHandler.get.getState().currentNotebook)
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path))
+    }
+
+}
 
 export class Kernel {
     readonly el: TagElement<"div">;
@@ -52,6 +97,7 @@ export class Kernel {
             tasks.el
         ]);
 
+        this.setKernelStatus(this.kernelState.kernelStatusHandler.getState())
         this.kernelState.kernelStatusHandler.addObserver(status => {
             this.setKernelStatus(status)
         })
@@ -292,11 +338,14 @@ class KernelSymbolsComponent {
         this.resultSymbols = (this.tableEl.tBodies[0] as TagElement<"tbody">).addClass('results');
         this.scopeSymbols = this.tableEl.addBody().addClass('scope-symbols');
 
-        notebookState.view("kernel", KernelStateHandler).kernelSymbolsHandler.addObserver(symbols => {
+        const handleSymbols = (symbols: KernelSymbols) => {
             symbols.forEach(s => this.addSymbol(s))
-        })
+        }
+        const symbolHandler = notebookState.view("kernel", KernelStateHandler).kernelSymbolsHandler;
+        handleSymbols(symbolHandler.getState())
+        symbolHandler.addObserver(symbols => handleSymbols(symbols))
 
-        notebookState.view("activeCell").addObserver(cell => {
+        const handleActiveCell = (cell?: CellState) => {
             if (cell === undefined) {
                 // only show predef
                 this.presentFor(-1, [])
@@ -306,7 +355,10 @@ class KernelSymbolsComponent {
                 const cellsBefore = cells.slice(0, idx).map(cell => cell.id)
                 this.presentFor(cell.id, cellsBefore)
             }
-        })
+        }
+        const activeCellHandler = notebookState.view("activeCell");
+        handleActiveCell(activeCellHandler.getState())
+        activeCellHandler.addObserver(cell => handleActiveCell(cell))
     }
 
     private updateRow(tr: ResultRow, resultValue: ResultValue) {

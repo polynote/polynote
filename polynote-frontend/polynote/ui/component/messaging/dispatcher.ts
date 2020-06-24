@@ -43,13 +43,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
                 this.socket.reconnect(onlyIfClosed)
             })
             .when(KernelCommand, (command: string) => {
-                if (command === "start") {
-                    this.socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
-                } else if (command === "kill") {
-                    if (confirm("Kill running kernel? State will be lost.")) {
-                        this.socket.send(new messages.StartKernel(messages.StartKernel.Kill));
-                    }
-                }
+                NotebookMessageDispatcher.kernelCommand(this.socket, command)
             })
             .when(CreateComment, (cellId, comment) => {
                 const state = this.state.getState()
@@ -420,6 +414,16 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
             this.dispatch(new RequestCellRun(cellsToRun))
         }
     }
+
+    static kernelCommand(socket: SocketStateHandler, command: string) {
+        if (command === "start") {
+            socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
+        } else if (command === "kill") {
+            if (confirm("Kill running kernel? State will be lost.")) {
+                socket.send(new messages.StartKernel(messages.StartKernel.Kill));
+            }
+        }
+    }
 }
 
 export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
@@ -435,14 +439,14 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 .when(RequestNotebooksList, () => {
                     this.socket.send(new messages.ListNotebooks([]))
                 })
-                .when(LoadNotebook, path => {
+                .when(LoadNotebook, (path, open) => {
                     let notebooks = s.notebooks
                     if (! s.notebooks[path])  {
                         notebooks = {...notebooks, [path]: ServerStateHandler.loadNotebook(path).loaded}
                     }
                     newS = {
                         ...s,
-                        currentNotebook: path,
+                        currentNotebook: open ? path : s.currentNotebook,
                         notebooks: notebooks
                     };
                 })
@@ -609,13 +613,13 @@ export class UpdateConfig extends UIAction {
 }
 
 export class LoadNotebook extends UIAction {
-    constructor(readonly path: string) {
+    constructor(readonly path: string, readonly open: boolean = true) {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: LoadNotebook): ConstructorParameters<typeof LoadNotebook> {
-        return [inst.path];
+        return [inst.path, inst.open];
     }
 }
 

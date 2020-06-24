@@ -1,5 +1,5 @@
 import {FullScreenModal} from "./modal";
-import {button, div, dropdown, h2, h3, iconButton, span, table, tag} from "../../util/tags";
+import {button, div, dropdown, h2, h3, iconButton, span, loader, table, tag} from "../../util/tags";
 import * as monaco from "monaco-editor";
 import {ClientBackup} from "../client_backup";
 import {NotebookInfo, ServerStateHandler} from "../state/server_state";
@@ -12,6 +12,7 @@ import {
 } from "../state/storage";
 import {Observer, StateHandler} from "../state/state_handler";
 import {
+    CloseNotebook,
     KernelCommand, LoadNotebook,
     RequestRunningKernels,
     ServerMessageDispatcher,
@@ -21,7 +22,7 @@ import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
 
 export class About extends FullScreenModal {
-    readonly observers: [StateHandler<any>, Observer<any>][] = []
+    readonly observers: [StateHandler<any>, Observer<any>, (() => void) | undefined][] = []
     private constructor(private serverMessageDispatcher: ServerMessageDispatcher) {
         super(
             div([], []),
@@ -171,7 +172,7 @@ export class About extends FullScreenModal {
             const obs = handler.addObserver(next => {
                 setValueEl(next)
             })
-            this.observers.push([handler, obs])
+            this.observers.push([handler, obs, undefined])
 
             storageTable.addRow({
                 key: handler.key,
@@ -213,6 +214,7 @@ export class About extends FullScreenModal {
                     span(['status'], [status]),
                 ]);
                 const actions = div([], [
+                    loader(),
                     iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
                         info.info!.dispatcher.dispatch(new KernelCommand("start"))
                     }),
@@ -220,9 +222,9 @@ export class About extends FullScreenModal {
                         info.info!.dispatcher.dispatch(new KernelCommand("kill"))
                     }),
                     iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
-                        this.serverMessageDispatcher.dispatch(new LoadNotebook(path))
+                        this.serverMessageDispatcher.dispatch(new SetSelectedNotebook(path))
                         this.hide();
-                    })
+                    }),
                 ]);
 
                 const rowEl = tableEl.addRow({ path, status: statusEl, actions });
@@ -232,7 +234,25 @@ export class About extends FullScreenModal {
                     rowEl.classList.replace(prev.kernel.status, status)
                     statusEl.innerText = status;
                 })
-                this.observers.push([info.handler, obs])
+                this.observers.push([info.handler, obs, undefined])
+
+                // load the notebook if it hasn't been already
+                if (!info.loaded) {
+                    rowEl.classList.add('loading')
+                    this.serverMessageDispatcher.dispatch(new LoadNotebook(path, false))
+                    const loading = info.handler.addObserver(() => {
+                        const maybeLoaded = ServerStateHandler.getOrCreateNotebook(path)
+                        if (maybeLoaded.loaded && maybeLoaded.info) {
+                            info.handler.removeObserver(loading);
+                            info = maybeLoaded;
+                            rowEl.classList.remove("loading");
+                        }
+                    })
+                    this.observers.push([info.handler, loading, () => {
+                        // close notebook if we opened it just for this view
+                        this.serverMessageDispatcher.dispatch(new CloseNotebook(path))
+                    }])
+                }
 
                 if (content.firstChild !== tableEl) {
                     content.firstChild?.replaceWith(tableEl);
@@ -243,7 +263,7 @@ export class About extends FullScreenModal {
         onNotebookUpdate()
         const nbs = ServerStateHandler.get.view("notebooks")
         const watcher = nbs.addObserver(() => onNotebookUpdate())
-        this.observers.push([nbs, watcher])
+        this.observers.push([nbs, watcher, undefined])
 
         return el;
     }
@@ -333,7 +353,15 @@ export class About extends FullScreenModal {
     }
 
     hide() {
-        this.observers.forEach(([handler, obs]) => handler.removeObserver(obs));
+        while(this.observers.length > 0) {
+            const item = this.observers.pop()!;
+            const handler = item[0];
+            const obs = item[1];
+            const cleanup = item[2];
+
+            handler.removeObserver(obs)
+            if (cleanup) cleanup()
+        }
         super.hide()
     }
 }

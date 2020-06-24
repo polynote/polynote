@@ -100,6 +100,7 @@ export class SocketStateHandler extends StateHandler<SocketState> {
         return this.socket.handleMessage(...args)
     }
     public close(...args: Parameters<SocketSession["close"]>): ReturnType<SocketSession["close"]> {
+        this.clearObservers()
         return this.socket.close(...args)
     }
 }

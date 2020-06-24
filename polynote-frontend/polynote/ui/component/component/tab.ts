@@ -3,6 +3,7 @@ import {CloseNotebook, ServerMessageDispatcher, SetSelectedNotebook} from "../me
 import {ServerStateHandler} from "../state/server_state";
 import {Observer} from "../state/state_handler";
 import {NotebookStateHandler} from "../state/notebook_state";
+import {Notebook} from "./notebook";
 
 export class TabComponent {
     readonly el: TagElement<"div">;
@@ -16,6 +17,19 @@ export class TabComponent {
         );
 
         this.addHome()
+
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => {
+            if (path) {
+                if (this.getTab(path) === undefined && path !== "home") {
+                    const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
+                    if (nbInfo?.info) {
+                        this.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
+                    }
+                } else {
+                    this.activate(path)
+                }
+            }
+        })
     }
 
     getTab(path: string) {

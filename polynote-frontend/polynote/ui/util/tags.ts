@@ -421,3 +421,7 @@ export function details(classes: string[], summary: Content, content: Content) {
 export function polynoteLogo() {
     return div(['polynote-logo'], [span(['alt'], ["Polynote"])]);
 }
+
+export function loader(classes: string[] = []) {
+    return div([...classes, 'loader'], [])
+}

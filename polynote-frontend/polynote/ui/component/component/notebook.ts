@@ -24,8 +24,7 @@ export class Notebook {
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
         this.el = div(['notebook-content'], [cellsEl, VimStatus.get.el]);
 
-        // we use views to watch for state changes we care about
-        notebookState.view("cells").addObserver((newCells, oldCells) => {
+        const handleCells = (newCells: CellState[], oldCells: CellState[] = []) => {
             const [removed, added] = diffArray(oldCells, newCells, (o, n) => o.id === n.id);
 
             added.forEach(state => {
@@ -93,7 +92,9 @@ export class Notebook {
                 acc[idx] = next.id
                 return acc
             }, {})
-        });
+        }
+        handleCells(notebookState.getState().cells)
+        notebookState.view("cells").addObserver((newCells, oldCells) => handleCells(newCells, oldCells));
 
         console.log("initial active cell ", this.notebookState.getState().activeCell)
         this.notebookState.view("activeCell").addObserver(cell => {

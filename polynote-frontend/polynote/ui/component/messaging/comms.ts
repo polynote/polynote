@@ -50,8 +50,10 @@ export class SocketSession extends EventTarget {
     static fromRelativeURL(relativeURL: string): SocketSession {
         const url = wsUrl(new URL(relativeURL, document.baseURI));
         if (openSessions[url.href]) {
+            console.log("retrieved socket for", url)
             return openSessions[url.href];
         }
+        console.log("opened socket for", url)
         return new SocketSession(url)
     }
 
@@ -176,7 +178,9 @@ export class SocketSession extends EventTarget {
 
     close() {
         if (this.socket) {
+            console.log("closing socket", this.url)
             if (this.socket.readyState < WebSocket.CLOSING) {
+                console.log("close()")
                 this.socket.close();
             }
             for (const l in this.listeners) {

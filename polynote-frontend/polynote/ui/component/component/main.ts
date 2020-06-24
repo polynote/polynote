@@ -11,7 +11,7 @@ import {SplitViewComponent} from "./splitview";
 import {ServerStateHandler} from "../state/server_state";
 import {TabComponent} from "./tab";
 import {Notebook} from "./notebook";
-import {Kernel} from "./kernel";
+import {Kernel, KernelPane} from "./kernel";
 import {NotebookList} from "./notebooklist";
 import {SocketStateHandler} from "../state/socket_state";
 import {Home} from "./home";
@@ -37,7 +37,8 @@ class Main {
         const home = new Home(dispatcher)
         const tabs = new TabComponent(dispatcher, home.el);
         const center = tabs.el;
-        const rightPane = { header: h2(['right-header'], []), el: div(['right-el'], [])}; // TODO: need a better placeholder here...
+        const kernelPane = new KernelPane()
+        const rightPane = { header: kernelPane.header, el: kernelPane.el};
 
         this.el = div(['main-ui'], [
             div(['header'], [new ToolbarComponent(dispatcher).el]),
@@ -46,29 +47,8 @@ class Main {
         ]);
 
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
-            if (path) {
-
-                Main.handlePath(path)
-
-                if(tabs.getTab(path) === undefined) {
-                    const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
-                    if (nbInfo?.info) {
-                        tabs.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
-                        const kernel = new Kernel(
-                            nbInfo.info.dispatcher,
-                            nbInfo.handler,
-                            'rightPane');
-
-                        rightPane.header.replaceWith(kernel.statusEl);
-                        rightPane.header = kernel.statusEl;
-
-                        rightPane.el.replaceWith(kernel.el);
-                        rightPane.el = kernel.el;
-                    }
-                } else {
-                    tabs.activate(path);
-                }
-            }
+            console.log("Current notebook is", path)
+            Main.handlePath(path)
         })
 
         const path = unescape(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
@@ -140,10 +120,10 @@ mainEl?.appendChild(Main.get.el);
 
 
 // TODO LIST ****************************************************************************************************************************
-//      - Kernel UI doesn't update after being selected in About for some reason...
 //      - Comments
 //      - Update kernel on changed tab
-//      - Reconnect / reload after disconnect
+//      - Reconnect / reload after disconnect (and make sure everything is disabled when disconnected)
 //      - Remember scroll positions when switching notebooks
 //      - Client Backup
 //      - How to deal with disposed StateHandlers? Check for memory leaks?
+//      - make sure all errors are displayed in task manager

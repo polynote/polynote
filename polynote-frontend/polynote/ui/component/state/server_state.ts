@@ -4,12 +4,14 @@ import {Identity, KernelBusyState} from "../../../data/messages";
 import {NotebookState, NotebookStateHandler} from "./notebook_state";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
-import {CloseNotebook, NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {CloseNotebook, KernelCommand, LoadNotebook, NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../../../data/data";
 import {removeKey} from "../../../util/functions";
 import {EditBuffer} from "./edit_buffer";
 import {ClientInterpreterComponent} from "../component/interpreter/client_interpreter";
+import * as messages from "../../../data/messages";
+import {Notebook} from "../component/notebook";
 
 export type NotebookInfo = {
     handler: NotebookStateHandler,
