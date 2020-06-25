@@ -121,9 +121,9 @@ mainEl?.appendChild(Main.get.el);
 
 // TODO LIST ****************************************************************************************************************************
 //      - Comments
-//      - Update kernel on changed tab
 //      - Reconnect / reload after disconnect (and make sure everything is disabled when disconnected)
 //      - Remember scroll positions when switching notebooks
+//      - Remember open notebooks
 //      - Client Backup
 //      - How to deal with disposed StateHandlers? Check for memory leaks?
 //      - make sure all errors are displayed in task manager

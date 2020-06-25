@@ -6,7 +6,7 @@ import {NotebookInfo, ServerStateHandler} from "../state/server_state";
 import {
     clearStorage,
     LocalStorageHandler,
-    NotebookLocationsHandler,
+    NotebookScrollLocationsHandler,
     RecentNotebooksHandler,
     UserPreferences, ViewPrefsHandler
 } from "../state/storage";
@@ -182,7 +182,7 @@ export class About extends FullScreenModal {
 
         addStorageEl(UserPreferences)
         addStorageEl(RecentNotebooksHandler)
-        addStorageEl(NotebookLocationsHandler)
+        addStorageEl(NotebookScrollLocationsHandler)
         addStorageEl(ViewPrefsHandler)
 
         storageInfoEl.appendChild(storageTable);

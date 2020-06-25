@@ -10,8 +10,6 @@ import {NotebookConfig, SparkPropertySet} from "../../../data/data";
 import {removeKey} from "../../../util/functions";
 import {EditBuffer} from "./edit_buffer";
 import {ClientInterpreterComponent} from "../component/interpreter/client_interpreter";
-import * as messages from "../../../data/messages";
-import {Notebook} from "../component/notebook";
 
 export type NotebookInfo = {
     handler: NotebookStateHandler,

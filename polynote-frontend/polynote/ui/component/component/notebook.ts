@@ -9,6 +9,8 @@ import {NotebookConfigComponent} from "./notebookconfig";
 import {VimStatus} from "./vim_status";
 import {Position} from "monaco-editor";
 import {PosRange} from "../../../data/result";
+import {NotebookScrollLocationsHandler} from "../state/storage";
+import {ServerStateHandler} from "../state/server_state";
 
 export class Notebook {
     readonly el: TagElement<"div">;
@@ -20,9 +22,30 @@ export class Notebook {
     //     reject: () => void };
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
+        const path = notebookState.getState().path;
         const config = new NotebookConfigComponent(dispatcher, notebookState.view("config"), notebookState.view("kernel").view("status"));
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
+        cellsEl.addEventListener('scroll', evt => {
+            NotebookScrollLocationsHandler.updateState(locations => {
+                return {
+                    ...locations,
+                    [path]: cellsEl.scrollTop
+                }
+            })
+        })
         this.el = div(['notebook-content'], [cellsEl, VimStatus.get.el]);
+
+        const handleVisibility = (currentNotebook?: string, previousNotebook?: string) => {
+            if (currentNotebook === path) {
+                // when this notebook becomes visible, scroll to the saved location (if present)
+                const maybeScrollLocation = NotebookScrollLocationsHandler.getState()[path]
+                if (maybeScrollLocation !== undefined) {
+                    cellsEl.scrollTop = maybeScrollLocation
+                }
+            }
+        }
+        handleVisibility(ServerStateHandler.get.getState().currentNotebook)
+        ServerStateHandler.get.view("currentNotebook").addObserver((current, previous) => handleVisibility(current, previous))
 
         const handleCells = (newCells: CellState[], oldCells: CellState[] = []) => {
             const [removed, added] = diffArray(oldCells, newCells, (o, n) => o.id === n.id);
