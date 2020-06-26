@@ -28,7 +28,7 @@ export interface ServerState {
     interpreters: Record<string, string>,
     serverVersion: string,
     serverCommit: string,
-    identity?: Identity,
+    identity: Identity,
     sparkTemplates: SparkPropertySet[]
     // ephemeral states
     currentNotebook?: string
@@ -51,6 +51,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 interpreters: {},
                 serverVersion: "unknown",
                 serverCommit: "unknown",
+                identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
                 currentNotebook: undefined
             })
@@ -72,6 +73,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 interpreters: {},
                 serverVersion: "unknown",
                 serverCommit: "unknown",
+                identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
                 currentNotebook: undefined
             })

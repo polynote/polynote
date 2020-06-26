@@ -5,7 +5,7 @@
 import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import * as messages from "../../../data/messages";
-import {Message, TaskInfo} from "../../../data/messages";
+import {Identity, Message, TaskInfo} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {purematch} from "../../../util/match";
 import {ContentEdit} from "../../../data/content_edit";
@@ -543,7 +543,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 interpreters: interpreters,
                 serverVersion: serverVersion,
                 serverCommit: serverCommit,
-                identity: identity ?? undefined,
+                identity: identity ?? new Identity("Unknown User", null),
                 sparkTemplates: sparkTemplates,
             }
         });

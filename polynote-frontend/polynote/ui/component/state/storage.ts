@@ -2,6 +2,7 @@ import {storage} from "../../util/storage";
 import {StateHandler} from "./state_handler";
 
 export type RecentNotebooks = {name: string, path: string}[];
+export type OpenNotebooks = string[]; // paths
 export type NotebookScrollLocations = Record<string, number>; // path -> scrollTop
 export interface ViewPreferences {
     leftPane: {
@@ -53,6 +54,10 @@ export class LocalStorageHandler<T> extends StateHandler<T> {
         super.setState(s);
         storage.set(this.key, s)
     }
+
+    clear() {
+        this.setState(this.initial)
+    }
 }
 
 export function clearStorage() {
@@ -61,6 +66,7 @@ export function clearStorage() {
 }
 
 export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("RecentNotebooks", []);
+export const OpenNotebooksHandler = new LocalStorageHandler<OpenNotebooks>("OpenNotebooks", []);
 export const NotebookScrollLocationsHandler = new LocalStorageHandler<NotebookScrollLocations>("NotebookScrollLocations", {});
 export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
     leftPane: {

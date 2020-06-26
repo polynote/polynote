@@ -87,6 +87,10 @@ export class CellContainerComponent {
         return lang === "text" ? new TextCellComponent(this.dispatcher, this.cellState, this.path) : new CodeCellComponent(this.dispatcher, this.cellState, this.path);
     }
 
+    layout() {
+        this.cell.layout()
+    }
+
     delete() {
         this.cellState.clearObservers();
         this.cell.delete()
@@ -223,6 +227,8 @@ abstract class CellComponent {
     protected abstract getCurrentSelection(): string
 
     delete() {}
+
+    layout() {}
 }
 
 class CodeCellComponent extends CellComponent {
@@ -633,7 +639,7 @@ class CodeCellComponent extends CellComponent {
         this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
     }
 
-    private layout() {
+    layout() {
         const lineCount = this.editor.getModel()!.getLineCount();
         const lastPos = this.editor.getTopForLineNumber(lineCount);
         const lineHeight = this.editor.getOption(EditorOption.lineHeight);

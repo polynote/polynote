@@ -83,6 +83,13 @@ export function arrDelete<T>(arr: T[], idx: number) {
     return [...arr.slice(0, idx), ...arr.slice(idx + 1)]
 }
 
+export function arrDeleteItem<T>(arr: T[], item: T) {
+    const idx = arr.indexOf(item);
+    if (idx >= 0) {
+        return [...arr.slice(0, idx), ...arr.slice(idx + 1)]
+    } else return arr
+}
+
 export function unzip<A, B>(arr: [A, B][]): [A[], B[]] {
     return arr.reduce<[A[], B[]]>(([as, bs], [a, b]) => {
         as.push(a)

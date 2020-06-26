@@ -4,6 +4,7 @@ import {ServerStateHandler} from "../state/server_state";
 import {Observer} from "../state/state_handler";
 import {NotebookStateHandler} from "../state/notebook_state";
 import {Notebook} from "./notebook";
+import {VimStatus} from "./vim_status";
 
 export class TabComponent {
     readonly el: TagElement<"div">;
@@ -13,8 +14,9 @@ export class TabComponent {
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private homeTab: TagElement<"div">) {
         this.el = div(['tab-view'], [
-            this.tabContainer = div(['tabbed-pane', 'tab-container'], [])]
-        );
+            this.tabContainer = div(['tabbed-pane', 'tab-container'], []),
+            VimStatus.get.el
+        ]);
 
         this.addHome()
 
@@ -49,15 +51,15 @@ export class TabComponent {
                     evt.stopPropagation();
                     remove()
                 })
-            ]).attr('title', path);
-
-            tab.addEventListener('mousedown', evt => {
-                if (evt.button === 0) { // left click
-                    activate()
-                } else if (evt.button === 1) { // middle click
-                    remove()
-                } // nothing on right click...
-            });
+            ])
+                .attr('title', path)
+                .click((evt: MouseEvent) => {
+                    if (evt.button === 0) { // left click
+                        activate()
+                    } else if (evt.button === 1) { // middle click
+                        remove()
+                    } // nothing on right click...
+                });
 
             this.tabContainer.appendChild(tab);
 
@@ -103,6 +105,7 @@ export class TabComponent {
                 const nextTabEl = tab.tab.previousElementSibling || tab.tab.nextElementSibling;
                 const nextTabPath = Object.entries(this.tabs).find(([p, t]) => t.tab === nextTabEl)?.[0];
 
+                // this needs to be done before we activate the next tab
                 this.tabContainer.removeChild(tab.tab);
                 delete this.tabs[path];
 

@@ -10,12 +10,11 @@ import {ToolbarComponent} from "./toolbar";
 import {SplitViewComponent} from "./splitview";
 import {ServerStateHandler} from "../state/server_state";
 import {TabComponent} from "./tab";
-import {Notebook} from "./notebook";
 import {Kernel, KernelPane} from "./kernel";
 import {NotebookList} from "./notebooklist";
 import {SocketStateHandler} from "../state/socket_state";
 import {Home} from "./home";
-import {RecentNotebooksHandler} from "../state/storage";
+import {OpenNotebooksHandler, RecentNotebooksHandler} from "../state/storage";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -51,11 +50,18 @@ class Main {
             Main.handlePath(path)
         })
 
+        console.log("Opening previously opened notebooks", OpenNotebooksHandler.getState())
         const path = unescape(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
-        const notebookBase = 'notebook/';
-        if (path.startsWith(notebookBase)) {
-            dispatcher.dispatch(new LoadNotebook(path.substring(notebookBase.length)))
-        }
+        Promise.allSettled(OpenNotebooksHandler.getState().map(path => {
+            console.log("opening", path)
+            return dispatcher.loadNotebook(path, true)
+        })).then(() => {
+            const notebookBase = 'notebook/';
+            if (path.startsWith(notebookBase)) {
+                dispatcher.dispatch(new LoadNotebook(path.substring(notebookBase.length)))
+            }
+        })
+
     }
 
     private static handlePath(path?: string) {
@@ -120,10 +126,9 @@ mainEl?.appendChild(Main.get.el);
 
 
 // TODO LIST ****************************************************************************************************************************
-//      - Comments
 //      - Reconnect / reload after disconnect (and make sure everything is disabled when disconnected)
-//      - Remember scroll positions when switching notebooks
-//      - Remember open notebooks
 //      - Client Backup
 //      - How to deal with disposed StateHandlers? Check for memory leaks?
 //      - make sure all errors are displayed in task manager
+//      - there's some weird flashes when notebooks are switched. unclear why. might be related to gfx card stuff.
+//      - clean up code with some helper functions. e.g., dispatcher notebook state updating cell state with cells.map

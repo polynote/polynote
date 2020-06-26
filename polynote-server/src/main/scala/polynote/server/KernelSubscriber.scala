@@ -6,7 +6,7 @@ import fs2.concurrent.{SignallingRef, Topic}
 import fs2.Stream
 import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection, StreamThrowableOps, StreamUIOps}
-import polynote.messages.{CellID, DeleteCell, InsertCell, KernelStatus, Notebook, NotebookUpdate, TinyString}
+import polynote.messages.{CellID, CreateComment, DeleteCell, DeleteComment, InsertCell, KernelStatus, Notebook, NotebookUpdate, TinyString, UpdateComment}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.logging.Logging
 import polynote.runtime.CellRange
@@ -71,6 +71,9 @@ object KernelSubscriber {
           val echoUpdate  = update match {
             case InsertCell(_, _, _, _) => Some(update)
             case DeleteCell(_, _, _) => Some(update)
+            case CreateComment(_, _, _, _) => Some(update)
+            case UpdateComment(_, _, _, _, _, _) => Some(update)
+            case DeleteComment(_, _, _, _) => Some(update)
             case _ => None
           }
           ZIO.effectTotal(global.set(update.globalVersion)).as(echoUpdate)

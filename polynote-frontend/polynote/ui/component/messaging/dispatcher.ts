@@ -10,15 +10,16 @@ import {ClientResult, Output, PosRange, ResultValue} from "../../../data/result"
 import {StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../../../data/content_edit";
-import {ServerState, ServerStateHandler} from "../state/server_state";
+import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_state";
 import {SocketStateHandler} from "../state/socket_state";
 import {About} from "../component/about";
 import {ValueInspector} from "../component/value_inspector";
-import {collect, equalsByKey, partition} from "../../../util/functions";
+import {arrDeleteItem, collect, equalsByKey, partition} from "../../../util/functions";
 import {HandleData, ModifyStream, ReleaseHandle, TableOp} from "../../../data/messages";
 import {Either} from "../../../data/types";
 import {DialogModal} from "../component/modal";
 import {ClientInterpreterComponent, ClientInterpreters} from "../component/interpreter/client_interpreter";
+import {OpenNotebooksHandler} from "../state/storage";
 
 export abstract class MessageDispatcher<S> {
     protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -449,6 +450,9 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                         currentNotebook: open ? path : s.currentNotebook,
                         notebooks: notebooks
                     };
+                    if (open && ! this.openNotebooks.includes(path)) {
+                        this.openNotebooks = [...this.openNotebooks, path]
+                    }
                 })
                 .when(CreateNotebook, (path, content) => {
                     if (path) {
@@ -482,6 +486,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 })
                 .when(CloseNotebook, (path) => {
                     ServerStateHandler.closeNotebook(path)
+                    this.openNotebooks = arrDeleteItem(this.openNotebooks, path)
                     newS = {
                         ...s,
                         notebooks: {
@@ -506,6 +511,31 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             if (newS) return newS
             else return s
         });
+    }
+
+    loadNotebook(path: string, open?: boolean): Promise<NotebookInfo> {
+        return new Promise(resolve => {
+            this.dispatch(new LoadNotebook(path, open))
+            const info = ServerStateHandler.getOrCreateNotebook(path)
+            const loading = info.handler.addObserver(() => {
+                const maybeLoaded = ServerStateHandler.getOrCreateNotebook(path)
+                if (maybeLoaded.loaded && maybeLoaded.info) {
+                    info.handler.removeObserver(loading);
+                    resolve(maybeLoaded)
+                }
+            })
+        })
+    }
+
+    private _openNotebooks: string[] = [];
+    private get openNotebooks() {
+        return this._openNotebooks;
+    }
+    private set openNotebooks(tabs: string[]) {
+        this._openNotebooks = tabs;
+        OpenNotebooksHandler.updateState(() => {
+            return this._openNotebooks;
+        })
     }
 }
 

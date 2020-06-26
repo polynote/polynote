@@ -6,14 +6,14 @@ import {NotebookInfo, ServerStateHandler} from "../state/server_state";
 import {
     clearStorage,
     LocalStorageHandler,
-    NotebookScrollLocationsHandler,
+    NotebookScrollLocationsHandler, OpenNotebooksHandler,
     RecentNotebooksHandler,
     UserPreferences, ViewPrefsHandler
 } from "../state/storage";
 import {Observer, StateHandler} from "../state/state_handler";
 import {
     CloseNotebook,
-    KernelCommand, LoadNotebook,
+    KernelCommand, LoadNotebook, RequestClearOutput,
     RequestRunningKernels,
     ServerMessageDispatcher,
     SetSelectedNotebook
@@ -22,7 +22,8 @@ import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
 
 export class About extends FullScreenModal {
-    readonly observers: [StateHandler<any>, Observer<any>, (() => void) | undefined][] = []
+    readonly observers: [StateHandler<any>, Observer<any>][] = []
+    private cleanup: (()=> void)[] = []
     private constructor(private serverMessageDispatcher: ServerMessageDispatcher) {
         super(
             div([], []),
@@ -153,7 +154,7 @@ export class About extends FullScreenModal {
         preferencesEl.appendChild(prefsTable);
 
         const storageTable = table([], {
-            classes: ['key', 'val'],
+            classes: ['key', 'val', 'clear'],
             rowHeading: false,
             addToTop: false
         });
@@ -168,21 +169,25 @@ export class About extends FullScreenModal {
             };
             setValueEl(handler.getState());
 
-
             const obs = handler.addObserver(next => {
                 setValueEl(next)
             })
-            this.observers.push([handler, obs, undefined])
+            this.observers.push([handler, obs])
+
+            const clearEl = iconButton(["clear"], `Clear ${handler.key}`, "minus-circle", "Clear")
+                .click(() => handler.clear())
 
             storageTable.addRow({
                 key: handler.key,
-                val: valueEl
+                val: valueEl,
+                clear: clearEl
             })
         }
 
         addStorageEl(UserPreferences)
         addStorageEl(RecentNotebooksHandler)
         addStorageEl(NotebookScrollLocationsHandler)
+        addStorageEl(OpenNotebooksHandler)
         addStorageEl(ViewPrefsHandler)
 
         storageInfoEl.appendChild(storageTable);
@@ -234,24 +239,21 @@ export class About extends FullScreenModal {
                     rowEl.classList.replace(prev.kernel.status, status)
                     statusEl.innerText = status;
                 })
-                this.observers.push([info.handler, obs, undefined])
+                this.observers.push([info.handler, obs])
 
                 // load the notebook if it hasn't been already
                 if (!info.loaded) {
                     rowEl.classList.add('loading')
-                    this.serverMessageDispatcher.dispatch(new LoadNotebook(path, false))
-                    const loading = info.handler.addObserver(() => {
-                        const maybeLoaded = ServerStateHandler.getOrCreateNotebook(path)
-                        if (maybeLoaded.loaded && maybeLoaded.info) {
-                            info.handler.removeObserver(loading);
-                            info = maybeLoaded;
-                            rowEl.classList.remove("loading");
+                    this.serverMessageDispatcher.loadNotebook(path, false).then(newInfo => {
+                        info = newInfo; // update `info` for the button click callbacks
+                        rowEl.classList.remove("loading");
+                    })
+
+                    this.cleanup.push(() => {
+                        if (ServerStateHandler.get.getState().currentNotebook !== path) {
+                            this.serverMessageDispatcher.dispatch(new CloseNotebook(path))
                         }
                     })
-                    this.observers.push([info.handler, loading, () => {
-                        // close notebook if we opened it just for this view
-                        this.serverMessageDispatcher.dispatch(new CloseNotebook(path))
-                    }])
                 }
 
                 if (content.firstChild !== tableEl) {
@@ -263,7 +265,7 @@ export class About extends FullScreenModal {
         onNotebookUpdate()
         const nbs = ServerStateHandler.get.view("notebooks")
         const watcher = nbs.addObserver(() => onNotebookUpdate())
-        this.observers.push([nbs, watcher, undefined])
+        this.observers.push([nbs, watcher])
 
         return el;
     }
@@ -357,11 +359,9 @@ export class About extends FullScreenModal {
             const item = this.observers.pop()!;
             const handler = item[0];
             const obs = item[1];
-            const cleanup = item[2];
-
             handler.removeObserver(obs)
-            if (cleanup) cleanup()
         }
+        this.cleanup.forEach(f => f())
         super.hide()
     }
 }

@@ -33,7 +33,7 @@ export class Notebook {
                 }
             })
         })
-        this.el = div(['notebook-content'], [cellsEl, VimStatus.get.el]);
+        this.el = div(['notebook-content'], [cellsEl]);
 
         const handleVisibility = (currentNotebook?: string, previousNotebook?: string) => {
             if (currentNotebook === path) {
@@ -42,6 +42,11 @@ export class Notebook {
                 if (maybeScrollLocation !== undefined) {
                     cellsEl.scrollTop = maybeScrollLocation
                 }
+
+                // layout cells
+                Object.values(this.cells).forEach(({cell, handler, el}) => {
+                    cell.layout()
+                })
             }
         }
         handleVisibility(ServerStateHandler.get.getState().currentNotebook)

@@ -23,7 +23,7 @@ export class CommentHandler {
                 editor: editor.ICodeEditor,
                 cellId: number) {
 
-       commentsState.addObserver((currentComments, oldComments) => {
+       const handleComments = (currentComments: Record<string, CellComment>, oldComments: Record<string, CellComment> = {}) => {
            const [removed, added] = diffArray(Object.keys(oldComments), Object.keys(currentComments));
 
            // For added and removed comments, we only need to update the comment roots here.
@@ -40,7 +40,7 @@ export class CommentHandler {
            removed.forEach(commentId => {
                const removedComment = oldComments[commentId];
                const maybeRoot = this.commentRoots[removedComment.range.toString];
-               if (maybeRoot) {
+               if (maybeRoot && maybeRoot.uuid === commentId) {
                    // If this is a root comment, we delete it and it will delete all it's children
                    maybeRoot.dispose();
                    delete this.commentRoots[removedComment.range.toString];
@@ -48,17 +48,20 @@ export class CommentHandler {
            });
 
            // ok, now we update all the root comments and their children
-           const rootChildren: Record<string, CellComment[]> = {};
+           const rootChildren: Record<string, CellComment[]> = {}; // range -> comment
            Object.values(currentComments).forEach(comment => {
                // at this point we should have a root for this comment's range.
-               const root = this.commentRoots[comment.range.toString];
-               if (comment.uuid === root.uuid) {
-                   // If this is the root comment, we set its state.
-                   root.rootState.updateState(() => comment);
-               } else {
-                   // Otherwise, it's a child comment so we collect it up here.
-                   rootChildren[root.range.toString] = [...rootChildren[root.uuid] ?? [], comment];
-               }
+               const maybeRoot = this.commentRoots[comment.range.toString];
+               if (maybeRoot) {
+                   if (comment.uuid === maybeRoot.uuid) {
+                       // If this is the root comment, we set its state.
+                       maybeRoot.rootState.updateState(() => comment);
+                       rootChildren[maybeRoot.range.toString] = rootChildren[maybeRoot.range.toString] ?? [];
+                   } else {
+                       // Otherwise, it's a child comment so we collect it up here.
+                       rootChildren[maybeRoot.range.toString] = [...rootChildren[maybeRoot.range.toString] ?? [], comment];
+                   }
+               } // if the root doesn't exist at this point it means it was likely just deleted. So do nothing here because the comments should be getting deleted concurrently.
            });
 
            // Finally, we update all the root children
@@ -67,11 +70,13 @@ export class CommentHandler {
                root.childrenState.updateState(() => children);
 
            })
-       });
+       }
+       handleComments(commentsState.getState())
+       commentsState.addObserver((current, old) => handleComments(current, old));
        
        let commentButton: CommentButtonComponent | undefined = undefined;
 
-       currentSelection.addObserver(currentSelection => {
+       const handleSelection = (currentSelection?: PosRange) => {
            const model = editor.getModel();
            if (currentSelection && currentSelection.length > 0 && model) {
                const maybeEquals = Object.keys(this.commentRoots)
@@ -83,14 +88,16 @@ export class CommentHandler {
                    commentButton = new CommentButtonComponent(dispatcher, editor, currentSelection, cellId);
                    commentButton.show();
                    return
-               }
+               } // else the CommentRoot will handle showing itself.
            }
            // if we got here, we should hide the button
            if (commentButton) {
                commentButton.hide();
                commentButton = undefined;
            }
-       })
+       }
+       handleSelection(currentSelection.getState())
+       currentSelection.addObserver(s => handleSelection(s))
 
     }
 
@@ -99,7 +106,7 @@ export class CommentHandler {
 abstract class MonacoRightGutterOverlay {
     readonly el: TagElement<"div">;
 
-    protected constructor(readonly editor: editor.ICodeEditor, readonly range: PosRange) {
+    protected constructor(readonly editor: editor.ICodeEditor) {
         this.el = div(['cell-overlay'], [])
     }
 
@@ -126,6 +133,8 @@ abstract class MonacoRightGutterOverlay {
         }
     }
 
+    abstract get range(): PosRange
+
     hide() {
         if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
     }
@@ -144,51 +153,58 @@ abstract class MonacoRightGutterOverlay {
 class CommentRoot extends MonacoRightGutterOverlay {
     readonly el: TagElement<"div">;
     private highlights: string[] = [];
+    private cleanup: (() => void)[] = [];
 
     constructor(readonly dispatcher: NotebookMessageDispatcher,
                 readonly rootState: StateHandler<CellComment>,
                 readonly childrenState: StateHandler<CellComment[]>,
                 readonly currentSelection: StateHandler<PosRange | undefined>,
                 editor: editor.ICodeEditor,
-                cellId: number) {
-        super(editor, rootState.getState().range);
-        this.setHighlight();
-        currentSelection.addObserver(() => {
-            this.setHighlight();
-        });
+                private cellId: number) {
+        super(editor);
+        this.handleSelection();
+        const selectionObs = currentSelection.addObserver(() => this.handleSelection());
+        this.cleanup.push(() => currentSelection.removeObserver(selectionObs))
 
         this.el.classList.add('comment-container');
 
         let root = new CommentComponent(dispatcher, cellId, rootState.getState());
         const commentList = div(['comments-list'], [root.el]);
         this.el.appendChild(commentList);
-        rootState.addObserver(changedRoot => {
+        const rootObs = rootState.addObserver(changedRoot => {
             const newRoot = new CommentComponent(dispatcher, cellId, changedRoot);
             root.el.replaceWith(newRoot.el);
             root = newRoot;
         });
+        this.cleanup.push(() => rootState.removeObserver(rootObs))
 
-        childrenState.getState()
-            .sort((a, b) => b.createdAt - a.createdAt)
-            .forEach(comment => {
-                this.el.appendChild(new CommentComponent(dispatcher, cellId, comment).el);
-            });
-        childrenState.addObserver(newChildren => {
+        const newComment = new NewCommentComponent(dispatcher, this.range, cellId);
+
+        const handleNewChildren = (newChildren: CellComment[]) => {
             // replace all the children. if this causes perf issues, we will need to do something more granular.
             commentList.innerHTML = "";
             commentList.appendChild(root.el);
             newChildren
-                .sort((a, b) => b.createdAt - a.createdAt)
+                .slice() // `newChildren` is frozen since it's coming from a state change
+                // descending sort by creation time. Since createdAt is a bigInt, we can't just subtract the numbers, apparently.
+                .sort((a, b) =>
+                    a.createdAt === b.createdAt
+                        ? 0
+                        : a.createdAt > b.createdAt
+                            ? 1
+                            : -1
+                )
                 .forEach(comment => {
                     commentList.appendChild(new CommentComponent(dispatcher, cellId, comment).el);
                 });
             commentList.appendChild(newComment.el);
-        });
+        }
 
-        const newComment = new NewCommentComponent(dispatcher, this.range, cellId);
-        commentList.append(newComment.el);
+        handleNewChildren(childrenState.getState())
+        const childrenObs = childrenState.addObserver(c => handleNewChildren(c));
+        this.cleanup.push(() => childrenState.removeObserver(childrenObs))
 
-        editor.onDidChangeModelContent(() => {
+        const changeListener = editor.onDidChangeModelContent(() => {
             const model = this.editor.getModel();
             if (model) {
                 const modelDecorations = model.getAllDecorations();
@@ -213,6 +229,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
                 }
             }
         })
+        this.cleanup.push(() => changeListener.dispose())
     }
 
     get uuid() {
@@ -223,12 +240,19 @@ class CommentRoot extends MonacoRightGutterOverlay {
         return this.rootState.getState().range;
     }
 
-    setHighlight() {
+    handleSelection() {
         const model = this.editor.getModel();
         if (model) {
             const mRange = this.range.toMRange(model);
             const currentPosition = this.editor.getPosition();
-            const highlightClass = currentPosition && mRange.containsPosition(currentPosition) ? "comment-highlight-strong" : "comment-highlight";
+            const selected = currentPosition && mRange.containsPosition(currentPosition);
+            let highlightClass = "comment-highlight";
+            if (selected) {
+                highlightClass = "comment-highlight-strong";
+                this.show()
+            } else {
+                this.hide()
+            }
             this.highlights = this.editor.deltaDecorations(this.highlights, [{
                 range: mRange,
                 options: {
@@ -241,27 +265,25 @@ class CommentRoot extends MonacoRightGutterOverlay {
     }
 
     dispose() {
-
-    }
-
-    show() {
-
-    }
-
-    hide() {
-
+        // we need to delete all children when the root is deleted.
+        this.childrenState.getState().forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
+        this.cleanup.forEach(f => f())
+        this.hide()
+        this.editor.deltaDecorations(this.highlights, []) // clear highlights
     }
 }
 
 class CommentButtonComponent extends MonacoRightGutterOverlay{
     constructor(readonly dispatcher: NotebookMessageDispatcher, editor: editor.ICodeEditor, readonly range: PosRange, readonly cellId: number) {
-        super(editor, range);
+        super(editor);
 
         const button = div(['new-comment-button'], []).click(evt => {
             evt.stopPropagation();
             evt.preventDefault();
 
-            button.replaceWith(new NewCommentComponent(dispatcher, range, cellId).el);
+            const newComment = new NewCommentComponent(dispatcher, range, cellId)
+            newComment.display(this)
+                .then(() => this.hide())
         });
         this.el.appendChild(button);
     }
@@ -269,7 +291,8 @@ class CommentButtonComponent extends MonacoRightGutterOverlay{
 
 class NewCommentComponent {
     readonly el: TagElement<"div">;
-    private currentIdentity?: Identity;
+    private currentIdentity: Identity;
+    onCreate?: () => void;
 
     constructor(readonly dispatcher: NotebookMessageDispatcher,
                 readonly range: PosRange,
@@ -277,45 +300,66 @@ class NewCommentComponent {
 
         this.currentIdentity = ServerStateHandler.get.getState().identity;
 
-        this.el.classList.add('comment-container');
-
         const doCreate = () => {
             this.dispatcher.dispatch(new CreateComment(cellId, createCellComment({
                 range: range,
-                author: this.currentIdentity?.name ?? "Unknown User",
+                author: this.currentIdentity.name,
                 authorAvatarUrl: this.currentIdentity?.avatar ?? undefined,
                 createdAt: Date.now(),
                 content: text.value
             })));
+            text.value = ""
+            if (this.onCreate) this.onCreate()
         };
 
-        const text = textarea(['comment-text'], '', '').listener('keydown', (evt: KeyboardEvent) => {
-            if (this.currentIdentity?.name && evt.shiftKey && evt.key === "Enter") {
-                doCreate();
+        const controls = div(['controls', 'hide'], [
+            button(['create-comment-button'], {}, ['Comment']).mousedown(evt => {
                 evt.stopPropagation();
                 evt.preventDefault();
-            }
-        });
-        this.el = div(['create-comment', 'comment'], [
-            div(['header'], [
-                ...(this.currentIdentity?.avatar ? [img(['avatar'], this.currentIdentity.avatar)] : []),
-                span(['author'], [this.currentIdentity?.name ?? "Unknown user"]),
-            ]),
-            div(['comment-content'], [
-                text,
-                div(['controls'], [
-                    button(['create-comment-button'], {}, ['Comment']).click(() => doCreate()),
-                    button(['cancel'], {}, ['Cancel']).click(() => this.el.parentElement!.blur())
+                doCreate()
+            }),
+            button(['cancel'], {}, ['Cancel']).mousedown(() => controls.classList.add("hide"))
+        ])
+        const text = textarea(['comment-text'], '', '')
+            .listener('keydown', (evt: KeyboardEvent) => {
+                if (this.currentIdentity.name && evt.shiftKey && evt.key === "Enter") {
+                    doCreate();
+                    evt.stopPropagation();
+                    evt.preventDefault();
+                }
+            }).listener('focus', evt => {
+                controls.classList.remove("hide")
+            }).listener('blur', () => {
+                controls.classList.add("hide")
+            });
+        this.el = div(["comments-list"], [
+            div(['create-comment', 'comment'], [
+                div(['header'], [
+                    ...(this.currentIdentity?.avatar ? [img(['avatar'], this.currentIdentity.avatar)] : []),
+                    span(['author'], [this.currentIdentity.name]),
+                ]),
+                div(['comment-content'], [
+                    text,
+                    controls
                 ])
             ])
         ])
+    }
 
+    // display using the provided overlay
+    display(overlay: MonacoRightGutterOverlay) {
+        overlay.el.innerHTML = "";
+        overlay.el.appendChild(this.el);
+        overlay.el.classList.add("comment-container");
+        return new Promise(resolve => {
+            this.onCreate = resolve
+        })
     }
 }
 
 class CommentComponent {
     readonly el: TagElement<"div">;
-    private currentIdentity?: Identity;
+    private currentIdentity: Identity;
 
     constructor(readonly dispatcher: NotebookMessageDispatcher,
                 readonly cellId: number,
@@ -362,14 +406,14 @@ class CommentComponent {
 
     setEditable(b: boolean) {
         if (b) {
-            const doEdit = () => {
-                this.dispatcher.dispatch(new UpdateComment(this.cellId, this.comment.uuid, this.comment.range, this.comment.content));
+            const doEdit = (content: string) => {
+                this.dispatcher.dispatch(new UpdateComment(this.cellId, this.comment.uuid, this.comment.range, content));
             };
 
             this.el.innerHTML = "";
             const text = textarea(['comment-text'], '', this.comment.content).listener('keydown', (evt: KeyboardEvent) => {
                 if (this.currentIdentity?.name && evt.shiftKey && evt.key === "Enter") {
-                    doEdit();
+                    doEdit(text.value);
                     evt.stopPropagation();
                     evt.preventDefault();
                 }
@@ -378,12 +422,12 @@ class CommentComponent {
                 div(['create-comment', 'comment'], [
                     div(['header'], [
                         ...(this.currentIdentity?.avatar ? [img(['avatar'], this.currentIdentity.avatar)] : []),
-                        span(['author'], [this.currentIdentity?.name ?? "Unknown user"]),
+                        span(['author'], [this.currentIdentity.name]),
                     ]),
                     div(['comment-content'], [
                         text,
                         div(['controls'], [
-                            button(['create-comment-button'], {}, ['Comment']).click(() => doEdit()),
+                            button(['create-comment-button'], {}, ['Comment']).click(() => doEdit(text.value)),
                             button(['cancel'], {}, ['Cancel']).click(() => this.setEditable(false))
                         ])
                     ]),
