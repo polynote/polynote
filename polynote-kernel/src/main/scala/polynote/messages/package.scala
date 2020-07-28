@@ -65,7 +65,7 @@ package object messages {
   implicit def shortListEncoder[A](implicit listEncoder: Encoder[List[A]]): Encoder[ShortList[A]] = listEncoder.contramap(l => l)
   implicit def shortListDecoder[A](implicit listDecoder: Decoder[List[A]]): Decoder[ShortList[A]] = listDecoder.map(l => ShortList(l))
 
-  implicit def listString2ShortListTinyString(ls: List[String]): TinyList[TinyString] = TinyList(ls.map(TinyString(_)))
+  implicit def truncateShortList[T](list: List[T]): ShortList[T] = ShortList(list.take(Short.MaxValue))
 
   trait TinyTag // denotes that the value is expected to be < 256 elements in length
 
@@ -109,6 +109,8 @@ package object messages {
   
   implicit def tinyListEncoder[A](implicit listEncoder: Encoder[List[A]]): Encoder[TinyList[A]] = listEncoder.contramap(l => l)
   implicit def tinyListDecoder[A](implicit listDecoder: Decoder[List[A]]): Decoder[TinyList[A]] = listDecoder.map(l => TinyList(l))
+
+  implicit def listString2TinyListTinyString(ls: List[String]): TinyList[TinyString] = TinyList(ls.map(TinyString(_)))
 
   type TinyMap[A, B] = Map[A, B] @@ TinyTag
   def TinyMap[A, B](map: Map[A, B]): TinyMap[A, B] = if (map.size > 255)

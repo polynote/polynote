@@ -149,6 +149,8 @@ object Rope {
   implicit val encoder: Encoder[Rope] = Encoder.encodeString.contramap(_.toString)
   implicit val decoder: Decoder[Rope] = Decoder.decodeString.map(Rope.apply)
   implicit val codec: Codec[Rope] = scodec.codecs.implicits.implicitStringCodec.xmap(Rope.apply, _.toString)
+  
+  implicit def fromString(str: String): Rope = Rope(str)
 
   val thresh = 2048
 
