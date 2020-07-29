@@ -35,8 +35,8 @@ package object config {
     changing: Option[Boolean] = None
   ) extends RepositoryConfig {
 
-    def artifactPattern: String = artifactPatternOpt.getOrElse("[orgPath]/[module](_[scalaVersion])(_[sbtVersion])/[revision]/[artifact]-[revision](-[classifier]).[ext]")
-    def metadataPattern: String = metadataPatternOpt.getOrElse("[orgPath]/[module](_[scalaVersion])(_[sbtVersion])/[revision]/[module](_[scalaVersion])(_[sbtVersion])-[revision]-ivy.xml")
+    def artifactPattern: String = artifactPatternOpt.filter(s => s.nonEmpty).getOrElse("[orgPath]/[module](_[scalaVersion])(_[sbtVersion])/[revision]/[artifact]-[revision](-[classifier]).[ext]")
+    def metadataPattern: String = metadataPatternOpt.filter(s => s.nonEmpty).getOrElse("[orgPath]/[module](_[scalaVersion])(_[sbtVersion])/[revision]/[module](_[scalaVersion])(_[sbtVersion])-[revision]-ivy.xml")
 
   }
 
