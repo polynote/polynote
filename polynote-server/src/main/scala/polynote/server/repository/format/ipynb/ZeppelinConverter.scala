@@ -22,7 +22,7 @@ class ZeppelinToIpynbFormat extends NotebookFormat {
   override val extension: String = "json"
   override val mime: String = "application/json"
 
-  override def decodeNotebook(noExtPath: String, rawContent: String): RIO[BaseEnv with GlobalEnv, Notebook] = {
+  override def decodeNotebook(noExtPath: String, rawContent: String): RIO[BaseEnv with Config, Notebook] = {
     for {
       parsed <- ZIO.fromEither(parse(rawContent))
       zep <- ZIO.fromEither(parsed.as[ZeppelinNotebook])
@@ -34,7 +34,7 @@ class ZeppelinToIpynbFormat extends NotebookFormat {
     }
   }
 
-  override def encodeNotebook(notebook: repository.NotebookContent): RIO[BaseEnv with GlobalEnv, String] =
+  override def encodeNotebook(notebook: repository.NotebookContent): RIO[Any, String] =
     new IPythonFormat().encodeNotebook(notebook)
 }
 
@@ -55,13 +55,14 @@ final case class ZeppelinParagraph(
   text: Option[String],
   results: Option[ZeppelinResult],
   status: ZeppelinStatus,
-  language: String
+  language: Option[String]
 ) {
   def toJupyterCell: JupyterCell = {
     val (cellType, res) = language match {
-      case "markdown" => (Markdown, None)
-      case "text"     => (Markdown, None)
-      case _          => (Code, results.map(_.toJupyterOutput))
+      case Some("markdown") => (Markdown, None)
+      case Some("text")     => (Markdown, None)
+      case Some(_)          => (Code, results.map(_.toJupyterOutput))
+      case None             => (Code, None)
     }
 
     val source = text.toList.flatMap(_.linesWithSeparators) match {
@@ -74,7 +75,7 @@ final case class ZeppelinParagraph(
       cell_type = cellType,
       execution_count = None,
       metadata = None, //TODO: add exec info
-      language = Option(language),
+      language = language,
       source = source,
       outputs = res
     )

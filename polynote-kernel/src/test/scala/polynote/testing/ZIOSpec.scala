@@ -8,6 +8,7 @@ import polynote.kernel.environment.{Config, Env, NotebookUpdates}
 import interpreter.Interpreter
 import org.scalatest.{BeforeAndAfterAll, Suite}
 import polynote.kernel.logging.Logging
+import polynote.testing
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
@@ -66,6 +67,14 @@ trait ConfiguredZIOSpec extends ZIOSpecBase[BaseEnv with Config] { this: Suite =
   def config: PolynoteConfig = PolynoteConfig()
   override lazy val envLayer: ZLayer[zio.ZEnv, Nothing, BaseEnv with Config] =
     baseLayer ++ ZLayer.succeed(config)
+
+  implicit class IORunOpsWithConfig[A](val self: ZIO[BaseEnv with Config, Throwable, A]) {
+    def runIO(): A = ConfiguredZIOSpec.this.runIOConfig(self)
+  }
+
+  def runIOConfig[A](io: ZIO[BaseEnv with Config, Throwable, A]): A = runtime.unsafeRunSync(io.provideSomeLayer(envLayer)).getOrElse {
+    c => throw c.squash
+  }
 }
 
 trait ExtConfiguredZIOSpec[Env <: Has[_]] extends ZIOSpecBase[BaseEnv with Config with Env] {
