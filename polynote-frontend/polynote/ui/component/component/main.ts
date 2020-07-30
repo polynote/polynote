@@ -5,7 +5,7 @@ import * as monaco from "monaco-editor";
 import {theme} from "../../monaco/theme";
 import {SocketSession} from "../messaging/comms";
 import {ServerMessageReceiver} from "../messaging/receiver";
-import {LoadNotebook, ServerMessageDispatcher} from "../messaging/dispatcher";
+import {LoadNotebook, Reconnect, ServerMessageDispatcher} from "../messaging/dispatcher";
 import {ToolbarComponent} from "./toolbar";
 import {SplitViewComponent} from "./splitview";
 import {ServerStateHandler} from "../state/server_state";
@@ -29,14 +29,25 @@ class Main {
         this.receiver = new ServerMessageReceiver();
         const dispatcher = new ServerMessageDispatcher(socket);
 
-        // serverDispatcher.dispatch(new RequestNotebooksList()) // TODO: notebook list component should do this in its constructor!
+        // handle reconnecting
+        const reconnectOnWindowFocus = () => {
+            console.log("Window was focused! Attempting to reconnect.")
+            dispatcher.dispatch(new Reconnect(true))
+        }
+        ServerStateHandler.get.view("connectionStatus").addObserver(status => {
+            if (status === "disconnected") {
+                window.addEventListener("focus", reconnectOnWindowFocus)
+            } else {
+                window.removeEventListener("focus", reconnectOnWindowFocus)
+            }
+        })
 
         const nbList = new NotebookList(dispatcher)
         const leftPane = { header: nbList.header, el: nbList.el };
         const home = new Home(dispatcher)
         const tabs = new TabComponent(dispatcher, home.el);
         const center = tabs.el;
-        const kernelPane = new KernelPane()
+        const kernelPane = new KernelPane(dispatcher)
         const rightPane = { header: kernelPane.header, el: kernelPane.el};
 
         this.el = div(['main-ui'], [
@@ -126,9 +137,7 @@ mainEl?.appendChild(Main.get.el);
 
 
 // TODO LIST ****************************************************************************************************************************
-//      - Reconnect / reload after disconnect (and make sure everything is disabled when disconnected)
 //      - Client Backup
 //      - How to deal with disposed StateHandlers? Check for memory leaks?
-//      - make sure all errors are displayed in task manager
 //      - there's some weird flashes when notebooks are switched. unclear why. might be related to gfx card stuff.
 //      - clean up code with some helper functions. e.g., dispatcher notebook state updating cell state with cells.map

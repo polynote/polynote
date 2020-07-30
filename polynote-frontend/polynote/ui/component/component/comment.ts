@@ -14,8 +14,10 @@ import {Identity} from "../../../data/messages";
 
 
 export class CommentHandler {
-    //                            Range -> Comment
+    //                              id -> Comment
     readonly commentRoots: Record<string, CommentRoot> = {};
+    //                              range -> id
+    readonly rootRanges: Record<string, string> = {};
 
     constructor(dispatcher: NotebookMessageDispatcher,
                 commentsState: StateHandler<Record<string, CellComment>>,
@@ -30,45 +32,67 @@ export class CommentHandler {
            // Child comments are handled by their roots.
            added.forEach(commentId => {
                const newComment = currentComments[commentId];
-               const maybeRoot = this.commentRoots[newComment.range.toString];
-               if (maybeRoot === undefined || maybeRoot.rootState.getState().createdAt > newComment.createdAt) {
-                   this.commentRoots[newComment.range.toString] =
+               const maybeRootId = this.rootRanges[newComment.range.toString];
+               if (maybeRootId === undefined) {
+                   // this is a fresh new root
+                   this.commentRoots[newComment.uuid] =
                        new CommentRoot(dispatcher, new StateHandler(newComment), new StateHandler([]), currentSelection, editor, cellId);
+                   this.rootRanges[newComment.range.toString] = newComment.uuid;
+               } else { // there is already a root at this location, but it might need to be replaced by this one
+                   const maybeRoot = this.commentRoots[maybeRootId];
+                   if (maybeRoot.rootState.getState().createdAt > newComment.createdAt) {
+                       // this comment is older than the current root at this position, we need to remove the root and set this one in its place.
+                       delete this.commentRoots[maybeRoot.uuid]
+                       delete this.rootRanges[maybeRoot.range.toString]
+
+                       this.commentRoots[newComment.uuid] =
+                           new CommentRoot(dispatcher, new StateHandler(newComment), new StateHandler([]), currentSelection, editor, cellId);
+                       this.rootRanges[newComment.range.toString] = newComment.uuid;
+                   } // else, the comment is a child and will be handled later.
                }
            });
 
            removed.forEach(commentId => {
                const removedComment = oldComments[commentId];
-               const maybeRoot = this.commentRoots[removedComment.range.toString];
+               const maybeRoot = this.commentRoots[removedComment.uuid];
                if (maybeRoot && maybeRoot.uuid === commentId) {
-                   // If this is a root comment, we delete it and it will delete all it's children
+                   // If this is a root comment, we delete it (it will handle deleting all it's children)
                    maybeRoot.dispose();
-                   delete this.commentRoots[removedComment.range.toString];
+                   delete this.commentRoots[removedComment.uuid];
+                   delete this.rootRanges[removedComment.range.toString];
                }
            });
 
+           // at this point, all the roots exist but their ranges might not be correct. So we need to update the root ranges
+           Object.values(this.commentRoots).forEach(root => {
+               const maybeChanged = currentComments[root.uuid];
+               if (root.range.toString !== maybeChanged.range.toString) {
+                   delete this.rootRanges[root.range.toString];
+                   this.rootRanges[maybeChanged.range.toString] = root.uuid
+               }
+           })
+
            // ok, now we update all the root comments and their children
-           const rootChildren: Record<string, CellComment[]> = {}; // range -> comment
+           const rootChildren: Record<string, CellComment[]> = {}; // root uuid -> comment
            Object.values(currentComments).forEach(comment => {
-               // at this point we should have a root for this comment's range.
-               const maybeRoot = this.commentRoots[comment.range.toString];
-               if (maybeRoot) {
+               // at this point, we should have a root for this comment's range.
+               const maybeRootId = this.rootRanges[comment.range.toString];
+               const maybeRoot = this.commentRoots[maybeRootId];
+               if (maybeRootId && maybeRoot) {
                    if (comment.uuid === maybeRoot.uuid) {
-                       // If this is the root comment, we set its state.
+                       // if this is a root comment, we update its state
                        maybeRoot.rootState.updateState(() => comment);
-                       rootChildren[maybeRoot.range.toString] = rootChildren[maybeRoot.range.toString] ?? [];
                    } else {
-                       // Otherwise, it's a child comment so we collect it up here.
-                       rootChildren[maybeRoot.range.toString] = [...rootChildren[maybeRoot.range.toString] ?? [], comment];
+                       // Otherwise, it's a child comment, so we add it to rootChildren.
+                       rootChildren[maybeRoot.uuid] = [...rootChildren[maybeRoot.uuid] ?? [], comment];
                    }
-               } // if the root doesn't exist at this point it means it was likely just deleted. So do nothing here because the comments should be getting deleted concurrently.
+               } // else, this comment's root was either deleted or its range was updated. Either way, the root will handle dealing with it so we can ignore it for now.
            });
 
            // Finally, we update all the root children
-           Object.entries(rootChildren).forEach(([rootRange, children]) => {
-               const root = this.commentRoots[rootRange];
-               root.childrenState.updateState(() => children);
-
+           Object.values(this.commentRoots).forEach(root => {
+               const children = rootChildren[root.uuid] ?? [];
+               root.childrenState.updateState(() => children)
            })
        }
        handleComments(commentsState.getState())
@@ -79,7 +103,7 @@ export class CommentHandler {
        const handleSelection = (currentSelection?: PosRange) => {
            const model = editor.getModel();
            if (currentSelection && currentSelection.length > 0 && model) {
-               const maybeEquals = Object.keys(this.commentRoots)
+               const maybeEquals = Object.keys(this.rootRanges)
                    .map(s => PosRange.fromString(s))
                    .find(r => r.equals(currentSelection));
                if (maybeEquals === undefined) {
@@ -91,14 +115,21 @@ export class CommentHandler {
                } // else the CommentRoot will handle showing itself.
            }
            // if we got here, we should hide the button
-           if (commentButton) {
+           if (commentButton && !commentButton.el.contains(document.activeElement)) {
                commentButton.hide();
                commentButton = undefined;
            }
        }
        handleSelection(currentSelection.getState())
        currentSelection.addObserver(s => handleSelection(s))
+    }
 
+    activeComment(): CommentRoot | undefined {
+        return Object.values(this.commentRoots).find(root => root.visible)
+    }
+
+    hide() {
+        Object.values(this.commentRoots).forEach(root => root.hide())
     }
 
 }
@@ -171,14 +202,22 @@ class CommentRoot extends MonacoRightGutterOverlay {
         let root = new CommentComponent(dispatcher, cellId, rootState.getState());
         const commentList = div(['comments-list'], [root.el]);
         this.el.appendChild(commentList);
-        const rootObs = rootState.addObserver(changedRoot => {
-            const newRoot = new CommentComponent(dispatcher, cellId, changedRoot);
+        const rootObs = rootState.addObserver((currentRoot, previousRoot) => {
+            console.log(currentRoot.uuid, "updating to new root!")
+            const newRoot = new CommentComponent(dispatcher, cellId, currentRoot);
             root.el.replaceWith(newRoot.el);
             root = newRoot;
+
+            if (currentRoot.range.toString !== previousRoot.range.toString) {
+                this.handleSelection()  // TODO: sometimes this is too slow :(
+                this.childrenState.getState().forEach(child => {
+                    dispatcher.dispatch(new UpdateComment(cellId, child.uuid, currentRoot.range, child.content))
+                })
+            }
         });
         this.cleanup.push(() => rootState.removeObserver(rootObs))
 
-        const newComment = new NewCommentComponent(dispatcher, this.range, cellId);
+        const newComment = new NewCommentComponent(dispatcher, () => this.range, cellId);
 
         const handleNewChildren = (newChildren: CellComment[]) => {
             // replace all the children. if this causes perf issues, we will need to do something more granular.
@@ -217,7 +256,6 @@ class CommentRoot extends MonacoRightGutterOverlay {
                         // we have a highlight with the same ID, but a different range. This means there is some drift.
                         const newRange = new PosRange(model.getOffsetAt(maybeDecoration.range.getStartPosition()), model.getOffsetAt(maybeDecoration.range.getEndPosition()));
                         dispatcher.dispatch(new UpdateComment(cellId, rootState.getState().uuid, newRange, rootState.getState().content));
-                        // TODO: update the children too?
                     }
                 } else {
                     // decoration wasn't found or was empty, so we need to delete it.
@@ -264,6 +302,17 @@ class CommentRoot extends MonacoRightGutterOverlay {
         }
     }
 
+    public visible = false;
+    show() {
+        super.show()
+        this.visible = true
+    }
+
+    hide() {
+        super.hide()
+        this.visible = false
+    }
+
     dispose() {
         // we need to delete all children when the root is deleted.
         this.childrenState.getState().forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
@@ -277,11 +326,11 @@ class CommentButtonComponent extends MonacoRightGutterOverlay{
     constructor(readonly dispatcher: NotebookMessageDispatcher, editor: editor.ICodeEditor, readonly range: PosRange, readonly cellId: number) {
         super(editor);
 
-        const button = div(['new-comment-button'], []).click(evt => {
+        const button = div(['new-comment-button'], []).mousedown(evt => {
             evt.stopPropagation();
             evt.preventDefault();
 
-            const newComment = new NewCommentComponent(dispatcher, range, cellId)
+            const newComment = new NewCommentComponent(dispatcher, () => range, cellId)
             newComment.display(this)
                 .then(() => this.hide())
         });
@@ -295,14 +344,14 @@ class NewCommentComponent {
     onCreate?: () => void;
 
     constructor(readonly dispatcher: NotebookMessageDispatcher,
-                readonly range: PosRange,
+                readonly range: () => PosRange,
                 readonly cellId: number) {
 
         this.currentIdentity = ServerStateHandler.get.getState().identity;
 
         const doCreate = () => {
             this.dispatcher.dispatch(new CreateComment(cellId, createCellComment({
-                range: range,
+                range: range(),
                 author: this.currentIdentity.name,
                 authorAvatarUrl: this.currentIdentity?.avatar ?? undefined,
                 createdAt: Date.now(),
@@ -344,6 +393,14 @@ class NewCommentComponent {
                 ])
             ])
         ])
+
+        ServerStateHandler.get.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
+            if (currentStatus === "disconnected" && previousStatus === "connected") {
+                this.el.classList.add("hide")
+            } else if (currentStatus === "connected" && previousStatus === "disconnected") {
+                this.el.classList.remove("hide")
+            }
+        })
     }
 
     // display using the provided overlay

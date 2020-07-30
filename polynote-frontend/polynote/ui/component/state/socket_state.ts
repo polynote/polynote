@@ -3,22 +3,25 @@ import {MessageListener, SocketSession} from "../messaging/comms";
 import * as messages from "../../../data/messages";
 import {Message} from "../../../data/messages";
 import {ServerErrorWithCause} from "../../../data/result";
-import {a} from "../../util/tags";
 
 export interface SocketState {
     status: "connected" | "disconnected",
-    errors: ServerErrorWithCause[]
+    // EPHEMERAL: error gets cleared after broadcast (see SocketStateHandler).
+    error?: ConnectionError
 }
 
-// export interface ISocket {
-//     url: {href: string},
-//     // TODO: is there a more clever way to handle these delegates?
-//     addMessageListener(...args: Parameters<SocketSession["addMessageListener"]>): ReturnType<SocketSession["addMessageListener"]>
-//     addEventListener(...args: Parameters<SocketSession["addEventListener"]>): ReturnType<SocketSession["addEventListener"]>
-//     send(...args: Parameters<SocketSession["send"]>): ReturnType<SocketSession["send"]>
-//     reconnect(...args: Parameters<SocketSession["reconnect"]>): ReturnType<SocketSession["reconnect"]>
-//     close(...args: Parameters<SocketSession["close"]>): ReturnType<SocketSession["close"]>
-// }
+export enum ConnectionStatus {ONLINE, OFFLINE};
+
+export class ConnectionError {
+    constructor(readonly status: ConnectionStatus, readonly error: ServerErrorWithCause) {
+        Object.freeze(this);
+    }
+
+    static unapply(inst: ConnectionError): ConstructorParameters<typeof ConnectionError> {
+        return [inst.status, inst.error];
+    }
+}
+
 
 /**
  * SocketStateHandler manages a Socket. It does not hold a reference to the socket, instead pushing it to the Sockets global map.
@@ -35,7 +38,7 @@ export class SocketStateHandler extends StateHandler<SocketState> {
         return SocketStateHandler.inst;
     }
 
-    constructor(socket: SocketSession, initial: SocketState = {status: "disconnected", errors: []}) {
+    constructor(socket: SocketSession, initial: SocketState = {status: "disconnected", error: undefined}) {
         super(initial);
 
         this.socketKey = socket.url.href;
@@ -53,24 +56,47 @@ export class SocketStateHandler extends StateHandler<SocketState> {
             })
         });
         socket.addEventListener('error', evt => {
+            console.log("got error event from socket: ", evt)
             const url = new URL(socket.url.toString());
             url.protocol = document.location.protocol;
             const req = new XMLHttpRequest();
             req.responseType = "arraybuffer";
+            const updateError = (error: ConnectionError) => {
+                console.log("Updating state with ", error)
+                this.updateState(s => {
+                    return {
+                        error: error,
+                        status: "disconnected"
+                    }
+                })
+            }
             req.addEventListener("readystatechange", evt => {
-                if (req.readyState == 4) {
+                console.log("got readystatechange after socket error", evt, "req", req)
+                if (req.readyState === XMLHttpRequest.DONE) {
                     if (req.response instanceof ArrayBuffer && req.response.byteLength > 0) {
-                        const msg = Message.decode(req.response);
+                        let msg: Message;
+                        try {
+                            msg = Message.decode(req.response);
+                        } catch (e) {
+                            if (e instanceof Error) {
+                                msg = new messages.Error(0, new ServerErrorWithCause(e.constructor.name, e.message || e.toString(), []))
+                            } else {
+                                msg = new messages.Error(0, new ServerErrorWithCause("Websocket Connection Error", e.toString(), []))
+                            }
+                        }
                         if (msg instanceof messages.Error) {
                             socket.close();
-                            this.updateState(s => {
-                                return {
-                                    ...s,
-                                    errors: [...s.errors, msg.error],
-                                    status: "disconnected"
-                                }
-                            })
+                            console.log("got error message", msg)
+                            // since we got an error message, we know we were able to at least open the socket, so the
+                            // connection is online.
+                            updateError(new ConnectionError(ConnectionStatus.ONLINE, msg.error))
                         }
+                    } else if (req.status === 0) {
+                        console.log("An error occurred opening the websocket!")
+                        // Assume that we are offline because we couldn't even open the websocket.
+                        updateError(new ConnectionError(ConnectionStatus.OFFLINE,
+                            new ServerErrorWithCause("Websocket Connection Error", "Error occurred connecting to websocket. \n" +
+                                "Polynote has been disconnected from the server, so editing and execution functionality has been disabled.", [])))
                     }
                 }
             });

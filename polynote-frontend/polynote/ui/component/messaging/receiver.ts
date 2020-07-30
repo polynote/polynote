@@ -533,6 +533,12 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             return { ...s, notebooks }
         });
         this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
+            // First, we need to check to see if versions match. If they don't, we need to reload to clear out any
+            // messed up state!
+            if (s.serverVersion !== "unknown" && serverVersion !== s.serverVersion) {
+                window.location.reload()
+            }
+
             // inject the client interpreters here as well.
             Object.keys(ClientInterpreters).forEach(key => {
                 interpreters[key] = ClientInterpreters[key].languageTitle

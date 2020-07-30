@@ -16,10 +16,6 @@ export class Notebook {
     readonly el: TagElement<"div">;
     readonly cells: Record<number, {cell: CellContainerComponent, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
     cellOrder: Record<number, number> = {}; // index => cell id;
-    // private pendingHint?: {
-    //     type: "completion" | "signature",
-    //     resolve: (hint: CompletionList | (SignatureHelp | undefined)) => void,
-    //     reject: () => void };
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         const path = notebookState.getState().path;
@@ -47,6 +43,9 @@ export class Notebook {
                 Object.values(this.cells).forEach(({cell, handler, el}) => {
                     cell.layout()
                 })
+            } else {
+                // deselect cells.
+                this.dispatcher.dispatch(new SetSelectedCell(undefined))
             }
         }
         handleVisibility(ServerStateHandler.get.getState().currentNotebook)

@@ -64,6 +64,10 @@ body {
 
   user-select: none;
 
+  .disabled {
+    pointer-events: none;
+  }
+
   .text {
     display: none;
   }
@@ -295,6 +299,10 @@ body {
       grid-template-rows: min-content;
       border-bottom-width: 1px;
       border-bottom-style: solid;
+
+      &.disabled {
+        pointer-events: none;
+      }
 
       button {
         line-height: 1;
@@ -1861,7 +1869,7 @@ button {
     white-space: pre;
     font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
 
-    width: 100%;
+    width: auto;
     background: white;
     border: solid lightgray 1px;
     padding: 3px;
@@ -2019,6 +2027,16 @@ button {
         transition: all 200ms;
       }
     }
+  }
+
+  &.disabled {
+    pointer-events: none;
+  }
+}
+
+.notebooks-list-header {
+  &.disabled {
+    pointer-events: none;
   }
 }
 

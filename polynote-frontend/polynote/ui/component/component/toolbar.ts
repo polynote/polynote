@@ -85,10 +85,16 @@ interface FancyButtonConfig {
 abstract class ToolbarElement {
     el: TagElement<"div">;
 
-    protected constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
-        connectionStatus.addObserver(status => {
-            this.setDisabled(status === "disconnected")
-        })
+    protected constructor(connectionStatus: StateHandler<"disconnected" | "connected">, disableOnDisconnect: boolean = true) {
+        if (disableOnDisconnect ) {
+            connectionStatus.addObserver((currentStatus, previousStatus) => {
+                if (currentStatus === "disconnected" && previousStatus === "connected") {
+                    this.el.classList.add("disabled")
+                } else if (currentStatus === "connected" && previousStatus === "disconnected") {
+                    this.el.classList.remove("disabled")
+                }
+            })
+        }
     }
 
     protected toolbarElem(name: string, buttonGroups: (TagElement<any>[] | FancyButtonConfig)[]) {
@@ -402,7 +408,7 @@ class SettingsToolbar extends ToolbarElement {
     private floatingMenu: TagElement<"div">;
 
     constructor(private dispatcher: ServerMessageDispatcher, connectionStatus: StateHandler<"disconnected" | "connected">) {
-        super(connectionStatus);
+        super(connectionStatus, false); // this section is not disabled on disconnect.
 
         this.el = this.toolbarElem("about", [[
             iconButton(["preferences"], "View UI Preferences", "cogs", "Preferences")

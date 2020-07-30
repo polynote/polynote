@@ -194,11 +194,19 @@ export class SocketSession extends EventTarget {
         }
     }
 
-    reconnect(onlyIfClosed: boolean) {
+    /**
+     * Create a new connection, closing the existing one if needed.
+     *
+     * @param onlyIfClosed  Whether to force a reconnect if the connection is currently open.
+     * @return              Whether a reconnect happened.
+     */
+    reconnect(onlyIfClosed: boolean): boolean {
         if (!this.socket || this.isClosed || (!onlyIfClosed && (this.socket.readyState > WebSocket.CONNECTING))) {
             this.close();
             this.mkSocket();
+            return true
         }
+        return false
     }
 
 }

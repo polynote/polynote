@@ -34,8 +34,7 @@ import {
     PosRange,
     Result,
     ResultValue,
-    RuntimeError,
-    ServerErrorWithCause
+    RuntimeError
 } from "../../../data/result";
 import {ServerStateHandler} from "../state/server_state";
 import {CellMetadata} from "../../../data/data";
@@ -62,6 +61,8 @@ import {NotificationHandler} from "../state/notification_handler";
 import {VimStatus} from "./vim_status";
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import {ClientInterpreters} from "./interpreter/client_interpreter";
+import {ErrorComponent} from "./error";
+import {Error} from "../../../data/messages";
 
 export class CellContainerComponent {
     readonly el: TagElement<"div">;
@@ -81,6 +82,14 @@ export class CellContainerComponent {
                 this.cell = newCell;
             }
         });
+
+        ServerStateHandler.get.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
+            if (currentStatus === "disconnected") {
+                this.cell.setDisabled(true)
+            } else if (previousStatus === "disconnected") {
+                this.cell.setDisabled(false)
+            }
+        })
     }
 
     private cellFor(lang: string) {
@@ -148,7 +157,7 @@ abstract class CellComponent {
 
     protected onSelected() {
         this.el?.classList.add("active");
-        this.el.focus()
+        this.el?.focus()
         this.scroll()
         if (!document.location.hash.includes(this.cellId)) {
             this.setUrl();
@@ -226,19 +235,22 @@ abstract class CellComponent {
 
     protected abstract getCurrentSelection(): string
 
+    abstract setDisabled(disabled: boolean): void
+
     delete() {}
 
     layout() {}
 }
 
 class CodeCellComponent extends CellComponent {
-
     private readonly editor: IStandaloneCodeEditor;
     private readonly editorEl: TagElement<"div">;
+    private cellInputTools: TagElement<"div">;
     private applyingServerEdits: boolean;
     private execDurationUpdater: number;
     private highlightDecorations: string[] = [];
     private vim?: any;
+    private commentHandler: CommentHandler;
 
     constructor(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>, private path: string) {
         super(dispatcher, cellState);
@@ -292,7 +304,9 @@ class CodeCellComponent extends CellComponent {
         });
         this.editor.onDidBlurEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "none" });
-            this.doDeselect();
+            if (!this.commentHandler.activeComment()) {
+                this.doDeselect();
+            }
         });
         this.editor.onDidChangeCursorSelection(evt => {
             // deep link - we only care if the user has selected more than a single character
@@ -352,9 +366,9 @@ class CodeCellComponent extends CellComponent {
                 })
             } else return []
         })
-        const runtimeErrorState = cellState.mapView<"runtimeError", ServerErrorTrace | undefined>("runtimeError", (runtimeError?: RuntimeError) => {
+        const runtimeErrorState = cellState.mapView<"runtimeError", ErrorComponent | undefined>("runtimeError", (runtimeError?: RuntimeError) => {
             if (runtimeError) {
-                const err = this.unrollServerError(runtimeError.error)
+                const err = ErrorComponent.fromServerError(runtimeError.error, this.cellId);
                 const cellLine = err.errorLine;
                 if (cellLine !== undefined && cellLine >= 0) {
                     const model = this.editor.getModel()!;
@@ -381,7 +395,7 @@ class CodeCellComponent extends CellComponent {
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
-                div(['cell-input-tools'], [
+                this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
                         dispatcher.dispatch(new RequestCellRun([this.state.id]))
                     }),
@@ -527,7 +541,7 @@ class CodeCellComponent extends CellComponent {
         cellState.view("presence").addObserver(presence => presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range)))
 
         // make sure to create the comment handler.
-        const commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
+       this.commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
     }
 
     // TODO: comment markers need to be updated here.
@@ -671,39 +685,6 @@ class CodeCellComponent extends CellComponent {
         }
     }
 
-    private unrollServerError(error: ServerErrorWithCause, maxDepth: number = 0, nested: boolean = false): ServerErrorTrace {
-        let errorLine: number | undefined = undefined;
-        const items: ServerErrorTrace["trace"]["items"] = [];
-        const message = `${error.message} (${error.className})`;
-
-        let reachedIrrelevant = false;
-
-        if (error.stackTrace?.length > 0) {
-            error.stackTrace.forEach((traceEl, i) => {
-                if (traceEl.file === this.cellId && traceEl.line >= 0) {
-                    if (errorLine === undefined)
-                        errorLine = traceEl.line ?? undefined;
-                    items.push({content: `(Line ${traceEl.line})`, type: "link"});
-                } else {
-                    if (traceEl.className === 'sun.reflect.NativeMethodAccessorImpl') { // TODO: seems hacky, maybe this logic fits better on the backend?
-                        reachedIrrelevant = true;
-                    }
-                    items.push({
-                        content: `${traceEl.className}.${traceEl.method}(${traceEl.file}:${traceEl.line})`,
-                        type: reachedIrrelevant ? 'irrelevant' : undefined})
-                }
-            });
-        }
-
-        const cause = (maxDepth > 0 && error.cause)
-            ? this.unrollServerError(error.cause, maxDepth - 1, true)
-            : undefined;
-        const label = nested ? "Caused by: " : "Uncaught exception: ";
-        const summary = {label, message};
-        const trace = {items, cause};
-        return {summary, trace, errorLine}
-    }
-
     private applyEdits(edits: ContentEdit[]) {
         // can't listen to these edits or they'll be sent to the server again
         // TODO: is there a better way to silently apply these edits? This seems like a hack; only works because of
@@ -840,6 +821,20 @@ class CodeCellComponent extends CellComponent {
         this.editor.focus()
     }
 
+    protected onDeselected() {
+        super.onDeselected();
+        this.commentHandler.hide()
+    }
+
+    setDisabled(disabled: boolean) {
+        this.editor.updateOptions({readOnly: disabled});
+        if (disabled) {
+            this.cellInputTools.classList.add("disabled")
+        } else {
+            this.cellInputTools.classList.remove("disabled")
+        }
+    }
+
     delete() {
         super.delete()
         VimStatus.get.deactivate(this.editor.getId())
@@ -858,17 +853,6 @@ class CodeCellComponent extends CellComponent {
 }
 
 type CellErrorMarkers = editor.IMarkerData & { originalSeverity: MarkerSeverity}
-type ServerErrorTrace = {
-    summary: {
-        label: string,
-        message: string
-    },
-    trace: {
-        items: {content: string, type?: "link" | "irrelevant"}[]
-        cause?: ServerErrorTrace
-    },
-    errorLine?: number
-}
 
 class CodeCellOutput {
     readonly el: TagElement<"div">;
@@ -884,7 +868,7 @@ class CodeCellOutput {
         private dispatcher: NotebookMessageDispatcher,
         private cellState: StateHandler<CellState>,
         compileErrorsHandler: StateHandler<CellErrorMarkers[][] | undefined>,
-        runtimeErrorHandler: StateHandler<ServerErrorTrace | undefined>) {
+        runtimeErrorHandler: StateHandler<ErrorComponent | undefined>) {
 
         const outputHandler = cellState.view("output");
         const resultsHandler = cellState.view("results");
@@ -911,7 +895,7 @@ class CodeCellOutput {
 
         compileErrorsHandler.addObserver(errors => this.setErrors(errors));
 
-        const handleRuntimeError = (error?: ServerErrorTrace) => {
+        const handleRuntimeError = (error?: ErrorComponent) => {
             this.setRuntimeError(error)
         }
         handleRuntimeError(runtimeErrorHandler.getState())
@@ -1077,35 +1061,12 @@ class CodeCellOutput {
         }
     }
 
-    setRuntimeError(error?: ServerErrorTrace) {
+    setRuntimeError(error?: ErrorComponent) {
         if (error) {
-            function rollupError(err: ServerErrorTrace): TagElement<"div" | "details"> {
-                const traceItems = err.trace.items.map(item => {
-                    if (item.type === "link") {
-                        return tag('li', [], {}, [span(['error-link'], [item.content])])
-                    } else if (item.type === "irrelevant") {
-                        return tag('li', ['irrelevant'], {}, [item.content])
-                    } else {
-                        return tag('li', [], {}, [item.content])
-                    }
-                });
-
-                const causeEl = err.trace.cause && rollupError(err.trace.cause);
-                const summaryContent = [span(['severity'], [err.summary.label]), span(['message'], [err.summary.message])];
-                if (traceItems.length > 0) {
-                    const traceContent = [tag('ul', ['stack-trace'], {}, traceItems), causeEl];
-                    return details([], summaryContent, traceContent)
-                } else {
-                    return div([], summaryContent)
-                }
-            }
-
-            const el = rollupError(error);
-
             this.cellOutputDisplay.classList.add('errors');
             this.cellOutputDisplay.appendChild(
                 div(['errors'], [
-                    blockquote(['error-report', 'Error'], [el])
+                    blockquote(['error-report', 'Error'], [error.el])
                 ])
             );
         } else {
@@ -1409,5 +1370,9 @@ export class TextCellComponent extends CellComponent {
     protected onSelected() {
         super.onSelected()
         this.editor.focus()
+    }
+
+    setDisabled(disabled: boolean) {
+        this.editor.disabled = disabled
     }
 }

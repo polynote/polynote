@@ -121,7 +121,7 @@ export class NotebookList {
 
     constructor(readonly dispatcher: ServerMessageDispatcher) {
 
-        this.header = h2([], [
+        this.header = h2(['notebooks-list-header'], [
             'Notebooks',
             span(['buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
@@ -146,10 +146,16 @@ export class NotebookList {
             this.el.addEventListener(evt, this.fileHandler.bind(this), false)
         });
 
-        ServerStateHandler.get.view("connectionStatus").addObserver(status=> {
-            const disabled = status === "disconnected";
-            [...this.el.querySelectorAll('.buttons button')].forEach((button: HTMLButtonElement) => button.disabled = disabled);
-        });
+        // disable the entire notebook list when disconnected from the server
+        ServerStateHandler.get.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
+            if (currentStatus === "disconnected" && previousStatus === "connected") {
+                this.el.classList.add("disabled")
+                this.header.classList.add("disabled")
+            } else if (currentStatus === "connected" && previousStatus === "disconnected") {
+                this.el.classList.remove("disabled")
+                this.header.classList.remove("disabled")
+            }
+        })
 
         ServerStateHandler.get.view("notebooks").addObserver((newNotebooks, oldNotebooks) => {
             const [removed, added] = diffArray(Object.keys(oldNotebooks), Object.keys(newNotebooks));

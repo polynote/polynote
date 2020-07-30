@@ -6,7 +6,7 @@ import {TaskInfo} from "../../../data/messages";
 export type KernelSymbols = (ResultValue)[];
 export type KernelStatus = 'busy' | 'idle' | 'dead' | 'disconnected';
 export type KernelInfo = Record<string, string>;
-export type KernelTasks = Record<string, TaskInfo>;
+export type KernelTasks = Record<string, TaskInfo>; // taskId -> TaskInfo
 
 export interface KernelState {
     symbols: KernelSymbols,

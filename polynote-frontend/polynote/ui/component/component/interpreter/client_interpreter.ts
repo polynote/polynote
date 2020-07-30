@@ -30,6 +30,8 @@ export const ClientInterpreters: Record<string, ClientInterpreter> = {
  *
  *  This will hopefully make it easier to fold vega / js interpretation into the server if we decide to do that.
  *
+ *  TODO: make singleton with lookup for each notebook I think...
+ *
  */
 export class ClientInterpreterComponent {
 

@@ -1,10 +1,14 @@
 import {StateHandler} from "./state_handler";
 import {ServerErrorWithCause} from "../../../data/result";
-import {Identity, KernelBusyState} from "../../../data/messages";
-import {NotebookState, NotebookStateHandler} from "./notebook_state";
+import {Identity} from "../../../data/messages";
+import {NotebookStateHandler} from "./notebook_state";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
-import {CloseNotebook, KernelCommand, LoadNotebook, NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {
+    CloseNotebook,
+    NotebookMessageDispatcher,
+    Reconnect
+} from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../../../data/data";
 import {removeKey} from "../../../util/functions";
@@ -20,8 +24,10 @@ export type NotebookInfo = {
     }
 };
 
+export type ServerError = { err: ServerErrorWithCause, code?: number };
+
 export interface ServerState {
-    errors: { code: number, err: ServerErrorWithCause }[],
+    errors: ServerError[],
     // Keys are notebook path. Values denote whether the notebook has ever been loaded in this session.
     notebooks: Record<string, NotebookInfo["loaded"]>,
     connectionStatus: "connected" | "disconnected",
@@ -187,6 +193,14 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             delete ServerStateHandler.notebooks[path]
             ServerStateHandler.getOrCreateNotebook(path)
         }
+    }
+
+    static reconnectNotebooks(onlyIfClosed: boolean) {
+        Object.entries(ServerStateHandler.notebooks).forEach(([path, notebook]) => {
+            if (notebook.loaded && notebook.info) {
+                notebook.info.dispatcher.dispatch(new Reconnect(onlyIfClosed))
+            }
+        })
     }
 
     static get runningNotebooks(): [string, NotebookInfo][] {

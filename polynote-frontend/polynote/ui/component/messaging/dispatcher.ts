@@ -5,17 +5,17 @@
  */
 import match from "../../../util/match";
 import * as messages from "../../../data/messages";
+import {HandleData, ModifyStream, ReleaseHandle, TableOp} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {ClientResult, Output, PosRange, ResultValue} from "../../../data/result";
-import {StateHandler} from "../state/state_handler";
+import {NoUpdate, StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../../../data/content_edit";
 import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_state";
-import {SocketStateHandler} from "../state/socket_state";
+import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
 import {About} from "../component/about";
 import {ValueInspector} from "../component/value_inspector";
-import {arrDeleteItem, collect, equalsByKey, partition} from "../../../util/functions";
-import {HandleData, ModifyStream, ReleaseHandle, TableOp} from "../../../data/messages";
+import {arrDeleteItem, collect, equalsByKey, partition, removeKey} from "../../../util/functions";
 import {Either} from "../../../data/types";
 import {DialogModal} from "../component/modal";
 import {ClientInterpreterComponent, ClientInterpreters} from "../component/interpreter/client_interpreter";
@@ -27,7 +27,7 @@ export abstract class MessageDispatcher<S> {
     abstract dispatch(action: UIAction): void
 }
 
-export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
+export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> {
     constructor(socket: SocketStateHandler, state: NotebookStateHandler, private clientInterpreter: ClientInterpreterComponent) {
         super(socket, state);
         // when the socket is opened, send a KernelStatus message to request the current status from the server.
@@ -41,7 +41,32 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
     dispatch(action: UIAction) {
         match(action)
             .when(Reconnect, (onlyIfClosed: boolean) => {
+                console.log("Attempting to reconnect to server")
                 this.socket.reconnect(onlyIfClosed)
+                const errorView = this.socket.view("error")
+                errorView.addObserver(err => {
+                    // if there was an error on reconnect, push it to the notebook state so it can be displayed
+                    if (err) {
+                        console.log("error on reconnecting notebook", err)
+                        this.state.updateState(s => {
+                            return {
+                                ...s,
+                                errors: [...s.errors, err.error]
+                            }
+                        })
+                    }
+                })
+                this.socket.view("status").addObserver(status => {
+                    if (status === "connected") {
+                        this.state.updateState(s => {
+                            return {
+                                ...s,
+                                errors: [] // any errors from before are no longer relevant, right?
+                            }
+                        })
+                        errorView.dispose()
+                    }
+                })
             })
             .when(KernelCommand, (command: string) => {
                 NotebookMessageDispatcher.kernelCommand(this.socket, command)
@@ -230,6 +255,17 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
             .when(RequestCancelTasks, () => {
                 const state = this.state.getState()
                 this.socket.send(new messages.CancelTasks(state.path))
+            })
+            .when(RemoveTask, taskId => {
+                this.state.updateState(s => {
+                    return {
+                        ...s,
+                        kernel: {
+                            ...s.kernel,
+                            tasks: removeKey(s.kernel.tasks, taskId)
+                        }
+                    }
+                })
             })
             .when(RequestClearOutput, () => {
                 this.socket.send(new messages.ClearOutput())
@@ -427,67 +463,111 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState>{
     }
 }
 
+// TODO: should this be a singleton too?
 export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
     constructor(socket: SocketStateHandler) {
         super(socket, ServerStateHandler.get);
-
     }
 
     dispatch(action: UIAction): void {
-        this.state.updateState(s => {
-            let newS: ServerState | undefined = undefined;
-            match(action)
-                .when(RequestNotebooksList, () => {
-                    this.socket.send(new messages.ListNotebooks([]))
+        match(action)
+            .when(Reconnect, (onlyIfClosed: boolean) => {
+
+
+                // TODO: need to add back "reconnect on window focus!"
+                //       and then, need to test what happens when the client is disconnected (i.e., is everything properly disabled?)
+
+
+                console.log("Attempting to reconnect to notebook") // TODO: once we have a proper place for server errors, we can display this log there.
+                this.socket.reconnect(onlyIfClosed)
+                const errorView = this.socket.view("error")
+                errorView.addObserver(err => {
+                    if (err) {
+                        // We don't want to reload if the connection is offline, instead we just want to display the
+                        // error to the user
+                        const reload = err.status === ConnectionStatus.ONLINE
+                        if (reload) {
+                            console.log("Error reconnecting, trying to reload the page")
+                            document.location.reload();
+                        } else {
+                            this.state.updateState(s => {
+                                return {
+                                    ...s,
+                                    errors: [...s.errors, {err: err.error}]
+                                }
+                            })
+                        }
+                    }
                 })
-                .when(LoadNotebook, (path, open) => {
+                // TODO: depending on how complicated reconnecting is, maybe we should just reload the page every time?
+                this.socket.view("status").addObserver(status => {
+                    if (status === "connected") {
+                        console.log("Reconnected successfully, now reconnecting to notebook sockets")
+                        this.state.updateState(s => {
+                            return {
+                                ...s,
+                                errors: [] // any errors from before are no longer relevant, right?
+                            }
+                        })
+                        ServerStateHandler.reconnectNotebooks(onlyIfClosed)
+                        errorView.dispose()
+                    }
+                })
+            })
+            .when(RequestNotebooksList, () => {
+                this.socket.send(new messages.ListNotebooks([]))
+            })
+            .when(LoadNotebook, (path, open) => {
+                this.state.updateState(s => {
                     let notebooks = s.notebooks
                     if (! s.notebooks[path])  {
                         notebooks = {...notebooks, [path]: ServerStateHandler.loadNotebook(path).loaded}
                     }
-                    newS = {
+                    if (open && ! this.openNotebooks.includes(path)) {
+                        this.openNotebooks = [...this.openNotebooks, path]
+                    }
+                    return {
                         ...s,
                         currentNotebook: open ? path : s.currentNotebook,
                         notebooks: notebooks
                     };
-                    if (open && ! this.openNotebooks.includes(path)) {
-                        this.openNotebooks = [...this.openNotebooks, path]
-                    }
                 })
-                .when(CreateNotebook, (path, content) => {
-                    if (path) {
-                        this.socket.send(new messages.CreateNotebook(path, content))
-                    } else {
-                        new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create').show().then(newPath => {
-                            this.socket.send(new messages.CreateNotebook(newPath, content))
-                        })
-                    }
-                })
-                .when(RenameNotebook, (oldPath, newPath) => {
-                    if (newPath) {
+            })
+            .when(CreateNotebook, (path, content) => {
+                if (path) {
+                    this.socket.send(new messages.CreateNotebook(path, content))
+                } else {
+                    new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create').show().then(newPath => {
+                        this.socket.send(new messages.CreateNotebook(newPath, content))
+                    })
+                }
+            })
+            .when(RenameNotebook, (oldPath, newPath) => {
+                if (newPath) {
+                    this.socket.send(new messages.RenameNotebook(oldPath, newPath))
+                } else {
+                    new DialogModal('Rename Notebook', oldPath, 'Rename').show().then(newPath => {
                         this.socket.send(new messages.RenameNotebook(oldPath, newPath))
-                    } else {
-                        new DialogModal('Rename Notebook', oldPath, 'Rename').show().then(newPath => {
-                            this.socket.send(new messages.RenameNotebook(oldPath, newPath))
-                        })
-                    }
-                })
-                .when(CopyNotebook, (oldPath, newPath) => {
-                    if (newPath) {
+                    })
+                }
+            })
+            .when(CopyNotebook, (oldPath, newPath) => {
+                if (newPath) {
+                    this.socket.send(new messages.CopyNotebook(oldPath, newPath))
+                } else {
+                    new DialogModal('Copy Notebook', oldPath, 'Copy').show().then(newPath => {
                         this.socket.send(new messages.CopyNotebook(oldPath, newPath))
-                    } else {
-                        new DialogModal('Copy Notebook', oldPath, 'Copy').show().then(newPath => {
-                            this.socket.send(new messages.CopyNotebook(oldPath, newPath))
-                        })
-                    }
-                })
-                .when(DeleteNotebook, (path) => {
-                    this.socket.send(new messages.DeleteNotebook(path))
-                })
-                .when(CloseNotebook, (path) => {
-                    ServerStateHandler.closeNotebook(path)
-                    this.openNotebooks = arrDeleteItem(this.openNotebooks, path)
-                    newS = {
+                    })
+                }
+            })
+            .when(DeleteNotebook, (path) => {
+                this.socket.send(new messages.DeleteNotebook(path))
+            })
+            .when(CloseNotebook, (path) => {
+                ServerStateHandler.closeNotebook(path)
+                this.openNotebooks = arrDeleteItem(this.openNotebooks, path)
+                this.state.updateState(s => {
+                    return {
                         ...s,
                         notebooks: {
                             ...s.notebooks,
@@ -495,22 +575,21 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                         }
                     }
                 })
-                .when(ViewAbout, section => {
-                    About.show(this, section)
-                })
-                .when(SetSelectedNotebook, path => {
-                    newS = {
+            })
+            .when(ViewAbout, section => {
+                About.show(this, section)
+            })
+            .when(SetSelectedNotebook, path => {
+                this.state.updateState(s => {
+                    return {
                         ...s,
                         currentNotebook: path
                     }
                 })
-                .when(RequestRunningKernels, () => {
-                    this.socket.send(new messages.RunningKernels([]))
-                })
-
-            if (newS) return newS
-            else return s
-        });
+            })
+            .when(RequestRunningKernels, () => {
+                this.socket.send(new messages.RunningKernels([]))
+            })
     }
 
     loadNotebook(path: string, open?: boolean): Promise<NotebookInfo> {
@@ -784,6 +863,17 @@ export class RequestCellRun extends UIAction {
 
     static unapply(inst: RequestCellRun): ConstructorParameters<typeof RequestCellRun> {
         return [inst.cells];
+    }
+}
+
+export class RemoveTask extends UIAction {
+    constructor(readonly taskId: string) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: RemoveTask): ConstructorParameters<typeof RemoveTask> {
+        return [inst.taskId];
     }
 }
 
