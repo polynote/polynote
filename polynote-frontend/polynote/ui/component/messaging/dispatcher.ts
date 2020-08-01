@@ -5,7 +5,7 @@
  */
 import match from "../../../util/match";
 import * as messages from "../../../data/messages";
-import {HandleData, ModifyStream, ReleaseHandle, TableOp} from "../../../data/messages";
+import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {ClientResult, Output, PosRange, ResultValue} from "../../../data/result";
 import {NoUpdate, StateHandler} from "../state/state_handler";
@@ -20,6 +20,7 @@ import {Either} from "../../../data/types";
 import {DialogModal} from "../component/modal";
 import {ClientInterpreterComponent, ClientInterpreters} from "../component/interpreter/client_interpreter";
 import {OpenNotebooksHandler} from "../state/storage";
+import {ClientBackup} from "../client_backup";
 
 export abstract class MessageDispatcher<S> {
     protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -73,15 +74,15 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
             })
             .when(CreateComment, (cellId, comment) => {
                 const state = this.state.getState()
-                this.socket.send(new messages.CreateComment(state.globalVersion, state.localVersion, cellId, comment))
+                this.sendUpdate(new messages.CreateComment(state.globalVersion, state.localVersion, cellId, comment))
             })
             .when(UpdateComment, (cellId, commentId, range, content) => {
                 const state = this.state.getState()
-                this.socket.send(new messages.UpdateComment(state.globalVersion, state.localVersion, cellId, commentId, range, content))
+                this.sendUpdate(new messages.UpdateComment(state.globalVersion, state.localVersion, cellId, commentId, range, content))
             })
             .when(DeleteComment, (cellId, commentId) => {
                 const state = this.state.getState()
-                this.socket.send(new messages.DeleteComment(state.globalVersion, state.localVersion, cellId, commentId))
+                this.sendUpdate(new messages.DeleteComment(state.globalVersion, state.localVersion, cellId, commentId))
             })
             .when(SetCurrentSelection, (cellId, range) => {
                 this.socket.send(new messages.CurrentSelection(cellId, range))
@@ -104,7 +105,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
             .when(SetCellOutput, (cellId, output) => {
                     if (output instanceof Output) {
                         this.state.updateState(state => {
-                            this.socket.send(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
+                            this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
                             return {
                                 ...state,
                                 cells: state.cells.map(cell => {
@@ -118,7 +119,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                         // ClientResults are special. The Client treats them like a Result, but the Server treats them like an Output.
                         output.toOutput().then(o => {
                             this.state.updateState(state => {
-                                this.socket.send(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
+                                this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
                                 return {
                                     ...state,
                                     cells: state.cells.map(cell => {
@@ -137,7 +138,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
             })
             .when(SetCellLanguage, (cellId, language) => {
                 this.state.updateState(state => {
-                    this.socket.send(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
+                    this.sendUpdate(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
@@ -155,7 +156,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                     const maxId = state.cells.reduce((acc, cell) => acc > cell.id ? acc : cell.id, -1)
                     const cell = new NotebookCell(maxId + 1, language, content, [], metadata);
                     const update = new messages.InsertCell(state.globalVersion, localVersion, cell, prev);
-                    this.socket.send(update);
+                    this.sendUpdate(update);
                     return {
                         ...state,
                         editBuffer: state.editBuffer.push(state.localVersion, update)
@@ -166,7 +167,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                 this.state.updateState(state => {
                     let localVersion = state.localVersion + 1;
                     const update = new messages.UpdateCell(state.globalVersion, localVersion, cellId, edits, metadata);
-                    this.socket.send(update);
+                    this.sendUpdate(update);
                     return {
                         ...state,
                         editBuffer: state.editBuffer.push(state.localVersion, update),
@@ -182,7 +183,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                 this.state.updateState(state => {
                     state = {...state}
                     const update = new messages.DeleteCell(state.globalVersion, ++state.localVersion, cellId);
-                    this.socket.send(update);
+                    this.sendUpdate(update);
                     state.editBuffer = state.editBuffer.push(state.localVersion, update)
                     return state
                 })
@@ -191,7 +192,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                 this.state.updateState(state => {
                     state = {...state}
                     const update = new messages.UpdateConfig(state.globalVersion, ++state.localVersion, conf);
-                    this.socket.send(update);
+                    this.sendUpdate(update);
                     state.editBuffer = state.editBuffer.push(state.localVersion, update)
                     return state
                 })
@@ -379,6 +380,12 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                 this.socket.close()
             })
         // TODO: add more actions! basically UIEvents that anything subscribes to should be here I think
+    }
+
+    private sendUpdate(upd: NotebookUpdate) {
+        this.socket.send(upd)
+        ClientBackup.updateNb(this.state.getState().path, upd)
+            .catch(err => console.error("Error backing up update", err))
     }
 
     // Helper methods

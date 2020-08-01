@@ -1,15 +1,13 @@
 import {StateHandler} from "./state_handler";
 import {
     ClientResult, CompileErrors,
-    KernelReport,
     Output,
     PosRange,
-    Result,
     ResultValue, RuntimeError,
     ServerErrorWithCause
 } from "../../../data/result";
-import {CompletionCandidate, HandleData, ModifyStream, Presence, Signatures} from "../../../data/messages";
-import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
+import {CompletionCandidate, HandleData, ModifyStream, Signatures} from "../../../data/messages";
+import {CellComment, CellMetadata, NotebookConfig} from "../../../data/data";
 import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../../../data/content_edit";
 import {EditBuffer} from "./edit_buffer";

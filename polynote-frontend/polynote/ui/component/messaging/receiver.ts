@@ -24,6 +24,7 @@ import {NoUpdate, StateHandler} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
 import {arrDelete, arrInsert, unzip} from "../../../util/functions";
 import {ClientInterpreters} from "../component/interpreter/client_interpreter";
+import {ClientBackup} from "../client_backup";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -101,6 +102,12 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 const resultsValues = cellState.results.filter(isRV)
                 return [cellState, resultsValues]
             }));
+
+            // add this notebook to the backups
+            ClientBackup.addNb(path, cells, config)
+                // .then(backups => console.log("Added new backup. All backups for this notebook:", backups))
+                .catch(err => console.error("Error adding backup", err));
+
             return {
                 ...s,
                 path: path,
@@ -372,6 +379,10 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
 
                 // discard edits before the local version from server – it will handle rebasing at least until that point
                 const editBuffer = s.editBuffer.discard(update.localVersion);
+
+                // make sure to update backups.
+                ClientBackup.updateNb(s.path, update)
+                    .catch(err => console.error("Error updating backup", err));
 
                 return {
                     ...res,

@@ -142,8 +142,6 @@ mainEl?.appendChild(Main.get.el);
 
 
 // TODO LIST ****************************************************************************************************************************
-//      - Client Backup
-//      - Dark Mode
 //      - How to deal with disposed StateHandlers? Check for memory leaks?
 //      - there's some weird flashes when notebooks are switched. unclear why. might be related to gfx card stuff.
 //      - clean up code with some helper functions. e.g., dispatcher notebook state updating cell state with cells.map
