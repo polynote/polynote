@@ -1,5 +1,7 @@
 import {storage} from "../../util/storage";
 import {StateHandler} from "./state_handler";
+import {diffArray} from "../../../util/functions";
+import * as deepEquals from 'fast-deep-equal/es6';
 
 export type RecentNotebooks = {name: string, path: string}[];
 export type OpenNotebooks = string[]; // paths
@@ -14,12 +16,6 @@ export interface ViewPreferences {
         collapsed: boolean
     },
 }
-export type Preference<T> = {name: string, value: T, description: string}
-export interface UserPreferences {
-    vim: Preference<boolean>,
-    notifications: Preference<boolean>,
-    // theme: Preference<"Light" | "Dark">
-}
 
 export class LocalStorageHandler<T> extends StateHandler<T> {
     constructor(readonly key: string, private initial: T) {
@@ -27,6 +23,7 @@ export class LocalStorageHandler<T> extends StateHandler<T> {
 
         // watch storage to detect when it was cleared
         const handleStorageChange = (next: T | null | undefined) => {
+            console.log("detected storage change", next)
             if (next === null) { // cleared
                 this.setState(initial)
             } else {
@@ -78,12 +75,63 @@ export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPr
         collapsed: false,
     }
 });
-export const UserPreferences = new LocalStorageHandler<UserPreferences>("UserPreferences", {
-    vim: {name: "VIM", value: false, description: "Whether VIM input mode is enabled for Code cells"},
+
+class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPreferences> {
+    constructor(initial: typeof UserPreferences) {
+
+        const storageKey = "UserPreferences";
+        const fromBrowser = storage.get(storageKey);
+        // In order to handle schema changes over time, we compare the locally stored values with `initial`.
+        // The schema in `initial` is the currently expected schema, so we need to handle added and removed keys.
+        const [added, removed] = diffArray(Object.keys(initial), Object.keys(fromBrowser))
+
+        added.forEach((key: keyof typeof UserPreferences) => {
+            fromBrowser[key] = initial[key]
+        });
+        removed.forEach((key: keyof typeof UserPreferences) => {
+            delete fromBrowser[key];
+        });
+
+        // Next, we check the schema of the preferences themselves
+        (Object.keys(fromBrowser) as (keyof typeof initial)[]).forEach(k => {
+            const [added, removed] = diffArray(Object.keys(initial[k]), Object.keys(fromBrowser[k]));
+
+            added.forEach((key: keyof typeof initial[typeof k]) => {
+                fromBrowser[k][key] = initial[k][key];
+            })
+
+            removed.forEach(key => {
+                delete fromBrowser[k][key]
+            })
+
+            // check whether the current value is allowed
+            if (! Object.values(initial[k].possibleValues).includes(fromBrowser[k].value)) {
+                fromBrowser[k] = initial[k]
+            }
+
+        })
+
+        super(storageKey, fromBrowser);
+    }
+
+    protected compare(s1: any, s2: any): boolean {
+        return deepEquals(s1, s2)
+    }
+}
+
+type UserPreference<T extends Record<string, any>> = {name: string, value: T[keyof T], description: string, possibleValues: T}
+export const UserPreferences: {[k: string]: UserPreference<Record<string, any>>} = {
+    vim: {name: "VIM", value: false, description: "Whether VIM input mode is enabled for Code cells", possibleValues: {true: true, false: false}},
     notifications: {
         name: "Notifications",
         value: false,
         description: "Whether to allow Polynote to send you browser notifications. " +
-            "Toggling this to `true` for the first time will prompt your browser to request your permission."},
-    // theme: {}
-})
+            "Toggling this to `true` for the first time will prompt your browser to request your permission.",
+        possibleValues: {true: true, false: false}},
+    theme: {
+        name: "Theme",
+        value: window.matchMedia("(prefers-color-scheme: dark)").matches ? 'dark' : 'light',
+        description: "The application color scheme (light or dark)",
+        possibleValues: {light: "light", dark: "dark"}}
+}
+export const UserPreferencesHandler = new UserPreferencesStorageHandler(UserPreferences)

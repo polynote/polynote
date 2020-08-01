@@ -1,5 +1,5 @@
 import {FullScreenModal} from "./modal";
-import {button, div, dropdown, h2, h3, iconButton, span, loader, table, tag} from "../../util/tags";
+import {button, div, dropdown, h2, h3, iconButton, span, loader, table, tag, polynoteLogo} from "../../util/tags";
 import * as monaco from "monaco-editor";
 import {ClientBackup} from "../client_backup";
 import {NotebookInfo, ServerStateHandler} from "../state/server_state";
@@ -8,7 +8,7 @@ import {
     LocalStorageHandler,
     NotebookScrollLocationsHandler, OpenNotebooksHandler,
     RecentNotebooksHandler,
-    UserPreferences, ViewPrefsHandler
+    UserPreferencesHandler, ViewPrefsHandler
 } from "../state/storage";
 import {Observer, StateHandler} from "../state/state_handler";
 import {
@@ -46,7 +46,7 @@ export class About extends FullScreenModal {
     aboutMain() {
         const el = div(["about-display"], [
             div([], [
-                tag('img', [], {src: "static/style/polynote.svg", alt:"Polynote"}, []),
+                polynoteLogo(),
                 h2([], ["About this Polynote Server"])
             ])
         ]);
@@ -122,28 +122,31 @@ export class About extends FullScreenModal {
             addToTop: false
         });
 
-        Object.entries(UserPreferences.getState()).forEach(([key, pref]) => {
+        Object.entries(UserPreferencesHandler.getState()).forEach(([key, pref]) => {
             const value = pref.value;
             let valueEl;
-            if (typeof value === "boolean") {
-                valueEl = dropdown([], {true: "true", false: "false"}).change(evt => {
-                    const self = evt.currentTarget;
-                    if (! self || ! (self instanceof HTMLSelectElement)) {
-                        throw new Error(`Unexpected Event target for event ${JSON.stringify(evt)}! Expected \`currentTarget\` to be an HTMLSelectElement but instead got ${JSON.stringify(self)}`)
-                    }
-                    const updatedValue = self.options[self.selectedIndex].value === "true";
-                    UserPreferences.updateState(state => {
-                        return {
-                            ...state,
-                            [key]: {
-                                ...pref,
-                                value: updatedValue
-                            }
+            console.log(pref)
+            const options = Object.entries(pref.possibleValues).reduce<Record<string, string>>((acc, [k, v]) => {
+                acc[k] = v.toString()
+                return acc
+            }, {})
+            valueEl = dropdown([], options).change(evt => {
+                const self = evt.currentTarget;
+                if (! self || ! (self instanceof HTMLSelectElement)) {
+                    throw new Error(`Unexpected Event target for event ${JSON.stringify(evt)}! Expected \`currentTarget\` to be an HTMLSelectElement but instead got ${JSON.stringify(self)}`)
+                }
+                const updatedValue = pref.possibleValues[self.options[self.selectedIndex].value];
+                UserPreferencesHandler.updateState(state => {
+                    return {
+                        ...state,
+                        [key]: {
+                            ...pref,
+                            value: updatedValue
                         }
-                    })
-                });
-                valueEl.value = value.toString();
-            }
+                    }
+                })
+            });
+            valueEl.value = value.toString();
             prefsTable.addRow({
                 key,
                 val: valueEl ?? value.toString(),
@@ -184,7 +187,7 @@ export class About extends FullScreenModal {
             })
         }
 
-        addStorageEl(UserPreferences)
+        addStorageEl(UserPreferencesHandler)
         addStorageEl(RecentNotebooksHandler)
         addStorageEl(NotebookScrollLocationsHandler)
         addStorageEl(OpenNotebooksHandler)

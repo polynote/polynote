@@ -1,5 +1,5 @@
 import {div, TagElement} from "../../util/tags";
-import {UserPreferences} from "../state/storage";
+import {UserPreferences, UserPreferencesHandler} from "../state/storage";
 import {editor} from "monaco-editor";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import {createVim} from "../../util/vim";
@@ -21,7 +21,7 @@ export class VimStatus {
     private constructor() {
         this.statusLine = div(["status"], []);
         this.el = div(["vim-status", "hide"], [this.statusLine])
-        const stateHandler = (pref: UserPreferences["vim"]) => {
+        const stateHandler = (pref: typeof UserPreferences["vim"]) => {
             if (!pref.value) {
                 Object.keys(this.vims).forEach(key => {
                     this.deactivate(key)
@@ -29,7 +29,7 @@ export class VimStatus {
             }
             this.enabled = pref.value;
         }
-        const vimState = UserPreferences.view("vim")
+        const vimState = UserPreferencesHandler.view("vim")
         stateHandler(vimState.getState())
         vimState.addObserver(state => stateHandler(state))
     }

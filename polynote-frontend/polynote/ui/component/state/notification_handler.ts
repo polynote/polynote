@@ -1,6 +1,5 @@
-import {Preference, UserPreferences} from "./storage";
+import {UserPreferences, UserPreferencesHandler} from "./storage";
 import {FaviconHandler} from "./favicon_handler";
-import {Preferences} from "../../util/storage";
 
 export class NotificationHandler {
     private static inst: NotificationHandler;
@@ -13,7 +12,7 @@ export class NotificationHandler {
 
     private enabled: boolean = false;
     private constructor() {
-        const handlePref = (pref: UserPreferences["notifications"]) => {
+        const handlePref = (pref: typeof UserPreferences["notifications"]) => {
             if (pref.value) {
                 Notification.requestPermission().then((result) => {
                     console.log(`Requested notification permission and got: '${result}'`)
@@ -21,8 +20,8 @@ export class NotificationHandler {
             }
             this.enabled = pref.value;
         }
-        handlePref(UserPreferences.getState().notifications)
-        UserPreferences.view("notifications").addObserver(pref => handlePref(pref))
+        handlePref(UserPreferencesHandler.getState().notifications)
+        UserPreferencesHandler.view("notifications").addObserver(pref => handlePref(pref))
     }
 
     /**

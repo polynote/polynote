@@ -2,7 +2,7 @@ import {div, h2, span, TagElement} from "../../util/tags";
 import {MarkdownIt} from "../../../util/markdown-it";
 import {scala, vega} from "../../monaco/languages";
 import * as monaco from "monaco-editor";
-import {theme} from "../../monaco/theme";
+import {themes} from "../../monaco/themes";
 import {SocketSession} from "../messaging/comms";
 import {ServerMessageReceiver} from "../messaging/receiver";
 import {LoadNotebook, Reconnect, ServerMessageDispatcher} from "../messaging/dispatcher";
@@ -15,6 +15,7 @@ import {NotebookList} from "./notebooklist";
 import {SocketStateHandler} from "../state/socket_state";
 import {Home} from "./home";
 import {OpenNotebooksHandler, RecentNotebooksHandler} from "../state/storage";
+import {ThemeHandler} from "../state/theme_handler";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -126,8 +127,12 @@ monaco.languages.register({id: 'vega'});
 monaco.languages.setMonarchTokensProvider('vega', vega.definition);
 monaco.languages.setLanguageConfiguration('vega', vega.config);
 
-// use our theme
-monaco.editor.defineTheme('polynote', theme);
+// use our themes
+monaco.editor.defineTheme('polynote-light', themes.light);
+monaco.editor.defineTheme('polynote-dark', themes.dark);
+
+// start the theme handler
+const themeHandler = new ThemeHandler()
 
 // open the global socket for control messages
 SocketSession.global;
@@ -138,6 +143,7 @@ mainEl?.appendChild(Main.get.el);
 
 // TODO LIST ****************************************************************************************************************************
 //      - Client Backup
+//      - Dark Mode
 //      - How to deal with disposed StateHandlers? Check for memory leaks?
 //      - there's some weird flashes when notebooks are switched. unclear why. might be related to gfx card stuff.
 //      - clean up code with some helper functions. e.g., dispatcher notebook state updating cell state with cells.map

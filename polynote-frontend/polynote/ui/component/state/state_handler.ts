@@ -21,7 +21,7 @@ export class StateHandler<S> {
      * Handle with which to set the state and notify observers of the new state.
      */
     protected setState(newState: S) {
-        if (newState !== this.state) {
+        if (! this.compare(newState, this.state)) {
             const oldState = this.state;
             this.state = newState;
             this.observers.forEach(obs => {
@@ -34,9 +34,9 @@ export class StateHandler<S> {
     updateState(f: (s: S) => S | typeof NoUpdate) {
         const currentState = this.getState()
         const newState = f(currentState);
-        if (newState !== NoUpdate) {
+        if (! this.compare(newState, NoUpdate)) {
             const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
-            this.setState(frozenState)
+            this.setState(frozenState as S)
         }
     }
 
@@ -48,12 +48,12 @@ export class StateHandler<S> {
         const view: StateHandler<S[K]> = constructor ? new constructor(this.state[key]) : new StateHandler(this.state[key]);
         const obs = this.addObserver(s => {
             const observedVal = s[key];
-            if (observedVal !== view.getState()) {
+            if (! this.compare(observedVal, view.getState())) {
                 view.setState(observedVal)
             }
         });
         view.addObserver(s => {
-            if (s !== this.getState()[key]) {
+            if (! this.compare(s, this.getState()[key])) {
                 this.updateState(st => {
                     return {
                         ...st,
@@ -163,6 +163,12 @@ export class StateHandler<S> {
 
     constructor(state: S) {
         this.setState(deepFreeze(state))
+    }
+
+    // Comparison function to use. Subclasses can provide a different comparison function (e.g., deepEquals) but should
+    // be aware of the performance implications.
+    protected compare(s1: any, s2: any) {
+        return s1 === s2
     }
 
     // methods to add and remove observers.
