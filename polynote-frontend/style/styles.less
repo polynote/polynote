@@ -195,6 +195,7 @@ body {
   position: relative;
   display: grid;
   grid-template-columns: 1fr;
+  z-index: 1; // otherwise it goes behind the notebook list...
 
   &.open {
     border-radius: 4px;
@@ -1359,6 +1360,8 @@ button.inspect.icon-button {
     display: inline-block;
     grid-area: body;
     overflow-y: auto;
+    border-width: 1px;
+    border-style: solid;
   }
 }
 
@@ -1866,8 +1869,7 @@ button {
     font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
 
     width: auto;
-    background: white;
-    border: solid lightgray 1px;
+    border: solid 1px;
     padding: 3px;
     font-size: large;
 
@@ -2002,10 +2004,7 @@ button {
 
 .notebooks-list {
   position: relative;
-  border-width: 1px;
-  border-style: solid;
   overflow: auto;
-  background: white;
 
   .tree-view {
     padding: .5em 0 1.5em;

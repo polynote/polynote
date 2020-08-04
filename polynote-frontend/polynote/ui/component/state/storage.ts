@@ -112,6 +112,7 @@ class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPrefe
         })
 
         super(storageKey, fromBrowser);
+        this.clear()
     }
 
     protected compare(s1: any, s2: any): boolean {
@@ -130,8 +131,8 @@ export const UserPreferences: {[k: string]: UserPreference<Record<string, any>>}
         possibleValues: {true: true, false: false}},
     theme: {
         name: "Theme",
-        value: window.matchMedia("(prefers-color-scheme: dark)").matches ? 'dark' : 'light',
-        description: "The application color scheme (light or dark)",
-        possibleValues: {light: "light", dark: "dark"}}
+        value: window.matchMedia("(prefers-color-scheme: dark)").matches ? 'Dark' : 'Light',
+        description: "The application color scheme (Light or Dark)",
+        possibleValues: {Light: "Light", Dark: "Dark"}}
 }
 export const UserPreferencesHandler = new UserPreferencesStorageHandler(UserPreferences)
