@@ -267,8 +267,13 @@ sealed trait NotebookUpdate extends Message {
     case DeleteComment(_, _, cellId, commentId) => notebook.deleteComment(cellId, commentId)
   }
 
-}
+  /**
+    * By default, received NotebookUpdates are echoed to other subscribers but not to the originating one.
+    * This overrides that, echoing this NotebookUpdate to the originating subscriber as well.
+    */
+  def echoOriginatingSubscriber: Boolean = false
 
+}
 
 object NotebookUpdate {
   def unapply(message: Message): Option[NotebookUpdate] = message match {
@@ -284,14 +289,15 @@ abstract class NotebookUpdateCompanion[T <: NotebookUpdate](msgTypeId: Byte) ext
   implicit final val updateDiscriminator: Discriminator[NotebookUpdate, T, Byte] = Discriminator(msgTypeId)
 }
 
-
 final case class CellResult(id: CellID, result: Result) extends Message
 object CellResult extends MessageCompanion[CellResult](4)
 
 final case class UpdateCell(globalVersion: Int, localVersion: Int, id: CellID, edits: ContentEdits, metadata: Option[CellMetadata]) extends Message with NotebookUpdate
 object UpdateCell extends NotebookUpdateCompanion[UpdateCell](5)
 
-final case class InsertCell(globalVersion: Int, localVersion: Int, cell: NotebookCell, after: CellID) extends Message with NotebookUpdate
+final case class InsertCell(globalVersion: Int, localVersion: Int, cell: NotebookCell, after: CellID) extends Message with NotebookUpdate {
+  override def echoOriginatingSubscriber: Boolean = true
+}
 object InsertCell extends NotebookUpdateCompanion[InsertCell](6)
 
 final case class Comment(
@@ -308,13 +314,19 @@ object Comment {
   implicit val decoder: Decoder[Comment] = deriveDecoder
 }
 
-final case class CreateComment(globalVersion: Int, localVersion: Int, cellId: CellID, comment: Comment) extends Message with NotebookUpdate
+final case class CreateComment(globalVersion: Int, localVersion: Int, cellId: CellID, comment: Comment) extends Message with NotebookUpdate {
+  override def echoOriginatingSubscriber: Boolean = true
+}
 object CreateComment extends NotebookUpdateCompanion[CreateComment](29)
 
-final case class UpdateComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID, range: CellRange, content: ShortString) extends Message with NotebookUpdate
+final case class UpdateComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID, range: CellRange, content: ShortString) extends Message with NotebookUpdate {
+  override def echoOriginatingSubscriber: Boolean = true
+}
 object UpdateComment extends NotebookUpdateCompanion[UpdateComment](30)
 
-final case class DeleteComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID) extends Message with NotebookUpdate
+final case class DeleteComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID) extends Message with NotebookUpdate {
+  override def echoOriginatingSubscriber: Boolean = true
+}
 object DeleteComment extends NotebookUpdateCompanion[DeleteComment](31)
 
 final case class CompletionsAt(id: CellID, pos: Int, completions: ShortList[Completion]) extends Message
@@ -329,7 +341,9 @@ object KernelStatus extends MessageCompanion[KernelStatus](9)
 final case class UpdateConfig(globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate
 object UpdateConfig extends NotebookUpdateCompanion[UpdateConfig](10)
 
-final case class SetCellLanguage(globalVersion: Int, localVersion: Int, id: CellID, language: TinyString) extends Message with NotebookUpdate
+final case class SetCellLanguage(globalVersion: Int, localVersion: Int, id: CellID, language: TinyString) extends Message with NotebookUpdate {
+  override def echoOriginatingSubscriber: Boolean = true
+}
 object SetCellLanguage extends NotebookUpdateCompanion[SetCellLanguage](11)
 
 final case class StartKernel(level: Byte) extends Message
@@ -356,7 +370,9 @@ object CopyNotebook extends MessageCompanion[CopyNotebook](27)
 final case class DeleteNotebook(path: ShortString) extends Message
 object DeleteNotebook extends MessageCompanion[DeleteNotebook](26)
 
-final case class DeleteCell(globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate
+final case class DeleteCell(globalVersion: Int, localVersion: Int, id: CellID) extends Message with NotebookUpdate {
+  override def echoOriginatingSubscriber: Boolean = true
+}
 object DeleteCell extends NotebookUpdateCompanion[DeleteCell](15)
 
 final case class SetCellOutput(globalVersion: Int, localVersion: Int, id: CellID, output: Option[Output]) extends Message with NotebookUpdate

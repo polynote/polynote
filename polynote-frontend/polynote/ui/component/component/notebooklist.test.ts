@@ -39,8 +39,8 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     waitFor(() => {
         expect(spy).toHaveBeenCalledWith('ws/' + encodeURIComponent(newPath))
     }).then(() => {
-        const x = ServerStateHandler.get.getState().currentNotebook
-        expect(ServerStateHandler.get.getState().currentNotebook).toEqual(newPath)
+        const x = ServerStateHandler.getState().currentNotebook
+        expect(ServerStateHandler.getState().currentNotebook).toEqual(newPath)
     }).then(done)
 });
 

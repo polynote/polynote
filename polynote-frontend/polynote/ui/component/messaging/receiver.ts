@@ -5,7 +5,7 @@
 import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import * as messages from "../../../data/messages";
-import {Identity, Message, TaskInfo} from "../../../data/messages";
+import {Identity, Message, TaskInfo, TaskStatus} from "../../../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../../../data/data";
 import {purematch} from "../../../util/match";
 import {ContentEdit} from "../../../data/content_edit";
@@ -22,7 +22,7 @@ import {
 } from "../../../data/result";
 import {NoUpdate, StateHandler} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrDelete, arrInsert, unzip} from "../../../util/functions";
+import {arrDelete, arrInsert, unzip} from "../../../util/helpers";
 import {ClientInterpreters} from "../component/interpreter/client_interpreter";
 import {ClientBackup} from "../client_backup";
 
@@ -224,6 +224,21 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         errors: [...s.errors, err]
                     }
                 })
+                .when(messages.CellStatusUpdate, (cellId, status) => {
+                    return {
+                        ...s,
+                        cells: s.cells.map(cell => {
+                            if (cell.id === cellId) {
+                                return {
+                                    ...cell,
+                                    queued: status === TaskStatus.Queued,
+                                    running: status === TaskStatus.Running,
+                                    error: status === TaskStatus.Error,
+                                }
+                            } else return cell
+                        })
+                    }
+                })
                 .otherwiseThrow || NoUpdate
         });
         this.receive(messages.NotebookUpdate, (s: NotebookState, update: messages.NotebookUpdate) => {
@@ -304,13 +319,18 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         }
                     })
                     .when(messages.SetCellLanguage, (g, l, id: number, language: string) => {
+                        let thisCell = undefined;
+                        const cells = s.cells.map(c => {
+                            if (c.id === id) {
+                                thisCell = {...c, language}
+                                return thisCell
+                            } else return c
+                        })
+                        const activeCell = s.activeCell?.id === id ? thisCell : s.activeCell;
                         return {
                             ...s,
-                            cells: s.cells.map(c => {
-                                if (c.id === id) {
-                                    return {...c, language}
-                                } else return c
-                            })
+                            cells,
+                            activeCell
                         }
                     })
                     .when(messages.SetCellOutput, (g, l, id: number, output?: Output) => {
@@ -480,16 +500,9 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     return {...cell, output: [result]}
                 })
                 .whenInstance(ExecutionInfo, result => {
-                    const isRunning = cell.running
-                        ? result.endTs === undefined  // if the cell is already running, it stays running as long as we didn't get an endTs.
-                        : cell.queued === true        // if the cell is not yet running but it is currently queued, we know it started to run once we get the initial execution info.
                     return {
                         ...cell,
-                        metadata: cell.metadata.copy({executionInfo: result}),
-                        output: result.endTs === undefined ? [] : cell.output, // clear output when the cell starts running
-                        queued: false, // we are certain the cell is no longer queued when we get Exec Info.
-                        running: isRunning,
-                        error: result.endTs === undefined ? false : cell.error, // if the cell just started running we clear any error marker
+                        metadata: cell.metadata.copy({executionInfo: result})
                     }
                 })
                 .whenInstance(ClientResult, result => {

@@ -15,7 +15,7 @@ import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_sta
 import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
 import {About} from "../component/about";
 import {ValueInspector} from "../component/value_inspector";
-import {arrDeleteItem, collect, equalsByKey, partition, removeKey} from "../../../util/functions";
+import {arrDeleteItem, collect, equalsByKey, partition, removeKey} from "../../../util/helpers";
 import {Either} from "../../../data/types";
 import {DialogModal} from "../component/modal";
 import {ClientInterpreterComponent, ClientInterpreters} from "../component/interpreter/client_interpreter";
@@ -57,7 +57,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                         })
                     }
                 })
-                this.socket.view("status").addObserver(status => {
+                this.socket.view("status", undefined, errorView).addObserver(status => {
                     if (status === "connected") {
                         this.state.updateState(s => {
                             return {
@@ -137,17 +137,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                     }
             })
             .when(SetCellLanguage, (cellId, language) => {
-                this.state.updateState(state => {
-                    this.sendUpdate(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
-                    return {
-                        ...state,
-                        cells: state.cells.map(cell => {
-                            if (cell.id === cellId) {
-                                return {...cell, language: language}
-                            } else return cell
-                        })
-                    }
-                })
+                const state = this.state.getState()
+                this.sendUpdate(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
             })
             .when(CreateCell, (language, content, metadata, prev) => {
                 this.state.updateState(state => {
@@ -247,7 +238,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                         ...state,
                         cells: state.cells.map(cell => {
                             if (cellIds.includes(cell.id)) {
-                                return { ...cell, queued: true, results: [], error: false }
+                                return { ...cell, results: [] }
                             } else return cell
                         })
                     }
@@ -296,9 +287,10 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                         }
                     }
                     id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
+                    const activeCell = state.cells.find(cell => cell.id === id)
                     return {
                         ...state,
-                        activeCell: state.cells.find(cell => cell.id === id),
+                        activeCell: activeCell,
                         cells: state.cells.map(cell => {
                             return {
                                 ...cell,
@@ -507,7 +499,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     }
                 })
                 // TODO: depending on how complicated reconnecting is, maybe we should just reload the page every time?
-                this.socket.view("status").addObserver(status => {
+                this.socket.view("status", undefined, errorView).addObserver(status => {
                     if (status === "connected") {
                         console.log("Reconnected successfully, now reconnecting to notebook sockets")
                         this.state.updateState(s => {

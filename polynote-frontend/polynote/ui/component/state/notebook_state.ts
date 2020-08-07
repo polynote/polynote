@@ -25,8 +25,6 @@ export interface CellState {
     // ephemeral states
     pendingEdits: ContentEdit[],
     presence: {id: number, name: string, color: string, range: PosRange, avatar?: string}[];
-    // TODO: Cell running state is never set explicitly. Maybe the server should send a message when a cell starts running?
-    //       Currently we piggyback off Tasks but that seems not great.
     selected?: boolean,
     error?: boolean,
     running?: boolean

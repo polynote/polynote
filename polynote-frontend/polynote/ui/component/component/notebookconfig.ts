@@ -33,7 +33,8 @@ export class NotebookConfigComponent {
         const dependencies = new Dependencies(stateHandler.view("dependencies"))
         const exclusions = new Exclusions(stateHandler.view("exclusions"))
         const resolvers = new Resolvers(stateHandler.view("repositories"))
-        const spark = new SparkConf(stateHandler.view("sparkConfig"), stateHandler.view("sparkTemplate"), ServerStateHandler.get.view("sparkTemplates"))
+        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates", stateHandler);
+        const spark = new SparkConf(stateHandler.view("sparkConfig"), stateHandler.view("sparkTemplate"), serverTemplatesHandler)
         const env = new EnvConf(stateHandler.view("env"))
 
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {

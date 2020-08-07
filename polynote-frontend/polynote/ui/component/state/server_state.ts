@@ -1,4 +1,4 @@
-import {StateHandler} from "./state_handler";
+import {Disposable, StateHandler} from "./state_handler";
 import {ServerErrorWithCause} from "../../../data/result";
 import {Identity} from "../../../data/messages";
 import {NotebookStateHandler} from "./notebook_state";
@@ -11,7 +11,7 @@ import {
 } from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../../../data/data";
-import {removeKey} from "../../../util/functions";
+import {removeKey} from "../../../util/helpers";
 import {EditBuffer} from "./edit_buffer";
 import {ClientInterpreterComponent} from "../component/interpreter/client_interpreter";
 
@@ -64,6 +64,26 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             console.log("created ServerStateHandler")
         }
         return ServerStateHandler.inst;
+    }
+
+    /**
+     * Create a temporary view into the ServerState.
+     *
+     * Since ServerStateHandler is a singleton, callers are required to provide a Disposable to clean up unneeded Views.
+     * If the view will never be cleaned up, use `ServerStateHandler.get.view` instead.
+     *
+     * @param key
+     * @param disposeWhen
+     */
+    static view<T extends keyof ServerState>(key: T, disposeWhen: Disposable): StateHandler<ServerState[T]> {
+        return ServerStateHandler.get.view(key, undefined, disposeWhen)
+    }
+
+    /**
+     * Convenience method to get the state.
+     */
+    static getState(): ServerState {
+        return ServerStateHandler.get.getState();
     }
 
     // only for testing

@@ -7,7 +7,7 @@ import {
     ServerMessageDispatcher
 } from "../messaging/dispatcher";
 import {ServerStateHandler} from "../state/server_state";
-import {diffArray, removeKey} from "../../../util/functions";
+import {diffArray, removeKey} from "../../../util/helpers";
 import {StateHandler} from "../state/state_handler";
 import {DialogModal} from "./modal";
 

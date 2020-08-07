@@ -3,7 +3,7 @@ import {CreateCell, NotebookMessageDispatcher, SetCellHighlight, SetSelectedCell
 import {CellState, NotebookStateHandler} from "../state/notebook_state";
 import {StateHandler} from "../state/state_handler";
 import {CellMetadata} from "../../../data/data";
-import {diffArray} from "../../../util/functions";
+import {diffArray} from "../../../util/helpers";
 import {CellContainerComponent} from "./cell";
 import {NotebookConfigComponent} from "./notebookconfig";
 import {VimStatus} from "./vim_status";
@@ -48,8 +48,8 @@ export class Notebook {
                 this.dispatcher.dispatch(new SetSelectedCell(undefined))
             }
         }
-        handleVisibility(ServerStateHandler.get.getState().currentNotebook)
-        ServerStateHandler.get.view("currentNotebook").addObserver((current, previous) => handleVisibility(current, previous))
+        handleVisibility(ServerStateHandler.getState().currentNotebook)
+        ServerStateHandler.view("currentNotebook", notebookState).addObserver((current, previous) => handleVisibility(current, previous))
 
         const handleCells = (newCells: CellState[], oldCells: CellState[] = []) => {
             const [removed, added] = diffArray(oldCells, newCells, (o, n) => o.id === n.id);

@@ -1,8 +1,8 @@
 import {CreateComment, DeleteComment, NotebookMessageDispatcher, UpdateComment} from "../messaging/dispatcher";
-import {StateHandler} from "../state/state_handler";
+import {BaseDisposable, Observer, StateHandler} from "../state/state_handler";
 import {CellComment} from "../../../data/data";
 import {PosRange} from "../../../data/result";
-import {diffArray} from "../../../util/functions";
+import {diffArray,Deferred} from "../../../util/helpers";
 import {button, div, img, span, tag, TagElement, textarea} from "../../util/tags";
 import * as monaco from "monaco-editor";
 import {editor} from "monaco-editor";
@@ -13,7 +13,7 @@ import {Identity} from "../../../data/messages";
 
 
 
-export class CommentHandler {
+export class CommentHandler extends BaseDisposable {
     //                              id -> Comment
     readonly commentRoots: Record<string, CommentRoot> = {};
     //                              range -> id
@@ -24,6 +24,7 @@ export class CommentHandler {
                 currentSelection: StateHandler<PosRange | undefined>,
                 editor: editor.ICodeEditor,
                 cellId: number) {
+       super()
 
        const handleComments = (currentComments: Record<string, CellComment>, oldComments: Record<string, CellComment> = {}) => {
            const [removed, added] = diffArray(Object.keys(oldComments), Object.keys(currentComments));
@@ -96,8 +97,8 @@ export class CommentHandler {
            })
        }
        handleComments(commentsState.getState())
-       commentsState.addObserver((current, old) => handleComments(current, old));
-       
+       commentsState.addObserver((current, old) => handleComments(current, old), this);
+
        let commentButton: CommentButtonComponent | undefined = undefined;
 
        const handleSelection = (currentSelection?: PosRange) => {
@@ -121,7 +122,7 @@ export class CommentHandler {
            }
        }
        handleSelection(currentSelection.getState())
-       currentSelection.addObserver(s => handleSelection(s))
+       currentSelection.addObserver(s => handleSelection(s), this);
     }
 
     activeComment(): CommentRoot | undefined {
@@ -131,13 +132,13 @@ export class CommentHandler {
     hide() {
         Object.values(this.commentRoots).forEach(root => root.hide())
     }
-
 }
 
-abstract class MonacoRightGutterOverlay {
+abstract class MonacoRightGutterOverlay extends BaseDisposable {
     readonly el: TagElement<"div">;
 
     protected constructor(readonly editor: editor.ICodeEditor) {
+        super()
         this.el = div(['cell-overlay'], [])
     }
 
@@ -184,7 +185,6 @@ abstract class MonacoRightGutterOverlay {
 class CommentRoot extends MonacoRightGutterOverlay {
     readonly el: TagElement<"div">;
     private highlights: string[] = [];
-    private cleanup: (() => void)[] = [];
 
     constructor(readonly dispatcher: NotebookMessageDispatcher,
                 readonly rootState: StateHandler<CellComment>,
@@ -194,15 +194,14 @@ class CommentRoot extends MonacoRightGutterOverlay {
                 private cellId: number) {
         super(editor);
         this.handleSelection();
-        const selectionObs = currentSelection.addObserver(() => this.handleSelection());
-        this.cleanup.push(() => currentSelection.removeObserver(selectionObs))
+        currentSelection.addObserver(() => this.handleSelection(), this);
 
         this.el.classList.add('comment-container');
 
         let root = new CommentComponent(dispatcher, cellId, rootState.getState());
         const commentList = div(['comments-list'], [root.el]);
         this.el.appendChild(commentList);
-        const rootObs = rootState.addObserver((currentRoot, previousRoot) => {
+        rootState.addObserver((currentRoot, previousRoot) => {
             console.log(currentRoot.uuid, "updating to new root!")
             const newRoot = new CommentComponent(dispatcher, cellId, currentRoot);
             root.el.replaceWith(newRoot.el);
@@ -214,8 +213,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
                     dispatcher.dispatch(new UpdateComment(cellId, child.uuid, currentRoot.range, child.content))
                 })
             }
-        });
-        this.cleanup.push(() => rootState.removeObserver(rootObs))
+        }, this);
 
         const newComment = new NewCommentComponent(dispatcher, () => this.range, cellId);
 
@@ -240,10 +238,9 @@ class CommentRoot extends MonacoRightGutterOverlay {
         }
 
         handleNewChildren(childrenState.getState())
-        const childrenObs = childrenState.addObserver(c => handleNewChildren(c));
-        this.cleanup.push(() => childrenState.removeObserver(childrenObs))
+        childrenState.addObserver(c => handleNewChildren(c), this);
 
-        const changeListener = editor.onDidChangeModelContent(() => {
+        const modelChangeListener = editor.onDidChangeModelContent(() => {
             const model = this.editor.getModel();
             if (model) {
                 const modelDecorations = model.getAllDecorations();
@@ -267,7 +264,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
                 }
             }
         })
-        this.cleanup.push(() => changeListener.dispose())
+        this.didDispose.then(() => modelChangeListener.dispose())
     }
 
     get uuid() {
@@ -313,10 +310,9 @@ class CommentRoot extends MonacoRightGutterOverlay {
         this.visible = false
     }
 
-    dispose() {
+    onDispose() {
         // we need to delete all children when the root is deleted.
         this.childrenState.getState().forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
-        this.cleanup.forEach(f => f())
         this.hide()
         this.editor.deltaDecorations(this.highlights, []) // clear highlights
     }
@@ -338,7 +334,7 @@ class CommentButtonComponent extends MonacoRightGutterOverlay{
     }
 }
 
-class NewCommentComponent {
+class NewCommentComponent extends BaseDisposable {
     readonly el: TagElement<"div">;
     private currentIdentity: Identity;
     onCreate?: () => void;
@@ -347,7 +343,8 @@ class NewCommentComponent {
                 readonly range: () => PosRange,
                 readonly cellId: number) {
 
-        this.currentIdentity = ServerStateHandler.get.getState().identity;
+        super()
+        this.currentIdentity = ServerStateHandler.getState().identity;
 
         const doCreate = () => {
             this.dispatcher.dispatch(new CreateComment(cellId, createCellComment({
@@ -394,7 +391,7 @@ class NewCommentComponent {
             ])
         ])
 
-        ServerStateHandler.get.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
+        ServerStateHandler.view("connectionStatus", this).addObserver((currentStatus, previousStatus) => {
             if (currentStatus === "disconnected" && previousStatus === "connected") {
                 this.el.classList.add("hide")
             } else if (currentStatus === "connected" && previousStatus === "disconnected") {
@@ -422,7 +419,7 @@ class CommentComponent {
                 readonly cellId: number,
                 readonly comment: CellComment) {
 
-        this.currentIdentity = ServerStateHandler.get.getState().identity;
+        this.currentIdentity = ServerStateHandler.getState().identity;
 
         this.el = this.commentElement(comment);
     }

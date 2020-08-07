@@ -51,7 +51,7 @@ export class About extends FullScreenModal {
             ])
         ]);
 
-        const {serverVersion, serverCommit} = ServerStateHandler.get.getState()
+        const {serverVersion, serverCommit} = ServerStateHandler.getState()
         const info = [
             ["Server Version", serverVersion],
             ["Server Commit", serverCommit]
@@ -253,7 +253,7 @@ export class About extends FullScreenModal {
                     })
 
                     this.cleanup.push(() => {
-                        if (ServerStateHandler.get.getState().currentNotebook !== path) {
+                        if (ServerStateHandler.getState().currentNotebook !== path) {
                             this.serverMessageDispatcher.dispatch(new CloseNotebook(path))
                         }
                     })

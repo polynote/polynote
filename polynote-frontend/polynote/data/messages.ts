@@ -334,13 +334,15 @@ export const TaskStatus = Object.freeze({
     Error: 3
 });
 
+type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus];
+
 export class TaskInfo {
     static codec = combined(tinyStr, tinyStr, shortStr, uint8, uint8, optional(tinyStr)).to(TaskInfo);
     static unapply(inst: TaskInfo): ConstructorParameters<typeof TaskInfo> {
         return [inst.id, inst.label, inst.detail, inst.status, inst.progress, inst.parent];
     }
 
-    constructor(readonly id: string, readonly label: string, readonly detail: string, readonly status: number,
+    constructor(readonly id: string, readonly label: string, readonly detail: string, readonly status: TaskStatus,
                 readonly progress: number, readonly parent?: string) {
         Object.freeze(this);
     }
@@ -444,6 +446,20 @@ export class KernelError extends KernelStatusUpdate {
     }
 }
 
+export class CellStatusUpdate extends KernelStatusUpdate {
+    static codec = combined(int16, uint8).to(CellStatusUpdate);
+    static get msgTypeId() { return 8; }
+
+    static unapply(inst: CellStatusUpdate): ConstructorParameters<typeof CellStatusUpdate> {
+        return [inst.cellId, inst.status];
+    }
+
+    constructor(readonly cellId: number, readonly status: TaskStatus) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 KernelStatusUpdate.codecs = [
     UpdatedSymbols,    // 0
     UpdatedTasks,      // 1
@@ -453,6 +469,7 @@ KernelStatusUpdate.codecs = [
     PresenceUpdate,    // 5
     PresenceSelection, // 6
     KernelError,       // 7
+    CellStatusUpdate,  // 8
 ];
 
 KernelStatusUpdate.codec = discriminated(

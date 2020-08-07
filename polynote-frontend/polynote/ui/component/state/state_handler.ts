@@ -1,14 +1,41 @@
 import * as deepEquals from 'fast-deep-equal/es6';
-import * as clone from "clone";
-import {deepFreeze, isObject} from "../../../util/functions";
+import {deepFreeze, Deferred, isObject} from "../../../util/helpers";
+
+// TODO: should probably validate that an object isn't used once disposed...
+/**
+ * An implementer of Disposable must have a dispose function which disposes the implementer, and a didDispose Promise
+ * that resolves when the implementer has been disposed.
+ *
+ * TODO: what's the point of this interface?
+ */
+export interface Disposable {
+    didDispose: Promise<void>,
+    dispose(): void
+}
+
+/**
+ * Helper implementation of Disposable. Extenders can override `onDispose` to add any special cleanup logic.
+ */
+export abstract class BaseDisposable implements Disposable {
+    private deferred: Deferred<void> = new Deferred()
+    didDispose: Promise<void> = this.deferred
+
+    // TODO: maybe onDispose isn't necessary, as implementers could instead use `this.didDispose.then()` to achieve the same thing...
+    protected onDispose(): void {}
+
+    // this readonly field trick is a hacky way to make a `final` member in Typescript...
+    readonly dispose = () => {
+        console.log("Disposing", this)
+        this.onDispose()
+        this.deferred.resolve()
+    };
+}
+
 
 export const NoUpdate: unique symbol = Symbol()
 
 // The StateHandler mediates interactions between Components and States
-export class StateHandler<S> {
-    public dispose: () => void = () => {
-        this.clearObservers()
-    };
+export class StateHandler<S> extends BaseDisposable {
 
     protected state: S
 
@@ -44,7 +71,10 @@ export class StateHandler<S> {
     // will be reflected in this state.
     // Optionally, caller can provide the constructor to use to instantiate the view StateHandler.
     // TODO: maybe views should be read-only? How often are views even changed?
-    view<K extends keyof S, C extends StateHandler<S[K]>>(key: K, constructor?: { new(s: S[K]): C}): C {
+    // TODO: should views remove themselves if they have no more observers?
+    // TODO: how often do we really use the constructor parameter? Feels like it kind of complicates things and isn't that useful.
+    // TODO: cache views for the same key, to avoid recreating them? This may conflict with disposal though.
+    view<K extends keyof S, C extends StateHandler<S[K]>>(key: K, constructor?: { new(s: S[K]): C}, disposeWhen?: Disposable): C {
         const view: StateHandler<S[K]> = constructor ? new constructor(this.state[key]) : new StateHandler(this.state[key]);
         const obs = this.addObserver(s => {
             const observedVal = s[key];
@@ -62,11 +92,10 @@ export class StateHandler<S> {
                 })
             }
         });
-        const oldDispose = view.dispose
-        view.dispose = () => {
-            oldDispose();
+        view.didDispose.then(() => {
             this.removeObserver(obs);
-        };
+        })
+        Promise.race([this.didDispose, ...(disposeWhen === undefined ? [] : [disposeWhen.didDispose])]).then(() => view.dispose())
         return view as C
     }
 
@@ -128,8 +157,8 @@ export class StateHandler<S> {
                 xmapView.clearObservers();
             }
         });
-        const oldDispose = view.dispose
-        view.dispose = () => {
+        const oldDispose = view.onDispose
+        view.onDispose = () => {
             oldDispose()
             view.clearObservers()
             xmapView.dispose()
@@ -152,7 +181,7 @@ export class StateHandler<S> {
             }
         });
         const oldDispose = view.dispose
-        view.dispose = () => {
+        view.onDispose = () => {
             oldDispose()
             view.clearObservers()
             mapView.dispose()
@@ -162,6 +191,7 @@ export class StateHandler<S> {
     }
 
     constructor(state: S) {
+        super()
         this.setState(deepFreeze(state))
     }
 
@@ -171,10 +201,20 @@ export class StateHandler<S> {
         return s1 === s2
     }
 
-    // methods to add and remove observers.
     protected observers: Observer<S>[] = [];
-    addObserver(f: Observer<S>): Observer<S> {
+
+    /**
+     * Add an Observer to this State Handler.
+     * If a Disposable is passed to `disposeWhen`, the Observer will be removed following `disposeWhen`'s disposal.
+     *
+     * @param disposeWhen
+     * @param f
+     */
+    addObserver(f: Observer<S>, disposeWhen?: Disposable): Observer<S> {
         this.observers.push(f);
+        disposeWhen?.didDispose.then(() => {
+            this.removeObserver(f)
+        })
         return f;
     }
 
@@ -187,6 +227,10 @@ export class StateHandler<S> {
 
     clearObservers(): void {
         this.observers = [];
+    }
+
+    protected onDispose() {
+        this.clearObservers()
     }
 }
 

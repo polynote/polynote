@@ -66,17 +66,10 @@ object KernelSubscriber {
 
     def foreignUpdates(local: AtomicInteger, global: AtomicInteger) =
       publisher.broadcastUpdates.subscribe(128).unNone.evalMap {
+        case (`id`, update) if update.echoOriginatingSubscriber =>
+          ZIO.effectTotal(global.set(update.globalVersion)).as(Some(update))
         case (`id`, update) =>
-          // We echo certain updates back to clients to let them know changes have been 'persisted'.
-          val echoUpdate  = update match {
-            case InsertCell(_, _, _, _) => Some(update)
-            case DeleteCell(_, _, _) => Some(update)
-            case CreateComment(_, _, _, _) => Some(update)
-            case UpdateComment(_, _, _, _, _, _) => Some(update)
-            case DeleteComment(_, _, _, _) => Some(update)
-            case _ => None
-          }
-          ZIO.effectTotal(global.set(update.globalVersion)).as(echoUpdate)
+          ZIO.effectTotal(global.set(update.globalVersion)).as(None)
         case (_, update)    => ZIO.effectTotal(global.get()).map {
           case knownGlobalVersion if update.globalVersion < knownGlobalVersion =>
             Some(rebaseUpdate(update, knownGlobalVersion, local.get()))

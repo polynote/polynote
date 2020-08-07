@@ -10,7 +10,7 @@ import {
     SetSelectedCell,
     UpdateCell, ShowValueInspector, DeselectCell
 } from "../messaging/dispatcher";
-import {StateHandler} from "../state/state_handler";
+import {BaseDisposable, StateHandler} from "../state/state_handler";
 import {CellState, CompletionHint, SignatureHint} from "../state/notebook_state";
 import * as monaco from "monaco-editor";
 // @ts-ignore (ignore use of non-public monaco api)
@@ -63,27 +63,29 @@ import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import {ClientInterpreters} from "./interpreter/client_interpreter";
 import {ErrorComponent} from "./error";
 import {Error} from "../../../data/messages";
+import {clientInterpreters} from "../../../interpreter/client_interpreter";
 
-export class CellContainerComponent {
+export class CellContainerComponent extends BaseDisposable {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
     private cell: CellComponent;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateHandler<CellState>, private path: string) {
+        super()
         this.cellId = `Cell${cellState.getState().id}`;
         this.cell = this.cellFor(cellState.getState().language);
         this.el = div(['cell-component'], [this.cell.el]);
         this.el.click(evt => this.cell.doSelect());
         cellState.view("language").addObserver((newLang, oldLang) => {
             // Need to create a whole new cell if the language switches between code and text
-            if (oldLang === "text" || newLang === "text") {
-                const newCell = this.cellFor(newLang);
-                this.cell.el.replaceWith(newCell.el);
-                this.cell = newCell;
-            }
-        });
+            if (oldLang !== undefined && (oldLang === "text" || newLang === "text")) {
+                const newCell = this.cellFor(newLang)
+                this.cell = newCell.replace(this.cell)
 
-        ServerStateHandler.get.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
+            }
+        }, this);
+
+        ServerStateHandler.view("connectionStatus", this).addObserver((currentStatus, previousStatus) => {
             if (currentStatus === "disconnected") {
                 this.cell.setDisabled(true)
             } else if (previousStatus === "disconnected") {
@@ -123,12 +125,13 @@ export const cellHotkeys = {
     [monaco.KeyCode.KEY_K]: ["MoveUpK", ""],
 };
 
-abstract class CellComponent {
+abstract class CellComponent extends BaseDisposable {
     protected id: number;
     protected cellId: string;
     public el: TagElement<"div">;
 
     protected constructor(protected dispatcher: NotebookMessageDispatcher, protected cellState: StateHandler<CellState>) {
+        super()
         this.id = cellState.getState().id;
         this.cellId = `Cell${this.id}`;
 
@@ -139,12 +142,13 @@ abstract class CellComponent {
                 this.onDeselected()
             }
         }
-        updateSelected(this.state.selected)
-        cellState.view("selected").addObserver((selected, prevSelected) => updateSelected(selected, prevSelected));
+        cellState.view("selected").addObserver((selected, prevSelected) => updateSelected(selected, prevSelected), this);
     }
 
     doSelect(){
-        this.dispatcher.dispatch(new SetSelectedCell(this.id))
+        if (! this.cellState.getState().selected) {
+            this.dispatcher.dispatch(new SetSelectedCell(this.id))
+        }
     }
 
     doDeselect(){
@@ -153,6 +157,15 @@ abstract class CellComponent {
                 this.dispatcher.dispatch(new DeselectCell(this.id))
             }
         }
+    }
+
+    replace(oldCell: CellComponent) {
+        oldCell.dispose()
+        oldCell.el.replaceWith(this.el);
+        if (this.cellState.getState().selected || oldCell.cellState.getState().selected) {
+            this.onSelected()
+        }
+        return this
     }
 
     protected onSelected() {
@@ -237,7 +250,9 @@ abstract class CellComponent {
 
     abstract setDisabled(disabled: boolean): void
 
-    delete() {}
+    delete() {
+        this.dispose()
+    }
 
     layout() {}
 }
@@ -255,7 +270,7 @@ class CodeCellComponent extends CellComponent {
     constructor(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>, private path: string) {
         super(dispatcher, cellState);
 
-        const langSelector = dropdown(['lang-selector'], ServerStateHandler.get.getState().interpreters);
+        const langSelector = dropdown(['lang-selector'], ServerStateHandler.getState().interpreters);
         langSelector.setSelectedValue(this.state.language);
         langSelector.addEventListener("input", evt => {
             const selectedLang = langSelector.getSelectedValue();
@@ -412,9 +427,12 @@ class CodeCellComponent extends CellComponent {
         ]);
 
         cellState.view("language").addObserver((newLang, oldLang) => {
-            this.el.classList.replace(oldLang, newLang);
-            langSelector.setSelectedValue(newLang);
-        });
+            const newHighlightLang = clientInterpreters[newLang]?.highlightLanguage ?? newLang;
+            const oldHighlightLang = clientInterpreters[oldLang]?.highlightLanguage ?? oldLang;
+            this.el.classList.replace(oldHighlightLang, newHighlightLang);
+            langSelector.setSelectedValue(newHighlightLang);
+            monaco.editor.setModelLanguage(this.editor.getModel()!, newHighlightLang)
+        }, this);
 
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
@@ -435,14 +453,14 @@ class CodeCellComponent extends CellComponent {
             }
         }
         updateMetadata(this.state.metadata);
-        cellState.view("metadata").addObserver(metadata => updateMetadata(metadata));
+        cellState.view("metadata").addObserver(metadata => updateMetadata(metadata), this);
 
         cellState.view("pendingEdits").addObserver(edits => {
             if (edits.length > 0) {
                 this.applyEdits(edits);
                 dispatcher.dispatch(new ClearCellEdits(this.id));
             }
-        });
+        }, this);
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
@@ -452,7 +470,7 @@ class CodeCellComponent extends CellComponent {
             }
         }
         updateError(this.state.error)
-        cellState.view("error").addObserver(error => updateError(error));
+        cellState.view("error").addObserver(error => updateError(error), this);
 
         const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
@@ -468,7 +486,7 @@ class CodeCellComponent extends CellComponent {
             }
         }
         updateRunning(this.state.running)
-        cellState.view("running").addObserver((curr, prev) => updateRunning(curr, prev));
+        cellState.view("running").addObserver((curr, prev) => updateRunning(curr, prev), this);
 
         const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
             if (queued) {
@@ -484,7 +502,7 @@ class CodeCellComponent extends CellComponent {
             }
         }
         updateQueued(this.state.queued)
-        cellState.view("queued").addObserver((curr, prev) => updateQueued(curr, prev));
+        cellState.view("queued").addObserver((curr, prev) => updateQueued(curr, prev), this);
 
         const updateHighlight = (h: { range: PosRange , className: string} | undefined) => {
             if (h) {
@@ -504,7 +522,7 @@ class CodeCellComponent extends CellComponent {
             }
         }
         updateHighlight(this.state.currentHighlight)
-        cellState.view("currentHighlight").addObserver(h => updateHighlight(h))
+        cellState.view("currentHighlight").addObserver(h => updateHighlight(h), this)
 
         const presenceMarkers: Record<number, string[]> = {};
         const updatePresence = (id: number, name: string, color: string, range: PosRange) => {
@@ -537,7 +555,7 @@ class CodeCellComponent extends CellComponent {
             }
         }
         cellState.getState().presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
-        cellState.view("presence").addObserver(presence => presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range)))
+        cellState.view("presence").addObserver(presence => presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range)), this)
 
         // make sure to create the comment handler.
        this.commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
@@ -673,12 +691,9 @@ class CodeCellComponent extends CellComponent {
         el.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
         el.appendChild(span(['exec-duration'], [prettyDuration(duration)]));
         el.classList.add('output');
-        if (executionInfo.endTs !== undefined) {
-            el.classList.remove("running");
-        } else {
-            el.classList.add("running");
+        if (executionInfo.endTs === undefined || executionInfo.endTs === null) {
             // update exec info every so often
-            if (this.execDurationUpdater !== undefined) {
+            if (this.execDurationUpdater === undefined) {
                 this.execDurationUpdater = window.setInterval(() => this.setExecutionInfo(el, executionInfo), 333)
             }
         }
@@ -825,6 +840,10 @@ class CodeCellComponent extends CellComponent {
         this.commentHandler.hide()
     }
 
+    onDispose() {
+        this.commentHandler.dispose()
+    }
+
     setDisabled(disabled: boolean) {
         this.editor.updateOptions({readOnly: disabled});
         if (disabled) {
@@ -853,7 +872,7 @@ class CodeCellComponent extends CellComponent {
 
 type CellErrorMarkers = editor.IMarkerData & { originalSeverity: MarkerSeverity}
 
-class CodeCellOutput {
+class CodeCellOutput extends BaseDisposable {
     readonly el: TagElement<"div">;
     private stdOutEl: MIMEElement | null;
     private stdOutLines: number;
@@ -868,6 +887,7 @@ class CodeCellOutput {
         private cellState: StateHandler<CellState>,
         compileErrorsHandler: StateHandler<CellErrorMarkers[][] | undefined>,
         runtimeErrorHandler: StateHandler<ErrorComponent | undefined>) {
+        super()
 
         const outputHandler = cellState.view("output");
         const resultsHandler = cellState.view("results");
@@ -887,18 +907,22 @@ class CodeCellOutput {
         ]);
 
         const handleResults = (results: (ClientResult | ResultValue)[]) => {
-            results.forEach(res => this.displayResult(res))
+            if (results.length > 0) {
+                results.forEach(res => this.displayResult(res))
+            } else {
+                this.clearResults()
+            }
         }
         handleResults(resultsHandler.getState())
-        resultsHandler.addObserver(results => handleResults(results));
+        resultsHandler.addObserver(results => handleResults(results), this);
 
-        compileErrorsHandler.addObserver(errors => this.setErrors(errors));
+        compileErrorsHandler.addObserver(errors => this.setErrors(errors), this);
 
         const handleRuntimeError = (error?: ErrorComponent) => {
             this.setRuntimeError(error)
         }
         handleRuntimeError(runtimeErrorHandler.getState())
-        runtimeErrorHandler.addObserver(error => handleRuntimeError(error));
+        runtimeErrorHandler.addObserver(error => handleRuntimeError(error), this);
 
         const handleOutput = (output: Output[]) => {
             if (output.length > 0) {
@@ -910,7 +934,7 @@ class CodeCellOutput {
             }
         }
         handleOutput(outputHandler.getState())
-        outputHandler.addObserver(output => handleOutput(output))
+        outputHandler.addObserver(output => handleOutput(output), this)
     }
 
     private displayResult(result: ResultValue | ClientResult) {
@@ -937,7 +961,6 @@ class CodeCellOutput {
                 this.cellResultMargin.innerHTML = '';
                 this.cellResultMargin.appendChild(outLabel);
 
-
                 this.displayRepr(result).then(display => {
                     const [mime, content] = display;
                     const [mimeType, args] = parseContentType(mime);
@@ -953,6 +976,11 @@ class CodeCellOutput {
             // TODO: add support for ClientResults!
             // result.display(this.resultTabs, this);
         }
+    }
+
+    private clearResults() {
+        this.resultTabs.innerHTML = '';
+        this.cellResultMargin.innerHTML = '';
     }
 
     // TODO: move this back to `ResultValue`
@@ -1211,6 +1239,7 @@ class CodeCellOutput {
 export class TextCellComponent extends CellComponent {
     private editor: RichTextEditor;
     private lastContent: string;
+    private listeners: [string, (evt: Event) => void][];
 
     constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<CellState>, private path: string) {
         super(dispatcher, stateHandler)
@@ -1225,18 +1254,19 @@ export class TextCellComponent extends CellComponent {
             div(['cell-input'], [editorEl])
         ])
 
-
-        this.editor.element.addEventListener('focus', () => {
-            this.doSelect();
-        });
-
-        this.editor.element.addEventListener('blur', () => {
-            this.doDeselect();
-        });
-
-        this.editor.element.addEventListener('keydown', (evt: KeyboardEvent) => this.onKeyDown(evt));
-
-        this.editor.element.addEventListener('input', (evt: KeyboardEvent) => this.onInput());
+        this.listeners = [
+            ['focus', () => {
+                this.doSelect();
+            }],
+            ['blur', () => {
+                this.doDeselect();
+            }],
+            ['keydown', (evt: KeyboardEvent) => this.onKeyDown(evt)],
+            ['input', (evt: KeyboardEvent) => this.onInput()]
+        ]
+        this.listeners.forEach(([k, fn]) => {
+            this.editor.element.addEventListener(k, fn);
+        })
     }
 
     // not private because it is also used by latex-editor
@@ -1373,5 +1403,12 @@ export class TextCellComponent extends CellComponent {
 
     setDisabled(disabled: boolean) {
         this.editor.disabled = disabled
+    }
+
+    protected onDispose() {
+        super.onDispose();
+        this.listeners.forEach(([k, fn]) => {
+            this.editor.element.removeEventListener(k, fn)
+        })
     }
 }

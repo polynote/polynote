@@ -27,7 +27,7 @@ import {DataStream} from "../messaging/datastream";
 import {StreamingDataRepr} from "../../../data/value_repr";
 import {CellState, NotebookStateHandler} from "../state/notebook_state";
 import {VegaClientResult} from "./interpreter/vega_interpreter";
-import {mapValues} from "../../../util/functions";
+import {mapValues} from "../../../util/helpers";
 
 function isDimension(dataType: DataType): boolean {
     if (dataType instanceof OptionalType) {
@@ -131,7 +131,7 @@ export class PlotEditor {
     constructor(private dispatcher: NotebookMessageDispatcher, private nbState: NotebookStateHandler, readonly repr: StreamingDataRepr, readonly name: string, readonly sourceCellId: number) {
         this.fields = repr.dataType.fields;
 
-        const connectionStatus = ServerStateHandler.get.getState().connectionStatus;
+        const connectionStatus = ServerStateHandler.getState().connectionStatus;
         if (connectionStatus === "disconnected") {
             this.container = div(['plot-editor-container', 'disconnected'], [
                 "Not connected to server – must be connected in order to plot."

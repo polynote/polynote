@@ -26,7 +26,7 @@ import {TaskInfo, TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../state/notebook_state";
 import {ServerError, ServerStateHandler} from "../state/server_state";
-import {removeKey} from "../../../util/functions";
+import {removeKey} from "../../../util/helpers";
 import {ErrorComponent} from "./error";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
@@ -69,7 +69,7 @@ export class KernelPane {
                 this.header = placeholderHeader;
             }
         }
-        handleCurrentNotebook(ServerStateHandler.get.getState().currentNotebook)
+        handleCurrentNotebook(ServerStateHandler.getState().currentNotebook)
         ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path))
     }
 
@@ -249,7 +249,7 @@ class KernelTasksComponent {
         handleKernelErrors(kernelErrors.getState())
         kernelErrors.addObserver(e => handleKernelErrors(e))
 
-        const serverErrors = ServerStateHandler.get.view("errors")
+        const serverErrors = ServerStateHandler.view("errors", kernelTasksHandler)
         let serverErrorIds: string[] = [];
         const handleServerErrors = (errs: ServerError[]) => {
             if (errs.length > 0) {
