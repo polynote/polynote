@@ -88,15 +88,6 @@ body {
     float: right;
   }
 
-  /*.floating-menu {
-    border: 1px #c2c2c2 solid;
-    background: white;
-    position: absolute;
-    display: none;
-    padding: 4px;
-    user-select: text;
-  }*/
-
   .toolbar {
     //min-width: 120px;
     float: left;
@@ -125,22 +116,6 @@ body {
         margin-left: 1em;
       }
     }
-
-    //.tool-group {
-    //  height: 35px;
-    //  line-height: 35px;
-    //  white-space: nowrap;
-    //  display: inline-block;
-    //  vertical-align: middle;
-    //  * {
-    //    vertical-align: middle;
-    //  }
-    //
-    //  & > button {
-    //    height: 35px;
-    //    display: inline-block;
-    //  }
-    //}
 
     .tool-group {
       height: 28px;
@@ -171,6 +146,20 @@ body {
         line-height: 1;
         font-size: 14px;
         display: inline-block;
+      }
+
+      .createLink {
+        &.active {
+          display: none
+        }
+      }
+
+      .unlink {
+        display: none;
+
+        &.active {
+          display: inherit;
+        }
       }
     }
 
@@ -510,7 +499,7 @@ body {
       -ms-text-size-adjust: 100%;
       -webkit-text-size-adjust: 100%;
       line-height: 1.5;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      font-family: @text-fonts;
       font-size: 16px;
       word-wrap: break-word;
       border-left: 1px solid transparent;
@@ -617,10 +606,6 @@ body {
     }
 
     .markdown-body a {
-      text-decoration: none;
-    }
-
-    .markdown-body a:hover {
       text-decoration: underline;
     }
 
@@ -2841,6 +2826,13 @@ img.icon, svg.icon {
   span { display: none; }
 }
 
+.link-component {
+  position: absolute;
+  padding: 4px;
+  border-radius: 4px;
+  margin-top: 4px;
+  font-family: @text-fonts;
+}
 
 /*
 Loader (adapted from https://github.com/lukehaas/css-loaders/blob/step2/less/loader.less)

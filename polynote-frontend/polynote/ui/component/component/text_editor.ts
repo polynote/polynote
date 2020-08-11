@@ -1,4 +1,4 @@
-import {TagElement} from "../../util/tags";
+import {a, div, TagElement} from "../../util/tags";
 import {MarkdownIt} from "../../../util/markdown-it";
 import {LaTeXEditor} from "./latex_editor";
 import {htmlToMarkdown} from "../../util/html_to_md";
@@ -43,6 +43,12 @@ export class RichTextEditor {
                 }
             }
         });
+
+        this.element.addEventListener('click', (evt) => {
+            if (evt.target instanceof HTMLAnchorElement) {
+                LinkComponent.showFor(evt.target)
+            }
+        })
     }
 
     set disabled(disable: boolean) {
@@ -55,5 +61,45 @@ export class RichTextEditor {
 
     get markdownContent() {
         return htmlToMarkdown(this.element);
+    }
+
+    get contentNodes() {
+        return Array.from(this.element.childNodes)
+            // there are a bunch of text nodes with newlines we don't care about.
+            .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
+    }
+}
+
+// TODO: add linky buttons here too, not just on the toolbar.
+class LinkComponent {
+    readonly el: TagElement<"div">;
+    private listener = () => this.hide()
+
+    private constructor(private target: HTMLAnchorElement) {
+        this.el = div(['link-component'], [
+            a([], target.href, target.href, { target: "_blank" })
+        ]).listener("mousedown", evt => evt.stopPropagation())
+
+        document.body.appendChild(this.el);
+        document.body.addEventListener("mousedown", this.listener)
+
+        const rect = target.getBoundingClientRect();
+        this.el.style.left = `${rect.left}px`
+        this.el.style.top = `${rect.bottom}px`
+    }
+
+    hide() {
+        document.body.removeChild(this.el)
+        document.body.removeEventListener("mousedown", this.listener)
+    }
+
+    private static inst: LinkComponent;
+    static showFor(target: HTMLAnchorElement) {
+        const link = new LinkComponent(target)
+        if (LinkComponent.inst) {
+            LinkComponent.inst.hide()
+        }
+        LinkComponent.inst = link
+        return LinkComponent.inst
     }
 }

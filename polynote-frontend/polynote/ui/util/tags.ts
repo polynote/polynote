@@ -127,11 +127,16 @@ export function icon(classes: string[], iconName: string, alt?: string) {
     return span(classes, icon);
 }
 
-export function a(classes: string[], href: string, contentOrPreventNavigate: Content | boolean, contentWhenPreventNavigate?: Content) {
-    const preventNavigate = typeof(contentOrPreventNavigate) === "boolean" ? contentOrPreventNavigate : false;
-    const content = typeof(contentOrPreventNavigate) === "boolean" ? contentWhenPreventNavigate : contentOrPreventNavigate;
+export interface LinkOptions {
+    preventNavigate?: boolean,
+    target?: string
+}
+export function a(classes: string[], href: string, content: Content, opts?: LinkOptions) {
     const a = tag("a", classes, {href: href, toString: href}, content);
-    if (preventNavigate) {
+    if (opts?.target) {
+        a.target = opts?.target;
+    }
+    if (opts?.preventNavigate) {
         a.addEventListener("click", (evt: MouseEvent) => {
             evt.preventDefault();
             return false;

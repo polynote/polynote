@@ -9,7 +9,6 @@ import {
 import {ServerStateHandler} from "../state/server_state";
 import {diffArray, removeKey} from "../../../util/helpers";
 import {StateHandler} from "../state/state_handler";
-import {DialogModal} from "./modal";
 
 export class NotebookListContextMenuComponent {
     readonly el: TagElement<"div">;
@@ -479,7 +478,7 @@ export class LeafComponent {
     }
 
     private getEl(leaf: Leaf) {
-        return a(['name'], `notebooks/${leaf.fullPath}`, true, [span([], [leaf.value])])
+        return a(['name'], `notebooks/${leaf.fullPath}`, [span([], [leaf.value])], { preventNavigate: true })
             .click(evt => this.dispatcher.dispatch(new LoadNotebook(leaf.fullPath)))
     }
 }

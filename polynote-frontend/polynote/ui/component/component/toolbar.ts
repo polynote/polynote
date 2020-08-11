@@ -1,9 +1,13 @@
 import {
     DownloadNotebook,
-    NotebookMessageDispatcher, RequestCancelTasks,
+    NotebookMessageDispatcher,
+    RequestCancelTasks,
     RequestCellRun,
     RequestClearOutput,
-    ServerMessageDispatcher, SetCellLanguage, UIAction, ViewAbout
+    ServerMessageDispatcher,
+    SetCellLanguage,
+    UIAction,
+    ViewAbout
 } from "../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../../util/tags";
 import {ServerStateHandler} from "../state/server_state";
@@ -284,6 +288,7 @@ class TextToolbar extends ToolbarElement {
     private blockTypeSelector: FakeSelect;
     private codeButton: CommandButton;
     private equationButton: CommandButton;
+    private unlinkButton: CommandButton;
     private buttons: CommandButton[];
 
     constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
@@ -291,10 +296,10 @@ class TextToolbar extends ToolbarElement {
 
         let buttons = [];
 
-        function commandButton(cmd: string, title: string, icon: string, alt: string): CommandButton {
+        function commandButton(cmd: string, title: string, icon: string, alt: string, arg?: () => string | undefined): CommandButton {
             const button = iconButton([cmd], title, icon, alt)
                 // .attr('command', cmd)
-                .click(() => document.execCommand(cmd, false))
+                .click(() => document.execCommand(cmd, false, arg?.()))
                 .withKey('getState', () => document.queryCommandValue(cmd)) as CommandButton;
 
             buttons.push(button);
@@ -340,6 +345,24 @@ class TextToolbar extends ToolbarElement {
                                 (selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code"
                             )
                         }) as CommandButton,
+                    commandButton("createLink", "Link", "link", "Link", () => document.getSelection()?.toString())
+                        .withKey('getState', () => {
+                            const selection = document.getSelection();
+                            return selection?.anchorNode?.parentElement instanceof HTMLAnchorElement
+                        }),
+                    this.unlinkButton = iconButton(["unlink"], "Unlink", "unlink", "Unlink")
+                        .click(() => {
+                            const selection = document.getSelection();
+                            if (selection?.anchorNode?.parentElement instanceof HTMLAnchorElement) {
+                                selection.selectAllChildren(selection.anchorNode.parentNode!);
+                                document.execCommand("unlink")
+                                selection.removeAllRanges()
+                            }
+                        })
+                        .withKey('getState', () => {
+                            const selection = document.getSelection();
+                            return selection?.anchorNode?.parentElement instanceof HTMLAnchorElement
+                        }) as CommandButton
                 ]}, {
                 classes: ["lists"],
                 elems: [
@@ -372,6 +395,7 @@ class TextToolbar extends ToolbarElement {
         this.blockTypeSelector = new FakeSelect(blockTypeSelectorEl);
 
         buttons.push(this.codeButton);
+        buttons.push(this.unlinkButton);
         buttons.push(this.equationButton);
         this.buttons = buttons;
 
@@ -384,7 +408,7 @@ class TextToolbar extends ToolbarElement {
 
             let state = button.getState();
 
-            if (state !== 'false') {
+            if (state.toString() !== 'false') {
                 button.classList.add('active');
             } else {
                 button.classList.remove('active');

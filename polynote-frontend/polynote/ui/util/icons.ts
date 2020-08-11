@@ -29,7 +29,7 @@ export function loadIcon(name: string): Promise<SVGElement> {
         return icons[name];
 
     const promise = loadXML(`static/style/icons/fa/${name}.svg`).then(
-        doc =>document.importNode(doc.documentElement, true) as any as SVGElement
+        doc => document.importNode(doc.documentElement, true) as any as SVGElement
     );
 
     icons[name] = promise;

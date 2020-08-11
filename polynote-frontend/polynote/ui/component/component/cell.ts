@@ -1303,12 +1303,6 @@ export class TextCellComponent extends CellComponent {
         }
     }
 
-    getContentNodes() {
-        return Array.from(this.editor.element.childNodes)
-            // there are a bunch of text nodes with newlines we don't care about.
-            .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
-    }
-
     // Note: lines in contenteditable are inherently weird, don't rely on this for anything aside from beginning and end
     getPosition() {
         // get selection
@@ -1322,7 +1316,7 @@ export class TextCellComponent extends CellComponent {
         }
         // ok, now which line number?
         let selectionLineNum = -1;
-        const contentNodes = this.getContentNodes();
+        const contentNodes = this.editor.contentNodes;
         contentNodes.forEach((node, idx) => {
             if (node === selectedNode || node.contains(selectedNode)) {
                 selectionLineNum = idx;
@@ -1335,7 +1329,7 @@ export class TextCellComponent extends CellComponent {
     }
 
     getRange() {
-        const contentLines = this.getContentNodes();
+        const contentLines = this.editor.contentNodes
 
         const lastLine = contentLines[contentLines.length - 1]?.textContent || "";
 
