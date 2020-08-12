@@ -32,7 +32,7 @@ class Main {
 
         // handle reconnecting
         const reconnectOnWindowFocus = () => {
-            console.log("Window was focused! Attempting to reconnect.")
+            console.warn("Window was focused! Attempting to reconnect.")
             dispatcher.dispatch(new Reconnect(true))
         }
         ServerStateHandler.get.view("connectionStatus").addObserver(status => {
@@ -58,14 +58,11 @@ class Main {
         ]);
 
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
-            console.log("Current notebook is", path)
             Main.handlePath(path)
         })
 
-        console.log("Opening previously opened notebooks", OpenNotebooksHandler.getState())
         const path = unescape(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.getState().map(path => {
-            console.log("opening", path)
             return dispatcher.loadNotebook(path, true)
         })).then(() => {
             const notebookBase = 'notebook/';

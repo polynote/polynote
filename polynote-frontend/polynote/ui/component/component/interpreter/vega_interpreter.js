@@ -40,7 +40,7 @@ export const VegaInterpreter = {
 
             return [new VegaClientResult(Promise.resolve(spec))];
         } catch (err) {
-            console.log(err)
+            console.error(err)
             return [RuntimeError.fromJS(err)];
         }
     }

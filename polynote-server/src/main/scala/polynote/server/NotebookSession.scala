@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import cats.instances.list._
 import cats.syntax.either._
 import cats.syntax.traverse._
-import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, PresenceUpdate, Running, StreamThrowableOps, StreamingHandles, TaskInfo, UpdatedTasks}
+import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, KernelBusyState, PresenceUpdate, Running, StreamThrowableOps, StreamingHandles, TaskInfo, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.util.Publish
 import polynote.messages._
@@ -140,7 +140,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
 
   // First send the notebook without any results (because they're large) and then send the individual results
   // to make notebook loading more incremental.
-  private def sendNotebook: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] = for {
+  private def sendNotebookContents: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] = for {
     nb      <- subscriber.notebook
     taskInfo = TaskInfo(nb.path, s"Loading notebook", s"Loading ${nb.path}", Running)
     _       <- PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo))))
@@ -149,9 +149,10 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
     _       <- sendCellResults(nb.results, taskInfo)
   } yield ()
 
-  def sendNotebookInfo: RIO[SessionEnv with PublishMessage, Unit] =
+  def sendNotebook: RIO[SessionEnv with PublishMessage, Unit] =
     subscriber.checkPermission(Permission.ReadNotebook).flatMap { _ =>
-      sendNotebook *> sendStatus *> sendTasks *> sendPresence
+      // make sure to send status first, so client knows whether this notebook is up or not.
+      sendStatus *> sendNotebookContents *> sendTasks *> sendPresence
     }.catchAll(err => PublishMessage(Error(0, err)))
 }
 
@@ -170,7 +171,7 @@ object NotebookSession {
       handler           = new NotebookSession(subscriber, streamingHandles, broadcastAll)
       env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
       close             = closeQueueIf(closed, output) *> subscriber.close()
-      _                <- handler.sendNotebookInfo
+      _                <- handler.sendNotebook
     } yield parallelStreams(
       toFrames(ZStream.fromQueue(output).unTake),
       input.handleMessages(close) {

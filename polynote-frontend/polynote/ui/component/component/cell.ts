@@ -153,7 +153,8 @@ abstract class CellComponent extends BaseDisposable {
 
     doDeselect(){
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
-            if (this.cellState.getState().selected) { // prevent blurring a different cell
+            if (this.cellState.getState().selected // prevent blurring a different cell
+                && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
                 this.dispatcher.dispatch(new DeselectCell(this.id))
             }
         }
@@ -195,10 +196,8 @@ abstract class CellComponent extends BaseDisposable {
 
             if (needToScrollUp && !needToScrollDown) {
                 this.el.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
-                console.log("scrolled up")
             } else if(!needToScrollUp && needToScrollDown) {
                 this.el.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
-                console.log("scrolled down")
             }
         }
     }

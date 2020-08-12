@@ -25,7 +25,6 @@ export abstract class BaseDisposable implements Disposable {
 
     // this readonly field trick is a hacky way to make a `final` member in Typescript...
     readonly dispose = () => {
-        console.log("Disposing", this)
         this.onDispose()
         this.deferred.resolve()
     };

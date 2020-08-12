@@ -83,7 +83,6 @@ export class Preferences {
         // listen for storage clear and clear ourselves as well.
         window.addEventListener('storage', evt => {
             if (evt.key === null && evt.newValue === null) { // this means `clear()` was called, according to https://developer.mozilla.org/en-US/docs/Web/API/StorageEvent#Attributes
-                console.log("cleared prefs");
                 this.clear();
             }
         });

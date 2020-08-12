@@ -48,7 +48,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                 errorView.addObserver(err => {
                     // if there was an error on reconnect, push it to the notebook state so it can be displayed
                     if (err) {
-                        console.log("error on reconnecting notebook", err)
+                        console.error("error on reconnecting notebook", err)
                         this.state.updateState(s => {
                             return {
                                 ...s,
@@ -220,8 +220,10 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                 this.state.updateState(state => {
                     // empty cellIds means run all of them!
                     if (cellIds.length === 0) {
-                        cellIds = collect(state.cells, cell => cell.language !== "text" ? cell.id : undefined)
+                        cellIds = state.cells.map(c => c.id)
                     }
+
+                    cellIds = collect(cellIds, id => state.cells[id].language !== "text" ? id: undefined);
 
                     const [clientCells, serverCells] = partition(cellIds, id => {
                         const cell = state.cells.find(c => c.id === id)
@@ -471,13 +473,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
     dispatch(action: UIAction): void {
         match(action)
             .when(Reconnect, (onlyIfClosed: boolean) => {
-
-
-                // TODO: need to add back "reconnect on window focus!"
-                //       and then, need to test what happens when the client is disconnected (i.e., is everything properly disabled?)
-
-
-                console.log("Attempting to reconnect to notebook") // TODO: once we have a proper place for server errors, we can display this log there.
+                console.warn("Attempting to reconnect to notebook") // TODO: once we have a proper place for server errors, we can display this log there.
                 this.socket.reconnect(onlyIfClosed)
                 const errorView = this.socket.view("error")
                 errorView.addObserver(err => {
@@ -486,7 +482,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                         // error to the user
                         const reload = err.status === ConnectionStatus.ONLINE
                         if (reload) {
-                            console.log("Error reconnecting, trying to reload the page")
+                            console.error("Error reconnecting, trying to reload the page")
                             document.location.reload();
                         } else {
                             this.state.updateState(s => {
@@ -501,7 +497,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 // TODO: depending on how complicated reconnecting is, maybe we should just reload the page every time?
                 this.socket.view("status", undefined, errorView).addObserver(status => {
                     if (status === "connected") {
-                        console.log("Reconnected successfully, now reconnecting to notebook sockets")
+                        console.warn("Reconnected successfully, now reconnecting to notebook sockets")
                         this.state.updateState(s => {
                             return {
                                 ...s,

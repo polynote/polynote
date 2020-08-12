@@ -64,7 +64,7 @@ export class KernelUI extends UIMessageTarget {
     }
 
     errorDisplay(code: number, err: ServerErrorWithCause) {
-        console.log("Kernel error:", err);
+        console.error("Kernel error:", err);
 
         const {el, messageStr, cellLine} = cell.errorDisplay(err, this.path);
 

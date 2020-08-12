@@ -33,6 +33,7 @@ import {ErrorComponent} from "./error";
 export class KernelPane {
     el: TagElement<"div">;
     header: TagElement<"div">;
+    private kernels: Record<string, Kernel> = {};
 
     constructor(serverMessageDispatcher: ServerMessageDispatcher) {
         const placeholderEl = div(['kernel-ui-placeholder'], []);
@@ -45,12 +46,14 @@ export class KernelPane {
                 const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
                 // the notebook should already be loaded
                 if (nbInfo?.info) {
-                    const kernel = new Kernel(
-                        serverMessageDispatcher,
-                        nbInfo.info.dispatcher,
-                        nbInfo.handler,
-                        'rightPane');
-
+                    if (this.kernels[path] === undefined) {
+                        this.kernels[path] = new Kernel(
+                            serverMessageDispatcher,
+                            nbInfo.info.dispatcher,
+                            nbInfo.handler,
+                            'rightPane');
+                    }
+                    const kernel = this.kernels[path];
                     this.el.replaceWith(kernel.el);
                     this.el = kernel.el
 
@@ -253,7 +256,7 @@ class KernelTasksComponent {
         let serverErrorIds: string[] = [];
         const handleServerErrors = (errs: ServerError[]) => {
             if (errs.length > 0) {
-                console.log("Got server errors", errs)
+                console.error("Got server errors", errs)
                 errs.forEach(e => {
                     const id = `ServerError: ${e.err.className}`;
                     if (!serverErrorIds.includes(id)) {
@@ -400,7 +403,13 @@ class KernelSymbolsComponent {
         this.scopeSymbols = this.tableEl.addBody().addClass('scope-symbols');
 
         const handleSymbols = (symbols: KernelSymbols) => {
-            symbols.forEach(s => this.addSymbol(s))
+            if (symbols.length > 0) {
+                symbols.forEach(s => this.addSymbol(s))
+            } else if (Object.values(this.symbols).length > 0) {
+                Object.entries(this.symbols).forEach(([cellId, syms]) => {
+                    Object.keys(syms).forEach(s => this.removeSymbol(parseInt(cellId), s))
+                })
+            }
         }
         const symbolHandler = notebookState.view("kernel", KernelStateHandler).kernelSymbolsHandler;
         handleSymbols(symbolHandler.getState())
@@ -531,7 +540,8 @@ class KernelSymbolsComponent {
         }
     }
 
-    private removeSymbol(name: string) {
+    private removeSymbol(cellId: number, name: string) {
+        delete this.symbols[cellId][name];
         const existing = this.tableEl.findRowsBy(row => row.name === name);
         if (existing.length > 0) {
             existing.forEach(tr => tr.parentNode!.removeChild(tr));

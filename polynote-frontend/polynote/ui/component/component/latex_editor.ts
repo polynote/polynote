@@ -153,7 +153,7 @@ export class LaTeXEditor {
         }
 
         if (!notebookParent) {
-            console.log('Error: reached top of document without finding notebook');
+            console.error('Error: reached top of document without finding notebook');
             return;
         }
 

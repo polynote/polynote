@@ -23,7 +23,6 @@ export class LocalStorageHandler<T> extends StateHandler<T> {
 
         // watch storage to detect when it was cleared
         const handleStorageChange = (next: T | null | undefined) => {
-            console.log("detected storage change", next)
             if (next === null) { // cleared
                 this.setState(initial)
             } else {

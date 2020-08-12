@@ -22,13 +22,13 @@ import {
     RepositoryConfig,
     SparkPropertySet
 } from "../../../data/data";
-import {KernelStatus} from "../state/kernel_state";
 import {ServerStateHandler} from "../state/server_state";
+import {KernelStatusString} from "../../../data/messages";
 
 export class NotebookConfigComponent {
     readonly el: TagElement<"div">;
 
-    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<NotebookConfig>, kernelStateHandler: StateHandler<KernelStatus>) {
+    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<NotebookConfig>, kernelStateHandler: StateHandler<KernelStatusString>) {
 
         const dependencies = new Dependencies(stateHandler.view("dependencies"))
         const exclusions = new Exclusions(stateHandler.view("exclusions"))

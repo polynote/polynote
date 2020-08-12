@@ -7,7 +7,6 @@ import {MessageListener} from "../comms";
 export class SocketSession {
     public url: { href: string };
     constructor(url: string) {
-        console.log("Mocked SocketSession")
         this.url = {href: url}
     }
 

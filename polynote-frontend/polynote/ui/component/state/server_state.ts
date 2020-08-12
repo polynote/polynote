@@ -61,7 +61,6 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 sparkTemplates: [],
                 currentNotebook: undefined
             })
-            console.log("created ServerStateHandler")
         }
         return ServerStateHandler.inst;
     }
@@ -139,7 +138,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     errors: [],
                     kernel: {
                         symbols: [],
-                        status: 'disconnected',
+                        status: ServerStateHandler.getState().connectionStatus === "connected" ? 'dead' : 'disconnected',
                         info: {},
                         tasks: {},
                     },

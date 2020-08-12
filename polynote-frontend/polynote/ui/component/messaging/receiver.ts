@@ -58,6 +58,16 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         }
                     }
                 })
+            } else {
+                state.updateState(s => {
+                    return {
+                        ...s,
+                        kernel: {
+                            ...s.kernel,
+                            status: s.kernel.status === 'disconnected' ? 'dead' : s.kernel.status // we know it can't be disconnected
+                        }
+                    }
+                })
             }
         })
 
@@ -137,12 +147,14 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         }
                     }
                 })
-                .when(messages.KernelBusyState, (busy, alive) => {
+                .whenInstance(messages.KernelBusyState, kernelState => {
+                    const status = kernelState.asStatus;
                     return {
                         ...s,
                         kernel: {
                             ...s.kernel,
-                            status: (busy && 'busy') || (!alive && 'dead') || 'idle'
+                            status,
+                            symbols: status === 'dead' ? [] : s.kernel.symbols
                         }
                     }
                 })
@@ -431,6 +443,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     })
                     .otherwiseThrow ?? NoUpdate
             } else {
+
+                let symbols = s.kernel.symbols
+                if (['busy', 'idle'].includes(s.kernel.status) && result instanceof ResultValue) {
+                    symbols = [...s.kernel.symbols, result];
+                }
                 return {
                     ...s,
                     cells: s.cells.map(c => {
@@ -438,7 +455,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                             return this.parseResults(c, [result])
                         } else return c
                     }),
-                    kernel: result instanceof ResultValue ? {...s.kernel, symbols: [...s.kernel.symbols, result]} : s.kernel
+                    kernel: {...s.kernel, symbols }
                 }
             }
         });
@@ -588,7 +605,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                         ...nbState,
                         kernel: {
                             ...nbState.kernel,
-                            status: (status.busy && 'busy') || (!status.alive && 'dead') || 'idle'
+                            status: status.asStatus
                         }
                     }
                 })

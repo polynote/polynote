@@ -125,7 +125,6 @@ export class About extends FullScreenModal {
         Object.entries(UserPreferencesHandler.getState()).forEach(([key, pref]) => {
             const value = pref.value;
             let valueEl;
-            console.log(pref)
             const options = Object.entries(pref.possibleValues).reduce<Record<string, string>>((acc, [k, v]) => {
                 acc[k] = v.toString()
                 return acc
@@ -177,7 +176,7 @@ export class About extends FullScreenModal {
             })
             this.observers.push([handler, obs])
 
-            const clearEl = iconButton(["clear"], `Clear ${handler.key}`, "minus-circle", "Clear")
+            const clearEl = iconButton(["clear"], `Clear ${handler.key}`, "trash-alt", "Clear")
                 .click(() => handler.clear())
 
             storageTable.addRow({

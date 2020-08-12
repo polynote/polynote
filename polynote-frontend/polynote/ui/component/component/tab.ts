@@ -53,7 +53,7 @@ export class TabComponent {
                 })
             ])
                 .attr('title', path)
-                .click((evt: MouseEvent) => {
+                .mousedown((evt: MouseEvent) => {
                     if (evt.button === 0) { // left click
                         activate()
                     } else if (evt.button === 1) { // middle click
@@ -99,26 +99,25 @@ export class TabComponent {
         const tab = this.tabs[path];
         if (tab) {
             tab.handler.removeObserver(tab.obs);
-            this.dispatcher.dispatch(new CloseNotebook(path))
+
+            const nextTabEl = tab.tab.previousElementSibling || tab.tab.nextElementSibling;
+            const nextTabPath = Object.entries(this.tabs).find(([p, t]) => t.tab === nextTabEl)?.[0];
+
+            this.tabContainer.removeChild(tab.tab);
+            delete this.tabs[path];
+
+            if (path !== "home") {
+                this.dispatcher.dispatch(new CloseNotebook(path))
+            }
 
             if (this.currentTab?.path === path) {
-                const nextTabEl = tab.tab.previousElementSibling || tab.tab.nextElementSibling;
-                const nextTabPath = Object.entries(this.tabs).find(([p, t]) => t.tab === nextTabEl)?.[0];
-
-                // this needs to be done before we activate the next tab
-                this.tabContainer.removeChild(tab.tab);
-                delete this.tabs[path];
-
                 if (nextTabPath) {
                     this.activate(nextTabPath);
-                } else {
-                    // this is the last one!
-                    this.addHome()
                 }
-                // this.dispatcher.dispatch(new SetSelectedNotebook(nextTabPath));
-            } else {
-                this.tabContainer.removeChild(tab.tab);
-                delete this.tabs[path];
+            }
+
+            if (Object.keys(this.tabs).length === 0) {
+                this.addHome()
             }
         }
     }

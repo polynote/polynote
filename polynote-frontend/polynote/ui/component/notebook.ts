@@ -205,7 +205,7 @@ export class NotebookUI extends UIMessageTarget {
             .when(messages.PresenceSelection, (id, cellId, range) => this.setPresenceSelection(id, cellId, range))
             .when(messages.KernelError, (err) => {
                 this.kernelUI.errorDisplay(0, err)
-                console.log(err)
+                console.error(err)
             })
         );
         this.socket.addEventListener('close', () => this.cellUI.configUI.setKernelState('disconnected'));
@@ -489,7 +489,7 @@ export class NotebookUI extends UIMessageTarget {
             const allCellIds = this.cellUI.getCodeCellIds();
             const activeCellIdx = allCellIds.indexOf(this.currentCell.id);
             if (activeCellIdx < 0) {
-                console.log("Active cell is not part of current notebook?")
+                console.error("Active cell is not part of current notebook?")
             } else {
                 const cellIds = this.cellUI.getCodeCellIds();
                 this.runCells(cellIds.slice(0, activeCellIdx + 1));

@@ -202,7 +202,7 @@ export const mdk = (function() {
                 return fakeEl.innerHTML;
             }
             catch(error){
-                if(options.throwOnError){ console.log(error); }
+                if(options.throwOnError){ console.error(error); }
                 return `<span class='katex-error' contenteditable="false" title='${escapeHtml(error.toString())}' data-tex-source="${escapeHtml(latex)}">${escapeHtml(latex)}</span>`;
             }
         };
@@ -218,7 +218,7 @@ export const mdk = (function() {
                 return `<p class='katex-block' contenteditable='false' data-tex-source="${escapeHtml(latex)}">` + katex.renderToString(latex, options) + "</p>";
             }
             catch(error){
-                if(options.throwOnError){ console.log(error); }
+                if(options.throwOnError){ console.error(error); }
                 return `<p class='katex-block katex-error' contenteditable="false" title='${escapeHtml(error.toString())}' data-tex-source="${escapeHtml(latex)}">${escapeHtml(latex)}</p>`;
             }
         };

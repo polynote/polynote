@@ -89,7 +89,7 @@ class LinkComponent {
     }
 
     hide() {
-        document.body.removeChild(this.el)
+        if (document.body.contains(this.el)) document.body.removeChild(this.el)
         document.body.removeEventListener("mousedown", this.listener)
     }
 

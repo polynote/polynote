@@ -24,11 +24,10 @@ export class ClientBackup {
 
                     return set(path, backups.toI())
                         .then(() => {
-                            console.log("Set backups for", path);
                             return backups
                         })
                         .catch(err => {
-                            console.log("Error while setting backups", err);
+                            console.error("Error while setting backups", err);
                             throw err;
                         })
                 }
@@ -66,11 +65,10 @@ export class ClientBackup {
                     backups.addUpdate(upd);
                     return set(path, backups.toI())
                         .then(() => {
-                            console.log("Updated backups for", path);
                             return backups
                         })
                         .catch(err => {
-                            console.log("Error while updating backups", err);
+                            console.error("Error while updating backups", err);
                             throw err;
                         })
                 }
@@ -119,10 +117,9 @@ class Backups {
     addBackup(backup: Backup) {
         if (Object.values(this.backups).length > BACKUPS_PER_NOTEBOOK) {
             const oldestDay = Math.min(...Object.keys(this.backups).map(i => parseInt(i)));
-            console.log("Reached total backup limit of", BACKUPS_PER_NOTEBOOK);
-            console.log("Deleting backups from", new Date(oldestDay).toDateString());
             const oldestBackups = this.backups[oldestDay];
-            console.log(oldestBackups);
+            console.warn("Reached total backup limit of", BACKUPS_PER_NOTEBOOK);
+            console.warn("Deleting backups from", new Date(oldestDay).toDateString(), oldestBackups);
             delete this.backups[oldestDay];
         }
 
@@ -135,8 +132,8 @@ class Backups {
         } else {
             const removed = this.backups[todayTs()].shift();
             this.backups[todayTs()].push(backup);
-            console.log("Reached backup limit of", BACKUPS_PER_DAY, "backups per day.");
-            console.log("Removed an old backup from earlier today", removed);
+            console.warn("Reached backup limit of", BACKUPS_PER_DAY, "backups per day.");
+            console.warn("Removed an old backup from earlier today", removed);
         }
     }
 
@@ -164,7 +161,7 @@ class Backups {
             if (! deepEquals(latestUpdate, typedUpdate)) {
                 latest.addUpdate(typedUpdate);
             } else {
-                console.log("got duplicate update: ", latestUpdate, typedUpdate, deepEquals(latestUpdate, typedUpdate))
+                console.warn("got duplicate update: ", latestUpdate, typedUpdate, deepEquals(latestUpdate, typedUpdate))
             }
         } else {
             throw new Error(`No backups found for ${this.path}!`)

@@ -16,7 +16,7 @@ export class VimStatus {
     public el: TagElement<"div">;
     private statusLine: TagElement<"div">;
     private vims: Record<string, { vim: any, statusLine: TagElement<"div"> }> = {}; // keys are editor ids, which should be unique.
-    private currentVim?: string;
+    private currentVimId?: string;
     private enabled: boolean = false;
     private constructor() {
         this.statusLine = div(["status"], []);
@@ -47,30 +47,35 @@ export class VimStatus {
             this.show()
             const maybeVim = this.vims[editor.getId()]
             if (maybeVim) {
-                console.log("already created vim")
                 this.statusLine.replaceWith(maybeVim.statusLine)
                 this.statusLine = maybeVim.statusLine;
-                this.currentVim = editor.getId();
+                this.currentVimId = editor.getId();
                 return maybeVim.vim
             } else {
-                console.log("creating vim")
                 // this.currentVim?.vim.dispose()
                 const statusLine = div(["status"], []);
                 const vim = createVim(editor, statusLine);
                 this.statusLine.replaceWith(statusLine);
                 this.statusLine = statusLine;
                 this.vims[editor.getId()] = {vim, statusLine}
-                this.currentVim = editor.getId();
+                this.currentVimId = editor.getId();
                 return vim
             }
         }
     }
 
     deactivate(id: string) {
-        console.log("deactivating vim!")
         this.hide()
         this.vims[id]?.vim.dispose()
         delete this.vims[id]
     }
 
+    static get currentVim() {
+        const inst = VimStatus.get;
+        return inst.currentVimId ? inst.vims[inst.currentVimId] : undefined
+    }
+
+    static get currentlyActive() {
+        return document.activeElement ? VimStatus.currentVim?.statusLine.contains(document.activeElement) : undefined
+    }
 }

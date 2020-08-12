@@ -56,13 +56,12 @@ export class SocketStateHandler extends StateHandler<SocketState> {
             })
         });
         socket.addEventListener('error', evt => {
-            console.log("got error event from socket: ", evt)
+            console.error("got error event from socket: ", evt)
             const url = new URL(socket.url.toString());
             url.protocol = document.location.protocol;
             const req = new XMLHttpRequest();
             req.responseType = "arraybuffer";
             const updateError = (error: ConnectionError) => {
-                console.log("Updating state with ", error)
                 this.updateState(s => {
                     return {
                         error: error,
@@ -71,7 +70,6 @@ export class SocketStateHandler extends StateHandler<SocketState> {
                 })
             }
             req.addEventListener("readystatechange", evt => {
-                console.log("got readystatechange after socket error", evt, "req", req)
                 if (req.readyState === XMLHttpRequest.DONE) {
                     if (req.response instanceof ArrayBuffer && req.response.byteLength > 0) {
                         let msg: Message;
@@ -86,13 +84,13 @@ export class SocketStateHandler extends StateHandler<SocketState> {
                         }
                         if (msg instanceof messages.Error) {
                             socket.close();
-                            console.log("got error message", msg)
+                            console.error("got error message", msg)
                             // since we got an error message, we know we were able to at least open the socket, so the
                             // connection is online.
                             updateError(new ConnectionError(ConnectionStatus.ONLINE, msg.error))
                         }
                     } else if (req.status === 0) {
-                        console.log("An error occurred opening the websocket!")
+                        console.error("An error occurred opening the websocket!")
                         // Assume that we are offline because we couldn't even open the websocket.
                         updateError(new ConnectionError(ConnectionStatus.OFFLINE,
                             new ServerErrorWithCause("Websocket Connection Error", "Error occurred connecting to websocket. \n" +

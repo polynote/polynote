@@ -59,7 +59,7 @@ export class ValueInspector extends FullScreenModal {
                             }
                             tabs['View data'] = new TableView(dispatcher, nbState, repr).el;
                         } catch(err) {
-                            console.log(err);
+                            console.error(err);
                         }
                     });
                 return tabs;

@@ -362,6 +362,7 @@ export class UpdatedTasks extends KernelStatusUpdate {
     }
 }
 
+export type KernelStatusString = 'busy' | 'idle' | 'dead' | 'disconnected';
 export class KernelBusyState extends KernelStatusUpdate {
     static codec = combined(bool, bool).to(KernelBusyState);
     static get msgTypeId() { return 2; }
@@ -373,6 +374,12 @@ export class KernelBusyState extends KernelStatusUpdate {
     constructor(readonly busy: boolean, readonly alive: boolean) {
         super();
         Object.freeze(this);
+    }
+
+    get asStatus(): KernelStatusString {
+        if (this.busy) return 'busy'
+        else if (this.alive) return 'idle'
+        else return 'dead'
     }
 }
 
