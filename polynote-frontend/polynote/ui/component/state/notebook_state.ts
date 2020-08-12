@@ -62,4 +62,17 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
     constructor(state: NotebookState) {
         super(state);
     }
+
+    // wait for cell to transition to a specific state
+    waitForCell(id: number, targetState: "queued" | "running" | "error"): Promise<undefined> {
+        return new Promise(resolve => {
+            const obs = this.addObserver(state => {
+                const maybeChanged = state.cells[id];
+                if (maybeChanged && maybeChanged[targetState]) {
+                    this.removeObserver(obs)
+                    resolve()
+                }
+            })
+        })
+    }
 }

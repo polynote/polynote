@@ -22,13 +22,13 @@ import {ClientInterpreterComponent, ClientInterpreters} from "../component/inter
 import {OpenNotebooksHandler} from "../state/storage";
 import {ClientBackup} from "../client_backup";
 
-export abstract class MessageDispatcher<S> {
-    protected constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
+export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHandler<S>> {
+    protected constructor(protected socket: SocketStateHandler, protected state: H) {}
 
     abstract dispatch(action: UIAction): void
 }
 
-export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> {
+export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, NotebookStateHandler> {
     constructor(socket: SocketStateHandler, state: NotebookStateHandler, private clientInterpreter: ClientInterpreterComponent) {
         super(socket, state);
         // when the socket is opened, send a KernelStatus message to request the current status from the server.
@@ -124,11 +124,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                                     ...state,
                                     cells: state.cells.map(cell => {
                                         if (cell.id === cellId) {
-                                            if (cell.results.includes(output)) {
-                                                return {...cell, output: [o]}
-                                            } else {
-                                                return {...cell, results: [...cell.results, output], output: [o]}
-                                            }
+                                            return {...cell, results: [...cell.results, output]}
                                         } else return cell
                                     })
                                 }
@@ -223,7 +219,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                         cellIds = state.cells.map(c => c.id)
                     }
 
-                    cellIds = collect(cellIds, id => state.cells[id].language !== "text" ? id: undefined);
+                    cellIds = collect(cellIds, id => state.cells[id].language !== "text" ? id: undefined).sort();
 
                     const [clientCells, serverCells] = partition(cellIds, id => {
                         const cell = state.cells.find(c => c.id === id)
@@ -234,7 +230,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState> 
                             return true // should this fail?
                         }
                     })
-                    clientCells.forEach(id => this.clientInterpreter.runCell(id, this))
+                    clientCells.forEach(id => {
+                        const idx = cellIds.indexOf(id)
+                        const prevId = cellIds[idx - 1]
+                        this.clientInterpreter.runCell(id, this, prevId)
+                    })
                     this.socket.send(new messages.RunCell(serverCells));
                     return {
                         ...state,

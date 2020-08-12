@@ -972,8 +972,10 @@ class CodeCellOutput extends BaseDisposable {
         } else {
             this.cellOutputTools.classList.add('output');
             this.resultTabs.innerHTML = '';
-            // TODO: add support for ClientResults!
-            // result.display(this.resultTabs, this);
+            result.toOutput().then(o => {
+                this.clearOutput()
+                this.addOutput(o.contentType, o.content.join(''))
+            })
         }
     }
 

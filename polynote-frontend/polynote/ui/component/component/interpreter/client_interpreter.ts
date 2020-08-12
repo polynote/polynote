@@ -5,7 +5,14 @@ import {ClientResult, ExecutionInfo, Result, ResultValue, RuntimeError} from "..
 import {NotebookStateHandler} from "../../state/notebook_state";
 import {NotebookMessageDispatcher, SetCellOutput} from "../../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../../messaging/receiver";
-import {CellResult, KernelStatus, TaskInfo, TaskStatus, UpdatedTasks} from "../../../../data/messages";
+import {
+    CellResult,
+    CellStatusUpdate,
+    KernelStatus,
+    TaskInfo,
+    TaskStatus,
+    UpdatedTasks
+} from "../../../../data/messages";
 import {DataRepr, StreamingDataRepr} from "../../../../data/value_repr";
 import {DataStream} from "../../messaging/datastream";
 
@@ -37,22 +44,21 @@ export class ClientInterpreterComponent {
 
     constructor(private notebookState: NotebookStateHandler, private receiver: NotebookMessageReceiver) {}
 
-    runCell(id: number, dispatcher: NotebookMessageDispatcher) {
+    runCell(id: number, dispatcher: NotebookMessageDispatcher, queueAfter?: number) {
         // we want to run the cell in order, so we need to find any cells above this one that are currently running/queued
         // and wait for them to complete
         const nbState = this.notebookState.getState()
         const cellIdx = nbState.cells.findIndex(cell => cell.id === id)
         const cell = nbState.cells[cellIdx]!;
 
-        // first, wait for this cell to be queued
-        new Promise(resolve => {
-            const obs = this.notebookState.addObserver(state => {
-                const maybeQueued = state.cells[cellIdx]
-                if (maybeQueued && maybeQueued.queued) {
-                    this.notebookState.removeObserver(obs)
-                    resolve()
-                }
-            })
+        // first, queue up the cell, waiting for another cell to queue if necessary
+        Promise.resolve().then(() => {
+            if (queueAfter !== undefined) {
+                return this.notebookState.waitForCell(queueAfter, "queued")
+            } else return Promise.resolve()
+        }).then(() => {
+            this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Queued)))
+            return this.notebookState.waitForCell(cellIdx, "queued")
         }).then(() => { // next, wait for any cells queued up earlier.
             let waitIdx = cellIdx;
             let waitCellId: number | undefined = undefined;
@@ -80,9 +86,11 @@ export class ClientInterpreterComponent {
             const start = Date.now()
             const updateStatus = (progress: number) => {
                 if (progress < 256) {
+                    this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Running)))
                     this.receiver.inject(new KernelStatus(new UpdatedTasks([new TaskInfo(taskId, taskId, '', TaskStatus.Running, progress)])))
                     this.receiver.inject(new CellResult(id, new ExecutionInfo(start)))
                 } else {
+                    this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Complete)))
                     this.receiver.inject(new KernelStatus(new UpdatedTasks([new TaskInfo(taskId, taskId, '', TaskStatus.Complete, progress)])))
                     this.receiver.inject(new CellResult(id, new ExecutionInfo(start, Date.now())))
                 }
