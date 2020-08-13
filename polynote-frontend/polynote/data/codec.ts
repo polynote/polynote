@@ -1,6 +1,6 @@
 'use strict';
 
-import {Both, Either, ExtractorConstructor, Ior, Left, Right} from "./types";
+import {Both, Either, ExtractorConstructor, Ior, Left, Right} from "./codec_types";
 
 // Add `getBigInt64` to DataView
 declare global {

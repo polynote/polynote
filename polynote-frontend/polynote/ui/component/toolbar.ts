@@ -1,46 +1,119 @@
-import {button, div, fakeSelectElem, h3, iconButton, tag, TagElement} from "../util/tags";
-import {FakeSelect} from "./fake_select";
-import {Cell, CodeCell, TextCell} from "./cell";
-import {LaTeXEditor} from "./latex_editor";
-import {CancelTasks, ClearOutput, DownloadNotebook, UIMessageTarget, ViewAbout} from "../util/ui_event";
-import {preferences, storage} from "../util/storage";
-import {CurrentNotebook} from "./current_notebook";
+import {
+    DownloadNotebook,
+    NotebookMessageDispatcher,
+    RequestCancelTasks,
+    RequestCellRun,
+    RequestClearOutput,
+    ServerMessageDispatcher,
+    SetCellLanguage,
+    UIAction,
+    ViewAbout
+} from "../../messaging/dispatcher";
+import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
+import {ServerStateHandler} from "../../state/server_state";
+import {Observer, StateHandler} from "../../state/state_handler";
+import {CellState, NotebookState, NotebookStateHandler} from "../../state/notebook_state";
+import {FakeSelect} from "../display/fake_select";
+import {LaTeXEditor} from "../input/latex_editor";
 
-export class ToolbarUI extends UIMessageTarget {
-    private notebookToolbar: NotebookToolbarUI;
-    cellToolbar: CellToolbarUI;
-    private codeToolbar: CodeToolbarUI;
-    private textToolbar: TextToolbarUI;
-    private settingsToolbar: SettingsToolbarUI;
+/**
+ * The Toolbar. Its contents change depending on the current cell selected, and buttons are disabled when there is
+ * no connection.
+ */
+export class ToolbarComponent {
     readonly el: TagElement<"div">;
-    constructor() {
-        super();
-        this.notebookToolbar = new NotebookToolbarUI(this);
-        this.cellToolbar = new CellToolbarUI(this);
-        this.codeToolbar = new CodeToolbarUI(this);
-        this.textToolbar = new TextToolbarUI(this);
-        this.settingsToolbar = new SettingsToolbarUI(this);
+    constructor(dispatcher: ServerMessageDispatcher) {
 
-        this.el = div(['toolbar-container'], [
-            this.notebookToolbar.el,
-            this.cellToolbar.el,
-            this.codeToolbar.el,
-            this.textToolbar.el,
-            this.settingsToolbar.el,
-        ]).listener('mousedown', (evt) => evt.preventDefault())
+        const connectionStatus = ServerStateHandler.get.view("connectionStatus");
+
+        let nb = new NotebookToolbar(connectionStatus);
+        let cell = new CellToolbar(connectionStatus);
+        let code = new CodeToolbar(connectionStatus);
+        let text = new TextToolbar(connectionStatus);
+        const settings = new SettingsToolbar(dispatcher, connectionStatus);
+
+        this.el = div(['toolbar-container'], [nb.el, cell.el, code.el, text.el, settings.el])
+            .listener('mousedown', (evt: Event) => evt.preventDefault());
+
+        let cellSelectionListener: Observer<NotebookState> | undefined;
+        let currentNotebookHandler: NotebookStateHandler | undefined;
+
+        // Change the toolbar to reflect the currently selected notebook and cell
+        const updateToolbar = (path?: string) => {
+            if (path) {
+                const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
+                if (nbInfo?.info) {
+                    currentNotebookHandler = nbInfo.handler
+                    const newListener = currentNotebookHandler.addObserver(state => {
+                        if (state.activeCell) {
+                            if (state.activeCell.language === "text") {
+                                this.el.classList.remove('editing-code');
+                                this.el.classList.add('editing-text');
+                            } else {
+                                this.el.classList.remove('editing-text');
+                                this.el.classList.add('editing-code');
+                            }
+                        }
+                    });
+                    if (currentNotebookHandler) {
+                        if (cellSelectionListener !== undefined) currentNotebookHandler.removeObserver(cellSelectionListener);
+                        cellSelectionListener = newListener;
+                        currentNotebookHandler = nbInfo.handler;
+                        nb.enable(nbInfo.info.dispatcher);
+                        cell.enable(nbInfo.info.dispatcher, currentNotebookHandler.view("activeCell"));
+                        code.enable(nbInfo.info.dispatcher);
+                        text.enable();
+                    }
+                }
+            } else {
+                cellSelectionListener = undefined;
+                currentNotebookHandler = undefined;
+                this.el.classList.remove('editing-text');
+                this.el.classList.remove('editing-code');
+                nb.disable();
+                cell.disable();
+                code.disable();
+                text.disable();
+            }
+        }
+        updateToolbar(ServerStateHandler.getState().currentNotebook)
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => updateToolbar(path))
     }
+}
 
-    onContextChanged() {
-        if (Cell.currentFocus instanceof TextCell) {
-            this.el.classList.remove('editing-code');
-            this.el.classList.add('editing-text');
-        } else if (Cell.currentFocus instanceof CodeCell) {
-            this.el.classList.remove('editing-text');
-            this.el.classList.add('editing-code');
+interface FancyButtonConfig {
+    classes: string[],
+    elems: TagElement<any>[]
+}
+
+abstract class ToolbarElement {
+    el: TagElement<"div">;
+
+    protected constructor(connectionStatus: StateHandler<"disconnected" | "connected">, disableOnDisconnect: boolean = true) {
+        if (disableOnDisconnect ) {
+            connectionStatus.addObserver((currentStatus, previousStatus) => {
+                if (currentStatus === "disconnected" && previousStatus === "connected") {
+                    this.el.classList.add("disabled")
+                } else if (currentStatus === "connected" && previousStatus === "disconnected") {
+                    this.el.classList.remove("disabled")
+                }
+            })
         }
     }
 
-    setDisabled(disable: boolean) {
+    protected toolbarElem(name: string, buttonGroups: (TagElement<any>[] | FancyButtonConfig)[]) {
+        const contents = [h3([], [name])].concat(
+            buttonGroups.map(group => {
+                if (group instanceof Array) {
+                    return div(["tool-group"], group)
+                } else {
+                    return div(["tool-group"].concat(group.classes), group.elems)
+                }
+            }));
+        return div(["toolbar", name], contents)
+    }
+
+    protected setDisabled(disable: boolean): void {
         if (disable) {
             [...this.el.querySelectorAll('button')].forEach(button => {
                 function hasNeverDisabled(button: HTMLButtonElement): button is HTMLButtonElement & {neverDisabled: boolean} {
@@ -67,119 +140,166 @@ export class ToolbarUI extends UIMessageTarget {
     }
 }
 
-interface FancyButtonConfig {
-    classes: string[],
-    elems: TagElement<any>[]
-}
+class NotebookToolbar extends ToolbarElement {
+    private dispatcher?: NotebookMessageDispatcher;
+    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+        super(connectionStatus);
 
-function toolbarElem(name: string, buttonGroups: (TagElement<any>[] | FancyButtonConfig)[]) {
-    const contents = [h3([], [name])].concat(
-        buttonGroups.map(group => {
-            if (group instanceof Array) {
-                return div(["tool-group"], group)
-            } else {
-                return div(["tool-group"].concat(group.classes), group.elems)
-            }
-        }));
-    return div(["toolbar", name], contents)
-}
-
-class NotebookToolbarUI extends UIMessageTarget {
-    readonly el: TagElement<"div">;
-    constructor(parent: UIMessageTarget) {
-        super(parent);
-        this.el = toolbarElem("notebook", [
+        this.el = this.toolbarElem("notebook", [
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "forward", "Run all")
-                    .click(() => CurrentNotebook.get.runAllCells()),
+                    .click(() => this.dispatch(new RequestCellRun([]))),
                 iconButton(["branch"], "Create branch", "code-branch", "Branch").disable().withKey('alwaysDisabled', true),
-                iconButton(["download"], "Download", "download", "Download").click(() => this.publish(new DownloadNotebook(CurrentNotebook.get.path))),
-                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.publish(new ClearOutput(CurrentNotebook.get.path)))
+                iconButton(["download"], "Download", "download", "Download").click(() => this.dispatch(new DownloadNotebook())),
+                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatch(new RequestClearOutput()))
             ], [
                 iconButton(["schedule-notebook"], "Schedule notebook", "clock", "Schedule").disable().withKey('alwaysDisabled', true),
             ]
         ]);
     }
+
+    private dispatch(action: UIAction) {
+        if (this.dispatcher) this.dispatcher.dispatch(action)
+    }
+
+    enable(dispatcher: NotebookMessageDispatcher) {
+        this.dispatcher = dispatcher;
+        this.setDisabled(false);
+    }
+
+    disable() {
+        this.dispatcher = undefined;
+        this.setDisabled(true);
+    }
 }
 
-class CellToolbarUI extends UIMessageTarget {
-    readonly el: TagElement<"div">;
-    cellTypeSelector: FakeSelect;
+class CellToolbar extends ToolbarElement {
+    private dispatcher?: NotebookMessageDispatcher;
+    private activeCellHandler?: StateHandler<CellState>;
+    private langSelector: FakeSelect;
+    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+        super(connectionStatus);
 
-    constructor(parent?: UIMessageTarget) {
-        super(parent);
-        let selectEl: TagElement<"div">;
-        this.el = toolbarElem("cell", [
+        const selectEl = fakeSelectElem(["cell-language"], [
+            button(["selected"], {value: "text"}, ["Text"])
+        ]);
+        this.el = this.toolbarElem("cell", [
             [
-                selectEl = fakeSelectElem(["cell-language"], [
-                    button(["selected"], {value: "text"}, ["Text"])
-                ])
+                selectEl
             ], [
                 iconButton(["insert-cell-above"], "Insert cell above current", "arrow-up", "Insert above")
-                    .click(() => CurrentNotebook.get.insertCell('above')),
+                    .click(() => {
+                        if(this.dispatcher) this.dispatcher.insertCell('above')
+                    }),
                 iconButton(["insert-cell-below"], "Insert cell below current", "arrow-down", "Insert below")
-                    .click(() => CurrentNotebook.get.insertCell('below')),
+                    .click(() => {
+                        if (this.dispatcher) this.dispatcher.insertCell('below')
+                    }),
                 iconButton(["delete-cell"], "Delete current cell", "trash-alt", "Delete")
-                    .click(() => CurrentNotebook.get.deleteCell())
+                    .click(() => {
+                        if (this.dispatcher) this.dispatcher.deleteCell()
+                    })
                 // iconButton(['undo'], 'Undo', 'undo-alt', 'Undo')
                 //     .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
             ]
         ]);
 
-        this.cellTypeSelector = new FakeSelect(selectEl);
-
-        this.cellTypeSelector.addListener(change => {
-            CurrentNotebook.get.onCellLanguageSelected(change.newValue)
-        })
-
-    }
-
-    setInterpreters(interpreters: Record<string, string>) {
-        while (this.cellTypeSelector.options.length > 1) {
-            this.cellTypeSelector.removeOption(this.cellTypeSelector.options[1]);
-        }
-
-        for (const languageId in interpreters) {
-            if (interpreters.hasOwnProperty(languageId)) {
-                this.cellTypeSelector.addOption(interpreters[languageId], languageId);
+        this.langSelector = new FakeSelect(selectEl);
+        const updateSelectorLanguages = (langs: Record<string, string>) => {
+            const langEntries = Object.entries(langs)
+            if (langEntries.length > 0) {
+                // clear all but option 0, which we set earlier to be 'Text'
+                while (this.langSelector.options.length > 1) {
+                    this.langSelector.removeOption(this.langSelector.options[1]);
+                }
+                langEntries.forEach(([lang, id]) => {
+                    this.langSelector.addOption(id, lang)
+                });
             }
         }
+        updateSelectorLanguages(ServerStateHandler.getState().interpreters)
+        ServerStateHandler.get.view("interpreters").addObserver(langs => updateSelectorLanguages(langs))
+
+        this.langSelector.addListener(change => {
+            if (this.dispatcher && this.activeCellHandler) {
+                const id = this.activeCellHandler.getState().id;
+                this.dispatcher.dispatch(new SetCellLanguage(id, change.newValue))
+            }
+        })
+    }
+
+    enable(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>) {
+        this.dispatcher = dispatcher;
+        this.activeCellHandler = cellState;
+        this.activeCellHandler.addObserver(cell => {
+            if (cell) {
+                this.langSelector.setState(cell.language)
+            }
+        })
+        this.setDisabled(false);
+    }
+
+    disable() {
+        this.dispatcher = undefined;
+        this.activeCellHandler?.clearObservers()
+        this.activeCellHandler?.dispose()
+        this.activeCellHandler = undefined;
+        this.setDisabled(true);
     }
 }
 
-class CodeToolbarUI extends UIMessageTarget {
-    readonly el: TagElement<"div">;
-    constructor(parent?: UIMessageTarget) {
-        super(parent);
-        this.el = toolbarElem("code", [
+class CodeToolbar extends ToolbarElement {
+    private dispatcher?: NotebookMessageDispatcher;
+    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+        super(connectionStatus);
+
+        this.el = this.toolbarElem("code", [
             [
                 iconButton(["run-cell"], "Run this cell (only)", "play", "Run")
-                    .click(() => CurrentNotebook.get.runCurrentCell()),
+                    .click(() => {
+                        if (this.dispatcher) this.dispatcher.runActiveCell();
+                    }),
                 iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "fast-forward", "Run to cursor")
-                    .click(() => CurrentNotebook.get.runToCursor()),
+                    .click(() => {
+                        if (this.dispatcher) this.dispatcher.runToActiveCell()
+                    }),
                 iconButton(["stop-cell"], "Stop/cancel this cell", "stop", "Cancel")
-                    .click(() => this.publish(new CancelTasks(CurrentNotebook.get.path))),
+                    .click(() => {
+                        if (this.dispatcher) this.dispatcher.dispatch(new RequestCancelTasks())
+                    }),
             ]
         ]);
+    }
+
+    enable(dispatcher: NotebookMessageDispatcher) {
+        this.dispatcher = dispatcher;
+        this.setDisabled(false);
+    }
+
+    disable() {
+        this.dispatcher = undefined;
+        this.setDisabled(true);
     }
 }
 
 type CommandButton = TagElement<"button"> & {getState: () => string};
 
-class TextToolbarUI extends UIMessageTarget {
-    readonly el: TagElement<"div">;
+class TextToolbar extends ToolbarElement {
     private blockTypeSelector: FakeSelect;
     private codeButton: CommandButton;
     private equationButton: CommandButton;
+    private unlinkButton: CommandButton;
     private buttons: CommandButton[];
-    constructor(parent?: UIMessageTarget) {
-        super(parent);
+
+    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+        super(connectionStatus);
+
         let buttons = [];
 
-        function commandButton(cmd: string, title: string, icon: string, alt: string): CommandButton {
+        function commandButton(cmd: string, title: string, icon: string, alt: string, arg?: () => string | undefined): CommandButton {
             const button = iconButton([cmd], title, icon, alt)
                 // .attr('command', cmd)
-                .click(() => document.execCommand(cmd, false))
+                .click(() => document.execCommand(cmd, false, arg?.()))
                 .withKey('getState', () => document.queryCommandValue(cmd)) as CommandButton;
 
             buttons.push(button);
@@ -187,7 +307,7 @@ class TextToolbarUI extends UIMessageTarget {
         }
         let blockTypeSelectorEl: TagElement<"div">;
 
-        this.el = toolbarElem("text", [
+        this.el = this.toolbarElem("text", [
             [
                 blockTypeSelectorEl = fakeSelectElem(["blockType"], [
                     button(["selected"], {value: "p"}, ["Paragraph"]),
@@ -200,63 +320,82 @@ class TextToolbarUI extends UIMessageTarget {
                     document.execCommand("formatBlock", false, `<${(evt.target as HTMLButtonElement).value}>`)
                 })
             ], {
-            classes: ["font"],
-            elems: [
-                commandButton("bold", "Bold", "bold", "Bold"),
-                commandButton("italic", "Italic", "italic", "Italic"),
-                commandButton("underline", "underline", "underline", "underline"),
-                commandButton("strikethrough", "Strikethrough", "strikethrough", "Strikethrough"),
-                this.codeButton = iconButton(["code"], "Inline code", "code", "Code")
-                    .click(() => {
-                        const selection = document.getSelection();
-                        if ((selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code") {
+                classes: ["font"],
+                elems: [
+                    commandButton("bold", "Bold", "bold", "Bold"),
+                    commandButton("italic", "Italic", "italic", "Italic"),
+                    commandButton("underline", "underline", "underline", "underline"),
+                    commandButton("strikethrough", "Strikethrough", "strikethrough", "Strikethrough"),
+                    this.codeButton = iconButton(["code"], "Inline code", "code", "Code")
+                        .click(() => {
+                            const selection = document.getSelection();
+                            if ((selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code") {
 
-                            if (selection?.anchorOffset === selection?.focusOffset) {
-                                // expand selection to the whole element
-                                document.getSelection()!.selectAllChildren(document.getSelection()!.anchorNode!.parentNode!);
+                                if (selection?.anchorOffset === selection?.focusOffset) {
+                                    // expand selection to the whole element
+                                    document.getSelection()!.selectAllChildren(document.getSelection()!.anchorNode!.parentNode!);
+                                }
+                                document.execCommand('removeFormat');
+                            } else {
+                                document.execCommand('insertHTML', false, '<code>' + selection!.toString() + '</code>');
                             }
-                            document.execCommand('removeFormat');
-                        } else {
-                            document.execCommand('insertHTML', false, '<code>' + selection!.toString() + '</code>');
-                        }
-                    }).withKey('getState', () => {
-                        const selection = document.getSelection()!;
-                        return (
-                            (selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code"
-                        )
-                    }) as CommandButton,
-            ]}, {
-            classes: ["lists"],
-            elems: [
-                commandButton("insertUnorderedList", "Bulleted list", "list-ul", "Bulleted list"),
-                commandButton("insertOrderedList", "Numbered list", "list-ol", "Numbered list"),
-                commandButton("indent", "Indent", "indent", "Indent"),
-                commandButton("outdent", "Outdent", "outdent", "Outdent"),
-            ]}, {
-            classes: ["objects"],
-            elems: [
-                iconButton(["image"], "Insert image", "image", "Image").disable().withKey('alwaysDisabled', true),
-                this.equationButton = button(["equation"], {title: "Insert/edit equation"}, "𝝨")
-                    .click(() => LaTeXEditor.forSelection()!.show())
-                    .withKey('getState', () => {
-                        const selection = document.getSelection()!;
-                        if (selection?.focusNode?.childNodes) {
-                            for (let i = 0; i < selection.focusNode.childNodes.length; i++) {
-                                const node = selection.focusNode.childNodes[i];
-                                if (node.nodeType === 1 && selection.containsNode(node, false) && ((node as HTMLElement).classList.contains('katex') || (node as HTMLElement).classList.contains('katex-block'))) {
-                                    return true;
+                        }).withKey('getState', () => {
+                            const selection = document.getSelection()!;
+                            return (
+                                (selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code"
+                            )
+                        }) as CommandButton,
+                    commandButton("createLink", "Link", "link", "Link", () => document.getSelection()?.toString())
+                        .withKey('getState', () => {
+                            const selection = document.getSelection();
+                            return selection?.anchorNode?.parentElement instanceof HTMLAnchorElement
+                        }),
+                    this.unlinkButton = iconButton(["unlink"], "Unlink", "unlink", "Unlink")
+                        .click(() => {
+                            const selection = document.getSelection();
+                            if (selection?.anchorNode?.parentElement instanceof HTMLAnchorElement) {
+                                selection.selectAllChildren(selection.anchorNode.parentNode!);
+                                document.execCommand("unlink")
+                                selection.removeAllRanges()
+                            }
+                        })
+                        .withKey('getState', () => {
+                            const selection = document.getSelection();
+                            return selection?.anchorNode?.parentElement instanceof HTMLAnchorElement
+                        }) as CommandButton
+                ]}, {
+                classes: ["lists"],
+                elems: [
+                    commandButton("insertUnorderedList", "Bulleted list", "list-ul", "Bulleted list"),
+                    commandButton("insertOrderedList", "Numbered list", "list-ol", "Numbered list"),
+                    commandButton("indent", "Indent", "indent", "Indent"),
+                    commandButton("outdent", "Outdent", "outdent", "Outdent"),
+                ]}, {
+                classes: ["objects"],
+                elems: [
+                    iconButton(["image"], "Insert image", "image", "Image").disable().withKey('alwaysDisabled', true),
+                    this.equationButton = button(["equation"], {title: "Insert/edit equation"}, "𝝨")
+                        .click(() => LaTeXEditor.forSelection()!.show())
+                        .withKey('getState', () => {
+                            const selection = document.getSelection()!;
+                            if (selection?.focusNode?.childNodes) {
+                                for (let i = 0; i < selection.focusNode.childNodes.length; i++) {
+                                    const node = selection.focusNode.childNodes[i];
+                                    if (node.nodeType === 1 && selection.containsNode(node, false) && ((node as HTMLElement).classList.contains('katex') || (node as HTMLElement).classList.contains('katex-block'))) {
+                                        return true;
+                                    }
                                 }
                             }
-                        }
-                        return false;
-                    }) as CommandButton,
-                iconButton(["table"], "Insert data table", "table", "Table").disable().withKey('alwaysDisabled', true),
-            ]}
+                            return false;
+                        }) as CommandButton,
+                    iconButton(["table"], "Insert data table", "table", "Table").disable().withKey('alwaysDisabled', true),
+                ]}
         ]);
 
         this.blockTypeSelector = new FakeSelect(blockTypeSelectorEl);
 
         buttons.push(this.codeButton);
+        buttons.push(this.unlinkButton);
         buttons.push(this.equationButton);
         this.buttons = buttons;
 
@@ -269,7 +408,7 @@ class TextToolbarUI extends UIMessageTarget {
 
             let state = button.getState();
 
-            if (state && state !== 'false') {
+            if (state.toString() !== 'false') {
                 button.classList.add('active');
             } else {
                 button.classList.remove('active');
@@ -282,24 +421,46 @@ class TextToolbarUI extends UIMessageTarget {
         }
     }
 
+    enable() {
+        this.setDisabled(false);
+    }
+
+    disable() {
+        this.setDisabled(true);
+    }
 }
 
-class SettingsToolbarUI extends UIMessageTarget {
-    readonly el: TagElement<"div">;
-    private readonly floatingMenu: TagElement<"div">;
-    constructor(parent?: UIMessageTarget) {
-        super(parent);
-        this.el = toolbarElem("about", [[
+class SettingsToolbar extends ToolbarElement {
+    private floatingMenu: TagElement<"div">;
+
+    constructor(private dispatcher: ServerMessageDispatcher, connectionStatus: StateHandler<"disconnected" | "connected">) {
+        super(connectionStatus, false); // this section is not disabled on disconnect.
+
+        this.el = this.toolbarElem("about", [[
             iconButton(["preferences"], "View UI Preferences", "cogs", "Preferences")
-                .click(() => this.publish(new ViewAbout("Preferences")))
+                .click(() => {
+                    this.dispatcher.dispatch(new ViewAbout("Preferences"))
+                })
                 .withKey('neverDisabled', true),
             iconButton(["help"], "help", "question", "Help")
-                .click(() => this.publish(new ViewAbout("Hotkeys")))
+                .click(() => {
+                    this.dispatcher.dispatch(new ViewAbout("Hotkeys"))
+                })
                 .withKey('neverDisabled', true),
         ]]);
 
         this.floatingMenu = div(['floating-menu'], []);
 
         this.el.appendChild(this.floatingMenu)
+
+        this.enable();
+    }
+
+    enable() {
+        this.setDisabled(false);
+    }
+
+    disable() {
+        this.setDisabled(true);
     }
 }

@@ -1,7 +1,9 @@
 'use strict';
 
-import {div, button, iconButton, h4, TagElement, icon, radio} from '../util/tags'
-import {objectEquals, mapValues} from '../util/js_object'
+import embed, {Result as VegaResult} from "vega-embed";
+import * as deepEquals from 'fast-deep-equal/es6';
+
+import {div, button, iconButton, h4, TagElement, icon, radio, fakeSelectElem, span, textbox} from '../tags'
 import {
     BoolType,
     ByteType, DataType,
@@ -14,19 +16,18 @@ import {
     StringType, StructField,
     TimestampType
 } from "../../data/data_type";
-import {FakeSelect} from "./fake_select";
-import {fakeSelectElem, span, textbox} from "../util/tags";
+import {FakeSelect} from "../display/fake_select";
+import {ServerStateHandler} from "../../state/server_state";
 import {GroupAgg, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
-import {DataStream, StreamingDataRepr} from "../../data/value_repr";
-import embed, {Result as VegaResult} from "vega-embed";
-import {Cell, CodeCell} from "./cell";
-import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {ClientResult, Output} from "../../data/result";
+import {HideValueInspector, NotebookMessageDispatcher, SetCellOutput} from "../../messaging/dispatcher";
 import {CellMetadata} from "../../data/data";
-import {EventTarget} from "event-target-shim"
-import {NotebookUI} from "./notebook";
-
+import {DataStream} from "../../messaging/datastream";
+import {StreamingDataRepr} from "../../data/value_repr";
+import {NotebookStateHandler} from "../../state/notebook_state";
+import {VegaClientResult} from "../../interpreter/vega_interpreter";
+import {mapValues} from "../../util/helpers";
 
 function isDimension(dataType: DataType): boolean {
     if (dataType instanceof OptionalType) {
@@ -100,7 +101,7 @@ type SpecFun = ((this: PlotEditor, plotType: string, xField: StructField, yMeas:
     singleMeasure?: boolean
 };
 
-export class PlotEditor extends EventTarget {
+export class PlotEditor {
     private fields: StructField[];
     container: TagElement<"div">;
     private plotTypeSelector: FakeSelect;
@@ -127,11 +128,11 @@ export class PlotEditor extends EventTarget {
     private spec: any;
     private plot: VegaResult;
 
-    constructor(readonly repr: StreamingDataRepr, private notebook: NotebookUI, readonly name: string, readonly sourceCell: number, readonly plotSavedCb?: () => void) {
-        super();
+    constructor(private dispatcher: NotebookMessageDispatcher, private nbState: NotebookStateHandler, readonly repr: StreamingDataRepr, readonly name: string, readonly sourceCellId: number) {
         this.fields = repr.dataType.fields;
 
-        if (!this.notebook.socket.isOpen) {
+        const connectionStatus = ServerStateHandler.getState().connectionStatus;
+        if (connectionStatus === "disconnected") {
             this.container = div(['plot-editor-container', 'disconnected'], [
                 "Not connected to server – must be connected in order to plot."
             ]);
@@ -232,7 +233,7 @@ export class PlotEditor extends EventTarget {
     listDimensions() {
         return this.fields.filter(field => isDimension(field.dataType)).map(
             field => {
-                const selected = (this.yMeasures || []).findIndex(x => objectEquals({field: field}, x)) >=0 ;
+                const selected = (this.yMeasures || []).findIndex(x => deepEquals({field: field}, x)) >=0 ;
                 const label =
                     `${field.name} (${(field.dataType.constructor as typeof DataType).typeName(field.dataType)})`;
                 const radioElement = radio(['set', 'set-dimension'], label, 'dimension', selected);
@@ -349,7 +350,7 @@ export class PlotEditor extends EventTarget {
             measureConfig.agg = from.selector.value
         }
 
-        if (this.yMeasures.findIndex(x => objectEquals(measureConfig, x)) === -1) {
+        if (this.yMeasures.findIndex(x => deepEquals(measureConfig, x)) === -1) {
             if (this.rawFields) {
                 this.yAxisDrop.classList.add('nonempty');
                 const el = span([this.correctYType], [from.field.name]);
@@ -420,7 +421,7 @@ export class PlotEditor extends EventTarget {
                 throw new Error("Plot can't be run when a previous plot stream is already running");
             }
 
-            const stream = this.currentStream = new DataStream(this.notebook.socket, this.repr, this.getTableOps()).batch(500);
+            const stream = this.currentStream = new DataStream(this.dispatcher, this.nbState, this.repr, this.getTableOps()).batch(500);
 
             // TODO: multiple Ys
             // TODO: encode color
@@ -504,14 +505,28 @@ export class PlotEditor extends EventTarget {
             } // others TODO
         });
         content = content.replace('"$DATA_STREAM$"', streamSpec);
-        const mkCell = (cellId: number) => new CodeCell(cellId, `(${content})`, 'vega', this.notebook, new CellMetadata(false, true, false));
-        VegaClientResult.plotToOutput(this.plot).then(output => {
-            this.notebook.insertCell("below", this.sourceCell, mkCell, [output], (cell: CodeCell) => {
-                cell.displayResult(new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output))
-            });
 
-            if (this.plotSavedCb) this.plotSavedCb()
-        });
+        VegaClientResult.plotToOutput(this.plot).then(output => {
+            return this.dispatcher.insertCell("below", {
+                id: this.sourceCellId,
+                language: 'vega',
+                metadata: new CellMetadata(false, true, false),
+                content: `(${content})`
+            }).then(newCellId => {
+                const clientResult = new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output);
+                this.dispatcher.dispatch(new SetCellOutput(newCellId, clientResult))
+                return new Promise((resolve, reject) => {
+                    const obs = this.nbState.addObserver(state => {
+                        const maybeHasOutput = state.cells.find(c => c.id === newCellId)
+                        if (maybeHasOutput && maybeHasOutput.output.includes(output)) {
+                            this.nbState.removeObserver(obs);
+                            this.dispatcher.dispatch(new HideValueInspector())
+                            resolve()
+                        }
+                    })
+                })
+            })
+        })
     }
 
 }
@@ -821,7 +836,7 @@ class PlotEditorResult extends ClientResult {
         super();
     }
 
-    display(targetEl: HTMLElement, cell: Cell) {
+    display(targetEl: HTMLElement) {
         targetEl.appendChild(this.plotEl);
     }
 

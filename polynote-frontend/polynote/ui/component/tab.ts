@@ -1,167 +1,128 @@
-// TODO: Shouldn't it extend UIEventTarget?
-import {div, icon, img, span, TagElement} from "../util/tags";
-import {NoActiveTab, TabActivated, TabRemoved, TabRenamed, UIMessage, UIMessageTarget} from "../util/ui_event";
-import {storage} from "../util/storage";
+import {div, icon, span, TagElement} from "../tags";
+import {CloseNotebook, ServerMessageDispatcher, SetSelectedNotebook} from "../../messaging/dispatcher";
+import {ServerStateHandler} from "../../state/server_state";
+import {Observer} from "../../state/state_handler";
+import {NotebookStateHandler} from "../../state/notebook_state";
+import {Notebook} from "./notebook/notebook";
+import {VimStatus} from "./notebook/vim_status";
 
-interface Tab {
-    name: string,
-    title: TagElement<"span">,
-    content: TagElement<any>,
-    type: string
-}
-
-type TabEl = TagElement<"div"> & { tab: Tab }
-function isTabEl(tabEl: any): tabEl is TabEl {
-    return (tabEl as TabEl).tab !== undefined;
-}
-
-export class TabUI extends UIMessageTarget {
+export class TabComponent {
     readonly el: TagElement<"div">;
+    private readonly tabs: Record<string, { tab: TagElement<"div">, content: TagElement<"div">, handler: NotebookStateHandler, obs: Observer<any>}> = {};
     private tabContainer: TagElement<"div">;
-    private readonly tabs: Record<string, Tab> = {};
-    private readonly tabEls: Record<string, TabEl> = {};
-    private currentTab: Tab;
+    private currentTab?: { path: string, tab: TagElement<"div">, content: TagElement<"div">};
 
-    constructor(private contentAreas: Record<string, TagElement<any>>) {
-        super();
-        this.el = div(['tabbed-pane'], [
-            this.tabContainer = div(['tab-container'], [])
+    constructor(private readonly dispatcher: ServerMessageDispatcher, private homeTab: TagElement<"div">) {
+        this.el = div(['tab-view'], [
+            this.tabContainer = div(['tabbed-pane', 'tab-container'], []),
+            VimStatus.get.el
         ]);
-    }
 
-    addTab(name: string, title: TagElement<"span">, content: TagElement<any>, type: string) {
-        const tab = {
-            name: name,
-            title: title,
-            content: content,
-            type: type
-        };
+        this.addHome()
 
-        this.tabs[name] = tab;
-        const tabEl = Object.assign(
-            div(['tab'], [
-                title,
-                icon(['close-button'], 'times', 'close icon').click(evt => this.removeTab(tab))
-            ]).attr('title', name),
-            { tab: tab });
-
-        this.tabEls[name] = tabEl;
-
-        tabEl.addEventListener('mousedown', evt => {
-            if (evt.button === 0) { // left click
-                this.activateTab(tab);
-            } else if (evt.button === 1) { // middle click
-                this.removeTab(tab)
-            } // nothing on right click...
-        });
-
-        this.tabContainer.appendChild(tabEl);
-
-        if (this.currentTab !== tab) {
-            this.activateTab(tab);
-        }
-        return tab;
-    }
-
-    removeTab(tab: Tab) {
-        const tabEl = this.tabEls[tab.name];
-
-        if (this.currentTab === tab) {
-            if (tabEl) {
-                const nextTab = tabEl.previousSibling || tabEl.nextSibling;
-                if (nextTab && isTabEl(nextTab) && nextTab.tab) {
-                    this.activateTab(nextTab.tab);
-                } else {
-                    setTimeout(() => this.publish(new NoActiveTab()), 0);
-                }
-            }
-        }
-
-        if (tabEl) {
-            this.tabContainer.removeChild(tabEl);
-        }
-
-        delete this.tabEls[tab.name];
-        delete this.tabs[tab.name];
-
-        this.publish(new TabRemoved(tab.name));
-
-        // if (tab.content && tab.content.parentNode) {
-        //     tab.content.parentNode.removeChild(tab.content);
-        // }
-    }
-
-    activateTabName(name: string) {
-        if (this.tabs[name]) {
-            this.activateTab(this.tabs[name]);
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    setCurrentScrollLocation(scrollTop: number) {
-        storage.update('notebookLocations', (locations: Record<string, number>) => {
-            if (!locations) {
-                locations = {};
-            }
-
-            locations[this.currentTab.name] = scrollTop;
-            return locations;
-        });
-    }
-
-    activateTab(tab: Tab) {
-        if (this.currentTab && this.currentTab === tab) {
-            return;
-        } else if (this.currentTab) {
-            // remember previous location
-            this.setCurrentScrollLocation(this.currentTab.content.notebook.parentElement.scrollTop);
-
-            for (const area in this.contentAreas) {
-                if (this.contentAreas.hasOwnProperty(area)) {
-                    if (this.currentTab.content[area]?.parentNode) {
-                        this.currentTab.content[area].parentNode.removeChild(this.currentTab.content[area]);
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => {
+            if (path) {
+                if (this.getTab(path) === undefined && path !== "home") {
+                    const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
+                    if (nbInfo?.info) {
+                        this.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
                     }
+                } else {
+                    this.activate(path)
                 }
             }
-            if (this.tabEls[this.currentTab.name]?.classList) {
-                this.tabEls[this.currentTab.name].classList.remove('active');
-            }
-        }
-
-        for (const area in this.contentAreas) {
-            if (this.contentAreas.hasOwnProperty(area)) {
-                if (tab.content[area]) {
-                    this.contentAreas[area].appendChild(tab.content[area]);
-                }
-            }
-        }
-        this.tabEls[tab.name].classList.add('active');
-        this.currentTab = tab;
-        this.publish(new TabActivated(tab.name, tab.type));
+        })
     }
 
-    getTab(name: string) {
-        return this.tabs[name];
+    getTab(path: string) {
+        return this.tabs[path]
     }
 
-    renameTab(oldName: string, newName: string, newTitle?: string) {
-        const tab = this.tabs[oldName];
-        const title = newTitle || newName;
+    add(path: string, title: TagElement<"span">, content: TagElement<"div">) {
+        if (this.tabs[path] === undefined) {
+
+            // define callbacks here so we can change the path if the tab is renamed.
+            let activate = () => this.activate(path);
+            let remove = () => this.remove(path);
+
+            const tab: TagElement<"div"> = div(['tab'], [
+                title,
+                icon(['close-button'], 'times', 'close icon').mousedown(evt => {
+                    evt.stopPropagation();
+                    remove()
+                })
+            ])
+                .attr('title', path)
+                .mousedown((evt: MouseEvent) => {
+                    if (evt.button === 0) { // left click
+                        activate()
+                    } else if (evt.button === 1) { // middle click
+                        remove()
+                    } // nothing on right click...
+                });
+
+            this.tabContainer.appendChild(tab);
+
+            // watch for renames of this notebook.
+            const handler = ServerStateHandler.getOrCreateNotebook(path).handler;
+            const obs = handler.view("path").addObserver((newPath, oldPath) => {
+                const tab = this.tabs[oldPath];
+                delete this.tabs[oldPath];
+                this.tabs[newPath] = tab;
+                activate = () => this.activate(newPath);
+                remove = () => this.remove(newPath);
+            });
+
+            this.tabs[path] = {tab, content, handler, obs};
+        }
+
+        this.activate(path);
+    }
+
+    activate(path: string) {
+        if (this.currentTab === undefined || this.currentTab.tab.classList.contains("active")) {
+            const tab = this.tabs[path];
+            const current = this.currentTab;
+            if (current) {
+                current.content.replaceWith(tab.content);
+                current.tab.classList.remove("active");
+            } else {
+                this.el.appendChild(tab.content)
+            }
+            tab.tab.classList.add("active");
+            this.currentTab = {path, tab: tab.tab, content: tab.content};
+            this.dispatcher.dispatch(new SetSelectedNotebook(path))
+        }
+    }
+
+    private remove(path: string) {
+        const tab = this.tabs[path];
         if (tab) {
-            tab.name = newName;
-            tab.title.innerHTML = '';
-            tab.title.appendChild(document.createTextNode(title));
-            delete this.tabs[oldName];
-            this.tabEls[newName] = this.tabEls[oldName];
-            delete this.tabEls[oldName];
-            this.tabs[newName] = tab;
-            this.publish(new TabRenamed(oldName, newName, tab.type, tab === this.currentTab))
+            tab.handler.removeObserver(tab.obs);
+
+            const nextTabEl = tab.tab.previousElementSibling || tab.tab.nextElementSibling;
+            const nextTabPath = Object.entries(this.tabs).find(([p, t]) => t.tab === nextTabEl)?.[0];
+
+            this.tabContainer.removeChild(tab.tab);
+            delete this.tabs[path];
+
+            if (path !== "home") {
+                this.dispatcher.dispatch(new CloseNotebook(path))
+            }
+
+            if (this.currentTab?.path === path) {
+                if (nextTabPath) {
+                    this.activate(nextTabPath);
+                }
+            }
+
+            if (Object.keys(this.tabs).length === 0) {
+                this.addHome()
+            }
         }
     }
 
-    getCurrentTab(): Tab {
-        return this.currentTab;
+    private addHome() {
+        this.add("home", span([], "Home"), this.homeTab);
     }
 }

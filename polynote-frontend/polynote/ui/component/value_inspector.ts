@@ -1,35 +1,35 @@
 "use strict";
 
-import {FullScreenModal, Modal} from "./modal";
-import {div, button, TagElement} from "../util/tags";
+import {FullScreenModal} from "../layout/modal";
+import {div, TagElement} from "../tags";
 import {ResultValue} from "../../data/result";
-import {MIMERepr, DataRepr, LazyDataRepr, StreamingDataRepr, StringRepr} from "../../data/value_repr";
 import match from "../../util/match";
-import {displayContent, displayData, contentTypeName, displaySchema} from "./display_content"
-import {ArrayType, DataType, MapType, StructType} from "../../data/data_type";
-import {PlotEditor} from "./plot_editor";
-import {TableView} from "./table_view";
-import {TabNav} from "./tab_nav";
+import {DataRepr, LazyDataRepr, MIMERepr, StreamingDataRepr, StringRepr} from "../../data/value_repr";
+import {contentTypeName, displayContent, displayData, displaySchema} from "../display/display_content";
 import {DataReader} from "../../data/codec";
-import {NotebookUI} from "./notebook";
-
+import {StructType} from "../../data/data_type";
+import {TabNav} from "../layout/tab_nav";
+import {PlotEditor} from "./plot_editor";
+import {TableView} from "../layout/table_view";
+import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
+import {NotebookStateHandler} from "../../state/notebook_state";
 
 export class ValueInspector extends FullScreenModal {
-    private static inst: ValueInspector;
-    static get() {
-        if (!ValueInspector.inst) {
-            ValueInspector.inst = new ValueInspector();
-        }
-        return ValueInspector.inst;
-    }
-    constructor() {
+    private constructor() {
         super(
             div([], []),
             { windowClasses: ['value-inspector'] }
         );
     }
+    private static inst: ValueInspector;
+    static get get() {
+        if (!ValueInspector.inst) {
+            ValueInspector.inst = new ValueInspector();
+        }
+        return ValueInspector.inst;
+    }
 
-    inspect(resultValue: ResultValue, notebook: NotebookUI, jumpTo?: string) {
+    inspect(dispatcher: NotebookMessageDispatcher, nbState: NotebookStateHandler, resultValue: ResultValue, whichTab?: string) {
         this.content.innerHTML = "";
         let tabsPromise = Promise.resolve({} as Record<string, TagElement<any>>);
 
@@ -55,9 +55,9 @@ export class ValueInspector extends FullScreenModal {
                         try {
                             if (dataType instanceof StructType) {
                                 tabs['Schema'] = displaySchema(dataType);
-                                tabs['Plot data'] = new PlotEditor(repr, notebook, resultValue.name, resultValue.sourceCell, () => this.hide()).container;
+                                tabs['Plot data'] = new PlotEditor(dispatcher, nbState, repr, resultValue.name, resultValue.sourceCell).container;
                             }
-                            tabs['View data'] = new TableView(repr, notebook).el;
+                            tabs['View data'] = new TableView(dispatcher, nbState, repr).el;
                         } catch(err) {
                             console.error(err);
                         }
@@ -73,13 +73,15 @@ export class ValueInspector extends FullScreenModal {
                 this.setTitle(`Inspect: ${resultValue.name}`);
                 this.show();
 
-                if (jumpTo && tabs[jumpTo]) {
-                    nav.showItem(jumpTo);
+                if (whichTab && tabs[whichTab]) {
+                    nav.showItem(whichTab);
                 } else {
                     Object.values(tabs).shift().dispatchEvent(new CustomEvent('TabDisplayed'))
                 }
             }
         })
     }
+
+
 
 }

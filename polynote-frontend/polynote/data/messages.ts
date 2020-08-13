@@ -10,7 +10,7 @@ import {ServerErrorWithCause, Output, PosRange, Result} from './result'
 import {StreamingDataRepr} from "./value_repr";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig, SparkPropertySet} from "./data";
 import {ContentEdit} from "./content_edit";
-import {Left, Right} from "./types";
+import {Left, Right} from "./codec_types";
 
 export abstract class Message extends CodecContainer {
     static codec: Codec<Message>;
