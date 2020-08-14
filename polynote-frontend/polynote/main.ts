@@ -136,9 +136,3 @@ SocketSession.global;
 
 const mainEl = document.getElementById('Main');
 mainEl?.appendChild(Main.get.el);
-
-
-// TODO LIST ****************************************************************************************************************************
-//      - How to deal with disposed StateHandlers? Check for memory leaks?
-//      - there's some weird flashes when notebooks are switched. unclear why. might be related to gfx card stuff.
-//      - clean up code with some helper functions. e.g., dispatcher notebook state updating cell state with cells.map

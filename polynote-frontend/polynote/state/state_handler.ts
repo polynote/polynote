@@ -66,6 +66,10 @@ export class StateHandler<S> extends BaseDisposable {
         }
     }
 
+    // chainUpdates(): ChainableUpdate<S> {
+    //     return new ChainableUpdate(this, [])
+    // }
+
     // Create a child 'view' of this state. Changes to this state will propagate to the view, and changes to the view
     // will be reflected in this state.
     // Optionally, caller can provide the constructor to use to instantiate the view StateHandler.
@@ -234,3 +238,28 @@ export class StateHandler<S> extends BaseDisposable {
 }
 
 export type Observer<S> = (currentS: S, previousS: S) => void;
+
+// type updateFn<S> = (s: S) => S | typeof NoUpdate | undefined | void
+// class ChainableUpdate<S> {
+//     constructor(private stateHandler: StateHandler<S>, readonly chain: updateFn<S>[] = []) {}
+//
+//     then(fn: updateFn<S> | ChainableUpdate<S>) {
+//         if (fn instanceof ChainableUpdate) {
+//             this.chain.push(...fn.chain)
+//         } else {
+//             this.chain.push(fn)
+//         }
+//         return this
+//     }
+//
+//     commit() {
+//         this.stateHandler.updateState(s => {
+//             return this.chain.reduce((state, next) => {
+//                 const newState = next(state)
+//                 if (newState === undefined || newState === null) {
+//                     return state
+//                 } else return newState
+//             }, s)
+//         })
+//     }
+// }

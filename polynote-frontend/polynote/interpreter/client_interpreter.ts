@@ -15,6 +15,7 @@ import {
 } from "../data/messages";
 import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
+import {ServerStateHandler} from "../state/server_state";
 
 export interface CellContext {
     id: number,
@@ -37,12 +38,23 @@ export const ClientInterpreters: Record<string, ClientInterpreter> = {
  *
  *  This will hopefully make it easier to fold vega / js interpretation into the server if we decide to do that.
  *
- *  TODO: make singleton with lookup for each notebook I think...
- *
  */
 export class ClientInterpreterComponent {
 
-    constructor(private notebookState: NotebookStateHandler, private receiver: NotebookMessageReceiver) {}
+    private static instances: Record<string, ClientInterpreterComponent> = {};
+    private constructor(private notebookState: NotebookStateHandler, private receiver: NotebookMessageReceiver) {}
+
+    static forPath(path: string): ClientInterpreterComponent | undefined {
+        let inst = ClientInterpreterComponent.instances[path];
+        if (inst === undefined) {
+            const nbInfo = ServerStateHandler.getNotebook(path);
+            if (nbInfo && nbInfo.info) {
+                inst = new ClientInterpreterComponent(nbInfo.handler, nbInfo.info.receiver);
+                ClientInterpreterComponent.instances[path] = inst;
+            }
+        }
+        return inst
+    }
 
     runCell(id: number, dispatcher: NotebookMessageDispatcher, queueAfter?: number) {
         // we want to run the cell in order, so we need to find any cells above this one that are currently running/queued
@@ -57,8 +69,9 @@ export class ClientInterpreterComponent {
                 return this.notebookState.waitForCell(queueAfter, "queued")
             } else return Promise.resolve()
         }).then(() => {
+            const promise = this.notebookState.waitForCell(cellIdx, "queued");
             this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Queued)))
-            return this.notebookState.waitForCell(cellIdx, "queued")
+            return promise
         }).then(() => { // next, wait for any cells queued up earlier.
             let waitIdx = cellIdx;
             let waitCellId: number | undefined = undefined;

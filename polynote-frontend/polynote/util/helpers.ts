@@ -117,6 +117,14 @@ export function partition<T>(arr: T[], fun: (t: T) => boolean): [T[], T[]] {
     }, [[], []])
 }
 
+export function mapSome<T>(arr: T[], cond: (t: T) => boolean, fn: (t: T) => T): T[] {
+    return arr.map(item => {
+        if (cond(item)) {
+            return fn(item)
+        } else return item
+    })
+}
+
 //****************
 //* Other Helpers
 //****************

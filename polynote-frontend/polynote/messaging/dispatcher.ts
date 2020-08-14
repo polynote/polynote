@@ -1,14 +1,9 @@
-/**
- * The Dispatcher is used to handle actions initiated by the UI.
- * It knows whether an Action should be translated to a message and then sent on the socket, or if it should be
- * handled by something else.
- */
 import match from "../util/match";
 import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
-import {ClientResult, Output, PosRange, ResultValue} from "../data/result";
-import {NoUpdate, StateHandler} from "../state/state_handler";
+import {ClientResult, Output, PosRange, ResultValue, ServerErrorWithCause} from "../data/result";
+import {StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../data/content_edit";
 import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_state";
@@ -22,6 +17,11 @@ import {ClientInterpreterComponent, ClientInterpreters} from "../interpreter/cli
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
 
+/**
+ * The Dispatcher is used to handle actions initiated by the UI.
+ * It knows whether an Action should be translated to a message and then sent on the socket, or if it should be
+ * handled by something else.
+ */
 export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHandler<S>> {
     protected constructor(protected socket: SocketStateHandler, protected state: H) {}
 
@@ -29,7 +29,7 @@ export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHand
 }
 
 export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, NotebookStateHandler> {
-    constructor(socket: SocketStateHandler, state: NotebookStateHandler, private clientInterpreter: ClientInterpreterComponent) {
+    constructor(socket: SocketStateHandler, state: NotebookStateHandler) {
         super(socket, state);
         // when the socket is opened, send a KernelStatus message to request the current status from the server.
         socket.view("status").addObserver(next => {
@@ -233,7 +233,20 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     clientCells.forEach(id => {
                         const idx = cellIds.indexOf(id)
                         const prevId = cellIds[idx - 1]
-                        this.clientInterpreter.runCell(id, this, prevId)
+                        const clientInterpreter = ClientInterpreterComponent.forPath(state.path);
+                        if (clientInterpreter) {
+                            clientInterpreter.runCell(id, this, prevId)
+                        } else {
+                            const cell = state.cells[id];
+                            const message = `Missing Client Interpreter for cell ${cell.id} of type ${cell.language}`
+                            console.error(message)
+                            this.state.updateState(s => {
+                                return {
+                                    ...s,
+                                    errors: [...s.errors, new ServerErrorWithCause("Missing Client Interpreter", message, [])]
+                                }
+                            })
+                        }
                     })
                     this.socket.send(new messages.RunCell(serverCells));
                     return {
@@ -373,7 +386,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(CloseNotebook, (path) => {
                 this.socket.close()
             })
-        // TODO: add more actions! basically UIEvents that anything subscribes to should be here I think
     }
 
     private sendUpdate(upd: NotebookUpdate) {

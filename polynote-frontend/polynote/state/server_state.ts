@@ -114,12 +114,16 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             // Note: the server will start sending notebook data on this socket automatically after it connects
             const nbSocket = new SocketStateHandler(SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`));
             const receiver = new NotebookMessageReceiver(nbSocket, nbInfo.handler);
-            const dispatcher = new NotebookMessageDispatcher(nbSocket, nbInfo.handler, new ClientInterpreterComponent(nbInfo.handler, receiver));
+            const dispatcher = new NotebookMessageDispatcher(nbSocket, nbInfo.handler)
             nbInfo.info = {receiver, dispatcher};
             nbInfo.loaded = true;
             ServerStateHandler.notebooks[path] = nbInfo;
             return nbInfo
         }
+    }
+
+    static getNotebook(path: string): NotebookInfo | undefined {
+        return ServerStateHandler.notebooks[path]
     }
 
     /**
