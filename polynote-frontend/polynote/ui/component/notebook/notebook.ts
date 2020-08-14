@@ -14,7 +14,7 @@ import {ServerStateHandler} from "../../../state/server_state";
 export class Notebook {
     readonly el: TagElement<"div">;
     readonly cells: Record<number, {cell: CellContainerComponent, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
-    cellOrder: Record<number, number> = {}; // index => cell id;
+    cellOrder: Record<number, number> = {}; // index -> cell id;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         const path = notebookState.getState().path;

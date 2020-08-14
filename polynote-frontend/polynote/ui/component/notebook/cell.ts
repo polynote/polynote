@@ -885,6 +885,7 @@ class CodeCellOutput extends Disposable {
     private readonly cellResultMargin: TagElement<"div">;
     private readonly cellOutputTools: TagElement<"div">;
     private readonly resultTabs: TagElement<"div">;
+    private cellErrorDisplay: TagElement<"div">;
 
     constructor(
         private dispatcher: NotebookMessageDispatcher,
@@ -901,7 +902,9 @@ class CodeCellOutput extends Disposable {
             // unfortunately we need this extra div for perf reasons (has to be a block)
             div(['cell-output-block'], [
                 div(['cell-output-container'], [
-                    this.cellOutputDisplay = div(['cell-output-display'], []),
+                    this.cellOutputDisplay = div(['cell-output-display'], [
+                        this.cellErrorDisplay = div([], [])
+                    ]),
                 ])
             ]),
             this.cellResultMargin = div(['cell-result-margin'], []),
@@ -922,11 +925,10 @@ class CodeCellOutput extends Disposable {
 
         compileErrorsHandler.addObserver(errors => this.setErrors(errors), this);
 
-        const handleRuntimeError = (error?: ErrorComponent) => {
+        this.setRuntimeError(runtimeErrorHandler.getState())
+        runtimeErrorHandler.addObserver(error => {
             this.setRuntimeError(error)
-        }
-        handleRuntimeError(runtimeErrorHandler.getState())
-        runtimeErrorHandler.addObserver(error => handleRuntimeError(error), this);
+        }, this);
 
         const handleOutput = (output: Output[]) => {
             if (output.length > 0) {
@@ -1096,12 +1098,9 @@ class CodeCellOutput extends Disposable {
 
     setRuntimeError(error?: ErrorComponent) {
         if (error) {
-            this.cellOutputDisplay.classList.add('errors');
-            this.cellOutputDisplay.appendChild(
-                div(['errors'], [
-                    blockquote(['error-report', 'Error'], [error.el])
-                ])
-            );
+            const runtimeError = div(['errors'], [blockquote(['error-report', 'Error'], [error.el])]);
+            this.cellErrorDisplay.replaceWith(runtimeError)
+            this.cellErrorDisplay = runtimeError;
         } else {
             this.clearErrors()
         }
@@ -1109,11 +1108,13 @@ class CodeCellOutput extends Disposable {
 
     private clearOutput() {
         this.cellOutputDisplay.innerHTML = "";
+        [...this.cellOutputDisplay.children].forEach(child => this.cellOutputDisplay.removeChild(child))
+        this.cellOutputDisplay.appendChild(this.cellErrorDisplay)
+        this.clearErrors()
     }
 
     private clearErrors() {
-        this.cellOutputDisplay.classList.remove('errors');
-        this.clearOutput() // TODO: should we just clear errors?
+        this.cellErrorDisplay.innerHTML = "";
     }
 
     private mimeEl(mimeType: string, args: Record<string, string>, content: string): MIMEElement {

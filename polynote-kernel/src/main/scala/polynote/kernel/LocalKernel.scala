@@ -74,7 +74,10 @@ class LocalKernel private[kernel] (
             publishEndTime.orDie
           }.catchAll {
             err =>
-              PublishResult(ErrorResult(err)) *> busyState.update(_.setIdle) *> publishEndTime.orDie
+              PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
+                PublishResult(ErrorResult(err)) *>
+                busyState.update(_.setIdle) *>
+                publishEndTime.orDie
           }
       }
     }

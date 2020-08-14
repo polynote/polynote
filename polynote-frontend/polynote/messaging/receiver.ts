@@ -450,7 +450,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             }
         });
         this.receive(messages.CellResult, (s, cellId, result) => {
-            if (cellId === -1) { // from a predef cell
+            if (cellId === -1 && ! (result instanceof ResultValue)) { // from a predef cell
                 return purematch<Result, NotebookState | typeof NoUpdate>(result)
                     .whenInstance(CompileErrors, result => {
                         // TODO: should somehow save this state somewhere!! Maybe this should also go into s.errors?
