@@ -79,7 +79,7 @@ class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPrefe
     constructor(initial: typeof UserPreferences) {
 
         const storageKey = "UserPreferences";
-        const fromBrowser = storage.get(storageKey);
+        const fromBrowser = storage.get(storageKey) ?? {};
         // In order to handle schema changes over time, we compare the locally stored values with `initial`.
         // The schema in `initial` is the currently expected schema, so we need to handle added and removed keys.
         const [added, removed] = diffArray(Object.keys(initial), Object.keys(fromBrowser))
