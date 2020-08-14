@@ -10,7 +10,7 @@ import {
     RecentNotebooksHandler,
     UserPreferencesHandler, ViewPrefsHandler
 } from "../../state/preferences";
-import {Observer, StateHandler} from "../../state/state_handler";
+import {Observer, StateView} from "../../state/state_handler";
 import {
     CloseNotebook,
     KernelCommand, RequestRunningKernels,
@@ -21,7 +21,7 @@ import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
 
 export class About extends FullScreenModal {
-    readonly observers: [StateHandler<any>, Observer<any>][] = []
+    readonly observers: [StateView<any>, Observer<any>][] = []
     private cleanup: (()=> void)[] = []
     private constructor(private serverMessageDispatcher: ServerMessageDispatcher) {
         super(

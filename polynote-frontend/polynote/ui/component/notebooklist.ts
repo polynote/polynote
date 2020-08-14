@@ -8,7 +8,7 @@ import {
 } from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {diffArray, removeKey} from "../../util/helpers";
-import {StateHandler} from "../../state/state_handler";
+import {StateHandler, StateView} from "../../state/state_handler";
 
 export class NotebookListContextMenuComponent {
     readonly el: TagElement<"div">;
@@ -291,7 +291,7 @@ export class BranchComponent {
     private children: (BranchComponent | LeafComponent)[] = [];
     readonly path: string;
 
-    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateHandler<Branch>, private parent?: BranchComponent) {
+    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateView<Branch>, private parent?: BranchComponent) {
         const initial = state.getState();
         this.childrenEl = tag('ul', [], {}, []);
         this.path = this.state.getState().fullPath;
@@ -349,21 +349,13 @@ export class BranchComponent {
 
     private addChild(node: Branch | Leaf) {
         let child: BranchComponent | LeafComponent;
-        // This is really slow - is it necessary?
-        // const childStateHandler =
-        //     this.state.xmapView("children",
-        //     (children: Record<string, Branch>) => children[node.fullPath],
-        //     (children: Record<string, Branch>, node: Branch) => {
-        //         children[node.fullPath] = node;
-        //         return children;
-        //     });
 
         // TODO: Creation of views seems to be a tad expensive, so we might need to revisit this as it creates 2 views for every node in the notebook list!
         const childStateHandler = this.state.view("children").view(node.fullPath);
         // childStateHandler.addObserver((next, prev) => console.log("child state changed for", node.fullPath, ":", prev, next))
         if ("children" in node) {
             // const childStateHandler = new StateHandler(node)
-            child = new BranchComponent(this.dispatcher, childStateHandler as StateHandler<Branch>, this);
+            child = new BranchComponent(this.dispatcher, childStateHandler as StateView<Branch>, this);
         } else {
             // const childStateHandler = new StateHandler(node)
             child = new LeafComponent(this.dispatcher, childStateHandler);
@@ -454,7 +446,7 @@ export class LeafComponent {
     private leafEl: TagElement<"a">;
     readonly path: string;
 
-    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateHandler<Leaf>) {
+    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateView<Leaf>) {
 
         const initial = state.getState();
         this.leafEl = this.getEl(initial);

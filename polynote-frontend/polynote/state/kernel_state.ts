@@ -1,8 +1,8 @@
 import {ResultValue} from "../data/result";
-import {StateHandler} from "./state_handler";
+import {StateView} from "./state_handler";
 import {KernelStatusString, TaskInfo} from "../data/messages";
+import {NotebookStateHandler} from "./notebook_state";
 
-// TODO: KernelSymbols needs to keep track of the cell source of each symbol doesn't it?
 export type KernelSymbols = (ResultValue)[];
 export type KernelInfo = Record<string, string>;
 export type KernelTasks = Record<string, TaskInfo>; // taskId -> TaskInfo
@@ -14,17 +14,17 @@ export interface KernelState {
     tasks: KernelTasks
 }
 
-export class KernelStateHandler extends StateHandler<KernelState> {
-    readonly kernelInfoHandler: StateHandler<KernelInfo>;
-    readonly kernelStatusHandler: StateHandler<KernelStatusString>;
-    readonly kernelSymbolsHandler: StateHandler<KernelSymbols>;
-    readonly kernelTasksHandler: StateHandler<KernelTasks>;
+export class KernelStateView extends StateView<KernelState> {
+    readonly kernelInfo: StateView<KernelInfo>;
+    readonly kernelStatus: StateView<KernelStatusString>;
+    readonly kernelSymbols: StateView<KernelSymbols>;
+    readonly kernelTasks: StateView<KernelTasks>;
 
     constructor(state: KernelState) {
         super(state);
-        this.kernelInfoHandler = this.view("info");
-        this.kernelStatusHandler = this.view("status");
-        this.kernelSymbolsHandler = this.view("symbols");
-        this.kernelTasksHandler = this.view("tasks");
+        this.kernelInfo = this.view("info");
+        this.kernelStatus = this.view("status");
+        this.kernelSymbols = this.view("symbols");
+        this.kernelTasks = this.view("tasks");
     }
 }

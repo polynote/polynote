@@ -57,18 +57,6 @@ test("views are updated by parent state changes", done => {
     }).then(_ => done())
 });
 
-test("views can update parent state", done => {
-    const sh = new StateHandler({key: 1});
-    const shV = sh.view("key");
-    sh.addObserver((next: {key: number}, prev: {key: number}) => {
-        expect(prev.key).toBe(1);
-        expect(next.key).toBe(2);
-        done()
-    });
-    shV.updateState(() => 2);
-    expect(shV.getState()).toBe(sh.getState().key)
-});
-
 test("views can be passed a constructor", done => {
     const sh = new StateHandler({key: 1});
     class AddingStorageHandler extends StateHandler<number> {
@@ -94,51 +82,18 @@ test("views can be passed a constructor", done => {
     expect(shV.getState()).toBe(sh.getState().key)
 });
 
-test("xmapview can be used to view a modified value", done => {
+test("mapview can be used to view a modified value", done => {
     const sh = new StateHandler({key: 1});
     const toT = (s: number) => s.toString();
     const fromT = (s: number, t: string) => parseInt(t);
-    const shV = sh.xmapView("key", toT, fromT);
+    const shV = sh.mapView("key", toT);
     sh.addObserver((next: {key: number}, prev: {key: number}) => {
         expect(prev.key).toBe(1);
         expect(next.key).toBe(2);
         done()
     });
-    shV.updateState(() => "2");
+    sh.updateState(() => ({key: 2}));
     expect(shV.getState()).toBe(toT(sh.getState().key))
-});
-
-test("xmapview can be used to view a modified value and cleans up after itself if toT returns undefined", done => {
-    const sh = new StateHandler({key: [{num: 1, id: "a"}, {num: 2, id: "b"}, {num: 3, id: "c"}]});
-    const toT = (ss: {num: number, id: string}[]) => ss.find(s => s.id === "b");
-    const fromT = (ss: {num: number, id: string}[], t: {num: number, id: string}) => {
-        const newSS = [...ss];
-        const idx = ss.findIndex(s => s.id === "b");
-        if (idx) {
-            newSS[idx] = t
-        }
-        return newSS
-    };
-    const shV = sh.xmapView("key", toT, fromT);
-    expect(sh["observers"].length).toEqual(1);
-    expect(shV["observers"].length).toEqual(1);
-    sh.addObserver((next: {key: {num: number, id: string}[]}) => {
-        if (next.key[1].id === "b" && next.key[1].num === 100) {
-            expect(next.key).toEqual([{num: 1, id: "a"}, {num: 100, id: "b"}, {num: 3, id: "c"}]);
-        }
-    });
-    shV.updateState(() => ({id: "b", num: 100}));
-    expect(shV.getState()).toEqual(toT(sh.getState().key));
-
-    sh.updateState(s => {
-        return {
-            ...s,
-            key:  [...s.key.slice(0, 1), ...s.key.slice(2)] // delete id = "b" from the state.
-        }
-    });
-    expect(sh["observers"].length).toEqual(1);
-    expect(shV["observers"].length).toEqual(0);
-    done()
 });
 
 test("stress test", () => {

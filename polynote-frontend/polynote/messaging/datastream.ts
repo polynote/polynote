@@ -13,6 +13,7 @@ import {Either} from "../data/codec_types";
 import match from "../util/match";
 import {StreamingDataRepr} from "../data/value_repr";
 import {
+    ClearDataStream,
     ModifyDataStream,
     NotebookMessageDispatcher,
     RequestCancelTasks,
@@ -20,7 +21,7 @@ import {
     StopDataStream
 } from "./dispatcher";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {Observer, StateHandler} from "../state/state_handler";
+import {Observer, StateView} from "../state/state_handler";
 
 export const QuartilesType = new StructType([
     new StructField("min", DoubleType),
@@ -48,7 +49,7 @@ export class DataStream {
     private nextPromise?: {resolve: <T>(value?: T | PromiseLike<T>) => void, reject: (reason?: any) => void}; // holds a Promise's `resolve` and `reject` inputs.
     private setupPromise?: Promise<Message | void>;
     private repr: StreamingDataRepr;
-    private activeStreams: StateHandler<NotebookState["activeStreams"]>;
+    private activeStreams: StateView<NotebookState["activeStreams"]>;
     private observer?: Observer<NotebookState["activeStreams"]>;
 
     constructor(private readonly dispatcher: NotebookMessageDispatcher, private readonly nbState: NotebookStateHandler, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
@@ -93,12 +94,7 @@ export class DataStream {
                 })
 
                 // clear messages now that they have been processed.
-                this.activeStreams.updateState(streams => {
-                    return {
-                        ...streams,
-                        [this.repr.handle]: []
-                    }
-                })
+                this.dispatcher.dispatch(new ClearDataStream(this.repr.handle))
             }
         })
     }

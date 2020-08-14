@@ -10,7 +10,7 @@ import {
     SetSelectedCell,
     UpdateCell, ShowValueInspector, DeselectCell
 } from "../../../messaging/dispatcher";
-import {BaseDisposable, StateHandler} from "../../../state/state_handler";
+import {Disposable, StateView} from "../../../state/state_handler";
 import {CellState, CompletionHint, SignatureHint} from "../../../state/notebook_state";
 import * as monaco from "monaco-editor";
 // @ts-ignore (ignore use of non-public monaco api)
@@ -72,12 +72,12 @@ export type CodeCellModel = editor.ITextModel & {
 
 export type MIMEElement = TagElement<"div", HTMLDivElement & { rel?: string, "mime-type"?: string}>;
 
-export class CellContainerComponent extends BaseDisposable {
+export class CellContainerComponent extends Disposable {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
     private cell: CellComponent;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateHandler<CellState>, private path: string) {
+    constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateView<CellState>, private path: string) {
         super()
         this.cellId = `Cell${cellState.getState().id}`;
         this.cell = this.cellFor(cellState.getState().language);
@@ -132,12 +132,12 @@ export const cellHotkeys = {
     [monaco.KeyCode.KEY_K]: ["MoveUpK", ""],
 };
 
-abstract class CellComponent extends BaseDisposable {
+abstract class CellComponent extends Disposable {
     protected id: number;
     protected cellId: string;
     public el: TagElement<"div">;
 
-    protected constructor(protected dispatcher: NotebookMessageDispatcher, protected cellState: StateHandler<CellState>) {
+    protected constructor(protected dispatcher: NotebookMessageDispatcher, protected cellState: StateView<CellState>) {
         super()
         this.id = cellState.getState().id;
         this.cellId = `Cell${this.id}`;
@@ -273,7 +273,7 @@ class CodeCellComponent extends CellComponent {
     private vim?: any;
     private commentHandler: CommentHandler;
 
-    constructor(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>, private path: string) {
+    constructor(dispatcher: NotebookMessageDispatcher, cellState: StateView<CellState>, private path: string) {
         super(dispatcher, cellState);
 
         const langSelector = dropdown(['lang-selector'], ServerStateHandler.getState().interpreters);
@@ -565,6 +565,8 @@ class CodeCellComponent extends CellComponent {
 
         // make sure to create the comment handler.
        this.commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
+
+        this.onDispose.then(() => this.commentHandler.dispose())
     }
 
     // TODO: comment markers need to be updated here.
@@ -846,10 +848,6 @@ class CodeCellComponent extends CellComponent {
         this.commentHandler.hide()
     }
 
-    onDispose() {
-        this.commentHandler.dispose()
-    }
-
     setDisabled(disabled: boolean) {
         this.editor.updateOptions({readOnly: disabled});
         if (disabled) {
@@ -878,7 +876,7 @@ class CodeCellComponent extends CellComponent {
 
 type CellErrorMarkers = editor.IMarkerData & { originalSeverity: MarkerSeverity}
 
-class CodeCellOutput extends BaseDisposable {
+class CodeCellOutput extends Disposable {
     readonly el: TagElement<"div">;
     private stdOutEl: MIMEElement | null;
     private stdOutLines: number;
@@ -890,9 +888,9 @@ class CodeCellOutput extends BaseDisposable {
 
     constructor(
         private dispatcher: NotebookMessageDispatcher,
-        private cellState: StateHandler<CellState>,
-        compileErrorsHandler: StateHandler<CellErrorMarkers[][] | undefined>,
-        runtimeErrorHandler: StateHandler<ErrorComponent | undefined>) {
+        private cellState: StateView<CellState>,
+        compileErrorsHandler: StateView<CellErrorMarkers[][] | undefined>,
+        runtimeErrorHandler: StateView<ErrorComponent | undefined>) {
         super()
 
         const outputHandler = cellState.view("output");
@@ -1249,7 +1247,7 @@ export class TextCellComponent extends CellComponent {
     private lastContent: string;
     private listeners: [string, (evt: Event) => void][];
 
-    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<CellState>, private path: string) {
+    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateView<CellState>, private path: string) {
         super(dispatcher, stateHandler)
 
         const editorEl = div(['cell-input-editor', 'markdown-body'], [])
@@ -1274,6 +1272,12 @@ export class TextCellComponent extends CellComponent {
         ]
         this.listeners.forEach(([k, fn]) => {
             this.editor.element.addEventListener(k, fn);
+        })
+
+        this.onDispose.then(() => {
+            this.listeners.forEach(([k, fn]) => {
+                this.editor.element.removeEventListener(k, fn)
+            })
         })
     }
 
@@ -1405,12 +1409,5 @@ export class TextCellComponent extends CellComponent {
 
     setDisabled(disabled: boolean) {
         this.editor.disabled = disabled
-    }
-
-    protected onDispose() {
-        super.onDispose();
-        this.listeners.forEach(([k, fn]) => {
-            this.editor.element.removeEventListener(k, fn)
-        })
     }
 }

@@ -13,7 +13,7 @@ import {
     textbox
 } from "../../tags";
 import {NotebookMessageDispatcher, UpdateConfig} from "../../../messaging/dispatcher";
-import {StateHandler} from "../../../state/state_handler";
+import {StateView} from "../../../state/state_handler";
 import {
     IvyRepository,
     MavenRepository,
@@ -28,7 +28,7 @@ import {KernelStatusString} from "../../../data/messages";
 export class NotebookConfigComponent {
     readonly el: TagElement<"div">;
 
-    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<NotebookConfig>, kernelStateHandler: StateHandler<KernelStatusString>) {
+    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateView<NotebookConfig>, kernelStateHandler: StateView<KernelStatusString>) {
 
         const dependencies = new Dependencies(stateHandler.view("dependencies"))
         const exclusions = new Exclusions(stateHandler.view("exclusions"))
@@ -79,7 +79,7 @@ class Dependencies {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
-    constructor(dependenciesHandler: StateHandler<Record<string, string[]> | undefined>) {
+    constructor(dependenciesHandler: StateView<Record<string, string[]> | undefined>) {
 
         this.el = div(['notebook-dependencies', 'notebook-config-section'], [
             h3([], ['Dependencies']),
@@ -148,7 +148,7 @@ class Resolvers {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
-    constructor(resolversHandler: StateHandler<RepositoryConfig[] | undefined>) {
+    constructor(resolversHandler: StateView<RepositoryConfig[] | undefined>) {
 
         this.el = div(['notebook-resolvers', 'notebook-config-section'], [
             h3([], ['Resolvers']),
@@ -254,7 +254,7 @@ class Exclusions {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
-    constructor(exclusionsHandler: StateHandler<string[] | undefined>) {
+    constructor(exclusionsHandler: StateView<string[] | undefined>) {
         this.el = div(['notebook-exclusions', 'notebook-config-section'], [
             h3([], ['Exclusions']),
             para([], ['[Scala only]: Specify organization:module coordinates for your exclusions, i.e. ', span(['pre'], ['org.myorg:package-name_2.11'])]),
@@ -310,7 +310,7 @@ class SparkConf {
     private container: TagElement<"div">;
     private templateEl: DropdownElement;
 
-    constructor(confHandler: StateHandler<Record<string, string> | undefined>, templateHandler: StateHandler<SparkPropertySet | undefined>, private allTemplatesHandler: StateHandler<SparkPropertySet[]>) {
+    constructor(confHandler: StateView<Record<string, string> | undefined>, templateHandler: StateView<SparkPropertySet | undefined>, private allTemplatesHandler: StateView<SparkPropertySet[]>) {
         this.templateEl = dropdown([], Object.fromEntries([["", "None"]]), );
         this.container = div(['spark-config-list'], []);
 
@@ -395,7 +395,7 @@ class EnvConf {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
-    constructor(envHandler: StateHandler<Record<string, string> | undefined>) {
+    constructor(envHandler: StateView<Record<string, string> | undefined>) {
         this.el = div(['notebook-env', 'notebook-config-section'], [
             h3([], ['Environment Variables']),
             para([], ['Set environment variables here. Please note this is only supported when kernels are launched as a subprocess (default).']),

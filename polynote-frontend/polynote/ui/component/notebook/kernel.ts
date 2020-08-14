@@ -1,4 +1,4 @@
-import {KernelInfo, KernelStateHandler, KernelSymbols, KernelTasks} from "../../../state/kernel_state";
+import {KernelInfo, KernelState, KernelStateView, KernelSymbols, KernelTasks} from "../../../state/kernel_state";
 import {
     Content,
     div,
@@ -20,7 +20,7 @@ import {
     ServerMessageDispatcher,
     ShowValueInspector
 } from "../../../messaging/dispatcher";
-import {StateHandler} from "../../../state/state_handler";
+import {StateView} from "../../../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../../../state/preferences";
 import {TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
@@ -82,7 +82,7 @@ export class Kernel {
     readonly el: TagElement<"div">;
     readonly statusEl: TagElement<"h2">;
     private status: TagElement<"span">;
-    private kernelState: KernelStateHandler;
+    private kernelState: KernelStateView;
 
     // TODO: this implementation will no longer appear on the welcome screen, which means that errors won't show.
     //       another solution for showing errors on the welcome screen needs to be implemented.
@@ -91,11 +91,11 @@ export class Kernel {
                 private notebookState: NotebookStateHandler,
                 private whichPane: keyof ViewPreferences) {
 
-        this.kernelState = notebookState.view("kernel", KernelStateHandler);
+        this.kernelState = notebookState.view("kernel", KernelStateView);
 
-        const info = new KernelInfoComponent(this.kernelState.kernelInfoHandler);
+        const info = new KernelInfoComponent(this.kernelState);
         const symbols = new KernelSymbolsComponent(dispatcher, notebookState);
-        const tasks = new KernelTasksComponent(dispatcher, this.kernelState.kernelTasksHandler, notebookState.view("errors"));
+        const tasks = new KernelTasksComponent(dispatcher, this.kernelState.kernelTasks, notebookState.view("errors"));
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -113,8 +113,8 @@ export class Kernel {
             tasks.el
         ]);
 
-        this.setKernelStatus(this.kernelState.kernelStatusHandler.getState())
-        this.kernelState.kernelStatusHandler.addObserver(status => {
+        this.setKernelStatus(this.kernelState.kernelStatus.getState())
+        this.kernelState.kernelStatus.addObserver(status => {
             this.setKernelStatus(status)
         })
 
@@ -152,9 +152,6 @@ export class Kernel {
         if (state === 'busy' || state === 'idle' || state === 'dead' || state === 'disconnected') {
             this.statusEl.classList.add(state);
             this.status.title = state;
-            if (state === 'dead') {
-                this.kernelState.kernelInfoHandler.updateState(() => ({}))
-            }
         } else {
             throw "State must be one of [busy, idle, dead, disconnected]";
         }
@@ -167,7 +164,7 @@ class KernelInfoComponent {
     private toggleEl: TagElement<"h3">;
     private infoEl: TableElement;
 
-    constructor(kernelInfoHandler: StateHandler<KernelInfo>) {
+    constructor(kernelStateHandler: KernelStateView) {
         this.el = div(['kernel-info'], [
             this.toggleEl = h3(['toggle'], ['...']).click(() => this.toggleCollapse()),
             h3(['title'], ['Info']),
@@ -178,8 +175,16 @@ class KernelInfoComponent {
             }),
         ]);
 
-        this.renderInfo(kernelInfoHandler.getState());
-        kernelInfoHandler.addObserver(info => this.renderInfo(info));
+        this.renderInfo(kernelStateHandler.kernelInfo.getState());
+        kernelStateHandler.kernelInfo.addObserver(info => this.renderInfo(info));
+
+        kernelStateHandler.kernelStatus.addObserver(status => {
+            if (status === "dead") {
+                this.el.style.display = "none";
+            } else {
+                this.el.style.display = "block";
+            }
+        })
     }
 
     private toggleCollapse() {
@@ -222,8 +227,8 @@ class KernelTasksComponent {
     private tasks: Record<string, KernelTask> = {};
 
     constructor(private dispatcher: NotebookMessageDispatcher,
-                private kernelTasksHandler: StateHandler<KernelTasks>,
-                private kernelErrors: StateHandler<ServerErrorWithCause[]>) {
+                private kernelTasksHandler: StateView<KernelTasks>,
+                private kernelErrors: StateView<ServerErrorWithCause[]>) {
         this.el = div(['kernel-tasks'], [
             h3([], ['Tasks']),
             this.taskContainer = div(['task-container'], [])
@@ -392,6 +397,7 @@ class KernelSymbolsComponent {
     private tableEl: TableElement;
     private resultSymbols: TagElement<"tbody">;
     private scopeSymbols: TagElement<"tbody">;
+    //                      cellId -> {    name -> symbol }
     private symbols: Record<number, Record<string, ResultValue>> = {};
     private predefs: Record<number, number> = {};
     private presentedCell: number = 0;
@@ -419,7 +425,7 @@ class KernelSymbolsComponent {
                 })
             }
         }
-        const symbolHandler = notebookState.view("kernel", KernelStateHandler).kernelSymbolsHandler;
+        const symbolHandler = notebookState.view("kernel", KernelStateView).kernelSymbols;
         handleSymbols(symbolHandler.getState())
         symbolHandler.addObserver(symbols => handleSymbols(symbols))
 

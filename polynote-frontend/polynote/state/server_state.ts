@@ -1,4 +1,4 @@
-import {Disposable, StateHandler} from "./state_handler";
+import {Disposable, StateHandler, StateView} from "./state_handler";
 import {ServerErrorWithCause} from "../data/result";
 import {Identity} from "../data/messages";
 import {NotebookStateHandler} from "./notebook_state";
@@ -13,7 +13,6 @@ import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
 import {removeKey} from "../util/helpers";
 import {EditBuffer} from "../data/edit_buffer";
-import {ClientInterpreterComponent} from "../interpreter/client_interpreter";
 
 export type NotebookInfo = {
     handler: NotebookStateHandler,
@@ -74,7 +73,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
      * @param key
      * @param disposeWhen
      */
-    static view<T extends keyof ServerState>(key: T, disposeWhen: Disposable): StateHandler<ServerState[T]> {
+    static view<T extends keyof ServerState>(key: T, disposeWhen: Disposable): StateView<ServerState[T]> {
         return ServerStateHandler.get.view(key, undefined, disposeWhen)
     }
 

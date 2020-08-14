@@ -11,7 +11,7 @@ import {
 } from "../../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
 import {ServerStateHandler} from "../../state/server_state";
-import {Observer, StateHandler} from "../../state/state_handler";
+import {Observer, StateView} from "../../state/state_handler";
 import {CellState, NotebookState, NotebookStateHandler} from "../../state/notebook_state";
 import {FakeSelect} from "../display/fake_select";
 import {LaTeXEditor} from "../input/latex_editor";
@@ -89,7 +89,7 @@ interface FancyButtonConfig {
 abstract class ToolbarElement {
     el: TagElement<"div">;
 
-    protected constructor(connectionStatus: StateHandler<"disconnected" | "connected">, disableOnDisconnect: boolean = true) {
+    protected constructor(connectionStatus: StateView<"disconnected" | "connected">, disableOnDisconnect: boolean = true) {
         if (disableOnDisconnect ) {
             connectionStatus.addObserver((currentStatus, previousStatus) => {
                 if (currentStatus === "disconnected" && previousStatus === "connected") {
@@ -142,7 +142,7 @@ abstract class ToolbarElement {
 
 class NotebookToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
-    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+    constructor(connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
 
         this.el = this.toolbarElem("notebook", [
@@ -175,9 +175,9 @@ class NotebookToolbar extends ToolbarElement {
 
 class CellToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
-    private activeCellHandler?: StateHandler<CellState>;
+    private activeCellHandler?: StateView<CellState>;
     private langSelector: FakeSelect;
-    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+    constructor(connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
 
         const selectEl = fakeSelectElem(["cell-language"], [
@@ -228,7 +228,7 @@ class CellToolbar extends ToolbarElement {
         })
     }
 
-    enable(dispatcher: NotebookMessageDispatcher, cellState: StateHandler<CellState>) {
+    enable(dispatcher: NotebookMessageDispatcher, cellState: StateView<CellState>) {
         this.dispatcher = dispatcher;
         this.activeCellHandler = cellState;
         this.activeCellHandler.addObserver(cell => {
@@ -250,7 +250,7 @@ class CellToolbar extends ToolbarElement {
 
 class CodeToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
-    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+    constructor(connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
 
         this.el = this.toolbarElem("code", [
@@ -291,7 +291,7 @@ class TextToolbar extends ToolbarElement {
     private unlinkButton: CommandButton;
     private buttons: CommandButton[];
 
-    constructor(connectionStatus: StateHandler<"disconnected" | "connected">) {
+    constructor(connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
 
         let buttons = [];
@@ -433,7 +433,7 @@ class TextToolbar extends ToolbarElement {
 class SettingsToolbar extends ToolbarElement {
     private floatingMenu: TagElement<"div">;
 
-    constructor(private dispatcher: ServerMessageDispatcher, connectionStatus: StateHandler<"disconnected" | "connected">) {
+    constructor(private dispatcher: ServerMessageDispatcher, connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus, false); // this section is not disabled on disconnect.
 
         this.el = this.toolbarElem("about", [[

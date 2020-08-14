@@ -1,5 +1,5 @@
 import {CreateComment, DeleteComment, NotebookMessageDispatcher, UpdateComment} from "../../../messaging/dispatcher";
-import {BaseDisposable, StateHandler} from "../../../state/state_handler";
+import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {CellComment} from "../../../data/data";
 import {PosRange} from "../../../data/result";
 import {diffArray} from "../../../util/helpers";
@@ -26,15 +26,15 @@ export function createCellComment({range, author, authorAvatarUrl, createdAt, co
     )
 }
 
-export class CommentHandler extends BaseDisposable {
+export class CommentHandler extends Disposable {
     //                              id -> Comment
     readonly commentRoots: Record<string, CommentRoot> = {};
     //                              range -> id
     readonly rootRanges: Record<string, string> = {};
 
     constructor(dispatcher: NotebookMessageDispatcher,
-                commentsState: StateHandler<Record<string, CellComment>>,
-                currentSelection: StateHandler<PosRange | undefined>,
+                commentsState: StateView<Record<string, CellComment>>,
+                currentSelection: StateView<PosRange | undefined>,
                 editor: editor.ICodeEditor,
                 cellId: number) {
        super()
@@ -147,7 +147,7 @@ export class CommentHandler extends BaseDisposable {
     }
 }
 
-abstract class MonacoRightGutterOverlay extends BaseDisposable {
+abstract class MonacoRightGutterOverlay extends Disposable {
     readonly el: TagElement<"div">;
 
     protected constructor(readonly editor: editor.ICodeEditor) {
@@ -202,7 +202,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
     constructor(readonly dispatcher: NotebookMessageDispatcher,
                 readonly rootState: StateHandler<CellComment>,
                 readonly childrenState: StateHandler<CellComment[]>,
-                readonly currentSelection: StateHandler<PosRange | undefined>,
+                readonly currentSelection: StateView<PosRange | undefined>,
                 editor: editor.ICodeEditor,
                 private cellId: number) {
         super(editor);
@@ -277,7 +277,13 @@ class CommentRoot extends MonacoRightGutterOverlay {
                 }
             }
         })
-        this.didDispose.then(() => modelChangeListener.dispose())
+        this.onDispose.then(() => {
+            // we need to delete all children when the root is deleted.
+            this.childrenState.getState().forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
+            this.hide()
+            this.editor.deltaDecorations(this.highlights, []) // clear highlights
+            modelChangeListener.dispose()
+        })
     }
 
     get uuid() {
@@ -322,13 +328,6 @@ class CommentRoot extends MonacoRightGutterOverlay {
         super.hide()
         this.visible = false
     }
-
-    onDispose() {
-        // we need to delete all children when the root is deleted.
-        this.childrenState.getState().forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
-        this.hide()
-        this.editor.deltaDecorations(this.highlights, []) // clear highlights
-    }
 }
 
 class CommentButtonComponent extends MonacoRightGutterOverlay{
@@ -347,7 +346,7 @@ class CommentButtonComponent extends MonacoRightGutterOverlay{
     }
 }
 
-class NewCommentComponent extends BaseDisposable {
+class NewCommentComponent extends Disposable {
     readonly el: TagElement<"div">;
     private currentIdentity: Identity;
     onCreate?: () => void;

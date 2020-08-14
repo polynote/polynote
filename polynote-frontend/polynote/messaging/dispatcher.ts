@@ -383,6 +383,17 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(StopDataStream, (handleType, handleId) => {
                 this.socket.send(new ReleaseHandle(handleType, handleId))
             })
+            .when(ClearDataStream, handleId => {
+                this.state.updateState(state => {
+                    return {
+                        ...state,
+                        activeStreams: {
+                            ...state.activeStreams,
+                            [handleId]: []
+                        }
+                    }
+                })
+            })
             .when(CloseNotebook, (path) => {
                 this.socket.close()
             })
@@ -1075,5 +1086,16 @@ export class StopDataStream extends UIAction {
 
     static unapply(inst: StopDataStream): ConstructorParameters<typeof StopDataStream> {
         return [inst.handleType, inst.handleId]
+    }
+}
+
+export class ClearDataStream extends UIAction {
+    constructor(readonly handleId: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: ClearDataStream): ConstructorParameters<typeof ClearDataStream> {
+        return [inst.handleId]
     }
 }
