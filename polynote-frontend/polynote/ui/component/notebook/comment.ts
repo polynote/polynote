@@ -112,7 +112,7 @@ export class CommentHandler extends Disposable {
        handleComments(commentsState.getState())
        commentsState.addObserver((current, old) => handleComments(current, old), this);
 
-       let commentButton: CommentButtonComponent | undefined = undefined;
+       let commentButton: CommentButton | undefined = undefined;
 
        const handleSelection = (currentSelection?: PosRange) => {
            const model = editor.getModel();
@@ -123,7 +123,7 @@ export class CommentHandler extends Disposable {
                if (maybeEquals === undefined) {
                    // show the new comment button
                    if (commentButton) commentButton.hide();
-                   commentButton = new CommentButtonComponent(dispatcher, editor, currentSelection, cellId);
+                   commentButton = new CommentButton(dispatcher, editor, currentSelection, cellId);
                    commentButton.show();
                    return
                } // else the CommentRoot will handle showing itself.
@@ -211,12 +211,12 @@ class CommentRoot extends MonacoRightGutterOverlay {
 
         this.el.classList.add('comment-container');
 
-        let root = new CommentComponent(dispatcher, cellId, rootState.getState());
+        let root = new Comment(dispatcher, cellId, rootState.getState());
         const commentList = div(['comments-list'], [root.el]);
         this.el.appendChild(commentList);
         rootState.addObserver((currentRoot, previousRoot) => {
             console.log(currentRoot.uuid, "updating to new root!")
-            const newRoot = new CommentComponent(dispatcher, cellId, currentRoot);
+            const newRoot = new Comment(dispatcher, cellId, currentRoot);
             root.el.replaceWith(newRoot.el);
             root = newRoot;
 
@@ -228,7 +228,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
             }
         }, this);
 
-        const newComment = new NewCommentComponent(dispatcher, () => this.range, cellId);
+        const newComment = new NewComment(dispatcher, () => this.range, cellId);
 
         const handleNewChildren = (newChildren: CellComment[]) => {
             // replace all the children. if this causes perf issues, we will need to do something more granular.
@@ -245,7 +245,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
                             : -1
                 )
                 .forEach(comment => {
-                    commentList.appendChild(new CommentComponent(dispatcher, cellId, comment).el);
+                    commentList.appendChild(new Comment(dispatcher, cellId, comment).el);
                 });
             commentList.appendChild(newComment.el);
         }
@@ -330,7 +330,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
     }
 }
 
-class CommentButtonComponent extends MonacoRightGutterOverlay{
+class CommentButton extends MonacoRightGutterOverlay{
     constructor(readonly dispatcher: NotebookMessageDispatcher, editor: editor.ICodeEditor, readonly range: PosRange, readonly cellId: number) {
         super(editor);
 
@@ -338,7 +338,7 @@ class CommentButtonComponent extends MonacoRightGutterOverlay{
             evt.stopPropagation();
             evt.preventDefault();
 
-            const newComment = new NewCommentComponent(dispatcher, () => range, cellId)
+            const newComment = new NewComment(dispatcher, () => range, cellId)
             newComment.display(this)
                 .then(() => this.hide())
         });
@@ -346,7 +346,7 @@ class CommentButtonComponent extends MonacoRightGutterOverlay{
     }
 }
 
-class NewCommentComponent extends Disposable {
+class NewComment extends Disposable {
     readonly el: TagElement<"div">;
     private currentIdentity: Identity;
     onCreate?: () => void;
@@ -423,7 +423,7 @@ class NewCommentComponent extends Disposable {
     }
 }
 
-class CommentComponent {
+class Comment {
     readonly el: TagElement<"div">;
     private currentIdentity: Identity;
 

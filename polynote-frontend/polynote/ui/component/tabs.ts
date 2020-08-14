@@ -6,7 +6,7 @@ import {NotebookStateHandler} from "../../state/notebook_state";
 import {Notebook} from "./notebook/notebook";
 import {VimStatus} from "./notebook/vim_status";
 
-export class TabComponent {
+export class Tabs {
     readonly el: TagElement<"div">;
     private readonly tabs: Record<string, { tab: TagElement<"div">, content: TagElement<"div">, handler: NotebookStateHandler, obs: Observer<any>}> = {};
     private tabContainer: TagElement<"div">;

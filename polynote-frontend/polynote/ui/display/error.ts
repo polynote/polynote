@@ -1,10 +1,10 @@
 import {ServerErrorWithCause} from "../../data/result";
 import {details, div, span, tag, TagElement} from "../tags";
 
-export class ErrorComponent {
+export class ErrorEl {
     el: TagElement<"div" | "details">;
     private constructor(readonly summary: { label: string; message: string },
-                        readonly trace: { cause?: ErrorComponent, items: { content: string; type?: "link" | "irrelevant" }[] },
+                        readonly trace: { cause?: ErrorEl, items: { content: string; type?: "link" | "irrelevant" }[] },
                         readonly errorLine?: number) {
 
         const traceItems = trace.items.map(item => {
@@ -27,9 +27,9 @@ export class ErrorComponent {
         }
     }
 
-    static fromServerError(err: ServerErrorWithCause, filename?: string, maxDepth: number = 0, nested: boolean = false): ErrorComponent {
+    static fromServerError(err: ServerErrorWithCause, filename?: string, maxDepth: number = 0, nested: boolean = false): ErrorEl {
         let errorLine: number | undefined = undefined;
-        const items: ErrorComponent["trace"]["items"] = [];
+        const items: ErrorEl["trace"]["items"] = [];
         const message = `${err.message} (${err.className})`;
 
         let reachedIrrelevant = false;
@@ -52,11 +52,11 @@ export class ErrorComponent {
         }
 
         const cause = (maxDepth > 0 && err.cause)
-            ? ErrorComponent.fromServerError(err.cause, filename, maxDepth - 1, true)
+            ? ErrorEl.fromServerError(err.cause, filename, maxDepth - 1, true)
             : undefined;
         const label = nested ? "Caused by: " : "Uncaught exception: ";
         const summary = {label, message};
         const trace = {items, cause};
-        return new ErrorComponent(summary, trace, errorLine)
+        return new ErrorEl(summary, trace, errorLine)
     }
 }

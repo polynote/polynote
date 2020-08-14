@@ -45,7 +45,7 @@ export class RichTextEditor {
 
         this.element.addEventListener('click', (evt) => {
             if (evt.target instanceof HTMLAnchorElement) {
-                LinkComponent.showFor(evt.target)
+                Link.showFor(evt.target)
             }
         })
     }
@@ -70,7 +70,7 @@ export class RichTextEditor {
 }
 
 // TODO: add linky buttons here too, not just on the toolbar.
-class LinkComponent {
+class Link {
     readonly el: TagElement<"div">;
     private listener = () => this.hide()
 
@@ -92,13 +92,13 @@ class LinkComponent {
         document.body.removeEventListener("mousedown", this.listener)
     }
 
-    private static inst: LinkComponent;
+    private static inst: Link;
     static showFor(target: HTMLAnchorElement) {
-        const link = new LinkComponent(target)
-        if (LinkComponent.inst) {
-            LinkComponent.inst.hide()
+        const link = new Link(target)
+        if (Link.inst) {
+            Link.inst.hide()
         }
-        LinkComponent.inst = link
-        return LinkComponent.inst
+        Link.inst = link
+        return Link.inst
     }
 }

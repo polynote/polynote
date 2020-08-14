@@ -1,4 +1,4 @@
-import {Branch, BranchComponent, BranchHandler, LeafComponent, NotebookList} from "./notebooklist";
+import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList} from "./notebooklist";
 import {StateHandler} from "../../state/state_handler";
 import {RequestNotebooksList, ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {fireEvent, getByText, queryAllByText, queryByText, queryHelpers, waitFor} from "@testing-library/dom";
@@ -22,7 +22,7 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
         value: "baz"
     };
     const leafState = new StateHandler(leaf);
-    const comp = new LeafComponent(dispatcher, leafState);
+    const comp = new LeafEl(dispatcher, leafState);
     const leafEl  = () => comp.el.querySelector("a.name")!;
     expect(leafEl()).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
 
@@ -50,7 +50,7 @@ test('A BranchComponent should update when its state changes', done => {
         value: "foo",
         children: {}
     });
-    const comp = new BranchComponent(dispatcher, branchState);
+    const comp = new BranchEl(dispatcher, branchState);
     expect(comp.childrenEl).toBeEmpty();
 
     const leaf = {
@@ -99,7 +99,7 @@ test("A BranchHandler should build a tree out of paths", () => {
         children: {}
     };
     const branchHandler = new BranchHandler(root);
-    const tree = new BranchComponent(dispatcher, branchHandler);
+    const tree = new BranchEl(dispatcher, branchHandler);
 
     // first add some notebooks at root, easy peasy.
     const simpleNBs = ["foo.ipynb", "bar.ipynb", "baz.ipynb"];
@@ -191,7 +191,7 @@ test("stress test", () => {
         children: {}
     };
     const branchHandler = new BranchHandler(root);
-    const comp = new BranchComponent(dispatcher, branchHandler);
+    const comp = new BranchEl(dispatcher, branchHandler);
     expect(branchHandler.getState()).toMatchSnapshot();
 
     const max = 300;

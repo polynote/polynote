@@ -60,22 +60,21 @@ import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import {ClientInterpreters} from "../../../interpreter/client_interpreter";
-import {ErrorComponent} from "../../display/error";
+import {ErrorEl} from "../../display/error";
 import {Error} from "../../../data/messages";
 
 
-// TODO: put this somewhere else
-export type CodeCellModel = editor.ITextModel & {
+type CodeCellModel = editor.ITextModel & {
     requestCompletion(pos: number): Promise<CompletionList>,
     requestSignatureHelp(pos: number): Promise<SignatureHelpResult>
 };
 
 export type MIMEElement = TagElement<"div", HTMLDivElement & { rel?: string, "mime-type"?: string}>;
 
-export class CellContainerComponent extends Disposable {
+export class CellContainer extends Disposable {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
-    private cell: CellComponent;
+    private cell: Cell;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateView<CellState>, private path: string) {
         super()
@@ -102,7 +101,7 @@ export class CellContainerComponent extends Disposable {
     }
 
     private cellFor(lang: string) {
-        return lang === "text" ? new TextCellComponent(this.dispatcher, this.cellState, this.path) : new CodeCellComponent(this.dispatcher, this.cellState, this.path);
+        return lang === "text" ? new TextCell(this.dispatcher, this.cellState, this.path) : new CodeCell(this.dispatcher, this.cellState, this.path);
     }
 
     layout() {
@@ -132,7 +131,7 @@ export const cellHotkeys = {
     [monaco.KeyCode.KEY_K]: ["MoveUpK", ""],
 };
 
-abstract class CellComponent extends Disposable {
+abstract class Cell extends Disposable {
     protected id: number;
     protected cellId: string;
     public el: TagElement<"div">;
@@ -167,7 +166,7 @@ abstract class CellComponent extends Disposable {
         }
     }
 
-    replace(oldCell: CellComponent) {
+    replace(oldCell: Cell) {
         oldCell.dispose()
         oldCell.el.replaceWith(this.el);
         if (this.cellState.getState().selected || oldCell.cellState.getState().selected) {
@@ -263,7 +262,7 @@ abstract class CellComponent extends Disposable {
     layout() {}
 }
 
-class CodeCellComponent extends CellComponent {
+class CodeCell extends Cell {
     private readonly editor: IStandaloneCodeEditor;
     private readonly editorEl: TagElement<"div">;
     private cellInputTools: TagElement<"div">;
@@ -386,9 +385,9 @@ class CodeCellComponent extends CellComponent {
                 })
             } else return []
         })
-        const runtimeErrorState = cellState.mapView<"runtimeError", ErrorComponent | undefined>("runtimeError", (runtimeError?: RuntimeError) => {
+        const runtimeErrorState = cellState.mapView<"runtimeError", ErrorEl | undefined>("runtimeError", (runtimeError?: RuntimeError) => {
             if (runtimeError) {
-                const err = ErrorComponent.fromServerError(runtimeError.error, this.cellId);
+                const err = ErrorEl.fromServerError(runtimeError.error, this.cellId);
                 const cellLine = err.errorLine;
                 if (cellLine !== undefined && cellLine >= 0) {
                     const model = this.editor.getModel()!;
@@ -569,14 +568,12 @@ class CodeCellComponent extends CellComponent {
         this.onDispose.then(() => this.commentHandler.dispose())
     }
 
-    // TODO: comment markers need to be updated here.
     private onChangeModelContent(event: IModelContentChangedEvent) {
         this.layout();
         if (this.applyingServerEdits)
             return;
 
         // clear the markers on edit
-        // TODO: there might be non-error markers, or might otherwise want to be smarter about clearing markers
         monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), []);
         const edits = event.changes.flatMap((contentChange) => {
             if (contentChange.rangeLength > 0 && contentChange.text.length > 0) {
@@ -891,7 +888,7 @@ class CodeCellOutput extends Disposable {
         private dispatcher: NotebookMessageDispatcher,
         private cellState: StateView<CellState>,
         compileErrorsHandler: StateView<CellErrorMarkers[][] | undefined>,
-        runtimeErrorHandler: StateView<ErrorComponent | undefined>) {
+        runtimeErrorHandler: StateView<ErrorEl | undefined>) {
         super()
 
         const outputHandler = cellState.view("output");
@@ -991,7 +988,6 @@ class CodeCellOutput extends Disposable {
         this.cellResultMargin.innerHTML = '';
     }
 
-    // TODO: move this back to `ResultValue`
     private displayRepr(result: ResultValue): Promise<[string, string | DocumentFragment]> {
         // We're searching for the best MIME type and representation for this result by going in order of most to least
         // useful (kind of arbitrarily defined...)
@@ -1096,7 +1092,7 @@ class CodeCellOutput extends Disposable {
         }
     }
 
-    setRuntimeError(error?: ErrorComponent) {
+    setRuntimeError(error?: ErrorEl) {
         if (error) {
             const runtimeError = div(['errors'], [blockquote(['error-report', 'Error'], [error.el])]);
             this.cellErrorDisplay.replaceWith(runtimeError)
@@ -1243,7 +1239,7 @@ class CodeCellOutput extends Disposable {
 }
 
 
-export class TextCellComponent extends CellComponent {
+export class TextCell extends Cell {
     private editor: RichTextEditor;
     private lastContent: string;
     private listeners: [string, (evt: Event) => void][];

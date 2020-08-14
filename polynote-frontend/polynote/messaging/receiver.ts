@@ -410,8 +410,6 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                             })
                         }
                     })
-                    // TODO: Make sure the server handles the case where a root comment is deleted, since the client
-                    //       will need to be told to delete all child comments.
                     .when(messages.DeleteComment, (g, l, id: number, commentId: string) => {
                         return {
                             ...s,

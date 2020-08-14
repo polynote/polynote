@@ -27,7 +27,7 @@ import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {ServerError, ServerStateHandler} from "../../../state/server_state";
 import {diffArray, removeKey} from "../../../util/helpers";
-import {ErrorComponent} from "../../display/error";
+import {ErrorEl} from "../../display/error";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
 export class KernelPane {
@@ -93,9 +93,9 @@ export class Kernel {
 
         this.kernelState = notebookState.view("kernel", KernelStateView);
 
-        const info = new KernelInfoComponent(this.kernelState);
-        const symbols = new KernelSymbolsComponent(dispatcher, notebookState);
-        const tasks = new KernelTasksComponent(dispatcher, this.kernelState.kernelTasks, notebookState.view("errors"));
+        const info = new KernelInfoEl(this.kernelState);
+        const symbols = new KernelSymbolsEl(dispatcher, notebookState);
+        const tasks = new KernelTasksEl(dispatcher, this.kernelState.kernelTasks, notebookState.view("errors"));
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -158,8 +158,7 @@ export class Kernel {
     }
 }
 
-// TODO: remove 'Component' suffix
-class KernelInfoComponent {
+class KernelInfoEl {
     readonly el: TagElement<"div">;
     private toggleEl: TagElement<"h3">;
     private infoEl: TableElement;
@@ -221,7 +220,7 @@ type KernelTask = TagElement<"div"> & {
     childTasks: Record<string, KernelTask>
 }
 
-class KernelTasksComponent {
+class KernelTasksEl {
     readonly el: TagElement<"div">;
     private taskContainer: TagElement<"div">;
     private tasks: Record<string, KernelTask> = {};
@@ -292,7 +291,7 @@ class KernelTasksComponent {
     }
 
     private addError(id: string, err: ServerErrorWithCause) {
-        const el = ErrorComponent.fromServerError(err, undefined).el;
+        const el = ErrorEl.fromServerError(err, undefined).el;
 
         const message = div(["message"], [
             para([], `${err.className}: ${err.message}`),
@@ -392,7 +391,7 @@ interface ResultRow extends TableRowElement {
     }
 }
 
-class KernelSymbolsComponent {
+class KernelSymbolsEl {
     readonly el: TagElement<"div">;
     private tableEl: TableElement;
     private resultSymbols: TagElement<"tbody">;

@@ -6,10 +6,9 @@ import {ViewPrefsHandler} from "../../state/preferences";
  */
 
 export type Pane = { header: TagElement<"h2">, el: TagElement<"div">}
-export class SplitViewComponent {
+export class SplitView {
     readonly el: TagElement<"div">;
     constructor(leftPane: Pane, center: TagElement<"div">, rightPane: Pane) {
-        // todo: left, right make divs, uipanel, handle clicks etc.
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
                 leftPane.header.click(evt => {

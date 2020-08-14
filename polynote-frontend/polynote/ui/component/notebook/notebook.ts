@@ -4,8 +4,8 @@ import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {StateHandler} from "../../../state/state_handler";
 import {CellMetadata} from "../../../data/data";
 import {diffArray} from "../../../util/helpers";
-import {CellContainerComponent} from "./cell";
-import {NotebookConfigComponent} from "./notebookconfig";
+import {CellContainer} from "./cell";
+import {NotebookConfigEl} from "./notebookconfig";
 import {VimStatus} from "./vim_status";
 import {PosRange} from "../../../data/result";
 import {NotebookScrollLocationsHandler} from "../../../state/preferences";
@@ -13,12 +13,12 @@ import {ServerStateHandler} from "../../../state/server_state";
 
 export class Notebook {
     readonly el: TagElement<"div">;
-    readonly cells: Record<number, {cell: CellContainerComponent, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
+    readonly cells: Record<number, {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
     cellOrder: Record<number, number> = {}; // index -> cell id;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         const path = notebookState.getState().path;
-        const config = new NotebookConfigComponent(dispatcher, notebookState.view("config"), notebookState.view("kernel").view("status"));
+        const config = new NotebookConfigEl(dispatcher, notebookState.view("config"), notebookState.view("kernel").view("status"));
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
         cellsEl.addEventListener('scroll', evt => {
             NotebookScrollLocationsHandler.updateState(locations => {
@@ -55,7 +55,7 @@ export class Notebook {
 
             added.forEach(state => {
                 const handler = new StateHandler(state);
-                const cell = new CellContainerComponent(dispatcher, handler, notebookState.getState().path);
+                const cell = new CellContainer(dispatcher, handler, notebookState.getState().path);
                 this.cells[state.id] = {cell, handler, el: div(['cell-and-divider'], [cell.el, this.newCellDivider()])}
             });
             removed.forEach(cell => {

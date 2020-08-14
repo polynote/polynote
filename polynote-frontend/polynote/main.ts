@@ -6,10 +6,10 @@ import {themes} from "./ui/input/monaco/themes";
 import {SocketSession} from "./messaging/comms";
 import {ServerMessageReceiver} from "./messaging/receiver";
 import {LoadNotebook, Reconnect, ServerMessageDispatcher} from "./messaging/dispatcher";
-import {ToolbarComponent} from "./ui/component/toolbar";
-import {SplitViewComponent} from "./ui/layout/splitview";
+import {Toolbar} from "./ui/component/toolbar";
+import {SplitView} from "./ui/layout/splitview";
 import {ServerStateHandler} from "./state/server_state";
-import {TabComponent} from "./ui/component/tab";
+import {Tabs} from "./ui/component/tabs";
 import {KernelPane} from "./ui/component/notebook/kernel";
 import {NotebookList} from "./ui/component/notebooklist";
 import {SocketStateHandler} from "./state/socket_state";
@@ -46,14 +46,14 @@ class Main {
         const nbList = new NotebookList(dispatcher)
         const leftPane = { header: nbList.header, el: nbList.el };
         const home = new Home(dispatcher)
-        const tabs = new TabComponent(dispatcher, home.el);
+        const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;
         const kernelPane = new KernelPane(dispatcher)
         const rightPane = { header: kernelPane.header, el: kernelPane.el};
 
         this.el = div(['main-ui'], [
-            div(['header'], [new ToolbarComponent(dispatcher).el]),
-            div(['body'], [new SplitViewComponent(leftPane, center, rightPane).el]),
+            div(['header'], [new Toolbar(dispatcher).el]),
+            div(['body'], [new SplitView(leftPane, center, rightPane).el]),
             div(['footer'], []) // no footer yet!
         ]);
 

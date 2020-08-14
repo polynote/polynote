@@ -10,7 +10,7 @@ import {ServerStateHandler} from "../../state/server_state";
 import {diffArray, removeKey} from "../../util/helpers";
 import {StateHandler, StateView} from "../../state/state_handler";
 
-export class NotebookListContextMenuComponent {
+export class NotebookListContextMenu{
     readonly el: TagElement<"div">;
     private targetItem?: string;
 
@@ -71,7 +71,7 @@ export class NotebookListContextMenuComponent {
         this.dispatcher.dispatch(new CreateNotebook())
     }
 
-    showFor(evt: Event, targetItem?: LeafComponent | BranchComponent) {
+    showFor(evt: Event, targetItem?: LeafEl | BranchEl) {
         if (evt instanceof MouseEvent) {
             this.el.style.left = `${evt.clientX}px`;
             this.el.style.top = `${evt.clientY}px`;
@@ -84,7 +84,7 @@ export class NotebookListContextMenuComponent {
         if (targetItem) {
             this.el.classList.add('for-item');
             this.targetItem = targetItem.path;
-            if (targetItem instanceof LeafComponent) {
+            if (targetItem instanceof LeafEl) {
                 this.el.classList.add('for-file');
             } else {
                 this.el.classList.add('for-dir');
@@ -102,12 +102,12 @@ export class NotebookListContextMenuComponent {
         }
     }
 
-    private static inst: NotebookListContextMenuComponent;
+    private static inst: NotebookListContextMenu;
     static get(dispatcher: ServerMessageDispatcher) {
-        if (! NotebookListContextMenuComponent.inst) {
-            NotebookListContextMenuComponent.inst = new NotebookListContextMenuComponent(dispatcher)
+        if (! NotebookListContextMenu.inst) {
+            NotebookListContextMenu.inst = new NotebookListContextMenu(dispatcher)
         }
-        return NotebookListContextMenuComponent.inst
+        return NotebookListContextMenu.inst
     }
 }
 
@@ -116,7 +116,7 @@ export class NotebookList {
     readonly header: TagElement<"h2">;
 
     private dragEnter: EventTarget | null;
-    private tree: BranchComponent;
+    private tree: BranchEl;
 
     constructor(readonly dispatcher: ServerMessageDispatcher) {
 
@@ -135,10 +135,10 @@ export class NotebookList {
             value: "",
             children: {}
         });
-        this.tree = new BranchComponent(dispatcher, treeState);
+        this.tree = new BranchEl(dispatcher, treeState);
 
         this.el = div(['notebooks-list'], [div(['tree-view'], [this.tree.el])])
-            .listener("contextmenu", evt => NotebookListContextMenuComponent.get(dispatcher).showFor(evt));
+            .listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt));
 
         // Drag n' drop!
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
@@ -284,14 +284,14 @@ export class BranchHandler extends StateHandler<Branch> {
 
 }
 
-export class BranchComponent {
+export class BranchEl {
     readonly el: TagElement<"li" | "ul">;
     readonly childrenEl: TagElement<"ul">;
     private readonly branchEl: TagElement<"button">;
-    private children: (BranchComponent | LeafComponent)[] = [];
+    private children: (BranchEl | LeafEl)[] = [];
     readonly path: string;
 
-    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateView<Branch>, private parent?: BranchComponent) {
+    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateView<Branch>, private parent?: BranchEl) {
         const initial = state.getState();
         this.childrenEl = tag('ul', [], {}, []);
         this.path = this.state.getState().fullPath;
@@ -348,17 +348,17 @@ export class BranchComponent {
     }
 
     private addChild(node: Branch | Leaf) {
-        let child: BranchComponent | LeafComponent;
+        let child: BranchEl | LeafEl;
 
         // TODO: Creation of views seems to be a tad expensive, so we might need to revisit this as it creates 2 views for every node in the notebook list!
         const childStateHandler = this.state.view("children").view(node.fullPath);
         // childStateHandler.addObserver((next, prev) => console.log("child state changed for", node.fullPath, ":", prev, next))
         if ("children" in node) {
             // const childStateHandler = new StateHandler(node)
-            child = new BranchComponent(this.dispatcher, childStateHandler as StateView<Branch>, this);
+            child = new BranchEl(this.dispatcher, childStateHandler as StateView<Branch>, this);
         } else {
             // const childStateHandler = new StateHandler(node)
-            child = new LeafComponent(this.dispatcher, childStateHandler);
+            child = new LeafEl(this.dispatcher, childStateHandler);
         }
 
         // insert this child in alphabetical order
@@ -376,7 +376,7 @@ export class BranchComponent {
 
         // add handlers
         child.el
-            .listener("contextmenu", evt => NotebookListContextMenuComponent.get(this.dispatcher).showFor(evt, child))
+            .listener("contextmenu", evt => NotebookListContextMenu.get(this.dispatcher).showFor(evt, child))
             .listener(
                 "keydown", (evt: KeyboardEvent) => {
                     switch (evt.key) {
@@ -389,8 +389,8 @@ export class BranchComponent {
             )
     }
 
-    private lastExpandedChild(child: BranchComponent | LeafComponent): BranchComponent | LeafComponent {
-        if (child instanceof LeafComponent) {
+    private lastExpandedChild(child: BranchEl | LeafEl): BranchEl | LeafEl {
+        if (child instanceof LeafEl) {
             return child
         } else {
             if (child.expanded) {
@@ -414,7 +414,7 @@ export class BranchComponent {
         const currentIdx = this.children.findIndex(c => c.path === path)
 
         const current = this.children[currentIdx];
-        if (!skipChildren && current instanceof BranchComponent && current.expanded && current.children.length > 0) {
+        if (!skipChildren && current instanceof BranchEl && current.expanded && current.children.length > 0) {
             current.children[0].focus()
         } else {
             if (currentIdx < this.children.length - 1) {
@@ -428,20 +428,20 @@ export class BranchComponent {
 
     private expandFolder(path: string) {
         const current = this.children.find(c => c.path === path)
-        if (current instanceof BranchComponent) {
+        if (current instanceof BranchEl) {
             current.expanded = true;
         }
     }
 
     private collapseFolder(path: string) {
         const current = this.children.find(c => c.path === path)
-        if (current instanceof BranchComponent) {
+        if (current instanceof BranchEl) {
             current.expanded = false;
         }
     }
 }
 
-export class LeafComponent {
+export class LeafEl {
     readonly el: TagElement<"li">;
     private leafEl: TagElement<"a">;
     readonly path: string;

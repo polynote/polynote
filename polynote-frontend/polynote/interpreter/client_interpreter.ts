@@ -22,13 +22,13 @@ export interface CellContext {
     availableValues: Record<string, any>
 }
 
-export interface ClientInterpreter {
+export interface IClientInterpreter {
     languageTitle: string;
     highlightLanguage: string;
     interpret(code: string, cellContext: CellContext): (ClientResult | RuntimeError)[]
 }
 
-export const ClientInterpreters: Record<string, ClientInterpreter> = {
+export const ClientInterpreters: Record<string, IClientInterpreter> = {
     "vega": VegaInterpreter
 };
 
@@ -39,18 +39,18 @@ export const ClientInterpreters: Record<string, ClientInterpreter> = {
  *  This will hopefully make it easier to fold vega / js interpretation into the server if we decide to do that.
  *
  */
-export class ClientInterpreterComponent {
+export class ClientInterpreter {
 
-    private static instances: Record<string, ClientInterpreterComponent> = {};
+    private static instances: Record<string, ClientInterpreter> = {};
     private constructor(private notebookState: NotebookStateHandler, private receiver: NotebookMessageReceiver) {}
 
-    static forPath(path: string): ClientInterpreterComponent | undefined {
-        let inst = ClientInterpreterComponent.instances[path];
+    static forPath(path: string): ClientInterpreter | undefined {
+        let inst = ClientInterpreter.instances[path];
         if (inst === undefined) {
             const nbInfo = ServerStateHandler.getNotebook(path);
             if (nbInfo && nbInfo.info) {
-                inst = new ClientInterpreterComponent(nbInfo.handler, nbInfo.info.receiver);
-                ClientInterpreterComponent.instances[path] = inst;
+                inst = new ClientInterpreter(nbInfo.handler, nbInfo.info.receiver);
+                ClientInterpreter.instances[path] = inst;
             }
         }
         return inst

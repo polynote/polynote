@@ -42,14 +42,13 @@ export interface NotebookState {
     cells: CellState[], // this is the canonical ordering of the cells.
     config: NotebookConfig,
     errors: ServerErrorWithCause[],
-    // TODO: pretty much everything needs to observe the kernel state to determine whether it should be disabled.
-    kernel: KernelState, // TODO move kernel state to this file
+    kernel: KernelState,
     // version
     // TODO: make sure the global and local versions are properly updated
     globalVersion: number,
     localVersion: number,
     editBuffer: EditBuffer,
-    // ephemeral states  TODO: should these live somewhere else?
+    // ephemeral states
     activeCell?: CellState,
     activeCompletion?: { resolve: (completion: CompletionHint) => void, reject: () => void },
     activeSignature?: { resolve: (signature: SignatureHint) => void, reject: () => void },

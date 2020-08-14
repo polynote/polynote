@@ -13,7 +13,7 @@ import {ValueInspector} from "../ui/component/value_inspector";
 import {arrDeleteItem, collect, equalsByKey, partition, removeKey} from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
-import {ClientInterpreterComponent, ClientInterpreters} from "../interpreter/client_interpreter";
+import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
 
@@ -233,7 +233,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     clientCells.forEach(id => {
                         const idx = cellIds.indexOf(id)
                         const prevId = cellIds[idx - 1]
-                        const clientInterpreter = ClientInterpreterComponent.forPath(state.path);
+                        const clientInterpreter = ClientInterpreter.forPath(state.path);
                         if (clientInterpreter) {
                             clientInterpreter.runCell(id, this, prevId)
                         } else {
@@ -337,7 +337,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
-                            // todo: what is this used for?
                             return {
                                 ...cell,
                                 currentSelection: cell.id === cellId ? range : undefined

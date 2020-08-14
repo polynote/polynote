@@ -25,7 +25,7 @@ import {
 import {ServerStateHandler} from "../../../state/server_state";
 import {KernelStatusString} from "../../../data/messages";
 
-export class NotebookConfigComponent {
+export class NotebookConfigEl {
     readonly el: TagElement<"div">;
 
     constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateView<NotebookConfig>, kernelStateHandler: StateView<KernelStatusString>) {

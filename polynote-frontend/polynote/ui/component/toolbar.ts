@@ -20,7 +20,7 @@ import {LaTeXEditor} from "../input/latex_editor";
  * The Toolbar. Its contents change depending on the current cell selected, and buttons are disabled when there is
  * no connection.
  */
-export class ToolbarComponent {
+export class Toolbar {
     readonly el: TagElement<"div">;
     constructor(dispatcher: ServerMessageDispatcher) {
 

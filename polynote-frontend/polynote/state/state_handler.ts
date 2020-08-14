@@ -123,9 +123,7 @@ export class StateView<S> extends Disposable {
 }
 
 /**
- * The StateHandler mediates interactions between Components and States.
- *
- * It is an updatable StateView.
+ * An updatable StateView.
  */
 export class StateHandler<S> extends StateView<S> {
 
