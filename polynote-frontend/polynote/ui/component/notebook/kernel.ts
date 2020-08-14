@@ -16,7 +16,7 @@ import {
 import {
     KernelCommand,
     NotebookMessageDispatcher,
-    Reconnect,
+    Reconnect, RemoveTask,
     ServerMessageDispatcher,
     ShowValueInspector
 } from "../../../messaging/dispatcher";
@@ -26,7 +26,7 @@ import {TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {ServerError, ServerStateHandler} from "../../../state/server_state";
-import {removeKey} from "../../../util/helpers";
+import {diffArray, removeKey} from "../../../util/helpers";
 import {ErrorComponent} from "../../display/error";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
@@ -230,15 +230,26 @@ class KernelTasksComponent {
         ]);
 
         Object.values(kernelTasksHandler.getState()).forEach(task => this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent));
-        kernelTasksHandler.addObserver(tasks => {
-            Object.values(tasks).forEach(task => {
+        kernelTasksHandler.addObserver((currentTasks, oldTasks) => {
+            const [added, removed] = diffArray(Object.keys(currentTasks), Object.keys(oldTasks))
+
+            added.forEach(taskId => {
+                const task = currentTasks[taskId];
+                this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
+            })
+
+            removed.forEach(taskId => {
+                this.removeTask(taskId)
+            })
+
+            Object.values(currentTasks).forEach(task => {
                 this.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
             })
         })
 
         let kernelErrorIds: string[] = [];
         const handleKernelErrors = (errs: ServerErrorWithCause[]) => {
-            if (errs) {
+            if (errs.length > 0) {
                 errs.forEach(e => {
                     const id = `KernelError ${e.className}`;
                     this.addError(id, e)
@@ -288,7 +299,7 @@ class KernelTasksComponent {
 
     private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent?: string) {
         const taskEl: KernelTask = Object.assign(div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
-            icon(['close-button'], 'times', 'close icon').click(_ => this.removeTask(id)),
+            icon(['close-button'], 'times', 'close icon').click(() => this.dispatcher.dispatch(new RemoveTask(id))),
             h4([], [label]),
             div(['detail'], detail),
             div(['progress'], [div(['progress-bar'], [])]),
@@ -352,7 +363,7 @@ class KernelTasksComponent {
                 task.classList.add(statusClass);
                 if (statusClass === "complete") {
                     setTimeout(() => {
-                        this.removeTask(id)
+                        this.dispatcher.dispatch(new RemoveTask(id))
                     }, 100);
                 }
             }
@@ -364,9 +375,6 @@ class KernelTasksComponent {
     private removeTask(id: string) {
         const task = this.tasks[id];
         if (task?.parentNode) task.parentNode.removeChild(task);
-        this.kernelTasksHandler.updateState(tasks => {
-            return removeKey(tasks, id)
-        });
         delete this.tasks[id];
     }
 }

@@ -34,7 +34,6 @@ class LocalKernel private[kernel] (
   closed: Promise[Throwable, Unit]
 ) extends Kernel {
 
-
   def currentTime: ZIO[Clock, Nothing, Long] = ZIO.accessM[Clock](_.get.currentTime(TimeUnit.MILLISECONDS))
 
   override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = {

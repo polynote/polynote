@@ -237,6 +237,24 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     }
                 })
                 .when(messages.CellStatusUpdate, (cellId, status) => {
+                    // Special handling for queuing cells: to ensure the correct order in the list, we'll handle creating
+                    // the queued task right now.
+                    // This is needed because TaskManager.queue both enqueues the cell AND waits until the queue is empty
+                    // and the cell is ready to be run. Unfortunately, this means that the backend sends the  Queue Task
+                    // AFTER the Queue CellStatusUpdate, and this race condition can mess up the order of tasks on the sidebar.
+                    // TODO: rethink how TaskManager.queue works, or figure out some other way to order this deterministically.
+                    let kernel = s.kernel;
+                    if (status === TaskStatus.Queued) {
+                        const taskId = `Cell ${cellId}`;
+                        kernel = {
+                            ...s.kernel,
+                            tasks: {
+                                ...s.kernel.tasks,
+                                [taskId]: new TaskInfo(taskId, taskId, '', TaskStatus.Queued, 0)
+                            }
+                        }
+                    }
+
                     return {
                         ...s,
                         cells: s.cells.map(cell => {
@@ -248,7 +266,8 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                     error: status === TaskStatus.Error,
                                 }
                             } else return cell
-                        })
+                        }),
+                        kernel
                     }
                 })
                 .otherwiseThrow || NoUpdate
