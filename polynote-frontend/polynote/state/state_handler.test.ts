@@ -73,13 +73,13 @@ test("views can be passed a constructor", done => {
     const shV = sh.view("key", AddingStorageHandler);
     expect(shV.someProperty).toBe(100);
     expect(shV instanceof AddingStorageHandler).toBeTruthy();
-    sh.addObserver((next: {key: number}, prev: {key: number}) => {
-        expect(prev.key).toBe(1);
-        expect(next.key).toBe(3);
+    shV.addObserver((next , prev) => {
+        expect(prev).toBe(1);
+        expect(next).toBe(3);
         done()
     });
     shV.updateState(() => 2);
-    expect(shV.getState()).toBe(sh.getState().key)
+    expect(shV.getState()).toBe(3)
 });
 
 test("mapview can be used to view a modified value", done => {

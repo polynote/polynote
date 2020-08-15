@@ -52,5 +52,6 @@ jobs:
         echo "Testing npm build"
         pushd $GITHUB_WORKSPACE/polynote-frontend
           npm install
+          npm run test
           npm run dist
         popd

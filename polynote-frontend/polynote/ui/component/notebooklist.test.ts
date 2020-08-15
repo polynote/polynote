@@ -8,7 +8,7 @@ import {SocketStateHandler} from "../../state/socket_state";
 import {SocketSession} from "../../messaging/comms";
 import {ServerMessageReceiver} from "../../messaging/receiver";
 
-jest.mock("../messaging/comms");
+jest.mock("../../messaging/comms");
 
 const mockSocket = SocketSession.fromRelativeURL("notebookpath");
 const socketHandler = new SocketStateHandler(mockSocket);
