@@ -61,7 +61,7 @@ export function clearStorage() {
     location.reload();
 }
 
-export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("RecentNotebooks", []);
+export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("RecentNotebooks", storage.get("recentNotebooks") ?? []);
 export const OpenNotebooksHandler = new LocalStorageHandler<OpenNotebooks>("OpenNotebooks", []);
 export const NotebookScrollLocationsHandler = new LocalStorageHandler<NotebookScrollLocations>("NotebookScrollLocations", {});
 export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
@@ -79,7 +79,11 @@ class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPrefe
     constructor(initial: typeof UserPreferences) {
 
         const storageKey = "UserPreferences";
-        const fromBrowser = storage.get(storageKey) ?? {};
+        const fromBrowser = storage.get(storageKey) ?? { // try the previous storage format.
+            vim: storage.get("preferences")?.["VIM"] ?? {},
+            theme: storage.get("preferences")?.["Theme"] ?? {},
+            notifications: storage.get("preferences")?.["Notifications"] ?? {},
+        };
         // In order to handle schema changes over time, we compare the locally stored values with `initial`.
         // The schema in `initial` is the currently expected schema, so we need to handle added and removed keys.
         const [added, removed] = diffArray(Object.keys(initial), Object.keys(fromBrowser))
