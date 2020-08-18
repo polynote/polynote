@@ -1,5 +1,6 @@
 package polynote.kernel.interpreter.python
 
+import jep.python.PyCallable
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.interpreter.State
 import polynote.kernel.{CompileErrors, Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
@@ -263,6 +264,68 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           vars("b") shouldEqual 1
           vars("result") shouldEqual 2
           vars("Out") shouldEqual 2
+          output shouldBe empty
+      }
+    }
+
+    "properly handle dataclasses" in {
+      assertOutput(
+        """
+          |from dataclasses import dataclass
+          |
+          |class Foo(object):
+          |    pass
+          |
+          |@dataclass
+          |class Bar:
+          |    my_foo: Foo
+          |
+          |foo = Foo()
+          |bar = Bar(foo)
+          |[bar, bar.my_foo]
+          |""".stripMargin) {
+        case (vars, output) =>
+          vars should have size 5
+
+          val fooCls = vars("Foo")
+          fooCls shouldBe a[PythonFunction]
+          val Foo = fooCls.asInstanceOf[PythonFunction]
+          val z = Foo.runner.typeName(Foo)
+          val z2 = Foo.runner.isCallable(Foo.unwrap)
+          val fooInst = Foo()
+          val u = fooInst.runner.typeName(fooInst)
+          val u2 = fooInst.runner.isCallable(fooInst.unwrap)
+          val x = fooInst.__class__
+          val y = x.runner.typeName(x)
+          val y2 = x.runner.isCallable(x.unwrap)
+          fooInst.__class__ shouldEqual fooCls
+          fooInst.__class__.__name__[String] shouldEqual "Foo"
+
+          val barCls = vars("Bar")
+          barCls shouldBe a[PythonFunction]
+          val Bar = barCls.asInstanceOf[PythonFunction]
+          val barInst = Bar(fooInst)
+          barInst.__class__ shouldEqual barCls
+          barInst.__class__.__name__[String] shouldEqual "Bar"
+
+          val foo = vars("foo")
+          foo shouldBe a[PythonObject]
+          foo.asInstanceOf[PythonObject].__class__ shouldEqual fooCls
+          foo.asInstanceOf[PythonObject].__class__.__name__[String] shouldEqual "Foo"
+
+          val bar = vars("bar")
+          bar shouldBe a[PythonObject]
+          bar.asInstanceOf[PythonObject].__class__ shouldEqual barCls
+          bar.asInstanceOf[PythonObject].__class__.__name__[String] shouldEqual "Bar"
+          bar.asInstanceOf[PythonObject].my_foo shouldEqual foo
+
+          val out = vars("Out")
+          out shouldBe a[PythonObject]
+          val List(outBar, outFoo) = out.asInstanceOf[PythonObject].asScalaList
+          outBar shouldEqual bar
+          outFoo shouldEqual foo
+          outBar.my_foo shouldEqual outFoo
+
           output shouldBe empty
       }
     }
