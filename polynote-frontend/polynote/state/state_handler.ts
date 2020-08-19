@@ -42,8 +42,11 @@ export class StateView<S> extends Disposable {
      * Note: this should be a setter but typescript won't allow a protected setter with a public getter, sigh.
      */
     protected setState(newState: S) {
-        if (! this.compare(newState, this.state)) {
-            const oldState = this.state;
+        if (this.isDisposed) {
+            throw new Error("Operations on disposed states are not supported")
+        }
+        if (! this.compare(newState, this._state)) {
+            const oldState = this._state;
             this._state = newState;
             this.observers.forEach(obs => {
                 obs(newState, oldState)
