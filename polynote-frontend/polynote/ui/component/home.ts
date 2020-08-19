@@ -28,7 +28,7 @@ export class Home {
                 ]))
             })
         }
-        handleRecents(RecentNotebooksHandler.getState())
+        handleRecents(RecentNotebooksHandler.state)
         RecentNotebooksHandler.addObserver(nbs => handleRecents(nbs))
     }
 }

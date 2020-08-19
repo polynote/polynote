@@ -36,7 +36,7 @@ export class LocalStorageHandler<T> extends StateHandler<T> {
         handleStorageChange(storage.get(this.key))
         storage.addStorageListener(this.key, (prev, next) => handleStorageChange(next))
     }
-    getState(): T {
+    get state(): T {
         const recent = storage.get(this.key);
         if (recent) {
             return recent;

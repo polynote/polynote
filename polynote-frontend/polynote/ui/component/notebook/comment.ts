@@ -54,7 +54,7 @@ export class CommentHandler extends Disposable {
                    this.rootRanges[newComment.range.toString] = newComment.uuid;
                } else { // there is already a root at this location, but it might need to be replaced by this one
                    const maybeRoot = this.commentRoots[maybeRootId];
-                   if (maybeRoot.rootState.getState().createdAt > newComment.createdAt) {
+                   if (maybeRoot.rootState.state.createdAt > newComment.createdAt) {
                        // this comment is older than the current root at this position, we need to remove the root and set this one in its place.
                        delete this.commentRoots[maybeRoot.uuid]
                        delete this.rootRanges[maybeRoot.range.toString]
@@ -109,7 +109,7 @@ export class CommentHandler extends Disposable {
                root.childrenState.updateState(() => children)
            })
        }
-       handleComments(commentsState.getState())
+       handleComments(commentsState.state)
        commentsState.addObserver((current, old) => handleComments(current, old), this);
 
        let commentButton: CommentButton | undefined = undefined;
@@ -134,7 +134,7 @@ export class CommentHandler extends Disposable {
                commentButton = undefined;
            }
        }
-       handleSelection(currentSelection.getState())
+       handleSelection(currentSelection.state)
        currentSelection.addObserver(s => handleSelection(s), this);
     }
 
@@ -211,7 +211,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
 
         this.el.classList.add('comment-container');
 
-        let root = new Comment(dispatcher, cellId, rootState.getState());
+        let root = new Comment(dispatcher, cellId, rootState.state);
         const commentList = div(['comments-list'], [root.el]);
         this.el.appendChild(commentList);
         rootState.addObserver((currentRoot, previousRoot) => {
@@ -222,7 +222,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
 
             if (currentRoot.range.toString !== previousRoot.range.toString) {
                 this.handleSelection()  // TODO: sometimes this is too slow :(
-                this.childrenState.getState().forEach(child => {
+                this.childrenState.state.forEach(child => {
                     dispatcher.dispatch(new UpdateComment(cellId, child.uuid, currentRoot.range, child.content))
                 })
             }
@@ -250,7 +250,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
             commentList.appendChild(newComment.el);
         }
 
-        handleNewChildren(childrenState.getState())
+        handleNewChildren(childrenState.state)
         childrenState.addObserver(c => handleNewChildren(c), this);
 
         const modelChangeListener = editor.onDidChangeModelContent(() => {
@@ -265,11 +265,11 @@ class CommentRoot extends MonacoRightGutterOverlay {
                     if (!monaco.Range.equalsRange(maybeDecoration.range, mRange)) {
                         // we have a highlight with the same ID, but a different range. This means there is some drift.
                         const newRange = new PosRange(model.getOffsetAt(maybeDecoration.range.getStartPosition()), model.getOffsetAt(maybeDecoration.range.getEndPosition()));
-                        dispatcher.dispatch(new UpdateComment(cellId, rootState.getState().uuid, newRange, rootState.getState().content));
+                        dispatcher.dispatch(new UpdateComment(cellId, rootState.state.uuid, newRange, rootState.state.content));
                     }
                 } else {
                     // decoration wasn't found or was empty, so we need to delete it.
-                    dispatcher.dispatch(new DeleteComment(cellId, rootState.getState().uuid));
+                    dispatcher.dispatch(new DeleteComment(cellId, rootState.state.uuid));
                     this.highlights = [];
 
                     // if the range was empty, remove it.
@@ -279,7 +279,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         })
         this.onDispose.then(() => {
             // we need to delete all children when the root is deleted.
-            this.childrenState.getState().forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
+            this.childrenState.state.forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
             this.hide()
             this.editor.deltaDecorations(this.highlights, []) // clear highlights
             modelChangeListener.dispose()
@@ -287,11 +287,11 @@ class CommentRoot extends MonacoRightGutterOverlay {
     }
 
     get uuid() {
-        return this.rootState.getState().uuid;
+        return this.rootState.state.uuid;
     }
 
     get range() {
-        return this.rootState.getState().range;
+        return this.rootState.state.range;
     }
 
     handleSelection() {
@@ -356,7 +356,7 @@ class NewComment extends Disposable {
                 readonly cellId: number) {
 
         super()
-        this.currentIdentity = ServerStateHandler.getState().identity;
+        this.currentIdentity = ServerStateHandler.state.identity;
 
         const doCreate = () => {
             this.dispatcher.dispatch(new CreateComment(cellId, createCellComment({
@@ -431,7 +431,7 @@ class Comment {
                 readonly cellId: number,
                 readonly comment: CellComment) {
 
-        this.currentIdentity = ServerStateHandler.getState().identity;
+        this.currentIdentity = ServerStateHandler.state.identity;
 
         this.el = this.commentElement(comment);
     }

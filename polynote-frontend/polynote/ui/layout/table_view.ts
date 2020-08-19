@@ -36,7 +36,7 @@ export class TableView {
         const fieldClasses = this.fields.map(field => field.name);
         const fieldNames = this.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
 
-        const connectionStatus = ServerStateHandler.getState().connectionStatus;
+        const connectionStatus = ServerStateHandler.state.connectionStatus;
         if (connectionStatus === "disconnected") {
             this.el = div(['table-view', 'disconnected'], [
                 "Not connected to server – must be connected in order to view data."

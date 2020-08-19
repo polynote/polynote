@@ -131,7 +131,7 @@ export class PlotEditor {
     constructor(private dispatcher: NotebookMessageDispatcher, private nbState: NotebookStateHandler, readonly repr: StreamingDataRepr, readonly name: string, readonly sourceCellId: number) {
         this.fields = repr.dataType.fields;
 
-        const connectionStatus = ServerStateHandler.getState().connectionStatus;
+        const connectionStatus = ServerStateHandler.state.connectionStatus;
         if (connectionStatus === "disconnected") {
             this.container = div(['plot-editor-container', 'disconnected'], [
                 "Not connected to server – must be connected in order to plot."

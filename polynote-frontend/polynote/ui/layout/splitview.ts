@@ -39,7 +39,7 @@ export class SplitView {
                 }),
                 div(['ui-panel-content'], [rightPane.el])])]);
 
-        const initialPrefs = ViewPrefsHandler.getState();
+        const initialPrefs = ViewPrefsHandler.state;
 
         // left pane
         left.classList.add('left');

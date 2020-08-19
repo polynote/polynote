@@ -101,7 +101,7 @@ class Dependencies {
                 this.addDep()
             }
         }
-        setDeps(dependenciesHandler.getState())
+        setDeps(dependenciesHandler.state)
         dependenciesHandler.addObserver(deps => setDeps(deps))
     }
 
@@ -183,7 +183,7 @@ class Resolvers {
             }
         }
 
-        setResolvers(resolversHandler.getState())
+        setResolvers(resolversHandler.state)
         resolversHandler.addObserver(resolvers => setResolvers(resolvers))
     }
 
@@ -272,7 +272,7 @@ class Exclusions {
                 this.addExcl()
             }
         }
-        setExclusions(exclusionsHandler.getState())
+        setExclusions(exclusionsHandler.state)
         exclusionsHandler.addObserver(excl => setExclusions(excl))
     }
 
@@ -331,7 +331,7 @@ class SparkConf {
                 this.addConf()
             }
         }
-        setConf(confHandler.getState())
+        setConf(confHandler.state)
         confHandler.addObserver(conf => setConf(conf))
 
         // populate the templates element.
@@ -340,14 +340,14 @@ class SparkConf {
                 this.templateEl.addValue(tmpl.name, tmpl.name)
             })
         }
-        updatedTemplates(allTemplatesHandler.getState())
+        updatedTemplates(allTemplatesHandler.state)
         allTemplatesHandler.addObserver(templates => updatedTemplates(templates))
 
         // watch for changes in the config's template
         const setTemplate = (template: SparkPropertySet | undefined) => {
             this.templateEl.setSelectedValue(template?.name ?? "")
         }
-        setTemplate(templateHandler.getState())
+        setTemplate(templateHandler.state)
         templateHandler.addObserver(template => setTemplate(template))
     }
 
@@ -386,7 +386,7 @@ class SparkConf {
 
     get template(): SparkPropertySet | undefined {
         const name = this.templateEl.options[this.templateEl.selectedIndex].value;
-        return this.allTemplatesHandler.getState().find(tmpl => tmpl.name === name)
+        return this.allTemplatesHandler.state.find(tmpl => tmpl.name === name)
     }
 
 }
@@ -413,7 +413,7 @@ class EnvConf {
                 this.addEnv()
             }
         }
-        setEnv(envHandler.getState())
+        setEnv(envHandler.state)
         envHandler.addObserver(env => setEnv(env))
     }
 

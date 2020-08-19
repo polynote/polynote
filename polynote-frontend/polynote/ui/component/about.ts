@@ -50,7 +50,7 @@ export class About extends FullScreenModal {
             ])
         ]);
 
-        const {serverVersion, serverCommit} = ServerStateHandler.getState()
+        const {serverVersion, serverCommit} = ServerStateHandler.state
         const info = [
             ["Server Version", serverVersion],
             ["Server Commit", serverCommit]
@@ -121,7 +121,7 @@ export class About extends FullScreenModal {
             addToTop: false
         });
 
-        Object.entries(UserPreferencesHandler.getState()).forEach(([key, pref]) => {
+        Object.entries(UserPreferencesHandler.state).forEach(([key, pref]) => {
             const value = pref.value;
             let valueEl;
             const options = Object.entries(pref.possibleValues).reduce<Record<string, string>>((acc, [k, v]) => {
@@ -168,7 +168,7 @@ export class About extends FullScreenModal {
                     valueEl.innerHTML = result;
                 });
             };
-            setValueEl(handler.getState());
+            setValueEl(handler.state);
 
             const obs = handler.addObserver(next => {
                 setValueEl(next)
@@ -215,7 +215,7 @@ export class About extends FullScreenModal {
             });
 
             ServerStateHandler.runningNotebooks.forEach(([path, info]) => {
-                const status = info.handler.getState().kernel.status;
+                const status = info.handler.state.kernel.status;
                 const statusEl = span([], [
                     span(['status'], [status]),
                 ]);
@@ -251,7 +251,7 @@ export class About extends FullScreenModal {
                     })
 
                     this.cleanup.push(() => {
-                        if (ServerStateHandler.getState().currentNotebook !== path) {
+                        if (ServerStateHandler.state.currentNotebook !== path) {
                             this.serverMessageDispatcher.dispatch(new CloseNotebook(path))
                         }
                     })

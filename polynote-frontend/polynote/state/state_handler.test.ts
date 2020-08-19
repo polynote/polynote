@@ -1,227 +1,229 @@
-import {Observer, StateHandler} from "./state_handler";
+import {Disposable, Observer, StateHandler, StateView} from "./state_handler";
+import {waitFor} from "@testing-library/dom";
+import * as deepEquals from 'fast-deep-equal/es6';
 
-test("setting the state updates observers", done => {
-    const sh = new StateHandler(1);
-    sh.addObserver((next, prev) => {
-        expect(prev).toBe(1);
-        expect(next).toBe(2);
-        done()
-    });
-    sh.updateState(() => 2)
-});
-
-test("updating the state updates observers", done => {
-    const sh = new StateHandler(1);
-    sh.addObserver((next, prev) => {
-        expect(prev).toBe(1);
-        expect(next).toBe(2);
-        done()
-    });
-    sh.updateState(() => 2)
-});
-
-test("views are updated by parent state changes", done => {
-    const sh = new StateHandler({key: 1, otherKey: "something"});
-    const viewKey = sh.view("key");
-    const viewOtherKey = sh.view("otherKey")
-    const gotOtherKey = new Promise(resolve => {
-        viewOtherKey.addObserver((next, prev) => {
-            expect(prev).toBe("something");
-            expect(next).toBe("nothing");
-            resolve()
+describe("Disposable", () => {
+    it("can be disposed", async () => {
+        const disposable = new Disposable()
+        expect(disposable.isDisposed).toBeFalsy()
+        disposable.dispose()
+        await waitFor(() => {
+            expect(disposable.isDisposed).toBeTruthy()
         })
     })
-    sh.updateState(s => {
-        return {
-            ...s,
-            otherKey: "nothing"
-        }
+    it("can trigger functions when disposed", resolve => {
+        const disposable = new Disposable()
+        disposable.onDispose.then(() => resolve())
+        disposable.dispose()
     })
-    gotOtherKey.then(_ => {
-        const promise = new Promise(resolve => {
-            viewKey.addObserver((next: number, prev: number) => {
-                expect(prev).toBe(1);
-                expect(next).toBe(2);
-                resolve()
-            });
-        })
-        sh.updateState(s => {
-            return {
-                ...s,
-                key: 2
-            }
-        })
-        return promise
-    }).then(_ => {
-        expect(viewKey.getState()).toBe(sh.getState().key)
-    }).then(_ => done())
-});
-
-test("views can be passed a constructor", done => {
-    const sh = new StateHandler({key: 1});
-    class AddingStorageHandler extends StateHandler<number> {
-        readonly someProperty: number = 100;
-        constructor( initial: number) {
-            super(initial);
-        }
-
-        updateState(f: (s: number) => number) {
-            const add1 = (s: number) => f(s) + 1;
-            super.updateState(add1);
-        }
-    }
-    const shV = sh.view("key", AddingStorageHandler);
-    expect(shV.someProperty).toBe(100);
-    expect(shV instanceof AddingStorageHandler).toBeTruthy();
-    shV.addObserver((next , prev) => {
-        expect(prev).toBe(1);
-        expect(next).toBe(3);
-        done()
-    });
-    shV.updateState(() => 2);
-    expect(shV.getState()).toBe(3)
-});
-
-test("mapview can be used to view a modified value", done => {
-    const sh = new StateHandler({key: 1});
-    const toT = (s: number) => s.toString();
-    const fromT = (s: number, t: string) => parseInt(t);
-    const shV = sh.mapView("key", toT);
-    sh.addObserver((next: {key: number}, prev: {key: number}) => {
-        expect(prev.key).toBe(1);
-        expect(next.key).toBe(2);
-        done()
-    });
-    sh.updateState(() => ({key: 2}));
-    expect(shV.getState()).toBe(toT(sh.getState().key))
-});
-
-test("stress test", () => {
-    const state = {
-        key: {
-            key2: {
-                values: <number[]> []
-            }
-        }
-    }
-    const sh = new StateHandler(state);
-    const view1 = sh.view("key")
-    const view2 = sh.view("key").view("key2")
-    const view3 = view1.view("key2");
-
-
-    [...Array(500).keys()].forEach(x => {
-        sh.updateState(s => {
-            return {
-                ...s,
-                key: {
-                    ...s.key,
-                    key2: {
-                        ...s.key.key2,
-                        values: [...s.key.key2.values, x]
-                    }
-                }
-            }
+    it("can't be disposed more than once", async () => {
+        const disposable = new Disposable()
+        disposable.dispose()
+        await waitFor(() => {
+            expect(() => disposable.dispose()).toThrow()
         })
     })
-    console.log(sh.getState())
-    console.log(sh.getState().key.key2)
 })
 
-test("tmp", done => {
-
-    // type Observer<S> = (key: keyof S, current: S[keyof S], previous: S[keyof S]) => void;
-    type HasObservers<S> = {
-        observers: Map<keyof S, Observer<S[keyof S]>[]>,
-        addObserver(key: keyof S, f: Observer<S[keyof S]>): Observer<S[keyof S]>,
-        removeObserver(key: keyof S, f: Observer<S[keyof S]>): void,
-        clearObservers(): void,
-    }
-    const HasObservers = <S>() => {
-        let observers: Map<keyof S, Observer<S[keyof S]>[]> = new Map();
-        return <HasObservers<S>>{
-            observers: observers,
-            addObserver(key: keyof S, f: Observer<S[keyof S]>): Observer<S[keyof S]> {
-                const maybeObs = observers.get(key);
-                if (maybeObs) {
-                    maybeObs.push(f);
-                } else {
-                    observers.set(key, [f]);
-                }
-                return f;
-            },
-            removeObserver(key: keyof S, f: Observer<S[keyof S]>): void {
-                if (observers.has(key)) {
-                    const idx = observers.get(key)!.indexOf(f);
-                    if (idx >= 0) {
-                        observers.get(key)!.splice(idx, 1)
-                    }
-                }
-            },
-            clearObservers(): void {
-                observers.clear()
-            },
-        }
-    }
-    type State<S extends object> = S & HasObservers<S>
-    function StateHandler<S extends object>(obj: S): State<S>{
-        const withObservers =  Object.assign(obj, HasObservers<S>())
-        return new Proxy(withObservers, new ProxyStateHandler<State<S>>())
-    }
-
-    class ProxyStateHandler<S extends object> implements ProxyHandler<State<S>>{
-        private children: Record<keyof S, S[keyof S]>
-        get(target: State<S>, p: keyof S): any {
-            let prop = target[p];
-            if (this.isObject(prop)) {
-                // TODO: use cache the Proxies in a WeakMap rather than creating a new one every time: https://hacks.mozilla.org/2015/07/es6-in-depth-proxies-and-reflect/
-                const foundProxy = this.children[p]
-                if (foundProxy) {
-                    return foundProxy
-                } else {
-                    const proxy = new Proxy(prop, new ProxyStateHandler())
-                    this.children[p] = proxy
-                    return proxy
-                }
-            } else {
-                return prop;
-            }
-        }
-
-        set(target: State<S>, p: keyof S, newState: State<S>[keyof S]): boolean {
-            const oldState = Reflect.get(target, p)
-            if (oldState) {
-                target[p] = newState;
-                target.observers.get(p)?.forEach(obs => {
-                    obs(newState, oldState)
-                })
-                return true;
-            } else {
-                return false
-            }
-        }
-
-        isObject(obj: any): obj is object {
-            return obj && typeof obj === "object" && !Array.isArray(obj)
-        }
-
-    }
-
-    type Foo = { key: { key2: { values: number[] } } }
-    const state: Foo = {
-        key: {
-            key2: {
-                values: [1, 2, 3, 4]
-            }
-        }
-    }
-    const s = StateHandler(state)
-    s.addObserver("key", (x, y) => {
-        console.log("current", x)
-        console.log("prev", y)
-        done()
+describe("StateHandler", () => {
+    it("holds some state value that can be updated", () => {
+        const s = new StateHandler(1)
+        expect(s.state).toEqual(1)
+        s.updateState(() => 2)
+        expect(s.state).toEqual(2)
     })
-    s.key = { key2: { values: [5]}}
-    // s.key.key2.values.push(5)
+    it("allows observation of state changes", done => {
+        const s = new StateHandler(1)
+        s.addObserver((newState, oldState) => {
+            expect(newState).toEqual(2)
+            expect(oldState).toEqual(1)
+            done()
+        })
+        s.updateState(() => 2)
+    })
+    it("doesn't call observers when the state isn't changed", () => {
+        const s = new StateHandler(1)
+        s.addObserver(() => {
+            throw new Error("you better not change the state!!")
+        })
+        expect(() => s.updateState(() => 2)).toThrow()
+        expect(s.state).toEqual(2)
+        expect(() => s.updateState(() => 2)).not.toThrow()
+    })
+    test("observers can be removed / cleared", () => {
+        const s = new StateHandler(1)
+        let obsStateChange = false;
+        const obs = s.addObserver(() => {
+            if (obsStateChange) {
+                throw new Error("error from obs")
+            }
+            obsStateChange = true;
+        })
+        let anonStateChange = false;
+        s.addObserver(() => {
+            if (anonStateChange) {
+                throw new Error("error from anonymous")
+            }
+            anonStateChange = true;
+        })
+        s.updateState(() => 2)
+        expect(s.state).toEqual(2)
+        expect(() => s.updateState(() => 3)).toThrowError("error from obs")
+        expect(s.state).toEqual(3)
+        s.removeObserver(obs)
+        expect(() => s.updateState(() => 4)).toThrowError("error from anonymous")
+        s.clearObservers()
+        s.updateState(() => 5)
+        expect(s.state).toEqual(5)
+    })
+    it("can be disposed", async () => {
+        const s = new StateHandler(1)
+        const obFn = jest.fn()
+        s.addObserver(obFn)
+        s.updateState(() => 2)
+        expect(obFn).toHaveBeenCalledTimes(1)
+        expect(obFn).toHaveBeenCalledWith(2, 1)
+        s.dispose()
+        s.onDispose.then(() => {
+            expect(() => s.state).toThrowError()
+            expect(() => s.updateState(() => 3)).toThrowError()
+            expect(obFn).toHaveBeenCalledTimes(1)
+        })
+    })
+    it("can be linked to the lifecycle of another Disposable", done => {
+        const d = new Disposable()
+        const s = new StateHandler(1, d)
+        const obFn = jest.fn()
+        s.addObserver(obFn)
+        s.updateState(() => 2)
+        expect(obFn).toHaveBeenCalledTimes(1)
+        expect(obFn).toHaveBeenCalledWith(2, 1)
+        d.dispose()  // disposed `d`, now expect `s` to also be disposed
+        s.onDispose.then(() => {
+            expect(() => s.updateState(() => 3)).toThrowError()
+            expect(obFn).toHaveBeenCalledTimes(1)
+            done()
+        })
+    })
+    it("supports views of object states", () => {
+        const sh = new StateHandler({a: 1, b: 2})
+        const view = sh.view("a")
+        expect(sh.state).toEqual({a: 1, b: 2})
+        expect(view.state).toEqual(1)
 
+        const obState = jest.fn()
+        sh.addObserver(obState)
+
+        const obA = jest.fn()
+        view.addObserver(obA)
+
+        sh.updateState(s => ({...s, a: 2}))
+        expect(view.state).toEqual(2)
+
+        sh.updateState(s => ({...s, b: 100}))
+        expect(view.state).toEqual(2) // stays the same
+
+        expect(obState).toHaveBeenCalledTimes(2)
+        expect(obA).toHaveBeenCalledTimes(1)
+    })
+    it("supports mapViews", () => {
+        const sh = new StateHandler({a: 1, b: 2})
+        const view = sh.mapView("a", a => a.toString())
+
+        expect(sh.state).toEqual({a: 1, b: 2})
+        expect(view.state).toEqual("1")
+
+        const obState = jest.fn()
+        sh.addObserver(obState)
+
+        const obA = jest.fn()
+        view.addObserver(obA)
+
+        sh.updateState(s => ({...s, a: 2}))
+        expect(view.state).toEqual("2")
+
+        sh.updateState(s => ({...s, b: 100}))
+        expect(view.state).toEqual("2") // stays the same
+
+        expect(obState).toHaveBeenCalledTimes(2)
+        expect(obA).toHaveBeenCalledTimes(1)
+    })
+    test("views are disposed when parent is disposed", () => {
+        const parent = new StateHandler({a: 1, b: 2})
+        const view = parent.view("a");
+        const obFn = jest.fn()
+        view.addObserver(obFn)
+        parent.updateState(s => ({...s, a: 2}))
+        expect(obFn).toHaveBeenCalledTimes(1)
+        expect(obFn).toHaveBeenCalledWith(2, 1)
+        parent.dispose()
+        view.onDispose.then(() => {
+            expect(() => view.state).toThrowError()
+            expect(obFn).toHaveBeenCalledTimes(1)
+        })
+    })
+    test("views can also synchronize with another Disposable", () => {
+        const d = new Disposable()
+        const parent = new StateHandler({a: 1, b: 2})
+        const view = parent.view("a", undefined, d);
+        const obFn = jest.fn()
+        view.addObserver(obFn)
+        parent.updateState(s => ({...s, a: 2}))
+        expect(obFn).toHaveBeenCalledTimes(1)
+        expect(obFn).toHaveBeenCalledWith(2, 1)
+        d.dispose()
+        view.onDispose.then(() => {
+            expect(() => view.state).toThrowError()
+            expect(obFn).toHaveBeenCalledTimes(1)
+        })
+    })
+    test("views can be passed a constructor", () => {
+        const parent = new StateHandler({a: 1, b: 2});
+
+        const view = parent.view("a")
+        const viewObs = jest.fn()
+        view.addObserver(viewObs)
+
+        class AddingStorageHandler extends StateView<number> {
+            readonly someProperty: number = 100;
+            constructor( initial: number) {
+                super(initial);
+            }
+
+            setState(newState: number) {
+                super.setState(newState + 10);
+            }
+        }
+        const addingView = parent.view("a", AddingStorageHandler);
+        expect(addingView.state).toEqual(11)
+        expect(addingView.someProperty).toEqual(100);
+        expect(addingView instanceof AddingStorageHandler).toBeTruthy();
+
+        const addingViewObs = jest.fn()
+        addingView.addObserver(addingViewObs)
+        parent.updateState(() => ({a: 2, b: 2}));
+        expect(viewObs).toHaveBeenCalledWith(2, 1)
+        expect(addingViewObs).toHaveBeenCalledWith(12, 11)
+
+        expect(view.state).toEqual(2)
+        expect(addingView.state).toEqual(12)
+    });
+    test("equality comparison can be extended", () => {
+        const state = () => ({a: 1, b: 2})
+        const sh = new StateHandler(state())
+        sh.addObserver(() => {
+            throw new Error("you better not change the state!!")
+        })
+        expect(() => sh.updateState(() => state())).toThrow()  // since state is a new object, this throws because equality is not deep.
+
+        const deep = new class<S> extends StateHandler<S> {
+            protected compare(s1: any, s2: any): boolean {
+                return deepEquals(s1, s2)
+            }
+        }({a: 1, b: 2})
+        deep.addObserver(() => {
+            throw new Error("you better not change the state!@")
+        })
+        expect(() => deep.updateState(() => state())).not.toThrow()
+    })
 })

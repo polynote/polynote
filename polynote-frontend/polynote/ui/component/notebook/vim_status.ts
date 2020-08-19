@@ -30,7 +30,7 @@ export class VimStatus {
             this.enabled = pref.value;
         }
         const vimState = UserPreferencesHandler.view("vim")
-        stateHandler(vimState.getState())
+        stateHandler(vimState.state)
         vimState.addObserver(state => stateHandler(state))
     }
 

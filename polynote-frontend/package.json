@@ -29,6 +29,7 @@
     "@types/node": "13.9.0",
     "@types/puppeteer": "2.1.0",
     "babel-jest": "26.0.1",
+    "canvas": "2.6.1",
     "copy-webpack-plugin": "5.1.1",
     "css-loader": "3.4.2",
     "file-loader": "5.1.0",

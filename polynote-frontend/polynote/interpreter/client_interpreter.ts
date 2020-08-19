@@ -59,7 +59,7 @@ export class ClientInterpreter {
     runCell(id: number, dispatcher: NotebookMessageDispatcher, queueAfter?: number) {
         // we want to run the cell in order, so we need to find any cells above this one that are currently running/queued
         // and wait for them to complete
-        const nbState = this.notebookState.getState()
+        const nbState = this.notebookState.state
         const cellIdx = nbState.cells.findIndex(cell => cell.id === id)
         const cell = nbState.cells[cellIdx]!;
 
@@ -77,7 +77,7 @@ export class ClientInterpreter {
             let waitCellId: number | undefined = undefined;
             while (waitIdx >= 0 && waitCellId === undefined) {
                 waitIdx -= 1;
-                const maybeWaitCell = this.notebookState.getState().cells[waitIdx]
+                const maybeWaitCell = this.notebookState.state.cells[waitIdx]
                 if (maybeWaitCell && (maybeWaitCell.queued || maybeWaitCell.running)) {
                     waitCellId = maybeWaitCell.id;
                 }
@@ -110,7 +110,7 @@ export class ClientInterpreter {
             }
             updateStatus(1)
 
-            const currentState = this.notebookState.getState();
+            const currentState = this.notebookState.state;
             const availableValues = currentState.cells.slice(0, cellIdx).reduce<Record<string, any>>((acc, next) => {
                 next.results
                     .filter(res => res instanceof ResultValue) // for now, ClientResults can't be used in other cells

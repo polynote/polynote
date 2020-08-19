@@ -13,7 +13,7 @@ export class ThemeHandler {
                 monaco.editor.setTheme(`polynote-${pref.value.toLowerCase()}`);
             }
         }
-        handlePref(UserPreferencesHandler.getState().theme)
+        handlePref(UserPreferencesHandler.state.theme)
         UserPreferencesHandler.view("theme").addObserver(pref => handlePref(pref))
     }
 }

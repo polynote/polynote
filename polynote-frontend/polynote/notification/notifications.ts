@@ -20,7 +20,7 @@ export class NotificationHandler {
             }
             this.enabled = pref.value;
         }
-        handlePref(UserPreferencesHandler.getState().notifications)
+        handlePref(UserPreferencesHandler.state.notifications)
         UserPreferencesHandler.view("notifications").addObserver(pref => handlePref(pref))
     }
 

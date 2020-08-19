@@ -134,6 +134,8 @@ export class Deferred<T> implements Promise<T> {
     resolve: (value?: (PromiseLike<T> | T)) => void;
     reject: (reason?: any) => void;
 
+    isSettled: boolean = false;
+
     // To implement Promise
     readonly [Symbol.toStringTag]: string;
 
@@ -148,6 +150,10 @@ export class Deferred<T> implements Promise<T> {
         this.then = this._promise.then.bind(this._promise);
         this.catch = this._promise.catch.bind(this._promise);
         this[Symbol.toStringTag] = 'Promise';
+
+        this.finally(() => {
+            this.isSettled = true
+        })
     }
 
     then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => (PromiseLike<TResult1> | TResult1)) | undefined | null, onrejected?: ((reason: any) => (PromiseLike<TResult2> | TResult2)) | undefined | null): Promise<TResult1 | TResult2> {

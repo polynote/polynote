@@ -76,7 +76,7 @@ export class Toolbar {
                 text.disable();
             }
         }
-        updateToolbar(ServerStateHandler.getState().currentNotebook)
+        updateToolbar(ServerStateHandler.state.currentNotebook)
         ServerStateHandler.get.view("currentNotebook").addObserver(path => updateToolbar(path))
     }
 }
@@ -217,12 +217,12 @@ class CellToolbar extends ToolbarElement {
                 });
             }
         }
-        updateSelectorLanguages(ServerStateHandler.getState().interpreters)
+        updateSelectorLanguages(ServerStateHandler.state.interpreters)
         ServerStateHandler.get.view("interpreters").addObserver(langs => updateSelectorLanguages(langs))
 
         this.langSelector.addListener(change => {
             if (this.dispatcher && this.activeCellHandler) {
-                const id = this.activeCellHandler.getState().id;
+                const id = this.activeCellHandler.state.id;
                 this.dispatcher.dispatch(new SetCellLanguage(id, change.newValue))
             }
         })

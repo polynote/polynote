@@ -32,7 +32,7 @@ import * as deepEquals from 'fast-deep-equal/es6';
  * handled by something else.
  */
 export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHandler<S>> {
-    protected constructor(protected socket: SocketStateHandler, protected state: H) {}
+    protected constructor(protected socket: SocketStateHandler, protected handler: H) {}
 
     abstract dispatch(action: UIAction): void
 }
@@ -58,7 +58,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     // if there was an error on reconnect, push it to the notebook state so it can be displayed
                     if (err) {
                         console.error("error on reconnecting notebook", err)
-                        this.state.updateState(s => {
+                        this.handler.updateState(s => {
                             return {
                                 ...s,
                                 errors: [...s.errors, err.error]
@@ -68,7 +68,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
                 this.socket.view("status", undefined, errorView).addObserver(status => {
                     if (status === "connected") {
-                        this.state.updateState(s => {
+                        this.handler.updateState(s => {
                             return {
                                 ...s,
                                 errors: [] // any errors from before are no longer relevant, right?
@@ -82,22 +82,22 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 NotebookMessageDispatcher.kernelCommand(this.socket, command)
             })
             .when(CreateComment, (cellId, comment) => {
-                const state = this.state.getState()
+                const state = this.handler.state
                 this.sendUpdate(new messages.CreateComment(state.globalVersion, state.localVersion, cellId, comment))
             })
             .when(UpdateComment, (cellId, commentId, range, content) => {
-                const state = this.state.getState()
+                const state = this.handler.state
                 this.sendUpdate(new messages.UpdateComment(state.globalVersion, state.localVersion, cellId, commentId, range, content))
             })
             .when(DeleteComment, (cellId, commentId) => {
-                const state = this.state.getState()
+                const state = this.handler.state
                 this.sendUpdate(new messages.DeleteComment(state.globalVersion, state.localVersion, cellId, commentId))
             })
             .when(SetCurrentSelection, (cellId, range) => {
                 this.socket.send(new messages.CurrentSelection(cellId, range))
             })
             .when(SetCellHighlight, (cellId, range, className) => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
@@ -113,7 +113,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(SetCellOutput, (cellId, output) => {
                     if (output instanceof Output) {
-                        this.state.updateState(state => {
+                        this.handler.updateState(state => {
                             this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
                             return {
                                 ...state,
@@ -127,7 +127,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     } else {
                         // ClientResults are special. The Client treats them like a Result, but the Server treats them like an Output.
                         output.toOutput().then(o => {
-                            this.state.updateState(state => {
+                            this.handler.updateState(state => {
                                 this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
                                 return {
                                     ...state,
@@ -142,11 +142,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     }
             })
             .when(SetCellLanguage, (cellId, language) => {
-                const state = this.state.getState()
+                const state = this.handler.state
                 this.sendUpdate(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
             })
             .when(CreateCell, (language, content, metadata, prev) => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     let localVersion = state.localVersion + 1;
                     // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
                     const maxId = state.cells.reduce((acc, cell) => acc > cell.id ? acc : cell.id, -1)
@@ -160,7 +160,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(UpdateCell, (cellId, edits, newContent, metadata) => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     let localVersion = state.localVersion + 1;
                     const update = new messages.UpdateCell(state.globalVersion, localVersion, cellId, edits, metadata);
                     this.sendUpdate(update);
@@ -176,7 +176,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(DeleteCell, (cellId) => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     state = {...state}
                     const update = new messages.DeleteCell(state.globalVersion, ++state.localVersion, cellId);
                     this.sendUpdate(update);
@@ -185,7 +185,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(UpdateConfig, conf => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     state = {...state}
                     const update = new messages.UpdateConfig(state.globalVersion, ++state.localVersion, conf);
                     this.sendUpdate(update);
@@ -195,7 +195,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(RequestCompletions, (cellId, offset, resolve, reject) => {
                 this.socket.send(new messages.CompletionsAt(cellId, offset, []));
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     if (state.activeCompletion) {
                         state.activeCompletion.reject();
                     }
@@ -207,7 +207,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(RequestSignature, (cellId, offset, resolve, reject) => {
                 this.socket.send(new messages.ParametersAt(cellId, offset));
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     if (state.activeSignature) {
                         state.activeSignature.reject();
                     }
@@ -218,11 +218,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(RequestNotebookVersion, version => {
-                const state = this.state.getState()
+                const state = this.handler.state
                 this.socket.send(new messages.NotebookVersion(state.path, version))
             })
             .when(RequestCellRun, cellIds => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     // empty cellIds means run all of them!
                     if (cellIds.length === 0) {
                         cellIds = state.cells.map(c => c.id)
@@ -249,7 +249,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                             const cell = state.cells[id];
                             const message = `Missing Client Interpreter for cell ${cell.id} of type ${cell.language}`
                             console.error(message)
-                            this.state.updateState(s => {
+                            this.handler.updateState(s => {
                                 return {
                                     ...s,
                                     errors: [...s.errors, new ServerErrorWithCause("Missing Client Interpreter", message, [])]
@@ -269,11 +269,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(RequestCancelTasks, () => {
-                const state = this.state.getState()
+                const state = this.handler.state
                 this.socket.send(new messages.CancelTasks(state.path))
             })
             .when(RemoveTask, taskId => {
-                this.state.updateState(s => {
+                this.handler.updateState(s => {
                     return {
                         ...s,
                         kernel: {
@@ -287,7 +287,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.socket.send(new messages.ClearOutput())
             })
             .when(SetSelectedCell, (selected, relative, skipHiddenCode) => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     let id = selected;
                     if (relative === "above")  {
                         const anchorIdx = state.cells.findIndex(cell => cell.id === id);
@@ -325,7 +325,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(DeselectCell, cellId => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
@@ -342,7 +342,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(CurrentSelection, (cellId, range) => {
                 this.socket.send(new messages.CurrentSelection(cellId, range));
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
@@ -355,7 +355,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(ClearCellEdits, id => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
@@ -370,7 +370,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(RemoveCellError, (id, error) => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
@@ -395,11 +395,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 const path = window.location.pathname + "?download=true"
                 const link = document.createElement('a');
                 link.setAttribute("href", path);
-                link.setAttribute("download", this.state.getState().path);
+                link.setAttribute("download", this.handler.state.path);
                 link.click()
             })
             .when(ShowValueInspector, (result, tab) => {
-                ValueInspector.get.inspect(this, this.state, result, tab)
+                ValueInspector.get.inspect(this, this.handler, result, tab)
             })
             .when(HideValueInspector, () => {
                 ValueInspector.get.hide()
@@ -414,7 +414,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.socket.send(new ReleaseHandle(handleType, handleId))
             })
             .when(ClearDataStream, handleId => {
-                this.state.updateState(state => {
+                this.handler.updateState(state => {
                     return {
                         ...state,
                         activeStreams: {
@@ -431,7 +431,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 
     private sendUpdate(upd: NotebookUpdate) {
         this.socket.send(upd)
-        ClientBackup.updateNb(this.state.getState().path, upd)
+        ClientBackup.updateNb(this.handler.state.path, upd)
             .catch(err => console.error("Error backing up update", err))
     }
 
@@ -446,7 +446,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
      * @return           A Promise that resolves with the inserted cell's id.
      */
     insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string}): Promise<number> {
-        const currentState = this.state.getState();
+        const currentState = this.handler.state;
         let currentCell = currentState.activeCell;
         if (anchor === undefined) {
             if (currentCell === undefined) {
@@ -464,7 +464,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         const createMsg = new CreateCell(anchor.language, anchor.content ?? '', anchor.metadata, maybePrev.id)
         this.dispatch(createMsg)
         return new Promise((resolve, reject) => {
-            const obs = this.state.addObserver(state => {
+            const obs = this.handler.addObserver(state => {
                 const anchorCellIdx = state.cells.findIndex(cell => cell.id === maybePrev.id)
                 const didInsert = state.cells.find((cell, idx) => {
                     const below = idx > anchorCellIdx;
@@ -473,7 +473,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     return below && newer && matches
                 });
                 if (didInsert !== undefined) {
-                    this.state.removeObserver(obs);
+                    this.handler.removeObserver(obs);
                     resolve(didInsert.id)
                 }
             })
@@ -482,7 +482,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 
     deleteCell(id?: number){
        if (id === undefined) {
-           id = this.state.getState().activeCell?.id;
+           id = this.handler.state.activeCell?.id;
        }
        if (id !== undefined) {
            this.dispatch(new DeleteCell(id));
@@ -490,14 +490,14 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     }
 
     runActiveCell() {
-        const id = this.state.getState().activeCell?.id;
+        const id = this.handler.state.activeCell?.id;
         if (id !== undefined) {
             this.dispatch(new RequestCellRun([id]));
         }
     }
 
     runToActiveCell() {
-        const state = this.state.getState();
+        const state = this.handler.state;
         const id = state.activeCell?.id;
         const activeIdx = state.cells.findIndex(cell => cell.id === id);
         const cellsToRun = state.cells.slice(0, activeIdx + 1).map(c => c.id);
@@ -538,7 +538,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                             console.error("Error reconnecting, trying to reload the page")
                             document.location.reload();
                         } else {
-                            this.state.updateState(s => {
+                            this.handler.updateState(s => {
                                 return {
                                     ...s,
                                     errors: [...s.errors, {err: err.error}]
@@ -551,7 +551,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 this.socket.view("status", undefined, errorView).addObserver(status => {
                     if (status === "connected") {
                         console.warn("Reconnected successfully, now reconnecting to notebook sockets")
-                        this.state.updateState(s => {
+                        this.handler.updateState(s => {
                             return {
                                 ...s,
                                 errors: [] // any errors from before are no longer relevant, right?
@@ -566,7 +566,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 this.socket.send(new messages.ListNotebooks([]))
             })
             .when(LoadNotebook, (path, open) => {
-                this.state.updateState(s => {
+                this.handler.updateState(s => {
                     let notebooks = s.notebooks
                     if (! s.notebooks[path])  {
                         notebooks = {...notebooks, [path]: ServerStateHandler.loadNotebook(path).loaded}
@@ -618,7 +618,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             .when(CloseNotebook, (path) => {
                 ServerStateHandler.closeNotebook(path)
                 this.openNotebooks = arrDeleteItem(this.openNotebooks, path)
-                this.state.updateState(s => {
+                this.handler.updateState(s => {
                     return {
                         ...s,
                         notebooks: {
@@ -632,7 +632,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 About.show(this, section)
             })
             .when(SetSelectedNotebook, path => {
-                this.state.updateState(s => {
+                this.handler.updateState(s => {
                     return {
                         ...s,
                         currentNotebook: path

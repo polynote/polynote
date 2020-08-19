@@ -80,8 +80,8 @@ export class CellContainer extends Disposable {
 
     constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateView<CellState>, private path: string) {
         super()
-        this.cellId = `Cell${cellState.getState().id}`;
-        this.cell = this.cellFor(cellState.getState().language);
+        this.cellId = `Cell${cellState.state.id}`;
+        this.cell = this.cellFor(cellState.state.language);
         this.el = div(['cell-component'], [this.cell.el]);
         this.el.click(evt => this.cell.doSelect());
         cellState.view("language").addObserver((newLang, oldLang) => {
@@ -144,7 +144,7 @@ abstract class Cell extends Disposable {
 
     protected constructor(protected dispatcher: NotebookMessageDispatcher, protected cellState: StateView<CellState>) {
         super()
-        this.id = cellState.getState().id;
+        this.id = cellState.state.id;
         this.cellId = `Cell${this.id}`;
 
         const updateSelected = (selected: boolean | undefined, prevSelected?: boolean) => {
@@ -162,14 +162,14 @@ abstract class Cell extends Disposable {
     }
 
     doSelect(){
-        if (! this.cellState.getState().selected) {
+        if (! this.cellState.state.selected) {
             this.dispatcher.dispatch(new SetSelectedCell(this.id))
         }
     }
 
     doDeselect(){
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
-            if (this.cellState.getState().selected // prevent blurring a different cell
+            if (this.cellState.state.selected // prevent blurring a different cell
                 && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
                 this.dispatcher.dispatch(new DeselectCell(this.id))
             }
@@ -179,7 +179,7 @@ abstract class Cell extends Disposable {
     replace(oldCell: Cell) {
         oldCell.dispose()
         oldCell.el.replaceWith(this.el);
-        if (this.cellState.getState().selected || oldCell.cellState.getState().selected) {
+        if (this.cellState.state.selected || oldCell.cellState.state.selected) {
             this.onSelected()
         }
         return this
@@ -231,7 +231,7 @@ abstract class Cell extends Disposable {
     }
 
     protected get state() {
-        return this.cellState.getState()
+        return this.cellState.state
     }
 
     protected onKeyDown(evt: IKeyboardEvent | KeyboardEvent) {
@@ -289,7 +289,7 @@ class CodeCell extends Cell {
     constructor(dispatcher: NotebookMessageDispatcher, cellState: StateView<CellState>, private path: string) {
         super(dispatcher, cellState);
 
-        const langSelector = dropdown(['lang-selector'], ServerStateHandler.getState().interpreters);
+        const langSelector = dropdown(['lang-selector'], ServerStateHandler.state.interpreters);
         langSelector.setSelectedValue(this.state.language);
         langSelector.addEventListener("input", evt => {
             const selectedLang = langSelector.getSelectedValue();
@@ -568,7 +568,7 @@ class CodeCell extends Cell {
                 presenceMarkers[id] = this.editor.deltaDecorations(old, newDecorations);
             }
         }
-        cellState.getState().presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
+        cellState.state.presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
         cellState.view("presence").addObserver(presence => presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range)), this)
 
         // make sure to create the comment handler.
@@ -966,12 +966,12 @@ class CodeCellOutput extends Disposable {
                 this.clearResults()
             }
         }
-        handleResults(resultsHandler.getState())
+        handleResults(resultsHandler.state)
         resultsHandler.addObserver(results => handleResults(results), this);
 
         compileErrorsHandler.addObserver(errors => this.setErrors(errors), this);
 
-        this.setRuntimeError(runtimeErrorHandler.getState())
+        this.setRuntimeError(runtimeErrorHandler.state)
         runtimeErrorHandler.addObserver(error => {
             this.setRuntimeError(error)
         }, this);
@@ -985,7 +985,7 @@ class CodeCellOutput extends Disposable {
                 this.clearOutput()
             }
         }
-        handleOutput(outputHandler.getState())
+        handleOutput(outputHandler.state)
         outputHandler.addObserver(output => handleOutput(output), this)
     }
 
@@ -1065,7 +1065,7 @@ class CodeCellOutput extends Disposable {
         if (index >= 0) {
             const repr = result.reprs[index] as StreamingDataRepr;
             // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
-            return monaco.editor.colorize(result.typeName, this.cellState.getState().language, {}).then(typeHTML => {
+            return monaco.editor.colorize(result.typeName, this.cellState.state.language, {}).then(typeHTML => {
                 const streamingRepr = result.reprs[index] as StreamingDataRepr;
                 const frag = document.createDocumentFragment();
                 const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
@@ -1308,7 +1308,7 @@ export class TextCell extends Cell {
 
         const editorEl = div(['cell-input-editor', 'markdown-body'], [])
 
-        const content = stateHandler.getState().content;
+        const content = stateHandler.state.content;
         this.editor = new RichTextEditor(editorEl, content)
         this.lastContent = content;
 

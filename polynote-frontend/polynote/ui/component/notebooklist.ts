@@ -291,10 +291,10 @@ export class BranchEl {
     private children: (BranchEl | LeafEl)[] = [];
     readonly path: string;
 
-    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateView<Branch>, private parent?: BranchEl) {
-        const initial = state.getState();
+    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly view: StateView<Branch>, private parent?: BranchEl) {
+        const initial = view.state;
         this.childrenEl = tag('ul', [], {}, []);
-        this.path = this.state.getState().fullPath;
+        this.path = this.view.state.fullPath;
 
         Object.values(initial.children).forEach(child => this.addChild(child));
 
@@ -317,7 +317,7 @@ export class BranchEl {
             this.expanded = !this.expanded;
         });
 
-        state.addObserver((newNode, oldNode) => {
+        view.addObserver((newNode, oldNode) => {
             const [removed, added] = diffArray(Object.keys(oldNode.children), Object.keys(newNode.children));
             removed.forEach(child => {
                 const idx = this.children.findIndex(c => c.path === oldNode.children[child].fullPath);
@@ -351,7 +351,7 @@ export class BranchEl {
         let child: BranchEl | LeafEl;
 
         // TODO: Creation of views seems to be a tad expensive, so we might need to revisit this as it creates 2 views for every node in the notebook list!
-        const childStateHandler = this.state.view("children").view(node.fullPath);
+        const childStateHandler = this.view.view("children").view(node.fullPath);
         // childStateHandler.addObserver((next, prev) => console.log("child state changed for", node.fullPath, ":", prev, next))
         if ("children" in node) {
             // const childStateHandler = new StateHandler(node)
@@ -446,21 +446,21 @@ export class LeafEl {
     private leafEl: TagElement<"a">;
     readonly path: string;
 
-    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly state: StateView<Leaf>) {
+    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly view: StateView<Leaf>) {
 
-        const initial = state.getState();
+        const initial = view.state;
         this.leafEl = this.getEl(initial);
         this.el = tag('li', ['leaf'], {}, [this.leafEl]);
-        this.path = this.state.getState().fullPath;
+        this.path = this.view.state.fullPath;
 
-        state.addObserver(leaf => {
+        view.addObserver(leaf => {
             if (leaf) {
                 const newEl = this.getEl(leaf);
                 this.leafEl.replaceWith(newEl);
                 this.leafEl = newEl;
             } else {
                 // this leaf was removed
-                state.dispose()
+                view.dispose()
             }
         })
     }

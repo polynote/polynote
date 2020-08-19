@@ -72,7 +72,7 @@ export class KernelPane {
                 this.header = placeholderHeader;
             }
         }
-        handleCurrentNotebook(ServerStateHandler.getState().currentNotebook)
+        handleCurrentNotebook(ServerStateHandler.state.currentNotebook)
         ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path))
     }
 
@@ -113,7 +113,7 @@ export class Kernel {
             tasks.el
         ]);
 
-        this.setKernelStatus(this.kernelState.kernelStatus.getState())
+        this.setKernelStatus(this.kernelState.kernelStatus.state)
         this.kernelState.kernelStatus.addObserver(status => {
             this.setKernelStatus(status)
         })
@@ -174,7 +174,7 @@ class KernelInfoEl {
             }),
         ]);
 
-        this.renderInfo(kernelStateHandler.kernelInfo.getState());
+        this.renderInfo(kernelStateHandler.kernelInfo.state);
         kernelStateHandler.kernelInfo.addObserver(info => this.renderInfo(info));
 
         kernelStateHandler.kernelStatus.addObserver(status => {
@@ -233,7 +233,7 @@ class KernelTasksEl {
             this.taskContainer = div(['task-container'], [])
         ]);
 
-        Object.values(kernelTasksHandler.getState()).forEach(task => this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent));
+        Object.values(kernelTasksHandler.state).forEach(task => this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent));
         kernelTasksHandler.addObserver((currentTasks, oldTasks) => {
             const [added, removed] = diffArray(Object.keys(currentTasks), Object.keys(oldTasks))
 
@@ -264,7 +264,7 @@ class KernelTasksEl {
                 kernelErrorIds = [];
             }
         }
-        handleKernelErrors(kernelErrors.getState())
+        handleKernelErrors(kernelErrors.state)
         kernelErrors.addObserver(e => handleKernelErrors(e))
 
         const serverErrors = ServerStateHandler.view("errors", kernelTasksHandler)
@@ -286,7 +286,7 @@ class KernelTasksEl {
                 serverErrorIds = [];
             }
         }
-        handleServerErrors(serverErrors.getState())
+        handleServerErrors(serverErrors.state)
         serverErrors.addObserver(e => handleServerErrors(e))
     }
 
@@ -425,7 +425,7 @@ class KernelSymbolsEl {
             }
         }
         const symbolHandler = notebookState.view("kernel", KernelStateView).kernelSymbols;
-        handleSymbols(symbolHandler.getState())
+        handleSymbols(symbolHandler.state)
         symbolHandler.addObserver(symbols => handleSymbols(symbols))
 
         const handleActiveCell = (cell?: CellState) => {
@@ -433,14 +433,14 @@ class KernelSymbolsEl {
                 // only show predef
                 this.presentFor(-1, [])
             } else {
-                const cells = notebookState.getState().cells;
+                const cells = notebookState.state.cells;
                 const idx = cells.findIndex(c => c.id === cell.id);
                 const cellsBefore = cells.slice(0, idx).map(cell => cell.id)
                 this.presentFor(cell.id, cellsBefore)
             }
         }
         const activeCellHandler = notebookState.view("activeCell");
-        handleActiveCell(activeCellHandler.getState())
+        handleActiveCell(activeCellHandler.state)
         activeCellHandler.addObserver(cell => handleActiveCell(cell))
     }
 

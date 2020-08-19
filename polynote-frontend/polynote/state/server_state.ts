@@ -81,8 +81,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     /**
      * Convenience method to get the state.
      */
-    static getState(): ServerState {
-        return ServerStateHandler.get.getState();
+    static get state(): ServerState {
+        return ServerStateHandler.get.state;
     }
 
     // only for testing
@@ -142,7 +142,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     errors: [],
                     kernel: {
                         symbols: [],
-                        status: ServerStateHandler.getState().connectionStatus === "connected" ? 'dead' : 'disconnected',
+                        status: ServerStateHandler.state.connectionStatus === "connected" ? 'dead' : 'disconnected',
                         info: {},
                         tasks: {},
                     },
@@ -230,7 +230,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         return Object.entries(ServerStateHandler.notebooks).reduce<[string, NotebookInfo][]>((acc, [path, info]) => {
             if (info.loaded) {
                 return [...acc, [path, info]]
-            } else if (info.handler.getState().kernel.status !== "disconnected") {
+            } else if (info.handler.state.kernel.status !== "disconnected") {
                 return [...acc, [path, info]]
             } else return acc
         }, [])

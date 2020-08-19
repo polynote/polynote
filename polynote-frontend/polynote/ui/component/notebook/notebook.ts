@@ -17,7 +17,7 @@ export class Notebook {
     cellOrder: Record<number, number> = {}; // index -> cell id;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
-        const path = notebookState.getState().path;
+        const path = notebookState.state.path;
         const config = new NotebookConfigEl(dispatcher, notebookState.view("config"), notebookState.view("kernel").view("status"));
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
         cellsEl.addEventListener('scroll', evt => {
@@ -33,7 +33,7 @@ export class Notebook {
         const handleVisibility = (currentNotebook?: string, previousNotebook?: string) => {
             if (currentNotebook === path) {
                 // when this notebook becomes visible, scroll to the saved location (if present)
-                const maybeScrollLocation = NotebookScrollLocationsHandler.getState()[path]
+                const maybeScrollLocation = NotebookScrollLocationsHandler.state[path]
                 if (maybeScrollLocation !== undefined) {
                     cellsEl.scrollTop = maybeScrollLocation
                 }
@@ -47,7 +47,7 @@ export class Notebook {
                 this.dispatcher.dispatch(new SetSelectedCell(undefined))
             }
         }
-        handleVisibility(ServerStateHandler.getState().currentNotebook)
+        handleVisibility(ServerStateHandler.state.currentNotebook)
         ServerStateHandler.view("currentNotebook", notebookState).addObserver((current, previous) => handleVisibility(current, previous))
 
         const handleCells = (newCells: CellState[], oldCells: CellState[] = []) => {
@@ -55,7 +55,7 @@ export class Notebook {
 
             added.forEach(state => {
                 const handler = new StateHandler(state, notebookState);
-                const cell = new CellContainer(dispatcher, handler, notebookState.getState().path);
+                const cell = new CellContainer(dispatcher, handler, notebookState.state.path);
                 this.cells[state.id] = {cell, handler, el: div(['cell-and-divider'], [cell.el, this.newCellDivider()])}
             });
             removed.forEach(cell => {
@@ -119,10 +119,10 @@ export class Notebook {
                 return acc
             }, {})
         }
-        handleCells(notebookState.getState().cells)
+        handleCells(notebookState.state.cells)
         notebookState.view("cells").addObserver((newCells, oldCells) => handleCells(newCells, oldCells));
 
-        console.log("initial active cell ", this.notebookState.getState().activeCell)
+        console.log("initial active cell ", this.notebookState.state.activeCell)
         this.notebookState.view("activeCell").addObserver(cell => {
             console.log("activeCell = ", cell)
             if (cell === undefined) {
@@ -155,7 +155,7 @@ export class Notebook {
             const self = evt.target as TagElement<"div">;
             const prevCell = Object.values(this.cells).reduce((acc: CellState, next) => {
                 if (self.previousElementSibling === next.cell.el) {
-                    acc = next.handler.getState()
+                    acc = next.handler.state
                 }
                 return acc;
             }, undefined);

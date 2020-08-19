@@ -39,8 +39,8 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     waitFor(() => {
         expect(spy).toHaveBeenCalledWith('ws/' + encodeURIComponent(newPath))
     }).then(() => {
-        const x = ServerStateHandler.getState().currentNotebook
-        expect(ServerStateHandler.getState().currentNotebook).toEqual(newPath)
+        const x = ServerStateHandler.state.currentNotebook
+        expect(ServerStateHandler.state.currentNotebook).toEqual(newPath)
     }).then(done)
 });
 
@@ -104,7 +104,7 @@ test("A BranchHandler should build a tree out of paths", () => {
     // first add some notebooks at root, easy peasy.
     const simpleNBs = ["foo.ipynb", "bar.ipynb", "baz.ipynb"];
     simpleNBs.forEach(nb => branchHandler.addPath(nb));
-    expect(Object.values(branchHandler.getState().children)).toEqual([
+    expect(Object.values(branchHandler.state.children)).toEqual([
         {fullPath: "foo.ipynb", value: "foo.ipynb"},
         {fullPath: "bar.ipynb", value: "bar.ipynb"},
         {fullPath: "baz.ipynb", value: "baz.ipynb"},
@@ -114,7 +114,7 @@ test("A BranchHandler should build a tree out of paths", () => {
     // next we will add a few directories
     const dirNBs = ["dir/one.ipynb", "dir/two.ipynb", "dir2/three.ipynb", "dir/four.ipynb"];
     dirNBs.forEach(nb => branchHandler.addPath(nb));
-    expect(Object.values(branchHandler.getState().children)).toEqual([
+    expect(Object.values(branchHandler.state.children)).toEqual([
         {fullPath: "foo.ipynb", value: "foo.ipynb"},
         {fullPath: "bar.ipynb", value: "bar.ipynb"},
         {fullPath: "baz.ipynb", value: "baz.ipynb"},
@@ -143,7 +143,7 @@ test("A BranchHandler should build a tree out of paths", () => {
     branchHandler.addPath("dir/1/2/3/4/surprisinglydeep.ipynb");
     branchHandler.addPath("dir/1/2/oh_my.ipynb");
     branchHandler.addPath("path/to/my/notebook.ipynb");
-    expect(branchHandler.getState().children).toEqual({
+    expect(branchHandler.state.children).toEqual({
         "foo.ipynb": {fullPath: "foo.ipynb", value: "foo.ipynb"},
         "bar.ipynb": {fullPath: "bar.ipynb", value: "bar.ipynb"},
         "baz.ipynb": {fullPath: "baz.ipynb", value: "baz.ipynb"},
@@ -192,7 +192,7 @@ test("stress test", () => {
     };
     const branchHandler = new BranchHandler(root);
     const comp = new BranchEl(dispatcher, branchHandler);
-    expect(branchHandler.getState()).toMatchSnapshot();
+    expect(branchHandler.state).toMatchSnapshot();
 
     const max = 300;
     [...Array(max).keys()].map(x => {
@@ -207,7 +207,7 @@ test("stress test", () => {
     }).forEach(p => {
         branchHandler.addPath(p)
     });
-    expect(branchHandler.getState()).toMatchSnapshot();
+    expect(branchHandler.state).toMatchSnapshot();
 });
 
 test("NotebookList e2e test", done => {
