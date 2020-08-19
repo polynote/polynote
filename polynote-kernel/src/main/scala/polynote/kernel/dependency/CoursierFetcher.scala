@@ -8,8 +8,8 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import cats.Traverse
 import cats.data.{Validated, ValidatedNel}
-import cats.effect.concurrent.Ref
 import cats.effect.LiftIO
+import cats.effect.concurrent.Ref
 import cats.instances.either._
 import cats.instances.list._
 import cats.syntax.alternative._
@@ -17,6 +17,7 @@ import cats.syntax.apply._
 import cats.syntax.traverse._
 import coursier.cache.{ArtifactError, Cache, CacheLogger, FileCache}
 import coursier.core._
+import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentials}
 import coursier.error.ResolutionError
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
@@ -24,25 +25,20 @@ import coursier.util.{EitherT, Sync}
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
 import polynote.config.{RepositoryConfig, ivy, maven, Credentials => CredentialsConfig}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
-import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
-import zio.blocking.{Blocking, blocking, effectBlocking}
 import polynote.kernel.logging.Logging
+import polynote.kernel.task.TaskManager
+import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
 import polynote.messages.NotebookConfig
 import zio.blocking.{Blocking, blocking, effectBlocking}
-import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
 import zio.interop.catz._
-import zio.{RIO, Task, ZIO, ZManaged}
+import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
 
 import scala.concurrent.ExecutionContext
 import scala.tools.nsc.interpreter.InputStream
-import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentials}
-import coursier.core.Authentication
-import polynote.kernel.task.TaskManager
 
 object CoursierFetcher {
   type ArtifactTask[A] = RIO[CurrentTask, A]
   type OuterTask[A] = RIO[TaskManager with CurrentTask, A]
-  //type ArtifactTask[A] = RIO[CurrentTask, A]
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val baseCache = FileCache[ArtifactTask]()
@@ -112,7 +108,7 @@ object CoursierFetcher {
       moduleStr =>
         val (org, name, typ, config, classifier, ver) = moduleStr.split(':') match {
           case Array(org, name, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.empty, Classifier.empty, ver)
-          case Array(org, name, classifier, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.empty, Classifier(classifier), ver)
+          case Array(org, name, typ, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.empty, Classifier.empty, ver)
           case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.empty, Classifier(classifier), ver)
           case Array(org, name, typ, config, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration(config), Classifier(classifier), ver)
           case _ => throw new Exception(s"Unable to parse dependency '$moduleStr'")
