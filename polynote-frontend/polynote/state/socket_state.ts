@@ -114,6 +114,9 @@ export class SocketStateHandler extends StateHandler<SocketState> {
     public addMessageListener(...args: Parameters<SocketSession["addMessageListener"]>): ReturnType<SocketSession["addMessageListener"]> {
         return this.socket.addMessageListener(...args)
     }
+    public removeMessageListener(...args: Parameters<SocketSession["removeMessageListener"]>): ReturnType<SocketSession["removeMessageListener"]> {
+        return this.socket.removeMessageListener(...args)
+    }
     public send(...args: Parameters<SocketSession["send"]>): ReturnType<SocketSession["send"]> {
         return this.socket.send(...args)
     }

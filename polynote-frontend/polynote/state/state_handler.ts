@@ -10,7 +10,7 @@ export abstract class Disposable {
     private deferred: Deferred<void> = new Deferred()
     onDispose: Promise<void> = this.deferred
 
-    // this readonly field trick is a hacky way to make  it `final`...
+    // this readonly field trick is a hacky way to make it `final`...
     readonly dispose = () => {
         this.deferred.resolve()
     };
@@ -81,10 +81,15 @@ export class StateView<S> extends Disposable {
         return mapView;
     }
 
-    protected constructor(state: S) {
+    protected constructor(state: S, disposeWhen?: Disposable) {
         super()
         this.setState(deepFreeze(state))
-        this.onDispose.then(() => this.clearObservers())
+        this.onDispose.then(() => {
+            this.clearObservers()
+        })
+        disposeWhen?.onDispose.then(() => {
+            this.dispose()
+        })
     }
 
     // Comparison function to use. Subclasses can provide a different comparison function (e.g., deepEquals) but should
@@ -137,8 +142,8 @@ export class StateHandler<S> extends StateView<S> {
         }
     }
 
-    constructor(state: S) {
-        super(state)
+    constructor(state: S, disposeWhen?: Disposable) {
+        super(state, disposeWhen)
     }
 }
 

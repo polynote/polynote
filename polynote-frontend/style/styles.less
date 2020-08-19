@@ -1167,7 +1167,6 @@ body {
     }
 
     .cell-output-display {
-      display: none;
       padding-top: 0.5em;
       padding-bottom: 0.5em;
       margin-bottom: 1em;
@@ -1175,6 +1174,10 @@ body {
       resize: vertical;
       position: relative;
       //background-color: @ui-background;
+
+      &:empty {
+        display: none;
+      }
 
       .output {
         padding-left: 2em;
@@ -1186,6 +1189,10 @@ body {
       }
 
     }
+  }
+
+  &.errors .cell-output .cell-output-tools {
+    display: block;
   }
 }
 

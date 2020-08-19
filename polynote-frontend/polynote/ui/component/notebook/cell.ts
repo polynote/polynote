@@ -8,7 +8,7 @@ import {
     RequestSignature,
     SetCellLanguage,
     SetSelectedCell,
-    UpdateCell, ShowValueInspector, DeselectCell
+    UpdateCell, ShowValueInspector, DeselectCell, RemoveCellError
 } from "../../../messaging/dispatcher";
 import {Disposable, StateView} from "../../../state/state_handler";
 import {CellState, CompletionHint, SignatureHint} from "../../../state/notebook_state";
@@ -62,6 +62,8 @@ import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import {ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl} from "../../display/error";
 import {Error} from "../../../data/messages";
+import IMarkerData = editor.IMarkerData;
+import * as deepEquals from 'fast-deep-equal/es6';
 
 
 type CodeCellModel = editor.ITextModel & {
@@ -97,6 +99,10 @@ export class CellContainer extends Disposable {
             } else if (previousStatus === "disconnected") {
                 this.cell.setDisabled(false)
             }
+        })
+
+        cellState.onDispose.then(() => {
+            this.dispose()
         })
     }
 
@@ -149,6 +155,10 @@ abstract class Cell extends Disposable {
             }
         }
         cellState.view("selected").addObserver((selected, prevSelected) => updateSelected(selected, prevSelected), this);
+
+        cellState.onDispose.then(() => {
+            this.dispose()
+        })
     }
 
     doSelect(){
@@ -262,6 +272,8 @@ abstract class Cell extends Disposable {
     layout() {}
 }
 
+type ErrorMarker = {error: CompileErrors | RuntimeError, id: string, markers: IMarkerData[]};
+
 class CodeCell extends Cell {
     private readonly editor: IStandaloneCodeEditor;
     private readonly editorEl: TagElement<"div">;
@@ -271,6 +283,8 @@ class CodeCell extends Cell {
     private highlightDecorations: string[] = [];
     private vim?: any;
     private commentHandler: CommentHandler;
+
+    private errorMarkers: ErrorMarker[] = []
 
     constructor(dispatcher: NotebookMessageDispatcher, cellState: StateView<CellState>, private path: string) {
         super(dispatcher, cellState);
@@ -375,15 +389,14 @@ class CodeCell extends Cell {
                         };
                     });
 
-                    monaco.editor.setModelMarkers(
-                        model,
-                        this.id.toString(),
-                        reportInfos
-                    );
+                    this.setErrorMarkers(error, reportInfos)
 
                     return reportInfos
                 })
-            } else return []
+            } else {
+                this.clearErrorMarkers("compiler")
+                return []
+            }
         })
         const runtimeErrorState = cellState.mapView<"runtimeError", ErrorEl | undefined>("runtimeError", (runtimeError?: RuntimeError) => {
             if (runtimeError) {
@@ -391,22 +404,18 @@ class CodeCell extends Cell {
                 const cellLine = err.errorLine;
                 if (cellLine !== undefined && cellLine >= 0) {
                     const model = this.editor.getModel()!;
-                    monaco.editor.setModelMarkers(
-                        model,
-                        this.id.toString(),
-                        [{
-                            message: err.summary.message,
-                            startLineNumber: cellLine,
-                            endLineNumber: cellLine,
-                            startColumn: model.getLineMinColumn(cellLine),
-                            endColumn: model.getLineMaxColumn(cellLine),
-                            severity: 8
-                        }]
-                    );
+                    this.setErrorMarkers(runtimeError, [{
+                        message: err.summary.message,
+                        startLineNumber: cellLine,
+                        endLineNumber: cellLine,
+                        startColumn: model.getLineMinColumn(cellLine),
+                        endColumn: model.getLineMaxColumn(cellLine),
+                        severity: 8
+                    }])
                 }
                 return err
             } else {
-                monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), []);
+                this.clearErrorMarkers("runtime")
                 return undefined
             }
         })
@@ -565,7 +574,16 @@ class CodeCell extends Cell {
         // make sure to create the comment handler.
        this.commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
 
-        this.onDispose.then(() => this.commentHandler.dispose())
+        this.onDispose.then(() => {
+            this.commentHandler.dispose()
+            const model = this.editor.getModel();
+            if (model) {
+                monaco.editor.getModelMarkers({resource: model.uri}).forEach(marker => {
+                    monaco.editor.setModelMarkers(model, marker.owner, [])
+                })
+            }
+            this.editor.dispose()
+        })
     }
 
     private onChangeModelContent(event: IModelContentChangedEvent) {
@@ -573,8 +591,13 @@ class CodeCell extends Cell {
         if (this.applyingServerEdits)
             return;
 
-        // clear the markers on edit
-        monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), []);
+        // clear any error markers if present on the edited content
+        const keep = monaco.editor.getModelMarkers({owner: this.id.toString()}).filter(marker => {
+            const markerRange = new monaco.Range(marker.startLineNumber, marker.startColumn, marker.endLineNumber, marker.endColumn);
+            return event.changes.every(change => ! markerRange.containsRange(change.range))
+        })
+        monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), keep);
+
         const edits = event.changes.flatMap((contentChange) => {
             if (contentChange.rangeLength > 0 && contentChange.text.length > 0) {
                 return [new Delete(contentChange.rangeOffset, contentChange.rangeLength), new Insert(contentChange.rangeOffset, contentChange.text)];
@@ -661,6 +684,34 @@ class CodeCell extends Cell {
                 dispose(): void {}
             }
         })
+    }
+
+    private setErrorMarkers(error: RuntimeError | CompileErrors, markers: IMarkerData[]) {
+        if (this.errorMarkers.find(e => deepEquals(e.error, error)) === undefined) {
+            const model = this.editor.getModel();
+            if (model) {
+                const id = this.id.toString() //`${this.id.toString()}_${error instanceof RuntimeError ? "runtimeError" : "compileError"}`
+                monaco.editor.setModelMarkers(model, id, markers)
+                this.errorMarkers.push({error, id, markers})
+            }
+        }
+    }
+
+    private removeErrorMarker(marker: ErrorMarker) {
+        this.errorMarkers = this.errorMarkers.filter(m => m !== marker)
+        const model = this.editor.getModel();
+        if (model) {
+            monaco.editor.setModelMarkers(model, this.id.toString(), this.errorMarkers.flatMap(m => m.markers))
+        }
+        this.dispatcher.dispatch(new RemoveCellError(this.id, marker.error))
+    }
+
+    private clearErrorMarkers(type?: "runtime" | "compiler") {
+        const model = this.editor.getModel();
+        if (model) {
+            const remove = this.errorMarkers.filter(marker => (type === "runtime" && marker.error instanceof RuntimeError) || (type === "compiler" && marker.error instanceof CompileErrors) || type === undefined )
+            remove.forEach(marker => this.removeErrorMarker(marker))
+        }
     }
 
     private toggleCode() {
@@ -882,7 +933,7 @@ class CodeCellOutput extends Disposable {
     private readonly cellResultMargin: TagElement<"div">;
     private readonly cellOutputTools: TagElement<"div">;
     private readonly resultTabs: TagElement<"div">;
-    private cellErrorDisplay: TagElement<"div">;
+    private cellErrorDisplay?: TagElement<"div">;
 
     constructor(
         private dispatcher: NotebookMessageDispatcher,
@@ -899,9 +950,7 @@ class CodeCellOutput extends Disposable {
             // unfortunately we need this extra div for perf reasons (has to be a block)
             div(['cell-output-block'], [
                 div(['cell-output-container'], [
-                    this.cellOutputDisplay = div(['cell-output-display'], [
-                        this.cellErrorDisplay = div([], [])
-                    ]),
+                    this.cellOutputDisplay = div(['cell-output-display'], []),
                 ])
             ]),
             this.cellResultMargin = div(['cell-result-margin'], []),
@@ -1067,36 +1116,44 @@ class CodeCellOutput extends Disposable {
     }
 
     private setErrors(errors?: CellErrorMarkers[][]) {
+        this.clearErrors()
         if (errors && errors.length > 0 && errors[0].length > 0 ) {
             errors.forEach(reportInfos => {
                 if (reportInfos.length > 0) {
                     this.cellOutputDisplay.classList.add('errors');
-                    this.cellOutputDisplay.appendChild(
-                        div(
-                            ['errors'],
-                            reportInfos.map((report) => {
-                                const severity = (['Info', 'Warning', 'Error'])[report.originalSeverity];
-                                return blockquote(['error-report', severity], [
-                                    span(['severity'], [severity]),
-                                    span(['message'], [report.message]),
-                                    ' ',
-                                    span(['error-link'], [`(Line ${report.startLineNumber})`])
-                                ]);
-                            })
-                        )
-                    );
+                    const compileError = div(
+                        ['errors'],
+                        reportInfos.map((report) => {
+                            const severity = (['Info', 'Warning', 'Error'])[report.originalSeverity];
+                            return blockquote(['error-report', severity], [
+                                span(['severity'], [severity]),
+                                span(['message'], [report.message]),
+                                ' ',
+                                span(['error-link'], [`(Line ${report.startLineNumber})`])
+                            ]);
+                        }));
+                    if (this.cellErrorDisplay === undefined) {
+                        this.cellErrorDisplay = compileError;
+                        this.cellOutputDisplay.appendChild(this.cellErrorDisplay)
+                    } else {
+                        this.cellErrorDisplay.replaceWith(compileError)
+                        this.cellErrorDisplay = compileError;
+                    }
                 }
             })
-        } else { // clear errors
-            this.clearErrors()
         }
     }
 
     setRuntimeError(error?: ErrorEl) {
         if (error) {
             const runtimeError = div(['errors'], [blockquote(['error-report', 'Error'], [error.el])]);
-            this.cellErrorDisplay.replaceWith(runtimeError)
-            this.cellErrorDisplay = runtimeError;
+            if (this.cellErrorDisplay === undefined) {
+                this.cellErrorDisplay = runtimeError;
+                this.cellOutputDisplay.appendChild(this.cellErrorDisplay)
+            } else {
+                this.cellErrorDisplay.replaceWith(runtimeError)
+                this.cellErrorDisplay = runtimeError;
+            }
         } else {
             this.clearErrors()
         }
@@ -1105,12 +1162,14 @@ class CodeCellOutput extends Disposable {
     private clearOutput() {
         this.cellOutputDisplay.innerHTML = "";
         [...this.cellOutputDisplay.children].forEach(child => this.cellOutputDisplay.removeChild(child))
-        this.cellOutputDisplay.appendChild(this.cellErrorDisplay)
         this.clearErrors()
     }
 
     private clearErrors() {
-        this.cellErrorDisplay.innerHTML = "";
+        if (this.cellErrorDisplay) {
+            this.cellOutputDisplay.removeChild(this.cellErrorDisplay)
+        }
+        this.cellErrorDisplay = undefined;
     }
 
     private mimeEl(mimeType: string, args: Record<string, string>, content: string): MIMEElement {

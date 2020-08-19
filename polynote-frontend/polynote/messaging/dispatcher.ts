@@ -2,7 +2,15 @@ import match from "../util/match";
 import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
-import {ClientResult, Output, PosRange, ResultValue, ServerErrorWithCause} from "../data/result";
+import {
+    ClientResult,
+    CompileErrors,
+    Output,
+    PosRange,
+    ResultValue,
+    RuntimeError,
+    ServerErrorWithCause
+} from "../data/result";
 import {StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../data/content_edit";
@@ -16,6 +24,7 @@ import {DialogModal} from "../ui/layout/modal";
 import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
+import * as deepEquals from 'fast-deep-equal/es6';
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -360,6 +369,28 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     }
                 })
             })
+            .when(RemoveCellError, (id, error) => {
+                this.state.updateState(state => {
+                    return {
+                        ...state,
+                        cells: state.cells.map(cell => {
+                            if (cell.id === id) {
+                                if (error instanceof RuntimeError) {
+                                    return {
+                                        ...cell,
+                                        runtimeError: undefined
+                                    }
+                                } else {
+                                    return {
+                                        ...cell,
+                                        compileErrors: cell.compileErrors.filter(e => ! deepEquals(e, error))
+                                    }
+                                }
+                            } else return cell
+                        })
+                    }
+                })
+            })
             .when(DownloadNotebook, () => {
                 const path = window.location.pathname + "?download=true"
                 const link = document.createElement('a');
@@ -551,6 +582,10 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 })
             })
             .when(CreateNotebook, (path, content) => {
+                const obs = this.socket.addMessageListener(messages.CreateNotebook, (path, content) => {
+                    this.socket.removeMessageListener(obs)
+                    this.loadNotebook(path, true)
+                })
                 if (path) {
                     this.socket.send(new messages.CreateNotebook(path, content))
                 } else {
@@ -986,6 +1021,17 @@ export class ClearCellEdits extends UIAction {
 
     static unapply(inst: ClearCellEdits): ConstructorParameters<typeof ClearCellEdits> {
         return [inst.cellId];
+    }
+}
+
+export class RemoveCellError extends UIAction {
+    constructor(readonly cellId: number, readonly error: RuntimeError | CompileErrors) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: RemoveCellError): ConstructorParameters<typeof RemoveCellError> {
+        return [inst.cellId, inst.error];
     }
 }
 

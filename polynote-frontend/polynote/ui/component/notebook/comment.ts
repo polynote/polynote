@@ -50,7 +50,7 @@ export class CommentHandler extends Disposable {
                if (maybeRootId === undefined) {
                    // this is a fresh new root
                    this.commentRoots[newComment.uuid] =
-                       new CommentRoot(dispatcher, new StateHandler(newComment), new StateHandler([]), currentSelection, editor, cellId);
+                       new CommentRoot(dispatcher, new StateHandler(newComment, commentsState), new StateHandler([], commentsState), currentSelection, editor, cellId);
                    this.rootRanges[newComment.range.toString] = newComment.uuid;
                } else { // there is already a root at this location, but it might need to be replaced by this one
                    const maybeRoot = this.commentRoots[maybeRootId];
@@ -60,7 +60,7 @@ export class CommentHandler extends Disposable {
                        delete this.rootRanges[maybeRoot.range.toString]
 
                        this.commentRoots[newComment.uuid] =
-                           new CommentRoot(dispatcher, new StateHandler(newComment), new StateHandler([]), currentSelection, editor, cellId);
+                           new CommentRoot(dispatcher, new StateHandler(newComment, commentsState), new StateHandler([], commentsState), currentSelection, editor, cellId);
                        this.rootRanges[newComment.range.toString] = newComment.uuid;
                    } // else, the comment is a child and will be handled later.
                }

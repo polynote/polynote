@@ -54,7 +54,7 @@ export class Notebook {
             const [removed, added] = diffArray(oldCells, newCells, (o, n) => o.id === n.id);
 
             added.forEach(state => {
-                const handler = new StateHandler(state);
+                const handler = new StateHandler(state, notebookState);
                 const cell = new CellContainer(dispatcher, handler, notebookState.getState().path);
                 this.cells[state.id] = {cell, handler, el: div(['cell-and-divider'], [cell.el, this.newCellDivider()])}
             });
@@ -159,7 +159,10 @@ export class Notebook {
                 }
                 return acc;
             }, undefined);
-            this.insertCell(prevCell?.id ?? -1, prevCell?.language ?? 'scala', '');
+
+            const lang = prevCell?.language && prevCell.language !== "text" ? prevCell.language : "scala"; // TODO: make this configurable
+
+            this.insertCell(prevCell?.id ?? -1, lang, '');
         });
     }
 

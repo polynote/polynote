@@ -36,7 +36,8 @@ export interface ServerState {
     identity: Identity,
     sparkTemplates: SparkPropertySet[]
     // ephemeral states
-    currentNotebook?: string
+    currentNotebook?: string,
+    pendingNotebook?: string
 }
 
 export class ServerStateHandler extends StateHandler<ServerState> {

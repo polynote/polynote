@@ -22,7 +22,7 @@ import {
 } from "../data/result";
 import {NoUpdate, StateHandler} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrDelete, arrInsert, unzip} from "../util/helpers";
+import {arrInsert, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {ClientBackup} from "../state/client_backup";
 
