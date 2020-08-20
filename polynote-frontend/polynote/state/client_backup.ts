@@ -74,8 +74,8 @@ export class ClientBackup {
     }
 }
 
-export function todayTs() {
-    return new Date().setHours(0,0,0,0);
+export function todayTs(date: Date = new Date()) {
+    return date.setHours(0,0,0,0);
 }
 
 
@@ -201,13 +201,17 @@ export function cleanConfig(config: NotebookConfig): CleanedConfig {
 }
 
 export function clean<T>(obj: T) {
-    function go(obj: T) {
+    function go(obj: any): any {
         if (obj && typeof obj === "object") {
-            const cleaned = {} as any;
-            Object.entries(obj).forEach(([k, v]) => {
-                cleaned[k] = go(v)
-            })
-            return cleaned
+            if (Array.isArray(obj)) {
+                return obj.map(item => go(item))
+            } else {
+                const cleaned = {} as any;
+                Object.entries(obj).forEach(([k, v]) => {
+                    cleaned[k] = go(v)
+                })
+                return cleaned
+            }
         } else {
             return obj
         }
@@ -217,7 +221,7 @@ export function clean<T>(obj: T) {
 }
 
 type TypedUpdate = NotebookUpdate & {type: string}
-function typedUpdate(update: NotebookUpdate): TypedUpdate {
+export function typedUpdate(update: NotebookUpdate): TypedUpdate {
     return Object.assign({type: update.constructor.name}, update);
 }
 
@@ -244,6 +248,16 @@ export class Backup {
 
     static fromI(iBackup: IBackup): Backup {
         return new Backup(iBackup.path, iBackup.cells, iBackup.config, iBackup.ts, iBackup.updates)
+    }
+
+    toI(): IBackup {
+        return {
+            path: this.path,
+            cells: this.cells,
+            config: this.config,
+            ts: this.ts,
+            updates: this.updates
+        }
     }
 
     equals(backup: Backup) {
