@@ -5,15 +5,8 @@ import * as deepEquals from 'fast-deep-equal/es6';
 
 export class ClientBackup {
     static addNb(path: string, cells: NotebookCell[], config?: NotebookConfig): Promise<Backups> {
-        const clearedCells = cells.map(cell => {
-            const clearedComments: Record<string, Pick<CellComment, any>> = {};
-            Object.entries(cell.comments).forEach(([id, comment]) => {
-                clearedComments[id] = Object.assign({}, {...comment})
-            })
-            return {id: cell.id, content: cell.content, language: cell.language, comments: clearedComments}
-        });
-        const clearedConfig = config && Object.assign({}, {...config});
-        const backup = new Backup(path, clearedCells, clearedConfig);
+        const cleanedConfig = config && cleanConfig(config)
+        const backup = new Backup(path, cleanCells(cells), cleanedConfig);
         return get(path)
             .then((backupsObj?: IBackups) => {
                 const backups: Backups = backupsObj ? Backups.fromI(backupsObj) : new Backups(path);
@@ -81,7 +74,7 @@ export class ClientBackup {
     }
 }
 
-function todayTs() {
+export function todayTs() {
     return new Date().setHours(0,0,0,0);
 }
 
@@ -110,7 +103,7 @@ interface IBackups {
     readonly backups: Record<number, IBackup[]>
 }
 
-class Backups {
+export class Backups {
 
     constructor(readonly path: string, readonly backups: Record<number, Backup[]> = {}) {}
 
@@ -192,6 +185,37 @@ class Backups {
 type Cleaned<T> = Pick<T, any>
 type CleanedCell = Omit<NotebookCell, 'results' | 'metadata' | 'comments'> & {comments: Cleaned<CellComment>};
 type CleanedConfig = Cleaned<NotebookConfig>;
+
+export function cleanCells(cells: NotebookCell[]): CleanedCell[] {
+    return cells.map(cell => {
+        const cleaned: Record<string, Pick<CellComment, any>> = {};
+        Object.entries(cell.comments).forEach(([id, comment]) => {
+            cleaned[id] = clean(comment) // We need to remove prototypes and functions from CellComment before storing it in the database.
+        })
+        return {id: cell.id, content: cell.content, language: cell.language, comments: cleaned}
+    })
+}
+
+export function cleanConfig(config: NotebookConfig): CleanedConfig {
+    return clean(config)
+}
+
+export function clean<T>(obj: T) {
+    function go(obj: T) {
+        if (obj && typeof obj === "object") {
+            const cleaned = {} as any;
+            Object.entries(obj).forEach(([k, v]) => {
+                cleaned[k] = go(v)
+            })
+            return cleaned
+        } else {
+            return obj
+        }
+    }
+
+    return go(obj)
+}
+
 type TypedUpdate = NotebookUpdate & {type: string}
 function typedUpdate(update: NotebookUpdate): TypedUpdate {
     return Object.assign({type: update.constructor.name}, update);
@@ -204,7 +228,7 @@ interface IBackup {
     readonly ts: number,
     readonly updates: {ts: number, update: TypedUpdate}[],
 }
-class Backup {
+export class Backup {
 
     constructor(readonly path: string,
                 readonly cells: CleanedCell[],
