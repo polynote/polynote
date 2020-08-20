@@ -162,14 +162,16 @@ describe("ClientBackup", () => {
         }).then(() => {
             // next, let's add notebooks to different days and show that we only keep the last BACKUPS_PER_NOTEBOOK
             return limitNotebooks.reduce<Promise<Backups> | undefined>((promiseChain, nextNotebook, idx) => {
-                if (idx % BACKUPS_PER_DAY === 0) {
-                    const date = new Date()
-                    date.setDate(date.getDate() + 1)
-                    MockDate.set(date)
-                }
                 if (promiseChain === undefined) {
                     return ClientBackup.addNb(nextNotebook.path, nextNotebook.cells, nextNotebook.config)
-                } else return promiseChain.then(() => ClientBackup.addNb(nextNotebook.path, nextNotebook.cells, nextNotebook.config))
+                } else return promiseChain.then(() => {
+                    if (idx % BACKUPS_PER_DAY === 0) {
+                        const date = new Date()
+                        date.setDate(date.getDate() + 1)
+                        MockDate.set(date)
+                    }
+                    return ClientBackup.addNb(nextNotebook.path, nextNotebook.cells, nextNotebook.config)
+                })
             }, undefined)!
                 .then(() => {
                     return ClientBackup.getBackups(sampleNotebook.path)
@@ -190,9 +192,9 @@ describe("ClientBackup", () => {
             // finally, show that the number does change if we add another backup from a different notebook!
             return ClientBackup.addNb("otherPath", sampleNotebook.cells, new NotebookConfig({python: ["foo"]}))
                 .then(() => {
-                    return ClientBackup.getBackups(sampleNotebook.path)
+                    return ClientBackup.allBackups()
                 }).then(backups => {
-                    const allBackups = Object.values(backups.backups).flat()
+                    const allBackups = Object.values(backups).flatMap(b => Object.values(b.backups)).flat()
                     expect(allBackups.length).toEqual(BACKUPS_PER_NOTEBOOK + 1)
                 })
         }).then(done)
