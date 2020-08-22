@@ -2,6 +2,7 @@ import {clear, get, keys, set} from 'idb-keyval';
 import {NotebookUpdate} from "../data/messages";
 import {CellComment, NotebookCell, NotebookConfig} from "../data/data";
 import * as deepEquals from 'fast-deep-equal/es6';
+import {isObject} from "../util/helpers";
 
 export class ClientBackup {
     static addNb(path: string, cells: NotebookCell[], config?: NotebookConfig): Promise<Backups> {
@@ -202,16 +203,14 @@ export function cleanConfig(config: NotebookConfig): CleanedConfig {
 
 export function clean<T>(obj: T) {
     function go(obj: any): any {
-        if (obj && typeof obj === "object") {
-            if (Array.isArray(obj)) {
-                return obj.map(item => go(item))
-            } else {
-                const cleaned = {} as any;
-                Object.entries(obj).forEach(([k, v]) => {
-                    cleaned[k] = go(v)
-                })
-                return cleaned
-            }
+        if (isObject(obj)) {
+            const cleaned = {} as any;
+            Object.entries(obj).forEach(([k, v]) => {
+                cleaned[k] = go(v)
+            })
+            return cleaned
+        } else if (Array.isArray(obj)) {
+            return obj.map(item => go(item))
         } else {
             return obj
         }

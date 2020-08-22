@@ -43,7 +43,7 @@ export function deepFreeze<T>(obj: T) {
     return go(obj)
 }
 
-export function equalsByKey<A, B>(a: A, b: B, keys: (keyof A & keyof B)[]): boolean {
+export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B)>): boolean {
     return keys.every(k => {
         if (k in a && k in b) {
             return deepEquals(a[k], b[k])
@@ -53,7 +53,7 @@ export function equalsByKey<A, B>(a: A, b: B, keys: (keyof A & keyof B)[]): bool
 
 export function removeKey<T>(obj: T, k: keyof T): T {
     return Object.keys(obj).reduce((acc: T, key: string) => {
-        if (key !== k) {
+        if (key !== k.toString()) {
             return { ...acc, [key]: obj[key as keyof T] }
         }
 
@@ -92,9 +92,7 @@ export function arrDeleteItem<T>(arr: T[], item: T) {
 
 export function unzip<A, B>(arr: [A, B][]): [A[], B[]] {
     return arr.reduce<[A[], B[]]>(([as, bs], [a, b]) => {
-        as.push(a)
-        bs.push(b)
-        return [as, bs]
+        return [[...as, a], [...bs, b]]
     }, [[], []])
 }
 

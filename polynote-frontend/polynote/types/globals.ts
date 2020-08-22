@@ -14,3 +14,6 @@
 interface Array<T> {
     concat<U>(...items: (U | ConcatArray<U>)[]): Array<T|U>;
 }
+
+// lifted from https://stackoverflow.com/a/56006703
+type NonEmptyArray<T> = [T, ...T[]]
