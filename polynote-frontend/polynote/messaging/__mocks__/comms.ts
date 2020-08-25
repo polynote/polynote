@@ -44,6 +44,8 @@ export class SocketSession {
         return handler;
     });
 
+    public handleMessage = this.send
+
     public addEventListener = jest.fn();
     public reconnect = jest.fn();
     public close = jest.fn();

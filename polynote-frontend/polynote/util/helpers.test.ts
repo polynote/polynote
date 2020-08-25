@@ -175,14 +175,14 @@ describe("mapSome", () => {
 
 describe("Deferred", () => {
     it("is a Promise that can be created and resolved later", done => {
-        function iOnlyTakePromises<T>(p: Promise<T>, success: (t: T) => boolean) {
+        function checkPromise<T>(p: Promise<T>, check: (t: T) => boolean) {
             return p.then(t => {
-                expect(success(t)).toBeTruthy()
+                expect(check(t)).toBeTruthy()
             })
         }
         const d = new Deferred()
         expect(d.isSettled).toBeFalsy()
-        iOnlyTakePromises(d, onlyHi => onlyHi === "hi")
+        checkPromise(d, onlyHi => onlyHi === "hi")
             .then(() => {
                 expect(d.isSettled).toBeTruthy()
             })

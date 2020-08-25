@@ -25,10 +25,10 @@ export class NotebookListContextMenu{
 
         this.el = div(['notebook-list-context-menu'], [
             tag('ul', [], {}, [
-                item('New notebook', noFile).click(evt => this.create(evt)),
-                item('Rename', onlyFile).click(evt => this.rename(evt)),
-                item('Copy', onlyFile).click(evt => this.copy(evt)),
-                item('Delete', onlyFile).click(evt => this.delete(evt))
+                item('New notebook', [...noFile, 'create']).click(evt => this.create(evt)),
+                item('Rename', [...onlyFile, 'rename']).click(evt => this.rename(evt)),
+                item('Copy', [...onlyFile, 'copy']).click(evt => this.copy(evt)),
+                item('Delete', [...onlyFile, 'delete']).click(evt => this.delete(evt))
             ])
         ]).listener("mousedown", evt => { evt.stopPropagation(); });
     }

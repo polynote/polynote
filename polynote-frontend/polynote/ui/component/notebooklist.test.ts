@@ -1,6 +1,11 @@
-import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList} from "./notebooklist";
+import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList, NotebookListContextMenu} from "./notebooklist";
 import {StateHandler} from "../../state/state_handler";
-import {RequestNotebooksList, ServerMessageDispatcher} from "../../messaging/dispatcher";
+import {
+    DeleteNotebook,
+    RenameNotebook,
+    RequestNotebooksList,
+    ServerMessageDispatcher
+} from "../../messaging/dispatcher";
 import {fireEvent, getByText, queryAllByText, queryByText, queryHelpers, waitFor} from "@testing-library/dom";
 import * as messages from "../../data/messages";
 import {NotebookInfo, ServerStateHandler} from "../../state/server_state";
@@ -39,19 +44,18 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     waitFor(() => {
         expect(spy).toHaveBeenCalledWith('ws/' + encodeURIComponent(newPath))
     }).then(() => {
-        const x = ServerStateHandler.state.currentNotebook
         expect(ServerStateHandler.state.currentNotebook).toEqual(newPath)
     }).then(done)
 });
 
-test('A BranchComponent should update when its state changes', done => {
+describe("BranchComponent", () => {
     const branchState = new StateHandler<Branch>({
         fullPath: "foo",
         value: "foo",
         children: {}
     });
-    const comp = new BranchEl(dispatcher, branchState);
-    expect(comp.childrenEl).toBeEmpty();
+    const branch = new BranchEl(dispatcher, branchState);
+    expect(branch.childrenEl).toBeEmpty();
 
     const leaf = {
         fullPath: "bar",
@@ -66,31 +70,74 @@ test('A BranchComponent should update when its state changes', done => {
             }
         }
     });
+    test('is updated when its state changes', done => {
+        expect(branch.childrenEl).not.toBeEmpty();
+        expect(branch.childrenEl).toHaveTextContent(leaf.value);
 
-    expect(comp.childrenEl).not.toBeEmpty();
-    expect(comp.childrenEl).toHaveTextContent(leaf.value);
-
-    const newLeaf = {
-        fullPath: "baz",
-        value: "baz"
-    };
-    branchState.updateState(s => {
-        return {
-            ...s,
-            children: {
-                ...s.children,
-                [leaf.fullPath]: newLeaf
+        const newLeaf = {
+            fullPath: "baz",
+            value: "baz"
+        };
+        branchState.updateState(s => {
+            return {
+                ...s,
+                children: {
+                    ...s.children,
+                    [leaf.fullPath]: newLeaf
+                }
             }
-        }
-    });
-    expect(comp.childrenEl).toHaveTextContent(newLeaf.value);
+        });
+        expect(branch.childrenEl).toHaveTextContent(newLeaf.value);
 
-    expect(comp.el).not.toHaveClass("expanded");
-    fireEvent(comp.el, new MouseEvent('click'));
-    waitFor(() => {
-        expect(comp.el).toHaveClass("expanded")
-    }).then(done)
-});
+        expect(branch.el).not.toHaveClass("expanded");
+        fireEvent(branch.el, new MouseEvent('click'));
+        waitFor(() => {
+            expect(branch.el).toHaveClass("expanded")
+        }).then(done)
+    });
+
+    test('can trigger a notebook rename', done => {
+        const contextMenu = NotebookListContextMenu.get(dispatcher)
+        expect(contextMenu.el).not.toBeInTheDocument()
+
+        const leafEl = branch.childrenEl.children[0];
+
+        fireEvent(leafEl, new MouseEvent("contextmenu"))
+        waitFor(() => {
+            expect(contextMenu.el).toBeInTheDocument()
+        }).then(() => {
+            const mockDispatch = jest.spyOn(dispatcher, 'dispatch').mockImplementation((() => {}))
+            const rename = contextMenu.el.querySelector('.rename')!;
+            fireEvent(rename, new MouseEvent('click'))
+            return waitFor(() => {
+                expect(mockDispatch).toHaveBeenCalledWith(new RenameNotebook(leaf.fullPath))
+            }).then(() => {
+                mockDispatch.mockRestore()
+            })
+        }).then(done)
+    })
+
+    test('can trigger a notebook deletion', done => {
+        const contextMenu = NotebookListContextMenu.get(dispatcher)
+        expect(contextMenu.el).not.toBeInTheDocument()
+
+        const leafEl = branch.childrenEl.children[0];
+
+        fireEvent(leafEl, new MouseEvent("contextmenu"))
+        waitFor(() => {
+            expect(contextMenu.el).toBeInTheDocument()
+        }).then(() => {
+            const mockDispatch = jest.spyOn(dispatcher, 'dispatch').mockImplementation((() => {}))
+            const del = contextMenu.el.querySelector('.delete')!;
+            fireEvent(del, new MouseEvent('click'))
+            return waitFor(() => {
+                expect(mockDispatch).toHaveBeenCalledWith(new DeleteNotebook(leaf.fullPath))
+            }).then(() => {
+                mockDispatch.mockRestore()
+            })
+        }).then(done)
+    })
+})
 
 test("A BranchHandler should build a tree out of paths", () => {
     const root = {
@@ -231,7 +278,7 @@ test("NotebookList e2e test", done => {
     waitFor(() => {
         expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmpty();
     }).then(() => {
-        // expect(nbList.el.outerHTML).toMatchSnapshot()
+        expect(nbList.el.outerHTML).toMatchSnapshot()
     })
     .then(() => {
         const path = `notebooks/${paths[0]}`;
