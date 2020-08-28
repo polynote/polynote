@@ -61,7 +61,7 @@ class Main {
             Main.handlePath(path)
         })
 
-        const path = unescape(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
+        const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.state.map(path => {
             return dispatcher.loadNotebook(path, true)
         })).then(() => {
