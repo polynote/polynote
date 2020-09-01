@@ -338,7 +338,9 @@ object ParametersAt extends MessageCompanion[ParametersAt](8)
 final case class KernelStatus(update: KernelStatusUpdate) extends Message
 object KernelStatus extends MessageCompanion[KernelStatus](9)
 
-final case class UpdateConfig(globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate
+final case class UpdateConfig(globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate {
+  override def echoOriginatingSubscriber: Boolean = true
+}
 object UpdateConfig extends NotebookUpdateCompanion[UpdateConfig](10)
 
 final case class SetCellLanguage(globalVersion: Int, localVersion: Int, id: CellID, language: TinyString) extends Message with NotebookUpdate {

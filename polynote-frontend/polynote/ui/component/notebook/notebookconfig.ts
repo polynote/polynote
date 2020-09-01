@@ -118,7 +118,7 @@ class Dependencies {
         });
 
         const input = textbox(['dependency'], 'Dependency coordinate, URL, pip package', data.dep).change(evt => {
-            data.dep = input.value
+            data.dep = input.value.trim()
         });
 
         const remove = iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
@@ -199,15 +199,15 @@ class Resolvers {
         }) as DropdownElement
 
         const input = textbox(['resolver-url'], 'Resolver URL or pattern', data.url).change(() => {
-            data.url = input.value;
+            data.url = input.value.trim();
         })
 
         const pattern = textbox(['resolver-artifact-pattern', 'ivy'], 'Artifact pattern (blank for default)', data.pattern).change(() => {
-            data.pattern = pattern.value
+            data.pattern = pattern.value.trim()
         })
 
         const metadata = textbox(['resolver-metadata-pattern', 'ivy'], 'Metadata pattern (blank for default)', data.metadata).change(() => {
-            data.metadata = metadata.value
+            data.metadata = metadata.value.trim()
         })
 
         const remove = iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
@@ -280,7 +280,7 @@ class Exclusions {
         const data = { exclusion: item ?? ""}
 
         const input = textbox(['exclusion'], 'Exclusion organization:name', data.exclusion).change(() => {
-            data.exclusion = input.value
+            data.exclusion = input.value.trim()
         })
         const remove = iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
             this.container.removeChild(row);
@@ -355,11 +355,11 @@ class SparkConf {
         const data = item ?? {key: "", val: ""}
 
         const key = textbox(['spark-config-key'], 'key', data.key).change(() => {
-            data.key = key.value
+            data.key = key.value.trim()
         })
 
         const val = textbox(['spark-config-val'], 'val', data.val).change(() => {
-            data.val = val.value
+            data.val = val.value.trim()
         })
 
         const remove = iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
@@ -421,11 +421,11 @@ class EnvConf {
         const data = item ?? {key: "", val: ""};
 
         const key = textbox(['env-key'], 'key', data.key).change(() => {
-            data.key = key.value
+            data.key = key.value.trim()
         })
 
         const val = textbox(['env-val'], 'val', data.val).change(() => {
-            data.val = val.value
+            data.val = val.value.trim()
         })
 
         const remove = iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
