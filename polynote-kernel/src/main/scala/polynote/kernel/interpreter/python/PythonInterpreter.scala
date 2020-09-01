@@ -101,6 +101,7 @@ class PythonInterpreter private[python] (
 
     override def typeName(obj: PythonObject): String = run(pyApi.typeName(obj.unwrap))
     override def qualifiedTypeName(obj: PythonObject): String = run(pyApi.qualifiedTypeName(obj.unwrap))
+    override def isCallable(obj: PyObject): Boolean = run(pyApi.isCallable(obj))
     override def len(obj: PythonObject): Int = run(pyApi.len(obj.unwrap))
     override def len64(obj: PythonObject): Long = run(pyApi.len64(obj.unwrap))
     override def list(obj: AnyRef): PythonObject = new PythonObject(run(pyApi.list(obj)), this)
@@ -240,6 +241,9 @@ class PythonInterpreter private[python] (
 
   protected def setup: String =
     """
+      |# This import enables postponed evaluation of annotations, which is needed for data classes and other type hints
+      |# to work properly. For more details, see: https://www.python.org/dev/peps/pep-0563/
+      |from __future__ import annotations
       |try:
       |    import os, sys, ast, jedi, shutil
       |    from pathlib import Path
@@ -759,8 +763,11 @@ object PythonInterpreter {
 
     private val qualifiedTypeFn: PyCallable = jep.getValue("__polynote_qualified_type__", classOf[PyCallable])
 
+    private val callableFn: PyCallable = jep.getValue("callable", classOf[PyCallable])
+
     def typeName(obj: PyObject): String = typeFn.callAs(classOf[PyObject], obj).getAttr("__name__", classOf[String])
     def qualifiedTypeName(obj: PyObject): String = qualifiedTypeFn.callAs(classOf[String], obj)
+    def isCallable(obj: PyObject): Boolean = callableFn.callAs(classOf[java.lang.Boolean], obj).booleanValue()
     def len(obj: PyObject): Int = lenFn.callAs(classOf[java.lang.Number], obj).intValue()
     def len64(obj: PyObject): Long = lenFn.callAs(classOf[java.lang.Number], obj).longValue()
     def list(obj: AnyRef): PyObject = listFn.callAs(classOf[PyObject], unwrapArg(obj))

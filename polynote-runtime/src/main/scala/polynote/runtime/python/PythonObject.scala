@@ -30,6 +30,7 @@ class PythonObject(obj: PyObject, private[polynote] val runner: PythonObject.Run
       }
     } match {
       case pc: PyCallable => new PythonFunction(pc, runner)
+      case po if runner.isCallable(po) => new PythonFunction(po.as(classOf[PyCallable]), runner)
       case po => new PythonObject(po, runner)
     }
   }
@@ -55,6 +56,7 @@ class PythonObject(obj: PyObject, private[polynote] val runner: PythonObject.Run
       }
     } match {
       case pc: PyCallable => new PythonFunction(pc, runner)
+      case po if runner.isCallable(po) => new PythonFunction(po.as(classOf[PyCallable]), runner)
       case po   => new PythonObject(po, runner)
     }
   }
@@ -98,6 +100,13 @@ class PythonObject(obj: PyObject, private[polynote] val runner: PythonObject.Run
 
   override def hashCode(): Int = runner.run(obj.hashCode())
 
+  override def equals(other: Any): Boolean = other match {
+    case wrapped: PythonObject =>
+      runner.run(obj.equals(wrapped.unwrap))
+    case _: PyObject =>
+      runner.run(obj.equals(other))
+    case _ => false
+  }
 }
 
 
@@ -181,6 +190,7 @@ object PythonObject {
       val tag: ClassTag[PyObject] = classTag[PyObject]
       def wrap(value: PyObject, runner: Runner): PythonObject = value match {
         case v: PyCallable => new PythonFunction(v, runner)
+        case v if runner.isCallable(v) => new PythonFunction(v.as(classOf[PyCallable]), runner)
         case v => new PythonObject(v, runner)
       }
     }
@@ -206,6 +216,7 @@ object PythonObject {
     def asTuple2Of[A : ClassTag, B : ClassTag](obj: PythonObject): (A, B)
     def typeName(obj: PythonObject): String
     def qualifiedTypeName(obj: PythonObject): String
+    def isCallable(obj: PyObject): Boolean
     def len(obj: PythonObject): Int
     def len64(obj: PythonObject): Long
     def list(obj: AnyRef): PythonObject
