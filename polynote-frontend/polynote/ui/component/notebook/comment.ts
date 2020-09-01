@@ -299,7 +299,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         if (model) {
             const mRange = this.range.toMRange(model);
             const currentPosition = this.editor.getPosition();
-            const selected = currentPosition && mRange.containsPosition(currentPosition);
+            const selected = this.editor.hasTextFocus() && currentPosition && mRange.containsPosition(currentPosition);
             let highlightClass = "comment-highlight";
             if (selected) {
                 highlightClass = "comment-highlight-strong";
