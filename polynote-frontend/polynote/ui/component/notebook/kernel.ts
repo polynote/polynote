@@ -16,7 +16,7 @@ import {
 import {
     KernelCommand,
     NotebookMessageDispatcher,
-    Reconnect, RemoveTask,
+    Reconnect, RemoveError, RemoveTask,
     ServerMessageDispatcher,
     ShowValueInspector
 } from "../../../messaging/dispatcher";
@@ -95,7 +95,7 @@ export class Kernel {
 
         const info = new KernelInfoEl(this.kernelState);
         const symbols = new KernelSymbolsEl(dispatcher, notebookState);
-        const tasks = new KernelTasksEl(dispatcher, this.kernelState.kernelTasks, notebookState.view("errors"));
+        const tasks = new KernelTasksEl(dispatcher, serverMessageDispatcher, this.kernelState.kernelTasks, notebookState.view("errors"));
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -224,8 +224,11 @@ class KernelTasksEl {
     readonly el: TagElement<"div">;
     private taskContainer: TagElement<"div">;
     private tasks: Record<string, KernelTask> = {};
+    private serverErrorIds: Record<string, ServerError>;
+    private kernelErrorIds: Record<string, ServerErrorWithCause>;
 
     constructor(private dispatcher: NotebookMessageDispatcher,
+                private serverMessageDispatcher: ServerMessageDispatcher,
                 private kernelTasksHandler: StateView<KernelTasks>,
                 private kernelErrors: StateView<ServerErrorWithCause[]>) {
         this.el = div(['kernel-tasks'], [
@@ -251,39 +254,55 @@ class KernelTasksEl {
             })
         })
 
-        let kernelErrorIds: string[] = [];
+        this.kernelErrorIds = {};
         const handleKernelErrors = (errs: ServerErrorWithCause[]) => {
             if (errs.length > 0) {
                 errs.forEach(e => {
                     const id = `KernelError ${e.className}`;
                     this.addError(id, e)
-                    kernelErrorIds.push(id);
+                    this.kernelErrorIds[id] = e;
+                })
+
+                // clear any old errors
+                Object.entries(this.kernelErrorIds).forEach(([id, err]) => {
+                    if (! errs.includes(err)) {
+                        this.removeTask(id)
+                        delete this.kernelErrorIds[id]
+                    }
                 })
             } else {
-                kernelErrorIds.forEach(id => this.removeTask(id))
-                kernelErrorIds = [];
+                Object.keys(this.kernelErrorIds).forEach(id => this.removeTask(id))
+                this.kernelErrorIds = {};
             }
         }
         handleKernelErrors(kernelErrors.state)
         kernelErrors.addObserver(e => handleKernelErrors(e))
 
         const serverErrors = ServerStateHandler.view("errors", kernelTasksHandler)
-        let serverErrorIds: string[] = [];
+        this.serverErrorIds = {};
         const handleServerErrors = (errs: ServerError[]) => {
             if (errs.length > 0) {
                 console.error("Got server errors", errs)
                 errs.forEach(e => {
                     const id = `ServerError: ${e.err.className}`;
-                    if (!serverErrorIds.includes(id)) {
+                    if (this.serverErrorIds[id] === undefined) {
                         this.addError(id, e.err)
-                        serverErrorIds.push(id)
+                        this.serverErrorIds[id] = e
+                    }
+                })
+
+                // clear any old errors
+                Object.entries(this.serverErrorIds).forEach(([id, err]) => {
+                    if (! errs.includes(err)) {
+                        this.removeTask(id)
+                        delete this.serverErrorIds[id]
                     }
                 })
             } else {
-                serverErrorIds.forEach(id => {
+                Object.keys(this.serverErrorIds).forEach(id => {
                     this.removeTask(id)
                 })
-                serverErrorIds = [];
+                this.serverErrorIds = {};
             }
         }
         handleServerErrors(serverErrors.state)
@@ -298,12 +317,26 @@ class KernelTasksEl {
             para([], el)
         ]);
 
-        this.updateTask(id, id, message, TaskStatus.Error, 0)
+        this.addTask(id, id, message, TaskStatus.Error, 0, undefined, () => {
+            this.removeError(id)
+        })
     }
 
-    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent?: string) {
+    private removeError(id: string) {
+        const maybeKernelError = this.kernelErrorIds[id]
+        if (maybeKernelError) {
+            this.dispatcher.dispatch(new RemoveError(maybeKernelError))
+        } else {
+            const maybeServerError = this.serverErrorIds[id]?.err;
+            if (maybeServerError) {
+                this.serverMessageDispatcher.dispatch(new RemoveError(maybeServerError))
+            }
+        }
+    }
+
+    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.dispatcher.dispatch(new RemoveTask(id))) {
         const taskEl: KernelTask = Object.assign(div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
-            icon(['close-button'], 'times', 'close icon').click(() => this.dispatcher.dispatch(new RemoveTask(id))),
+            icon(['close-button'], 'times', 'close icon').click(() => remove()),
             h4([], [label]),
             div(['detail'], detail),
             div(['progress'], [div(['progress-bar'], [])]),

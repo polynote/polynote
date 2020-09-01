@@ -283,6 +283,14 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     }
                 })
             })
+            .when(RemoveError, err => {
+                this.handler.updateState(s => {
+                    return {
+                        ...s,
+                        errors: s.errors.filter(e => ! deepEquals(e, err))
+                    }
+                })
+            })
             .when(RequestClearOutput, () => {
                 this.socket.send(new messages.ClearOutput())
             })
@@ -642,6 +650,14 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             .when(RequestRunningKernels, () => {
                 this.socket.send(new messages.RunningKernels([]))
             })
+            .when(RemoveError, err => {
+                this.handler.updateState(s => {
+                    return {
+                        ...s,
+                        errors: s.errors.filter(e => ! deepEquals(e.err, err))
+                    }
+                })
+            })
     }
 
     loadNotebook(path: string, open?: boolean): Promise<NotebookInfo> {
@@ -926,6 +942,17 @@ export class RemoveTask extends UIAction {
 
     static unapply(inst: RemoveTask): ConstructorParameters<typeof RemoveTask> {
         return [inst.taskId];
+    }
+}
+
+export class RemoveError extends UIAction {
+    constructor(readonly err: ServerErrorWithCause) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: RemoveError): ConstructorParameters<typeof RemoveError> {
+        return [inst.err];
     }
 }
 
