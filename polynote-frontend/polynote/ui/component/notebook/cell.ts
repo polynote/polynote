@@ -887,8 +887,10 @@ class CodeCell extends Cell {
 
     protected onSelected() {
         super.onSelected()
-        this.vim = VimStatus.get.activate(this.editor)
-        this.editor.focus()
+        if (this.editorEl.contains(document.activeElement)) {
+            this.vim = VimStatus.get.activate(this.editor)
+            this.editor.focus()
+        }
     }
 
     protected onDeselected() {
