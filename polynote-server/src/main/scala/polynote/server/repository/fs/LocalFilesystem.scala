@@ -85,7 +85,10 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
   }
 
   override def list(path: Path): RIO[BaseEnv, List[Path]] =
-    effectBlocking(Files.walk(path, maxDepth, FileVisitOption.FOLLOW_LINKS).iterator().asScala.drop(1).toList)
+    effectBlocking(
+      if (Files.exists(path)) Files.walk(path, maxDepth, FileVisitOption.FOLLOW_LINKS).iterator().asScala.drop(1).toList
+      else List.empty[Path]
+    )
 
   override def validate(path: Path): RIO[BaseEnv, Unit] = {
     if (path.iterator().asScala.length > maxDepth) {
