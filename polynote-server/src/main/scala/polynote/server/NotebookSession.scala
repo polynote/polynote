@@ -118,6 +118,11 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
         ZIO.foreach_(presence.flatMap(_._2.toList).map(sel => KernelStatus(sel)))(PublishMessage)
   }
 
+  private def sendCellStatuses: RIO[BaseEnv with PublishMessage, Unit] = subscriber.publisher.statuses.flatMap {
+    statuses =>
+      ZIO.foreach_(statuses.map(KernelStatus(_)))(PublishMessage)
+  }
+
   // Send the results, along with some progress updates based on how many results there are
   private def sendCellResults(results: List[CellResult], taskInfo: TaskInfo): ZIO[PublishMessage, Throwable, Unit] = {
     val sendResults = ZIO.when(results.nonEmpty) {
@@ -152,7 +157,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
   def sendNotebook: RIO[SessionEnv with PublishMessage, Unit] =
     subscriber.checkPermission(Permission.ReadNotebook).flatMap { _ =>
       // make sure to send status first, so client knows whether this notebook is up or not.
-      sendStatus *> sendNotebookContents *> sendTasks *> sendPresence
+      sendStatus *> sendNotebookContents *> sendTasks *> sendPresence *> sendCellStatuses
     }.catchAll(err => PublishMessage(Error(0, err)))
 }
 

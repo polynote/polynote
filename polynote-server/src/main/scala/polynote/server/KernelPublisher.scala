@@ -12,7 +12,7 @@ import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.kernel.util.{Publish, RefMap}
 import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.messages.{CellID, CellResult, Error, Message, Notebook, NotebookUpdate, ShortList}
-import polynote.kernel.{BaseEnv, CellEnv, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
+import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
@@ -149,6 +149,17 @@ class KernelPublisher private (
   def tasks(): TaskB[List[TaskInfo]] = kernelRef.get.get.flatMap {
     kernel => kernel.tasks().provideSomeLayer[BaseEnv](baseLayer)
   } orElse taskManager.list
+
+  // TODO: A bit ugly. There's probably a better way to keep track of cell status.
+  private val extract = """Cell (\d*)""".r
+  def statuses: TaskB[List[CellStatusUpdate]] = tasks().map(tasks => tasks.flatMap {
+    task =>
+      task.id match {
+        case extract(cellId) =>
+          List(CellStatusUpdate(cellId.toShort, task.status))
+        case _ => Nil
+      }
+  })
 
   def subscribe(): RIO[BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = subscribing.withPermit {
     for {
