@@ -66,7 +66,7 @@ import IMarkerData = editor.IMarkerData;
 import * as deepEquals from 'fast-deep-equal/es6';
 
 
-type CodeCellModel = editor.ITextModel & {
+export type CodeCellModel = editor.ITextModel & {
     requestCompletion(pos: number): Promise<CompletionList>,
     requestSignatureHelp(pos: number): Promise<SignatureHelpResult>
 };

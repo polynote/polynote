@@ -16,6 +16,7 @@ import {SocketStateHandler} from "./state/socket_state";
 import {Home} from "./ui/component/home";
 import {OpenNotebooksHandler, RecentNotebooksHandler} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
+import {CodeCellModel} from "./ui/component/notebook/cell";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -136,3 +137,40 @@ SocketSession.global;
 
 const mainEl = document.getElementById('Main');
 mainEl?.appendChild(Main.get.el);
+
+// Register all the completion providers.
+// TODO: is there a more elegant way to do this?
+monaco.languages.registerCompletionItemProvider('scala', {
+    triggerCharacters: ['.'],
+    provideCompletionItems: (doc, pos, context, cancelToken) => {
+        return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
+    }
+});
+
+monaco.languages.registerCompletionItemProvider('python', {
+    triggerCharacters: ['.', "["],
+    provideCompletionItems: (doc, pos, cancelToken, context) => {
+        return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
+    }
+});
+
+monaco.languages.registerSignatureHelpProvider('scala', {
+    signatureHelpTriggerCharacters: ['(', ','],
+    provideSignatureHelp: (doc, pos, cancelToken, context) => {
+        return (doc as CodeCellModel).requestSignatureHelp(doc.getOffsetAt(pos));
+    }
+});
+
+monaco.languages.registerSignatureHelpProvider('python', {
+    signatureHelpTriggerCharacters: ['(', ','],
+    provideSignatureHelp: (doc, pos, cancelToken, context) => {
+        return (doc as CodeCellModel).requestSignatureHelp(doc.getOffsetAt(pos));
+    }
+});
+
+monaco.languages.registerCompletionItemProvider('sql', {
+    triggerCharacters: ['.'],
+    provideCompletionItems: (doc, pos, context, cancelToken) => {
+        return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
+    }
+});
