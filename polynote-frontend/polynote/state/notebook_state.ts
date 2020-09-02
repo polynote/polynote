@@ -25,6 +25,7 @@ export interface CellState {
     // ephemeral states
     pendingEdits: ContentEdit[],
     presence: {id: number, name: string, color: string, range: PosRange, avatar?: string}[];
+    editing?: boolean,
     selected?: boolean,
     error?: boolean,
     running?: boolean

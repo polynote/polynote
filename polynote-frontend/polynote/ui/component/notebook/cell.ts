@@ -370,6 +370,12 @@ class CodeCell extends Cell {
         //       we'll need to rethink this stuff.
         this.editor.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
 
+        cellState.view("editing").addObserver(editing => {
+            if (editing) {
+                this.editor.focus()
+            }
+        })
+
         const compileErrorsState = cellState.mapView<"compileErrors", CellErrorMarkers[][]>("compileErrors", (errors: CompileErrors[]) => {
             if (errors.length > 0) {
                 return errors.map(error => {
@@ -812,7 +818,7 @@ class CodeCell extends Cell {
         return matchS<boolean>(key)
             .when("MoveUp", ifNoSuggestion(() => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "above", true))
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", skipHiddenCode: true, editing: true}))
                 }
             }))
             .when("MoveDown", ifNoSuggestion(() => {
@@ -821,12 +827,12 @@ class CodeCell extends Cell {
                     lastColumn -= 1
                 }
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "below", true))
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", skipHiddenCode: true, editing: true}))
                 }
             }))
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
                 return true // preventDefault
             })
             .when("RunAndInsertBelow", () => {
@@ -835,10 +841,10 @@ class CodeCell extends Cell {
                 return true // preventDefault
             })
             .when("SelectPrevious", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, "above"))
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
             }))
             .when("SelectNext", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
             }))
             .when("InsertAbove", ifNoSuggestion(() => {
                 this.dispatcher.insertCell("above")
@@ -858,7 +864,7 @@ class CodeCell extends Cell {
             .when("MoveUpK", ifNoSuggestion(() => {
                 if (!this.vim?.state.vim.insertMode) {
                     if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                        this.dispatcher.dispatch(new SetSelectedCell(this.id, "above", true))
+                        this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", skipHiddenCode: true, editing: true}))
                     }
                 }
             }))
@@ -866,7 +872,7 @@ class CodeCell extends Cell {
                 if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
                     let lastColumn = range.endColumn - 1;
                     if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                        this.dispatcher.dispatch(new SetSelectedCell(this.id, "below", true))
+                        this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative:"below", skipHiddenCode: true, editing: true}))
                     }
                 }
             }))
@@ -1422,16 +1428,16 @@ export class TextCell extends Cell {
         return matchS<boolean>(key)
             .when("MoveUp", () => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "above"))
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
                 }
             })
             .when("MoveDown", () => {
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
                 }
             })
             .when("RunAndSelectNext", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
                 return true // preventDefault
             })
             .when("RunAndInsertBelow", () => {
@@ -1439,10 +1445,10 @@ export class TextCell extends Cell {
                 return true // preventDefault
             })
             .when("SelectPrevious", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, "above"))
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
             })
             .when("SelectNext", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, "below"))
+                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
             })
             .when("InsertAbove", () => {
                 this.dispatcher.insertCell("above")

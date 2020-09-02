@@ -294,24 +294,24 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(RequestClearOutput, () => {
                 this.socket.send(new messages.ClearOutput())
             })
-            .when(SetSelectedCell, (selected, relative, skipHiddenCode) => {
+            .when(SetSelectedCell, (selected, options) => {
                 this.handler.updateState(state => {
                     let id = selected;
-                    if (relative === "above")  {
+                    if (options?.relative === "above")  {
                         const anchorIdx = state.cells.findIndex(cell => cell.id === id);
                         let prevIdx = anchorIdx - 1;
                         id = state.cells[prevIdx]?.id;
-                        if (skipHiddenCode) {
+                        if (options?.skipHiddenCode) {
                             while (state.cells[prevIdx]?.metadata.hideSource) {
                                 --prevIdx;
                             }
                             id = state.cells[prevIdx]?.id;
                         }
-                    } else if (relative === "below") {
+                    } else if (options?.relative === "below") {
                         const anchorIdx = state.cells.findIndex(cell => cell.id === id);
                         let nextIdx = anchorIdx + 1
                         id = state.cells[nextIdx]?.id;
-                        if (skipHiddenCode) {
+                        if (options?.skipHiddenCode) {
                             while (state.cells[nextIdx]?.metadata.hideSource) {
                                 ++nextIdx;
                             }
@@ -326,7 +326,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                         cells: state.cells.map(cell => {
                             return {
                                 ...cell,
-                                selected: cell.id === id
+                                selected: cell.id === id,
+                                editing: cell.id === id && (options?.editing ?? false)
                             }
                         })
                     }
@@ -993,17 +994,19 @@ export class SetSelectedCell extends UIAction {
     /**
      * Change the currently selected cell.
      *
-     * @param selected        The ID of the cell to select OR the ID of the anchor cell for `relative`. If `undefined`, deselects cells.
-     * @param relative        If set, select the cell either above or below the one with ID specified by `selected`
-     * @param skipHiddenCode  If set alongside a relative cell selection, cells with hidden code blocks should be skipped.
+     * @param selected     The ID of the cell to select OR the ID of the anchor cell for `relative`. If `undefined`, deselects cells.
+     * @param options      Options, consisting of:
+     *                     relative        If set, select the cell either above or below the one with ID specified by `selected`
+     *                     skipHiddenCode  If set alongside a relative cell selection, cells with hidden code blocks should be skipped.
+     *                     editing         If set, indicate that the cell is editing in addition to being selected.
      */
-    constructor(readonly selected: number | undefined, readonly relative?: "above" | "below", readonly skipHiddenCode: boolean = false) {
+    constructor(readonly selected: number | undefined, readonly options?: { relative?: "above" | "below", skipHiddenCode?: boolean, editing?: boolean}) {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: SetSelectedCell): ConstructorParameters<typeof SetSelectedCell> {
-        return [inst.selected, inst.relative, inst.skipHiddenCode];
+        return [inst.selected, inst.options];
     }
 }
 
