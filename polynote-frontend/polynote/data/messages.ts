@@ -830,6 +830,19 @@ export class CurrentSelection extends Message {
     }
 }
 
+export class KeepAlive extends Message {
+    static codec = combined(uint8).to(KeepAlive);
+    static get msgTypeId() { return 32; }
+    static unapply(inst: KeepAlive): ConstructorParameters<typeof KeepAlive> {
+        return [inst.payload];
+    }
+
+    constructor(readonly payload: number) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 Message.codecs = [
     Error,            // 0
     LoadNotebook,     // 1
@@ -863,12 +876,17 @@ Message.codecs = [
     CreateComment,    // 29
     UpdateComment,    // 30
     DeleteComment,    // 31
+    KeepAlive,        // 32
 ];
 
 
 Message.codec = discriminated(
     uint8,
-    (msgTypeId) => Message.codecs[msgTypeId].codec,
+    (msgTypeId) => {
+        const maybeMessage = Message.codecs[msgTypeId]
+        if (maybeMessage) return maybeMessage.codec
+        else throw new globalThis.Error(`Unable to find codec for id ${msgTypeId}`)
+    },
     (msg) => (msg.constructor as typeof Message).msgTypeId
 );
 

@@ -403,6 +403,9 @@ object NotebookVersion extends MessageCompanion[NotebookVersion](23)
 final case class RunningKernels(statuses: TinyList[(ShortString, KernelBusyState)]) extends Message
 object RunningKernels extends MessageCompanion[RunningKernels](24)
 
+final case class KeepAlive(payload: Byte) extends Message
+object KeepAlive extends MessageCompanion[KeepAlive](32)
+
 /*****************************************
  ** Stuff for stream-ish value handling **
  *****************************************/

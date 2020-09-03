@@ -94,6 +94,10 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
 
     case CurrentSelection(cellID, range) => subscriber.setSelection(cellID, range)
 
+    case KeepAlive(payload) =>
+      // echo received KeepAlive message back to client.
+      PublishMessage(KeepAlive(payload))
+
     // TODO: remove once Global and Notebook messages are separated, to give back exhaustivity checking
     case _ => ZIO.unit
   }

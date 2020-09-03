@@ -259,8 +259,10 @@ class KernelTasksEl {
             if (errs.length > 0) {
                 errs.forEach(e => {
                     const id = `KernelError ${e.className}`;
-                    this.addError(id, e)
-                    this.kernelErrorIds[id] = e;
+                    if (this.kernelErrorIds[id] === undefined) {
+                        this.addError(id, e)
+                        this.kernelErrorIds[id] = e;
+                    }
                 })
 
                 // clear any old errors

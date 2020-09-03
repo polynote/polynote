@@ -1,7 +1,7 @@
 'use strict';
 
 import {EventTarget} from 'event-target-shim'
-import {Message} from "../data/messages";
+import {KeepAlive, Message} from "../data/messages";
 
 export class PolynoteMessageEvent<T extends Message> extends CustomEvent<any> {
     constructor(readonly message: T) {
@@ -77,6 +77,33 @@ export class SocketSession extends EventTarget {
         this.socket.addEventListener('open', this.listeners.open);
         this.socket.addEventListener('close', this.listeners.close);
         this.socket.addEventListener('error', this.listeners.error);
+
+        // keepalive
+        const interval = 10 * 1000 // 10 seconds
+        let latestPayload: number = 0; // Unsigned int. Can't be larger than 255.
+        let receivedResponse: boolean = true;
+        const ping = () => {
+            if (receivedResponse) {
+                latestPayload = (latestPayload + 1) % 256;
+                this.send(new KeepAlive(latestPayload));
+                receivedResponse = false;
+            } else {
+                console.error(this.url.href, "Did not receive response to latest ping!")
+                this.dispatchEvent(new CustomEvent('error', {detail: {cause: `KeepAlive timed out after ${interval} ms`}}));
+            }
+        }
+        this.addMessageListener(KeepAlive, payload => {
+            console.log(this.url.href, "got pong with payload", payload);
+            if (payload !== latestPayload) {
+                console.warn(this.url.href, "KeepAlive response didn't match! Expected", latestPayload, "received", payload)
+            } else {
+                receivedResponse = true;
+            }
+        })
+
+        setInterval(() => {
+            ping()
+        }, interval)
     }
 
     onError(event: Event) {

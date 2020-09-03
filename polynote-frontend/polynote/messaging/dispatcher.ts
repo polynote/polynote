@@ -46,6 +46,17 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 socket.send(new messages.KernelStatus(new messages.KernelBusyState(false, false)))
             }
         });
+        const errorView = socket.view("error")
+        errorView.addObserver(err => {
+            if (err) {
+                this.handler.updateState(s => {
+                    return {
+                        ...s,
+                        errors: [...s.errors, err.error]
+                    }
+                })
+            }
+        })
     }
 
     dispatch(action: UIAction) {
@@ -530,6 +541,18 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
     constructor(socket: SocketStateHandler) {
         super(socket, ServerStateHandler.get);
+
+        const errorView = socket.view("error")
+        errorView.addObserver(err => {
+            if (err) {
+                this.handler.updateState(s => {
+                    return {
+                        ...s,
+                        errors: [...s.errors, {err: err.error}]
+                    }
+                })
+            }
+        })
     }
 
     dispatch(action: UIAction): void {

@@ -64,6 +64,10 @@ object SocketSession {
 
     case RunningKernels(_) => getRunningKernels
 
+    case KeepAlive(payload) =>
+      // echo received KeepAlive message back to client.
+      ZIO.succeed(Option(KeepAlive(payload)))
+
     case other =>
       ZIO.succeed(None)
   }

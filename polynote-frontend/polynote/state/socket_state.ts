@@ -76,10 +76,16 @@ export class SocketStateHandler extends StateHandler<SocketState> {
                         try {
                             msg = Message.decode(req.response);
                         } catch (e) {
-                            if (e instanceof Error) {
-                                msg = new messages.Error(0, new ServerErrorWithCause(e.constructor.name, e.message || e.toString(), []))
-                            } else {
-                                msg = new messages.Error(0, new ServerErrorWithCause("Websocket Connection Error", e.toString(), []))
+                            try {
+                                const resp = new TextDecoder().decode(req.response)
+                                msg = new messages.Error(0, new ServerErrorWithCause("Websocket Connection Error", resp, []))
+                            } catch (_) {
+                                if (e instanceof Error) {
+                                    msg = new messages.Error(0, new ServerErrorWithCause("Websocket Connection Error", e.toString(), [],
+                                        new ServerErrorWithCause(e.constructor.name, e.message || e.toString(), [])))
+                                } else {
+                                    msg = new messages.Error(0, new ServerErrorWithCause("Websocket Connection Error", e.toString(), []))
+                                }
                             }
                         }
                         if (msg instanceof messages.Error) {
