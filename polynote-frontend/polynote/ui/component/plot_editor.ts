@@ -1,7 +1,6 @@
 'use strict';
 
 import embed, {Result as VegaResult} from "vega-embed";
-import * as deepEquals from 'fast-deep-equal/es6';
 
 import {div, button, iconButton, h4, TagElement, icon, radio, fakeSelectElem, span, textbox} from '../tags'
 import {
@@ -27,7 +26,7 @@ import {DataStream} from "../../messaging/datastream";
 import {StreamingDataRepr} from "../../data/value_repr";
 import {NotebookStateHandler} from "../../state/notebook_state";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
-import {mapValues} from "../../util/helpers";
+import {mapValues, deepEquals} from "../../util/helpers";
 
 function isDimension(dataType: DataType): boolean {
     if (dataType instanceof OptionalType) {

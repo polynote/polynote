@@ -13,7 +13,6 @@ import {NotebookCells, UpdateConfig} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {PosRange} from "../data/result";
 import * as MockDate from "mockdate";
-import * as deepEquals from 'fast-deep-equal/es6';
 
 const nowTime = new Date()
 

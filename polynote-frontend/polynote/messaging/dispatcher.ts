@@ -11,20 +11,19 @@ import {
     RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
-import {StateHandler} from "../state/state_handler";
+import {NoUpdate, StateHandler} from "../state/state_handler";
 import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../data/content_edit";
 import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_state";
 import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
 import {About} from "../ui/component/about";
 import {ValueInspector} from "../ui/component/value_inspector";
-import {arrDeleteItem, collect, equalsByKey, partition, removeKey} from "../util/helpers";
+import {arrDeleteItem, collect, deepEquals, equalsByKey, partition, removeKey} from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
 import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
-import * as deepEquals from 'fast-deep-equal/es6';
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -50,7 +49,9 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         errorView.addObserver(err => {
             if (err) {
                 this.handler.updateState(s => {
-                    return {
+                    if (s.errors.find(e => deepEquals(e, err.error))) {
+                        return NoUpdate
+                    } else return {
                         ...s,
                         errors: [...s.errors, err.error]
                     }
@@ -546,7 +547,9 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         errorView.addObserver(err => {
             if (err) {
                 this.handler.updateState(s => {
-                    return {
+                    if (s.errors.find(e => deepEquals(e, {err: err.error}))) {
+                        return NoUpdate
+                    } else return {
                         ...s,
                         errors: [...s.errors, {err: err.error}]
                     }

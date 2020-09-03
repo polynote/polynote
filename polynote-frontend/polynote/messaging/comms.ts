@@ -93,7 +93,6 @@ export class SocketSession extends EventTarget {
             }
         }
         this.addMessageListener(KeepAlive, payload => {
-            console.log(this.url.href, "got pong with payload", payload);
             if (payload !== latestPayload) {
                 console.warn(this.url.href, "KeepAlive response didn't match! Expected", latestPayload, "received", payload)
             } else {

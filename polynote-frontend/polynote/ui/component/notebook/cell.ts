@@ -63,7 +63,7 @@ import {ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl} from "../../display/error";
 import {Error} from "../../../data/messages";
 import IMarkerData = editor.IMarkerData;
-import * as deepEquals from 'fast-deep-equal/es6';
+import { deepEquals } from "../../../util/helpers";
 
 
 export type CodeCellModel = editor.ITextModel & {

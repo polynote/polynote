@@ -4,13 +4,13 @@ import {
     arrayCodec, bool, bufferCodec, Codec, CodecContainer, combined, discriminated, either, float64, int16, int32, int64,
     mapCodec, optional, Pair, shortStr, str, tinyStr, uint16, uint32, uint8
 } from './codec'
-import * as deepEquals from 'fast-deep-equal/es6';
 
 import {ServerErrorWithCause, Output, PosRange, Result} from './result'
 import {StreamingDataRepr} from "./value_repr";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig, SparkPropertySet} from "./data";
 import {ContentEdit} from "./content_edit";
 import {Left, Right} from "./codec_types";
+import {deepEquals} from "../util/helpers";
 
 export abstract class Message extends CodecContainer {
     static codec: Codec<Message>;

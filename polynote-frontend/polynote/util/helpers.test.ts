@@ -2,7 +2,7 @@ import {
     arrDelete, arrDeleteItem,
     arrInsert,
     arrReplace,
-    changedKeys, collect,
+    changedKeys, collect, deepEquals,
     deepFreeze, Deferred,
     diffArray,
     equalsByKey,
@@ -10,7 +10,6 @@ import {
     mapValues, partition,
     removeKey, unzip
 } from "./helpers";
-import * as deepEquals from 'fast-deep-equal/es6';
 import * as messages from "../data/messages";
 import {ServerErrorWithCause} from "../data/result";
 

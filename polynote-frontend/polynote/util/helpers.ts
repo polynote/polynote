@@ -1,6 +1,11 @@
 'use strict';
 
-import * as deepEquals from 'fast-deep-equal/es6';
+import * as fastEquals from 'fast-deep-equal/es6';
+
+// provide some types to deepEquals
+export function deepEquals<T>(a: T, b: T): boolean {
+    return fastEquals(a, b)
+}
 
 //*********************
 //* Object helpers
@@ -46,7 +51,7 @@ export function deepFreeze<T>(obj: T) {
 export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B)>): boolean {
     return keys.every(k => {
         if (k in a && k in b) {
-            return deepEquals(a[k], b[k])
+            return deepEquals(a[k], b[k] as any) // TODO: is there a way to fiddle with the types so this works without any?
         } else return false
     })
 }

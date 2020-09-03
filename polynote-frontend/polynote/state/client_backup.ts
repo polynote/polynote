@@ -1,8 +1,7 @@
 import {clear, get, keys, set} from 'idb-keyval';
 import {NotebookUpdate} from "../data/messages";
 import {CellComment, NotebookCell, NotebookConfig} from "../data/data";
-import * as deepEquals from 'fast-deep-equal/es6';
-import {isObject} from "../util/helpers";
+import {deepEquals, isObject} from "../util/helpers";
 
 export class ClientBackup {
     static addNb(path: string, cells: NotebookCell[], config?: NotebookConfig): Promise<Backups> {

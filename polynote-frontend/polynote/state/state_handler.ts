@@ -1,5 +1,4 @@
-import * as deepEquals from 'fast-deep-equal/es6';
-import {deepFreeze, Deferred} from "../util/helpers";
+import {deepEquals, deepFreeze, Deferred} from "../util/helpers";
 
 /**
  * An implementer of Disposable must have a dispose function which disposes the implementer, and a didDispose Promise

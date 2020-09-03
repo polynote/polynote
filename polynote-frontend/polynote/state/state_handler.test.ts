@@ -1,6 +1,6 @@
 import {Disposable, Observer, StateHandler, StateView} from "./state_handler";
 import {waitFor} from "@testing-library/dom";
-import * as deepEquals from 'fast-deep-equal/es6';
+import {deepEquals} from "../util/helpers";
 
 describe("Disposable", () => {
     it("can be disposed", async () => {

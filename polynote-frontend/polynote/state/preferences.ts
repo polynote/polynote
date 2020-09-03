@@ -1,7 +1,6 @@
 import {storage} from "./storage";
 import {StateHandler} from "./state_handler";
-import {diffArray} from "../util/helpers";
-import * as deepEquals from 'fast-deep-equal/es6';
+import {deepEquals, diffArray} from "../util/helpers";
 
 export type RecentNotebooks = {name: string, path: string}[];
 export type OpenNotebooks = string[]; // paths
