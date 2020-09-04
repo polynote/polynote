@@ -401,7 +401,7 @@ class KernelTasksEl {
                 task.className = 'task';
                 task.classList.add(statusClass);
                 if (statusClass === "complete") {
-                    setTimeout(() => {
+                    window.setTimeout(() => {
                         this.dispatcher.dispatch(new RemoveTask(id))
                     }, 100);
                 }

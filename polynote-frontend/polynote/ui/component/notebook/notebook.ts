@@ -215,10 +215,10 @@ export class Notebook {
             })
         }).then((cellId: number) => {
             return new Promise(resolve => {
-                const interval = setInterval(() => {
+                const interval = window.setInterval(() => {
                     const maybeCell = this.cells[cellId]?.cell
                     if (maybeCell && this.el.contains(maybeCell.el)) {
-                        clearInterval(interval)
+                        window.clearInterval(interval)
                         resolve(cellId)
                     }
                 }, 100)

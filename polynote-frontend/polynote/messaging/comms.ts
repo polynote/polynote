@@ -101,7 +101,7 @@ export class SocketSession extends EventTarget {
             }
         })
 
-        this.pingIntervalId = setInterval(() => {
+        this.pingIntervalId = window.setInterval(() => {
             ping()
         }, interval)
     }
