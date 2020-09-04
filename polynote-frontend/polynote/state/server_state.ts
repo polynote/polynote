@@ -37,7 +37,7 @@ export interface ServerState {
     sparkTemplates: SparkPropertySet[]
     // ephemeral states
     currentNotebook?: string,
-    pendingNotebook?: string
+    openNotebooks: string[]
 }
 
 export class ServerStateHandler extends StateHandler<ServerState> {
@@ -59,7 +59,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 serverCommit: "unknown",
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
-                currentNotebook: undefined
+                currentNotebook: undefined,
+                openNotebooks: []
             })
         }
         return ServerStateHandler.inst;
@@ -100,7 +101,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 serverCommit: "unknown",
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
-                currentNotebook: undefined
+                currentNotebook: undefined,
+                openNotebooks: []
             })
         }
     }

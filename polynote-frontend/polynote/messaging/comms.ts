@@ -39,6 +39,7 @@ window.addEventListener("beforeunload", closeAll);
 
 export class SocketSession extends EventTarget {
     private static inst: SocketSession;
+    private pingIntervalId: number;
 
     static get global() {
         if (!SocketSession.inst) {
@@ -100,7 +101,7 @@ export class SocketSession extends EventTarget {
             }
         })
 
-        setInterval(() => {
+        this.pingIntervalId = setInterval(() => {
             ping()
         }, interval)
     }
@@ -212,6 +213,7 @@ export class SocketSession extends EventTarget {
             }
             this.listeners = {};
             this.socket = undefined;
+            clearInterval(this.pingIntervalId)
             this.dispatchEvent(new CustomEvent('close'));
         }
     }

@@ -20,12 +20,28 @@ export class Tabs {
 
         this.addHome()
 
+        ServerStateHandler.get.view("openNotebooks").addObserver(nbs => {
+            if (nbs) {
+                nbs.forEach(path => {
+                    if (this.getTab(path) === undefined && path !== "home") {
+                        const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
+                        if (nbInfo?.info) {
+                            this.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
+                        }
+                    }
+                })
+            } else {
+                Object.keys(this.tabs).forEach(tab => this.remove(tab))
+            }
+        })
+
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             if (path) {
                 if (this.getTab(path) === undefined && path !== "home") {
                     const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
                     if (nbInfo?.info) {
                         this.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
+                        this.activate(path)
                     }
                 } else {
                     this.activate(path)
@@ -75,8 +91,6 @@ export class Tabs {
 
             this.tabs[path] = {tab, content, handler, obs};
         }
-
-        this.activate(path);
     }
 
     activate(path: string) {

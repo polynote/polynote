@@ -1,5 +1,5 @@
 import {
-    arrDelete, arrDeleteItem,
+    arrDelete, arrDeleteFirstItem,
     arrInsert,
     arrReplace,
     changedKeys, collect, deepEquals,
@@ -140,10 +140,10 @@ describe("arrDelete", () => {
 
 describe("arrDeleteItem", () => {
     it("deletes the element of an array matching the provided item", () => {
-        expect(arrDeleteItem([0, 1, 2, 3, 4], 2)).toEqual([0, 1, 3, 4])
-        expect(arrDeleteItem([0, 1, 2, 3, 4], 0)).toEqual([1, 2, 3, 4])
-        expect(arrDeleteItem([0, 1, 2, 3, 4], 4)).toEqual([0, 1, 2, 3])
-        expect(arrDeleteItem([0, 1, 2, 3, 4], 100)).toEqual([0, 1, 2, 3, 4])
+        expect(arrDeleteFirstItem([0, 1, 2, 3, 4], 2)).toEqual([0, 1, 3, 4])
+        expect(arrDeleteFirstItem([0, 1, 2, 3, 4], 0)).toEqual([1, 2, 3, 4])
+        expect(arrDeleteFirstItem([0, 1, 2, 3, 4], 4)).toEqual([0, 1, 2, 3])
+        expect(arrDeleteFirstItem([0, 1, 2, 3, 4], 100)).toEqual([0, 1, 2, 3, 4])
     })
 })
 

@@ -140,10 +140,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         ...s,
                         kernel: {
                             ...s.kernel,
-                            tasks: {
-                                ...s.kernel.tasks,
-                                ...taskMap,
-                            }
+                            tasks: taskMap
                         }
                     }
                 })

@@ -201,8 +201,6 @@ export class Notebook {
      * Wait for a specific cell to be loaded. Since we load cells lazily, we might get actions for certain cells
      * (e.g., highlighting them) before they have been loaded by the page.
      *
-     * Resolves during the next animation frame, which ensures that the cell has been painted, etc.
-     *
      * @returns the id of the cell, useful if you pass this Promise somewhere else.
      */
     private waitForCell(cellId: number): Promise<number> {
@@ -214,6 +212,16 @@ export class Notebook {
                         resolve(cellId)
                     })
                 }
+            })
+        }).then((cellId: number) => {
+            return new Promise(resolve => {
+                const interval = setInterval(() => {
+                    const maybeCell = this.cells[cellId]?.cell
+                    if (maybeCell && this.el.contains(maybeCell.el)) {
+                        clearInterval(interval)
+                        resolve(cellId)
+                    }
+                }, 100)
             })
         })
     }

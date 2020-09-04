@@ -4,7 +4,7 @@ import {
     CreateNotebook, DeleteNotebook,
     LoadNotebook, RenameNotebook,
     RequestNotebooksList,
-    ServerMessageDispatcher
+    ServerMessageDispatcher, SetSelectedNotebook
 } from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {diffArray, removeKey} from "../../util/helpers";
@@ -471,7 +471,8 @@ export class LeafEl {
 
     private getEl(leaf: Leaf) {
         return a(['name'], `notebooks/${leaf.fullPath}`, [span([], [leaf.value])], { preventNavigate: true })
-            .click(evt => this.dispatcher.dispatch(new LoadNotebook(leaf.fullPath)))
+            .click(evt => this.dispatcher.loadNotebook(leaf.fullPath)
+                .then(() => this.dispatcher.dispatch(new SetSelectedNotebook(leaf.fullPath))))
     }
 }
 

@@ -18,7 +18,7 @@ import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_sta
 import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
 import {About} from "../ui/component/about";
 import {ValueInspector} from "../ui/component/value_inspector";
-import {arrDeleteItem, collect, deepEquals, equalsByKey, partition, removeKey} from "../util/helpers";
+import {arrDeleteFirstItem, collect, deepEquals, diffArray, equalsByKey, partition, removeKey} from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
 import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
@@ -556,6 +556,10 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 })
             }
         })
+
+        this.handler.view("openNotebooks").addObserver(nbs => {
+            OpenNotebooksHandler.updateState(() => nbs)
+        })
     }
 
     dispatch(action: UIAction): void {
@@ -606,26 +610,35 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     if (! s.notebooks[path])  {
                         notebooks = {...notebooks, [path]: ServerStateHandler.loadNotebook(path).loaded}
                     }
-                    if (open && ! this.openNotebooks.includes(path)) {
-                        this.openNotebooks = [...this.openNotebooks, path]
-                    }
                     return {
                         ...s,
-                        currentNotebook: open ? path : s.currentNotebook,
-                        notebooks: notebooks
+                        notebooks: notebooks,
+                        openNotebooks: open && !s.openNotebooks.includes(path) ? [...s.openNotebooks, path] : s.openNotebooks
                     };
                 })
             })
             .when(CreateNotebook, (path, content) => {
-                const obs = this.socket.addMessageListener(messages.CreateNotebook, (path, content) => {
-                    this.socket.removeMessageListener(obs)
-                    this.loadNotebook(path, true)
-                })
+                const waitForNotebook = (nbPath: string) => {
+                    const nbs = this.handler.view("notebooks")
+                    nbs.addObserver((current, prev) => {
+                        const [added, _] = diffArray(Object.keys(current), Object.keys(prev))
+                        added.forEach(newNb => {
+                            if (newNb.includes(nbPath)) {
+                                nbs.dispose()
+                                this.loadNotebook(newNb, true).then(() => {
+                                    this.dispatch(new SetSelectedNotebook(newNb))
+                                })
+                            }
+                        })
+                    })
+                }
                 if (path) {
                     this.socket.send(new messages.CreateNotebook(path, content))
+                    waitForNotebook(path)
                 } else {
                     new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create').show().then(newPath => {
                         this.socket.send(new messages.CreateNotebook(newPath, content))
+                        waitForNotebook(newPath)
                     })
                 }
             })
@@ -652,14 +665,14 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             })
             .when(CloseNotebook, (path) => {
                 ServerStateHandler.closeNotebook(path)
-                this.openNotebooks = arrDeleteItem(this.openNotebooks, path)
                 this.handler.updateState(s => {
                     return {
                         ...s,
                         notebooks: {
                             ...s.notebooks,
                             [path]: false
-                        }
+                        },
+                        openNotebooks: arrDeleteFirstItem(s.openNotebooks, path)
                     }
                 })
             })
@@ -691,24 +704,15 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         return new Promise(resolve => {
             this.dispatch(new LoadNotebook(path, open))
             const info = ServerStateHandler.getOrCreateNotebook(path)
-            const loading = info.handler.addObserver(() => {
+            const checkIfLoaded = () => {
                 const maybeLoaded = ServerStateHandler.getOrCreateNotebook(path)
                 if (maybeLoaded.loaded && maybeLoaded.info) {
                     info.handler.removeObserver(loading);
                     resolve(maybeLoaded)
                 }
-            })
-        })
-    }
-
-    private _openNotebooks: string[] = [];
-    private get openNotebooks() {
-        return this._openNotebooks;
-    }
-    private set openNotebooks(tabs: string[]) {
-        this._openNotebooks = tabs;
-        OpenNotebooksHandler.updateState(() => {
-            return this._openNotebooks;
+            }
+            const loading = info.handler.addObserver(checkIfLoaded)
+            checkIfLoaded()
         })
     }
 }
