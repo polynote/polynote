@@ -62,8 +62,3 @@ export function setTheme(theme: string) {
 
 // set the initial theme based on preferences
 setTheme(preferences.get("Theme").value as string);
-
-// change the theme when the preference is changed
-preferences.addPreferenceListener("Theme", (oldValue, newValue) => {
-    setTheme(newValue.value as string);
-});
