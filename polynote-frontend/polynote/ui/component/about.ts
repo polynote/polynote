@@ -170,6 +170,11 @@ export class About extends FullScreenModal {
         }
         storageInfoEl.appendChild(storageTable);
 
+        // change the theme when the preference is changed
+    preferences.addPreferenceListener("Theme", (oldValue, newValue) => {
+        setTheme(newValue.value as string);
+    });
+
         return el;
     }
 
