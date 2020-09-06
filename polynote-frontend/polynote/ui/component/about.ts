@@ -170,6 +170,11 @@ export class About extends FullScreenModal {
         }
         storageInfoEl.appendChild(storageTable);
 
+        // bind theme switch listener
+        preferences.addPreferenceListener("Theme", (oldValue, newValue) => {
+            setTheme(newValue.value as string);
+        });
+        
         return el;
     }
 
