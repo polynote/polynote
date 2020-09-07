@@ -5,6 +5,7 @@ import {FullScreenModal} from "./modal";
 import {TabNav} from "./tab_nav";
 import {getHotkeys} from "../util/hotkeys";
 import {preferences, storage} from "../util/storage";
+import {setTheme} from "../../main";
 import * as monaco from "monaco-editor";
 import {KernelCommand, LoadNotebook, RunningKernels, ServerVersion, UIMessageRequest} from "../util/ui_event";
 import {KernelBusyState} from "../../data/messages";
