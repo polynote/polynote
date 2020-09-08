@@ -1168,11 +1168,11 @@ class CodeCellOutput extends Disposable {
     }
 
     private clearOutput() {
+        this.clearErrors();
+        [...this.cellOutputDisplay.children].forEach(child => this.cellOutputDisplay.removeChild(child));
         this.cellOutputDisplay.innerHTML = "";
-        [...this.cellOutputDisplay.children].forEach(child => this.cellOutputDisplay.removeChild(child))
         this.stdOutEl = null;
         this.stdOutDetails = null;
-        this.clearErrors()
     }
 
     private clearErrors() {
