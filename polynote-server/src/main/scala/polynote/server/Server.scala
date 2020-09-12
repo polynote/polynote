@@ -3,7 +3,7 @@ package polynote.server
 import java.io.File
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Path, Paths}
+import java.nio.file.{Files, Path, Paths}
 import java.util.UUID
 
 import fs2.concurrent.Topic
@@ -169,8 +169,18 @@ class Server {
             .handleSome(serveStatic)
             .build
         }
+      
+      def initNotebookStorageDir() = {
+        val NotebookStorageDirPath = currentPath.resolve(config.storage.dir)
+        if (NotebookStorageDirPath.toFile.exists()) {
+          ZIO.unit
+        } else {
+          effectBlocking(Files.createDirectory(NotebookStorageDirPath))
+        }
+      }
 
       for {
+        _ <- initNotebookStorageDir().toManaged_
         authRoutes    <- IdentityProvider.authRoutes.toManaged_
         broadcastAll  <- Topic[Task, Option[Message]](None).toManaged_  // used to broadcast messages to all connected clients
         _             <- Env.addManagedLayer(NotebookManager.layer[BaseEnv with MainEnv with MainArgs](broadcastAll))
