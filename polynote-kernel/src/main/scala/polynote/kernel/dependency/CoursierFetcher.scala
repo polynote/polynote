@@ -235,16 +235,14 @@ object CoursierFetcher {
   }
 
   private def splitDependencies(deps: List[String]): RIO[Blocking, (List[String], List[URI])] = deps.map { dep =>
-    val asURI = new URI(dep)
-    for {
+    (for {
+      asURI <- ZIO(new URI(dep))
       supported <- DownloadableFileProvider.isSupported(asURI)
-    } yield {
-      Either.cond(
-        test = supported,
-        right = asURI,
-        left = dep // an unsupported protocol might be a dependency coordinate (like the `foo` in `foo:bar_2.11:1.2.3`)
-      )
-    }
+    } yield Either.cond(
+      test = supported,
+      right = asURI,
+      left = dep // an unsupported protocol might be a dependency coordinate (like the `foo` in `foo:bar_2.11:1.2.3`)
+    )).orElseSucceed(Left(dep)) // the URI constructor can throw
   }.sequence.map(_.separate)
 
   protected def cacheLocation(uri: URI): Path = {
