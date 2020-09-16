@@ -1,3 +1,10 @@
+# 0.3.12 (Sep 16, 2020)
+* Fix an issue with Python Data Classes
+* Fix issues importing Zeppelin notebooks
+* Fix some dependency resolution bugs (Thanks @JD557)
+* Fix an issue improperly decoding URI components (Thanks @akiyamaneko)
+* Other minor bug fixes
+
 # 0.3.11 (Jun 10, 2020)
 * Fix a regression which stopped certain error types from appearing in the UI
 * Check Notebook read permission when loading a notebook. 
