@@ -196,11 +196,11 @@ export class About extends FullScreenModal {
         return el;
     }
 
-    runningKernels() {
-        let content = div([], ['Looks like no kernels are running now!']);
-        const el = div(["running-kernels"], [
+    openKernels() {
+        let content = div([], ['Looks like no kernels are open now!']);
+        const el = div(["open-kernels"], [
             div([], [
-                h2([], ["Running Kernels"]),
+                h2([], ["Open Kernels"]),
                 content
             ])
         ]);
@@ -214,7 +214,7 @@ export class About extends FullScreenModal {
                 addToTop: false
             });
 
-            ServerStateHandler.runningNotebooks.forEach(([path, info]) => {
+            ServerStateHandler.openNotebooks.forEach(([path, info]) => {
                 const status = info.handler.state.kernel.status;
                 const statusEl = span([], [
                     span(['status'], [status]),
@@ -345,7 +345,7 @@ export class About extends FullScreenModal {
             'About': this.aboutMain.bind(this),
             'Hotkeys': this.hotkeys.bind(this),
             'Preferences': this.preferences.bind(this),
-            'Running Kernels': this.runningKernels.bind(this),
+            'Open Kernels': this.openKernels.bind(this),
             'Client-side Backups': this.clientBackups.bind(this),
         };
         const tabnav = new TabNav(tabs);

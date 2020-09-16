@@ -228,7 +228,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         })
     }
 
-    static get runningNotebooks(): [string, NotebookInfo][] {
+    static get openNotebooks(): [string, NotebookInfo][] {
         return Object.entries(ServerStateHandler.notebooks).reduce<[string, NotebookInfo][]>((acc, [path, info]) => {
             if (info.loaded) {
                 return [...acc, [path, info]]
