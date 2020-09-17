@@ -170,13 +170,8 @@ class Server {
             .build
         }
       
-      def initNotebookStorageDir() = {
-        val NotebookStorageDirPath = currentPath.resolve(config.storage.dir)
-        if (NotebookStorageDirPath.toFile.exists()) {
-          ZIO.unit
-        } else {
-          effectBlocking(Files.createDirectory(NotebookStorageDirPath))
-        }
+      def initNotebookStorageDir(): ZIO[Blocking, Throwable, Path] = {
+        effectBlocking(Files.createDirectories(currentPath.resolve(config.storage.dir)))
       }
 
       for {
