@@ -1,7 +1,7 @@
 FROM openjdk:8-slim-buster
 
 ARG POLYNOTE_VERSION
-ARG SCALA_VERSION="2.11"
+ARG SCALA_VERSION
 ARG DIST_TAR="polynote-dist.tar.gz"
 
 WORKDIR /opt
