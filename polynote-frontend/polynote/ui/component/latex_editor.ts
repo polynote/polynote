@@ -138,15 +138,21 @@ export class LaTeXEditor extends UIMessageTarget {
             }
 
             this.dispose();
+            this.enableEquationButton();
         } else if (evt.key === 'Escape' || evt.key === 'Cancel') {
             if (parent && this.deleteOnCancel) {
                 parent.removeChild(this.outputEl);
                 parent.dispatchEvent(new CustomEvent('input'));
             }
             this.dispose();
+            this.enableEquationButton();
         }
     }
 
+    enableEquationButton() {
+        (document.getElementsByClassName('equation')[0] as HTMLButtonElement).disabled = false;
+    }
+    
     dispose() {
         this.input.removeEventListener('input', this.inputHandler);
         this.input.removeEventListener('keydown', this.keyHandler);
