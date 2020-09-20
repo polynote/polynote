@@ -207,7 +207,8 @@ class PythonInterpreter private[python] (
 
   def init(state: State): RIO[InterpreterEnv, State] = for {
     globals <- getValue("globals().copy()")
-    _       <- exec(setup)
+    supportStatus <- isFutureAnnotationsSupported
+    _ <- exec(setup(supportStatus))
     _       <- exec(matplotlib)
     scope   <- populateGlobals(state)
     _       <- jep { _ =>
@@ -239,11 +240,27 @@ class PythonInterpreter private[python] (
   protected[python] def getValue(name: String): Task[PyObject] = jep(_.getValue(name, classOf[PyObject]))
 
 
-  protected def setup: String =
+  protected def isFutureAnnotationsSupported: Task[Boolean] =
+    jep {
+      jep =>
+        // https://www.python.org/dev/peps/pep-0563/ require python 3.7
+        jep.eval("import sys")
+        jep.getValue("sys.version_info >= (3,7)",
+          classOf[java.lang.Boolean]
+        ).booleanValue
+    }
+  
+  protected def importFutureAnnotations: String =
     """
       |# This import enables postponed evaluation of annotations, which is needed for data classes and other type hints
       |# to work properly. For more details, see: https://www.python.org/dev/peps/pep-0563/
       |from __future__ import annotations
+      |""".stripMargin
+  
+  
+  protected def setup(isFutureAnnotationsSupported: Boolean): String =
+     (if (isFutureAnnotationsSupported) importFutureAnnotations else "") +
+      """
       |try:
       |    import os, sys, ast, jedi, shutil
       |    from pathlib import Path
