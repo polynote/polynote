@@ -208,7 +208,7 @@ class PythonInterpreter private[python] (
   def init(state: State): RIO[InterpreterEnv, State] = for {
     globals <- getValue("globals().copy()")
     supportStatus <- isFutureAnnotationsSupported
-    _ <- exec(setup(supportStatus))
+    _       <- exec(setup(supportStatus))
     _       <- exec(matplotlib)
     scope   <- populateGlobals(state)
     _       <- jep { _ =>
