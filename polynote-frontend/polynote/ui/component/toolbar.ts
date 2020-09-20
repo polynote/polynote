@@ -237,7 +237,10 @@ class TextToolbarUI extends UIMessageTarget {
             elems: [
                 iconButton(["image"], "Insert image", "image", "Image").disable().withKey('alwaysDisabled', true),
                 this.equationButton = button(["equation"], {title: "Insert/edit equation"}, "𝝨")
-                    .click(() => LaTeXEditor.forSelection()!.show())
+                    .click(() => {
+                        this.equationButton.disabled = true;
+                        LaTeXEditor.forSelection()!.show()
+                    })
                     .withKey('getState', () => {
                         const selection = document.getSelection()!;
                         if (selection?.focusNode?.childNodes) {
