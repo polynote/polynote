@@ -1813,6 +1813,10 @@ button {
     justify-content: flex-start;
     padding-top: 2px;
 
+    // Scroll when there are too many tabs. TODO: this is a bit ugly, I think we need a nicer way to scroll this.
+    overflow-x: scroll;
+    height: fit-content;
+
     &:last-child:after {
       border-bottom-width: 1px;
       border-bottom-style: solid;
@@ -2142,6 +2146,7 @@ button.dialog-button {
   font-size: 12pt;
   padding: 2em;
   line-height: 1.5;
+  overflow-y: scroll;
 
   .recent-notebooks li {
     span {

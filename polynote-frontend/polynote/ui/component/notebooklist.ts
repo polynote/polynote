@@ -471,8 +471,12 @@ export class LeafEl {
 
     private getEl(leaf: Leaf) {
         return a(['name'], `notebooks/${leaf.fullPath}`, [span([], [leaf.value])], { preventNavigate: true })
-            .click(evt => this.dispatcher.loadNotebook(leaf.fullPath)
-                .then(() => this.dispatcher.dispatch(new SetSelectedNotebook(leaf.fullPath))))
+            .click(evt => {
+                evt.preventDefault();
+                evt.stopPropagation();
+                this.dispatcher.loadNotebook(leaf.fullPath)
+                    .then(() => this.dispatcher.dispatch(new SetSelectedNotebook(leaf.fullPath)))
+            })
     }
 }
 
