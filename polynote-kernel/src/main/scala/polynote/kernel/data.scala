@@ -273,3 +273,6 @@ final case class KernelError(err: Throwable) extends KernelStatusUpdate with Alw
 object KernelError extends KernelStatusUpdateCompanion[KernelError](7) {
   implicit val codec: Codec[KernelError] = RuntimeError.throwableWithCausesCodec.xmap(new KernelError(_), _.err)
 }
+
+final case class CellStatusUpdate(cellID: CellID, status: TaskStatus) extends KernelStatusUpdate with AlwaysRelevant
+object CellStatusUpdate extends KernelStatusUpdateCompanion[CellStatusUpdate](8)

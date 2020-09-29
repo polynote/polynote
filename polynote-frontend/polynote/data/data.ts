@@ -10,7 +10,7 @@ export class CellMetadata {
         return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.executionInfo];
     }
 
-    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly executionInfo?: ExecutionInfo) {}
+    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly executionInfo: ExecutionInfo | null = null) {}
 
     copy(metadata: Partial<CellMetadata>) {
         const disableRun = metadata.disableRun ?? this.disableRun;

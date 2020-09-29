@@ -7,10 +7,10 @@ import {
 
 import {ServerErrorWithCause, Output, PosRange, Result} from './result'
 import {StreamingDataRepr} from "./value_repr";
-import {isEqual} from "../util/functions";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig, SparkPropertySet} from "./data";
 import {ContentEdit} from "./content_edit";
-import {Left, Right} from "./types";
+import {Left, Right} from "./codec_types";
+import {deepEquals} from "../util/helpers";
 
 export abstract class Message extends CodecContainer {
     static codec: Codec<Message>;
@@ -334,13 +334,15 @@ export const TaskStatus = Object.freeze({
     Error: 3
 });
 
+type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus];
+
 export class TaskInfo {
     static codec = combined(tinyStr, tinyStr, shortStr, uint8, uint8, optional(tinyStr)).to(TaskInfo);
     static unapply(inst: TaskInfo): ConstructorParameters<typeof TaskInfo> {
         return [inst.id, inst.label, inst.detail, inst.status, inst.progress, inst.parent];
     }
 
-    constructor(readonly id: string, readonly label: string, readonly detail: string, readonly status: number,
+    constructor(readonly id: string, readonly label: string, readonly detail: string, readonly status: TaskStatus,
                 readonly progress: number, readonly parent?: string) {
         Object.freeze(this);
     }
@@ -360,6 +362,7 @@ export class UpdatedTasks extends KernelStatusUpdate {
     }
 }
 
+export type KernelStatusString = 'busy' | 'idle' | 'dead' | 'disconnected';
 export class KernelBusyState extends KernelStatusUpdate {
     static codec = combined(bool, bool).to(KernelBusyState);
     static get msgTypeId() { return 2; }
@@ -371,6 +374,12 @@ export class KernelBusyState extends KernelStatusUpdate {
     constructor(readonly busy: boolean, readonly alive: boolean) {
         super();
         Object.freeze(this);
+    }
+
+    get asStatus(): KernelStatusString {
+        if (this.busy) return 'busy'
+        else if (this.alive) return 'idle'
+        else return 'dead'
     }
 }
 
@@ -444,6 +453,20 @@ export class KernelError extends KernelStatusUpdate {
     }
 }
 
+export class CellStatusUpdate extends KernelStatusUpdate {
+    static codec = combined(int16, uint8).to(CellStatusUpdate);
+    static get msgTypeId() { return 8; }
+
+    static unapply(inst: CellStatusUpdate): ConstructorParameters<typeof CellStatusUpdate> {
+        return [inst.cellId, inst.status];
+    }
+
+    constructor(readonly cellId: number, readonly status: TaskStatus) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 KernelStatusUpdate.codecs = [
     UpdatedSymbols,    // 0
     UpdatedTasks,      // 1
@@ -453,6 +476,7 @@ KernelStatusUpdate.codecs = [
     PresenceUpdate,    // 5
     PresenceSelection, // 6
     KernelError,       // 7
+    CellStatusUpdate,  // 8
 ];
 
 KernelStatusUpdate.codec = discriminated(
@@ -712,7 +736,7 @@ export class ModifyStream extends Message {
         if (!(other instanceof ModifyStream) || other.fromHandle !== this.fromHandle)
             return false;
 
-        return isEqual(this.ops, other.ops);
+        return deepEquals(this.ops, other.ops);
     }
 }
 
@@ -806,6 +830,19 @@ export class CurrentSelection extends Message {
     }
 }
 
+export class KeepAlive extends Message {
+    static codec = combined(uint8).to(KeepAlive);
+    static get msgTypeId() { return 32; }
+    static unapply(inst: KeepAlive): ConstructorParameters<typeof KeepAlive> {
+        return [inst.payload];
+    }
+
+    constructor(readonly payload: number) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 Message.codecs = [
     Error,            // 0
     LoadNotebook,     // 1
@@ -839,12 +876,17 @@ Message.codecs = [
     CreateComment,    // 29
     UpdateComment,    // 30
     DeleteComment,    // 31
+    KeepAlive,        // 32
 ];
 
 
 Message.codec = discriminated(
     uint8,
-    (msgTypeId) => Message.codecs[msgTypeId].codec,
+    (msgTypeId) => {
+        const maybeMessage = Message.codecs[msgTypeId]
+        if (maybeMessage) return maybeMessage.codec
+        else throw new globalThis.Error(`Unable to find codec for id ${msgTypeId}`)
+    },
     (msg) => (msg.constructor as typeof Message).msgTypeId
 );
 

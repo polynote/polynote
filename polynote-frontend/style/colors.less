@@ -514,6 +514,11 @@ button {
 
 
   }
+
+  .vim-status {
+    border-color: @ui-border;
+    background: @ui-panel-bg;
+  }
 }
 
 .tree-view {
@@ -558,16 +563,15 @@ button {
   }
 }
 
-.notebooks-list {
+.ui-panel-content {
   border-color: @ui-border;
+  background: @ui-panel-bg;
 
-  .ui-panel-content {
-    background: @ui-panel-bg;
-  }
-
-  &.highlight {
-    .tree-view {
-      border-color: green;
+  .notebooks-list {
+    &.highlight {
+      .tree-view {
+        border-color: green;
+      }
     }
   }
 }
@@ -824,6 +828,19 @@ button.dialog-button {
     &:not(:first-child) {
       border-top-color: @ui-border;
     }
+  }
+}
+
+.link-component {
+  background: @ui-border-light;
+  box-shadow: 0px 0px 5px @ui-border-dark;
+
+  a {
+    color: @default-link-color;
+  }
+
+  :visited {
+    color: @default-link-color;
   }
 }
 

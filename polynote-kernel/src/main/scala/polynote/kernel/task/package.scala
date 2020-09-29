@@ -124,10 +124,10 @@ package object task {
           imDone        <- Promise.make[Throwable, Unit]
           _             <- readyQueue.offer((myTurn, imDone))
           runTask        = (myTurn.await *> statusRef.update(_.running) *> taskBody).ensuring(imDone.succeed(())).onTermination(fail)
-          taskFiber     <- runTask.forkDaemon
+          taskFiber     <- runTask.ensuring(remove).forkDaemon
           descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
           _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
-        } yield taskFiber.join.ensuring(remove)
+        } yield taskFiber.join
       }
 
       private def runImpl[R <: CurrentTask, A, R1 >: R <: Has[_]](

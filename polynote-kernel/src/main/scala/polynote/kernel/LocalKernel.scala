@@ -2,29 +2,28 @@ package polynote.kernel
 
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.concurrent.Ref
-import cats.syntax.traverse._
 import cats.instances.list._
+import cats.syntax.traverse._
 import fs2.concurrent.SignallingRef
 import polynote.kernel.Kernel.InterpreterNotStarted
 import polynote.kernel.dependency.CoursierFetcher
-import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask, Env, PublishResult, PublishStatus}
+import polynote.kernel.environment._
 import polynote.kernel.interpreter.State.Root
-import polynote.kernel.interpreter.{CellExecutor, Interpreter, State}
 import polynote.kernel.interpreter.scal.ScalaInterpreter
+import polynote.kernel.interpreter.{CellExecutor, Interpreter, State}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.RefMap
 import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
-import polynote.runtime.{LazyDataRepr, ReprsOf, StreamingDataRepr, StringRepr, TableOp, UpdatingDataRepr, ValueRepr}
+import polynote.runtime._
 import scodec.bits.ByteVector
-import zio.{Promise, RIO, Task, ZIO, ZLayer}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.interop.catz._
+import zio.{Promise, RIO, Task, ZIO, ZLayer}
 
 
 class LocalKernel private[kernel] (
@@ -35,10 +34,10 @@ class LocalKernel private[kernel] (
   closed: Promise[Throwable, Unit]
 ) extends Kernel {
 
-
   def currentTime: ZIO[Clock, Nothing, Long] = ZIO.accessM[Clock](_.get.currentTime(TimeUnit.MILLISECONDS))
 
-  override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] =
+  override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = {
+    PublishStatus(CellStatusUpdate(id, Queued)) *>
     TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
       currentTime.flatMap {
         startTime =>
@@ -47,6 +46,7 @@ class LocalKernel private[kernel] (
 
           val run = for {
             _             <- busyState.update(_.setBusy)
+            _             <- PublishStatus(CellStatusUpdate(id, Running))
             notebook      <- CurrentNotebook.get
             cell          <- ZIO(notebook.cell(id))
             interpreter   <- getOrLaunch(cell.language, CellID(0))
@@ -59,22 +59,29 @@ class LocalKernel private[kernel] (
             initialState   = State.id(id, prevState)                                                                    // run the cell while capturing outputs
             resultState   <- (interpreter.run(cell.content.toString, initialState).provideSomeLayer(CellExecutor.layer(scalaCompiler.classLoader)) >>= updateValues)
               .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
-            _             <- publishEndTime
             _             <- updateState(resultState)
             _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
+            _             <- publishEndTime
+            _             <- PublishStatus(CellStatusUpdate(id, Complete))
+            notebook      <- CurrentNotebook.get
             _             <- busyState.update(_.setIdle)
           } yield ()
 
           run.provideSomeLayer(CurrentRuntime.layer(id)).onInterrupt { _ =>
             PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
+            PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
             busyState.update(_.setIdle).orDie *>
             publishEndTime.orDie
           }.catchAll {
             err =>
-              PublishResult(ErrorResult(err)) *> busyState.update(_.setIdle) *> publishEndTime.orDie
+              PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
+                PublishResult(ErrorResult(err)) *>
+                busyState.update(_.setIdle) *>
+                publishEndTime.orDie
           }
       }
     }
+  }
 
   private def latestPredef(state: State) = state.rewindWhile(_.id >= 0) match {
     case s if s.id < 0 => s

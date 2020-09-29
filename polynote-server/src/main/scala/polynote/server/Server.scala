@@ -140,7 +140,8 @@ class Server {
 
       def serveFile(name: String, req: Request) = {
         val mimeType = Server.MimeTypes.get(name)
-        val gzipped = staticFilePath(s"$name.gz", staticPath).flatMap {
+
+        val gzipped = if (watchUI) ZIO.fail(()) else staticFilePath(s"$name.gz", staticPath).flatMap {
           path => Response.fromPath(path, req, contentType = mimeType, headers = List("Content-Encoding" -> "gzip")).map(_.withCacheControl)
         }
 
@@ -185,7 +186,7 @@ class Server {
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
               path.stripPrefix("/ws").stripPrefix("/") match {
                 case "" => authorize(req, SocketSession(inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output)))
-                case rest => authorize(req, NotebookSession.stream(rest, inputFrames).flatMap(output => Response.websocket(req, output)))
+                case rest => authorize(req, NotebookSession.stream(rest, inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output)))
               }
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {

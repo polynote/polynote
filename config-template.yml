@@ -21,6 +21,13 @@
 #  host: 127.0.0.1
 #  port: 8192
 
+###############################################################################
+# Security settings. Be careful with these!
+###############################################################################
+
+#security:
+#  websocket_key: only_for_testing
+
 
 ############################################################################################
 # Storage-related configuration. Locations are all relative to Polynote's working directory.

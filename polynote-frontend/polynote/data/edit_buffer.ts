@@ -5,9 +5,11 @@ interface Version {
     edits: NotebookUpdate[]
 }
 
+// An immutable holder of edits.
+// The old EditBuffer used to be mutable, maybe this deserves a better name now that it is immutable.
 export class EditBuffer {
 
-    constructor(public versions: Version[] = []) {}
+    constructor(readonly versions: Version[] = []) {}
 
     /**
      * Add edits corresponding to a version. The version should always increase.
@@ -18,7 +20,7 @@ export class EditBuffer {
         if (! (edits instanceof Array)) {
             edits = [edits]
         }
-        this.versions.push({version, edits});
+        return new EditBuffer([...this.versions, {version, edits}]);
     }
 
     /**
@@ -26,9 +28,11 @@ export class EditBuffer {
      * @param until The earliest version to keep
      */
     discard(until: number) {
-        while (this.versions.length > 0 && this.versions[0].version < until) {
-            this.versions.shift();
+        const versions = [...this.versions];
+        while (versions.length > 0 && versions[0].version < until) {
+            versions.shift();
         }
+        return new EditBuffer(versions)
     }
 
     /**

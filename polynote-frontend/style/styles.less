@@ -32,11 +32,28 @@ body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
   font-size: 10pt;
   margin: 0;
-  padding: @toolbar-height 0 0;
 }
 
 #Logo {
 
+}
+
+.main-ui {
+  display: grid;
+  grid-template-areas: "header"
+                       "body";
+  grid-template-columns: 100%;
+  grid-template-rows: max-content 1fr;
+  overflow: hidden;
+  height: 100vh;
+
+  .header {
+    grid-area: header;
+  }
+  .body {
+    grid-area: body;
+    overflow: hidden;
+  }
 }
 
 .toolbar-container {
@@ -47,10 +64,9 @@ body {
 
   user-select: none;
 
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  .disabled {
+    pointer-events: none;
+  }
 
   .text {
     display: none;
@@ -72,15 +88,6 @@ body {
     float: right;
   }
 
-  /*.floating-menu {
-    border: 1px #c2c2c2 solid;
-    background: white;
-    position: absolute;
-    display: none;
-    padding: 4px;
-    user-select: text;
-  }*/
-
   .toolbar {
     //min-width: 120px;
     float: left;
@@ -96,7 +103,6 @@ body {
     }
 
     h3 {
-      position: absolute;
       bottom: 6px;
       font-size: 100%;
       font-weight: normal;
@@ -110,22 +116,6 @@ body {
         margin-left: 1em;
       }
     }
-
-    //.tool-group {
-    //  height: 35px;
-    //  line-height: 35px;
-    //  white-space: nowrap;
-    //  display: inline-block;
-    //  vertical-align: middle;
-    //  * {
-    //    vertical-align: middle;
-    //  }
-    //
-    //  & > button {
-    //    height: 35px;
-    //    display: inline-block;
-    //  }
-    //}
 
     .tool-group {
       height: 28px;
@@ -157,6 +147,20 @@ body {
         font-size: 14px;
         display: inline-block;
       }
+
+      .createLink {
+        &.active {
+          display: none
+        }
+      }
+
+      .unlink {
+        display: none;
+
+        &.active {
+          display: inherit;
+        }
+      }
     }
 
     .tool-group::before {
@@ -180,6 +184,7 @@ body {
   position: relative;
   display: grid;
   grid-template-columns: 1fr;
+  z-index: 1; // otherwise it goes behind the notebook list...
 
   &.open {
     border-radius: 4px;
@@ -285,6 +290,10 @@ body {
       border-bottom-width: 1px;
       border-bottom-style: solid;
 
+      &.disabled {
+        pointer-events: none;
+      }
+
       button {
         line-height: 1;
         background-size: 12px 12px;
@@ -354,7 +363,7 @@ body {
         .exec-start::before {
           content: "Ran on ";
         }
-        .exec-start::after {
+        .exec-duration::before {
           content: " took ";
         }
 
@@ -362,7 +371,7 @@ body {
           .exec-start::before {
             content: "Started at ";
           }
-          .exec-start::after {
+          .exec-duration::before {
             content: " running for ";
           }
         }
@@ -376,7 +385,7 @@ body {
 
     .cell-footer {
       display: none;
-      grid-template-columns: [vim] auto [exec-info] max-content;
+      grid-template-columns: [exec-info] max-content;
       grid-template-rows: auto;
       padding: 2px 4px 2px 4px;
       line-height: 1.5;
@@ -385,14 +394,6 @@ body {
       border-top-style: dashed;
     }
 
-    .vim-status {
-      white-space: pre;
-      font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
-
-      &.hide {
-        display: none !important;
-      }
-    }
   }
 
   &.code-cell:hover .cell-input-tools .options {
@@ -498,7 +499,7 @@ body {
       -ms-text-size-adjust: 100%;
       -webkit-text-size-adjust: 100%;
       line-height: 1.5;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      font-family: @text-fonts;
       font-size: 16px;
       word-wrap: break-word;
       border-left: 1px solid transparent;
@@ -605,10 +606,6 @@ body {
     }
 
     .markdown-body a {
-      text-decoration: none;
-    }
-
-    .markdown-body a:hover {
       text-decoration: underline;
     }
 
@@ -1170,7 +1167,6 @@ body {
     }
 
     .cell-output-display {
-      display: none;
       padding-top: 0.5em;
       padding-bottom: 0.5em;
       margin-bottom: 1em;
@@ -1178,6 +1174,10 @@ body {
       resize: vertical;
       position: relative;
       //background-color: @ui-background;
+
+      &:empty {
+        display: none;
+      }
 
       .output {
         padding-left: 2em;
@@ -1190,11 +1190,10 @@ body {
 
     }
   }
-}
 
-.vim-enabled.cell-container.code-cell .cell-input .cell-footer {
-  display: grid;
-  height: 1.5em;
+  &.errors .cell-output .cell-output-tools {
+    display: block;
+  }
 }
 
 button {
@@ -1277,12 +1276,20 @@ button.inspect.icon-button {
 }
 
 .notebook-content {
-  overflow-y: auto;
-  padding: 2px;
-  border-width: 1px;
-  border-style: solid;
-  border-top-width: 0;
-  border-top-style: none;
+  display: grid;
+  //grid-template-areas: "notebook"
+  //                     "vim";
+  //grid-template-columns: 100%;
+  //grid-template-rows: 1fr min-content;
+  overflow: hidden;
+
+  .notebook-cells {
+    //grid-area: notebook;
+    padding: 12pt;
+    padding-bottom: 50vh; // allow last cell to scroll up to midpoint
+    overflow-y: auto;
+  }
+
 }
 
 @keyframes fadeOut {
@@ -1345,6 +1352,8 @@ button.inspect.icon-button {
     display: inline-block;
     grid-area: body;
     overflow-y: auto;
+    border-width: 1px;
+    border-style: solid;
   }
 }
 
@@ -1557,6 +1566,19 @@ button.inspect.icon-button {
       display: none !important;
     }
   }
+
+  .loader {
+    display: none;
+  }
+
+  &.loading {
+    .kill, .start {
+      display: none !important;
+    }
+    .loader {
+      display: inline-block !important;
+    }
+  }
 }
 
 .drag-handle {
@@ -1697,11 +1719,7 @@ button {
 }
 
 .split-view {
-  position: absolute;
-  top: 68px;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  height: 100%;
   display: grid;
   grid-template-areas: "left leftdrag center rightdrag right";
   grid-template-columns: max-content 1px auto 1px max-content;
@@ -1782,14 +1800,22 @@ button {
 
 .tab-view {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-areas: "tabs"
+                       "notebook"
+                       "vim";
+  grid-template-rows: auto 1fr min-content;
 
   .tab-container {
+    grid-area: tabs;
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
     justify-content: flex-start;
     padding-top: 2px;
+
+    // Scroll when there are too many tabs. TODO: this is a bit ugly, I think we need a nicer way to scroll this.
+    overflow-x: scroll;
+    height: fit-content;
 
     &:last-child:after {
       border-bottom-width: 1px;
@@ -1832,6 +1858,28 @@ button {
       border-bottom: none;
     }
   }
+
+  .vim-status {
+    grid-area: vim;
+    white-space: pre;
+    font-family: 'Hasklig', 'Fira Code', 'Menlo', fixed;
+
+    width: auto;
+    border: solid 1px;
+    padding: 3px;
+    font-size: large;
+
+    &.status:empty {
+      height: 100px;
+      background: green;
+      display: none !important;
+    }
+
+    &.hide {
+      display: none !important;
+    }
+  }
+
 }
 
 .tree-view {
@@ -1952,8 +2000,6 @@ button {
 
 .notebooks-list {
   position: relative;
-  border-width: 1px;
-  border-style: solid;
   overflow: auto;
 
   .tree-view {
@@ -1972,6 +2018,16 @@ button {
         transition: all 200ms;
       }
     }
+  }
+
+  &.disabled {
+    pointer-events: none;
+  }
+}
+
+.notebooks-list-header {
+  &.disabled {
+    pointer-events: none;
   }
 }
 
@@ -2047,12 +2103,6 @@ button.dialog-button {
 }
 
 
-.notebook-cells {
-  position: relative;
-  padding: 12pt;
-  margin-bottom: 50vh; // allow last cell to scroll up to midpoint
-}
-
 .latex-editor {
   position: absolute;
 
@@ -2096,6 +2146,7 @@ button.dialog-button {
   font-size: 12pt;
   padding: 2em;
   line-height: 1.5;
+  overflow-y: scroll;
 
   .recent-notebooks li {
     span {
@@ -2642,6 +2693,10 @@ img.icon, svg.icon {
   height: 1em;
 }
 
+.hide {
+  display: none
+}
+
 // cell overlays
 .cell-overlay {
   position: absolute;
@@ -2751,6 +2806,7 @@ img.icon, svg.icon {
           align-self: center;
         }
       }
+
     }
 
     .comment-content {
@@ -2781,5 +2837,109 @@ img.icon, svg.icon {
 
   span { display: none; }
 }
+
+.link-component {
+  position: absolute;
+  padding: 4px;
+  border-radius: 4px;
+  margin-top: 4px;
+  font-family: @text-fonts;
+}
+
+/*
+Loader (adapted from https://github.com/lukehaas/css-loaders/blob/step2/less/loader.less)
+License follows:
+
+The MIT License (MIT)
+
+Copyright (c) 2014 Luke Haas
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
+// BEGIN loader code
+
+@dot-size: 12px;
+
+.loader,
+.loader:before,
+.loader:after {
+  border-radius: 50%;
+  width: @dot-size;
+  height: @dot-size;
+  -webkit-animation-fill-mode: both;
+  animation-fill-mode: both;
+  -webkit-animation: loader 1.8s infinite ease-in-out;
+  animation: loader 1.8s infinite ease-in-out;
+}
+
+.loader {
+  color: #000000;
+  font-size: 16px;
+  margin: 9px 12px;
+  position: relative;
+  text-indent: -9999em;
+  -webkit-transform: translateZ(0);
+  -ms-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-animation-delay: -0.16s;
+  animation-delay: -0.16s;
+  vertical-align: baseline;
+
+  &:before,
+  &:after {
+    content: '';
+    position: absolute;
+    top: 0;
+  }
+
+  &:before {
+    left: calc(-1.2 * @dot-size);
+    -webkit-animation-delay: -0.32s;
+    animation-delay: -0.32s;
+  }
+
+  &:after {
+    left: calc(1.2 * @dot-size);
+  }
+}
+
+@-webkit-keyframes loader {
+  0%,
+  80%,
+  100% {
+    box-shadow: 0 @dot-size 0 -1.3em;
+  }
+  40% {
+    box-shadow: 0 @dot-size 0 0;
+  }
+}
+
+@keyframes loader {
+  0%,
+  80%,
+  100% {
+    box-shadow: 0 @dot-size 0 -1.3em;
+  }
+  40% {
+    box-shadow: 0 @dot-size 0 0;
+  }
+}
+
+// END loader code
 
 @import "content";
