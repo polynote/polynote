@@ -502,6 +502,11 @@ class CodeCell extends Cell {
                     NotificationHandler.get.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
                         this.dispatcher.dispatch(new SetSelectedCell(this.id))
                     })
+                    // clear the execution duration updater if it hasn't been cleared already.
+                    if (this.execDurationUpdater) {
+                        window.clearInterval(this.execDurationUpdater);
+                        delete this.execDurationUpdater;
+                    }
                 }
             }
         }
@@ -742,8 +747,6 @@ class CodeCell extends Cell {
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
         const start = new Date(Number(executionInfo.startTs));
-        const endTs = executionInfo.endTs ?? Date.now();
-        const duration = Number(endTs) - Number(executionInfo.startTs);
         // clear display
         el.innerHTML = '';
         window.clearInterval(this.execDurationUpdater);
@@ -751,12 +754,18 @@ class CodeCell extends Cell {
 
         // populate display
         el.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
-        el.appendChild(span(['exec-duration'], [prettyDuration(duration)]));
         el.classList.add('output');
-        if (executionInfo.endTs === undefined || executionInfo.endTs === null) {
-            // update exec info every so often
-            if (this.execDurationUpdater === undefined) {
-                this.execDurationUpdater = window.setInterval(() => this.setExecutionInfo(el, executionInfo), 333)
+
+        if (this.state.running || executionInfo.endTs) {
+            const endTs = executionInfo.endTs ?? Date.now();
+            const duration = Number(endTs) - Number(executionInfo.startTs);
+            el.appendChild(span(['exec-duration'], [prettyDuration(duration)]));
+
+            if (executionInfo.endTs === undefined || executionInfo.endTs === null) {
+                // update exec info every so often
+                if (this.execDurationUpdater === undefined) {
+                    this.execDurationUpdater = window.setInterval(() => this.setExecutionInfo(el, executionInfo), 333)
+                }
             }
         }
     }
@@ -893,10 +902,8 @@ class CodeCell extends Cell {
 
     protected onSelected() {
         super.onSelected()
-        if (this.editorEl.contains(document.activeElement)) {
-            this.vim = VimStatus.get.activate(this.editor)
-            this.editor.focus()
-        }
+        this.vim = VimStatus.get.activate(this.editor)
+        this.editor.focus()
     }
 
     protected onDeselected() {

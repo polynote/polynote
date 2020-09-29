@@ -55,7 +55,13 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         kernel: {
                             ...s.kernel,
                             status: status
-                        }
+                        },
+                        cells: s.cells.map(cell => ({
+                            ...cell,
+                            running: undefined,
+                            queued: undefined,
+                            currentHighlight: undefined
+                        }))
                     }
                 })
             } else {
@@ -122,7 +128,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 ...s,
                 path: path,
                 cells: cellStates,
-                config: config ?? NotebookConfig.default,
+                config: {...s.config, config: config ?? NotebookConfig.default},
                 kernel: {
                     ...s.kernel,
                     symbols: [...s.kernel.symbols, ...results.flat()]
@@ -140,7 +146,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         ...s,
                         kernel: {
                             ...s.kernel,
-                            tasks: taskMap
+                            tasks: {...s.kernel.tasks, ...taskMap}
                         }
                     }
                 })
@@ -346,7 +352,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     .when(messages.UpdateConfig, (g, l, config: NotebookConfig) => {
                         return {
                             ...s,
-                            config
+                            config: {...s.config, config}
                         }
                     })
                     .when(messages.SetCellLanguage, (g, l, id: number, language: string) => {

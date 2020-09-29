@@ -31,6 +31,7 @@ export class CommentHandler extends Disposable {
     readonly commentRoots: Record<string, CommentRoot> = {};
     //                              range -> id
     readonly rootRanges: Record<string, string> = {};
+    private commentButton?: CommentButton;
 
     constructor(dispatcher: NotebookMessageDispatcher,
                 commentsState: StateView<Record<string, CellComment>>,
@@ -112,8 +113,6 @@ export class CommentHandler extends Disposable {
        handleComments(commentsState.state)
        commentsState.addObserver((current, old) => handleComments(current, old), this);
 
-       let commentButton: CommentButton | undefined = undefined;
-
        const handleSelection = (currentSelection?: PosRange) => {
            const model = editor.getModel();
            if (currentSelection && currentSelection.length > 0 && model) {
@@ -122,16 +121,16 @@ export class CommentHandler extends Disposable {
                    .find(r => r.equals(currentSelection));
                if (maybeEquals === undefined) {
                    // show the new comment button
-                   if (commentButton) commentButton.hide();
-                   commentButton = new CommentButton(dispatcher, editor, currentSelection, cellId);
-                   commentButton.show();
+                   if (this.commentButton) this.commentButton.hide();
+                   this.commentButton = new CommentButton(dispatcher, editor, currentSelection, cellId);
+                   this.commentButton.show();
                    return
                } // else the CommentRoot will handle showing itself.
            }
            // if we got here, we should hide the button
-           if (commentButton && !commentButton.el.contains(document.activeElement)) {
-               commentButton.hide();
-               commentButton = undefined;
+           if (this.commentButton && !this.commentButton.el.contains(document.activeElement)) {
+               this.commentButton.hide();
+               this.commentButton = undefined;
            }
        }
        handleSelection(currentSelection.state)
@@ -144,6 +143,7 @@ export class CommentHandler extends Disposable {
 
     hide() {
         Object.values(this.commentRoots).forEach(root => root.hide())
+        this.commentButton?.hide()
     }
 }
 

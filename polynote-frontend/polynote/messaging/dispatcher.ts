@@ -330,18 +330,24 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                             id = state.cells[nextIdx]?.id;
                         }
                     }
-                    id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
-                    const activeCell = state.cells.find(cell => cell.id === id)
-                    return {
-                        ...state,
-                        activeCell: activeCell,
-                        cells: state.cells.map(cell => {
-                            return {
-                                ...cell,
-                                selected: cell.id === id,
-                                editing: cell.id === id && (options?.editing ?? false)
-                            }
-                        })
+                    if (id === undefined && (options?.relative !== undefined)) { // if ID is undefined, create cell above/below as needed
+                        this.insertCell(options.relative)
+                            .then(newId => this.dispatch(new SetSelectedCell(newId)))
+                        return NoUpdate
+                    } else {
+                        id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
+                        const activeCell = state.cells.find(cell => cell.id === id)
+                        return {
+                            ...state,
+                            activeCell: activeCell,
+                            cells: state.cells.map(cell => {
+                                return {
+                                    ...cell,
+                                    selected: cell.id === id,
+                                    editing: cell.id === id && (options?.editing ?? false)
+                                }
+                            })
+                        }
                     }
                 })
             })
@@ -447,6 +453,14 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(CloseNotebook, (path) => {
                 this.socket.close()
+            })
+            .when(ToggleNotebookConfig, open => {
+                this.handler.updateState(s => {
+                    return {
+                        ...s,
+                        config: {...s.config, open: (open ?? !s.config.open)}
+                    }
+                })
             })
     }
 
@@ -625,7 +639,8 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                         added.forEach(newNb => {
                             if (newNb.includes(nbPath)) {
                                 nbs.dispose()
-                                this.loadNotebook(newNb, true).then(() => {
+                                this.loadNotebook(newNb, true).then(nbInfo => {
+                                    nbInfo.info?.dispatcher.dispatch(new ToggleNotebookConfig(true))  // open config automatically for newly created notebooks.
                                     this.dispatch(new SetSelectedNotebook(newNb))
                                 })
                             }
@@ -1125,6 +1140,17 @@ export class SetSelectedNotebook extends UIAction {
 
     static unapply(inst: SetSelectedNotebook): ConstructorParameters<typeof SetSelectedNotebook> {
         return [inst.path];
+    }
+}
+
+export class ToggleNotebookConfig extends UIAction {
+    constructor(readonly open?: boolean) {
+        super();
+        Object.freeze(this);
+    }
+
+    static unapply(inst: ToggleNotebookConfig): ConstructorParameters<typeof ToggleNotebookConfig> {
+        return [inst.open];
     }
 }
 

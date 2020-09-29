@@ -140,7 +140,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 handler: new NotebookStateHandler({
                     path,
                     cells: [],
-                    config: NotebookConfig.default,
+                    config: {open: false, config: NotebookConfig.default},
                     errors: [],
                     kernel: {
                         symbols: [],

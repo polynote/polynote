@@ -35,9 +35,9 @@ export class Tabs {
             }
         })
 
-        ServerStateHandler.get.view("currentNotebook").addObserver(path => {
+        const handleCurrentNotebook = (path?: string) => {
             if (path) {
-                if (this.getTab(path) === undefined && path !== "home") {
+                if (path && this.getTab(path) === undefined && path !== "home") {
                     const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
                     if (nbInfo?.info) {
                         this.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
@@ -46,8 +46,12 @@ export class Tabs {
                 } else {
                     this.activate(path)
                 }
+            } else {
+                this.activate("home")
             }
-        })
+        }
+        ServerStateHandler.get.view("currentNotebook").addObserver(n => handleCurrentNotebook(n))
+        handleCurrentNotebook(ServerStateHandler.get.state.currentNotebook)
     }
 
     getTab(path: string) {

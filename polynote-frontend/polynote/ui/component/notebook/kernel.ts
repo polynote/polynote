@@ -337,36 +337,41 @@ class KernelTasksEl {
     }
 
     private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.dispatcher.dispatch(new RemoveTask(id))) {
-        const taskEl: KernelTask = Object.assign(div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
-            icon(['close-button'], 'times', 'close icon').click(() => remove()),
-            h4([], [label]),
-            div(['detail'], detail),
-            div(['progress'], [div(['progress-bar'], [])]),
-            div(['child-tasks'], [])
-        ]), {
-            labelText: label,
-            detailText: detail,
-            status: status,
-            childTasks: {}
-        });
+        // short-circuit if the task coming in is already completed.
+        if (status === TaskStatus.Complete) {
+            remove()
+        } else {
+            const taskEl: KernelTask = Object.assign(div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
+                icon(['close-button'], 'times', 'close icon').click(() => remove()),
+                h4([], [label]),
+                div(['detail'], detail),
+                div(['progress'], [div(['progress-bar'], [])]),
+                div(['child-tasks'], [])
+            ]), {
+                labelText: label,
+                detailText: detail,
+                status: status,
+                childTasks: {}
+            });
 
-        if (detail && typeof detail === "string") {
-            taskEl.attr('title', detail);
-        }
-
-        const container = (typeof parent !== "undefined" && (this.tasks[parent]?.querySelector('.child-tasks'))) || this.taskContainer;
-
-        if (container) {
-            this.setProgress(taskEl, progress);
-
-            let before = container.firstChild as KernelTask;
-            while (before?.status <= status) {
-                before = before.nextSibling as KernelTask;
+            if (detail && typeof detail === "string") {
+                taskEl.attr('title', detail);
             }
 
-            container.insertBefore(taskEl, before);
+            const container = (typeof parent !== "undefined" && (this.tasks[parent]?.querySelector('.child-tasks'))) || this.taskContainer;
 
-            this.tasks[id] = taskEl;
+            if (container) {
+                this.setProgress(taskEl, progress);
+
+                let before = container.firstChild as KernelTask;
+                while (before?.status <= status) {
+                    before = before.nextSibling as KernelTask;
+                }
+
+                container.insertBefore(taskEl, before);
+
+                this.tasks[id] = taskEl;
+            }
         }
     }
     private setProgress(el: KernelTask, progress: number) {

@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import cats.instances.list._
 import cats.syntax.either._
 import cats.syntax.traverse._
-import polynote.kernel.{BaseEnv, ClearResults, GlobalEnv, KernelBusyState, PresenceUpdate, Running, StreamThrowableOps, StreamingHandles, TaskInfo, UpdatedTasks}
+import polynote.kernel.{BaseEnv, ClearResults, Complete, GlobalEnv, KernelBusyState, PresenceUpdate, Running, StreamThrowableOps, StreamingHandles, TaskInfo, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.util.Publish
 import polynote.messages._
@@ -156,6 +156,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
     _       <- PublishMessage(nb.withoutResults)
     _       <- PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo.progress(0.5)))))
     _       <- sendCellResults(nb.results, taskInfo)
+    _       <- PublishMessage(KernelStatus(UpdatedTasks(List(taskInfo.done(Complete)))))
   } yield ()
 
   def sendNotebook: RIO[SessionEnv with PublishMessage, Unit] =

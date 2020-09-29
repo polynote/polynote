@@ -36,12 +36,13 @@ export interface CellState {
 
 export type CompletionHint = { cell: number, offset: number; completions: CompletionCandidate[] }
 export type SignatureHint = { cell: number, offset: number, signatures?: Signatures };
+export type NBConfig = {open: boolean, config: NotebookConfig}
 
 export interface NotebookState {
     // basic states
     path: string,
     cells: CellState[], // this is the canonical ordering of the cells.
-    config: NotebookConfig,
+    config: NBConfig,
     errors: ServerErrorWithCause[],
     kernel: KernelState,
     // version

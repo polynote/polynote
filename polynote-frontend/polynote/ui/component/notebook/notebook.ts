@@ -122,9 +122,9 @@ export class Notebook {
         handleCells(notebookState.state.cells)
         notebookState.view("cells").addObserver((newCells, oldCells) => handleCells(newCells, oldCells));
 
-        console.log("initial active cell ", this.notebookState.state.activeCell)
+        console.debug("initial active cell ", this.notebookState.state.activeCell)
         this.notebookState.view("activeCell").addObserver(cell => {
-            console.log("activeCell = ", cell)
+            console.debug("activeCell = ", cell)
             if (cell === undefined) {
                 VimStatus.get.hide()
             }

@@ -12,7 +12,7 @@ import {
     TagElement,
     textbox
 } from "../../tags";
-import {NotebookMessageDispatcher, UpdateConfig} from "../../../messaging/dispatcher";
+import {NotebookMessageDispatcher, ToggleNotebookConfig, UpdateConfig} from "../../../messaging/dispatcher";
 import {StateView} from "../../../state/state_handler";
 import {
     IvyRepository,
@@ -24,18 +24,20 @@ import {
 } from "../../../data/data";
 import {ServerStateHandler} from "../../../state/server_state";
 import {KernelStatusString} from "../../../data/messages";
+import {NBConfig} from "../../../state/notebook_state";
 
 export class NotebookConfigEl {
     readonly el: TagElement<"div">;
 
-    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateView<NotebookConfig>, kernelStateHandler: StateView<KernelStatusString>) {
+    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateView<NBConfig>, kernelStateHandler: StateView<KernelStatusString>) {
 
-        const dependencies = new Dependencies(stateHandler.view("dependencies"))
-        const exclusions = new Exclusions(stateHandler.view("exclusions"))
-        const resolvers = new Resolvers(stateHandler.view("repositories"))
-        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates", stateHandler);
-        const spark = new SparkConf(stateHandler.view("sparkConfig"), stateHandler.view("sparkTemplate"), serverTemplatesHandler)
-        const env = new EnvConf(stateHandler.view("env"))
+        const configState = stateHandler.view("config");
+        const dependencies = new Dependencies(configState.view("dependencies"))
+        const exclusions = new Exclusions(configState.view("exclusions"))
+        const resolvers = new Resolvers(configState.view("repositories"))
+        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates", configState);
+        const spark = new SparkConf(configState.view("sparkConfig"), configState.view("sparkTemplate"), serverTemplatesHandler)
+        const env = new EnvConf(configState.view("env"))
 
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
             const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, env.conf);
@@ -44,7 +46,7 @@ export class NotebookConfigEl {
         })
 
         this.el = div(['notebook-config'], [
-            h2(['config'], ['Configuration & dependencies']).click(() => this.el.classList.toggle('open')),
+            h2(['config'], ['Configuration & dependencies']).click(() => dispatcher.dispatch(new ToggleNotebookConfig())),
             div(['content'], [
                 dependencies.el,
                 resolvers.el,
@@ -54,7 +56,7 @@ export class NotebookConfigEl {
                 div(['controls'], [
                     saveButton,
                     button(['cancel'], {}, ['Cancel']).click(evt => {
-                        this.el.classList.remove("open");
+                        dispatcher.dispatch(new ToggleNotebookConfig(false))
                     })
                 ])
             ])
@@ -70,6 +72,14 @@ export class NotebookConfigEl {
                 } else {
                     saveButton.textContent = "Save & Restart"
                 }
+            }
+        })
+
+        stateHandler.view("open").addObserver(open => {
+            if (open) {
+                this.el.classList.add("open")
+            } else {
+                this.el.classList.remove("open")
             }
         })
     }
