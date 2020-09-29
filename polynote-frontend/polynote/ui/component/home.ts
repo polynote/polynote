@@ -1,5 +1,5 @@
 import {div, h2, h3, img, para, polynoteLogo, span, tag, TagElement} from "../tags";
-import {LoadNotebook, ServerMessageDispatcher} from "../../messaging/dispatcher";
+import {LoadNotebook, ServerMessageDispatcher, SetSelectedNotebook} from "../../messaging/dispatcher";
 import {RecentNotebooks, RecentNotebooksHandler} from "../../state/preferences";
 
 export class Home {
@@ -24,7 +24,7 @@ export class Home {
             recentNotebooks.innerHTML = "";
             recents.forEach(({name, path}) => {
                 recentNotebooks.appendChild(tag('li', ['notebook-link'], {}, [
-                    span([], [path]).click(() => dispatcher.dispatch(new LoadNotebook(path)))
+                    span([], [path]).click(() => dispatcher.loadNotebook(path).then(() => dispatcher.dispatch(new SetSelectedNotebook(path))))
                 ]))
             })
         }
