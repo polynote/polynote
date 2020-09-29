@@ -659,6 +659,7 @@ object ScalaCompiler {
     val cp = classPath ++ requiredPaths
 
     val settings = initial.copy()
+    settings.target.value = "jvm-1.8" // set Java8 by default
     settings.classpath.append(cp.map(_.getCanonicalPath).mkString(File.pathSeparator))
     settings.Yrangepos.value = true
     try {
