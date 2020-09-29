@@ -846,7 +846,7 @@ class CodeCell extends Cell {
             })
             .when("RunAndInsertBelow", () => {
                 this.dispatcher.runActiveCell()
-                this.dispatcher.insertCell("below")
+                this.dispatcher.insertCell("below").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
                 return true // preventDefault
             })
             .when("SelectPrevious", ifNoSuggestion(() => {
@@ -856,10 +856,10 @@ class CodeCell extends Cell {
                 this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
             }))
             .when("InsertAbove", ifNoSuggestion(() => {
-                this.dispatcher.insertCell("above")
+                this.dispatcher.insertCell("above").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
             }))
             .when("InsertBelow", ifNoSuggestion(() => {
-                this.dispatcher.insertCell("below")
+                this.dispatcher.insertCell("below").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
             }))
             .when("Delete", ifNoSuggestion(() => {
                 this.dispatcher.deleteCell()
