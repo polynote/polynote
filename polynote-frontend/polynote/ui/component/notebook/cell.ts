@@ -272,7 +272,7 @@ abstract class Cell extends Disposable {
     layout() {}
 }
 
-type ErrorMarker = {error: CompileErrors | RuntimeError, id: string, markers: IMarkerData[]};
+type ErrorMarker = {error: CompileErrors | RuntimeError, markers: IMarkerData[]};
 
 class CodeCell extends Cell {
     private readonly editor: IStandaloneCodeEditor;
@@ -587,12 +587,9 @@ class CodeCell extends Cell {
 
         this.onDispose.then(() => {
             this.commentHandler.dispose()
-            const model = this.editor.getModel();
-            if (model) {
-                monaco.editor.getModelMarkers({resource: model.uri}).forEach(marker => {
-                    monaco.editor.setModelMarkers(model, marker.owner, [])
-                })
-            }
+            this.getModelMarkers()?.forEach(marker => {
+                this.setModelMarkers([], marker.owner)
+            })
             this.editor.dispose()
         })
     }
@@ -603,11 +600,14 @@ class CodeCell extends Cell {
             return;
 
         // clear any error markers if present on the edited content
-        const keep = monaco.editor.getModelMarkers({owner: this.id.toString()}).filter(marker => {
-            const markerRange = new monaco.Range(marker.startLineNumber, marker.startColumn, marker.endLineNumber, marker.endColumn);
-            return event.changes.every(change => ! markerRange.containsRange(change.range))
-        })
-        monaco.editor.setModelMarkers(this.editor.getModel()!, this.id.toString(), keep);
+        const markers = this.getModelMarkers()
+        if (markers) {
+            const keep = markers.filter(marker => {
+                const markerRange = new monaco.Range(marker.startLineNumber, marker.startColumn, marker.endLineNumber, marker.endColumn);
+                return event.changes.every(change => ! markerRange.containsRange(change.range))
+            })
+            this.setModelMarkers(keep)
+        }
 
         const edits = event.changes.flatMap((contentChange) => {
             if (contentChange.rangeLength > 0 && contentChange.text.length > 0) {
@@ -699,30 +699,20 @@ class CodeCell extends Cell {
 
     private setErrorMarkers(error: RuntimeError | CompileErrors, markers: IMarkerData[]) {
         if (this.errorMarkers.find(e => deepEquals(e.error, error)) === undefined) {
-            const model = this.editor.getModel();
-            if (model) {
-                const id = this.id.toString() //`${this.id.toString()}_${error instanceof RuntimeError ? "runtimeError" : "compileError"}`
-                monaco.editor.setModelMarkers(model, id, markers)
-                this.errorMarkers.push({error, id, markers})
-            }
+            this.setModelMarkers(markers)
+            this.errorMarkers.push({error, markers})
         }
     }
 
     private removeErrorMarker(marker: ErrorMarker) {
         this.errorMarkers = this.errorMarkers.filter(m => m !== marker)
-        const model = this.editor.getModel();
-        if (model) {
-            monaco.editor.setModelMarkers(model, this.id.toString(), this.errorMarkers.flatMap(m => m.markers))
-        }
+        this.setModelMarkers(this.errorMarkers.flatMap(m => m.markers))
         this.dispatcher.dispatch(new RemoveCellError(this.id, marker.error))
     }
 
     private clearErrorMarkers(type?: "runtime" | "compiler") {
-        const model = this.editor.getModel();
-        if (model) {
-            const remove = this.errorMarkers.filter(marker => (type === "runtime" && marker.error instanceof RuntimeError) || (type === "compiler" && marker.error instanceof CompileErrors) || type === undefined )
-            remove.forEach(marker => this.removeErrorMarker(marker))
-        }
+        const remove = this.errorMarkers.filter(marker => (type === "runtime" && marker.error instanceof RuntimeError) || (type === "compiler" && marker.error instanceof CompileErrors) || type === undefined )
+        remove.forEach(marker => this.removeErrorMarker(marker))
     }
 
     private toggleCode() {
@@ -898,6 +888,22 @@ class CodeCell extends Cell {
 
     getCurrentSelection() {
         return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
+    }
+
+    get markerOwner() {
+        return `${this.path}-${this.id}`
+    }
+
+    getModelMarkers(): editor.IMarker[] | undefined {
+        const model = this.editor.getModel()
+        return model ? monaco.editor.getModelMarkers({resource: model.uri}) : undefined
+    }
+
+    setModelMarkers(markers: IMarkerData[], owner: string = this.markerOwner): void {
+        const model = this.editor.getModel()
+        if (model) {
+            monaco.editor.setModelMarkers(model, owner, markers)
+        }
     }
 
     protected onSelected() {
