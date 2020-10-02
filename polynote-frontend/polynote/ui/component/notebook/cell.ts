@@ -424,7 +424,7 @@ class CodeCell extends Cell {
                 this.clearErrorMarkers("runtime")
                 return undefined
             }
-        })
+        }, (errEl1: ErrorEl, errEl2: ErrorEl) => deepEquals(errEl1, errEl2, ["el"])) // remove `el` from equality check because dom elements are never equal.
         let cellOutput = new CodeCellOutput(dispatcher, cellState, compileErrorsState, runtimeErrorState);
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
@@ -1167,7 +1167,7 @@ class CodeCellOutput extends Disposable {
 
     setRuntimeError(error?: ErrorEl) {
         if (error) {
-            const runtimeError = div(['errors'], [blockquote(['error-report', 'Error'], [error.el])]);
+            const runtimeError = div(['errors'], [blockquote(['error-report', 'Error'], [error.el])]).click(e => e.stopPropagation());
             if (this.cellErrorDisplay === undefined) {
                 this.cellErrorDisplay = runtimeError;
                 this.cellOutputDisplay.appendChild(this.cellErrorDisplay)
