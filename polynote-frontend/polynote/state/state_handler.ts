@@ -76,14 +76,14 @@ export class StateView<S> extends Disposable {
     }
 
     // a child view and a one-way transformation.
-    mapView<K extends keyof S, T>(key: K, toT: (s: S[K]) => T | typeof NoUpdate): StateView<T | undefined> {
+    mapView<K extends keyof S, T>(key: K, toT: (s: S[K]) => T | typeof NoUpdate, tEquals: (t1?: T, t2?: T) => boolean = deepEquals): StateView<T | undefined> {
         const initialT = toT(this.state[key]);
         const mapView = new StateView(initialT === NoUpdate ? undefined : initialT);
         const obs = this.addObserver(s => {
             const observedVal = s[key];
             if (! this.compare(observedVal, mapView.state)) {
                 const t = toT(observedVal)
-                if (t !== NoUpdate && ! deepEquals(t, mapView.state)) {
+                if (t !== NoUpdate && ! tEquals(t, mapView.state)) {
                     mapView.setState(t)
                 }
             }

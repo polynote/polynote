@@ -2,8 +2,15 @@
 
 import * as fastEquals from 'fast-deep-equal/es6';
 
-// provide some types to deepEquals
-export function deepEquals<T>(a: T, b: T): boolean {
+export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
+    if (ignoreKeys && a && b) {
+        a = ignoreKeys.reduce((acc: T, key: keyof T) => {
+            return removeKey(acc, key)
+        }, a)
+        b = ignoreKeys.reduce((acc: T, key: keyof T) => {
+            return removeKey(acc, key)
+        }, b)
+    }
     return fastEquals(a, b)
 }
 

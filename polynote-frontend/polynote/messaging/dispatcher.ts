@@ -240,7 +240,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                         cellIds = state.cells.map(c => c.id)
                     }
 
-                    cellIds = collect(cellIds, id => state.cells[id].language !== "text" ? id: undefined);
+                    cellIds = collect(cellIds, id => state.cells.find(cell => cell.id === id)?.language !== "text" ? id : undefined);
 
                     const [clientCells, serverCells] = partition(cellIds, id => {
                         const cell = state.cells.find(c => c.id === id)
