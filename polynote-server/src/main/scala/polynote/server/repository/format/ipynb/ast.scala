@@ -15,6 +15,8 @@ import polynote.messages._
 import polynote.runtime.{MIMERepr, StringRepr}
 import polynote.server.repository.NotebookContent
 
+import scala.util.Try
+
 sealed trait JupyterCellType
 
 case object Markdown extends JupyterCellType
@@ -108,7 +110,15 @@ object JupyterOutput {
             .getOrElse(CompileErrors(Nil))
         }
       case Error(typ, message, trace) =>
-        RuntimeError(RecoveredException(message, typ))
+        val traceElements = trace.flatMap(el => {
+          Try {
+            val Array(declaringClass, methodName, fileName, lineNumber) = el.split(",")
+            new StackTraceElement(declaringClass, methodName, fileName, lineNumber.toInt)
+          }.toOption
+        }).toArray
+        val err = RecoveredException(message, typ)
+        err.setStackTrace(traceElements)
+        RuntimeError(err)
     }
   }
 
@@ -136,7 +146,7 @@ object JupyterOutput {
         case RecoveredException(msg, typ) => (typ, msg)
         case err => (err.getClass.getName, err.getMessage)
       }
-      Error(typ, Option(msg).getOrElse(""), Nil) :: Nil
+      Error(typ, Option(msg).getOrElse(""), err.getStackTrace.map(el => Seq(el.getClassName, el.getMethodName, el.getFileName, el.getLineNumber).mkString(",")).toList) :: Nil
 
     case ClearResults() => Nil
     case rv @ ResultValue(name, typeName, reprs, _, _, _, _) if rv.isCellResult =>
