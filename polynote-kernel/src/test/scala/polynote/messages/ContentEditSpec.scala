@@ -213,6 +213,17 @@ class ContentEditSpec extends FreeSpec with Matchers with ScalaCheckDrivenProper
             initial.withEdits(edits).withEdits(edit.rebase(edits)).toString
         }
 
+        "twelfth" in {
+          val initial = Rope("12345")
+          val edit = Insert(0, "A")
+          val edits = ContentEdits(
+              Insert(0, "A"),
+              Insert(0, "B")
+          )
+
+          initial.withEdit(edit).withEdits(edits.rebase(edit)).toString shouldEqual
+            initial.withEdits(edits).withEdits(edit.rebase(edits)).toString
+        }
       }
 
       "rebase of single edits is symmetric" in forAll(Generators.genEdit(30), Generators.genEdit(30)) {

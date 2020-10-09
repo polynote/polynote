@@ -12,8 +12,8 @@ import {
     TagElement,
     textbox
 } from "../../tags";
-import {NotebookMessageDispatcher, ToggleNotebookConfig, UpdateConfig} from "../../../messaging/dispatcher";
-import {StateView} from "../../../state/state_handler";
+import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
+import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {
     IvyRepository,
     MavenRepository,
@@ -26,27 +26,29 @@ import {ServerStateHandler} from "../../../state/server_state";
 import {KernelStatusString} from "../../../data/messages";
 import {NBConfig} from "../../../state/notebook_state";
 
-export class NotebookConfigEl {
+export class NotebookConfigEl extends Disposable {
     readonly el: TagElement<"div">;
 
-    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateView<NBConfig>, kernelStateHandler: StateView<KernelStatusString>) {
+    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<NBConfig>, kernelStateHandler: StateView<KernelStatusString>) {
+        super()
 
         const configState = stateHandler.view("config");
         const dependencies = new Dependencies(configState.view("dependencies"))
         const exclusions = new Exclusions(configState.view("exclusions"))
         const resolvers = new Resolvers(configState.view("repositories"))
-        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates", configState);
+        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates");
         const spark = new SparkConf(configState.view("sparkConfig"), configState.view("sparkTemplate"), serverTemplatesHandler)
         const env = new EnvConf(configState.view("env"))
 
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
             const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, env.conf);
             this.el.classList.remove("open");
-            dispatcher.dispatch(new UpdateConfig(conf));
+            console.log("saved notebook config!", conf)
+            stateHandler.update1("config", () => conf)
         })
 
         this.el = div(['notebook-config'], [
-            h2(['config'], ['Configuration & dependencies']).click(() => dispatcher.dispatch(new ToggleNotebookConfig())),
+            h2(['config'], ['Configuration & dependencies']).click(() => stateHandler.update1("open", open => !open)),
             div(['content'], [
                 dependencies.el,
                 resolvers.el,
@@ -56,7 +58,7 @@ export class NotebookConfigEl {
                 div(['controls'], [
                     saveButton,
                     button(['cancel'], {}, ['Cancel']).click(evt => {
-                        dispatcher.dispatch(new ToggleNotebookConfig(false))
+                        stateHandler.update1("open", () => false)
                     })
                 ])
             ])
@@ -73,7 +75,7 @@ export class NotebookConfigEl {
                     saveButton.textContent = "Save & Restart"
                 }
             }
-        })
+        }, this)
 
         stateHandler.view("open").addObserver(open => {
             if (open) {
@@ -81,15 +83,16 @@ export class NotebookConfigEl {
             } else {
                 this.el.classList.remove("open")
             }
-        })
+        }, this)
     }
 }
 
-class Dependencies {
+class Dependencies extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
     constructor(dependenciesHandler: StateView<Record<string, string[]> | undefined>) {
+        super()
 
         this.el = div(['notebook-dependencies', 'notebook-config-section'], [
             h3([], ['Dependencies']),
@@ -112,7 +115,7 @@ class Dependencies {
             }
         }
         setDeps(dependenciesHandler.state)
-        dependenciesHandler.addObserver(deps => setDeps(deps))
+        dependenciesHandler.addObserver(deps => setDeps(deps), this)
     }
 
     private defaultLang = "scala"; // TODO: make this configurable
@@ -154,11 +157,12 @@ class Dependencies {
     }
 }
 
-class Resolvers {
+class Resolvers extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
     constructor(resolversHandler: StateView<RepositoryConfig[] | undefined>) {
+        super()
 
         this.el = div(['notebook-resolvers', 'notebook-config-section'], [
             h3([], ['Resolvers']),
@@ -194,7 +198,7 @@ class Resolvers {
         }
 
         setResolvers(resolversHandler.state)
-        resolversHandler.addObserver(resolvers => setResolvers(resolvers))
+        resolversHandler.addObserver(resolvers => setResolvers(resolvers), this)
     }
 
     private defaultRes = "ivy"; // TODO: make this configurable
@@ -260,11 +264,13 @@ class Resolvers {
     }
 }
 
-class Exclusions {
+class Exclusions extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
     constructor(exclusionsHandler: StateView<string[] | undefined>) {
+        super()
+
         this.el = div(['notebook-exclusions', 'notebook-config-section'], [
             h3([], ['Exclusions']),
             para([], ['[Scala only]: Specify organization:module coordinates for your exclusions, i.e. ', span(['pre'], ['org.myorg:package-name_2.11'])]),
@@ -283,7 +289,7 @@ class Exclusions {
             }
         }
         setExclusions(exclusionsHandler.state)
-        exclusionsHandler.addObserver(excl => setExclusions(excl))
+        exclusionsHandler.addObserver(excl => setExclusions(excl), this)
     }
 
     private addExcl(item?: string) {
@@ -315,12 +321,14 @@ class Exclusions {
     }
 }
 
-class SparkConf {
+class SparkConf extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
     private templateEl: DropdownElement;
 
     constructor(confHandler: StateView<Record<string, string> | undefined>, templateHandler: StateView<SparkPropertySet | undefined>, private allTemplatesHandler: StateView<SparkPropertySet[]>) {
+        super()
+
         this.templateEl = dropdown([], Object.fromEntries([["", "None"]]), );
         this.container = div(['spark-config-list'], []);
 
@@ -342,7 +350,7 @@ class SparkConf {
             }
         }
         setConf(confHandler.state)
-        confHandler.addObserver(conf => setConf(conf))
+        confHandler.addObserver(conf => setConf(conf), this)
 
         // populate the templates element.
         const updatedTemplates = (templates: SparkPropertySet[]) => {
@@ -351,14 +359,14 @@ class SparkConf {
             })
         }
         updatedTemplates(allTemplatesHandler.state)
-        allTemplatesHandler.addObserver(templates => updatedTemplates(templates))
+        allTemplatesHandler.addObserver(templates => updatedTemplates(templates), this)
 
         // watch for changes in the config's template
         const setTemplate = (template: SparkPropertySet | undefined) => {
             this.templateEl.setSelectedValue(template?.name ?? "")
         }
         setTemplate(templateHandler.state)
-        templateHandler.addObserver(template => setTemplate(template))
+        templateHandler.addObserver(template => setTemplate(template), this)
     }
 
     private addConf(item?: {key: string, val: string}) {
@@ -401,11 +409,12 @@ class SparkConf {
 
 }
 
-class EnvConf {
+class EnvConf extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
     constructor(envHandler: StateView<Record<string, string> | undefined>) {
+        super()
         this.el = div(['notebook-env', 'notebook-config-section'], [
             h3([], ['Environment Variables']),
             para([], ['Set environment variables here. Please note this is only supported when kernels are launched as a subprocess (default).']),
@@ -424,7 +433,7 @@ class EnvConf {
             }
         }
         setEnv(envHandler.state)
-        envHandler.addObserver(env => setEnv(env))
+        envHandler.addObserver(env => setEnv(env), this)
     }
 
     private addEnv(item?: {key: string, val: string}) {

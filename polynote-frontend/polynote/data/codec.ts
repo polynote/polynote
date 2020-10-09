@@ -114,6 +114,45 @@ export class DataReader {
     }
 }
 
+export const NumberGuards = {
+    uint8: {
+        max: 2**8 - 1,
+        min: 0
+    },
+    uint16: {
+        max: 2**16 - 1,
+        min: 0
+    },
+    uint32: {
+        max: 2**32 - 1,
+        min: 0
+    },
+    int8: {
+        max: 2**7 - 1,
+        min: -(2**7)
+    },
+    int16: {
+        max: 2**15 - 1,
+        min: -(2**15)
+    },
+    int32: {
+        max: 2**31 - 1,
+        min: -(2**31)
+    },
+    int64: {
+        max: 2n ** 63n - 1n,
+        min: - (2n ** 63n)
+    },
+    float32: {
+        max: 3.4028234663852886e+38, // java.lang.float.MAX_VALUE
+        min: -3.4028234663852886e+38
+    },
+    float64: {
+        max: 1.7976931348623157e+308, // java.lang.Double.MAX_VALUE
+        min: -1.7976931348623157e+308
+    }
+}
+
 export class DataWriter {
     chunkSize: number;
     buffer: ArrayBuffer;
@@ -137,55 +176,75 @@ export class DataWriter {
         }
     }
 
+    numberGuard(key: keyof typeof NumberGuards, value: number | bigint) {
+        const max: number | bigint = NumberGuards[key].max;
+        if (value > max ) {
+            throw new Error(`${value} is greater than ${max}`)
+        }
+        const min: number | bigint = NumberGuards[key].min;
+        if (value < min ) {
+            throw new Error(`${value} is less than ${min}`)
+        }
+    }
+
     writeUint8(value: number) {
+        this.numberGuard("uint8", value);
         this.ensureBufSize(this.buffer.byteLength + 1);
         this.dataView.setUint8(this.offset++, value);
     }
 
     writeInt8(value: number) {
+        this.numberGuard("int8", value);
         this.ensureBufSize(this.buffer.byteLength + 1);
         this.dataView.setInt8(this.offset++, value);
     }
 
     writeUint16(value: number) {
+        this.numberGuard("uint16", value);
         this.ensureBufSize(this.buffer.byteLength + 2);
         this.dataView.setUint16(this.offset, value);
         this.offset += 2;
     }
 
     writeInt16(value: number) {
+        this.numberGuard("int16", value);
         this.ensureBufSize(this.buffer.byteLength + 2);
         this.dataView.setInt16(this.offset, value);
         this.offset += 2;
     }
 
     writeUint32(value: number) {
+        this.numberGuard("uint32", value);
         this.ensureBufSize(this.buffer.byteLength + 4);
         this.dataView.setUint32(this.offset, value);
         this.offset += 4;
     }
 
     writeInt32(value: number) {
+        this.numberGuard("int32", value);
         this.ensureBufSize(this.buffer.byteLength + 4);
         this.dataView.setInt32(this.offset, value);
         this.offset += 4;
     }
 
     writeInt64(value: bigint) {
+        this.numberGuard("int64", value);
         this.ensureBufSize(this.buffer.byteLength + 8);
         this.dataView.setBigInt64(this.offset, BigInt(value));
         this.offset += 8;
     }
 
     writeFloat32(value: number) {
+        this.numberGuard("float32", value);
         this.ensureBufSize(this.buffer.byteLength + 4);
         this.dataView.setFloat32(this.offset, value);
         this.offset += 4;
     }
 
     writeFloat64(value: number) {
+        this.numberGuard("float64", value);
         this.ensureBufSize(this.buffer.byteLength + 8);
-        this.dataView.setFloat32(this.offset, value);
+        this.dataView.setFloat64(this.offset, value);
         this.offset += 8;
     }
 
