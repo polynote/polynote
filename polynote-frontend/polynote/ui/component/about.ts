@@ -13,7 +13,7 @@ import {
 import {Observer, StateView} from "../../state/state_handler";
 import {
     CloseNotebook,
-    KernelCommand, RequestRunningKernels,
+    RequestRunningKernels,
     ServerMessageDispatcher,
     SetSelectedNotebook
 } from "../../messaging/dispatcher";
@@ -222,10 +222,10 @@ export class About extends FullScreenModal {
                 const actions = div([], [
                     loader(),
                     iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
-                        info.info!.dispatcher.dispatch(new KernelCommand("start"))
+                        info.info!.dispatcher.kernelCommand("start")
                     }),
                     iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
-                        info.info!.dispatcher.dispatch(new KernelCommand("kill"))
+                        info.info!.dispatcher.kernelCommand("kill")
                     }),
                     iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
                         this.serverMessageDispatcher.dispatch(new SetSelectedNotebook(path))

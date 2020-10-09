@@ -14,7 +14,6 @@ import {
     TagElement
 } from "../../tags";
 import {
-    KernelCommand,
     NotebookMessageDispatcher,
     Reconnect, RemoveError, RemoveTask,
     ServerMessageDispatcher,
@@ -127,12 +126,12 @@ export class Kernel {
 
     private startKernel(evt: Event) {
         evt.stopPropagation();
-        this.dispatcher.dispatch(new KernelCommand('start'))
+        this.dispatcher.kernelCommand('start')
     }
 
     private killKernel(evt: Event) {
         evt.stopPropagation();
-        this.dispatcher.dispatch(new KernelCommand('kill'))
+        this.dispatcher.kernelCommand('kill')
     }
 
     private collapse() {
