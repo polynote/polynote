@@ -1,5 +1,5 @@
 import {div, icon, span, TagElement} from "../tags";
-import {CloseNotebook, ServerMessageDispatcher, SetSelectedNotebook} from "../../messaging/dispatcher";
+import {CloseNotebook, ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {Observer} from "../../state/state_handler";
 import {NotebookStateHandler} from "../../state/notebook_state";
@@ -109,7 +109,7 @@ export class Tabs {
             }
             tab.tab.classList.add("active");
             this.currentTab = {path, tab: tab.tab, content: tab.content};
-            this.dispatcher.dispatch(new SetSelectedNotebook(path))
+            ServerStateHandler.selectNotebook(path)
         }
     }
 

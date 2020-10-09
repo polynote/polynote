@@ -1,4 +1,4 @@
-import {Disposable, StateHandler, StateView} from "./state_handler";
+import {Disposable, NoUpdate, StateHandler, StateView} from "./state_handler";
 import {ServerErrorWithCause} from "../data/result";
 import {Identity} from "../data/messages";
 import {NotebookStateHandler} from "./notebook_state";
@@ -84,6 +84,10 @@ export class ServerStateHandler extends StateHandler<ServerState> {
      */
     static get state(): ServerState {
         return ServerStateHandler.get.state;
+    }
+
+    static updateState(f: (s: ServerState) => (typeof NoUpdate | ServerState)) {
+        return ServerStateHandler.get.updateState(f)
     }
 
     // only for testing
@@ -236,6 +240,10 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 return [...acc, [path, info]]
             } else return acc
         }, [])
+    }
+
+    static selectNotebook(path: string) {
+        ServerStateHandler.updateState(s => ({...s, currentNotebook: path}))
     }
 }
 

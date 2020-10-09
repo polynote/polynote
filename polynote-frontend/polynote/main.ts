@@ -5,7 +5,7 @@ import * as monaco from "monaco-editor";
 import {themes} from "./ui/input/monaco/themes";
 import {SocketSession} from "./messaging/comms";
 import {ServerMessageReceiver} from "./messaging/receiver";
-import {LoadNotebook, Reconnect, ServerMessageDispatcher, SetSelectedNotebook} from "./messaging/dispatcher";
+import {Reconnect, ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
 import {SplitView} from "./ui/layout/splitview";
 import {ServerStateHandler} from "./state/server_state";
@@ -70,7 +70,7 @@ class Main {
             if (path.startsWith(notebookBase)) {
                 const nbPath = path.substring(notebookBase.length)
                 dispatcher.loadNotebook(nbPath).then(() => {
-                    dispatcher.dispatch(new SetSelectedNotebook(nbPath))
+                    ServerStateHandler.selectNotebook(nbPath)
                 })
             }
         })
