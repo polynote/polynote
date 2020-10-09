@@ -90,9 +90,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     }
                 })
             })
-            .when(KernelCommand, (command: string) => {
-                NotebookMessageDispatcher.kernelCommand(this.socket, command)
-            })
             .when(CreateComment, (cellId, comment) => {
                 const state = this.handler.state
                 this.sendUpdate(new messages.CreateComment(state.globalVersion, state.localVersion, cellId, comment))
@@ -541,12 +538,12 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         }
     }
 
-    static kernelCommand(socket: SocketStateHandler, command: string) {
+    kernelCommand(command: "start" | "kill") {
         if (command === "start") {
-            socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
+            this.socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
         } else if (command === "kill") {
             if (confirm("Kill running kernel? State will be lost.")) {
-                socket.send(new messages.StartKernel(messages.StartKernel.Kill));
+                this.socket.send(new messages.StartKernel(messages.StartKernel.Kill));
             }
         }
     }
@@ -739,14 +736,6 @@ export class UIAction {
     static unapply(inst: UIAction): any[] {return []}
 
     constructor(...args: any[]) {}
-}
-
-export class KernelCommand extends UIAction {
-    constructor(readonly command: "start" | "kill") { super() }
-
-    static unapply(inst: KernelCommand): ConstructorParameters<typeof KernelCommand> {
-        return [inst.command]
-    }
 }
 
 export class Reconnect extends UIAction {

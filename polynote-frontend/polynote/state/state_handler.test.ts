@@ -222,7 +222,7 @@ describe("StateHandler", () => {
             }
         }({a: 1, b: 2})
         deep.addObserver(() => {
-            throw new Error("you better not change the state!@")
+            throw new Error("you better not change the state!!")
         })
         expect(() => deep.updateState(() => state())).not.toThrow()
     })
