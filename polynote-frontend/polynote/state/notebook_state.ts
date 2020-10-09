@@ -54,7 +54,6 @@ export interface NotebookState {
     path: string,
     cells: CellState[], // this is the canonical ordering of the cells.
     config: NBConfig,
-    errors: ServerErrorWithCause[],
     kernel: KernelState,
     // version
     // TODO: make sure the global and local versions are properly updated

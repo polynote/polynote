@@ -11,7 +11,7 @@ import {
 } from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
-import {removeKey} from "../util/helpers";
+import {deepEquals, removeKey} from "../util/helpers";
 import {EditBuffer} from "../data/edit_buffer";
 
 export type NotebookInfo = {
@@ -23,10 +23,7 @@ export type NotebookInfo = {
     }
 };
 
-export type ServerError = { err: ServerErrorWithCause, code?: number };
-
 export interface ServerState {
-    errors: ServerError[],
     // Keys are notebook path. Values denote whether the notebook has ever been loaded in this session.
     notebooks: Record<string, NotebookInfo["loaded"]>,
     connectionStatus: "connected" | "disconnected",
@@ -51,7 +48,6 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     static get get() {
         if (!ServerStateHandler.inst) {
             ServerStateHandler.inst = new ServerStateHandler({
-                errors: [],
                 notebooks: {},
                 connectionStatus: "disconnected",
                 interpreters: {},
@@ -97,7 +93,6 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             ServerStateHandler.inst.dispose()
 
             ServerStateHandler.inst = new ServerStateHandler({
-                errors: [],
                 notebooks: {},
                 connectionStatus: "disconnected",
                 interpreters: {},
@@ -145,7 +140,6 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     path,
                     cells: [],
                     config: {open: false, config: NotebookConfig.default},
-                    errors: [],
                     kernel: {
                         symbols: {},
                         status: ServerStateHandler.state.connectionStatus === "connected" ? 'dead' : 'disconnected',

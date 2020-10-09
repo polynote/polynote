@@ -1,4 +1,4 @@
-import {KernelInfo, KernelState, KernelStateView, KernelSymbols, KernelTasks} from "../../../state/kernel_state";
+import {KernelInfo, KernelState, KernelStateHandler, KernelSymbols, KernelTasks} from "../../../state/kernel_state";
 import {
     Content,
     div,
@@ -15,18 +15,19 @@ import {
 } from "../../tags";
 import {
     NotebookMessageDispatcher,
-    Reconnect, RemoveError, RemoveTask,
+    Reconnect,
     ServerMessageDispatcher,
     ShowValueInspector
 } from "../../../messaging/dispatcher";
-import {StateView} from "../../../state/state_handler";
+import {StateHandler, StateView} from "../../../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../../../state/preferences";
 import {TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
-import {ServerError, ServerStateHandler} from "../../../state/server_state";
+import {ServerStateHandler} from "../../../state/server_state";
 import {changedKeys, diffArray, removeKey} from "../../../util/helpers";
 import {ErrorEl} from "../../display/error";
+import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
 export class KernelPane {
@@ -81,7 +82,7 @@ export class Kernel {
     readonly el: TagElement<"div">;
     readonly statusEl: TagElement<"h2">;
     private status: TagElement<"span">;
-    private kernelState: KernelStateView;
+    private kernelState: KernelStateHandler;
 
     // TODO: this implementation will no longer appear on the welcome screen, which means that errors won't show.
     //       another solution for showing errors on the welcome screen needs to be implemented.
@@ -90,11 +91,11 @@ export class Kernel {
                 private notebookState: NotebookStateHandler,
                 private whichPane: keyof ViewPreferences) {
 
-        this.kernelState = notebookState.view("kernel", KernelStateView);
+        this.kernelState = notebookState.lens("kernel", KernelStateHandler);
 
         const info = new KernelInfoEl(this.kernelState);
         const symbols = new KernelSymbolsEl(dispatcher, notebookState);
-        const tasks = new KernelTasksEl(dispatcher, serverMessageDispatcher, this.kernelState.kernelTasks, notebookState.view("errors"));
+        const tasks = new KernelTasksEl(notebookState.view("path"), serverMessageDispatcher, this.kernelState.kernelTasks);
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -162,7 +163,7 @@ class KernelInfoEl {
     private toggleEl: TagElement<"h3">;
     private infoEl: TableElement;
 
-    constructor(kernelStateHandler: KernelStateView) {
+    constructor(kernelStateHandler: KernelStateHandler) {
         this.el = div(['kernel-info'], [
             this.toggleEl = h3(['toggle'], ['...']).click(() => this.toggleCollapse()),
             h3(['title'], ['Info']),
@@ -221,19 +222,21 @@ type KernelTask = TagElement<"div"> & {
 
 class KernelTasksEl {
     readonly el: TagElement<"div">;
+    private notebookPath: string;
     private taskContainer: TagElement<"div">;
     private tasks: Record<string, KernelTask> = {};
-    private serverErrorIds: Record<string, ServerError>;
-    private kernelErrorIds: Record<string, ServerErrorWithCause>;
+    private errors: Record<string, DisplayError>;
 
-    constructor(private dispatcher: NotebookMessageDispatcher,
+    constructor(private notebookPathHandler: StateView<string>,
                 private serverMessageDispatcher: ServerMessageDispatcher,
-                private kernelTasksHandler: StateView<KernelTasks>,
-                private kernelErrors: StateView<ServerErrorWithCause[]>) {
+                private kernelTasksHandler: StateHandler<KernelTasks>) {
         this.el = div(['kernel-tasks'], [
             h3([], ['Tasks']),
             this.taskContainer = div(['task-container'], [])
         ]);
+
+        this.notebookPath = notebookPathHandler.state
+        notebookPathHandler.addObserver(path => this.notebookPath = path)
 
         Object.values(kernelTasksHandler.state).forEach(task => this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent));
         kernelTasksHandler.addObserver((currentTasks, oldTasks) => {
@@ -253,61 +256,31 @@ class KernelTasksEl {
             })
         })
 
-        this.kernelErrorIds = {};
-        const handleKernelErrors = (errs: ServerErrorWithCause[]) => {
+        this.errors = {}
+        const handleErrors = (errs: DisplayError[]) => {
             if (errs.length > 0) {
                 errs.forEach(e => {
-                    const id = `KernelError ${e.className}`;
-                    if (this.kernelErrorIds[id] === undefined) {
-                        this.addError(id, e)
-                        this.kernelErrorIds[id] = e;
+                    if (this.errors[e.id] === undefined) {
+                        this.addError(e.id, e.err)
+                        this.errors[e.id] = e
                     }
                 })
 
                 // clear any old errors
-                Object.entries(this.kernelErrorIds).forEach(([id, err]) => {
+                Object.entries(this.errors).forEach(([id, err]) => {
                     if (! errs.includes(err)) {
                         this.removeTask(id)
-                        delete this.kernelErrorIds[id]
+                        delete this.errors[id]
                     }
                 })
             } else {
-                Object.keys(this.kernelErrorIds).forEach(id => this.removeTask(id))
-                this.kernelErrorIds = {};
-            }
-        }
-        handleKernelErrors(kernelErrors.state)
-        kernelErrors.addObserver(e => handleKernelErrors(e))
-
-        const serverErrors = ServerStateHandler.view("errors", kernelTasksHandler)
-        this.serverErrorIds = {};
-        const handleServerErrors = (errs: ServerError[]) => {
-            if (errs.length > 0) {
-                console.error("Got server errors", errs)
-                errs.forEach(e => {
-                    const id = `ServerError: ${e.err.className}`;
-                    if (this.serverErrorIds[id] === undefined) {
-                        this.addError(id, e.err)
-                        this.serverErrorIds[id] = e
-                    }
-                })
-
-                // clear any old errors
-                Object.entries(this.serverErrorIds).forEach(([id, err]) => {
-                    if (! errs.includes(err)) {
-                        this.removeTask(id)
-                        delete this.serverErrorIds[id]
-                    }
-                })
-            } else {
-                Object.keys(this.serverErrorIds).forEach(id => {
+                Object.keys(this.errors).forEach(id => {
                     this.removeTask(id)
                 })
-                this.serverErrorIds = {};
+                this.errors = {}
             }
         }
-        handleServerErrors(serverErrors.state)
-        serverErrors.addObserver(e => handleServerErrors(e))
+        ErrorStateHandler.get.addObserver(errors => handleErrors([...errors.serverErrors, ...errors[this.notebookPath] ?? []]))
     }
 
     private addError(id: string, err: ServerErrorWithCause) {
@@ -324,18 +297,14 @@ class KernelTasksEl {
     }
 
     private removeError(id: string) {
-        const maybeKernelError = this.kernelErrorIds[id]
-        if (maybeKernelError) {
-            this.dispatcher.dispatch(new RemoveError(maybeKernelError))
-        } else {
-            const maybeServerError = this.serverErrorIds[id]?.err;
-            if (maybeServerError) {
-                this.serverMessageDispatcher.dispatch(new RemoveError(maybeServerError))
-            }
+        const maybeError = this.errors[id];
+        if (maybeError) {
+            ErrorStateHandler.removeError(maybeError)
+            delete this.errors[id];
         }
     }
 
-    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.dispatcher.dispatch(new RemoveTask(id))) {
+    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.removeTask(id)) {
         // short-circuit if the task coming in is already completed.
         if (status === TaskStatus.Complete) {
             remove()
@@ -406,7 +375,7 @@ class KernelTasksEl {
                 task.classList.add(statusClass);
                 if (statusClass === "complete") {
                     window.setTimeout(() => {
-                        this.dispatcher.dispatch(new RemoveTask(id))
+                        this.removeTask(id)
                     }, 100);
                 }
             }
@@ -419,6 +388,7 @@ class KernelTasksEl {
         const task = this.tasks[id];
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
+        this.kernelTasksHandler.updateState(s => removeKey(s, id))
     }
 }
 
@@ -467,7 +437,7 @@ class KernelSymbolsEl {
                 })
             }
         }
-        const symbolHandler = notebookState.view("kernel", KernelStateView).kernelSymbols;
+        const symbolHandler = notebookState.view("kernel", KernelStateHandler).kernelSymbols;
         handleSymbols(symbolHandler.state)
         symbolHandler.addObserver(symbols => handleSymbols(symbols))
 

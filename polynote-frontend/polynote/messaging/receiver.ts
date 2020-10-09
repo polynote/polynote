@@ -25,6 +25,7 @@ import {SocketStateHandler} from "../state/socket_state";
 import {arrInsert, deepCopy, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {ClientBackup} from "../state/client_backup";
+import {ErrorStateHandler} from "../state/error_state";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -249,10 +250,8 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     } else return NoUpdate
                 })
                 .when(messages.KernelError, (err) => {
-                    return {
-                        ...s,
-                        errors: [...s.errors, err]
-                    }
+                    ErrorStateHandler.addKernelError(s.path, err)
+                    return NoUpdate
                 })
                 .when(messages.CellStatusUpdate, (cellId, status) => {
                     // Special handling for queuing cells: to ensure the correct order in the list, we'll handle creating
@@ -475,7 +474,8 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         return NoUpdate
                     })
                     .whenInstance(RuntimeError, result => {
-                        return {...s, errors: [...s.errors, result.error]}
+                        ErrorStateHandler.addKernelError(s.path, result.error)
+                        return NoUpdate
                     })
                     .otherwise(NoUpdate)
             } else {
@@ -580,11 +580,10 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         });
 
         this.receive(messages.Error, (s, code, err) => {
-            return {
-                ...s,
-                errors: [...s.errors, {code, err}]
-            }
+            ErrorStateHandler.addServerError(err)
+            return NoUpdate
         });
+
         this.receive(messages.CreateNotebook, (s, path) => {
             return {
                 ...s,
@@ -596,6 +595,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         });
         this.receive(messages.RenameNotebook, (s, oldPath, newPath) => {
             ServerStateHandler.renameNotebook(oldPath, newPath)
+            ErrorStateHandler.notebookRenamed(oldPath, newPath) // TODO: there's probably a better way to do this, some sort of Ref value
             return NoUpdate // `renameNotebook` already takes care of updating the state.
         });
         this.receive(messages.DeleteNotebook, (s, path) => {
