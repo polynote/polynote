@@ -95,8 +95,9 @@ We tag these images with the name `polynote-local`.
 > Change version to match desired target
 
 ```sh
-export POLYNOTE_VERSION=0.2.13
-docker build -t polynote-local:latest --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION base
+export POLYNOTE_VERSION=0.3.11
+export SCALA_VERSION=2.11
+docker build -t polynote-local:latest --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION --build-arg SCALA_VERSION=$SCALA_VERSION base
 ```
 
 
@@ -117,6 +118,20 @@ docker build -t polynote-local:dev -f ../../docker/dev/Dockerfile .
 > Change version to match desired target
 
 ```sh
-export POLYNOTE_VERSION=0.2.13
-docker build -t polynote-local:spark24 --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION spark-2.4
+export POLYNOTE_VERSION=0.3.11
+export SPARK_VERSION=2.4.7
+export SCALA_VERSION=2.11
+docker build -t polynote-local:spark24 --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION -build-arg SPARK_VERSION=$SPARK_VERSION --build-arg SCALA_VERSION=$SCALA_VERSION --build-arg HADOOP_VERSION=2.7.7 --build-arg HADOOP_VERSION_MAJOR=2.7 spark
 ```
+
+## Spark v3 image (hadoop 3.2)
+
+> Change version to match desired target
+
+```sh
+export POLYNOTE_VERSION=0.3.11
+export SPARK_VERSION=3.0.1
+export SCALA_VERSION=2.12
+docker build -t polynote-local:spark3 --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION -build-arg SPARK_VERSION=$SPARK_VERSION --build-arg SCALA_VERSION=$SCALA_VERSION --build-arg HADOOP_VERSION=3.2.1 --build-arg HADOOP_VERSION_MAJOR=3.2 spark
+```
+
