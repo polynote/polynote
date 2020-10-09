@@ -22,7 +22,7 @@ else
 fi
 
 pushd /opt
-wget -q "https://downloads.apache.org/spark/${SPARK_VERSION_DIR}/${SPARK_NAME}.tgz" \
+wget -q "https://archive.apache.org/dist/spark/${SPARK_VERSION_DIR}/${SPARK_NAME}.tgz" \
   && tar zxpf "${SPARK_NAME}.tgz" \
   && mv "${SPARK_NAME}" spark \
   && rm "${SPARK_NAME}.tgz"
