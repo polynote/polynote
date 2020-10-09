@@ -4,7 +4,7 @@ import {
     CreateNotebook, DeleteNotebook,
     LoadNotebook, RenameNotebook,
     RequestNotebooksList,
-    ServerMessageDispatcher, SetSelectedNotebook
+    ServerMessageDispatcher
 } from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {diffArray, removeKey} from "../../util/helpers";
@@ -475,7 +475,9 @@ export class LeafEl {
                 evt.preventDefault();
                 evt.stopPropagation();
                 this.dispatcher.loadNotebook(leaf.fullPath)
-                    .then(() => this.dispatcher.dispatch(new SetSelectedNotebook(leaf.fullPath)))
+                    .then(() => {
+                        ServerStateHandler.selectNotebook(leaf.fullPath)
+                    })
             })
     }
 }

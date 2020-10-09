@@ -15,7 +15,6 @@ import {
     CloseNotebook,
     RequestRunningKernels,
     ServerMessageDispatcher,
-    SetSelectedNotebook
 } from "../../messaging/dispatcher";
 import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
@@ -228,7 +227,7 @@ export class About extends FullScreenModal {
                         info.info!.dispatcher.kernelCommand("kill")
                     }),
                     iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
-                        this.serverMessageDispatcher.dispatch(new SetSelectedNotebook(path))
+                        ServerStateHandler.selectNotebook(path)
                         this.hide();
                     }),
                 ]);

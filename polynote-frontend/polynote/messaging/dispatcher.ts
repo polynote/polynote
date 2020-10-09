@@ -638,7 +638,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                                 nbs.dispose()
                                 this.loadNotebook(newNb, true).then(nbInfo => {
                                     nbInfo.info?.dispatcher.dispatch(new ToggleNotebookConfig(true))  // open config automatically for newly created notebooks.
-                                    this.dispatch(new SetSelectedNotebook(newNb))
+                                    ServerStateHandler.selectNotebook(newNb)
                                 })
                             }
                         })
@@ -690,14 +690,6 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             })
             .when(ViewAbout, section => {
                 About.show(this, section)
-            })
-            .when(SetSelectedNotebook, path => {
-                this.handler.updateState(s => {
-                    return {
-                        ...s,
-                        currentNotebook: path
-                    }
-                })
             })
             .when(RequestRunningKernels, () => {
                 this.socket.send(new messages.RunningKernels([]))
@@ -1118,17 +1110,6 @@ export class DownloadNotebook extends UIAction {
 
     static unapply(inst: DownloadNotebook): ConstructorParameters<typeof DownloadNotebook> {
         return [];
-    }
-}
-
-export class SetSelectedNotebook extends UIAction {
-    constructor(readonly path?: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: SetSelectedNotebook): ConstructorParameters<typeof SetSelectedNotebook> {
-        return [inst.path];
     }
 }
 
