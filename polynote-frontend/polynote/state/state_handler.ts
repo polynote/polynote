@@ -46,16 +46,13 @@ export class StateView<S> extends Disposable {
         }
         if (! this.compare(newState, this._state)) {
             const oldState = this._state;
-            this._state = newState;
+            const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
+            this._state = frozenState;
             this.observers.forEach(obs => {
-                obs(newState, oldState)
+                obs(frozenState, oldState)
             });
         }
     }
-
-    // chainUpdates(): ChainableUpdate<S> {
-    //     return new ChainableUpdate(this, [])
-    // }
 
     // Create a child 'view' of this state. Changes to this state will propagate to the view.
     // Optionally, caller can provide the constructor to use to instantiate the view StateHandler.
@@ -150,9 +147,30 @@ export class StateHandler<S> extends StateView<S> {
         const currentState = this.state
         const newState = f(currentState);
         if (! this.compare(newState, NoUpdate)) {
-            const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
-            this.setState(frozenState as S)
+            this.setState(newState as S)
         }
+    }
+
+    // A lens is like a view except changes to the lens propagate back to its parent
+    lens<K extends keyof S, C extends StateHandler<S[K]>>(key: K, constructor?: { new(s: S[K]): C}, disposeWhen?: Disposable): C {
+        const view: StateHandler<S[K]> = constructor ? new constructor(this.state[key]) : new StateHandler(this.state[key]);
+        const obs = this.addObserver(s => {
+            const observedVal = s[key];
+            if (! this.compare(observedVal, view.state)) {
+                view.setState(observedVal)
+            }
+        });
+        view.addObserver(viewState => {
+            this.setState({
+                ...this.state,
+                [key]: viewState
+            })
+        })
+        view.onDispose.then(() => {
+            this.removeObserver(obs);
+        })
+        Promise.race([this.onDispose, ...(disposeWhen === undefined ? [] : [disposeWhen.onDispose])]).then(() => view.dispose())
+        return view as C
     }
 
     constructor(state: S, disposeWhen?: Disposable) {
@@ -161,28 +179,3 @@ export class StateHandler<S> extends StateView<S> {
 }
 
 export type Observer<S> = (currentS: S, previousS: S) => void;
-
-// type updateFn<S> = (s: S) => S | typeof NoUpdate | undefined | void
-// class ChainableUpdate<S> {
-//     constructor(private stateHandler: StateHandler<S>, readonly chain: updateFn<S>[] = []) {}
-//
-//     then(fn: updateFn<S> | ChainableUpdate<S>) {
-//         if (fn instanceof ChainableUpdate) {
-//             this.chain.push(...fn.chain)
-//         } else {
-//             this.chain.push(fn)
-//         }
-//         return this
-//     }
-//
-//     commit() {
-//         this.stateHandler.updateState(s => {
-//             return this.chain.reduce((state, next) => {
-//                 const newState = next(state)
-//                 if (newState === undefined || newState === null) {
-//                     return state
-//                 } else return newState
-//             }, s)
-//         })
-//     }
-// }

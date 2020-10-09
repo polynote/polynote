@@ -1,5 +1,5 @@
 import {ResultValue} from "../data/result";
-import {StateView} from "./state_handler";
+import {StateHandler, StateView} from "./state_handler";
 import {KernelStatusString, TaskInfo} from "../data/messages";
 import {NotebookStateHandler} from "./notebook_state";
 
@@ -14,17 +14,17 @@ export interface KernelState {
     tasks: KernelTasks
 }
 
-export class KernelStateView extends StateView<KernelState> {
-    readonly kernelInfo: StateView<KernelInfo>;
-    readonly kernelStatus: StateView<KernelStatusString>;
-    readonly kernelSymbols: StateView<KernelSymbols>;
-    readonly kernelTasks: StateView<KernelTasks>;
+export class KernelStateHandler extends StateHandler<KernelState> {
+    readonly kernelInfo: StateHandler<KernelInfo>;
+    readonly kernelStatus: StateHandler<KernelStatusString>;
+    readonly kernelSymbols: StateHandler<KernelSymbols>;
+    readonly kernelTasks: StateHandler<KernelTasks>;
 
     constructor(state: KernelState) {
         super(state);
-        this.kernelInfo = this.view("info");
-        this.kernelStatus = this.view("status");
-        this.kernelSymbols = this.view("symbols");
-        this.kernelTasks = this.view("tasks");
+        this.kernelInfo = this.lens("info");
+        this.kernelStatus = this.lens("status");
+        this.kernelSymbols = this.lens("symbols");
+        this.kernelTasks = this.lens("tasks");
     }
 }

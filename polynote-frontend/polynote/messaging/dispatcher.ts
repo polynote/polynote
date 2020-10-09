@@ -24,6 +24,7 @@ import {DialogModal} from "../ui/layout/modal";
 import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
+import {ErrorStateHandler} from "../state/error_state";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -48,14 +49,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         const errorView = socket.view("error")
         errorView.addObserver(err => {
             if (err) {
-                this.handler.updateState(s => {
-                    if (s.errors.find(e => deepEquals(e, err.error))) {
-                        return NoUpdate
-                    } else return {
-                        ...s,
-                        errors: [...s.errors, err.error]
-                    }
-                })
+                ErrorStateHandler.addKernelError(state.state.path, err.error)
             }
         })
     }
@@ -63,19 +57,14 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     dispatch(action: UIAction) {
         match(action)
             .when(Reconnect, (onlyIfClosed: boolean) => {
-                console.log("Attempting to reconnect to server")
+                console.log("Attempting to reconnect to notebook")
                 this.socket.reconnect(onlyIfClosed)
                 const errorView = this.socket.view("error")
                 errorView.addObserver(err => {
                     // if there was an error on reconnect, push it to the notebook state so it can be displayed
                     if (err) {
                         console.error("error on reconnecting notebook", err)
-                        this.handler.updateState(s => {
-                            return {
-                                ...s,
-                                errors: [...s.errors, err.error]
-                            }
-                        })
+                        ErrorStateHandler.addKernelError(this.handler.state.path, err.error)
                     }
                 })
                 this.socket.view("status", undefined, errorView).addObserver(status => {
@@ -258,12 +247,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                             const cell = state.cells[id];
                             const message = `Missing Client Interpreter for cell ${cell.id} of type ${cell.language}`
                             console.error(message)
-                            this.handler.updateState(s => {
-                                return {
-                                    ...s,
-                                    errors: [...s.errors, new ServerErrorWithCause("Missing Client Interpreter", message, [])]
-                                }
-                            })
+                            ErrorStateHandler.addKernelError(this.handler.state.path, new ServerErrorWithCause("Missing Client Interpreter", message, []))
                         }
                     })
                     this.socket.send(new messages.RunCell(serverCells));
@@ -280,25 +264,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(RequestCancelTasks, () => {
                 const state = this.handler.state
                 this.socket.send(new messages.CancelTasks(state.path))
-            })
-            .when(RemoveTask, taskId => {
-                this.handler.updateState(s => {
-                    return {
-                        ...s,
-                        kernel: {
-                            ...s.kernel,
-                            tasks: removeKey(s.kernel.tasks, taskId)
-                        }
-                    }
-                })
-            })
-            .when(RemoveError, err => {
-                this.handler.updateState(s => {
-                    return {
-                        ...s,
-                        errors: s.errors.filter(e => ! deepEquals(e, err))
-                    }
-                })
             })
             .when(RequestClearOutput, () => {
                 this.socket.send(new messages.ClearOutput())
@@ -557,14 +522,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         const errorView = socket.view("error")
         errorView.addObserver(err => {
             if (err) {
-                this.handler.updateState(s => {
-                    if (s.errors.find(e => deepEquals(e, {err: err.error}))) {
-                        return NoUpdate
-                    } else return {
-                        ...s,
-                        errors: [...s.errors, {err: err.error}]
-                    }
-                })
+                ErrorStateHandler.addServerError(err.error)
             }
         })
 
@@ -576,7 +534,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
     dispatch(action: UIAction): void {
         match(action)
             .when(Reconnect, (onlyIfClosed: boolean) => {
-                console.warn("Attempting to reconnect to notebook") // TODO: once we have a proper place for server errors, we can display this log there.
+                console.warn("Attempting to reconnect to server") // TODO: once we have a proper place for server errors, we can display this log there.
                 this.socket.reconnect(onlyIfClosed)
                 const errorView = this.socket.view("error")
                 errorView.addObserver(err => {
@@ -588,12 +546,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                             console.error("Error reconnecting, trying to reload the page")
                             document.location.reload();
                         } else {
-                            this.handler.updateState(s => {
-                                return {
-                                    ...s,
-                                    errors: [...s.errors, {err: err.error}]
-                                }
-                            })
+                            ErrorStateHandler.addServerError(err.error)
                         }
                     }
                 })
@@ -693,14 +646,6 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             })
             .when(RequestRunningKernels, () => {
                 this.socket.send(new messages.RunningKernels([]))
-            })
-            .when(RemoveError, err => {
-                this.handler.updateState(s => {
-                    return {
-                        ...s,
-                        errors: s.errors.filter(e => ! deepEquals(e.err, err))
-                    }
-                })
             })
     }
 
@@ -958,28 +903,6 @@ export class RequestCellRun extends UIAction {
 
     static unapply(inst: RequestCellRun): ConstructorParameters<typeof RequestCellRun> {
         return [inst.cells];
-    }
-}
-
-export class RemoveTask extends UIAction {
-    constructor(readonly taskId: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RemoveTask): ConstructorParameters<typeof RemoveTask> {
-        return [inst.taskId];
-    }
-}
-
-export class RemoveError extends UIAction {
-    constructor(readonly err: ServerErrorWithCause) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RemoveError): ConstructorParameters<typeof RemoveError> {
-        return [inst.err];
     }
 }
 
