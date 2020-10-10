@@ -49,7 +49,7 @@ test('ServerStateHandler supports views', done => {
                     ...s,
                     notebooks: {
                         ...s.notebooks,
-                        ["path"]: ServerStateHandler.loadNotebook("path").loaded
+                        ["path"]: true
                     }
                 }
             })

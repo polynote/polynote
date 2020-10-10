@@ -1,8 +1,9 @@
 import {a, button, div, h2, iconButton, span, tag, TagElement} from "../tags";
 import {
     CopyNotebook,
-    CreateNotebook, DeleteNotebook,
-    LoadNotebook, RenameNotebook,
+    CreateNotebook,
+    DeleteNotebook,
+    RenameNotebook,
     RequestNotebooksList,
     ServerMessageDispatcher
 } from "../../messaging/dispatcher";
@@ -474,7 +475,7 @@ export class LeafEl {
             .click(evt => {
                 evt.preventDefault();
                 evt.stopPropagation();
-                this.dispatcher.loadNotebook(leaf.fullPath)
+                ServerStateHandler.loadNotebook(leaf.fullPath)
                     .then(() => {
                         ServerStateHandler.selectNotebook(leaf.fullPath)
                     })

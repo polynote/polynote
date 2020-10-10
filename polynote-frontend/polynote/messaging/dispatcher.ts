@@ -568,19 +568,6 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             .when(RequestNotebooksList, () => {
                 this.socket.send(new messages.ListNotebooks([]))
             })
-            .when(LoadNotebook, (path, open) => {
-                this.handler.updateState(s => {
-                    let notebooks = s.notebooks
-                    if (! s.notebooks[path])  {
-                        notebooks = {...notebooks, [path]: ServerStateHandler.loadNotebook(path).loaded}
-                    }
-                    return {
-                        ...s,
-                        notebooks: notebooks,
-                        openNotebooks: open && !s.openNotebooks.includes(path) ? [...s.openNotebooks, path] : s.openNotebooks
-                    };
-                })
-            })
             .when(CreateNotebook, (path, content) => {
                 const waitForNotebook = (nbPath: string) => {
                     const nbs = this.handler.view("notebooks")
@@ -589,7 +576,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                         added.forEach(newNb => {
                             if (newNb.includes(nbPath)) {
                                 nbs.dispose()
-                                this.loadNotebook(newNb, true).then(nbInfo => {
+                                ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {
                                     nbInfo.info?.dispatcher.dispatch(new ToggleNotebookConfig(true))  // open config automatically for newly created notebooks.
                                     ServerStateHandler.selectNotebook(newNb)
                                 })
@@ -647,22 +634,6 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             .when(RequestRunningKernels, () => {
                 this.socket.send(new messages.RunningKernels([]))
             })
-    }
-
-    loadNotebook(path: string, open?: boolean): Promise<NotebookInfo> {
-        return new Promise(resolve => {
-            this.dispatch(new LoadNotebook(path, open))
-            const info = ServerStateHandler.getOrCreateNotebook(path)
-            const checkIfLoaded = () => {
-                const maybeLoaded = ServerStateHandler.getOrCreateNotebook(path)
-                if (maybeLoaded.loaded && maybeLoaded.info) {
-                    info.handler.removeObserver(loading);
-                    resolve(maybeLoaded)
-                }
-            }
-            const loading = info.handler.addObserver(checkIfLoaded)
-            checkIfLoaded()
-        })
     }
 }
 
@@ -758,17 +729,6 @@ export class UpdateConfig extends UIAction {
 
     static unapply(inst: UpdateConfig): ConstructorParameters<typeof UpdateConfig> {
         return [inst.config];
-    }
-}
-
-export class LoadNotebook extends UIAction {
-    constructor(readonly path: string, readonly open: boolean = true) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: LoadNotebook): ConstructorParameters<typeof LoadNotebook> {
-        return [inst.path, inst.open];
     }
 }
 
