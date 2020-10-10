@@ -21,7 +21,7 @@ import {
 } from "../../../messaging/dispatcher";
 import {StateHandler, StateView} from "../../../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../../../state/preferences";
-import {TaskStatus} from "../../../data/messages";
+import {KernelStatusString, TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {ServerStateHandler} from "../../../state/server_state";
@@ -147,7 +147,7 @@ export class Kernel {
         })
     }
 
-    private setKernelStatus(state: 'busy' | 'idle' | 'dead' | 'disconnected') {
+    private setKernelStatus(state: KernelStatusString) {
         this.statusEl.classList.remove('busy', 'idle', 'dead', 'disconnected');
         if (state === 'busy' || state === 'idle' || state === 'dead' || state === 'disconnected') {
             this.statusEl.classList.add(state);
@@ -443,7 +443,7 @@ class KernelSymbolsEl {
 
         const handleActiveCell = (cell?: CellState) => {
             if (cell === undefined) {
-                // only show predef
+                // only show predef:16:
                 this.presentFor(-1, [])
             } else {
                 const cells = notebookState.state.cells;

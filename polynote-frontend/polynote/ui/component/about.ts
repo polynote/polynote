@@ -12,7 +12,6 @@ import {
 } from "../../state/preferences";
 import {Observer, StateView} from "../../state/state_handler";
 import {
-    CloseNotebook,
     RequestRunningKernels,
     ServerMessageDispatcher,
 } from "../../messaging/dispatcher";
@@ -251,7 +250,7 @@ export class About extends FullScreenModal {
 
                     this.cleanup.push(() => {
                         if (ServerStateHandler.state.currentNotebook !== path) {
-                            this.serverMessageDispatcher.dispatch(new CloseNotebook(path))
+                            ServerStateHandler.closeNotebook(path)
                         }
                     })
                 }
