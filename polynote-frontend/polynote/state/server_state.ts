@@ -106,12 +106,10 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         }
     }
 
-    static loadNotebook(path: string): NotebookInfo {
-        const nbInfo = ServerStateHandler.getOrCreateNotebook(path)
+    static loadNotebook(path: string, open?: boolean): Promise<NotebookInfo> {
+        let nbInfo = ServerStateHandler.getOrCreateNotebook(path)
         const loaded =  nbInfo?.info;
-        if (loaded) {
-            return nbInfo
-        } else {
+        if (! loaded) {
             // Note: the server will start sending notebook data on this socket automatically after it connects
             const nbSocket = new SocketStateHandler(SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`));
             const receiver = new NotebookMessageReceiver(nbSocket, nbInfo.handler);
@@ -119,8 +117,25 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             nbInfo.info = {receiver, dispatcher};
             nbInfo.loaded = true;
             ServerStateHandler.notebooks[path] = nbInfo;
-            return nbInfo
         }
+
+        ServerStateHandler.updateState(s => ({
+            ...s,
+            notebooks: {...s.notebooks, [path]: nbInfo.loaded},
+            openNotebooks: open && !s.openNotebooks.includes(path) ? [...s.openNotebooks, path] : s.openNotebooks
+        }))
+
+        return new Promise(resolve => {
+            const checkIfLoaded = () => {
+                const maybeLoaded = ServerStateHandler.getOrCreateNotebook(path)
+                if (maybeLoaded.loaded && maybeLoaded.info) {
+                    nbInfo.handler.removeObserver(loading);
+                    resolve(maybeLoaded)
+                }
+            }
+            const loading = nbInfo.handler.addObserver(checkIfLoaded)
+            checkIfLoaded()
+        })
     }
 
     static getNotebook(path: string): NotebookInfo | undefined {

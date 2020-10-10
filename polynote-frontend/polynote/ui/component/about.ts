@@ -244,7 +244,7 @@ export class About extends FullScreenModal {
                 // load the notebook if it hasn't been already
                 if (!info.loaded) {
                     rowEl.classList.add('loading')
-                    this.serverMessageDispatcher.loadNotebook(path, false).then(newInfo => {
+                    ServerStateHandler.loadNotebook(path, false).then(newInfo => {
                         info = newInfo; // update `info` for the button click callbacks
                         rowEl.classList.remove("loading");
                     })

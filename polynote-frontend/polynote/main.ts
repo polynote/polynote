@@ -64,12 +64,12 @@ class Main {
 
         const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.state.map(path => {
-            return dispatcher.loadNotebook(path, true)
+            return ServerStateHandler.loadNotebook(path, true)
         })).then(() => {
             const notebookBase = 'notebook/';
             if (path.startsWith(notebookBase)) {
                 const nbPath = path.substring(notebookBase.length)
-                dispatcher.loadNotebook(nbPath).then(() => {
+                ServerStateHandler.loadNotebook(nbPath).then(() => {
                     ServerStateHandler.selectNotebook(nbPath)
                 })
             }
