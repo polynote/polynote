@@ -1,5 +1,5 @@
 import {div, icon, span, TagElement} from "../tags";
-import {CloseNotebook, ServerMessageDispatcher} from "../../messaging/dispatcher";
+import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {Observer} from "../../state/state_handler";
 import {NotebookStateHandler} from "../../state/notebook_state";
@@ -125,7 +125,7 @@ export class Tabs {
             delete this.tabs[path];
 
             if (path !== "home") {
-                this.dispatcher.dispatch(new CloseNotebook(path))
+                ServerStateHandler.closeNotebook(path)
             }
 
             if (this.currentTab?.path === path) {

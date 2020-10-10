@@ -32,7 +32,11 @@ import {ErrorStateHandler} from "../state/error_state";
  * handled by something else.
  */
 export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHandler<S>> {
-    protected constructor(protected socket: SocketStateHandler, protected handler: H) {}
+    protected constructor(protected socket: SocketStateHandler, protected handler: H) {
+        handler.onDispose.then(() => {
+            this.socket.close()
+        })
+    }
 
     abstract dispatch(action: UIAction): void
 }
@@ -413,9 +417,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     }
                 })
             })
-            .when(CloseNotebook, (path) => {
-                this.socket.close()
-            })
             .when(ToggleNotebookConfig, open => {
                 this.handler.updateState(s => {
                     return {
@@ -615,19 +616,6 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             .when(DeleteNotebook, (path) => {
                 this.socket.send(new messages.DeleteNotebook(path))
             })
-            .when(CloseNotebook, (path) => {
-                ServerStateHandler.closeNotebook(path)
-                this.handler.updateState(s => {
-                    return {
-                        ...s,
-                        notebooks: {
-                            ...s.notebooks,
-                            [path]: false
-                        },
-                        openNotebooks: arrDeleteFirstItem(s.openNotebooks, path)
-                    }
-                })
-            })
             .when(ViewAbout, section => {
                 About.show(this, section)
             })
@@ -772,17 +760,6 @@ export class DeleteNotebook extends UIAction {
     }
 
     static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
-        return [inst.path];
-    }
-}
-
-export class CloseNotebook extends UIAction {
-    constructor(readonly path: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: CloseNotebook): ConstructorParameters<typeof CloseNotebook> {
         return [inst.path];
     }
 }

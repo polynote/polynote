@@ -5,13 +5,12 @@ import {NotebookStateHandler} from "./notebook_state";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {
-    CloseNotebook,
     NotebookMessageDispatcher,
     Reconnect
 } from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
-import {deepEquals, removeKey} from "../util/helpers";
+import {arrDeleteFirstItem, deepEquals, removeKey} from "../util/helpers";
 import {EditBuffer} from "../data/edit_buffer";
 
 export type NotebookInfo = {
@@ -157,7 +156,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     config: {open: false, config: NotebookConfig.default},
                     kernel: {
                         symbols: [],
-                        status: ServerStateHandler.state.connectionStatus === "connected" ? 'dead' : 'disconnected',
+                        status: 'disconnected',
                         info: {},
                         tasks: {},
                     },
@@ -225,11 +224,19 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         const maybeNb = ServerStateHandler.notebooks[path];
         if (maybeNb) {
             maybeNb.handler.dispose()
-            maybeNb.info?.dispatcher.dispatch(new CloseNotebook(path))
 
             // reset the entry for this notebook.
             delete ServerStateHandler.notebooks[path]
             ServerStateHandler.getOrCreateNotebook(path)
+
+            ServerStateHandler.updateState(s => ({
+                ...s,
+                notebooks: {
+                    ...s.notebooks,
+                    [path]: false
+                },
+                openNotebooks: arrDeleteFirstItem(s.openNotebooks, path)
+            }))
         }
     }
 
