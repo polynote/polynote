@@ -13,13 +13,7 @@ import {
     TableRowElement,
     TagElement
 } from "../../tags";
-import {
-    KernelCommand,
-    NotebookMessageDispatcher,
-    Reconnect, RemoveError, RemoveTask,
-    ServerMessageDispatcher,
-    ShowValueInspector
-} from "../../../messaging/dispatcher";
+import {NotebookMessageDispatcher, ServerMessageDispatcher} from "../../../messaging/dispatcher";
 import {StateView} from "../../../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../../../state/preferences";
 import {TaskStatus} from "../../../data/messages";
@@ -122,17 +116,17 @@ export class Kernel {
 
     private connect(evt: Event) {
         evt.stopPropagation();
-        this.serverMessageDispatcher.dispatch(new Reconnect(true))
+        this.serverMessageDispatcher.reconnect(true);
     }
 
     private startKernel(evt: Event) {
         evt.stopPropagation();
-        this.dispatcher.dispatch(new KernelCommand('start'))
+        this.dispatcher.startKernel();
     }
 
     private killKernel(evt: Event) {
         evt.stopPropagation();
-        this.dispatcher.dispatch(new KernelCommand('kill'))
+        this.dispatcher.killKernel();
     }
 
     private collapse() {
@@ -325,18 +319,26 @@ class KernelTasksEl {
     }
 
     private removeError(id: string) {
-        const maybeKernelError = this.kernelErrorIds[id]
+        const maybeKernelError = this.kernelErrorIds[id];
         if (maybeKernelError) {
-            this.dispatcher.dispatch(new RemoveError(maybeKernelError))
+            this.dispatcher.removeError(maybeKernelError);
         } else {
             const maybeServerError = this.serverErrorIds[id]?.err;
             if (maybeServerError) {
-                this.serverMessageDispatcher.dispatch(new RemoveError(maybeServerError))
+                this.serverMessageDispatcher.removeError(maybeServerError);
             }
         }
     }
 
-    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.dispatcher.dispatch(new RemoveTask(id))) {
+    private addTask(
+        id: string,
+        label: string,
+        detail: Content,
+        status: number,
+        progress: number,
+        parent: string | undefined = undefined,
+        remove: () => void = () => this.dispatcher.removeTask(id)
+    ) {
         // short-circuit if the task coming in is already completed.
         if (status === TaskStatus.Complete) {
             remove()
@@ -406,9 +408,7 @@ class KernelTasksEl {
                 task.className = 'task';
                 task.classList.add(statusClass);
                 if (statusClass === "complete") {
-                    window.setTimeout(() => {
-                        this.dispatcher.dispatch(new RemoveTask(id))
-                    }, 100);
+                    window.setTimeout(() => this.dispatcher.removeTask(id), 100);
                 }
             }
             task.status = status;
@@ -497,7 +497,7 @@ class KernelSymbolsEl {
         tr.onmousedown = (evt) => {
             evt.preventDefault();
             evt.stopPropagation();
-            this.dispatcher.dispatch(new ShowValueInspector(tr.resultValue))
+            this.dispatcher.showValueInspector(tr.resultValue)
         };
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;

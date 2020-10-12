@@ -3,7 +3,7 @@
 import { VegaInterpreter } from "./vega_interpreter";
 import {ClientResult, ExecutionInfo, ResultValue, RuntimeError} from "../data/result";
 import {NotebookStateHandler} from "../state/notebook_state";
-import {NotebookMessageDispatcher, SetCellOutput} from "../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {
     CellResult,
@@ -135,7 +135,7 @@ export class ClientInterpreter {
                 if (res instanceof RuntimeError) {
                     this.receiver.inject(new CellResult(id, res))
                 } else {
-                    dispatcher.dispatch(new SetCellOutput(id, res))
+                    dispatcher.setCellOutput(id, res)
                 }
             })
         })

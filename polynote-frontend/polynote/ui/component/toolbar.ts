@@ -1,14 +1,4 @@
-import {
-    DownloadNotebook,
-    NotebookMessageDispatcher,
-    RequestCancelTasks,
-    RequestCellRun,
-    RequestClearOutput,
-    ServerMessageDispatcher,
-    SetCellLanguage,
-    UIAction,
-    ViewAbout
-} from "../../messaging/dispatcher";
+import {NotebookMessageDispatcher, ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
 import {ServerStateHandler} from "../../state/server_state";
 import {Observer, StateView} from "../../state/state_handler";
@@ -148,18 +138,14 @@ class NotebookToolbar extends ToolbarElement {
         this.el = this.toolbarElem("notebook", [
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "forward", "Run all")
-                    .click(() => this.dispatch(new RequestCellRun([]))),
+                    .click(() => this.dispatcher?.requestCellRun([])),
                 iconButton(["branch"], "Create branch", "code-branch", "Branch").disable().withKey('alwaysDisabled', true),
-                iconButton(["download"], "Download", "download", "Download").click(() => this.dispatch(new DownloadNotebook())),
-                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatch(new RequestClearOutput()))
+                iconButton(["download"], "Download", "download", "Download").click(() => this.dispatcher?.downloadNotebook()),
+                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatcher?.requestClearOutput())
             ], [
                 iconButton(["schedule-notebook"], "Schedule notebook", "clock", "Schedule").disable().withKey('alwaysDisabled', true),
             ]
         ]);
-    }
-
-    private dispatch(action: UIAction) {
-        if (this.dispatcher) this.dispatcher.dispatch(action)
     }
 
     enable(dispatcher: NotebookMessageDispatcher) {
@@ -223,7 +209,7 @@ class CellToolbar extends ToolbarElement {
         this.langSelector.addListener(change => {
             if (this.dispatcher && this.activeCellHandler) {
                 const id = this.activeCellHandler.state.id;
-                this.dispatcher.dispatch(new SetCellLanguage(id, change.newValue))
+                this.dispatcher.setCellLanguage(id, change.newValue)
             }
         })
     }
@@ -265,7 +251,7 @@ class CodeToolbar extends ToolbarElement {
                     }),
                 iconButton(["stop-cell"], "Stop/cancel this cell", "stop", "Cancel")
                     .click(() => {
-                        if (this.dispatcher) this.dispatcher.dispatch(new RequestCancelTasks())
+                        if (this.dispatcher) this.dispatcher.requestCancelTasks()
                     }),
             ]
         ]);
@@ -439,12 +425,12 @@ class SettingsToolbar extends ToolbarElement {
         this.el = this.toolbarElem("about", [[
             iconButton(["preferences"], "View UI Preferences", "cogs", "Preferences")
                 .click(() => {
-                    this.dispatcher.dispatch(new ViewAbout("Preferences"))
+                    this.dispatcher.viewAbout("Preferences");
                 })
                 .withKey('neverDisabled', true),
             iconButton(["help"], "help", "question", "Help")
                 .click(() => {
-                    this.dispatcher.dispatch(new ViewAbout("Hotkeys"))
+                    this.dispatcher.viewAbout("Hotkeys");
                 })
                 .withKey('neverDisabled', true),
         ]]);

@@ -5,7 +5,7 @@ import * as monaco from "monaco-editor";
 import {themes} from "./ui/input/monaco/themes";
 import {SocketSession} from "./messaging/comms";
 import {ServerMessageReceiver} from "./messaging/receiver";
-import {LoadNotebook, Reconnect, ServerMessageDispatcher, SetSelectedNotebook} from "./messaging/dispatcher";
+import {ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
 import {SplitView} from "./ui/layout/splitview";
 import {ServerStateHandler} from "./state/server_state";
@@ -33,8 +33,8 @@ class Main {
 
         // handle reconnecting
         const reconnectOnWindowFocus = () => {
-            console.warn("Window was focused! Attempting to reconnect.")
-            dispatcher.dispatch(new Reconnect(true))
+            console.warn("Window was focused! Attempting to reconnect.");
+            dispatcher.reconnect(true);
         }
         ServerStateHandler.get.view("connectionStatus").addObserver(status => {
             if (status === "disconnected") {
@@ -64,14 +64,12 @@ class Main {
 
         const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.state.map(path => {
-            return dispatcher.loadNotebook(path, true)
+            return dispatcher.loadNotebook(path, true);
         })).then(() => {
             const notebookBase = 'notebook/';
             if (path.startsWith(notebookBase)) {
-                const nbPath = path.substring(notebookBase.length)
-                dispatcher.loadNotebook(nbPath).then(() => {
-                    dispatcher.dispatch(new SetSelectedNotebook(nbPath))
-                })
+                const nbPath = path.substring(notebookBase.length);
+                dispatcher.loadNotebook(nbPath).then(() => dispatcher.setSelectedNotebook(nbPath));
             }
         })
 

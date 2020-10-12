@@ -11,12 +11,7 @@ import {
     UserPreferencesHandler, ViewPrefsHandler
 } from "../../state/preferences";
 import {Observer, StateView} from "../../state/state_handler";
-import {
-    CloseNotebook,
-    KernelCommand, RequestRunningKernels,
-    ServerMessageDispatcher,
-    SetSelectedNotebook
-} from "../../messaging/dispatcher";
+import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
 
@@ -221,14 +216,14 @@ export class About extends FullScreenModal {
                 ]);
                 const actions = div([], [
                     loader(),
-                    iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
-                        info.info!.dispatcher.dispatch(new KernelCommand("start"))
-                    }),
-                    iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
-                        info.info!.dispatcher.dispatch(new KernelCommand("kill"))
-                    }),
+                    iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(
+                        () => info.info!.dispatcher.startKernel()
+                    ),
+                    iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(
+                        () => info.info!.dispatcher.killKernel()
+                    ),
                     iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
-                        this.serverMessageDispatcher.dispatch(new SetSelectedNotebook(path))
+                        this.serverMessageDispatcher.setSelectedNotebook(path);
                         this.hide();
                     }),
                 ]);
@@ -252,7 +247,7 @@ export class About extends FullScreenModal {
 
                     this.cleanup.push(() => {
                         if (ServerStateHandler.state.currentNotebook !== path) {
-                            this.serverMessageDispatcher.dispatch(new CloseNotebook(path))
+                            this.serverMessageDispatcher.closeNotebook(path);
                         }
                     })
                 }
@@ -262,7 +257,7 @@ export class About extends FullScreenModal {
                 }
             })
         }
-        this.serverMessageDispatcher.dispatch(new RequestRunningKernels())
+        this.serverMessageDispatcher.requestRunningKernels();
         onNotebookUpdate()
         const nbs = ServerStateHandler.get.view("notebooks")
         const watcher = nbs.addObserver(() => onNotebookUpdate())

@@ -1,5 +1,5 @@
 import {div, icon, span, TagElement} from "../../tags";
-import {NotebookMessageDispatcher, SetCellHighlight, SetSelectedCell} from "../../../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {StateHandler} from "../../../state/state_handler";
 import {CellMetadata} from "../../../data/data";
@@ -44,7 +44,7 @@ export class Notebook {
                 })
             } else {
                 // deselect cells.
-                this.dispatcher.dispatch(new SetSelectedCell(undefined))
+                this.dispatcher.setSelectedCell(undefined)
             }
         }
         handleVisibility(ServerStateHandler.state.currentNotebook)
@@ -138,11 +138,11 @@ export class Notebook {
         const cellId = parseInt(hashId.slice("Cell".length))
         // cell might not yet be loaded, so be sure to wait for it
         this.waitForCell(cellId).then(() => {
-            this.dispatcher.dispatch(new SetSelectedCell(cellId))
+            this.dispatcher.setSelectedCell(cellId);
 
             if (pos) {
                 const pr = PosRange.fromString(pos)
-                this.dispatcher.dispatch(new SetCellHighlight(cellId, pr, "link-highlight"))
+                this.dispatcher.setCellHighlight(cellId, pr, "link-highlight");
             }
         })
     }
@@ -169,7 +169,7 @@ export class Notebook {
     private insertCell(prev: number, language: string, content: string, metadata?: CellMetadata) {
         this.dispatcher.insertCell("below", {id: prev, language, content, metadata: metadata ?? new CellMetadata()})
             .then(newCellId => {
-                this.dispatcher.dispatch(new SetSelectedCell(newCellId))
+                this.dispatcher.setSelectedCell(newCellId)
             })
     }
 

@@ -1,14 +1,6 @@
 import {blockquote, button, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
 import {
-    ClearCellEdits,
-    CurrentSelection,
-    NotebookMessageDispatcher,
-    RequestCellRun,
-    RequestCompletions,
-    RequestSignature,
-    SetCellLanguage,
-    SetSelectedCell,
-    UpdateCell, ShowValueInspector, DeselectCell, RemoveCellError
+    NotebookMessageDispatcher
 } from "../../../messaging/dispatcher";
 import {Disposable, StateView} from "../../../state/state_handler";
 import {CellState, CompletionHint, SignatureHint} from "../../../state/notebook_state";
@@ -163,7 +155,7 @@ abstract class Cell extends Disposable {
 
     doSelect(){
         if (! this.cellState.state.selected) {
-            this.dispatcher.dispatch(new SetSelectedCell(this.id))
+            this.dispatcher.setSelectedCell(this.id)
         }
     }
 
@@ -171,7 +163,7 @@ abstract class Cell extends Disposable {
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
             if (this.cellState.state.selected // prevent blurring a different cell
                 && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
-                this.dispatcher.dispatch(new DeselectCell(this.id))
+                this.dispatcher.deselectCell(this.id)
             }
         }
     }
@@ -294,7 +286,7 @@ class CodeCell extends Cell {
         langSelector.addEventListener("input", evt => {
             const selectedLang = langSelector.getSelectedValue();
             if (selectedLang !== this.state.language) {
-                dispatcher.dispatch(new SetCellLanguage(this.id, selectedLang))
+                dispatcher.setCellLanguage(this.id, selectedLang);
             }
         });
 
@@ -351,9 +343,9 @@ class CodeCell extends Cell {
             if (model) {
                 const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
                 if (evt.selection.getDirection() === SelectionDirection.RTL) {
-                    this.dispatcher.dispatch(new CurrentSelection(this.id, range.reversed));
+                    this.dispatcher.currentSelection(this.id, range.reversed);
                 } else {
-                    this.dispatcher.dispatch(new CurrentSelection(this.id, range));
+                    this.dispatcher.currentSelection(this.id, range);
                 }
             }
         });
@@ -431,7 +423,7 @@ class CodeCell extends Cell {
             div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
-                        dispatcher.dispatch(new RequestCellRun([this.state.id]))
+                        dispatcher.requestCellRun([this.state.id])
                     }),
                     div(['cell-label'], [this.state.id.toString()]),
                     div(['lang-selector'], [langSelector]),
@@ -478,7 +470,7 @@ class CodeCell extends Cell {
         cellState.view("pendingEdits").addObserver(edits => {
             if (edits.length > 0) {
                 this.applyEdits(edits);
-                dispatcher.dispatch(new ClearCellEdits(this.id));
+                dispatcher.clearCellEdits(this.id);
             }
         }, this);
 
@@ -500,7 +492,7 @@ class CodeCell extends Cell {
                 if (previously) {
                     const status = this.state.error ? "Error" : "Complete"
                     NotificationHandler.get.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
-                        this.dispatcher.dispatch(new SetSelectedCell(this.id))
+                        this.dispatcher.setSelectedCell(this.id)
                     })
                     // clear the execution duration updater if it hasn't been cleared already.
                     if (this.execDurationUpdater) {
@@ -618,13 +610,13 @@ class CodeCell extends Cell {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.getValue()));
+        this.dispatcher.updateCell(this.id, edits, this.editor.getValue());
     }
 
     requestCompletion(pos: number): Promise<CompletionList> {
         return new Promise<CompletionHint>(
             (resolve, reject) =>
-                this.dispatcher.dispatch(new RequestCompletions(this.id, pos, resolve, reject))
+                this.dispatcher.requestCompletions(this.id, pos, resolve, reject)
         ).then(({cell, offset, completions}) => {
             const len = completions.length;
             const indexStrLen = ("" + len).length;
@@ -664,7 +656,7 @@ class CodeCell extends Cell {
 
     requestSignatureHelp(pos: number): Promise<SignatureHelpResult> {
         return new Promise<SignatureHint>((resolve, reject) =>
-            this.dispatcher.dispatch(new RequestSignature(this.id, pos, resolve, reject))
+            this.dispatcher.requestSignature(this.id, pos, resolve, reject)
         ).then(({cell, offset, signatures}) => {
             let sigHelp: SignatureHelp;
             if (signatures) {
@@ -705,9 +697,9 @@ class CodeCell extends Cell {
     }
 
     private removeErrorMarker(marker: ErrorMarker) {
-        this.errorMarkers = this.errorMarkers.filter(m => m !== marker)
-        this.setModelMarkers(this.errorMarkers.flatMap(m => m.markers))
-        this.dispatcher.dispatch(new RemoveCellError(this.id, marker.error))
+        this.errorMarkers = this.errorMarkers.filter(m => m !== marker);
+        this.setModelMarkers(this.errorMarkers.flatMap(m => m.markers));
+        this.dispatcher.removeCellError(this.id, marker.error);
     }
 
     private clearErrorMarkers(type?: "runtime" | "compiler") {
@@ -717,14 +709,14 @@ class CodeCell extends Cell {
 
     private toggleCode() {
         const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideSource})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
+        const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideSource});
+        this.dispatcher.updateCell(this.id, [], undefined, newMetadata);
     }
 
     private toggleOutput() {
         const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
+        const newMetadata = prevMetadata.copy({hideOutput: !prevMetadata.hideOutput});
+        this.dispatcher.updateCell(this.id, [], undefined, newMetadata);
     }
 
     layout() {
@@ -817,7 +809,7 @@ class CodeCell extends Cell {
         return matchS<boolean>(key)
             .when("MoveUp", ifNoSuggestion(() => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", skipHiddenCode: true, editing: true}))
+                    this.dispatcher.setSelectedCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
                 }
             }))
             .when("MoveDown", ifNoSuggestion(() => {
@@ -826,36 +818,36 @@ class CodeCell extends Cell {
                     lastColumn -= 1
                 }
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", skipHiddenCode: true, editing: true}))
+                    this.dispatcher.setSelectedCell(this.id, {relative: "below", skipHiddenCode: true, editing: true})
                 }
             }))
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                this.dispatcher.setSelectedCell(this.id, {relative: "below", editing: true})
                 return true // preventDefault
             })
             .when("RunAndInsertBelow", () => {
                 this.dispatcher.runActiveCell()
-                this.dispatcher.insertCell("below").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
+                this.dispatcher.insertCell("below").then(id => this.dispatcher.setSelectedCell(id))
                 return true // preventDefault
             })
             .when("SelectPrevious", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
+                this.dispatcher.setSelectedCell(this.id, {relative: "above", editing: true})
             }))
             .when("SelectNext", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                this.dispatcher.setSelectedCell(this.id, {relative: "below", editing: true})
             }))
             .when("InsertAbove", ifNoSuggestion(() => {
-                this.dispatcher.insertCell("above").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
+                this.dispatcher.insertCell("above").then(id => this.dispatcher.setSelectedCell(id))
             }))
             .when("InsertBelow", ifNoSuggestion(() => {
-                this.dispatcher.insertCell("below").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
+                this.dispatcher.insertCell("below").then(id => this.dispatcher.setSelectedCell(id))
             }))
             .when("Delete", ifNoSuggestion(() => {
                 this.dispatcher.deleteCell()
             }))
             .when("RunAll", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new RequestCellRun([]))
+                this.dispatcher.requestCellRun([])
             }))
             .when("RunToCursor", ifNoSuggestion(() => {
                 this.dispatcher.runToActiveCell()
@@ -863,7 +855,7 @@ class CodeCell extends Cell {
             .when("MoveUpK", ifNoSuggestion(() => {
                 if (!this.vim?.state.vim.insertMode) {
                     if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                        this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", skipHiddenCode: true, editing: true}))
+                        this.dispatcher.setSelectedCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
                     }
                 }
             }))
@@ -871,7 +863,7 @@ class CodeCell extends Cell {
                 if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
                     let lastColumn = range.endColumn - 1;
                     if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                        this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative:"below", skipHiddenCode: true, editing: true}))
+                        this.dispatcher.setSelectedCell(this.id, {relative:"below", skipHiddenCode: true, editing: true})
                     }
                 }
             }))
@@ -1023,11 +1015,9 @@ class CodeCellOutput extends Disposable {
                 if (result.reprs.length > 1) {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
-                            evt => {
-                                this.dispatcher.dispatch(new ShowValueInspector(result))
-                            }
+                            evt => this.dispatcher.showValueInspector(result)
                         )
-                    ]
+                    ];
                 }
 
                 const outLabel = div(['out-ident', 'with-reprs'], [...inspectIcon, 'Out:']);
@@ -1100,12 +1090,10 @@ class CodeCellOutput extends Disposable {
                     h4(['result-name-and-type'], [
                         span(['result-name'], [result.name]), ': ', resultType,
                         iconButton(['view-data'], 'View data', 'table', '[View]')
-                            .click(_ => this.dispatcher.dispatch(new ShowValueInspector(result, 'View data'))),
+                            .click(_ => this.dispatcher.showValueInspector(result, 'View data')),
                         repr.dataType instanceof StructType
                             ? iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
-                                .click(_ => {
-                                    this.dispatcher.dispatch(new ShowValueInspector(result, 'Plot data'))
-                                })
+                                .click(_ => this.dispatcher.showValueInspector(result, 'Plot data'))
                             : undefined
                     ]),
                     repr.dataType instanceof StructType ? displaySchema(streamingRepr.dataType) : undefined
@@ -1390,7 +1378,7 @@ export class TextCell extends Cell {
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.markdownContent))
+            this.dispatcher.updateCell(this.id, edits, this.editor.markdownContent);
         }
     }
 
@@ -1441,16 +1429,16 @@ export class TextCell extends Cell {
         return matchS<boolean>(key)
             .when("MoveUp", () => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
+                    this.dispatcher.setSelectedCell(this.id, {relative: "above", editing: true})
                 }
             })
             .when("MoveDown", () => {
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                    this.dispatcher.setSelectedCell(this.id, {relative: "below", editing: true})
                 }
             })
             .when("RunAndSelectNext", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                this.dispatcher.setSelectedCell(this.id, {relative: "below", editing: true})
                 return true // preventDefault
             })
             .when("RunAndInsertBelow", () => {
@@ -1458,10 +1446,10 @@ export class TextCell extends Cell {
                 return true // preventDefault
             })
             .when("SelectPrevious", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
+                this.dispatcher.setSelectedCell(this.id, {relative: "above", editing: true})
             })
             .when("SelectNext", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                this.dispatcher.setSelectedCell(this.id, {relative: "below", editing: true})
             })
             .when("InsertAbove", () => {
                 this.dispatcher.insertCell("above")
@@ -1473,7 +1461,7 @@ export class TextCell extends Cell {
                 this.dispatcher.deleteCell()
             })
             .when("RunAll", () => {
-                this.dispatcher.dispatch(new RequestCellRun([]))
+                this.dispatcher.requestCellRun([])
             })
             .when("RunToCursor", () => {
                 this.dispatcher.runToActiveCell()

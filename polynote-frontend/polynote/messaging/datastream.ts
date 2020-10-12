@@ -13,12 +13,7 @@ import {Either} from "../data/codec_types";
 import match from "../util/match";
 import {StreamingDataRepr} from "../data/value_repr";
 import {
-    ClearDataStream,
-    ModifyDataStream,
-    NotebookMessageDispatcher,
-    RequestCancelTasks,
-    RequestDataBatch,
-    StopDataStream
+    NotebookMessageDispatcher
 } from "./dispatcher";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {Observer, StateView} from "../state/state_handler";
@@ -94,7 +89,7 @@ export class DataStream {
                 })
 
                 // clear messages now that they have been processed.
-                this.dispatcher.dispatch(new ClearDataStream(this.repr.handle))
+                this.dispatcher.clearDataStream(this.repr.handle)
             }
         })
     }
@@ -120,7 +115,7 @@ export class DataStream {
     kill() {
         this.terminated = true;
         if (this.repr.handle != this.originalRepr.handle) {
-            this.dispatcher.dispatch(new StopDataStream(StreamingDataRepr.handleTypeId, this.repr.handle))
+            this.dispatcher.stopDataStream(StreamingDataRepr.handleTypeId, this.repr.handle)
         }
 
         if (this.observer)  {
@@ -206,7 +201,7 @@ export class DataStream {
     }
 
     abort() {
-        this.dispatcher.dispatch(new RequestCancelTasks())
+        this.dispatcher.requestCancelTasks();
         this.kill();
     }
 
@@ -232,7 +227,7 @@ export class DataStream {
     }
 
     private _requestNext() {
-        this.dispatcher.dispatch(new RequestDataBatch(StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize))
+        this.dispatcher.requestDataBatch(StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize)
     }
     private decodeValues(data: ArrayBuffer[]) {
         return data.map(buf => this.repr.dataType.decodeBuffer(new DataReader(buf)));
@@ -242,7 +237,7 @@ export class DataStream {
         if (!this.setupPromise) {
             this.setupPromise = new Promise((resolve, reject) => {
                 const handleId = this.repr.handle;
-                this.dispatcher.dispatch(new ModifyDataStream(handleId, this.mods))
+                this.dispatcher.modifyDataStream(handleId, this.mods)
                 const obs = this.activeStreams.addObserver(handles => {
                     const messages = handles[handleId]
                     if (messages.length > 0) {

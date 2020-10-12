@@ -1,4 +1,4 @@
-import {CreateComment, DeleteComment, NotebookMessageDispatcher, UpdateComment} from "../../../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {CellComment} from "../../../data/data";
 import {PosRange} from "../../../data/result";
@@ -214,19 +214,21 @@ class CommentRoot extends MonacoRightGutterOverlay {
         let root = new Comment(dispatcher, cellId, rootState.state);
         const commentList = div(['comments-list'], [root.el]);
         this.el.appendChild(commentList);
-        rootState.addObserver((currentRoot, previousRoot) => {
-            console.log(currentRoot.uuid, "updating to new root!")
-            const newRoot = new Comment(dispatcher, cellId, currentRoot);
-            root.el.replaceWith(newRoot.el);
-            root = newRoot;
+        rootState.addObserver(
+            (currentRoot, previousRoot) => {
+                console.log(currentRoot.uuid, "updating to new root!")
+                const newRoot = new Comment(dispatcher, cellId, currentRoot);
+                root.el.replaceWith(newRoot.el);
+                root = newRoot;
 
-            if (currentRoot.range.toString !== previousRoot.range.toString) {
-                this.handleSelection()  // TODO: sometimes this is too slow :(
-                this.childrenState.state.forEach(child => {
-                    dispatcher.dispatch(new UpdateComment(cellId, child.uuid, currentRoot.range, child.content))
-                })
-            }
-        }, this);
+                if (currentRoot.range.toString !== previousRoot.range.toString) {
+                    this.handleSelection()  // TODO: sometimes this is too slow :(
+                    this.childrenState.state.forEach(
+                        child => dispatcher.updateComment(cellId, child.uuid, currentRoot.range, child.content)
+                    );
+                }
+            },
+            this);
 
         const newComment = new NewComment(dispatcher, () => this.range, cellId);
 
@@ -265,11 +267,11 @@ class CommentRoot extends MonacoRightGutterOverlay {
                     if (!monaco.Range.equalsRange(maybeDecoration.range, mRange)) {
                         // we have a highlight with the same ID, but a different range. This means there is some drift.
                         const newRange = new PosRange(model.getOffsetAt(maybeDecoration.range.getStartPosition()), model.getOffsetAt(maybeDecoration.range.getEndPosition()));
-                        dispatcher.dispatch(new UpdateComment(cellId, rootState.state.uuid, newRange, rootState.state.content));
+                        dispatcher.updateComment(cellId, rootState.state.uuid, newRange, rootState.state.content);
                     }
                 } else {
                     // decoration wasn't found or was empty, so we need to delete it.
-                    dispatcher.dispatch(new DeleteComment(cellId, rootState.state.uuid));
+                    dispatcher.deleteComment(cellId, rootState.state.uuid);
                     this.highlights = [];
 
                     // if the range was empty, remove it.
@@ -279,10 +281,10 @@ class CommentRoot extends MonacoRightGutterOverlay {
         })
         this.onDispose.then(() => {
             // we need to delete all children when the root is deleted.
-            this.childrenState.state.forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
-            this.hide()
-            this.editor.deltaDecorations(this.highlights, []) // clear highlights
-            modelChangeListener.dispose()
+            this.childrenState.state.forEach(comment => this.dispatcher.deleteComment(this.cellId, comment.uuid));
+            this.hide();
+            this.editor.deltaDecorations(this.highlights, []); // clear highlights
+            modelChangeListener.dispose();
         })
     }
 
@@ -359,15 +361,15 @@ class NewComment extends Disposable {
         this.currentIdentity = ServerStateHandler.state.identity;
 
         const doCreate = () => {
-            this.dispatcher.dispatch(new CreateComment(cellId, createCellComment({
+            this.dispatcher.createComment(cellId, createCellComment({
                 range: range(),
                 author: this.currentIdentity.name,
                 authorAvatarUrl: this.currentIdentity?.avatar ?? undefined,
                 createdAt: Date.now(),
                 content: text.value
-            })));
-            text.value = ""
-            if (this.onCreate) this.onCreate()
+            }));
+            text.value = "";
+            if (this.onCreate) this.onCreate();
         };
 
         const controls = div(['controls', 'hide'], [
@@ -473,7 +475,7 @@ class Comment {
     setEditable(b: boolean) {
         if (b) {
             const doEdit = (content: string) => {
-                this.dispatcher.dispatch(new UpdateComment(this.cellId, this.comment.uuid, this.comment.range, content));
+                this.dispatcher.updateComment(this.cellId, this.comment.uuid, this.comment.range, content);
             };
 
             this.el.innerHTML = "";
@@ -506,6 +508,6 @@ class Comment {
     }
 
     private delete() {
-        this.dispatcher.dispatch(new DeleteComment(this.cellId, this.comment.uuid))
+        this.dispatcher.deleteComment(this.cellId, this.comment.uuid);
     }
 }

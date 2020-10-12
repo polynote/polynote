@@ -1,11 +1,5 @@
 import {a, button, div, h2, iconButton, span, tag, TagElement} from "../tags";
-import {
-    CopyNotebook,
-    CreateNotebook, DeleteNotebook,
-    LoadNotebook, RenameNotebook,
-    RequestNotebooksList,
-    ServerMessageDispatcher, SetSelectedNotebook
-} from "../../messaging/dispatcher";
+import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {diffArray, removeKey} from "../../util/helpers";
 import {StateHandler, StateView} from "../../state/state_handler";
@@ -39,7 +33,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new DeleteNotebook(this.targetItem))
+            this.dispatcher.deleteNotebook(this.targetItem);
         }
     }
 
@@ -49,7 +43,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new RenameNotebook(this.targetItem))
+            this.dispatcher.renameNotebook(this.targetItem);
         }
     }
 
@@ -59,7 +53,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new CopyNotebook(this.targetItem))
+            this.dispatcher.copyNotebook(this.targetItem);
         }
     }
 
@@ -68,7 +62,7 @@ export class NotebookListContextMenu{
             evt.stopPropagation();
         }
         this.hide();
-        this.dispatcher.dispatch(new CreateNotebook())
+        this.dispatcher.createNotebook();
     }
 
     showFor(evt: Event, targetItem?: LeafEl | BranchEl) {
@@ -125,7 +119,7 @@ export class NotebookList {
             span(['buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
-                    dispatcher.dispatch(new CreateNotebook())
+                    dispatcher.createNotebook();
                 })
             ])
         ]);
@@ -141,18 +135,18 @@ export class NotebookList {
             .listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt));
 
         // Drag n' drop!
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
-            this.el.addEventListener(evt, this.fileHandler.bind(this), false)
-        });
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(
+            evt => this.el.addEventListener(evt, this.fileHandler.bind(this), false)
+        );
 
         // disable the entire notebook list when disconnected from the server
         ServerStateHandler.get.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
             if (currentStatus === "disconnected" && previousStatus === "connected") {
-                this.el.classList.add("disabled")
-                this.header.classList.add("disabled")
+                this.el.classList.add("disabled");
+                this.header.classList.add("disabled");
             } else if (currentStatus === "connected" && previousStatus === "disconnected") {
-                this.el.classList.remove("disabled")
-                this.header.classList.remove("disabled")
+                this.el.classList.remove("disabled");
+                this.header.classList.remove("disabled");
             }
         })
 
@@ -160,11 +154,11 @@ export class NotebookList {
             const [removed, added] = diffArray(Object.keys(oldNotebooks), Object.keys(newNotebooks));
 
             added.forEach(path => treeState.addPath(path));
-            removed.forEach(path => treeState.removePath(path))
+            removed.forEach(path => treeState.removePath(path));
         });
 
         // we're ready to request the notebooks list now!
-        dispatcher.dispatch(new RequestNotebooksList())
+        dispatcher.requestNotebooksList();
     }
 
     private fileHandler(evt: DragEvent) {
@@ -191,7 +185,7 @@ export class NotebookList {
                     reader.onloadend = () => {
                         if (reader.result) {
                             // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
-                            this.dispatcher.dispatch(new CreateNotebook(file.name, reader.result as string));
+                            this.dispatcher.createNotebook(file.name, reader.result as string);
                         } else {
                             throw new Error(`Didn't get any file contents when reading ${file.name}! `)
                         }
@@ -475,7 +469,7 @@ export class LeafEl {
                 evt.preventDefault();
                 evt.stopPropagation();
                 this.dispatcher.loadNotebook(leaf.fullPath)
-                    .then(() => this.dispatcher.dispatch(new SetSelectedNotebook(leaf.fullPath)))
+                    .then(() => this.dispatcher.setSelectedNotebook(leaf.fullPath))
             })
     }
 }

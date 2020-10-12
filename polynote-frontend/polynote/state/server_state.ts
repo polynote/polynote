@@ -4,11 +4,7 @@ import {Identity} from "../data/messages";
 import {NotebookStateHandler} from "./notebook_state";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
-import {
-    CloseNotebook,
-    NotebookMessageDispatcher,
-    Reconnect
-} from "../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
 import {removeKey} from "../util/helpers";
@@ -211,19 +207,19 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     static closeNotebook(path: string) {
         const maybeNb = ServerStateHandler.notebooks[path];
         if (maybeNb) {
-            maybeNb.handler.dispose()
-            maybeNb.info?.dispatcher.dispatch(new CloseNotebook(path))
+            maybeNb.handler.dispose();
+            maybeNb.info?.dispatcher.closeNotebook();
 
             // reset the entry for this notebook.
-            delete ServerStateHandler.notebooks[path]
-            ServerStateHandler.getOrCreateNotebook(path)
+            delete ServerStateHandler.notebooks[path];
+            ServerStateHandler.getOrCreateNotebook(path);
         }
     }
 
     static reconnectNotebooks(onlyIfClosed: boolean) {
         Object.entries(ServerStateHandler.notebooks).forEach(([path, notebook]) => {
             if (notebook.loaded && notebook.info) {
-                notebook.info.dispatcher.dispatch(new Reconnect(onlyIfClosed))
+                notebook.info.dispatcher.reconnect(onlyIfClosed)
             }
         })
     }

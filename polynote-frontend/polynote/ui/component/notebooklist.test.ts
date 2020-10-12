@@ -1,11 +1,6 @@
 import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList, NotebookListContextMenu} from "./notebooklist";
 import {StateHandler} from "../../state/state_handler";
-import {
-    DeleteNotebook,
-    RenameNotebook,
-    RequestNotebooksList,
-    ServerMessageDispatcher
-} from "../../messaging/dispatcher";
+import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {fireEvent, getByText, queryAllByText, queryByText, queryHelpers, waitFor} from "@testing-library/dom";
 import * as messages from "../../data/messages";
 import {NotebookInfo, ServerStateHandler} from "../../state/server_state";
@@ -97,43 +92,43 @@ describe("BranchComponent", () => {
     });
 
     test('can trigger a notebook rename', done => {
-        const contextMenu = NotebookListContextMenu.get(dispatcher)
-        expect(contextMenu.el).not.toBeInTheDocument()
+        const contextMenu = NotebookListContextMenu.get(dispatcher);
+        expect(contextMenu.el).not.toBeInTheDocument();
 
         const leafEl = branch.childrenEl.children[0];
 
         fireEvent(leafEl, new MouseEvent("contextmenu"))
         waitFor(() => {
-            expect(contextMenu.el).toBeInTheDocument()
+            expect(contextMenu.el).toBeInTheDocument();
         }).then(() => {
-            const mockDispatch = jest.spyOn(dispatcher, 'dispatch').mockImplementation((() => {}))
+            const mockDispatch = jest.spyOn(dispatcher, 'renameNotebook').mockImplementation((() => {}));
             const rename = contextMenu.el.querySelector('.rename')!;
-            fireEvent(rename, new MouseEvent('click'))
+            fireEvent(rename, new MouseEvent('click'));
             return waitFor(() => {
-                expect(mockDispatch).toHaveBeenCalledWith(new RenameNotebook(leaf.fullPath))
+                expect(mockDispatch).toHaveBeenCalledWith(leaf.fullPath);
             }).then(() => {
-                mockDispatch.mockRestore()
+                mockDispatch.mockRestore();
             })
         }).then(done)
     })
 
     test('can trigger a notebook deletion', done => {
-        const contextMenu = NotebookListContextMenu.get(dispatcher)
-        expect(contextMenu.el).not.toBeInTheDocument()
+        const contextMenu = NotebookListContextMenu.get(dispatcher);
+        expect(contextMenu.el).not.toBeInTheDocument();
 
         const leafEl = branch.childrenEl.children[0];
 
-        fireEvent(leafEl, new MouseEvent("contextmenu"))
+        fireEvent(leafEl, new MouseEvent("contextmenu"));
         waitFor(() => {
-            expect(contextMenu.el).toBeInTheDocument()
+            expect(contextMenu.el).toBeInTheDocument();
         }).then(() => {
-            const mockDispatch = jest.spyOn(dispatcher, 'dispatch').mockImplementation((() => {}))
+            const mockDispatch = jest.spyOn(dispatcher, 'deleteNotebook').mockImplementation((() => {}));
             const del = contextMenu.el.querySelector('.delete')!;
-            fireEvent(del, new MouseEvent('click'))
+            fireEvent(del, new MouseEvent('click'));
             return waitFor(() => {
-                expect(mockDispatch).toHaveBeenCalledWith(new DeleteNotebook(leaf.fullPath))
+                expect(mockDispatch).toHaveBeenCalledWith(leaf.fullPath);
             }).then(() => {
-                mockDispatch.mockRestore()
+                mockDispatch.mockRestore();
             })
         }).then(done)
     })
