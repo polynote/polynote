@@ -3,9 +3,9 @@ package polynote.kernel.util
 import java.util.concurrent.atomic.AtomicLong
 
 import zio.stream.{Take, ZStream}
-import zio.{Cause, IO, Managed, Promise, Queue, Ref, Semaphore, UIO, UManaged, ZIO, ZQueue}
+import zio.{Cause, Exit, IO, Managed, Promise, Queue, Ref, Semaphore, UIO, UManaged, ZIO, ZQueue}
 
-sealed trait ZTopic[-RA, +EA, -RB, +EB, -A, +B] {
+sealed trait ZTopic[-RA, -RB, +EA, +EB, -A, +B] {
   /**
     * Publish a value to all the subscribers of this topic. The returned effect will complete
     * once all subscribers have received the value. If the topic is closed, does nothing (as there are no subscribers)
@@ -55,28 +55,28 @@ sealed trait ZTopic[-RA, +EA, -RB, +EB, -A, +B] {
     * Modify the type of published value, by providing a function from
     * the new type to the current type.
     */
-  final def contramap[A1](fn: A1 => A): ZTopic[RA, EA, RB, EB, A1, B] =
+  final def contramap[A1](fn: A1 => A): ZTopic[RA, RB, EA, EB, A1, B] =
     bimapM(lift(fn), identityM)
 
   /**
     * Modify the type of published value, by providing an effectful
     * function from the new type to the current type.
     */
-  final def contramapM[RA1 <: RA, EA1 >: EA, A1](fn: A1 => ZIO[RA1, EA1, A]): ZTopic[RA1, EA1, RB, EB, A1, B] =
+  final def contramapM[RA1 <: RA, EA1 >: EA, A1](fn: A1 => ZIO[RA1, EA1, A]): ZTopic[RA1, RB, EA1, EB, A1, B] =
     bimapM(fn, identityM)
 
   /**
     * Modify the type of emitted value, by providing a function from
     * the current type to the new type.
     */
-  final def map[B1](fn: B => B1): ZTopic[RA, EA, RB, EB, A, B1] =
+  final def map[B1](fn: B => B1): ZTopic[RA, RB, EA, EB, A, B1] =
     bimapM(identityM, lift(fn))
 
   /**
     * Modify the type of emitted value, by providing an effectful
     * function from the current type to the new type.
     */
-  final def mapM[RB1 <: RB, EB1 >: EB, B1](fn: B => ZIO[RB1, EB1, B1]): ZTopic[RA, EA, RB1, EB1, A, B1] =
+  final def mapM[RB1 <: RB, EB1 >: EB, B1](fn: B => ZIO[RB1, EB1, B1]): ZTopic[RA, RB1, EA, EB1, A, B1] =
     bimapM(identityM, fn)
 
   /**
@@ -84,7 +84,7 @@ sealed trait ZTopic[-RA, +EA, -RB, +EB, -A, +B] {
     * a function from the new published type to the current published type,
     * and a function from the current emitted type to the new emitted type.
     */
-  final def bimap[A1, B1](to: A1 => A, from: B => B1): ZTopic[RA, EA, RB, EB, A1, B1] =
+  final def bimap[A1, B1](to: A1 => A, from: B => B1): ZTopic[RA, RB, EA, EB, A1, B1] =
     bimapM(lift(to), lift(from))
 
   /**
@@ -93,10 +93,10 @@ sealed trait ZTopic[-RA, +EA, -RB, +EB, -A, +B] {
     * published type, and an effectful function from the current emitted
     * type to the new emitted type.
     */
-  final def bimapM[RA1 <: RA, EA1 >: EA, RB1 <: RB, EB1 >: EB, A1, B1](
+  final def bimapM[RA1 <: RA, RB1 <: RB, EA1 >: EA, EB1 >: EB, A1, B1](
     to: A1 => ZIO[RA1, EA1, A],
     from: B => ZIO[RB1, EB1, B1]
-  ): ZTopic[RA1, EA1, RB1, EB1, A1, B1] = new ZTopic.Bimapped(to, from, this)
+  ): ZTopic[RA1, RB1, EA1, EB1, A1, B1] = new ZTopic.Bimapped(to, from, this)
 
   private def lift[T, U](fn: T => U): T => UIO[U] =
     fn andThen (u => ZIO.succeed(u))  // TODO: this could be ZIO.succeedNow inside the zio package
@@ -173,12 +173,12 @@ object ZTopic {
 
     private class Subscriber[-R, +E, In, Out](
       val id: Long,
-      queue: ZQueue[Any, Nothing, R, E, Take[Nothing, In], Take[Nothing, Out]]
+      queue: ZQueue[Any, R, Nothing, E, Take[Nothing, In], Take[Nothing, Out]]
     ) extends ZTopic.Subscriber[R, E, Out] with ZTopic.SubscriberWrite[R, E, In] {
       override def offer(value: Take[Nothing, In]): UIO[Unit] = {
-        val send = queue.offer(value).doUntil(identity).unit
+        val send = queue.offer(value).repeatUntil(identity).unit
         value match {
-          case Take.End => removeSubscriber(id) *> send
+          case take if take.isDone => removeSubscriber(id) *> send
           case _ => send
         }
       }
@@ -186,21 +186,21 @@ object ZTopic {
       override def take(): ZIO[R, E, Take[Nothing, Out]] = queue.isShutdown.flatMap {
         case false =>
           queue.take.tap {
-            case Take.End => shutdown()
-            case _        => ZIO.unit
+            case take if take.isDone => shutdown()
+            case _                   => ZIO.unit
           }
-        case true => ZIO.succeed(Take.End)
+        case true => ZIO.succeed(Take.end)
       }
 
-      override lazy val stream: ZStream[R, E, Out] = ZStream.fromQueueWithShutdown(queue).unTake
+      override lazy val stream: ZStream[R, E, Out] = ZStream.fromQueueWithShutdown(queue).flattenTake
       override def map[B](fn: Out => B): ZTopic.Subscriber[R, E, B] = new Subscriber(id, queue.map(_.map(fn)))
       override def mapM[R1 <: R, E1 >: E, B](fn: Out => ZIO[R1, E1, B]): ZTopic.Subscriber[R1, E1, B] = new Subscriber(
         id,
-        queue.mapM {
-          case Take.Value(a) => fn(a).map(Take.Value(_))
-          case Take.End => ZIO.succeed(Take.End)
-          case Take.Fail(err) => ZIO.halt(err)
-        }
+        queue.mapM(_.fold(
+          ZIO.succeed(Take.end),
+          err => ZIO.halt(err),
+          chunk => chunk.mapM(fn).map(Take.chunk)
+        ))
       )
 
       override def shutdown(): UIO[Unit] = queue.shutdown *> removeSubscriber(id)
@@ -225,7 +225,7 @@ object ZTopic {
         }
     }
 
-    def publish(value: A): UIO[Unit] = ifNotClosed(publishTake(Take.Value(value)))
+    def publish(value: A): UIO[Unit] = ifNotClosed(publishTake(Take.single(value)))
 
     private def mkSubscriber: UIO[Subscriber[Any, Nothing, A, A]] = for {
       queue <- mkQueue
@@ -253,7 +253,7 @@ object ZTopic {
 
     override def close(): UIO[Unit] =
       closeLock.withPermit(closed.succeed(())) *>
-        publishTake(Take.End) *>
+        publishTake(Take.end) *>
         subscriberSet.setAsync(Map.empty)
 
   }
@@ -261,11 +261,11 @@ object ZTopic {
   /**
     * Implementation that's [contra]mapped over an underlying topic
     */
-  private final class Bimapped[-RA, +EA, -RB, +EB, A1, A, B, B1](
+  private final class Bimapped[-RA, -RB, +EA, +EB, A1, A, B, B1](
     to: A1 => ZIO[RA, EA, A],
     from: B => ZIO[RB, EB, B1],
-    underlying: ZTopic[RA, EA, RB, EB, A, B]
-  ) extends ZTopic[RA, EA, RB, EB, A1, B1] {
+    underlying: ZTopic[RA, RB, EA, EB, A, B]
+  ) extends ZTopic[RA, RB, EA, EB, A1, B1] {
 
     override def publish(value: A1): ZIO[RA, EA, Unit] =
       to(value) >>= underlying.publish

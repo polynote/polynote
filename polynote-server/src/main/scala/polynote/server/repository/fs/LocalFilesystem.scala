@@ -125,7 +125,7 @@ object LocalFilesystem {
       val buf = bytes.duplicate()
       effectBlocking {
         channel.write(buf)
-      }.doWhile(_ => buf.hasRemaining).unit
+      }.repeatWhile(_ => buf.hasRemaining).unit
     }
 
     override def close(): RIO[Blocking, Unit] = lock.withPermit {

@@ -62,7 +62,7 @@ class FileBasedRepository(
         err => consecutiveSaveFails.incrementAndGet.flatMap {
           case count if count >= maxSaveFails =>
             log.error(s"Failed to save notebook ${maxSaveFails} times; closing with error") *>
-              closed.fail(err) *> pending.offer(Take.End).unit
+              closed.fail(err) *> pending.offer(Take.end).unit
           case count =>
             log.error(Some(s"Failed to save notebook $count times (will retry)"), err)
         }
@@ -77,12 +77,12 @@ class FileBasedRepository(
     override def getVersioned: UIO[(Int, Notebook)] = current.get
 
     override def update(update: NotebookUpdate): IO[AlreadyClosed, Unit] =
-      ifOpen(pending.offer(Take.Value((update, None)))).unit
+      ifOpen(pending.offer(Take.single((update, None)))).unit
 
     override def updateAndGet(update: NotebookUpdate): IO[AlreadyClosed, (Int, Notebook)] = ifOpen {
       for {
         completer <- Promise.make[Nothing, (Int, Notebook)]
-        _         <- pending.offer(Take.Value((update, Some(completer))))
+        _         <- pending.offer(Take.single((update, Some(completer))))
         result    <- completer.await
       } yield result
     }
@@ -133,7 +133,7 @@ class FileBasedRepository(
 
     override def close(): Task[Unit] =
       closed.succeed(()) *>
-        pending.offer(Take.End) *>
+        pending.offer(Take.end) *>
         pending.awaitShutdown *>
         process.await.flatMap(_.join) *>
         closed.await
@@ -203,9 +203,14 @@ class FileBasedRepository(
 
       // process all the submitted updates into the ref in order
       val processPending = pending.take.flatMap {
-        case Take.Value((update, completerOpt)) => (writeWAL(update).forkDaemon &> doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError
-        case Take.End                           => pending.shutdown *> closed.succeed(()).unit <* ZIO.fail(None)
-        case Take.Fail(_)                       => ZIO.dieMessage("Unreachable state")  // Scala 2.11 exhaustivity check doesn't realize
+        a => a.foldM(
+          pending.shutdown *> closed.succeed(()).unit <* ZIO.fail(None),
+          _ => ZIO.dieMessage("Unreachable state"),
+          chunk => chunk.mapM {
+            case ((update, completerOpt)) =>
+              (writeWAL(update).forkDaemon &> doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError
+          }.unit
+        )
       }.forever.flip
 
       val doSave = syncWAL &> save.whenM(saveNeeded)

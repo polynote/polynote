@@ -40,7 +40,6 @@ class CellExecutor(publishSync: Result => Unit, classLoader: ClassLoader, blocki
       }
     }
   }
-  def here: Boolean = blockingExecutor.here
 }
 
 object CellExecutor {

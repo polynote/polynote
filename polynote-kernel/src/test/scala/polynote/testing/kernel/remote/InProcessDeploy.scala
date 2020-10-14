@@ -8,7 +8,7 @@ import polynote.kernel.{BaseEnv, GlobalEnv, Kernel}
 import polynote.kernel.environment.CurrentNotebook
 import polynote.kernel.logging.Logging
 import polynote.kernel.remote.{RemoteKernelClient, SocketTransport}
-import zio.{Fiber, RIO, Ref, ZIO}
+import zio.{Fiber, RIO, Ref, URIO, ZIO}
 import zio.duration.Duration
 
 class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref[RemoteKernelClient]) extends SocketTransport.Deploy {
@@ -27,9 +27,9 @@ class InProcessDeploy(kernelFactory: Kernel.Factory.LocalService, clientRef: Ref
 
 object InProcessDeploy {
   class Process(fiber: Fiber[Throwable, Int]) extends SocketTransport.DeployedProcess {
-    def exitStatus: RIO[BaseEnv, Option[Int]] = fiber.poll.flatMap {
-      case Some(exit) => ZIO.fromEither(exit.toEither).map(Some(_))
-      case None => ZIO.succeed(None)
+    def exitStatus: URIO[BaseEnv, Option[Int]] = fiber.poll.flatMap {
+      case Some(exit) => ZIO.fromEither(exit.toEither).asSome.catchAll(_ => ZIO.some(-1))
+      case None => ZIO.none
     }
 
     def awaitExit(timeout: Long, timeUnit: TimeUnit): RIO[BaseEnv, Option[Int]] = {
