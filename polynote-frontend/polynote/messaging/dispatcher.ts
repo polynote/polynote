@@ -724,7 +724,41 @@ export class ServerMessageDispatcher {
     }
 
     reconnect(onlyIfClosed: boolean): void {
-        this.socket.reconnect(onlyIfClosed);
+        console.warn("Attempting to reconnect to notebook") // TODO: once we have a proper place for server errors, we can display this log there.
+        this.socket.reconnect(onlyIfClosed)
+        const errorView = this.socket.view("error")
+        errorView.addObserver(err => {
+            if (err) {
+                // We don't want to reload if the connection is offline, instead we just want to display the
+                // error to the user
+                const reload = err.status === ConnectionStatus.ONLINE
+                if (reload) {
+                    console.error("Error reconnecting, trying to reload the page")
+                    document.location.reload();
+                } else {
+                    this.handler.updateState(s => {
+                        return {
+                            ...s,
+                            errors: [...s.errors, {err: err.error}]
+                        }
+                    })
+                }
+            }
+        })
+        // TODO: depending on how complicated reconnecting is, maybe we should just reload the page every time?
+        this.socket.view("status", undefined, errorView).addObserver(status => {
+            if (status === "connected") {
+                console.warn("Reconnected successfully, now reconnecting to notebook sockets")
+                this.handler.updateState(s => {
+                    return {
+                        ...s,
+                        errors: [] // any errors from before are no longer relevant, right?
+                    }
+                })
+                ServerStateHandler.reconnectNotebooks(onlyIfClosed)
+                errorView.dispose()
+            }
+        })
     }
 
 }
