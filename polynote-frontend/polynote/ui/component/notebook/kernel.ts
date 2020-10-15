@@ -441,18 +441,17 @@ class KernelSymbolsEl {
         handleSymbols(symbolHandler.state)
         symbolHandler.addObserver(symbols => handleSymbols(symbols))
 
-        const handleActiveCell = (cell?: CellState) => {
-            if (cell === undefined) {
-                // only show predef:16:
+        const handleActiveCell = (cellId?: number) => {
+            if (cellId === undefined) {
+                // only show predef:
                 this.presentFor(-1, [])
             } else {
-                const cells = notebookState.state.cells;
-                const idx = cells.findIndex(c => c.id === cell.id);
-                const cellsBefore = cells.slice(0, idx).map(cell => cell.id)
-                this.presentFor(cell.id, cellsBefore)
+                const idx = notebookState.getCellIndex(cellId)
+                const cellsBefore = notebookState.state.cellOrder.slice(0, idx)
+                this.presentFor(cellId, cellsBefore)
             }
         }
-        const activeCellHandler = notebookState.view("activeCell");
+        const activeCellHandler = notebookState.view("activeCellId");
         handleActiveCell(activeCellHandler.state)
         activeCellHandler.addObserver(cell => handleActiveCell(cell))
     }

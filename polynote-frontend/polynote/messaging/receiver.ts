@@ -22,10 +22,11 @@ import {
 } from "../data/result";
 import {NoUpdate, StateHandler} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrInsert, deepCopy, unzip} from "../util/helpers";
+import {arrDelete, deepCopy, arrInsert, mapValues, removeKey, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
+import {numberFormat} from "vega-lite/build/src/compile/format";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
@@ -57,10 +58,10 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                             ...s.kernel,
                             status: status
                         },
-                        cells: s.cells.map(cell => ({
+                        cells: mapValues(s.cells, cell => ({
                             ...cell,
-                            running: undefined,
-                            queued: undefined,
+                            running: false,
+                            queued: false,
                             currentHighlight: undefined
                         }))
                     }
@@ -109,9 +110,9 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             }
             return NoUpdate
         });
-        this.receive(messages.NotebookCells, (s: NotebookState, path: string, cells: NotebookCell[], config?: NotebookConfig) => {
+        this.receive(messages.NotebookCells, (s: NotebookState, path: string, notebookCells: NotebookCell[], config?: NotebookConfig) => {
             const symbols = {...s.kernel.symbols};
-            const cellStates = cells.map(cell => {
+            const cellStates = notebookCells.map(cell => {
                 const cellState = this.cellToState(cell);
                 if (!symbols[cell.id]) {
                     symbols[cell.id] = {};
@@ -131,16 +132,19 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 }
                 return cellState;
             });
+            const cells = cellStates.reduce((acc, next) => ({...acc, [next.id]: next}), {});
+            const cellOrder = notebookCells.map(cell => cell.id)
 
             // add this notebook to the backups
-            ClientBackup.addNb(path, cells, config)
+            ClientBackup.addNb(path, notebookCells, config)
                 // .then(backups => console.log("Added new backup. All backups for this notebook:", backups))
                 .catch(err => console.error("Error adding backup", err));
 
             return {
                 ...s,
                 path: path,
-                cells: cellStates,
+                cells,
+                cellOrder,
                 config: {...s.config, config: config ?? NotebookConfig.default},
                 kernel: {
                     ...s.kernel,
@@ -189,21 +193,13 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 .when(messages.ExecutionStatus, (id, pos) => {
                     return {
                         ...s,
-                        cells: s.cells.map(c => {
-                            if (c.id === id) {
-                                if (pos) {
-                                    return {
-                                        ...c,
-                                        currentHighlight: { range: pos, className: "currently-executing" }
-                                    }
-                                } else {
-                                    return {
-                                        ...c,
-                                        currentHighlight: undefined
-                                    }
-                                }
-                            } else return c
-                        })
+                        cells:  {
+                            ...s.cells,
+                            [id]: {
+                                ...s.cells[id],
+                                currentHighlight: pos ? { range: pos, className: "currently-executing" } : undefined
+                            }
+                        }
                     }
                 })
                 .when(messages.PresenceUpdate, (added, removed) => {
@@ -233,19 +229,18 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                     selection: {cellId, range}
                                 }
                             },
-                            cells: s.cells.map(cell => {
-                                if (cell.id === cellId) {
-                                    return {
-                                        ...cell,
-                                        presence: [...cell.presence, {
-                                            id: maybePresence.id,
-                                            name: maybePresence.name,
-                                            color: maybePresence.color,
-                                            range: range
-                                        }]
-                                    }
-                                } else return cell
-                            })
+                            cells: {
+                                ...s.cells,
+                                [cellId]: {
+                                    ...s.cells[cellId],
+                                    presence: [...s.cells[cellId].presence, {
+                                        id: maybePresence.id,
+                                        name: maybePresence.name,
+                                        color: maybePresence.color,
+                                        range: range
+                                    }]
+                                }
+                            }
                         }
                     } else return NoUpdate
                 })
@@ -274,16 +269,15 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
 
                     return {
                         ...s,
-                        cells: s.cells.map(cell => {
-                            if (cell.id === cellId) {
-                                return {
-                                    ...cell,
-                                    queued: status === TaskStatus.Queued,
-                                    running: status === TaskStatus.Running,
-                                    error: status === TaskStatus.Error,
-                                }
-                            } else return cell
-                        }),
+                        cells: {
+                            ...s.cells,
+                            [cellId]: {
+                                ...s.cells[cellId],
+                                queued: status === TaskStatus.Queued,
+                                running: status === TaskStatus.Running,
+                                error: status === TaskStatus.Error,
+                            }
+                        },
                         kernel
                     }
                 })
@@ -303,62 +297,48 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     .when(messages.UpdateCell, (g, l, id: number, edits: ContentEdit[], metadata?: CellMetadata) => {
                         return {
                             ...s,
-                            cells: s.cells.map(c => {
-                                if (c.id === id){
-                                    return <CellState>{
-                                        ...c,
-                                        pendingEdits: edits,
-                                        content: edits.reduce<string>((content, edit) => edit.apply(content), c.content),
-                                        metadata: metadata || c.metadata,
-                                    }
-                                } else return c
-                            })
+                            cells: {
+                                ...s.cells,
+                                [id]: {
+                                    ...s.cells[id],
+                                    pendingEdits: edits,
+                                    content: edits.reduce<string>((content, edit) => edit.apply(content), s.cells[id].content),
+                                    metadata: metadata || s.cells[id].metadata,
+                                }
+                            }
                         }
                     })
                     .when(messages.InsertCell, (g, l, cell: NotebookCell, after: number) => {
                         const newCell = this.cellToState(cell);
-                        const insertIdx = s.cells.findIndex(c => c.id === after) + 1;
+                        const insertIdx = s.cellOrder.findIndex(id => id === after) + 1;
                         return {
                             ...s,
-                            cells: arrInsert(s.cells, insertIdx, newCell)
+                            cells:  {
+                                ...s.cells,
+                                [cell.id]: newCell
+                            },
+                            cellOrder: arrInsert(s.cellOrder, insertIdx, newCell.id)
                         }
                     })
                     .when(messages.DeleteCell, (g, l, id: number) => {
-                        const idx = s.cells.findIndex(c => c.id === id);
+                        const idx = s.cellOrder.indexOf(id)
                         if (idx > -1) {
-                            const cells = s.cells.reduce<[CellState[], CellState | null]>(([acc, prev], next, idx) => {
-                                // Upon deletion, we want to set the selected cell to be the cell below the deleted one, if present. Otherwise, we want to select the cell above.
-                                if (next.id === id) {
-                                    if (idx === s.cells.length - 1) {
-                                        // deleting the last cell, so try to select the previous cell
-                                        const maybePrevious = acc[acc.length - 1];
-                                        if (maybePrevious) {
-                                            // if the previous cell exists, select it
-                                            const selectPrevious: CellState = {...maybePrevious, selected: true}
-                                            return [[...acc.slice(0, acc.length - 1), selectPrevious], next]
-                                        } else {
-                                            // there's no previous cell, which means this is the last cell... nothing to select.
-                                            return [acc, next]
-                                        }
-                                    } else {
-                                        // not deleting the last cell. we will select the next cell in the next iteration.
-                                        return [acc, next]
-                                    }
-                                } else if (prev && prev.id === id) {
-                                    // the previous cell was deleted, so select this one.
-                                    const selectedNext = {...next, selected: true}
-                                    return [[...acc, selectedNext], selectedNext]
-                                } else {
-                                    return [[...acc, next], next]
-                                }
-                            }, [[], null])[0]
-
-
-                            return {
+                            // Upon deletion, we want to set the selected cell to be the cell below the deleted one, if present. Otherwise, we want to select the cell above.
+                            const nextCellId = s.cellOrder[idx + 1] ?? s.cellOrder[idx - 1]
+                            const x = {
                                 ...s,
-                                cells: cells,
-                                activeCell: cells.find(cell => cell.selected === true)
+                                cells: {
+                                    ...removeKey(s.cells, id),
+                                    [nextCellId]: {
+                                        ...s.cells[nextCellId],
+                                        selected: true
+                                    }
+                                },
+                                cellOrder: arrDelete(s.cellOrder, idx),
+                                activeCellId: nextCellId
                             }
+                            console.log("DeleteCell", id, "nextCellId is", nextCellId, "state is now", x)
+                            return x
                         } else return s
                     })
                     .when(messages.UpdateConfig, (g, l, config: NotebookConfig) => {
@@ -368,18 +348,15 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         }
                     })
                     .when(messages.SetCellLanguage, (g, l, id: number, language: string) => {
-                        let thisCell = undefined;
-                        const cells = s.cells.map(c => {
-                            if (c.id === id) {
-                                thisCell = {...c, language}
-                                return thisCell
-                            } else return c
-                        })
-                        const activeCell = s.activeCell?.id === id ? thisCell : s.activeCell;
                         return {
                             ...s,
-                            cells,
-                            activeCell
+                            cells: {
+                                ...s.cells,
+                                [id]: {
+                                    ...s.cells[id],
+                                    language
+                                }
+                            }
                         }
                     })
                     .when(messages.SetCellOutput, (g, l, id: number, output?: Output) => {
@@ -387,60 +364,60 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         if (output) {
                             return {
                                 ...s,
-                                cells: s.cells.map(c => {
-                                    if (c.id === id) {
-                                        return {...c, output: outputs([output], true) }
-                                    } else return c
-                                })
+                                cells: {
+                                    ...s.cells,
+                                    [id]: {
+                                        ...s.cells[id],
+                                        output: outputs([output], true)
+                                    }
+                                }
                             }
                         } else return s
                     })
                     .when(messages.CreateComment, (g, l, id: number, comment: CellComment) => {
                         return {
                             ...s,
-                            cells: s.cells.map(c => {
-                                if (c.id === id){
-                                    return {
-                                        ...c,
-                                        comments: {
-                                            ...c.comments,
-                                            [comment.uuid]: comment // we're trusting the server to be correct here.
-                                        }
+                            cells: {
+                                ...s.cells,
+                                [id]: {
+                                    ...s.cells[id],
+                                    comments: {
+                                        ...s.cells[id].comments,
+                                        [comment.uuid]: comment // we're trusting the server to be correct here.
                                     }
-                                } else return c
-                            })
+                                }
+                            }
                         }
                     })
                     .when(messages.UpdateComment, (g, l, id: number, commentId: string, range: PosRange, content: string) => {
+                        const prevComment = s.cells[id].comments[commentId];
+                        const updatedComment = new CellComment(commentId, range, prevComment.author, prevComment.authorAvatarUrl, prevComment.createdAt, content)
                         return {
                             ...s,
-                            cells: s.cells.map(c => {
-                                if (c.id === id) {
-                                    const comment = c.comments[commentId];
-                                    return {
-                                        ...c,
-                                        comments: {
-                                            ...c.comments,
-                                            [commentId]: new CellComment(commentId, range, comment.author, comment.authorAvatarUrl, comment.createdAt, content)
-                                        }
+                            cells: {
+                                ...s.cells,
+                                [id]: {
+                                    ...s.cells[id],
+                                    comments: {
+                                        ...s.cells[id].comments,
+                                        [commentId]: updatedComment
                                     }
-                                } else return c
-                            })
+                                }
+                            }
                         }
                     })
                     .when(messages.DeleteComment, (g, l, id: number, commentId: string) => {
+                        const comments = {...s.cells[id].comments}
+                        delete comments[commentId]
                         return {
                             ...s,
-                            cells: s.cells.map(c => {
-                                if (c.id === id) {
-                                    const comments = {...c.comments}
-                                    delete comments[commentId]
-                                    return {
-                                        ...c,
-                                        comments,
-                                    }
-                                } else return c
-                            })
+                            cells: {
+                                ...s.cells,
+                                [id]: {
+                                    ...s.cells[id],
+                                    comments: {...comments}
+                                }
+                            }
                         }
                     }).otherwiseThrow ?? s;
 
@@ -466,7 +443,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             }
         });
         this.receive(messages.CellResult, (s, cellId, result) => {
-            if (cellId === -1 && ! (result instanceof ResultValue)) { // from a predef cell
+            if (cellId < 0 && ! (result instanceof ResultValue)) { // from a predef cell
                 return purematch<Result, NotebookState | typeof NoUpdate>(result)
                     .whenInstance(CompileErrors, result => {
                         // TODO: should somehow save this state somewhere!! Maybe this should also go into s.errors?
@@ -484,13 +461,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     symbols[cellId] = {...(symbols[cellId] || {})};
                     symbols[cellId][result.name] = result;
                 }
+
+                const cells = cellId < 0 ? s.cells : {...s.cells, [cellId]: this.parseResults(s.cells[cellId], [result])}
                 return {
                     ...s,
-                    cells: s.cells.map(c => {
-                        if (c.id === cellId) {
-                            return this.parseResults(c, [result])
-                        } else return c
-                    }),
+                    cells,
                     kernel: {...s.kernel, symbols }
                 }
             }
@@ -528,8 +503,16 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             output: [],
             results: [],
             compileErrors: [],
+            runtimeError: undefined,
             pendingEdits: [],
-            presence: []
+            presence: [],
+            editing: false,
+            selected: false,
+            error: false,
+            running: false,
+            queued: false,
+            currentSelection: undefined,
+            currentHighlight: undefined,
         }, cell.results);
     }
 

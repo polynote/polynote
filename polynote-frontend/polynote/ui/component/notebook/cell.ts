@@ -147,7 +147,7 @@ export class CellContainer extends Disposable {
     }
 
     delete() {
-        this.cellState.clearObservers();
+        this.cellState.dispose()
         this.cell.delete()
     }
 }
@@ -180,16 +180,24 @@ abstract class Cell extends Disposable {
         this.cellId = `Cell${this.id}`;
 
         const updateSelected = (selected: boolean | undefined, prevSelected?: boolean) => {
+            console.log("Updating selected status for cell", this.id)
             if (selected && ! prevSelected) {
+                console.log("Selected cell", this.id)
                 this.onSelected()
             } else if (! selected && prevSelected){
+                console.log("Deselected cell", this.id)
                 this.onDeselected()
             }
         }
-        cellState.view("selected").addObserver((selected, prevSelected) => updateSelected(selected, prevSelected), this);
+        const cellSelected = cellState.view("selected")
+        cellSelected.onDispose.then(() => {
+            console.log("disposed cell selection watcher for cell", this.id)
+        })
+        cellSelected.addObserver((selected, prevSelected) => updateSelected(selected, prevSelected), this);
 
         cellState.onDispose.then(() => {
             this.dispose()
+            console.log("Disposed cell class for cell ", this.id)
         })
     }
 
@@ -842,7 +850,7 @@ class CodeCell extends Cell {
     protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
         const ifNoSuggestion = (fun: () => void) => () => {
             // this is really ugly, is there a better way to tell whether the widget is visible??
-            const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController).widget._value.suggestWidgetVisible.get();
+            const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController)?.widget?._value.suggestWidgetVisible?.get();
             if (!suggestionsVisible) { // don't do stuff when suggestions are visible
                 fun()
             }

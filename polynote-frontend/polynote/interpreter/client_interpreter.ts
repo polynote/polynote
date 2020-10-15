@@ -64,16 +64,16 @@ export class ClientInterpreter {
         // we want to run the cell in order, so we need to find any cells above this one that are currently running/queued
         // and wait for them to complete
         const nbState = this.notebookState.state
-        const cellIdx = nbState.cells.findIndex(cell => cell.id === id)
+        const cellIdx = this.notebookState.getCellIndex(id)!
         const cell = nbState.cells[cellIdx]!;
 
         // first, queue up the cell, waiting for another cell to queue if necessary
         Promise.resolve().then(() => {
             if (queueAfter !== undefined) {
-                return this.notebookState.waitForCell(queueAfter, "queued")
+                return this.notebookState.waitForCellChange(queueAfter, "queued")
             } else return Promise.resolve()
         }).then(() => {
-            const promise = this.notebookState.waitForCell(cellIdx, "queued");
+            const promise = this.notebookState.waitForCellChange(cellIdx, "queued");
             this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Queued)))
             return promise
         }).then(() => { // next, wait for any cells queued up earlier.
@@ -90,7 +90,7 @@ export class ClientInterpreter {
             if (waitCellId) {
                 return new Promise(resolve => {
                     const obs = this.notebookState.addObserver(state => {
-                        const maybeCellReady = state.cells.find(c => c.id === waitCellId)
+                        const maybeCellReady = state.cells[waitCellId!];
                         if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
                             this.notebookState.removeObserver(obs)
                             resolve()
@@ -120,7 +120,6 @@ export class ClientInterpreter {
                 if (res instanceof ClientResult) {
                     dispatcher.dispatch(new SetCellOutput(id, res))
                 } else {
-                    console.log(res);
                     this.receiver.inject(new CellResult(id, res))
                 }
             })
@@ -137,13 +136,13 @@ export function cellContext(notebookState: NotebookStateHandler, dispatcher: Not
 
 export function availableResultValues(symbols: KernelSymbols, notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, id?: number): Record<string, ResultValue> {
     const currentState = notebookState.state;
-    const cells = notebookState.state.cells;
+    //const cells = notebookState.state.cell;
     const availableCells = Object.keys(symbols);
     const whichCells = availableCells.filter(id => id.startsWith('-'));
-    const cellIdx = id !== undefined ? cells.findIndex(cell => cell.id === id) : cells.length - 1;
+    const cellIdx = id !== undefined ? currentState.cellOrder.indexOf(id) : currentState.cellOrder.length - 1;
 
     if (cellIdx >= 0) {
-        whichCells.push(...cells.slice(0, cellIdx).map(cell => cell.id.toString()))
+        whichCells.push(...currentState.cellOrder.slice(0, cellIdx).map(id => id.toString()))
     }
 
     return whichCells.reduce<Record<string, ResultValue>>((acc, next) => {

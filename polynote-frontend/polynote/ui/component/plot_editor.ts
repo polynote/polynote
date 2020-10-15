@@ -516,7 +516,7 @@ export class PlotEditor {
                 this.dispatcher.dispatch(new SetCellOutput(newCellId, clientResult))
                 return new Promise((resolve, reject) => {
                     const obs = this.nbState.addObserver(state => {
-                        const maybeHasOutput = state.cells.find(c => c.id === newCellId)
+                        const maybeHasOutput = state.cells[newCellId]
                         if (maybeHasOutput && maybeHasOutput.output.includes(output)) {
                             this.nbState.removeObserver(obs);
                             this.dispatcher.dispatch(new HideValueInspector())

@@ -136,6 +136,12 @@ export function unzip<A, B>(arr: [A, B][]): [A[], B[]] {
     }, [[], []])
 }
 
+export function unzip3<A, B, C>(arr: [A, B, C][]): [A[], B[], C[]] {
+    return arr.reduce<[A[], B[], C[]]>(([as, bs, cs], [a, b, c]) => {
+        return [[...as, a], [...bs, b], [...cs, c]]
+    }, [[], [], []])
+}
+
 export function collect<T, U>(arr: T[], fun: (t: T) => U | undefined | null): U[] {
     return arr.flatMap(t => {
         const newT = fun(t)

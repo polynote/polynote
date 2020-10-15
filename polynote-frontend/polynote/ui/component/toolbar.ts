@@ -46,8 +46,9 @@ export class Toolbar {
                 if (nbInfo?.info) {
                     currentNotebookHandler = nbInfo.handler
                     const newListener = currentNotebookHandler.addObserver(state => {
-                        if (state.activeCell) {
-                            if (state.activeCell.language === "text") {
+                        if (state.activeCellId) {
+                            const lang = state.cells[state.activeCellId].language
+                            if (lang === "text") {
                                 this.el.classList.remove('editing-code');
                                 this.el.classList.add('editing-text');
                             } else {
@@ -61,7 +62,7 @@ export class Toolbar {
                         cellSelectionListener = newListener;
                         currentNotebookHandler = nbInfo.handler;
                         nb.enable(nbInfo.info.dispatcher);
-                        cell.enable(nbInfo.info.dispatcher, currentNotebookHandler.view("activeCell"));
+                        cell.enable(nbInfo.info.dispatcher, currentNotebookHandler);
                         code.enable(nbInfo.info.dispatcher);
                         text.enable();
                     }
@@ -176,7 +177,7 @@ class NotebookToolbar extends ToolbarElement {
 
 class CellToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
-    private activeCellHandler?: StateView<CellState>;
+    private activeCellHandler?: StateView<number|undefined>;
     private langSelector: FakeSelect;
     private disabledLangSelector: FakeSelect;
     constructor(connectionStatus: StateView<"disconnected" | "connected">) {
@@ -229,18 +230,19 @@ class CellToolbar extends ToolbarElement {
         ServerStateHandler.get.view("interpreters").addObserver(langs => updateSelectorLanguages(langs))
 
         this.langSelector.addListener(change => {
-            if (this.dispatcher && this.activeCellHandler) {
-                const id = this.activeCellHandler.state.id;
+            const id = this.activeCellHandler?.state;
+            if (this.dispatcher && id) {
                 this.dispatcher.dispatch(new SetCellLanguage(id, change.newValue))
             }
         })
     }
 
-    enable(dispatcher: NotebookMessageDispatcher, cellState: StateView<CellState>) {
+    enable(dispatcher: NotebookMessageDispatcher, currentNotebookHandler: NotebookStateHandler) {
         this.dispatcher = dispatcher;
-        this.activeCellHandler = cellState;
-        this.activeCellHandler.addObserver(cell => {
-            if (cell) {
+        this.activeCellHandler = currentNotebookHandler.view("activeCellId");
+        this.activeCellHandler.addObserver(cellId => {
+            if (cellId) {
+                const cell = currentNotebookHandler.state.cells[cellId];
                 const lang = cell.language;
                 if (ClientInterpreters[lang] && ClientInterpreters[lang].hidden) {
                     this.disabledLangSelector.element.querySelector('button')!.innerHTML = ClientInterpreters[lang].languageTitle;
