@@ -3,7 +3,9 @@
 Polynote is written in a combination of Python and Scala (for the backend) 
 and Typescript (for the frontend ui). You will need the development tools
 outlined under [Dependencies](#dependencies) prior to attempting to build from
- source. 
+ source. Alternatively, you can use the 
+ [developent docker image](https://github.com/polynote/polynote/tree/master/docker#dev-image).
+ 
 
 ## Dependencies
 
