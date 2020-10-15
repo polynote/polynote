@@ -20,10 +20,10 @@ import polynote.messages.{CellID, Message, Notebook, NotebookCell, ShortList}
 import polynote.testing.ExtConfiguredZIOSpec
 import polynote.testing.kernel.MockNotebookRef
 import zio.duration.Duration
-import zio.{Promise, RIO, Schedule, Tagged, Task, ZIO, ZLayer}
+import zio.{Promise, RIO, Schedule, Tag, Task, ZIO, ZLayer}
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory {
-  val tagged: Tagged[Interpreter.Factories] = implicitly
+  val tagged: Tag[Interpreter.Factories] = implicitly
 
   override lazy val configuredEnvLayer: ZLayer[zio.ZEnv with Config, Nothing, Interpreter.Factories] = ZLayer.succeed(Map.empty)
 
@@ -45,7 +45,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val kernelFactory   = Kernel.Factory.const(kernel)
       kernel.queueCell _ when (CellID(0)) returns ZIO.environment[CellEnv].map {
         env =>
-          ZIO.foreach(0 until 100) {
+          ZIO.foreach_(0 until 100) {
             i => PublishResult(Output("text/plain; rel=stdout", s"$i\r"))
           }.flatMap {
             _ => PublishResult(Output("text/plain; rel=stdout", "end\n"))
@@ -76,7 +76,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       assert(process.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty)
 
       val kernel2 = kernelPublisher.kernel
-        .repeat(Schedule.doUntil[Kernel](_ ne kernel))
+        .repeatUntil(_ ne kernel)
         .timeout(Duration(20, TimeUnit.SECONDS))
         .someOrFail(new Exception("Kernel should have changed; didn't change after 5 seconds"))
         .runWith(kernelFactory)

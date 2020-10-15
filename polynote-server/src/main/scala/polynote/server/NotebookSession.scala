@@ -183,10 +183,10 @@ object NotebookSession {
       close             = closeQueueIf(closed, output) *> subscriber.close()
       _                <- handler.sendNotebook
     } yield parallelStreams(
-      toFrames(ZStream.fromQueue(output).unTake),
+      toFrames(ZStream.fromQueue(output).flattenTake),
       input.handleMessages(close) {
         msg => handler.handleMessage(msg).catchAll {
-          err => Logging.error(err) *> output.offer(Take.Value(Error(0, err)))
+          err => Logging.error(err) *> output.offer(Take.single(Error(0, err)))
         }.fork.as(None)
       },
       keepaliveStream(closed)

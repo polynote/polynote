@@ -140,7 +140,7 @@ abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec 
 
               val remoteNotebook = unsafeRun {
                 clientRef.get.absorb.flatMap {
-                  client => client.notebookRef.getVersioned.doUntil(_._1 == finalVersion)
+                  client => client.notebookRef.getVersioned.repeatUntil(_._1 == finalVersion)
                 }.timeoutFail(new TimeoutException("timed out waiting for the correct notebook"))(zio.duration.Duration(2, TimeUnit.SECONDS))
               }
               remoteNotebook._2 shouldEqual finalNotebook
@@ -197,7 +197,7 @@ class RemoteKernelSpecWithPortRange extends RemoteKernelSpecBase {
     val uniquePorts = new scala.collection.mutable.HashSet[Int]()
     val numPorts = 5
     unsafeRun {
-      ZIO.foreachPar(0 until numPorts) { _ =>
+      ZIO.foreachPar_(0 until numPorts) { _ =>
         transport.openServerChannel.bracket(channel => ZIO.effectTotal(channel.close())) {
           channel =>
             ZIO.effect(channel.getLocalAddress.asInstanceOf[InetSocketAddress].getPort).flatMap {
