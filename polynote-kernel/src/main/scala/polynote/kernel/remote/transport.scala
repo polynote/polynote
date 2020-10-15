@@ -235,8 +235,9 @@ class SocketTransport(
   }.timeoutFail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.render}"))(timeout)
 
   private def monitorProcess(process: SocketTransport.DeployedProcess) = {
-    val exited = for {
-      status <- ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus
+    val checkExit = ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus
+    val exited    = for {
+      status <- checkExit.repeatUntil(_.nonEmpty).get
       _      <- Logging.info(s"Kernel process ended with $status")
     } yield ()
 
