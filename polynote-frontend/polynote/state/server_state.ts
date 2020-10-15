@@ -152,7 +152,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             const nbInfo = {
                 handler: new NotebookStateHandler({
                     path,
-                    cells: [],
+                    cells: {},
+                    cellOrder: [],
                     config: {open: false, config: NotebookConfig.default},
                     kernel: {
                         symbols: [],
@@ -164,6 +165,9 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     localVersion: -1,
                     editBuffer: new EditBuffer(),
                     activePresence: {},
+                    activeCellId: undefined,
+                    activeCompletion: undefined,
+                    activeSignature: undefined,
                     activeStreams: {}
                 }),
                 loaded: false,

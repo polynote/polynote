@@ -14,7 +14,6 @@ import {ServerStateHandler} from "../../../state/server_state";
 export class Notebook {
     readonly el: TagElement<"div">;
     readonly cells: Record<number, {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
-    cellOrder: Record<number, number> = {}; // index -> cell id;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         const path = notebookState.state.path;
@@ -50,19 +49,35 @@ export class Notebook {
         handleVisibility(ServerStateHandler.state.currentNotebook)
         ServerStateHandler.view("currentNotebook", notebookState).addObserver((current, previous) => handleVisibility(current, previous))
 
-        const handleCells = (newCells: CellState[], oldCells: CellState[] = []) => {
-            const [removed, added] = diffArray(oldCells, newCells, (o, n) => o.id === n.id);
+        const cellsHandler = notebookState.lens("cells")
 
-            added.forEach(state => {
-                const handler = new StateHandler(state, notebookState);
+        const handleCells = (newOrder: number[], prevOrder: number[] = []) => {
+            const [removedIds, addedIds] = diffArray(prevOrder, newOrder)
+
+            addedIds.forEach(id => {
+                const handler = cellsHandler.lens(id)
+                handler.onDispose.then(() => console.log("disposed lens for cell", id))
                 const cell = new CellContainer(dispatcher, handler, notebookState.state.path);
-                this.cells[state.id] = {cell, handler, el: div(['cell-and-divider'], [cell.el, this.newCellDivider()])}
+                const el = div(['cell-and-divider'], [cell.el, this.newCellDivider()])
+                this.cells[id] = {cell, handler, el}
+                const cellIdx = newOrder.indexOf(id)
+                const nextCellIdAtIdx = prevOrder[cellIdx]
+                if (nextCellIdAtIdx) {
+                    // there's a different cell at this index. we need to insert this cell above the existing cell
+                    const nextCellEl = this.cells[nextCellIdAtIdx].el;
+                    // note that inserting a node that is already in the DOM will move it from its current location to here.
+                    cellsEl.insertBefore(el, nextCellEl);
+                } else {
+                    // index not found, must be at the end
+                    cellsEl.appendChild(el);
+                }
             });
-            removed.forEach(cell => {
-                this.cells[cell.id].cell.delete();
-                const cellEl = this.cells[cell.id].el!;
 
-                const prevCellId = this.getPreviousCellId(cell.id) ?? -1
+            removedIds.forEach(id => {
+                const deletedCell = this.cells[id].handler.state
+                const cellEl = this.cells[id].el!;
+
+                const prevCellId = notebookState.getPreviousCellId(id, prevOrder) ?? -1
                 const undoEl = div(['undo-delete'], [
                     icon(['close-button'], 'times', 'close icon').click(evt => {
                         undoEl.parentNode!.removeChild(undoEl)
@@ -70,60 +85,23 @@ export class Notebook {
                     span(['undo-message'], [
                         'Cell deleted. ',
                         span(['undo-link'], ['Undo']).click(evt => {
-                            this.insertCell(prevCellId, cell.language, cell.content, cell.metadata)
+                            this.insertCell(prevCellId, deletedCell.language, deletedCell.content, deletedCell.metadata)
                             undoEl.parentNode!.removeChild(undoEl);
                         })
                     ])
                 ])
 
                 cellEl.replaceWith(undoEl)
-                delete this.cells[cell.id];
-
-                // clean up cell order
-                const deletedIdx = this.getCellIndex(cell.id)
-                if (deletedIdx !== undefined) {
-                    let idx = deletedIdx;
-                    let nextId = this.cellOrder[idx + 1];
-                    while (nextId !== undefined) {
-                        this.cellOrder[idx] = nextId;
-                        idx += 1;
-                        nextId = this.cellOrder[idx + 1];
-                    }
-                    if (idx === Object.entries(this.cellOrder).length) {
-                        delete this.cellOrder[idx]
-                    }
-                }
+                this.cells[id].handler.dispose()
+                this.cells[id].cell.delete();
+                delete this.cells[id];
             });
-
-            newCells.forEach((cell, idx) => {
-                const cellEl = this.cells[cell.id].el;
-                const cellIdAtIdx = this.cellOrder[idx];
-                if (cellIdAtIdx !== undefined) {
-                    if (cellIdAtIdx !== cell.id) {
-                        // there's a different cell at this index. we need to insert this cell above the existing cell
-                        const prevCellEl = this.cells[cellIdAtIdx].el;
-                        // note that inserting a node that is already in the DOM will move it from its current location to here.
-                        cellsEl.insertBefore(cellEl, prevCellEl);
-                        this.cellOrder[idx] = cell.id;
-                        this.cellOrder[idx + 1] = cellIdAtIdx;
-                    }
-                } else {
-                    // index not found, must be at the end
-                    this.cellOrder[idx] = cell.id;
-                    cellsEl.appendChild(cellEl);
-                }
-                this.cells[cell.id].handler.updateState(() => cell);
-            })
-            this.cellOrder = newCells.reduce<Record<number, number>>((acc, next, idx) => {
-                acc[idx] = next.id
-                return acc
-            }, {})
         }
-        handleCells(notebookState.state.cells)
-        notebookState.view("cells").addObserver((newCells, oldCells) => handleCells(newCells, oldCells));
+        handleCells(notebookState.state.cellOrder)
+        notebookState.view("cellOrder").addObserver((newOrder, prevOrder) => handleCells(newOrder, prevOrder));
 
-        console.debug("initial active cell ", this.notebookState.state.activeCell)
-        this.notebookState.view("activeCell").addObserver(cell => {
+        console.debug("initial active cell ", this.notebookState.state.activeCellId)
+        this.notebookState.view("activeCellId").addObserver(cell => {
             console.debug("activeCell = ", cell)
             if (cell === undefined) {
                 VimStatus.get.hide()
@@ -174,39 +152,16 @@ export class Notebook {
     }
 
     /**
-     * Get the ordering index of the cell with the provided id.
-     */
-    private getCellIndex(cellId: number): number | undefined {
-        const anchorIdxStr = Object.entries(this.cellOrder).find(([idx, id]) => id === cellId)?.[0];
-        return anchorIdxStr ? parseInt(anchorIdxStr) : undefined
-    }
-
-    /**
-     * Get the cell above the one with the provided id
-     */
-    private getPreviousCellId(anchorId: number): number | undefined {
-        const anchorIdx = this.getCellIndex(anchorId)
-        return anchorIdx ? this.cellOrder[anchorIdx - 1] : undefined
-    }
-
-    /**
-     * Get the cell below the one with the provided id
-     */
-    private getNextCellId(anchorId: number): number | undefined {
-        const anchorIdx = this.getCellIndex(anchorId)
-        return anchorIdx ? this.cellOrder[anchorIdx + 1] : undefined
-    }
-
-    /**
      * Wait for a specific cell to be loaded. Since we load cells lazily, we might get actions for certain cells
      * (e.g., highlighting them) before they have been loaded by the page.
      *
      * @returns the id of the cell, useful if you pass this Promise somewhere else.
      */
     private waitForCell(cellId: number): Promise<number> {
+        // wait for the cell to appear in the state
         return new Promise(resolve => {
             const wait = this.notebookState.addObserver(state => {
-                if (state.cells.find(cell => cell.id === cellId)) {
+                if (state.cellOrder.find(id => id === cellId)) {
                     this.notebookState.removeObserver(wait)
                     requestAnimationFrame(() => {
                         resolve(cellId)
@@ -214,6 +169,7 @@ export class Notebook {
                 }
             })
         }).then((cellId: number) => {
+            // wait for the cell to appear on the page
             return new Promise(resolve => {
                 const interval = window.setInterval(() => {
                     const maybeCell = this.cells[cellId]?.cell

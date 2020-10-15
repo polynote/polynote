@@ -21,17 +21,17 @@ export interface CellState {
     output: Output[],
     results: (ResultValue | ClientResult)[],
     compileErrors: CompileErrors[],
-    runtimeError?: RuntimeError,
+    runtimeError: RuntimeError | undefined,
     // ephemeral states
     pendingEdits: ContentEdit[],
     presence: {id: number, name: string, color: string, range: PosRange, avatar?: string}[];
-    editing?: boolean,
-    selected?: boolean,
-    error?: boolean,
-    running?: boolean
-    queued?: boolean,
-    currentSelection?: PosRange,
-    currentHighlight?: { range: PosRange, className: string}
+    editing: boolean,
+    selected: boolean,
+    error: boolean,
+    running: boolean
+    queued: boolean,
+    currentSelection: PosRange | undefined,
+    currentHighlight: { range: PosRange, className: string} | undefined
 }
 
 export type CompletionHint = { cell: number, offset: number; completions: CompletionCandidate[] }
@@ -41,7 +41,8 @@ export type NBConfig = {open: boolean, config: NotebookConfig}
 export interface NotebookState {
     // basic states
     path: string,
-    cells: CellState[], // this is the canonical ordering of the cells.
+    cells: Record<number, CellState>, // cellId -> state
+    cellOrder: number[], // this is the canonical ordering of the cells.
     config: NBConfig,
     kernel: KernelState,
     // version
@@ -50,9 +51,9 @@ export interface NotebookState {
     localVersion: number,
     editBuffer: EditBuffer,
     // ephemeral states
-    activeCell?: CellState,
-    activeCompletion?: { resolve: (completion: CompletionHint) => void, reject: () => void },
-    activeSignature?: { resolve: (signature: SignatureHint) => void, reject: () => void },
+    activeCellId: number | undefined,
+    activeCompletion: { resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
+    activeSignature: { resolve: (signature: SignatureHint) => void, reject: () => void } | undefined,
     activePresence: Record<number, { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}}>,
     // map of handle ID to message received.
     activeStreams: Record<number, (HandleData | ModifyStream)[]>
@@ -63,8 +64,27 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         super(state);
     }
 
+    getCellIndex(cellId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
+        return cellOrder.indexOf(cellId)
+    }
+
+    getCellIdAtIndex(cellIdx: number): number | undefined {
+        return this.state.cellOrder[cellIdx]
+    }
+
+    getPreviousCellId(anchorId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
+        const anchorIdx = this.getCellIndex(anchorId, cellOrder)
+        return anchorIdx ? cellOrder[anchorIdx - 1] : undefined
+    }
+
+    getNextCellId(anchorId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
+        const anchorIdx = this.getCellIndex(anchorId, cellOrder)
+        return anchorIdx ? cellOrder[anchorIdx + 1] : undefined
+    }
+
+
     // wait for cell to transition to a specific state
-    waitForCell(id: number, targetState: "queued" | "running" | "error"): Promise<undefined> {
+    waitForCellChange(id: number, targetState: "queued" | "running" | "error"): Promise<undefined> {
         return new Promise(resolve => {
             const obs = this.addObserver(state => {
                 const maybeChanged = state.cells[id];

@@ -60,16 +60,16 @@ export class ClientInterpreter {
         // we want to run the cell in order, so we need to find any cells above this one that are currently running/queued
         // and wait for them to complete
         const nbState = this.notebookState.state
-        const cellIdx = nbState.cells.findIndex(cell => cell.id === id)
+        const cellIdx = this.notebookState.getCellIndex(id)!
         const cell = nbState.cells[cellIdx]!;
 
         // first, queue up the cell, waiting for another cell to queue if necessary
         Promise.resolve().then(() => {
             if (queueAfter !== undefined) {
-                return this.notebookState.waitForCell(queueAfter, "queued")
+                return this.notebookState.waitForCellChange(queueAfter, "queued")
             } else return Promise.resolve()
         }).then(() => {
-            const promise = this.notebookState.waitForCell(cellIdx, "queued");
+            const promise = this.notebookState.waitForCellChange(cellIdx, "queued");
             this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Queued)))
             return promise
         }).then(() => { // next, wait for any cells queued up earlier.
@@ -86,7 +86,7 @@ export class ClientInterpreter {
             if (waitCellId) {
                 return new Promise(resolve => {
                     const obs = this.notebookState.addObserver(state => {
-                        const maybeCellReady = state.cells.find(c => c.id === waitCellId)
+                        const maybeCellReady = state.cells[waitCellId!];
                         if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
                             this.notebookState.removeObserver(obs)
                             resolve()
@@ -111,8 +111,8 @@ export class ClientInterpreter {
             updateStatus(1)
 
             const currentState = this.notebookState.state;
-            const availableValues = currentState.cells.slice(0, cellIdx).reduce<Record<string, any>>((acc, next) => {
-                next.results
+            const availableValues = currentState.cellOrder.slice(0, cellIdx).reduce<Record<string, any>>((acc, next) => {
+                currentState.cells[next].results
                     .filter(res => res instanceof ResultValue) // for now, ClientResults can't be used in other cells
                     .forEach((result: ResultValue) => {
                         let bestValue: any = result.valueText;

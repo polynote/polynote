@@ -18,7 +18,16 @@ import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_sta
 import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
 import {About} from "../ui/component/about";
 import {ValueInspector} from "../ui/component/value_inspector";
-import {arrDeleteFirstItem, collect, deepEquals, diffArray, equalsByKey, partition, removeKey} from "../util/helpers";
+import {
+    arrDeleteFirstItem,
+    collect,
+    deepEquals,
+    diffArray,
+    equalsByKey,
+    mapValues,
+    partition,
+    removeKey
+} from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
 import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
@@ -102,14 +111,13 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.handler.updateState(state => {
                     return {
                         ...state,
-                        cells: state.cells.map(cell => {
-                            if (cell.id === cellId) {
-                                return {
-                                    ...cell,
-                                    currentHighlight: {range, className}
-                                }
-                            } else return cell
-                        })
+                        cells: {
+                            ...state.cells,
+                            [cellId]: {
+                                ...state.cells[cellId],
+                                currentHighlight: {range, className}
+                            }
+                        }
                     }
                 })
             })
@@ -119,11 +127,13 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                             this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
                             return {
                                 ...state,
-                                cells: state.cells.map(cell => {
-                                    if (cell.id === cellId) {
-                                        return {...cell, output: [output]}
-                                    } else return cell
-                                })
+                                cells: {
+                                    ...state.cells,
+                                    [cellId]: {
+                                        ...state.cells[cellId],
+                                        output: [output]
+                                    }
+                                }
                             }
                         })
                     } else {
@@ -133,11 +143,13 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                                 this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
                                 return {
                                     ...state,
-                                    cells: state.cells.map(cell => {
-                                        if (cell.id === cellId) {
-                                            return {...cell, results: [...cell.results, output]}
-                                        } else return cell
-                                    })
+                                    cells: {
+                                        ...state.cells,
+                                        [cellId]: {
+                                            ...state.cells[cellId],
+                                            results: [...state.cells[cellId].results, output]
+                                        }
+                                    }
                                 }
                             })
                         })
@@ -151,7 +163,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.handler.updateState(state => {
                     let localVersion = state.localVersion + 1;
                     // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
-                    const maxId = state.cells.reduce((acc, cell) => acc > cell.id ? acc : cell.id, -1)
+                    const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
                     const cell = new NotebookCell(maxId + 1, language, content, [], metadata);
                     const update = new messages.InsertCell(state.globalVersion, localVersion, cell, prev);
                     this.sendUpdate(update);
@@ -166,14 +178,17 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     let localVersion = state.localVersion + 1;
                     const update = new messages.UpdateCell(state.globalVersion, localVersion, cellId, edits, metadata);
                     this.sendUpdate(update);
+                    const cell = state.cells[cellId]
                     return {
                         ...state,
                         editBuffer: state.editBuffer.push(state.localVersion, update),
-                        cells: state.cells.map(cell => {
-                            if (cell.id === cellId) {
-                                return {...cell, content: newContent ?? cell.content, metadata: metadata ?? cell.metadata}
-                            } else return cell
-                        })
+                        cells: {
+                            ...state.cells,
+                            [cellId]: {
+                                ...cell,
+                                content: newContent ?? cell.content, metadata: metadata ?? cell.metadata
+                            }
+                        }
                     }
                 })
             })
@@ -227,13 +242,13 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.handler.updateState(state => {
                     // empty cellIds means run all of them!
                     if (cellIds.length === 0) {
-                        cellIds = state.cells.map(c => c.id)
+                        cellIds = state.cellOrder
                     }
 
-                    cellIds = collect(cellIds, id => state.cells.find(cell => cell.id === id)?.language !== "text" ? id : undefined);
+                    cellIds = collect(cellIds, id => state.cells[id]?.language !== "text" ? id : undefined);
 
                     const [clientCells, serverCells] = partition(cellIds, id => {
-                        const cell = state.cells.find(c => c.id === id)
+                        const cell = state.cells[id]
                         if (cell) {
                             return Object.keys(ClientInterpreters).includes(cell.language)
                         } else {
@@ -257,7 +272,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     this.socket.send(new messages.RunCell(serverCells));
                     return {
                         ...state,
-                        cells: state.cells.map(cell => {
+                        cells: mapValues(state.cells, cell => {
                             if (cellIds.includes(cell.id)) {
                                 return { ...cell, results: [] }
                             } else return cell
@@ -275,38 +290,39 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(SetSelectedCell, (selected, options) => {
                 this.handler.updateState(state => {
                     let id = selected;
-                    if (options?.relative === "above")  {
-                        const anchorIdx = state.cells.findIndex(cell => cell.id === id);
-                        let prevIdx = anchorIdx - 1;
-                        id = state.cells[prevIdx]?.id;
-                        if (options?.skipHiddenCode) {
-                            while (state.cells[prevIdx]?.metadata.hideSource) {
-                                --prevIdx;
-                            }
+                    if (id) {
+                        const anchorIdx = state.cellOrder.indexOf(id)
+                        if (options?.relative === "above")  {
+                            let prevIdx = anchorIdx - 1;
                             id = state.cells[prevIdx]?.id;
-                        }
-                    } else if (options?.relative === "below") {
-                        const anchorIdx = state.cells.findIndex(cell => cell.id === id);
-                        let nextIdx = anchorIdx + 1
-                        id = state.cells[nextIdx]?.id;
-                        if (options?.skipHiddenCode) {
-                            while (state.cells[nextIdx]?.metadata.hideSource) {
-                                ++nextIdx;
+                            if (options?.skipHiddenCode) {
+                                while (state.cells[prevIdx]?.metadata.hideSource) {
+                                    --prevIdx;
+                                }
+                                id = state.cells[prevIdx]?.id;
                             }
+                        } else if (options?.relative === "below") {
+                            let nextIdx = anchorIdx + 1
                             id = state.cells[nextIdx]?.id;
+                            if (options?.skipHiddenCode) {
+                                while (state.cells[nextIdx]?.metadata.hideSource) {
+                                    ++nextIdx;
+                                }
+                                id = state.cells[nextIdx]?.id;
+                            }
                         }
                     }
                     if (id === undefined && (options?.relative !== undefined)) { // if ID is undefined, create cell above/below as needed
+                        // TODO: SetSelectedCell should NOT be creating cells! yikes
                         this.insertCell(options.relative)
                             .then(newId => this.dispatch(new SetSelectedCell(newId)))
                         return NoUpdate
                     } else {
                         id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
-                        const activeCell = state.cells.find(cell => cell.id === id)
                         return {
                             ...state,
-                            activeCell: activeCell,
-                            cells: state.cells.map(cell => {
+                            activeCellId: id,
+                            cells: mapValues(state.cells, cell => {
                                 return {
                                     ...cell,
                                     selected: cell.id === id,
@@ -321,15 +337,14 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.handler.updateState(state => {
                     return {
                         ...state,
-                        cells: state.cells.map(cell => {
-                            if (cell.id === cellId) {
-                                return {
-                                    ...cell,
-                                    selected: false
-                                }
-                            } else return cell
-                        }),
-                        activeCell: state.activeCell?.id === cellId ? undefined : state.activeCell
+                        cells: {
+                            ...state.cells,
+                            [cellId]: {
+                                ...state.cells[cellId],
+                                selected: false
+                            }
+                        },
+                        activeCellId: state.activeCellId === cellId ? undefined : state.activeCellId
                     }
                 })
             })
@@ -338,7 +353,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.handler.updateState(state => {
                     return {
                         ...state,
-                        cells: state.cells.map(cell => {
+                        cells: mapValues(state.cells, cell => {
                             return {
                                 ...cell,
                                 currentSelection: cell.id === cellId ? range : undefined
@@ -351,36 +366,30 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.handler.updateState(state => {
                     return {
                         ...state,
-                        cells: state.cells.map(cell => {
-                            if (cell.id === id) {
-                                return {
-                                    ...cell,
-                                    pendingEdits: []
-                                }
-                            } else return cell
-                        })
+                        cells: {
+                            ...state.cells,
+                            [id]: {
+                                ...state.cells[id],
+                                pendingEdits: []
+                            }
+                        }
                     }
                 })
             })
             .when(RemoveCellError, (id, error) => {
                 this.handler.updateState(state => {
+                    let cell = {...state.cells[id]};
+                    if (error instanceof RuntimeError) {
+                        cell = {...cell, runtimeError: undefined};
+                    } else {
+                        cell = {...cell, compileErrors: cell.compileErrors.filter(e => ! deepEquals(e, error)) }
+                    }
                     return {
                         ...state,
-                        cells: state.cells.map(cell => {
-                            if (cell.id === id) {
-                                if (error instanceof RuntimeError) {
-                                    return {
-                                        ...cell,
-                                        runtimeError: undefined
-                                    }
-                                } else {
-                                    return {
-                                        ...cell,
-                                        compileErrors: cell.compileErrors.filter(e => ! deepEquals(e, error))
-                                    }
-                                }
-                            } else return cell
-                        })
+                        cells: {
+                            ...state.cells,
+                            [id]: cell
+                        }
                     }
                 })
             })
@@ -444,35 +453,37 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
      * @return           A Promise that resolves with the inserted cell's id.
      */
     insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string}): Promise<number> {
-        const currentState = this.handler.state;
-        let currentCell = currentState.activeCell;
+        const state = this.handler.state;
+        let currentCellId = state.activeCellId;
         if (anchor === undefined) {
-            if (currentCell === undefined) {
+            if (currentCellId === undefined) {
                 if (direction === 'above') {
-                    currentCell = currentState.cells[0];
+                    currentCellId = state.cellOrder[0];
                 } else {
-                    currentCell = currentState.cells[currentState.cells.length - 1];
+                    currentCellId = state.cellOrder[state.cellOrder.length - 1];
                 }
             }
-            anchor = {id: currentCell.id, language: currentCell.language, metadata: currentCell.metadata};
+            const currentCell = state.cells[currentCellId];
+            anchor = {id: currentCellId, language: currentCell.language, metadata: currentCell.metadata};
         }
-        const anchorIdx = currentState.cells.findIndex(cell => cell.id === anchor!.id);
+        const anchorIdx = this.handler.getCellIndex(anchor.id)!;
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
-        const maybePrev = currentState.cells[prevIdx];
-        const createMsg = new CreateCell(anchor.language, anchor.content ?? '', anchor.metadata, maybePrev.id)
+        const maybePrevId = state.cellOrder[prevIdx] ?? -1;
+        console.log("Inserting new cell below", maybePrevId, "params were", direction, anchor)
+        const createMsg = new CreateCell(anchor.language, anchor.content ?? '', anchor.metadata, maybePrevId)
         this.dispatch(createMsg)
         return new Promise((resolve, reject) => {
             const obs = this.handler.addObserver(state => {
-                const anchorCellIdx = state.cells.findIndex(cell => cell.id === maybePrev.id)
-                const didInsert = state.cells.find((cell, idx) => {
+                const anchorCellIdx = state.cellOrder.indexOf(maybePrevId)
+                const insertedCellId = state.cellOrder.find((id, idx) => {
                     const below = idx > anchorCellIdx;
-                    const newer = cell.id > maybePrev.id;
-                    const matches = equalsByKey(cell, createMsg, ["language", "content", "metadata"]);
+                    const newer = id > maybePrevId;
+                    const matches = equalsByKey(state.cells[id], createMsg, ["language", "content", "metadata"]);
                     return below && newer && matches
                 });
-                if (didInsert !== undefined) {
+                if (insertedCellId !== undefined) {
                     this.handler.removeObserver(obs);
-                    resolve(didInsert.id)
+                    resolve(insertedCellId)
                 }
             })
         })
@@ -480,7 +491,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 
     deleteCell(id?: number){
        if (id === undefined) {
-           id = this.handler.state.activeCell?.id;
+           id = this.handler.state.activeCellId;
        }
        if (id !== undefined) {
            this.dispatch(new DeleteCell(id));
@@ -488,7 +499,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     }
 
     runActiveCell() {
-        const id = this.handler.state.activeCell?.id;
+        const id = this.handler.state.activeCellId;
         if (id !== undefined) {
             this.dispatch(new RequestCellRun([id]));
         }
@@ -496,11 +507,13 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 
     runToActiveCell() {
         const state = this.handler.state;
-        const id = state.activeCell?.id;
-        const activeIdx = state.cells.findIndex(cell => cell.id === id);
-        const cellsToRun = state.cells.slice(0, activeIdx + 1).map(c => c.id);
-        if (cellsToRun.length > 0) {
-            this.dispatch(new RequestCellRun(cellsToRun))
+        const id = state.activeCellId;
+        if (id) {
+            const activeIdx = state.cellOrder.indexOf(id)
+            const cellsToRun = state.cellOrder.slice(0, activeIdx + 1);
+            if (cellsToRun.length > 0) {
+                this.dispatch(new RequestCellRun(cellsToRun))
+            }
         }
     }
 
