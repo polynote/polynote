@@ -1,5 +1,5 @@
 import {FullScreenModal} from "../layout/modal";
-import {button, div, dropdown, h2, h3, iconButton, span, loader, table, tag, polynoteLogo} from "../tags";
+import {button, div, dropdown, h2, h3, iconButton, span, loader, table, tag, polynoteLogo, TagElement} from "../tags";
 import * as monaco from "monaco-editor";
 import {ClientBackup} from "../../state/client_backup";
 import {ServerStateHandler} from "../../state/server_state";
@@ -10,13 +10,14 @@ import {
     RecentNotebooksHandler,
     UserPreferencesHandler, ViewPrefsHandler
 } from "../../state/preferences";
-import {Observer, StateView} from "../../state/state_handler";
+import {Disposable, Observer, StateView} from "../../state/state_handler";
 import {
     RequestRunningKernels,
     ServerMessageDispatcher,
 } from "../../messaging/dispatcher";
 import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
+import {Deferred} from "../../util/helpers";
 
 export class About extends FullScreenModal {
     readonly observers: [StateView<any>, Observer<any>][] = []
@@ -132,7 +133,7 @@ export class About extends FullScreenModal {
                     throw new Error(`Unexpected Event target for event ${JSON.stringify(evt)}! Expected \`currentTarget\` to be an HTMLSelectElement but instead got ${JSON.stringify(self)}`)
                 }
                 const updatedValue = pref.possibleValues[self.options[self.selectedIndex].value];
-                UserPreferencesHandler.updateState(state => {
+                UserPreferencesHandler.update(state => {
                     return {
                         ...state,
                         [key]: {
@@ -190,6 +191,61 @@ export class About extends FullScreenModal {
         addStorageEl(ViewPrefsHandler)
 
         storageInfoEl.appendChild(storageTable);
+
+        return el;
+    }
+
+    stateInspector() {
+        let stateEl: TagElement<"div", HTMLDivElement>;
+        const el = div(["state-inspector"], [
+            div([], [
+                h2([], ["See the UI's current state"]),
+                span([], ["Inspect the current state of the Polynote UI. Mostly useful for debugging purposes."]),
+                tag('br'),
+                h3([], ["State Inspector"]),
+                stateEl = div(['state'], []),
+            ])
+        ]);
+
+        const stateTable = table([], {
+            classes: ['key', 'val'],
+            rowHeading: false,
+            addToTop: false
+        });
+
+        const showState = <T>(key: string, handler: StateView<T>) => {
+            const valueEl = div(['json', 'loading'], []);
+
+            const setValueEl = (value: any) => {
+                monaco.editor.colorize(JSON.stringify(value, (k, v) => typeof v === 'bigint' ? v.toString : v, 1), "json", {}).then(function(result) {
+                    valueEl.innerHTML = result;
+                    valueEl.classList.remove('loading')
+                });
+            };
+            setTimeout(() => {
+                setValueEl(handler.state);
+            }, 0)
+
+            const obs = handler.addObserver(next => {
+                setValueEl(next)
+            })
+            this.observers.push([handler, obs])
+
+            stateTable.addRow({
+                key,
+                val: valueEl,
+            })
+        }
+
+        showState("Server State", ServerStateHandler.get)
+        Object.keys(ServerStateHandler.get.state.notebooks).forEach(path => {
+            const maybeNbInfo = ServerStateHandler.getNotebook(path)
+            if (maybeNbInfo) {
+                showState(path, maybeNbInfo.handler)
+            }
+        })
+
+        stateEl.appendChild(stateTable)
 
         return el;
     }
@@ -345,6 +401,7 @@ export class About extends FullScreenModal {
             'Preferences': this.preferences.bind(this),
             'Open Kernels': this.openKernels.bind(this),
             'Client-side Backups': this.clientBackups.bind(this),
+            'State Inspector': this.stateInspector.bind(this),
         };
         const tabnav = new TabNav(tabs);
         this.content.firstChild?.replaceWith(tabnav.el);

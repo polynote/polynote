@@ -45,13 +45,13 @@ export class SocketStateHandler extends StateHandler<SocketState> {
         Sockets.set(this.socketKey, socket);
 
         socket.addEventListener('open', evt => {
-            this.updateState(s => {
+            this.update(s => {
                 return { ...s, status: "connected" }
             })
         });
 
         socket.addEventListener('close', evt => {
-            this.updateState(s => {
+            this.update(s => {
                 return { ...s, status: "disconnected" }
             })
         });
@@ -62,7 +62,7 @@ export class SocketStateHandler extends StateHandler<SocketState> {
             const req = new XMLHttpRequest();
             req.responseType = "arraybuffer";
             const updateError = (error: ConnectionError) => {
-                this.updateState(s => {
+                this.update(s => {
                     return {
                         error: error,
                         status: "disconnected"

@@ -136,7 +136,7 @@ export class Kernel {
     }
 
     private collapse() {
-        ViewPrefsHandler.updateState(state => {
+        ViewPrefsHandler.update(state => {
             return {
                 ...state,
                 [this.whichPane]: {
@@ -388,7 +388,7 @@ class KernelTasksEl {
         const task = this.tasks[id];
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
-        this.kernelTasksHandler.updateState(s => removeKey(s, id))
+        this.kernelTasksHandler.update(s => removeKey(s, id))
     }
 }
 

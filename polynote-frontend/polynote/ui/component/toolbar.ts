@@ -5,7 +5,6 @@ import {
     RequestCellRun,
     RequestClearOutput,
     ServerMessageDispatcher,
-    SetCellLanguage,
     UIAction,
     ViewAbout
 } from "../../messaging/dispatcher";
@@ -62,7 +61,7 @@ export class Toolbar {
                         cellSelectionListener = newListener;
                         currentNotebookHandler = nbInfo.handler;
                         nb.enable(nbInfo.info.dispatcher);
-                        cell.enable(nbInfo.info.dispatcher, currentNotebookHandler);
+                        cell.enable(currentNotebookHandler);
                         code.enable(nbInfo.info.dispatcher);
                         text.enable();
                     }
@@ -176,7 +175,7 @@ class NotebookToolbar extends ToolbarElement {
 }
 
 class CellToolbar extends ToolbarElement {
-    private dispatcher?: NotebookMessageDispatcher;
+    private nbHandler?: NotebookStateHandler;
     private activeCellHandler?: StateView<number|undefined>;
     private langSelector: FakeSelect;
     private disabledLangSelector: FakeSelect;
@@ -195,15 +194,15 @@ class CellToolbar extends ToolbarElement {
             ], [
                 iconButton(["insert-cell-above"], "Insert cell above current", "arrow-up", "Insert above")
                     .click(() => {
-                        if(this.dispatcher) this.dispatcher.insertCell('above')
+                        if(this.nbHandler) this.nbHandler.insertCell('above')
                     }),
                 iconButton(["insert-cell-below"], "Insert cell below current", "arrow-down", "Insert below")
                     .click(() => {
-                        if (this.dispatcher) this.dispatcher.insertCell('below')
+                        if (this.nbHandler) this.nbHandler.insertCell('below')
                     }),
                 iconButton(["delete-cell"], "Delete current cell", "trash-alt", "Delete")
                     .click(() => {
-                        if (this.dispatcher) this.dispatcher.deleteCell()
+                        if (this.nbHandler) this.nbHandler.deleteCell()
                     })
                 // iconButton(['undo'], 'Undo', 'undo-alt', 'Undo')
                 //     .click(() => this.dispatchEvent(new ToolbarEvent('Undo'))),
@@ -231,14 +230,14 @@ class CellToolbar extends ToolbarElement {
 
         this.langSelector.addListener(change => {
             const id = this.activeCellHandler?.state;
-            if (this.dispatcher && id) {
-                this.dispatcher.dispatch(new SetCellLanguage(id, change.newValue))
+            if (this.nbHandler && id) {
+                this.nbHandler.setCellLanguage(id, change.newValue)
             }
         })
     }
 
-    enable(dispatcher: NotebookMessageDispatcher, currentNotebookHandler: NotebookStateHandler) {
-        this.dispatcher = dispatcher;
+    enable(currentNotebookHandler: NotebookStateHandler) {
+        this.nbHandler = currentNotebookHandler;
         this.activeCellHandler = currentNotebookHandler.view("activeCellId");
         this.activeCellHandler.addObserver(cellId => {
             if (cellId) {
@@ -262,7 +261,7 @@ class CellToolbar extends ToolbarElement {
     }
 
     disable() {
-        this.dispatcher = undefined;
+        this.nbHandler = undefined;
         this.activeCellHandler?.clearObservers()
         this.activeCellHandler?.dispose()
         this.activeCellHandler = undefined;

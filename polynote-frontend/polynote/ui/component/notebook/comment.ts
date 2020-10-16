@@ -96,7 +96,7 @@ export class CommentHandler extends Disposable {
                if (maybeRootId && maybeRoot) {
                    if (comment.uuid === maybeRoot.uuid) {
                        // if this is a root comment, we update its state
-                       maybeRoot.rootState.updateState(() => comment);
+                       maybeRoot.rootState.update(() => comment);
                    } else {
                        // Otherwise, it's a child comment, so we add it to rootChildren.
                        rootChildren[maybeRoot.uuid] = [...rootChildren[maybeRoot.uuid] ?? [], comment];
@@ -107,7 +107,7 @@ export class CommentHandler extends Disposable {
            // Finally, we update all the root children
            Object.values(this.commentRoots).forEach(root => {
                const children = rootChildren[root.uuid] ?? [];
-               root.childrenState.updateState(() => children)
+               root.childrenState.update(() => children)
            })
        }
        handleComments(commentsState.state)

@@ -250,7 +250,7 @@ export class BranchHandler extends StateHandler<Branch> {
                 }
             }
         }
-        this.updateState(s => {
+        this.update(s => {
             return go(path, [], s)
         })
     }
@@ -278,7 +278,7 @@ export class BranchHandler extends StateHandler<Branch> {
                 }
             }
         }
-        this.updateState(s => {
+        this.update(s => {
             return go(path, s)
         })
     }
@@ -475,7 +475,7 @@ export class LeafEl {
             .click(evt => {
                 evt.preventDefault();
                 evt.stopPropagation();
-                ServerStateHandler.loadNotebook(leaf.fullPath)
+                ServerStateHandler.loadNotebook(leaf.fullPath, true)
                     .then(() => {
                         ServerStateHandler.selectNotebook(leaf.fullPath)
                     })

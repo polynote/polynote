@@ -3,7 +3,7 @@
 import {VizInterpreter, VegaInterpreter} from "./vega_interpreter";
 import {ClientResult, CompileErrors, ExecutionInfo, Result, ResultValue, RuntimeError} from "../data/result";
 import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {NotebookMessageDispatcher, SetCellOutput} from "../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {
     CellResult,
@@ -118,7 +118,7 @@ export class ClientInterpreter {
             updateStatus(256)
             results.forEach(res => {
                 if (res instanceof ClientResult) {
-                    dispatcher.dispatch(new SetCellOutput(id, res))
+                    dispatcher.setCellOutput(id, res);
                 } else {
                     this.receiver.inject(new CellResult(id, res))
                 }

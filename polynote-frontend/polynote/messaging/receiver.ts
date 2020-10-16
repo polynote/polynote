@@ -20,22 +20,21 @@ import {
     ResultValue,
     RuntimeError
 } from "../data/result";
-import {NoUpdate, StateHandler} from "../state/state_handler";
+import {NoUpdate, StateHandler, StateView} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
 import {arrDelete, deepCopy, arrInsert, mapValues, removeKey, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
-import {numberFormat} from "vega-lite/build/src/compile/format";
 
 class MessageReceiver<S> {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
 
     receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => S | typeof NoUpdate) {
         this.socket.addMessageListener(msgType, (...args: ConstructorParameters<typeof msgType>) => {
-            this.state.updateState(s => {
+            this.state.update(s => {
                 return fn(s, ...args) ?? NoUpdate
-            })
+            }, this)
         })
     }
 
@@ -45,13 +44,24 @@ class MessageReceiver<S> {
     }
 }
 
+// A View whose observers ignore state updates from the server
+export class IgnoreServerUpdatesView<S> extends StateView<S> {
+    constructor(s: S) {
+        super(s);
+    }
+
+    protected matchSource(updateSource: any, x: any): boolean {
+        return ! (updateSource instanceof MessageReceiver)
+    }
+}
+
 export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
     constructor(socket: SocketStateHandler, state: NotebookStateHandler) {
         super(socket, state);
 
         socket.view("status").addObserver(status => {
             if (status === "disconnected") {
-                state.updateState(s => {
+                state.update(s => {
                     return {
                         ...s,
                         kernel: {
@@ -67,7 +77,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     }
                 })
             } else {
-                state.updateState(s => {
+                state.update(s => {
                     return {
                         ...s,
                         kernel: {
@@ -313,11 +323,15 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         const insertIdx = s.cellOrder.findIndex(id => id === after) + 1;
                         return {
                             ...s,
-                            cells:  {
+                            cells: {
                                 ...s.cells,
                                 [cell.id]: newCell
                             },
-                            cellOrder: arrInsert(s.cellOrder, insertIdx, newCell.id)
+                            cellOrder: arrInsert(s.cellOrder, insertIdx, newCell.id),
+                            pendingCells: {
+                                ...s.pendingCells,
+                                added: s.pendingCells.added.filter(pending => pending.cellId !== cell.id)
+                            }
                         }
                     })
                     .when(messages.DeleteCell, (g, l, id: number) => {
@@ -335,7 +349,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                     }
                                 },
                                 cellOrder: arrDelete(s.cellOrder, idx),
-                                activeCellId: nextCellId
+                                activeCellId: nextCellId,
+                                pendingCells: {
+                                    ...s.pendingCells,
+                                    removed: s.pendingCells.removed.filter(pending => pending !== id)
+                                }
                             }
                             console.log("DeleteCell", id, "nextCellId is", nextCellId, "state is now", x)
                             return x
@@ -555,7 +573,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         super(SocketStateHandler.global, ServerStateHandler.get);
 
         this.socket.view("status").addObserver(status => {
-            this.state.updateState(s => {
+            this.state.update(s => {
                 return {
                     ...s, connectionStatus: status
                 }
@@ -620,7 +638,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 const path = kv.first;
                 const status = kv.second;
                 const nbInfo = ServerStateHandler.getOrCreateNotebook(path)
-                nbInfo.handler.updateState(nbState => {
+                nbInfo.handler.update(nbState => {
                     return {
                         ...nbState,
                         kernel: {
