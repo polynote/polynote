@@ -1,4 +1,4 @@
-import {StateHandler} from "./state_handler";
+import {NoUpdate, StateHandler} from "./state_handler";
 import {
     ClientResult, CompileErrors,
     Output,
@@ -11,6 +11,7 @@ import {CellComment, CellMetadata, NotebookConfig} from "../data/data";
 import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
+import {deepEquals, equalsByKey, mapValues} from "../util/helpers";
 
 export interface CellState {
     id: number,
@@ -56,12 +57,17 @@ export interface NotebookState {
     activeSignature: { resolve: (signature: SignatureHint) => void, reject: () => void } | undefined,
     activePresence: Record<number, { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}}>,
     // map of handle ID to message received.
-    activeStreams: Record<number, (HandleData | ModifyStream)[]>
+    activeStreams: Record<number, (HandleData | ModifyStream)[]>,
+    // cell changes that are waiting ack from server
+    pendingCells: { added: {cellId: number, language: string, content: string, metadata: CellMetadata, prev: number}[], removed: number[]},
 }
 
 export class NotebookStateHandler extends StateHandler<NotebookState> {
+    readonly cellsHandler: StateHandler<Record<number, CellState>>;
     constructor(state: NotebookState) {
         super(state);
+
+        this.cellsHandler = this.lens("cells")
     }
 
     getCellIndex(cellId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
@@ -82,6 +88,128 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         return anchorIdx ? cellOrder[anchorIdx + 1] : undefined
     }
 
+    /**
+     * Change the currently selected cell.
+     *
+     * @param selected     The ID of the cell to select OR the ID of the anchor cell for `relative`. If `undefined`, deselects cells.
+     * @param options      Options, consisting of:
+     *                     relative        If set, select the cell either above or below the one with ID specified by `selected`
+     *                     skipHiddenCode  If set alongside a relative cell selection, cells with hidden code blocks should be skipped.
+     *                     editing         If set, indicate that the cell is editing in addition to being selected.
+     * @return             The ID of the cell that was selected, possibly undefined if nothing was selected.
+     */
+    selectCell(selected: number | undefined, options?: { relative?: "above" | "below", skipHiddenCode?: boolean, editing?: boolean}): number | undefined {
+        let id = selected;
+        if (id !== undefined) {
+            const anchorIdx = this.state.cellOrder.indexOf(id)
+            if (options?.relative === "above")  {
+                let prevIdx = anchorIdx - 1;
+                id = this.state.cellOrder[prevIdx];
+                if (options?.skipHiddenCode) {
+                    while (prevIdx > -1 && this.state.cells[id]?.metadata.hideSource) {
+                        --prevIdx;
+                        id = this.state.cellOrder[prevIdx];
+                    }
+                }
+            } else if (options?.relative === "below") {
+                let nextIdx = anchorIdx + 1
+                id = this.state.cellOrder[nextIdx];
+                if (options?.skipHiddenCode) {
+                    while (nextIdx < this.state.cellOrder.length && this.state.cells[id]?.metadata.hideSource) {
+                        ++nextIdx;
+                        id = this.state.cellOrder[nextIdx];
+                    }
+                }
+            }
+        }
+        id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
+        console.log("cell 6 output is", this.state.cells[6]?.output)
+        this.update(s => ({
+            ...s,
+            activeCellId: id,
+            cells: mapValues(s.cells, cell => ({
+                ...cell,
+                selected: cell.id === id,
+                editing: cell.id === id && (options?.editing ?? false)
+            }))
+        }))
+        return id
+    }
+
+    /**
+     * Helper for inserting a cell.
+     *
+     * @param direction  Whether to insert below of above the anchor
+     * @param anchor     The anchor. If it is undefined, the anchor is based on the currently selected cell. If none is
+     *                   selected, the anchor is either the first or last cell (depending on the direction supplied).
+     *                   The anchor is used to determine the location, language, and metadata to supply to the new cell.
+     * @return           A Promise that resolves with the inserted cell's id.
+     */
+    insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string}): Promise<number> {
+        const state = this.state;
+        let currentCellId = state.activeCellId;
+        if (anchor === undefined) {
+            if (currentCellId === undefined) {
+                if (direction === 'above') {
+                    currentCellId = state.cellOrder[0];
+                } else {
+                    currentCellId = state.cellOrder[state.cellOrder.length - 1];
+                }
+            }
+            const currentCell = state.cells[currentCellId];
+            anchor = {id: currentCellId, language: currentCell.language, metadata: currentCell.metadata};
+        }
+        const anchorIdx = this.getCellIndex(anchor.id)!;
+        const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
+        const maybePrevId = state.cellOrder[prevIdx] ?? -1;
+        const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
+        const cellTemplate = {cellId: maxId + 1, language: anchor!.language, content: anchor!.content ?? '', metadata: anchor!.metadata, prev: maybePrevId}
+        this.update1("pendingCells", pending => ({
+            ...pending,
+            added: [...pending.added, cellTemplate]
+        }))
+        return new Promise(resolve => {
+            const cellOrder = this.view("cellOrder")
+            cellOrder.addObserver(order => {
+                const anchorCellIdx = order.indexOf(maybePrevId)
+                const insertedCellId = order.slice(anchorCellIdx).find((id, idx) => {
+                    const newer = id > maybePrevId;
+                    const matches = equalsByKey(this.state.cells[id], cellTemplate, ["language", "content", "metadata"]);
+                    return newer && matches
+                });
+                if (insertedCellId !== undefined) {
+                    cellOrder.dispose()
+                    resolve(insertedCellId)
+                }
+            })
+        })
+    }
+
+    deleteCell(id?: number){
+        if (id === undefined) {
+            id = this.state.activeCellId;
+        }
+        if (id !== undefined) {
+            this.update1("pendingCells", pending => ({
+                ...pending,
+                removed: [...pending.removed, id!]
+            }))
+        }
+    }
+
+    setCellLanguage(id: number, language: string) {
+        console.log("Setting language of cell", id, "to", language)
+        this.cellsHandler.update1(id, cell => ({
+            ...cell,
+            language,
+            // clear a bunch of stuff if we're changing to text... hm, maybe we need to do something else when it's a a text cell...
+            output: language === "text" ? [] : cell.output,
+            results: language === "text" ? [] : cell.results,
+            error: language === "text" ? false : cell.error,
+            compileErrors: language === "text" ? [] : cell.compileErrors,
+            runtimeError: language === "text" ? undefined : cell.runtimeError,
+        }))
+    }
 
     // wait for cell to transition to a specific state
     waitForCellChange(id: number, targetState: "queued" | "running" | "error"): Promise<undefined> {

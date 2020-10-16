@@ -25,7 +25,7 @@ export class Home {
             recentNotebooks.innerHTML = "";
             recents.forEach(({name, path}) => {
                 recentNotebooks.appendChild(tag('li', ['notebook-link'], {}, [
-                    span([], [path]).click(() => ServerStateHandler.loadNotebook(path).then(() => {
+                    span([], [path]).click(() => ServerStateHandler.loadNotebook(path, true).then(() => {
                         ServerStateHandler.selectNotebook(path)
                     }))
                 ]))

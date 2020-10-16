@@ -1,5 +1,5 @@
 import {div, icon, span, TagElement} from "../../tags";
-import {NotebookMessageDispatcher, SetCellHighlight, SetSelectedCell} from "../../../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {StateHandler} from "../../../state/state_handler";
 import {CellMetadata} from "../../../data/data";
@@ -20,7 +20,7 @@ export class Notebook {
         const config = new NotebookConfigEl(dispatcher, notebookState.view("config"), notebookState.view("kernel").view("status"));
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
         cellsEl.addEventListener('scroll', evt => {
-            NotebookScrollLocationsHandler.updateState(locations => {
+            NotebookScrollLocationsHandler.update(locations => {
                 return {
                     ...locations,
                     [path]: cellsEl.scrollTop
@@ -43,7 +43,7 @@ export class Notebook {
                 })
             } else {
                 // deselect cells.
-                this.dispatcher.dispatch(new SetSelectedCell(undefined))
+                this.notebookState.selectCell(undefined)
             }
         }
         handleVisibility(ServerStateHandler.state.currentNotebook)
@@ -56,8 +56,7 @@ export class Notebook {
 
             addedIds.forEach(id => {
                 const handler = cellsHandler.lens(id)
-                handler.onDispose.then(() => console.log("disposed lens for cell", id))
-                const cell = new CellContainer(dispatcher, handler, notebookState.state.path);
+                const cell = new CellContainer(dispatcher, notebookState, handler, notebookState.state.path);
                 const el = div(['cell-and-divider'], [cell.el, this.newCellDivider()])
                 this.cells[id] = {cell, handler, el}
                 const cellIdx = newOrder.indexOf(id)
@@ -116,11 +115,15 @@ export class Notebook {
         const cellId = parseInt(hashId.slice("Cell".length))
         // cell might not yet be loaded, so be sure to wait for it
         this.waitForCell(cellId).then(() => {
-            this.dispatcher.dispatch(new SetSelectedCell(cellId))
+            this.notebookState.selectCell(cellId)
 
             if (pos) {
-                const pr = PosRange.fromString(pos)
-                this.dispatcher.dispatch(new SetCellHighlight(cellId, pr, "link-highlight"))
+                const range = PosRange.fromString(pos)
+                // TODO: when should this go away? maybe when you edit the cell
+                cellsHandler.lens(cellId).update(s => ({
+                    ...s,
+                    currentHighlight: {range, className: "link-highlight"}
+                })).dispose()
             }
         })
     }
@@ -145,9 +148,9 @@ export class Notebook {
     }
 
     private insertCell(prev: number, language: string, content: string, metadata?: CellMetadata) {
-        this.dispatcher.insertCell("below", {id: prev, language, content, metadata: metadata ?? new CellMetadata()})
+        this.notebookState.insertCell("below", {id: prev, language, content, metadata: metadata ?? new CellMetadata()})
             .then(newCellId => {
-                this.dispatcher.dispatch(new SetSelectedCell(newCellId))
+                this.notebookState.selectCell(newCellId)
             })
     }
 

@@ -81,8 +81,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         return ServerStateHandler.get.state;
     }
 
-    static updateState(f: (s: ServerState) => (typeof NoUpdate | ServerState)) {
-        return ServerStateHandler.get.updateState(f)
+    static updateState(f: (s: ServerState) => (typeof NoUpdate | ServerState), updateSource?: any) {
+        return ServerStateHandler.get.update(f, updateSource)
     }
 
     // only for testing
@@ -168,7 +168,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     activeCellId: undefined,
                     activeCompletion: undefined,
                     activeSignature: undefined,
-                    activeStreams: {}
+                    activeStreams: {},
+                    pendingCells: { added: [], removed: []},
                 }),
                 loaded: false,
                 info: undefined,
@@ -183,7 +184,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         const nbInfo = ServerStateHandler.notebooks[oldPath]
         if (nbInfo) {
             // update the path in the notebook's handler
-            nbInfo.handler.updateState(nbState => {
+            nbInfo.handler.update(nbState => {
                 return {
                     ...nbState,
                     path: newPath
@@ -194,7 +195,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             delete ServerStateHandler.notebooks[oldPath]
 
             // update the server state's notebook dictionary
-            ServerStateHandler.get.updateState(s => {
+            ServerStateHandler.get.update(s => {
                 const prev = s.notebooks[oldPath]
                 return {
                     ...s,
@@ -214,7 +215,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         delete ServerStateHandler.notebooks[path]
 
         // update the server state's notebook dictionary
-        ServerStateHandler.get.updateState(s => {
+        ServerStateHandler.get.update(s => {
             return {
                 ...s,
                 notebooks: {

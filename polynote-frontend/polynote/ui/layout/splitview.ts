@@ -12,7 +12,7 @@ export class SplitView {
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
                 leftPane.header.click(evt => {
-                    ViewPrefsHandler.updateState(s => {
+                    ViewPrefsHandler.update(s => {
                         return {
                             ...s,
                             leftPane: {
@@ -27,7 +27,7 @@ export class SplitView {
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
                 rightPane.header.click(evt => {
-                    ViewPrefsHandler.updateState(s => {
+                    ViewPrefsHandler.update(s => {
                         return {
                             ...s,
                             rightPane: {
@@ -66,7 +66,7 @@ export class SplitView {
             }
         });
         leftDragger.addEventListener('dragend', () => {
-            ViewPrefsHandler.updateState(s => {
+            ViewPrefsHandler.update(s => {
                 return {
                     ...s,
                     leftPane: {
@@ -102,7 +102,7 @@ export class SplitView {
             }
         });
         rightDragger.addEventListener('dragend', evt => {
-            ViewPrefsHandler.updateState(s => {
+            ViewPrefsHandler.update(s => {
                 return {
                     ...s,
                     rightPane: {

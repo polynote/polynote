@@ -20,7 +20,7 @@ export class ErrorStateHandler extends StateHandler<ErrorState> {
     }
 
     static addServerError(err: ServerErrorWithCause) {
-        ErrorStateHandler.get.updateState(s => {
+        ErrorStateHandler.get.update(s => {
             if (s.serverErrors.find(e => deepEquals(e.err, err)) === undefined) {
                 return {
                     ...s,
@@ -31,7 +31,7 @@ export class ErrorStateHandler extends StateHandler<ErrorState> {
     }
 
     static addKernelError(path: string, err: ServerErrorWithCause) {
-        ErrorStateHandler.get.updateState(s => {
+        ErrorStateHandler.get.update(s => {
             if (s[path]?.find(e => deepEquals(e.err, err)) === undefined) {
                 return {
                 ...s,
@@ -42,7 +42,7 @@ export class ErrorStateHandler extends StateHandler<ErrorState> {
     }
 
     static removeError(err: DisplayError) {
-        ErrorStateHandler.get.updateState(errorState => {
+        ErrorStateHandler.get.update(errorState => {
             let state = { ...errorState };
             Object.keys(errorState).forEach(key => {
                 state = {...state, [key]: arrDeleteFirstItem(state[key], err)}
@@ -52,7 +52,7 @@ export class ErrorStateHandler extends StateHandler<ErrorState> {
     }
 
     static notebookRenamed(oldPath: string, newPath: string) {
-        ErrorStateHandler.get.updateState(s => {
+        ErrorStateHandler.get.update(s => {
             const newState = {...s}
             newState[newPath] = newState[oldPath]
             delete newState[oldPath]

@@ -69,7 +69,7 @@ class Main {
             const notebookBase = 'notebook/';
             if (path.startsWith(notebookBase)) {
                 const nbPath = path.substring(notebookBase.length)
-                ServerStateHandler.loadNotebook(nbPath).then(() => {
+                ServerStateHandler.loadNotebook(nbPath, true).then(() => {
                     ServerStateHandler.selectNotebook(nbPath)
                 })
             }
@@ -92,7 +92,7 @@ class Main {
                 window.history.pushState({notebook: path}, title, tabUrl.href);
             }
 
-            RecentNotebooksHandler.updateState(recents => {
+            RecentNotebooksHandler.update(recents => {
                 const maybeExists = recents.find(r => r.path === path);
                 if (maybeExists) {
                     return [maybeExists, ...recents.filter(r => r.path !== path)];

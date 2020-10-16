@@ -29,7 +29,7 @@ describe("StateHandler", () => {
     it("holds some state value that can be updated", () => {
         const s = new StateHandler(1)
         expect(s.state).toEqual(1)
-        s.updateState(() => 2)
+        s.update(() => 2)
         expect(s.state).toEqual(2)
     })
     it("allows observation of state changes", done => {
@@ -39,16 +39,16 @@ describe("StateHandler", () => {
             expect(oldState).toEqual(1)
             done()
         })
-        s.updateState(() => 2)
+        s.update(() => 2)
     })
     it("doesn't call observers when the state isn't changed", () => {
         const s = new StateHandler(1)
         s.addObserver(() => {
             throw new Error("you better not change the state!!")
         })
-        expect(() => s.updateState(() => 2)).toThrow()
+        expect(() => s.update(() => 2)).toThrow()
         expect(s.state).toEqual(2)
-        expect(() => s.updateState(() => 2)).not.toThrow()
+        expect(() => s.update(() => 2)).not.toThrow()
     })
     test("observers can be removed / cleared", () => {
         const s = new StateHandler(1)
@@ -66,27 +66,27 @@ describe("StateHandler", () => {
             }
             anonStateChange = true;
         })
-        s.updateState(() => 2)
+        s.update(() => 2)
         expect(s.state).toEqual(2)
-        expect(() => s.updateState(() => 3)).toThrowError("error from obs")
+        expect(() => s.update(() => 3)).toThrowError("error from obs")
         expect(s.state).toEqual(3)
         s.removeObserver(obs)
-        expect(() => s.updateState(() => 4)).toThrowError("error from anonymous")
+        expect(() => s.update(() => 4)).toThrowError("error from anonymous")
         s.clearObservers()
-        s.updateState(() => 5)
+        s.update(() => 5)
         expect(s.state).toEqual(5)
     })
     it("can be disposed", async () => {
         const s = new StateHandler(1)
         const obFn = jest.fn()
         s.addObserver(obFn)
-        s.updateState(() => 2)
+        s.update(() => 2)
         expect(obFn).toHaveBeenCalledTimes(1)
         expect(obFn).toHaveBeenCalledWith(2, 1)
         s.dispose()
         s.onDispose.then(() => {
             expect(() => s.state).toThrowError()
-            expect(() => s.updateState(() => 3)).toThrowError()
+            expect(() => s.update(() => 3)).toThrowError()
             expect(obFn).toHaveBeenCalledTimes(1)
         })
     })
@@ -95,12 +95,12 @@ describe("StateHandler", () => {
         const s = new StateHandler(1, d)
         const obFn = jest.fn()
         s.addObserver(obFn)
-        s.updateState(() => 2)
+        s.update(() => 2)
         expect(obFn).toHaveBeenCalledTimes(1)
         expect(obFn).toHaveBeenCalledWith(2, 1)
         d.dispose()  // disposed `d`, now expect `s` to also be disposed
         s.onDispose.then(() => {
-            expect(() => s.updateState(() => 3)).toThrowError()
+            expect(() => s.update(() => 3)).toThrowError()
             expect(obFn).toHaveBeenCalledTimes(1)
             done()
         })
@@ -117,10 +117,10 @@ describe("StateHandler", () => {
         const obA = jest.fn()
         view.addObserver(obA)
 
-        sh.updateState(s => ({...s, a: 2}))
+        sh.update(s => ({...s, a: 2}))
         expect(view.state).toEqual(2)
 
-        sh.updateState(s => ({...s, b: 100}))
+        sh.update(s => ({...s, b: 100}))
         expect(view.state).toEqual(2) // stays the same
 
         expect(obState).toHaveBeenCalledTimes(2)
@@ -139,10 +139,10 @@ describe("StateHandler", () => {
         const obA = jest.fn()
         view.addObserver(obA)
 
-        sh.updateState(s => ({...s, a: 2}))
+        sh.update(s => ({...s, a: 2}))
         expect(view.state).toEqual("2")
 
-        sh.updateState(s => ({...s, b: 100}))
+        sh.update(s => ({...s, b: 100}))
         expect(view.state).toEqual("2") // stays the same
 
         expect(obState).toHaveBeenCalledTimes(2)
@@ -153,7 +153,7 @@ describe("StateHandler", () => {
         const view = parent.view("a");
         const obFn = jest.fn()
         view.addObserver(obFn)
-        parent.updateState(s => ({...s, a: 2}))
+        parent.update(s => ({...s, a: 2}))
         expect(obFn).toHaveBeenCalledTimes(1)
         expect(obFn).toHaveBeenCalledWith(2, 1)
         parent.dispose()
@@ -168,7 +168,7 @@ describe("StateHandler", () => {
         const view = parent.view("a", undefined, d);
         const obFn = jest.fn()
         view.addObserver(obFn)
-        parent.updateState(s => ({...s, a: 2}))
+        parent.update(s => ({...s, a: 2}))
         expect(obFn).toHaveBeenCalledTimes(1)
         expect(obFn).toHaveBeenCalledWith(2, 1)
         d.dispose()
@@ -201,7 +201,7 @@ describe("StateHandler", () => {
 
         const addingViewObs = jest.fn()
         addingView.addObserver(addingViewObs)
-        parent.updateState(() => ({a: 2, b: 2}));
+        parent.update(() => ({a: 2, b: 2}));
         expect(viewObs).toHaveBeenCalledWith(2, 1)
         expect(addingViewObs).toHaveBeenCalledWith(12, 11)
 
@@ -214,7 +214,7 @@ describe("StateHandler", () => {
         sh.addObserver(() => {
             throw new Error("you better not change the state!!")
         })
-        expect(() => sh.updateState(() => state())).toThrow()  // since state is a new object, this throws because equality is not deep.
+        expect(() => sh.update(() => state())).toThrow()  // since state is a new object, this throws because equality is not deep.
 
         const deep = new class<S> extends StateHandler<S> {
             protected compare(s1: any, s2: any): boolean {
@@ -224,6 +224,6 @@ describe("StateHandler", () => {
         deep.addObserver(() => {
             throw new Error("you better not change the state!!")
         })
-        expect(() => deep.updateState(() => state())).not.toThrow()
+        expect(() => deep.update(() => state())).not.toThrow()
     })
 })

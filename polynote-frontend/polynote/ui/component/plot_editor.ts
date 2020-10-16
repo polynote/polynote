@@ -20,7 +20,7 @@ import {ServerStateHandler} from "../../state/server_state";
 import {GroupAgg, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {ClientResult, Output} from "../../data/result";
-import {HideValueInspector, NotebookMessageDispatcher, SetCellOutput} from "../../messaging/dispatcher";
+import {HideValueInspector, NotebookMessageDispatcher} from "../../messaging/dispatcher";
 import {CellMetadata} from "../../data/data";
 import {DataStream} from "../../messaging/datastream";
 import {StreamingDataRepr} from "../../data/value_repr";
@@ -506,15 +506,19 @@ export class PlotEditor {
         content = content.replace('"$DATA_STREAM$"', streamSpec);
 
         VegaClientResult.plotToOutput(this.plot).then(output => {
-            return this.dispatcher.insertCell("below", {
+            return this.nbState.insertCell("below", {
                 id: this.sourceCellId,
                 language: 'vega',
                 metadata: new CellMetadata(false, true, false),
                 content: `(${content})`
             }).then(newCellId => {
                 const clientResult = new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output);
-                this.dispatcher.dispatch(new SetCellOutput(newCellId, clientResult))
-                return new Promise((resolve, reject) => {
+                this.nbState.cellsHandler.update1(newCellId, cell => ({
+                    ...cell,
+                    output: [output],
+                    results: [...cell.results, clientResult]
+                }))
+                return new Promise(resolve => {
                     const obs = this.nbState.addObserver(state => {
                         const maybeHasOutput = state.cells[newCellId]
                         if (maybeHasOutput && maybeHasOutput.output.includes(output)) {

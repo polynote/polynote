@@ -11,8 +11,8 @@ import {
     RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
-import {NoUpdate, StateHandler} from "../state/state_handler";
-import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
+import {NoUpdate, StateHandler, StateView} from "../state/state_handler";
+import {CellState, CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../data/content_edit";
 import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_state";
 import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
@@ -34,6 +34,7 @@ import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_inter
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
+import {IgnoreServerUpdatesView} from "./receiver";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -65,6 +66,65 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 ErrorStateHandler.addKernelError(state.state.path, err.error)
             }
         })
+
+        const cells: Record<number, StateView<CellState>> = {};
+        const cellsState = state.view("cells");
+        state.view("cellOrder").addObserver((newOrder, prevOrder) => {
+            const [_, added] = diffArray(prevOrder, newOrder);
+
+            added.forEach(id => {
+                const handler = cellsState.view(id)
+                cells[id] = handler
+                this.watchCell(handler)
+            })
+        })
+
+        state.view("pendingCells", IgnoreServerUpdatesView).addObserver((newCells, prevCells) => {
+            const added = diffArray(prevCells.added, newCells.added)[1];
+
+            added.forEach(pending => {
+                this.handler.update(state => {
+                    let localVersion = state.localVersion + 1;
+                    // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
+                    const cell = new NotebookCell(pending.cellId, pending.language, pending.content, [], pending.metadata);
+                    const update = new messages.InsertCell(state.globalVersion, localVersion, cell, pending.prev);
+                    this.sendUpdate(update);
+                    return {
+                        ...state,
+                        editBuffer: state.editBuffer.push(state.localVersion, update)
+                    }
+                })
+            })
+
+            const removed = diffArray(prevCells.removed, newCells.removed)[1];
+            removed.forEach(id => {
+                this.handler.update(state => {
+                    state = {...state}
+                    const update = new messages.DeleteCell(state.globalVersion, ++state.localVersion, id);
+                    this.sendUpdate(update);
+                    // TODO: rethink EditBuffer. What if editbuffer was removed from the state, and then edits went UI -> statehandler -> editbuffer -> dispatcher ?
+                    state.editBuffer = state.editBuffer.push(state.localVersion, update)
+                    return state
+                })
+            })
+        })
+    }
+
+    // TODO: make sure this isn't being set every time
+    private watchCell(cellView: StateView<CellState>) {
+        const cellId = cellView.state.id;
+        cellView.view("output", IgnoreServerUpdatesView).addObserver((newOutput, oldOutput, source) => {
+            const [_, added] = diffArray(oldOutput, newOutput)
+            added.forEach(o => {
+                console.log("got new output! Gonna send it to the server", this.handler.state.path, cellId, o, o instanceof Output)
+                this.sendUpdate(new messages.SetCellOutput(this.handler.state.globalVersion, this.handler.state.localVersion, cellId, o))
+            })
+        })
+
+        cellView.view("language", IgnoreServerUpdatesView).addObserver(lang => {
+            const state = this.handler.state
+            this.sendUpdate(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, lang))
+        })
     }
 
     dispatch(action: UIAction) {
@@ -82,7 +142,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
                 this.socket.view("status", undefined, errorView).addObserver(status => {
                     if (status === "connected") {
-                        this.handler.updateState(s => {
+                        this.handler.update(s => {
                             return {
                                 ...s,
                                 errors: [] // any errors from before are no longer relevant, right?
@@ -107,74 +167,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(SetCurrentSelection, (cellId, range) => {
                 this.socket.send(new messages.CurrentSelection(cellId, range))
             })
-            .when(SetCellHighlight, (cellId, range, className) => {
-                this.handler.updateState(state => {
-                    return {
-                        ...state,
-                        cells: {
-                            ...state.cells,
-                            [cellId]: {
-                                ...state.cells[cellId],
-                                currentHighlight: {range, className}
-                            }
-                        }
-                    }
-                })
-            })
-            .when(SetCellOutput, (cellId, output) => {
-                    if (output instanceof Output) {
-                        this.handler.updateState(state => {
-                            this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
-                            return {
-                                ...state,
-                                cells: {
-                                    ...state.cells,
-                                    [cellId]: {
-                                        ...state.cells[cellId],
-                                        output: [output]
-                                    }
-                                }
-                            }
-                        })
-                    } else {
-                        // ClientResults are special. The Client treats them like a Result, but the Server treats them like an Output.
-                        output.toOutput().then(o => {
-                            this.handler.updateState(state => {
-                                this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
-                                return {
-                                    ...state,
-                                    cells: {
-                                        ...state.cells,
-                                        [cellId]: {
-                                            ...state.cells[cellId],
-                                            results: [...state.cells[cellId].results, output]
-                                        }
-                                    }
-                                }
-                            })
-                        })
-                    }
-            })
-            .when(SetCellLanguage, (cellId, language) => {
-                const state = this.handler.state
-                this.sendUpdate(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
-            })
-            .when(CreateCell, (language, content, metadata, prev) => {
-                this.handler.updateState(state => {
-                    let localVersion = state.localVersion + 1;
-                    // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
-                    const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
-                    const cell = new NotebookCell(maxId + 1, language, content, [], metadata);
-                    const update = new messages.InsertCell(state.globalVersion, localVersion, cell, prev);
-                    this.sendUpdate(update);
-                    return {
-                        ...state,
-                        editBuffer: state.editBuffer.push(state.localVersion, update)
-                    }
-                })
-            })
             .when(UpdateCell, (cellId, edits, newContent, metadata) => {
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     let localVersion = state.localVersion + 1;
                     const update = new messages.UpdateCell(state.globalVersion, localVersion, cellId, edits, metadata);
                     this.sendUpdate(update);
@@ -192,17 +186,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     }
                 })
             })
-            .when(DeleteCell, (cellId) => {
-                this.handler.updateState(state => {
-                    state = {...state}
-                    const update = new messages.DeleteCell(state.globalVersion, ++state.localVersion, cellId);
-                    this.sendUpdate(update);
-                    state.editBuffer = state.editBuffer.push(state.localVersion, update)
-                    return state
-                })
-            })
             .when(UpdateConfig, conf => {
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     state = {...state}
                     const update = new messages.UpdateConfig(state.globalVersion, ++state.localVersion, conf);
                     this.sendUpdate(update);
@@ -212,7 +197,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(RequestCompletions, (cellId, offset, resolve, reject) => {
                 this.socket.send(new messages.CompletionsAt(cellId, offset, []));
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     if (state.activeCompletion) {
                         state.activeCompletion.reject();
                     }
@@ -224,7 +209,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(RequestSignature, (cellId, offset, resolve, reject) => {
                 this.socket.send(new messages.ParametersAt(cellId, offset));
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     if (state.activeSignature) {
                         state.activeSignature.reject();
                     }
@@ -239,7 +224,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.socket.send(new messages.NotebookVersion(state.path, version))
             })
             .when(RequestCellRun, cellIds => {
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     // empty cellIds means run all of them!
                     if (cellIds.length === 0) {
                         cellIds = state.cellOrder
@@ -287,54 +272,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(RequestClearOutput, () => {
                 this.socket.send(new messages.ClearOutput())
             })
-            .when(SetSelectedCell, (selected, options) => {
-                this.handler.updateState(state => {
-                    let id = selected;
-                    if (id) {
-                        const anchorIdx = state.cellOrder.indexOf(id)
-                        if (options?.relative === "above")  {
-                            let prevIdx = anchorIdx - 1;
-                            id = state.cells[prevIdx]?.id;
-                            if (options?.skipHiddenCode) {
-                                while (state.cells[prevIdx]?.metadata.hideSource) {
-                                    --prevIdx;
-                                }
-                                id = state.cells[prevIdx]?.id;
-                            }
-                        } else if (options?.relative === "below") {
-                            let nextIdx = anchorIdx + 1
-                            id = state.cells[nextIdx]?.id;
-                            if (options?.skipHiddenCode) {
-                                while (state.cells[nextIdx]?.metadata.hideSource) {
-                                    ++nextIdx;
-                                }
-                                id = state.cells[nextIdx]?.id;
-                            }
-                        }
-                    }
-                    if (id === undefined && (options?.relative !== undefined)) { // if ID is undefined, create cell above/below as needed
-                        // TODO: SetSelectedCell should NOT be creating cells! yikes
-                        this.insertCell(options.relative)
-                            .then(newId => this.dispatch(new SetSelectedCell(newId)))
-                        return NoUpdate
-                    } else {
-                        id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
-                        return {
-                            ...state,
-                            activeCellId: id,
-                            cells: mapValues(state.cells, cell => {
-                                return {
-                                    ...cell,
-                                    selected: cell.id === id,
-                                    editing: cell.id === id && (options?.editing ?? false)
-                                }
-                            })
-                        }
-                    }
-                })
-            })
             .when(DeselectCell, cellId => {
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     return {
                         ...state,
                         cells: {
@@ -350,7 +289,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(CurrentSelection, (cellId, range) => {
                 this.socket.send(new messages.CurrentSelection(cellId, range));
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     return {
                         ...state,
                         cells: mapValues(state.cells, cell => {
@@ -363,7 +302,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(ClearCellEdits, id => {
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     return {
                         ...state,
                         cells: {
@@ -377,7 +316,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(RemoveCellError, (id, error) => {
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     let cell = {...state.cells[id]};
                     if (error instanceof RuntimeError) {
                         cell = {...cell, runtimeError: undefined};
@@ -416,7 +355,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.socket.send(new ReleaseHandle(handleType, handleId))
             })
             .when(ClearDataStream, handleId => {
-                this.handler.updateState(state => {
+                this.handler.update(state => {
                     return {
                         ...state,
                         activeStreams: {
@@ -427,7 +366,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(ToggleNotebookConfig, open => {
-                this.handler.updateState(s => {
+                this.handler.update(s => {
                     return {
                         ...s,
                         config: {...s.config, open: (open ?? !s.config.open)}
@@ -443,60 +382,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     }
 
     // Helper methods
-    /**
-     * Helper for inserting a cell.
-     *
-     * @param direction  Whether to insert below of above the anchor
-     * @param anchor     The anchor. If it is undefined, the anchor is based on the currently selected cell. If none is
-     *                   selected, the anchor is either the first or last cell (depending on the direction supplied).
-     *                   The anchor is used to determine the location, language, and metadata to supply to the new cell.
-     * @return           A Promise that resolves with the inserted cell's id.
-     */
-    insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string}): Promise<number> {
-        const state = this.handler.state;
-        let currentCellId = state.activeCellId;
-        if (anchor === undefined) {
-            if (currentCellId === undefined) {
-                if (direction === 'above') {
-                    currentCellId = state.cellOrder[0];
-                } else {
-                    currentCellId = state.cellOrder[state.cellOrder.length - 1];
-                }
-            }
-            const currentCell = state.cells[currentCellId];
-            anchor = {id: currentCellId, language: currentCell.language, metadata: currentCell.metadata};
-        }
-        const anchorIdx = this.handler.getCellIndex(anchor.id)!;
-        const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
-        const maybePrevId = state.cellOrder[prevIdx] ?? -1;
-        console.log("Inserting new cell below", maybePrevId, "params were", direction, anchor)
-        const createMsg = new CreateCell(anchor.language, anchor.content ?? '', anchor.metadata, maybePrevId)
-        this.dispatch(createMsg)
-        return new Promise((resolve, reject) => {
-            const obs = this.handler.addObserver(state => {
-                const anchorCellIdx = state.cellOrder.indexOf(maybePrevId)
-                const insertedCellId = state.cellOrder.find((id, idx) => {
-                    const below = idx > anchorCellIdx;
-                    const newer = id > maybePrevId;
-                    const matches = equalsByKey(state.cells[id], createMsg, ["language", "content", "metadata"]);
-                    return below && newer && matches
-                });
-                if (insertedCellId !== undefined) {
-                    this.handler.removeObserver(obs);
-                    resolve(insertedCellId)
-                }
-            })
-        })
-    }
-
-    deleteCell(id?: number){
-       if (id === undefined) {
-           id = this.handler.state.activeCellId;
-       }
-       if (id !== undefined) {
-           this.dispatch(new DeleteCell(id));
-       }
-    }
 
     runActiveCell() {
         const id = this.handler.state.activeCellId;
@@ -541,7 +426,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         })
 
         this.handler.view("openNotebooks").addObserver(nbs => {
-            OpenNotebooksHandler.updateState(() => nbs)
+            OpenNotebooksHandler.update(() => nbs)
         })
     }
 
@@ -568,7 +453,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 this.socket.view("status", undefined, errorView).addObserver(status => {
                     if (status === "connected") {
                         console.warn("Reconnected successfully, now reconnecting to notebook sockets")
-                        this.handler.updateState(s => {
+                        this.handler.update(s => {
                             return {
                                 ...s,
                                 errors: [] // any errors from before are no longer relevant, right?
@@ -711,17 +596,6 @@ export class UpdateCell extends UIAction {
     }
 }
 
-export class DeleteCell extends UIAction {
-    constructor(readonly cellId: number) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: DeleteCell): ConstructorParameters<typeof DeleteCell> {
-        return [inst.cellId];
-    }
-}
-
 export class UpdateConfig extends UIAction {
     constructor(readonly config: NotebookConfig) {
         super();
@@ -785,28 +659,6 @@ export class SetCurrentSelection extends UIAction {
 
     static unapply(inst: SetCurrentSelection): ConstructorParameters<typeof SetCurrentSelection> {
         return [inst.cellId, inst.range];
-    }
-}
-
-export class SetCellOutput extends UIAction {
-    constructor(readonly cellId: number, readonly output: (Output | ClientResult)) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: SetCellOutput): ConstructorParameters<typeof SetCellOutput> {
-        return [inst.cellId, inst.output];
-    }
-}
-
-export class SetCellLanguage extends UIAction {
-    constructor(readonly cellId: number, readonly language: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: SetCellLanguage): ConstructorParameters<typeof SetCellLanguage> {
-        return [inst.cellId, inst.language];
     }
 }
 
@@ -889,26 +741,6 @@ export class RequestNotebooksList extends UIAction {
     }
 }
 
-export class SetSelectedCell extends UIAction {
-    /**
-     * Change the currently selected cell.
-     *
-     * @param selected     The ID of the cell to select OR the ID of the anchor cell for `relative`. If `undefined`, deselects cells.
-     * @param options      Options, consisting of:
-     *                     relative        If set, select the cell either above or below the one with ID specified by `selected`
-     *                     skipHiddenCode  If set alongside a relative cell selection, cells with hidden code blocks should be skipped.
-     *                     editing         If set, indicate that the cell is editing in addition to being selected.
-     */
-    constructor(readonly selected: number | undefined, readonly options?: { relative?: "above" | "below", skipHiddenCode?: boolean, editing?: boolean}) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: SetSelectedCell): ConstructorParameters<typeof SetSelectedCell> {
-        return [inst.selected, inst.options];
-    }
-}
-
 export class DeselectCell extends UIAction {
     constructor(readonly cellId: number) {
         super();
@@ -928,17 +760,6 @@ export class CurrentSelection extends UIAction {
 
     static unapply(inst: CurrentSelection): ConstructorParameters<typeof CurrentSelection> {
         return [inst.cellId, inst.range];
-    }
-}
-
-export class SetCellHighlight extends UIAction {
-    constructor(readonly cellId: number, readonly range: PosRange, readonly className: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: SetCellHighlight): ConstructorParameters<typeof SetCellHighlight> {
-        return [inst.cellId, inst.range, inst.className];
     }
 }
 

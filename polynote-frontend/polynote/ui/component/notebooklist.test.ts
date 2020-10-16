@@ -32,7 +32,7 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     expect(leafEl()).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
 
     const newPath = "foo/bar/baz2";
-    leafState.updateState(() => ({
+    leafState.update(() => ({
         fullPath: newPath,
         value: "baz2"
     }));
@@ -61,7 +61,7 @@ describe("BranchComponent", () => {
         fullPath: "bar",
         value: "bar"
     };
-    branchState.updateState(s => {
+    branchState.update(s => {
         return {
             ...s,
             children: {
@@ -78,7 +78,7 @@ describe("BranchComponent", () => {
             fullPath: "baz",
             value: "baz"
         };
-        branchState.updateState(s => {
+        branchState.update(s => {
             return {
                 ...s,
                 children: {
