@@ -17,10 +17,9 @@ import {
 } from "../../messaging/dispatcher";
 import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
-import {Deferred} from "../../util/helpers";
 
 export class About extends FullScreenModal {
-    readonly observers: [StateView<any>, Observer<any>][] = []
+    readonly observers: [StateView<any>, [Observer<any>, string]][] = []
     private cleanup: (()=> void)[] = []
     private constructor(private serverMessageDispatcher: ServerMessageDispatcher) {
         super(

@@ -12,8 +12,8 @@ import {
     TagElement,
     textbox
 } from "../../tags";
-import {NotebookMessageDispatcher, ToggleNotebookConfig, UpdateConfig} from "../../../messaging/dispatcher";
-import {StateView} from "../../../state/state_handler";
+import {NotebookMessageDispatcher, ToggleNotebookConfig} from "../../../messaging/dispatcher";
+import {StateHandler, StateView} from "../../../state/state_handler";
 import {
     IvyRepository,
     MavenRepository,
@@ -29,7 +29,7 @@ import {NBConfig} from "../../../state/notebook_state";
 export class NotebookConfigEl {
     readonly el: TagElement<"div">;
 
-    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateView<NBConfig>, kernelStateHandler: StateView<KernelStatusString>) {
+    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<NBConfig>, kernelStateHandler: StateView<KernelStatusString>) {
 
         const configState = stateHandler.view("config");
         const dependencies = new Dependencies(configState.view("dependencies"))
@@ -42,7 +42,8 @@ export class NotebookConfigEl {
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
             const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, env.conf);
             this.el.classList.remove("open");
-            dispatcher.dispatch(new UpdateConfig(conf));
+            console.log("saved notebook config!", conf)
+            stateHandler.update1("config", () => conf)
         })
 
         this.el = div(['notebook-config'], [

@@ -70,6 +70,14 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             }
         })
 
+        state.updateHandler.addObserver(updates => {
+            if (updates.length > 0) {
+                console.log("got updates to send", updates)
+                updates.forEach(update => this.sendUpdate(update))
+                state.updateHandler.update(() => [])
+            }
+        })
+
         const cells: Record<number, StateView<CellState>> = {};
         const cellsState = state.view("cells");
         state.view("cellOrder").addObserver((newOrder, prevOrder) => {
@@ -81,52 +89,17 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.watchCell(handler)
             })
         })
-
-        state.view("pendingCells", IgnoreServerUpdatesView).addObserver((newCells, prevCells) => {
-            const added = diffArray(prevCells.added, newCells.added)[1];
-
-            added.forEach(pending => {
-                this.handler.update(state => {
-                    let localVersion = state.localVersion + 1;
-                    // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
-                    const cell = new NotebookCell(pending.cellId, pending.language, pending.content, [], pending.metadata);
-                    const update = new messages.InsertCell(state.globalVersion, localVersion, cell, pending.prev);
-                    this.sendUpdate(update);
-                    return {
-                        ...state,
-                        editBuffer: state.editBuffer.push(state.localVersion, update)
-                    }
-                })
-            })
-
-            const removed = diffArray(prevCells.removed, newCells.removed)[1];
-            removed.forEach(id => {
-                this.handler.update(state => {
-                    state = {...state}
-                    const update = new messages.DeleteCell(state.globalVersion, ++state.localVersion, id);
-                    this.sendUpdate(update);
-                    // TODO: rethink EditBuffer. What if editbuffer was removed from the state, and then edits went UI -> statehandler -> editbuffer -> dispatcher ?
-                    state.editBuffer = state.editBuffer.push(state.localVersion, update)
-                    return state
-                })
-            })
-        })
     }
 
     // TODO: make sure this isn't being set every time
     private watchCell(cellView: StateView<CellState>) {
-        const cellId = cellView.state.id;
-        cellView.view("output", IgnoreServerUpdatesView).addObserver((newOutput, oldOutput, source) => {
-            const [_, added] = diffArray(oldOutput, newOutput)
-            added.forEach(o => {
-                console.log("got new output! Gonna send it to the server", this.handler.state.path, cellId, o, o instanceof Output)
-                this.sendUpdate(new messages.SetCellOutput(this.handler.state.globalVersion, this.handler.state.localVersion, cellId, o))
-            })
-        })
+        const id = cellView.state.id;
+        console.log("dispatcher: watching cell", id)
 
-        cellView.view("language", IgnoreServerUpdatesView).addObserver(lang => {
-            const state = this.handler.state
-            this.sendUpdate(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, lang))
+        cellView.view("currentSelection").addObserver(range => {
+            if (range) {
+                this.socket.send(new messages.CurrentSelection(id, range))
+            }
         })
     }
 
@@ -156,115 +129,16 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 })
             })
             .when(CreateComment, (cellId, comment) => {
-                const state = this.handler.state
+                const state = this.handler.updateHandler
                 this.sendUpdate(new messages.CreateComment(state.globalVersion, state.localVersion, cellId, comment))
             })
             .when(UpdateComment, (cellId, commentId, range, content) => {
-                const state = this.handler.state
+                const state = this.handler.updateHandler
                 this.sendUpdate(new messages.UpdateComment(state.globalVersion, state.localVersion, cellId, commentId, range, content))
             })
             .when(DeleteComment, (cellId, commentId) => {
-                const state = this.handler.state
+                const state = this.handler.updateHandler
                 this.sendUpdate(new messages.DeleteComment(state.globalVersion, state.localVersion, cellId, commentId))
-            })
-            .when(SetCurrentSelection, (cellId, range) => {
-                this.socket.send(new messages.CurrentSelection(cellId, range))
-            })
-            .when(SetCellHighlight, (cellId, range, className) => {
-                this.handler.updateState(state => {
-                    return {
-                        ...state,
-                        cells: {
-                            ...state.cells,
-                            [cellId]: {
-                                ...state.cells[cellId],
-                                currentHighlight: {range, className}
-                            }
-                        }
-                    }
-                })
-            })
-            .when(SetCellOutput, (cellId, output) => {
-                    if (output instanceof Output) {
-                        this.handler.updateState(state => {
-                            this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output))
-                            return {
-                                ...state,
-                                cells: {
-                                    ...state.cells,
-                                    [cellId]: {
-                                        ...state.cells[cellId],
-                                        output: outputs([output], true)
-                                    }
-                                }
-                            }
-                        })
-                    } else {
-                        // ClientResults are special. The Client treats them like a Result, but the Server treats them like an Output.
-                        output.toOutput().then(o => {
-                            const state = this.handler.state;
-                            this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
-                        });
-
-                        this.handler.updateState(state => {
-                            return {
-                                ...state,
-                                cells: {
-                                    ...state.cells,
-                                    [cellId]: {
-                                        ...state.cells[cellId],
-                                        results: [output]
-                                    }
-                                }
-                            }
-                        });
-                    }
-            })
-            .when(SetCellLanguage, (cellId, language) => {
-                const state = this.handler.state
-                this.sendUpdate(new messages.SetCellLanguage(state.globalVersion, state.localVersion, cellId, language))
-            })
-            .when(CreateCell, (language, content, metadata, prev) => {
-                this.handler.updateState(state => {
-                    let localVersion = state.localVersion + 1;
-                    // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
-                    const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
-                    const cell = new NotebookCell(maxId + 1, language, content, [], metadata);
-                    const update = new messages.InsertCell(state.globalVersion, localVersion, cell, prev);
-                    this.sendUpdate(update);
-                    return {
-                        ...state,
-                        editBuffer: state.editBuffer.push(state.localVersion, update)
-                    }
-                })
-            })
-            .when(UpdateCell, (cellId, edits, newContent, metadata) => {
-                this.handler.update(state => {
-                    let localVersion = state.localVersion + 1;
-                    const update = new messages.UpdateCell(state.globalVersion, localVersion, cellId, edits, metadata);
-                    this.sendUpdate(update);
-                    const cell = state.cells[cellId]
-                    return {
-                        ...state,
-                        editBuffer: state.editBuffer.push(state.localVersion, update),
-                        cells: {
-                            ...state.cells,
-                            [cellId]: {
-                                ...cell,
-                                content: newContent ?? edits.reduce<string>((content, edit) => edit.apply(content), cell.content), metadata: metadata ?? cell.metadata
-                            }
-                        }
-                    }
-                })
-            })
-            .when(UpdateConfig, conf => {
-                this.handler.update(state => {
-                    state = {...state}
-                    const update = new messages.UpdateConfig(state.globalVersion, ++state.localVersion, conf);
-                    this.sendUpdate(update);
-                    state.editBuffer = state.editBuffer.push(state.localVersion, update)
-                    return state
-                })
             })
             .when(RequestCompletions, (cellId, offset, resolve, reject) => {
                 this.socket.send(new messages.CompletionsAt(cellId, offset, []));
@@ -362,34 +236,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     }
                 })
             })
-            .when(CurrentSelection, (cellId, range) => {
-                this.socket.send(new messages.CurrentSelection(cellId, range));
-                this.handler.update(state => {
-                    return {
-                        ...state,
-                        cells: mapValues(state.cells, cell => {
-                            return {
-                                ...cell,
-                                currentSelection: cell.id === cellId ? range : undefined
-                            }
-                        })
-                    }
-                })
-            })
-            .when(ClearCellEdits, id => {
-                this.handler.update(state => {
-                    return {
-                        ...state,
-                        cells: {
-                            ...state.cells,
-                            [id]: {
-                                ...state.cells[id],
-                                pendingEdits: []
-                            }
-                        }
-                    }
-                })
-            })
             .when(RemoveCellError, (id, error) => {
                 this.handler.update(state => {
                     let cell = {...state.cells[id]};
@@ -415,12 +261,12 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 link.click()
             })
             .when(ShowValueInspector, (result, viewType) => {
-                this.insertCell("below", {
+                this.handler.insertCell("below", {
                     id: result.sourceCell,
                     language: 'viz',
                     metadata: new CellMetadata(false, false, false),
                     content: JSON.stringify({type: viewType, value: result.name})
-                }).then(id => this.dispatch(new SetSelectedCell(id)))
+                }).then(id => this.handler.selectCell(id))
             })
             .when(HideValueInspector, () => {
                 ValueInspector.get.hide()
@@ -464,19 +310,9 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     // Helper methods
 
     setCellOutput(cellId: number, output: Output | ClientResult) {
-        const asOutput = output instanceof Output ? Promise.resolve(output) : output.toOutput();
-
         if (output instanceof Output) {
-            const state = this.handler.state;
-            this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, output));
-            this.handler.cellsHandler.update1(cellId, cellState => ({...cellState}));
+            this.handler.cellsHandler.update1(cellId, cellState => ({...cellState, output: [output]}));
         } else {
-            // ClientResults are special. The Client treats them like a Result, but the Server treats them like an Output.
-            output.toOutput().then(o => {
-                const state = this.handler.state;
-                this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
-            });
-
             this.handler.cellsHandler.update1(cellId, cellState => ({...cellState, results: [output]}));
         }
     }
@@ -683,28 +519,6 @@ export class CreateCell extends UIAction {
     }
 }
 
-export class UpdateCell extends UIAction {
-    constructor(readonly cellId: number, readonly edits: ContentEdit[], readonly newContent?: string, readonly metadata?: CellMetadata) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: UpdateCell): ConstructorParameters<typeof UpdateCell> {
-        return [inst.cellId, inst.edits, inst.newContent, inst.metadata];
-    }
-}
-
-export class UpdateConfig extends UIAction {
-    constructor(readonly config: NotebookConfig) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: UpdateConfig): ConstructorParameters<typeof UpdateConfig> {
-        return [inst.config];
-    }
-}
-
 export class CreateNotebook extends UIAction {
     constructor(readonly path?: string, readonly content?: string) {
         super();
@@ -746,17 +560,6 @@ export class DeleteNotebook extends UIAction {
 
     static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
         return [inst.path];
-    }
-}
-
-export class SetCurrentSelection extends UIAction {
-    constructor(readonly cellId: number, readonly range: PosRange) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: SetCurrentSelection): ConstructorParameters<typeof SetCurrentSelection> {
-        return [inst.cellId, inst.range];
     }
 }
 
@@ -847,28 +650,6 @@ export class DeselectCell extends UIAction {
 
     static unapply(inst: DeselectCell): ConstructorParameters<typeof DeselectCell> {
         return [inst.cellId]
-    }
-}
-
-export class CurrentSelection extends UIAction {
-    constructor(readonly cellId: number, readonly range: PosRange) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: CurrentSelection): ConstructorParameters<typeof CurrentSelection> {
-        return [inst.cellId, inst.range];
-    }
-}
-
-export class ClearCellEdits extends UIAction {
-    constructor(readonly cellId: number) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: ClearCellEdits): ConstructorParameters<typeof ClearCellEdits> {
-        return [inst.cellId];
     }
 }
 

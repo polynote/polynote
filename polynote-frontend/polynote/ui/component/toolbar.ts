@@ -35,7 +35,7 @@ export class Toolbar {
         this.el = div(['toolbar-container'], [nb.el, cell.el, code.el, text.el, settings.el])
             .listener('mousedown', (evt: Event) => evt.preventDefault());
 
-        let cellSelectionListener: Observer<NotebookState> | undefined;
+        let cellSelectionListener: [Observer<NotebookState>, string] | undefined;
         let currentNotebookHandler: NotebookStateHandler | undefined;
 
         // Change the toolbar to reflect the currently selected notebook and cell

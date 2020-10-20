@@ -22,6 +22,18 @@ export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
     return fastEquals(a, b)
 }
 
+// Shallow Equality that handles empty objects / arrays
+export function shallowEquals<T>(a: T, b: T): boolean {
+    if (a === b) return true
+
+    if (isObject(a) && isObject(b) && isEmpty(a) && isEmpty(b)) {
+        return true
+    }
+
+    return Array.isArray(a) && Array.isArray(b) && isEmpty(a) && isEmpty(b);
+
+}
+
 //*********************
 //* Object helpers
 //*********************
@@ -29,6 +41,10 @@ export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
 // Checks if variable is an object (and not an array, even though arrays are technically objects). Maybe there's a more correct name for this method.
 export function isObject(obj: any): obj is object {
     return obj && typeof obj === "object" && !Array.isArray(obj)
+}
+
+export function isEmpty(obj: object): boolean {
+    return obj && Object.keys(obj).length === 0
 }
 
 export function diffArray<T>(a: T[], b: T[], equals: (a: T, b: T) => boolean = (a: T, b: T) => deepEquals(a, b)): [T[], T[]] {

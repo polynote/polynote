@@ -20,7 +20,7 @@ export class Notebook {
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         const path = notebookState.state.path;
-        const config = new NotebookConfigEl(dispatcher, notebookState.view("config"), notebookState.view("kernel").view("status"));
+        const config = new NotebookConfigEl(dispatcher, notebookState.lens("config"), notebookState.view("kernel").view("status"));
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
         cellsEl.addEventListener('scroll', evt => {
             NotebookScrollLocationsHandler.update(locations => {
@@ -52,7 +52,7 @@ export class Notebook {
         handleVisibility(ServerStateHandler.state.currentNotebook)
         ServerStateHandler.view("currentNotebook", notebookState).addObserver((current, previous) => handleVisibility(current, previous))
 
-        const cellsHandler = notebookState.lens("cells")
+        const cellsHandler = notebookState.cellsHandler
 
         const handleCells = (newOrder: number[], prevOrder: number[] = []) => {
             const [removedIds, addedIds] = diffArray(prevOrder, newOrder)

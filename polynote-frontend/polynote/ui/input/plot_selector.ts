@@ -903,7 +903,7 @@ export class PlotSelector {
     readonly el: TagElement<'div'>;
     private readonly stateHandler: StateHandler<PlotSelectorState>;
     private listeners: ((newPlot: PlotDefinition, oldPlot?: PlotDefinition) => any)[] = [];
-    private publishObserver: Observer<PlotSelectorState>;
+    private publishObserver: [Observer<PlotSelectorState>, string];
 
     private dimensionFields: StructField[];
     private measuresUI: MeasuresUI;
@@ -1050,7 +1050,7 @@ export class PlotSelector {
         if (!deepEquals(state, this.stateHandler.state)) {
             this.stateHandler.removeObserver(this.publishObserver);
             this.stateHandler.updateState(_ => state);
-            this.stateHandler.addObserver(this.publishObserver);
+            this.stateHandler.addObserver(this.publishObserver[0], undefined, this.publishObserver[1]);
         }
     }
 

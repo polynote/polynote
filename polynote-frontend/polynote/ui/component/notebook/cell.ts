@@ -1,15 +1,18 @@
 import {blockquote, button, Content, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
 import {
-    ClearCellEdits,
-    CurrentSelection,
     NotebookMessageDispatcher,
     RequestCellRun,
     RequestCompletions,
     RequestSignature,
-    UpdateCell, ShowValueInspector, DeselectCell, RemoveCellError
+    ShowValueInspector, DeselectCell, RemoveCellError
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
-import {CellState, CompletionHint, NotebookStateHandler, SignatureHint} from "../../../state/notebook_state";
+import {
+    CellState,
+    CompletionHint,
+    NotebookStateHandler, Outputs,
+    SignatureHint
+} from "../../../state/notebook_state";
 import * as monaco from "monaco-editor";
 // @ts-ignore (ignore use of non-public monaco api)
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
@@ -24,13 +27,11 @@ import {
     SelectionDirection
 } from "monaco-editor";
 import {
-    ClearResults,
     ClientResult,
     CompileErrors,
     ExecutionInfo, MIMEClientResult,
     Output,
     PosRange,
-    Result,
     ResultValue,
     RuntimeError
 } from "../../../data/result";
@@ -391,9 +392,9 @@ class CodeCell extends Cell {
             if (model) {
                 const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
                 if (evt.selection.getDirection() === SelectionDirection.RTL) {
-                    this.dispatcher.dispatch(new CurrentSelection(this.id, range.reversed));
+                    this.cellState.update1("currentSelection", () => range.reversed)
                 } else {
-                    this.dispatcher.dispatch(new CurrentSelection(this.id, range));
+                    this.cellState.update1("currentSelection", () => range)
                 }
             }
         });
@@ -521,12 +522,13 @@ class CodeCell extends Cell {
         updateMetadata(this.state.metadata);
         cellState.view("metadata", undefined, this).addObserver(metadata => updateMetadata(metadata));
 
-        cellState.view("pendingEdits", undefined, this).addObserver(edits => {
+        cellState.view("incomingEdits", undefined, this).addObserver(edits => {
             if (edits.length > 0) {
+                console.log("applying edits", edits)
                 this.applyEdits(edits);
-                dispatcher.dispatch(new ClearCellEdits(this.id));
+                cellState.update1("incomingEdits", () => [])
             }
-        });
+        }, undefined, `incomingEdits of cell ${this.id}`);
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
@@ -666,7 +668,14 @@ class CodeCell extends Cell {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.getValue()));
+        console.log("model content changed! sending these edits:", edits)
+        this.cellState.update(s => ({...s, outgoingEdits: edits, content: this.editor.getValue()}))
+        const obs = this.cellState.addObserver(s => {
+            if (s.outgoingEdits === edits) {
+                this.cellState.removeObserver(obs)
+                this.cellState.update(s => ({...s, outgoingEdits: []}))
+            }
+        })
     }
 
     requestCompletion(pos: number): Promise<CompletionList> {
@@ -764,15 +773,11 @@ class CodeCell extends Cell {
     }
 
     private toggleCode() {
-        const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideSource})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
+        this.cellState.update1("metadata", prevMetadata => prevMetadata.copy({hideSource: !prevMetadata.hideSource}))
     }
 
     private toggleOutput() {
-        const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
+        this.cellState.update1("metadata", prevMetadata => prevMetadata.copy({hideOutput: !prevMetadata.hideOutput}))
     }
 
     layout() {
@@ -985,7 +990,7 @@ class CodeCell extends Cell {
         const model = this.editor.getModel()
         if (model && maybeSelection && !maybeSelection.isEmpty()) {
             const pos = PosRange.fromRange(maybeSelection, model)
-            currentURL.hash += `,${pos.toString}`
+            currentURL.hash += `,${pos.rangeStr}`
         }
         return currentURL
     }
@@ -1427,7 +1432,7 @@ export class TextCell extends Cell {
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.markdownContent))
+            this.cellState.update(s => ({...s, outgoingEdits: edits, content: this.editor.markdownContent}))
         }
     }
 
@@ -1675,15 +1680,15 @@ export class VizCell extends Cell {
 
         // handle external edits
         // TODO: fix this pendingEdits thing
-        this.cellState.view("pendingEdits").addObserver(edits => {
+        this.cellState.view("incomingEdits", undefined, this).addObserver(edits => {
             if (edits.length > 0) {
-                this.dispatcher.dispatch(new ClearCellEdits(this.cellState.state.id));
+                this.cellState.update1("incomingEdits", () => []);
                 const newViz = parseMaybeViz(this.cellState.state.content);
                 if (isViz(newViz)) {
                     editor.currentViz = newViz;
                 }
             }
-        }, editor);
+        });
 
         this.editor.onChange(viz => this.updateViz(viz));
 
@@ -1695,8 +1700,8 @@ export class VizCell extends Cell {
         if (!this.cellState.state.output.length || this.viz.type !== 'plot') {
             const result = this.vizResult(this.viz);
             if (result) {
-                this.previousViews[this.viz.type] = [this.viz, result]
-                this.dispatcher.dispatch(new SetCellOutput(this.cellState.state.id, result));
+                this.previousViews[this.viz.type] = [this.viz, result];
+                this.dispatcher.setCellOutput(this.cellState.state.id, result);
             }
         }
     }
@@ -1719,18 +1724,17 @@ export class VizCell extends Cell {
         if (edits.length > 0) {
             this.viz = deepCopy(viz);
             const cellId = this.cellState.state.id;
-
-            this.dispatcher.dispatch(new UpdateCell(this.id, edits, newCode));
+            this.cellState.update1("outgoingEdits", () => edits);
             if (this.previousViews[viz.type] && deepEquals(this.previousViews[viz.type][0], viz)) {
                 const result = this.previousViews[viz.type][1];
                 this.cellOutput.clearOutput();
-                this.dispatcher.dispatch(new SetCellOutput(cellId, result));
+                this.dispatcher.setCellOutput(cellId, result);
             } else if (this.resultValue) {
                 const result = this.vizResult(viz);
 
                 if (result) {
                     this.cellOutput.clearOutput();
-                    this.dispatcher.dispatch(new SetCellOutput(cellId, result));
+                    this.dispatcher.setCellOutput(cellId, result);
                 } else if (viz.type !== oldViz?.type) {
                     this.cellOutput.clearOutput();
                 }
@@ -1787,9 +1791,7 @@ export class VizCell extends Cell {
     }
 
     private toggleCode(hide?: boolean) {
-        const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideSource: hide ?? !prevMetadata.hideSource});
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata));
+        this.cellState.update1("metadata", meta => meta.copy({hideSource: hide ?? !meta.hideSource}));
     }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {

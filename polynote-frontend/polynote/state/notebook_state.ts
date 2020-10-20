@@ -6,12 +6,14 @@ import {
     ResultValue, RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
-import {CompletionCandidate, HandleData, ModifyStream, Signatures, TaskStatus} from "../data/messages";
-import {CellComment, CellMetadata, NotebookConfig} from "../data/data";
+import {CompletionCandidate, HandleData, ModifyStream, NotebookUpdate, Signatures, TaskStatus} from "../data/messages";
+import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
-import {deepEquals, equalsByKey, mapValues} from "../util/helpers";
+import {deepEquals, diffArray, equalsByKey, mapValues} from "../util/helpers";
+import * as messages from "../data/messages";
+import {IgnoreServerUpdatesView} from "../messaging/receiver";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {availableResultValues} from "../interpreter/client_interpreter";
 
@@ -35,7 +37,8 @@ export interface CellState {
     compileErrors: CompileErrors[],
     runtimeError: RuntimeError | undefined,
     // ephemeral states
-    pendingEdits: ContentEdit[],
+    incomingEdits: ContentEdit[],
+    outgoingEdits: ContentEdit[],
     presence: {id: number, name: string, color: string, range: PosRange, avatar?: string}[];
     editing: boolean,
     selected: boolean,
@@ -57,11 +60,6 @@ export interface NotebookState {
     cellOrder: number[], // this is the canonical ordering of the cells.
     config: NBConfig,
     kernel: KernelState,
-    // version
-    // TODO: make sure the global and local versions are properly updated
-    globalVersion: number,
-    localVersion: number,
-    editBuffer: EditBuffer,
     // ephemeral states
     activeCellId: number | undefined,
     activeCompletion: { resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
@@ -69,16 +67,16 @@ export interface NotebookState {
     activePresence: Record<number, { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}}>,
     // map of handle ID to message received.
     activeStreams: Record<number, (HandleData | ModifyStream)[]>,
-    // cell changes that are waiting ack from server
-    pendingCells: { added: {cellId: number, language: string, content: string, metadata: CellMetadata, prev: number}[], removed: number[]},
 }
 
 export class NotebookStateHandler extends StateHandler<NotebookState> {
     readonly cellsHandler: StateHandler<Record<number, CellState>>;
+    updateHandler: NotebookUpdateHandler;
     constructor(state: NotebookState) {
         super(state);
 
         this.cellsHandler = this.lens("cells")
+        this.updateHandler = new NotebookUpdateHandler(this, -1, -1, new EditBuffer())
     }
 
     availableValuesAt(id: number, dispatcher: NotebookMessageDispatcher): Record<string, ResultValue> {
@@ -181,12 +179,10 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         const anchorIdx = this.getCellIndex(anchor.id)!;
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
         const maybePrevId = state.cellOrder[prevIdx] ?? -1;
+        // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
         const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
         const cellTemplate = {cellId: maxId + 1, language: anchor!.language, content: anchor!.content ?? '', metadata: anchor!.metadata, prev: maybePrevId}
-        this.update1("pendingCells", pending => ({
-            ...pending,
-            added: [...pending.added, cellTemplate]
-        }))
+        this.updateHandler.insertCell(maxId + 1, anchor!.language, anchor.content ?? '', anchor.metadata, maybePrevId)
         return new Promise(resolve => {
             const cellOrder = this.view("cellOrder")
             cellOrder.addObserver(order => {
@@ -209,10 +205,7 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
             id = this.state.activeCellId;
         }
         if (id !== undefined) {
-            this.update1("pendingCells", pending => ({
-                ...pending,
-                removed: [...pending.removed, id!]
-            }))
+            this.updateHandler.deleteCell(id)
         }
     }
 
@@ -260,5 +253,119 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                 }
             })
         })
+    }
+}
+
+// Handle Notebook Updates and, keeping track of versions and local edits.
+export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
+    cellWatchers: Record<number, StateView<CellState>> = {};
+    constructor(state: NotebookStateHandler, public globalVersion: number, public localVersion: number, public edits: EditBuffer) {
+        super([])
+
+        state.view("config", IgnoreServerUpdatesView).addObserver((current, prev) => {
+            if (! deepEquals(current.config, prev.config)) {
+                this.updateConfig(current.config)
+            }
+        })
+
+        state.view("cellOrder").addObserver((newOrder, prevOrder) => {
+            const [removed, added] = diffArray(prevOrder, newOrder)
+            added.forEach(cellId => this.watchCell(cellId, state.cellsHandler.view(cellId, IgnoreServerUpdatesView)) )
+            removed.forEach(cellId => {
+                this.cellWatchers[cellId].dispose()
+                delete this.cellWatchers[cellId]
+            })
+        })
+    }
+
+    addUpdate(update: NotebookUpdate) {
+        if (update.localVersion !== this.localVersion) {
+            throw new Error(`Update Version mismatch! Update had ${update.localVersion}, but I had ${this.localVersion}`)
+        }
+        this.edits.push(update.localVersion, update)
+        this.update(s => [...s, update])
+    }
+
+    insertCell(cellId: number, language: string, content: string, metadata: CellMetadata, prevId: number) {
+        this.localVersion++;
+        const cell = new NotebookCell(cellId, language, content, [], metadata);
+        const update = new messages.InsertCell(this.globalVersion, this.localVersion, cell, prevId);
+        this.addUpdate(update)
+    }
+
+    deleteCell(id: number) {
+        this.localVersion++;
+        const update = new messages.DeleteCell(this.globalVersion, this.localVersion, id)
+        this.addUpdate(update)
+    }
+
+    updateCell(id: number, changed: {edits?: ContentEdit[], metadata?: CellMetadata}) {
+        this.localVersion++;
+        const update = new messages.UpdateCell(this.globalVersion, this.localVersion, id, changed.edits ?? [], changed.metadata)
+        this.addUpdate(update)
+    }
+
+    setCellOutput(cellId: number, output: Output) {
+        console.log("setting cell output!", cellId, output)
+        this.addUpdate(new messages.SetCellOutput(this.globalVersion, this.localVersion, cellId, output))
+    }
+
+    updateConfig(config: NotebookConfig) {
+        this.localVersion++;
+        const update = new messages.UpdateConfig(this.globalVersion, this.localVersion, config);
+        this.addUpdate(update);
+    }
+
+    rebaseUpdate(update: NotebookUpdate) {
+        this.globalVersion = update.globalVersion
+        if (update.localVersion < this.localVersion) {
+            const prevUpdates = this.edits.range(update.localVersion, this.localVersion);
+
+            // discard edits before the local version from server – it will handle rebasing at least until that point
+            this.edits = this.edits.discard(update.localVersion)
+
+            update = messages.NotebookUpdate.rebase(update, prevUpdates)
+        }
+
+        return update
+    }
+
+    private watchCell(id: number, handler: StateView<CellState>) {
+        console.log("notebookupdatehandler: watching cell", id)
+        this.cellWatchers[id] = handler
+        handler.view("output").addObserver((newOutput, oldOutput, source) => {
+            const added = diffArray(oldOutput, newOutput)[1]
+            added.forEach(o => {
+                console.log("got new output! Gonna send it to the server", id, o, o instanceof Output)
+                this.addUpdate(new messages.SetCellOutput(this.globalVersion, this.localVersion, id, o))
+            })
+        })
+
+        handler.view("results", IgnoreServerUpdatesView).addObserver((newResults) => {
+            if (newResults[0] && newResults[0] instanceof ClientResult) {
+                newResults[0].toOutput().then(
+                    o => this.addUpdate(new messages.SetCellOutput(this.globalVersion, this.localVersion, id, o))
+                )
+            }
+        })
+
+        handler.view("language").addObserver(lang => {
+            this.addUpdate(new messages.SetCellLanguage(this.globalVersion, this.localVersion, id, lang))
+        })
+
+        handler.view("outgoingEdits").addObserver(edits => {
+            console.log("got outgoing edits!", edits)
+            if (edits.length > 0) {
+                this.updateCell(id, {edits})
+            }
+        })
+
+        handler.view("metadata").addObserver(metadata => {
+            this.updateCell(id, {metadata})
+        })
+    }
+
+    protected compare(s1: any, s2: any): boolean {
+        return deepEquals(s1, s2);
     }
 }
