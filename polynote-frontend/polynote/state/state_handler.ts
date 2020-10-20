@@ -1,4 +1,4 @@
-import {deepEquals, deepFreeze, Deferred} from "../util/helpers";
+import {deepEquals, deepFreeze, Deferred, shallowEquals} from "../util/helpers";
 
 /**
  * An implementer of Disposable must have a dispose function which disposes the implementer, and a didDispose Promise
@@ -51,7 +51,8 @@ export class StateView<S> extends Disposable {
             const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
             this._state = frozenState;
             if (this.matchSource(updateSource, frozenState)) {
-                this.observers.forEach(obs => {
+                this.observers.forEach(([obs, desc]) => {
+                    const x = desc
                     obs(frozenState, oldState, updateSource)
                 });
             }
@@ -72,7 +73,7 @@ export class StateView<S> extends Disposable {
                     view.dispose()
                 }
             }
-        })
+        }, undefined, `handleView of key ${key}`)
         view.onDispose.then(() => {
             this.removeObserver(obs)
         })
@@ -116,10 +117,10 @@ export class StateView<S> extends Disposable {
     // Comparison function to use. Subclasses can provide a different comparison function (e.g., deepEquals) but should
     // be aware of the performance implications.
     protected compare(s1: any, s2: any) {
-        return s1 === s2
+        return shallowEquals(s1, s2)
     }
 
-    protected observers: Observer<S>[] = [];
+    protected observers: [Observer<S>, string][] = [];
 
     /**
      * Add an Observer to this State Handler.
@@ -128,15 +129,16 @@ export class StateView<S> extends Disposable {
      * @param disposeWhen
      * @param f
      */
-    addObserver(f: Observer<S>, disposeWhen?: Disposable): Observer<S> {
-        this.observers.push(f);
+    addObserver(f: Observer<S>, disposeWhen?: Disposable, description = "obs"): [Observer<S>, string] {
+        const obs: [Observer<S>, string] = [f, description]
+        this.observers.push(obs);
         disposeWhen?.onDispose.then(() => {
-            this.removeObserver(f)
+            this.removeObserver(obs)
         })
-        return f;
+        return obs;
     }
 
-    removeObserver(f: Observer<S>): void {
+    removeObserver(f: [Observer<S>, string]): void {
         const idx = this.observers.indexOf(f);
         if (idx >= 0) {
             this.observers.splice(idx, 1)
@@ -149,7 +151,7 @@ export class StateView<S> extends Disposable {
 
     // Optional filter for update sources
     protected matchSource(updateSource: any, x: any) {
-        return true;
+        return updateSource !== this;
     }
 }
 
@@ -169,7 +171,7 @@ export class StateHandler<S> extends StateView<S> {
     }
 
     update1<K extends keyof S, C extends StateHandler<S[K]>>(key: K, f: (s: S[K]) => S[K] | typeof NoUpdate, updateSource?: any) {
-        this.lens(key).update(f, updateSource).dispose()
+        this.update(s => ({...s, [key]: f(s[key])}), updateSource)
     }
 
     // A lens is like a view except changes to the lens propagate back to its parent
@@ -181,8 +183,12 @@ export class StateHandler<S> extends StateView<S> {
                 ...this.state,
                 [key]: viewState
             }, src ?? lens)
-        })
+        }, undefined, `lens of key ${key}`)
         return lens as C
+    }
+
+    protected compare(s1: any, s2: any): boolean {
+        return deepEquals(s1, s2);
     }
 
     constructor(state: S, disposeWhen?: Disposable) {

@@ -1,15 +1,18 @@
 import {blockquote, button, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
 import {
-    ClearCellEdits,
-    CurrentSelection,
     NotebookMessageDispatcher,
     RequestCellRun,
     RequestCompletions,
     RequestSignature,
-    UpdateCell, ShowValueInspector, DeselectCell, RemoveCellError
+    ShowValueInspector, DeselectCell, RemoveCellError
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
-import {CellState, CompletionHint, NotebookStateHandler, SignatureHint} from "../../../state/notebook_state";
+import {
+    CellState,
+    CompletionHint,
+    NotebookStateHandler,
+    SignatureHint
+} from "../../../state/notebook_state";
 import * as monaco from "monaco-editor";
 // @ts-ignore (ignore use of non-public monaco api)
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
@@ -24,13 +27,11 @@ import {
     SelectionDirection
 } from "monaco-editor";
 import {
-    ClearResults,
     ClientResult,
     CompileErrors,
     ExecutionInfo,
     Output,
     PosRange,
-    Result,
     ResultValue,
     RuntimeError
 } from "../../../data/result";
@@ -365,9 +366,9 @@ class CodeCell extends Cell {
             if (model) {
                 const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
                 if (evt.selection.getDirection() === SelectionDirection.RTL) {
-                    this.dispatcher.dispatch(new CurrentSelection(this.id, range.reversed));
+                    this.cellState.update1("currentSelection", () => range.reversed)
                 } else {
-                    this.dispatcher.dispatch(new CurrentSelection(this.id, range));
+                    this.cellState.update1("currentSelection", () => range)
                 }
             }
         });
@@ -495,12 +496,13 @@ class CodeCell extends Cell {
         updateMetadata(this.state.metadata);
         cellState.view("metadata", undefined, this).addObserver(metadata => updateMetadata(metadata));
 
-        cellState.view("pendingEdits", undefined, this).addObserver(edits => {
+        cellState.view("incomingEdits", undefined, this).addObserver(edits => {
             if (edits.length > 0) {
+                console.log("applying edits", edits)
                 this.applyEdits(edits);
-                dispatcher.dispatch(new ClearCellEdits(this.id));
+                cellState.update1("incomingEdits", () => [])
             }
-        });
+        }, undefined, `incomingEdits of cell ${this.id}`);
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
@@ -640,7 +642,14 @@ class CodeCell extends Cell {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.getValue()));
+        console.log("model content changed! sending these edits:", edits)
+        this.cellState.update(s => ({...s, outgoingEdits: edits, content: this.editor.getValue()}))
+        const obs = this.cellState.addObserver(s => {
+            if (s.outgoingEdits === edits) {
+                this.cellState.removeObserver(obs)
+                this.cellState.update(s => ({...s, outgoingEdits: []}))
+            }
+        })
     }
 
     requestCompletion(pos: number): Promise<CompletionList> {
@@ -738,15 +747,11 @@ class CodeCell extends Cell {
     }
 
     private toggleCode() {
-        const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideSource})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
+        this.cellState.update1("metadata", prevMetadata => prevMetadata.copy({hideSource: !prevMetadata.hideSource}))
     }
 
     private toggleOutput() {
-        const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
+        this.cellState.update1("metadata", prevMetadata => prevMetadata.copy({hideOutput: !prevMetadata.hideOutput}))
     }
 
     layout() {
@@ -959,7 +964,7 @@ class CodeCell extends Cell {
         const model = this.editor.getModel()
         if (model && maybeSelection && !maybeSelection.isEmpty()) {
             const pos = PosRange.fromRange(maybeSelection, model)
-            currentURL.hash += `,${pos.toString}`
+            currentURL.hash += `,${pos.rangeStr}`
         }
         return currentURL
     }
@@ -1386,7 +1391,7 @@ export class TextCell extends Cell {
     onInput() {
         const newContent = this.editor.markdownContent;
         const diff = Diff.diff(this.lastContent, newContent);
-        const edits = [];
+        const edits: ContentEdit[] = [];
         let i = 0;
         let pos = 0;
         while (i < diff.length) {
@@ -1412,7 +1417,7 @@ export class TextCell extends Cell {
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.markdownContent))
+            this.cellState.update(s => ({...s, outgoingEdits: edits, content: this.editor.markdownContent}))
         }
     }
 

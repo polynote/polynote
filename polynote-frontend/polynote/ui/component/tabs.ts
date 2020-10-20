@@ -8,7 +8,7 @@ import {VimStatus} from "./notebook/vim_status";
 
 export class Tabs {
     readonly el: TagElement<"div">;
-    private readonly tabs: Record<string, { tab: TagElement<"div">, content: TagElement<"div">, handler: NotebookStateHandler, obs: Observer<any>}> = {};
+    private readonly tabs: Record<string, { tab: TagElement<"div">, content: TagElement<"div">, handler: NotebookStateHandler, obs: [Observer<any>, string]}> = {};
     private tabContainer: TagElement<"div">;
     private currentTab?: { path: string, tab: TagElement<"div">, content: TagElement<"div">};
 

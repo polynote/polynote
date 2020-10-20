@@ -202,7 +202,7 @@ export class PosRange {
         return new PosRange(this.end, this.start);
     }
 
-    get toString() {
+    get rangeStr() {
         return `${this.start}-${this.end}`
     }
 

@@ -22,7 +22,7 @@ import {
 } from "../data/result";
 import {NoUpdate, StateHandler, StateView} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrDelete, arrInsert, mapValues, removeKey, unzip} from "../util/helpers";
+import {arrDelete, arrInsert, deepEquals, mapValues, removeKey, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
@@ -114,7 +114,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             }
         });
         this.receive(messages.NotebookVersion, (s, path, serverGlobalVersion) => {
-            if (s.globalVersion !== serverGlobalVersion){
+            if (state.updateHandler.globalVersion !== serverGlobalVersion){
                 // this means we must have been disconnected for a bit and the server state has changed.
                 document.location.reload() // is it ok to trigger the reload here?
             }
@@ -140,7 +140,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
 
             return {
                 ...s,
-                path: path,
+                path,
                 cells,
                 cellOrder,
                 config: {...s.config, config: config ?? NotebookConfig.default},
@@ -282,14 +282,9 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 .otherwiseThrow || NoUpdate
         });
         this.receive(messages.NotebookUpdate, (s: NotebookState, update: messages.NotebookUpdate) => {
-            if (update.globalVersion >= s.globalVersion) {
-                const globalVersion = update.globalVersion
-                const localVersion = s.localVersion + 1
+            if (update.globalVersion >= state.updateHandler.globalVersion) {
 
-                if (update.localVersion < s.localVersion) {
-                    const prevUpdates = s.editBuffer.range(update.localVersion, s.localVersion);
-                    update = messages.NotebookUpdate.rebase(update, prevUpdates)
-                }
+                update = state.updateHandler.rebaseUpdate(update)
 
                 const res = purematch<messages.NotebookUpdate, NotebookState>(update)
                     .when(messages.UpdateCell, (g, l, id: number, edits: ContentEdit[], metadata?: CellMetadata) => {
@@ -299,7 +294,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                 ...s.cells,
                                 [id]: {
                                     ...s.cells[id],
-                                    pendingEdits: edits,
+                                    incomingEdits: edits,
                                     metadata: metadata || s.cells[id].metadata,
                                 }
                             }
@@ -314,11 +309,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                 ...s.cells,
                                 [cell.id]: newCell
                             },
-                            cellOrder: arrInsert(s.cellOrder, insertIdx, newCell.id),
-                            pendingCells: {
-                                ...s.pendingCells,
-                                added: s.pendingCells.added.filter(pending => pending.cellId !== cell.id)
-                            }
+                            cellOrder: arrInsert(s.cellOrder, insertIdx, newCell.id)
                         }
                     })
                     .when(messages.DeleteCell, (g, l, id: number) => {
@@ -337,10 +328,6 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                 },
                                 cellOrder: arrDelete(s.cellOrder, idx),
                                 activeCellId: nextCellId,
-                                pendingCells: {
-                                    ...s.pendingCells,
-                                    removed: s.pendingCells.removed.filter(pending => pending !== id)
-                                }
                             }
                             console.log("DeleteCell", id, "nextCellId is", nextCellId, "state is now", x)
                             return x
@@ -426,23 +413,15 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         }
                     }).otherwiseThrow ?? s;
 
-                // discard edits before the local version from server – it will handle rebasing at least until that point
-                const editBuffer = s.editBuffer.discard(update.localVersion);
-
                 // make sure to update backups.
                 ClientBackup.updateNb(s.path, update)
                     .catch(err => console.error("Error updating backup", err));
 
-                return {
-                    ...res,
-                    editBuffer,
-                    localVersion,
-                    globalVersion,
-                }
+                return res
             } else {
                 console.warn(
                     "Ignoring NotebookUpdate with globalVersion", update.globalVersion,
-                    "that is less than our globalVersion", s.globalVersion,
+                    "that is less than our globalVersion", state.updateHandler.globalVersion,
                     ". This might mean something is wrong.", update)
                 return NoUpdate
             }
@@ -508,7 +487,8 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             results: [],
             compileErrors: [],
             runtimeError: undefined,
-            pendingEdits: [],
+            incomingEdits: [],
+            outgoingEdits: [],
             presence: [],
             editing: false,
             selected: false,

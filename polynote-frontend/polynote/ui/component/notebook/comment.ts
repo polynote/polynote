@@ -47,22 +47,22 @@ export class CommentHandler extends Disposable {
            // Child comments are handled by their roots.
            added.forEach(commentId => {
                const newComment = currentComments[commentId];
-               const maybeRootId = this.rootRanges[newComment.range.toString];
+               const maybeRootId = this.rootRanges[newComment.range.rangeStr];
                if (maybeRootId === undefined) {
                    // this is a fresh new root
                    this.commentRoots[newComment.uuid] =
                        new CommentRoot(dispatcher, new StateHandler(newComment, commentsState), new StateHandler([], commentsState), currentSelection, editor, cellId);
-                   this.rootRanges[newComment.range.toString] = newComment.uuid;
+                   this.rootRanges[newComment.range.rangeStr] = newComment.uuid;
                } else { // there is already a root at this location, but it might need to be replaced by this one
                    const maybeRoot = this.commentRoots[maybeRootId];
                    if (maybeRoot.rootState.state.createdAt > newComment.createdAt) {
                        // this comment is older than the current root at this position, we need to remove the root and set this one in its place.
                        delete this.commentRoots[maybeRoot.uuid]
-                       delete this.rootRanges[maybeRoot.range.toString]
+                       delete this.rootRanges[maybeRoot.range.rangeStr]
 
                        this.commentRoots[newComment.uuid] =
                            new CommentRoot(dispatcher, new StateHandler(newComment, commentsState), new StateHandler([], commentsState), currentSelection, editor, cellId);
-                       this.rootRanges[newComment.range.toString] = newComment.uuid;
+                       this.rootRanges[newComment.range.rangeStr] = newComment.uuid;
                    } // else, the comment is a child and will be handled later.
                }
            });
@@ -74,16 +74,16 @@ export class CommentHandler extends Disposable {
                    // If this is a root comment, we delete it (it will handle deleting all it's children)
                    maybeRoot.dispose();
                    delete this.commentRoots[removedComment.uuid];
-                   delete this.rootRanges[removedComment.range.toString];
+                   delete this.rootRanges[removedComment.range.rangeStr];
                }
            });
 
            // at this point, all the roots exist but their ranges might not be correct. So we need to update the root ranges
            Object.values(this.commentRoots).forEach(root => {
                const maybeChanged = currentComments[root.uuid];
-               if (root.range.toString !== maybeChanged.range.toString) {
-                   delete this.rootRanges[root.range.toString];
-                   this.rootRanges[maybeChanged.range.toString] = root.uuid
+               if (root.range.rangeStr !== maybeChanged.range.rangeStr) {
+                   delete this.rootRanges[root.range.rangeStr];
+                   this.rootRanges[maybeChanged.range.rangeStr] = root.uuid
                }
            })
 
@@ -91,7 +91,7 @@ export class CommentHandler extends Disposable {
            const rootChildren: Record<string, CellComment[]> = {}; // root uuid -> comment
            Object.values(currentComments).forEach(comment => {
                // at this point, we should have a root for this comment's range.
-               const maybeRootId = this.rootRanges[comment.range.toString];
+               const maybeRootId = this.rootRanges[comment.range.rangeStr];
                const maybeRoot = this.commentRoots[maybeRootId];
                if (maybeRootId && maybeRoot) {
                    if (comment.uuid === maybeRoot.uuid) {
@@ -220,7 +220,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
             root.el.replaceWith(newRoot.el);
             root = newRoot;
 
-            if (currentRoot.range.toString !== previousRoot.range.toString) {
+            if (currentRoot.range.rangeStr !== previousRoot.range.rangeStr) {
                 this.handleSelection()  // TODO: sometimes this is too slow :(
                 this.childrenState.state.forEach(child => {
                     dispatcher.dispatch(new UpdateComment(cellId, child.uuid, currentRoot.range, child.content))

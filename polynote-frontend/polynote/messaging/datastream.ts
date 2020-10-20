@@ -50,7 +50,7 @@ export class DataStream {
     private setupPromise?: Promise<Message | void>;
     private repr: StreamingDataRepr;
     private activeStreams: StateView<NotebookState["activeStreams"]>;
-    private observer?: Observer<NotebookState["activeStreams"]>;
+    private observer?: [Observer<NotebookState["activeStreams"]>, string];
 
     constructor(private readonly dispatcher: NotebookMessageDispatcher, private readonly nbState: NotebookStateHandler, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
         this.mods = mods ?? [];
