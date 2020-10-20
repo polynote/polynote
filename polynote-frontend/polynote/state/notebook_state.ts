@@ -51,8 +51,8 @@ export interface NotebookState {
     kernel: KernelState,
     // ephemeral states
     activeCellId: number | undefined,
-    activeCompletion: { resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
-    activeSignature: { resolve: (signature: SignatureHint) => void, reject: () => void } | undefined,
+    activeCompletion: { cellId: number, offset: number, resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
+    activeSignature: { cellId: number, offset: number, resolve: (signature: SignatureHint) => void, reject: () => void } | undefined,
     activePresence: Record<number, { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}}>,
     // map of handle ID to message received.
     activeStreams: Record<number, (HandleData | ModifyStream)[]>,
