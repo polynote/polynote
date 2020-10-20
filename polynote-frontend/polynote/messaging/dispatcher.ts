@@ -157,50 +157,49 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 this.socket.send(new messages.NotebookVersion(state.path, version))
             })
             .when(RequestCellRun, cellIds => {
-                this.handler.update(state => {
-                    // empty cellIds means run all of them!
-                    if (cellIds.length === 0) {
-                        cellIds = state.cellOrder
-                    }
+                const state = this.handler.state
+                // empty cellIds means run all of them!
+                if (cellIds.length === 0) {
+                    cellIds = state.cellOrder
+                }
 
-                    cellIds = collect(cellIds, id => state.cells[id]?.language !== "text" ? id : undefined);
+                cellIds = collect(cellIds, id => state.cells[id]?.language !== "text" ? id : undefined);
 
-                    const [clientCells, serverCells] = partition(cellIds, id => {
-                        const cell = state.cells[id]
-                        if (cell) {
-                            return Object.keys(ClientInterpreters).includes(cell.language)
-                        } else {
-                            console.warn("Run requested for cell with ID", id, "but a cell with that ID was not found in", state.cells)
-                            return true // should this fail?
-                        }
-                    })
-                    clientCells.forEach(id => {
-                        const idx = cellIds.indexOf(id)
-                        const prevId = cellIds[idx - 1]
-                        const clientInterpreter = ClientInterpreter.forPath(state.path);
-                        if (clientInterpreter) {
-                            clientInterpreter.runCell(id, this, prevId)
-                        } else {
-                            const cell = state.cells[id];
-                            const message = `Missing Client Interpreter for cell ${cell.id} of type ${cell.language}`
-                            console.error(message)
-                            ErrorStateHandler.addKernelError(this.handler.state.path, new ServerErrorWithCause("Missing Client Interpreter", message, []))
-                        }
-                    })
-
-                    if (serverCells.length) {
-                        this.socket.send(new messages.RunCell(serverCells));
-                    }
-
-                    return {
-                        ...state,
-                        cells: mapValues(state.cells, cell => {
-                            if (cellIds.includes(cell.id)) {
-                                return { ...cell, results: [] }
-                            } else return cell
-                        })
+                const [clientCells, serverCells] = partition(cellIds, id => {
+                    const cell = state.cells[id]
+                    if (cell) {
+                        return Object.keys(ClientInterpreters).includes(cell.language)
+                    } else {
+                        console.warn("Run requested for cell with ID", id, "but a cell with that ID was not found in", state.cells)
+                        return true // should this fail?
                     }
                 })
+                clientCells.forEach(id => {
+                    const idx = cellIds.indexOf(id)
+                    const prevId = cellIds[idx - 1]
+                    const clientInterpreter = ClientInterpreter.forPath(state.path);
+                    if (clientInterpreter) {
+                        clientInterpreter.runCell(id, this, prevId)
+                    } else {
+                        const cell = state.cells[id];
+                        const message = `Missing Client Interpreter for cell ${cell.id} of type ${cell.language}`
+                        console.error(message)
+                        ErrorStateHandler.addKernelError(this.handler.state.path, new ServerErrorWithCause("Missing Client Interpreter", message, []))
+                    }
+                })
+
+                if (serverCells.length) {
+                    this.socket.send(new messages.RunCell(serverCells));
+                }
+
+                return {
+                    ...state,
+                    cells: mapValues(state.cells, cell => {
+                        if (cellIds.includes(cell.id)) {
+                            return { ...cell, results: [] }
+                        } else return cell
+                    })
+                }
             })
             .when(RequestCancelTasks, () => {
                 const state = this.handler.state
@@ -208,21 +207,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             })
             .when(RequestClearOutput, () => {
                 this.socket.send(new messages.ClearOutput())
-            })
-            .when(DeselectCell, cellId => {
-                this.handler.update(state => {
-                    return {
-                        ...state,
-                        cells: {
-                            ...state.cells,
-                            [cellId]: {
-                                ...state.cells[cellId],
-                                selected: false
-                            }
-                        },
-                        activeCellId: state.activeCellId === cellId ? undefined : state.activeCellId
-                    }
-                })
             })
             .when(RemoveCellError, (id, error) => {
                 this.handler.update(state => {
@@ -603,17 +587,6 @@ export class RequestNotebooksList extends UIAction {
 
     static unapply(inst: RequestNotebooksList): ConstructorParameters<typeof RequestNotebooksList> {
         return [];
-    }
-}
-
-export class DeselectCell extends UIAction {
-    constructor(readonly cellId: number) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: DeselectCell): ConstructorParameters<typeof DeselectCell> {
-        return [inst.cellId]
     }
 }
 

@@ -123,10 +123,10 @@ export class Notebook {
             if (pos) {
                 const range = PosRange.fromString(pos)
                 // TODO: when should this go away? maybe when you edit the cell
-                cellsHandler.lens(cellId).update(s => ({
+                cellsHandler.update1(cellId, s => ({
                     ...s,
                     currentHighlight: {range, className: "link-highlight"}
-                })).dispose()
+                }))
             }
         })
     }
