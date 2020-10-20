@@ -70,6 +70,18 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             }
         })
 
+        state.view("activeSignature").addObserver(sig => {
+            if (sig) {
+                this.socket.send(new messages.ParametersAt(sig.cellId, sig.offset))
+            }
+        })
+
+        state.view("activeCompletion").addObserver(sig => {
+            if (sig) {
+                this.socket.send(new messages.CompletionsAt(sig.cellId, sig.offset, []))
+            }
+        })
+
         state.updateHandler.addObserver(updates => {
             if (updates.length > 0) {
                 console.log("got updates to send", updates)
@@ -139,30 +151,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(DeleteComment, (cellId, commentId) => {
                 const state = this.handler.updateHandler
                 this.sendUpdate(new messages.DeleteComment(state.globalVersion, state.localVersion, cellId, commentId))
-            })
-            .when(RequestCompletions, (cellId, offset, resolve, reject) => {
-                this.socket.send(new messages.CompletionsAt(cellId, offset, []));
-                this.handler.update(state => {
-                    if (state.activeCompletion) {
-                        state.activeCompletion.reject();
-                    }
-                    return {
-                        ...state,
-                        activeCompletion: {resolve, reject}
-                    }
-                })
-            })
-            .when(RequestSignature, (cellId, offset, resolve, reject) => {
-                this.socket.send(new messages.ParametersAt(cellId, offset));
-                this.handler.update(state => {
-                    if (state.activeSignature) {
-                        state.activeSignature.reject();
-                    }
-                    return {
-                        ...state,
-                        activeSignature: {resolve, reject}
-                    }
-                })
             })
             .when(RequestNotebookVersion, version => {
                 const state = this.handler.state
@@ -560,30 +548,6 @@ export class DeleteNotebook extends UIAction {
 
     static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
         return [inst.path];
-    }
-}
-
-export class RequestCompletions extends UIAction {
-    constructor(readonly cellId: number, readonly offset: number,
-                readonly resolve: (completion: CompletionHint) => void, readonly reject: () => void) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestCompletions): ConstructorParameters<typeof RequestCompletions> {
-        return [inst.cellId, inst.offset, inst.resolve, inst.reject];
-    }
-}
-
-export class RequestSignature extends UIAction {
-    constructor(readonly cellId: number, readonly offset: number,
-                readonly resolve: (value: SignatureHint) => void, readonly reject: () => void) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestSignature): ConstructorParameters<typeof RequestSignature> {
-        return [inst.cellId, inst.offset, inst.resolve, inst.reject];
     }
 }
 

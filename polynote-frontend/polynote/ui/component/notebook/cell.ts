@@ -2,8 +2,6 @@ import {blockquote, button, Content, details, div, dropdown, h4, iconButton, spa
 import {
     NotebookMessageDispatcher,
     RequestCellRun,
-    RequestCompletions,
-    RequestSignature,
     ShowValueInspector, DeselectCell, RemoveCellError
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
@@ -678,11 +676,11 @@ class CodeCell extends Cell {
         })
     }
 
-    requestCompletion(pos: number): Promise<CompletionList> {
-        return new Promise<CompletionHint>(
-            (resolve, reject) =>
-                this.dispatcher.dispatch(new RequestCompletions(this.id, pos, resolve, reject))
-        ).then(({cell, offset, completions}) => {
+    requestCompletion(offset: number): Promise<CompletionList> {
+        return new Promise<CompletionHint>((resolve, reject) => {
+            this.notebookState.state.activeCompletion?.reject() // remove previously active completion if present
+            return this.notebookState.update1("activeCompletion", () => ({cellId: this.id, offset, resolve, reject}))
+        }).then(({cell, offset, completions}) => {
             const len = completions.length;
             const indexStrLen = ("" + len).length;
             const completionResults = completions.map((candidate, index) => {
@@ -701,7 +699,7 @@ class CodeCell extends Cell {
 
                 // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
                 const model = this.editor.getModel()!;
-                const p = model.getPositionAt(pos);
+                const p = model.getPositionAt(offset);
                 const word = model.getWordUntilPosition(p);
                 const range = new Range(p.lineNumber, word.startColumn, p.lineNumber, word.endColumn);
                 return {
@@ -719,10 +717,11 @@ class CodeCell extends Cell {
         })
     }
 
-    requestSignatureHelp(pos: number): Promise<SignatureHelpResult> {
-        return new Promise<SignatureHint>((resolve, reject) =>
-            this.dispatcher.dispatch(new RequestSignature(this.id, pos, resolve, reject))
-        ).then(({cell, offset, signatures}) => {
+    requestSignatureHelp(offset: number): Promise<SignatureHelpResult> {
+        return new Promise<SignatureHint>((resolve, reject) => {
+            this.notebookState.state.activeSignature?.reject() // remove previous active signature if present.
+            return this.notebookState.update1("activeSignature", () => ({cellId: this.id, offset, resolve, reject}))
+        }).then(({cell, offset, signatures}) => {
             let sigHelp: SignatureHelp;
             if (signatures) {
                 sigHelp = {
@@ -968,6 +967,8 @@ class CodeCell extends Cell {
     protected onDeselected() {
         super.onDeselected();
         this.commentHandler.hide()
+        // hide parameter hints on blur
+        this.editor.trigger('keyboard', 'closeParameterHints', null);
     }
 
     setDisabled(disabled: boolean) {
