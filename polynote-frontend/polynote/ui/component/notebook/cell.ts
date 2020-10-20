@@ -2,7 +2,7 @@ import {blockquote, button, details, div, dropdown, h4, iconButton, span, tag, T
 import {
     NotebookMessageDispatcher,
     RequestCellRun,
-    ShowValueInspector, RemoveCellError
+    ShowValueInspector,
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {
@@ -739,7 +739,11 @@ class CodeCell extends Cell {
     private removeErrorMarker(marker: ErrorMarker) {
         this.errorMarkers = this.errorMarkers.filter(m => m !== marker)
         this.setModelMarkers(this.errorMarkers.flatMap(m => m.markers))
-        this.dispatcher.dispatch(new RemoveCellError(this.id, marker.error))
+        if (marker.error instanceof RuntimeError) {
+            this.cellState.update1("runtimeError", () => undefined)
+        } else {
+            this.cellState.update1("compileErrors", errors => errors.filter(e => ! deepEquals(e, marker.error)))
+        }
     }
 
     private clearErrorMarkers(type?: "runtime" | "compiler") {
