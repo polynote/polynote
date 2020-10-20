@@ -2,7 +2,7 @@ import {blockquote, button, details, div, dropdown, h4, iconButton, span, tag, T
 import {
     NotebookMessageDispatcher,
     RequestCellRun,
-    ShowValueInspector, DeselectCell, RemoveCellError
+    ShowValueInspector, RemoveCellError
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {
@@ -174,7 +174,7 @@ abstract class Cell extends Disposable {
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
             if (this.cellState.state.selected // prevent blurring a different cell
                 && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
-                this.dispatcher.dispatch(new DeselectCell(this.id))
+                this.cellState.update1("selected", () => false)
             }
         }
     }
@@ -515,6 +515,8 @@ class CodeCell extends Cell {
         const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
                 this.el.classList.add("running");
+                // clear results when a cell starts running:
+                this.cellState.update1("results", () => [])
             } else {
                 this.el.classList.remove("running");
                 if (previously) {

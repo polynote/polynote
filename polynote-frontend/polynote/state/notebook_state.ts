@@ -66,6 +66,20 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
 
         this.cellsHandler = this.lens("cells")
         this.updateHandler = new NotebookUpdateHandler(this, -1, -1, new EditBuffer())
+
+        this.view("activeCellId").addObserver(cellId => {
+            if (cellId) {
+                const activeCellWatcher = this.cellsHandler.view(cellId)
+                const obs = activeCellWatcher.addObserver(s => {
+                    if (! s.selected) {
+                        console.log("deselected", cellId)
+                        activeCellWatcher.removeObserver(obs)
+                        activeCellWatcher.dispose()
+                        this.update1("activeCellId", () => undefined)
+                    }
+                })
+            }
+        })
     }
 
     getCellIndex(cellId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
@@ -218,7 +232,7 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
     }
 }
 
-// Handle Notebook Updates and, keeping track of versions and local edits.
+// Handle Notebook Updates, keeping track of versions and local edits.
 export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
     cellWatchers: Record<number, StateView<CellState>> = {};
     constructor(state: NotebookStateHandler, public globalVersion: number, public localVersion: number, public edits: EditBuffer) {
