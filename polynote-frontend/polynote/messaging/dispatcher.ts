@@ -208,23 +208,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(RequestClearOutput, () => {
                 this.socket.send(new messages.ClearOutput())
             })
-            .when(RemoveCellError, (id, error) => {
-                this.handler.update(state => {
-                    let cell = {...state.cells[id]};
-                    if (error instanceof RuntimeError) {
-                        cell = {...cell, runtimeError: undefined};
-                    } else {
-                        cell = {...cell, compileErrors: cell.compileErrors.filter(e => ! deepEquals(e, error)) }
-                    }
-                    return {
-                        ...state,
-                        cells: {
-                            ...state.cells,
-                            [id]: cell
-                        }
-                    }
-                })
-            })
             .when(DownloadNotebook, () => {
                 const path = window.location.pathname + "?download=true"
                 const link = document.createElement('a');
@@ -587,17 +570,6 @@ export class RequestNotebooksList extends UIAction {
 
     static unapply(inst: RequestNotebooksList): ConstructorParameters<typeof RequestNotebooksList> {
         return [];
-    }
-}
-
-export class RemoveCellError extends UIAction {
-    constructor(readonly cellId: number, readonly error: RuntimeError | CompileErrors) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RemoveCellError): ConstructorParameters<typeof RemoveCellError> {
-        return [inst.cellId, inst.error];
     }
 }
 
