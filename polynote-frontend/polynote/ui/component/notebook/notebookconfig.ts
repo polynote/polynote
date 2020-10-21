@@ -12,7 +12,7 @@ import {
     TagElement,
     textbox
 } from "../../tags";
-import {NotebookMessageDispatcher, ToggleNotebookConfig} from "../../../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {StateHandler, StateView} from "../../../state/state_handler";
 import {
     IvyRepository,
@@ -47,7 +47,7 @@ export class NotebookConfigEl {
         })
 
         this.el = div(['notebook-config'], [
-            h2(['config'], ['Configuration & dependencies']).click(() => dispatcher.dispatch(new ToggleNotebookConfig())),
+            h2(['config'], ['Configuration & dependencies']).click(() => stateHandler.update1("open", open => !open)),
             div(['content'], [
                 dependencies.el,
                 resolvers.el,
@@ -57,7 +57,7 @@ export class NotebookConfigEl {
                 div(['controls'], [
                     saveButton,
                     button(['cancel'], {}, ['Cancel']).click(evt => {
-                        dispatcher.dispatch(new ToggleNotebookConfig(false))
+                        stateHandler.update1("open", () => false)
                     })
                 ])
             ])

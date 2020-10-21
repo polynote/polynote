@@ -215,25 +215,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .when(StopDataStream, (handleType, handleId) => {
                 this.socket.send(new ReleaseHandle(handleType, handleId))
             })
-            .when(ClearDataStream, handleId => {
-                this.handler.update(state => {
-                    return {
-                        ...state,
-                        activeStreams: {
-                            ...state.activeStreams,
-                            [handleId]: []
-                        }
-                    }
-                })
-            })
-            .when(ToggleNotebookConfig, open => {
-                this.handler.update(s => {
-                    return {
-                        ...s,
-                        config: {...s.config, open: (open ?? !s.config.open)}
-                    }
-                })
-            })
     }
 
     private sendUpdate(upd: NotebookUpdate) {
@@ -337,7 +318,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                             if (newNb.includes(nbPath)) {
                                 nbs.dispose()
                                 ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {
-                                    nbInfo.info?.dispatcher.dispatch(new ToggleNotebookConfig(true))  // open config automatically for newly created notebooks.
+                                    nbInfo.handler.update1("config", conf => ({...conf, open: true}))
                                     ServerStateHandler.selectNotebook(newNb)
                                 })
                             }
@@ -567,17 +548,6 @@ export class DownloadNotebook extends UIAction {
     }
 }
 
-export class ToggleNotebookConfig extends UIAction {
-    constructor(readonly open?: boolean) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: ToggleNotebookConfig): ConstructorParameters<typeof ToggleNotebookConfig> {
-        return [inst.open];
-    }
-}
-
 export class ViewAbout extends UIAction {
     constructor(readonly section: string) {
         super();
@@ -641,16 +611,5 @@ export class StopDataStream extends UIAction {
 
     static unapply(inst: StopDataStream): ConstructorParameters<typeof StopDataStream> {
         return [inst.handleType, inst.handleId]
-    }
-}
-
-export class ClearDataStream extends UIAction {
-    constructor(readonly handleId: number) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: ClearDataStream): ConstructorParameters<typeof ClearDataStream> {
-        return [inst.handleId]
     }
 }
