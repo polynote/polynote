@@ -12,6 +12,8 @@ val versions = new {
   val fs2        = "1.0.5"
   val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC2-6"
+  val postgresVersion = "42.2.16"
+  val quillVersion    = "3.5.2"
   val zio        = "1.0.2"
   val zioInterop = "2.0.0.0-RC12"
 }
@@ -139,8 +141,11 @@ val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
+    "io.getquill" %% "quill-jdbc" % versions.quillVersion,
     "org.polynote" %% "uzhttp" % "0.2.6",
+    "org.postgresql" % "postgresql" % versions.postgresVersion,
     "org.scodec" %% "scodec-core" % "1.10.3",
+    "com.typesafe" % "config" % "1.4.0",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
