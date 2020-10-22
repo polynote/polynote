@@ -5,10 +5,9 @@ import java.util.{Date, UUID}
 /* NOTE: this class does NOT contain notebook contents, i.e. the Polynote JSON code */
 case class NotebookEntity(notebookId: String,   /* this is a UUID for the notebook */
                           folderPath: String,   //  These two items represent a unique key
-                          name: String,         //  ""
+                          name: String,
                           description: String,
                           version: Int,
-                          // createdBy: String     // for createdBy, see userId
                           createdOn: Date,
                           updatedBy: String,
                           updatedOn: Date)
