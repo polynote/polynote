@@ -48,6 +48,21 @@
 #  # The location Polynote puts various caches, such as virtual environments created for your notebooks.
 #  cache: tmp
 
+###########################################################################################
+# Database storage configuration. If enabled, only database storage is used and file system
+# storage is ignored.
+###########################################################################################
+
+#database_config:
+#  is_enabled: true
+#  host: localhost
+#  port: 5432
+#  user: postgres
+#  password: polynote
+#  database_name: postgres
+#  minimum_idle_connections: 1
+#  maximum_connection_pool_size: 10
+
 ##########################################################
 # Configure the way Polynote runs Kernels and Interpreters
 ##########################################################

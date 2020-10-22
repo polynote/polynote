@@ -11,6 +11,8 @@ import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.messages._
 import polynote.server.repository.fs.FileSystems
+import polynote.server.repository.db.Postgres
+import polynote.server.repository.fs.{DatabaseFilesystem, FileSystems}
 import zio.{Has, IO, Promise, RIO, Ref, Semaphore, Task, UIO, URIO, URLayer, ZIO, ZLayer}
 
 
@@ -71,7 +73,11 @@ trait NotebookRepository {
 
 object NotebookRepository {
   val live: URLayer[Config with FileSystems, Has[NotebookRepository]] = ZLayer.fromServiceM {
-    (config: PolynoteConfig) => makeTreeRepository(config.storage.dir, config.storage.mounts, config)
+    (config: PolynoteConfig) =>
+      if (! config.databaseConfig.isEnabled)
+        makeTreeRepository(config.storage.dir, config.storage.mounts, config)
+      else
+        makeDatabaseTreeRepository(config.storage.dir, config.storage.mounts, config)
   }
 
   def makeTreeRepository(dir: String, mounts: Map[String, Mount], config: PolynoteConfig): URIO[FileSystems, TreeRepository] = {
@@ -85,6 +91,25 @@ object NotebookRepository {
         }.map {
           repos =>
             val rootRepo = new FileBasedRepository(new File(System.getProperty("user.dir")).toPath.resolve(dir), fs = fs)
+            new TreeRepository(rootRepo, repos.toMap)
+        }
+
+    }
+  }
+
+  def makeDatabaseTreeRepository(dir: String, mounts: Map[String, Mount], config: PolynoteConfig): URIO[FileSystems, TreeRepository] = {
+    FileSystems.defaultFilesystem.flatMap {
+      fs =>
+        ZIO.collectAllPar {
+          mounts.toSeq.map {
+            case (key, mount) =>
+              makeDatabaseTreeRepository(mount.dir, mount.mounts, config).map(key -> _)
+          }
+        }.map {
+          repos =>
+            val pg = new Postgres(config)
+            val dbFileSystem = new DatabaseFilesystem(pg)
+            val rootRepo = new DatabaseRepository(new File(System.getProperty("user.dir")).toPath.resolve(dir), dbFileSystem)
             new TreeRepository(rootRepo, repos.toMap)
         }
 

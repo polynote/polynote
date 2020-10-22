@@ -87,6 +87,22 @@ object Storage {
   implicit val decoder: Decoder[Storage] = deriveConfigDecoder[Storage]
 }
 
+final case class DatabaseConfig (
+  isEnabled: Boolean = false,
+  host: Option[String] = None,
+  port: Option[Int] = None,
+  user: Option[String] = None,
+  password: Option[String] = None,
+  databaseName: Option[String] = None,
+  minimumIdleConnections: Option[Int] = None,
+  maximumConnectionPoolSize: Option[Int] = None
+)
+
+object DatabaseConfig {
+  implicit val encoder: ObjectEncoder[DatabaseConfig] = deriveEncoder
+  implicit val decoder: Decoder[DatabaseConfig] = deriveConfigDecoder[DatabaseConfig]
+}
+
 sealed trait KernelIsolation
 object KernelIsolation {
   case object Never extends KernelIsolation
@@ -228,7 +244,8 @@ final case class PolynoteConfig(
   ui: UI = UI(),
   credentials: Credentials = Credentials(),
   env: Map[String, String] = Map.empty,
-  static: StaticConfig = StaticConfig()
+  static: StaticConfig = StaticConfig(),
+  databaseConfig: DatabaseConfig = DatabaseConfig()
 )
 
 
