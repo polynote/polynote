@@ -605,7 +605,8 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
 
             // inject the client interpreters here as well.
             Object.keys(ClientInterpreters).forEach(key => {
-                interpreters[key] = ClientInterpreters[key].languageTitle
+                if (!ClientInterpreters[key].hidden)
+                    interpreters[key] = ClientInterpreters[key].languageTitle;
             });
 
             return {

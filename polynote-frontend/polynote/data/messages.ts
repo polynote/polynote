@@ -677,9 +677,12 @@ export class CancelTasks extends Message {
     }
 }
 
-export class TableOp extends Message {
+export abstract class TableOp extends Message {
     static codecs: any[];
+
+    abstract streamCode(on: string): string
 }
+
 export class GroupAgg extends TableOp {
     static codec = combined(arrayCodec(int32, str), arrayCodec(int32, Pair.codec(str, str))).to(GroupAgg);
     static get msgTypeId() { return 0; }
@@ -691,6 +694,15 @@ export class GroupAgg extends TableOp {
         this.aggregations = aggregations;
         Object.freeze(this);
     }
+
+    streamCode(on: string): string {
+        const aggSpecs = this.aggregations.map(pair => {
+            const obj: Record<string, string> = {};
+            obj[pair.first] = pair.second;
+            return obj;
+        });
+        return `${on}.aggregate(${JSON.stringify(this.columns)}, ${JSON.stringify(aggSpecs)})`
+    }
 }
 
 export class QuantileBin extends TableOp {
@@ -701,6 +713,11 @@ export class QuantileBin extends TableOp {
         super();
         Object.freeze(this);
     }
+
+    streamCode(on: string): string {
+        const args = [this.column, this.binCount, this.err].map(arg => JSON.stringify(arg)).join(', ');
+        return `${on}.bin(${args})`
+    }
 }
 
 export class Select extends TableOp {
@@ -710,6 +727,11 @@ export class Select extends TableOp {
     constructor(readonly columns: string[]) {
         super();
         Object.freeze(this);
+    }
+
+    streamCode(on: string): string {
+        const args = this.columns.map(arg => JSON.stringify(arg)).join(', ');
+        return `${on}.select(${args})`
     }
 }
 

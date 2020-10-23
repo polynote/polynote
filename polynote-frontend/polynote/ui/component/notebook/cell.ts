@@ -10,8 +10,8 @@ import {
     SetSelectedCell,
     UpdateCell, ShowValueInspector, DeselectCell, RemoveCellError
 } from "../../../messaging/dispatcher";
-import {Disposable, StateView} from "../../../state/state_handler";
-import {CellState, CompletionHint, SignatureHint} from "../../../state/notebook_state";
+import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
+import {CellState, CompletionHint, NotebookStateHandler, SignatureHint} from "../../../state/notebook_state";
 import * as monaco from "monaco-editor";
 // @ts-ignore (ignore use of non-public monaco api)
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
@@ -54,7 +54,7 @@ import {RichTextEditor} from "../../input/text_editor";
 import {Diff} from "../../../util/diff";
 import {DataRepr, MIMERepr, StreamingDataRepr} from "../../../data/value_repr";
 import {DataReader} from "../../../data/codec";
-import {StructType} from "../../../data/data_type";
+import {BoolType, DoubleType, IntType, StringType, StructField, StructType} from "../../../data/data_type";
 import {FaviconHandler} from "../../../notification/favicon_handler";
 import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
@@ -63,7 +63,8 @@ import {ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl} from "../../display/error";
 import {Error} from "../../../data/messages";
 import IMarkerData = editor.IMarkerData;
-import { deepEquals } from "../../../util/helpers";
+import {deepEquals, Deferred} from "../../../util/helpers";
+import {parsePlotDefinition, PlotDefinition, PlotSelector} from "../../input/plot_selector";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -77,11 +78,13 @@ export class CellContainer extends Disposable {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
     private cell: Cell;
+    private path: string;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateView<CellState>, private path: string) {
+    constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler, private cellState: StateView<CellState>) {
         super()
         this.cellId = `Cell${cellState.state.id}`;
         this.cell = this.cellFor(cellState.state.language);
+        this.path = notebookState.state.path;
         this.el = div(['cell-component'], [this.cell.el]);
         this.el.click(evt => this.cell.doSelect());
         cellState.view("language").addObserver((newLang, oldLang) => {
@@ -107,7 +110,15 @@ export class CellContainer extends Disposable {
     }
 
     private cellFor(lang: string) {
-        return lang === "text" ? new TextCell(this.dispatcher, this.cellState, this.path) : new CodeCell(this.dispatcher, this.cellState, this.path);
+        switch (lang) {
+            case "text":
+                return new TextCell(this.dispatcher, this.cellState, this.path);
+            case "plot":
+                const initialPlot = parsePlotDefinition(this.cellState.state.content);
+                return new PlotCell(this.dispatcher, this.notebookState, this.cellState, initialPlot, this.path);
+            default:
+                return new CodeCell(this.dispatcher, this.cellState, this.path);
+        }
     }
 
     layout() {
@@ -1489,4 +1500,161 @@ export class TextCell extends Cell {
     setDisabled(disabled: boolean) {
         this.editor.disabled = disabled
     }
+}
+
+
+export class PlotCell extends Cell {
+
+    private editor: PlotSelector;
+    private editorEl: TagElement<'div'>;
+    private cellInputTools: TagElement<'div'>;
+    private execDurationUpdater: number;
+
+    private valueName: string;
+    private streamRepr: StreamingDataRepr | undefined = undefined;
+
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cellState: StateView<CellState>, private plot: PlotDefinition, private path: string) {
+        super(dispatcher, cellState);
+
+        this.valueName = plot.value;
+
+        notebookState.availableValuesAt(cellState.state.id, dispatcher).addObserver(
+            availableValues => this.updateValue(availableValues),
+            this
+        )
+
+        this.editorEl = div([], [])
+
+        // TODO: abstract the common stuff with CodeCell?
+
+        const execInfoEl = div(["exec-info"], []);
+
+        const updateMetadata = (metadata: CellMetadata) => {
+            if (metadata.hideSource) {
+                this.el.classList.add("hide-code")
+            } else {
+                this.el.classList.remove("hide-code");
+                this.layout();
+            }
+
+            if (metadata.hideOutput) {
+                this.el.classList.add("hide-output");
+            } else {
+                this.el.classList.remove("hide-output");
+            }
+
+            if (metadata.executionInfo) {
+                this.setExecutionInfo(execInfoEl, metadata.executionInfo)
+            }
+        }
+
+        let cellOutput = new CodeCellOutput(dispatcher, cellState, new StateView(undefined), new StateView(undefined));
+
+        this.el = div(['cell-container', this.state.language, 'code-cell'], [
+            div(['cell-input'], [
+                this.cellInputTools = div(['cell-input-tools'], [
+                    iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
+                        dispatcher.dispatch(new RequestCellRun([this.state.id]))
+                    }),
+                    div(['cell-label'], [this.state.id.toString()]),
+                    div(['lang-selector'], []),
+                    execInfoEl,
+                    div(["options"], [
+                        button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
+                        iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput())
+                    ])
+                ]),
+                this.editorEl
+            ]),
+            cellOutput.el
+        ]);
+
+
+        updateMetadata(this.state.metadata);
+
+        this.el.appendChild(this.editor.el);
+    }
+
+    private updateValue(availableValues: Record<string, ResultValue> | undefined) {
+        if (availableValues && availableValues[this.valueName]) {
+            const repr = availableValues[this.valueName].reprs.find(repr => repr instanceof StreamingDataRepr);
+            if (repr && repr instanceof StreamingDataRepr && repr !== this.streamRepr) {
+                this.streamRepr = repr;
+                if (this.editor) {
+                    this.editor.dispose();
+                }
+
+                this.editor = new PlotSelector(
+                    this.valueName,
+                    repr.dataType,
+                    this.plot
+                );
+
+                this.editor
+
+                if (this.editorEl.parentNode) {
+                    this.editorEl.parentNode.replaceChild(this.editor.el, this.editorEl);
+                }
+                this.editorEl = this.editor.el;
+            }
+        }
+    }
+
+    protected getCurrentSelection(): string {
+        return "";
+    }
+
+    protected getPosition(): IPosition {
+        // plots don't really have a position.
+        return {
+            lineNumber: 0,
+            column: 0
+        };
+    }
+
+    protected getRange(): IRange {
+        // plots don't really have a range
+        return {
+            startLineNumber: 0,
+            startColumn: 0,
+            endLineNumber: 0,
+            endColumn: 0
+        };
+    }
+
+    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string): boolean | undefined {
+        return undefined;
+    }
+
+    setDisabled(disabled: boolean): void {
+    }
+
+    private toggleCode() {}
+    private toggleOutput() {}
+
+    private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
+        const start = new Date(Number(executionInfo.startTs));
+        // clear display
+        el.innerHTML = '';
+        window.clearInterval(this.execDurationUpdater);
+        delete this.execDurationUpdater;
+
+        // populate display
+        el.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
+        el.classList.add('output');
+
+        if (this.state.running || executionInfo.endTs) {
+            const endTs = executionInfo.endTs ?? Date.now();
+            const duration = Number(endTs) - Number(executionInfo.startTs);
+            el.appendChild(span(['exec-duration'], [prettyDuration(duration)]));
+
+            if (executionInfo.endTs === undefined || executionInfo.endTs === null) {
+                // update exec info every so often
+                if (this.execDurationUpdater === undefined) {
+                    this.execDurationUpdater = window.setInterval(() => this.setExecutionInfo(el, executionInfo), 333)
+                }
+            }
+        }
+    }
+
 }

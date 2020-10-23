@@ -94,7 +94,7 @@ export class StateView<S> extends Disposable {
         return mapView;
     }
 
-    protected constructor(state: S, disposeWhen?: Disposable) {
+    constructor(state: S, disposeWhen?: Disposable) {
         super()
         this.setState(deepFreeze(state))
         this.onDispose.then(() => {

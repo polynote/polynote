@@ -1,8 +1,8 @@
 "use strict";
 
 import { VegaInterpreter } from "./vega_interpreter";
-import {ClientResult, ExecutionInfo, ResultValue, RuntimeError} from "../data/result";
-import {NotebookStateHandler} from "../state/notebook_state";
+import {ClientResult, ExecutionInfo, Result, ResultValue, RuntimeError} from "../data/result";
+import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {NotebookMessageDispatcher, SetCellOutput} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {
@@ -25,7 +25,8 @@ export interface CellContext {
 export interface IClientInterpreter {
     languageTitle: string;
     highlightLanguage: string;
-    interpret(code: string, cellContext: CellContext): (ClientResult | RuntimeError)[]
+    interpret(code: string, cellContext: CellContext): (ClientResult | RuntimeError)[];
+    hidden?: boolean
 }
 
 export const ClientInterpreters: Record<string, IClientInterpreter> = {
@@ -110,25 +111,7 @@ export class ClientInterpreter {
             }
             updateStatus(1)
 
-            const currentState = this.notebookState.state;
-            const availableValues = currentState.cells.slice(0, cellIdx).reduce<Record<string, any>>((acc, next) => {
-                next.results
-                    .filter(res => res instanceof ResultValue) // for now, ClientResults can't be used in other cells
-                    .forEach((result: ResultValue) => {
-                        let bestValue: any = result.valueText;
-                        const dataRepr = result.reprs.find(repr => repr instanceof DataRepr);
-                        if (dataRepr) {
-                            bestValue = (dataRepr as DataRepr).decode();
-                        } else {
-                            const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
-                            if (streamingRepr instanceof StreamingDataRepr) {
-                                bestValue = new DataStream(dispatcher, this.notebookState, streamingRepr);
-                            }
-                        }
-                        acc[result.name] = bestValue;
-                    })
-                return acc
-            }, {})
+            const availableValues = availableClientValues(this.notebookState.state.cells, this.notebookState, dispatcher, id);
             const results = ClientInterpreters[cell.language].interpret(cell.content, {id, availableValues})
             updateStatus(256)
             results.forEach(res => {
@@ -141,4 +124,39 @@ export class ClientInterpreter {
         })
     }
 
+}
+
+export function availableResultValues(cells: CellState[], notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, id?: number): Record<string, ResultValue> {
+    const currentState = notebookState.state;
+    let cellIdx = id !== undefined ? cells.findIndex(cell => cell.id === id) : cells.length - 1;
+    if (cellIdx < 0) {
+        return {};
+    }
+    return cells.slice(0, cellIdx).reduce<Record<string, ResultValue>>((acc, next) => {
+        next.results
+            .filter(res => res instanceof ResultValue) // for now, ClientResults can't be used in other cells
+            .forEach((result: ResultValue) => acc[result.name] = result)
+        return acc
+    }, {})
+}
+
+function availableClientValues(cells: CellState[], notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, id?: number): Record<string, any> {
+    return Object.fromEntries(
+        Object.entries(availableResultValues(cells, notebookState, dispatcher, id)).map(
+            entry => {
+                const [name, result] = entry;
+                let bestValue: any = result.valueText;
+                const dataRepr = result.reprs.find(repr => repr instanceof DataRepr);
+                if (dataRepr) {
+                    bestValue = (dataRepr as DataRepr).decode();
+                } else {
+                    const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
+                    if (streamingRepr instanceof StreamingDataRepr) {
+                        bestValue = new DataStream(dispatcher, notebookState, streamingRepr);
+                    }
+                }
+                return [name, bestValue];
+            }
+        )
+    )
 }

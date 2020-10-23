@@ -2,7 +2,7 @@
 
 import {loadIcon} from "./icons";
 
-type ContentElement = (Node | string | undefined)
+type ContentElement = (Node | {el: Node} | string | undefined)
 export type Content = ContentElement | ContentElement[];
 export type AsyncContent = Content | Promise<ContentElement>
 
@@ -19,8 +19,10 @@ function appendContent(el: Node, content: AsyncContent) {
     for (let item of content) {
         if (typeof item === "string") {
             el.appendChild(document.createTextNode(item));
-        } else if (item !== undefined) {
+        } else if (item instanceof Node) {
             el.appendChild(item);
+        } else if (item && item.el) {
+            el.appendChild(item.el);
         }
     }
 }
@@ -34,6 +36,7 @@ export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElem
     click(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     mousedown(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     change(handler: EventListenerOrEventListenerObject): TagElement<K, T>
+    onValueChange(fn: (newValue: string) => void): TagElement<K, T>
     listener(name: string, handler: EventListenerOrEventListenerObject): TagElement<K, T>
     withKey(key: string, value: any): TagElement<K, T>
     disable(): TagElement<K, T>
@@ -75,6 +78,11 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
         },
         change(handler: EventListenerOrEventListenerObject) {
             return el.listener('change', handler);
+        },
+        onValueChange(fn: (newValue: string) => void) {
+            if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
+                return el.change(evt => fn(el.value))
+            else throw new Error("Element is not an input")
         },
         listener(name: string, handler: EventListenerOrEventListenerObject) {
             el.addEventListener(name, handler);
@@ -171,8 +179,8 @@ export function iconButton(classes: string[], title: string, iconName: string, a
     return button(classes, {title: title}, icon([], iconName, alt));
 }
 
-export function textbox(classes: string[], placeholder: string, value: string = "") {
-    const input = tag('input', classes, {type: 'text', placeholder: placeholder}, []);
+export function textbox(classes: string[], placeholder: string, value: string = "", type: "text" | "number" = "text") {
+    const input = tag('input', classes, {type, placeholder: placeholder}, []);
     if (value) {
         input.value = value;
     }
@@ -211,6 +219,7 @@ export interface DropdownElement extends TagElement<"select"> {
     setSelectedValue(value: string): void
     getSelectedValue(): string
     addValue(key: string, val: string): void
+    onSelect(fn: (newValue: string) => void): TagElement<"select">
 }
 
 export function dropdown(classes: string[], options: Record<string, string>, value?: string): DropdownElement {
@@ -238,6 +247,9 @@ export function dropdown(classes: string[], options: Record<string, string>, val
             dropdown.add(opt);
             opts.push(opt)
         },
+        onSelect(fn: (newValue: string) => void): TagElement<"select"> {
+            return select.change(_ => fn(this.getSelectedValue()));
+        }
     });
 
     if (value) dropdown.setSelectedValue(value);
@@ -279,6 +291,13 @@ export function h3(classes: string[], content: Content) {
 
 export function h4(classes: string[], content: Content) {
     return tag('h4', classes, {}, content);
+}
+
+export function label(classes: string[], label: string, input: TagElement<"input" | "select" | "textarea">): TagElement<"label"> {
+    return tag('label', classes, {}, [
+       span(['label-title'], label),
+       input
+    ]);
 }
 
 /**
