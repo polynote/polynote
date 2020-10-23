@@ -1,3 +1,5 @@
+import {deepEquals} from "./helpers";
+
 export default function match<T>(obj: T) {
     return new Matcher(obj);
 }
@@ -13,25 +15,46 @@ export interface Extractable<T, Args> {
   unapply(t: T): Args
 }
 
-export class Matcher<T> {
-    protected result: any | null;
+export class Matcher<T, R = any> {
+    protected result: R | undefined;
     constructor(readonly obj: T) {}
 
-    when<U extends T, C extends Extractable<U, ConstructorParameters<C>>>(type: C, fn: (...args: ConstructorParameters<C>) => any) {
+    typed<R1>(): Matcher<T, R1> {
+        if (this.result !== undefined) {
+            throw new Error("Must call `typed` before defining any match cases");
+        }
+        return this as any as Matcher<T, R1>;
+    }
+
+    when<U extends T, C extends Extractable<U, ConstructorParameters<C>>>(type: C, fn: (...args: ConstructorParameters<C>) => R) {
         if (this.result === undefined && this.obj instanceof type) {
-            this.result = fn(...type.unapply(this.obj)) || null;
+            this.result = fn(...type.unapply(this.obj));
         }
         return this;
     }
 
-    whenInstance<C extends (new (...args: any[]) => InstanceType<C>)>(type: C, fn: (inst: InstanceType<C>) => any) {
-        if (this.result === undefined && this.obj instanceof type) {
-            this.result = fn(this.obj) || null;
+    whenP(predicate: (value: T) => boolean, fn: (value: T) => R) {
+        if (this.result === undefined && predicate(this.obj)) {
+            this.result = fn(this.obj);
         }
         return this;
     }
 
-    otherwise<U>(value: U) {
+    whenV(cmpValue: T, fn: (value: T) => R) {
+        if (this.result === undefined && deepEquals(this.obj, cmpValue)) {
+            this.result = fn(this.obj);
+        }
+        return this;
+    }
+
+    whenInstance<C extends (new (...args: any[]) => InstanceType<C>)>(type: C, fn: (inst: InstanceType<C>) => R) {
+        if (this.result === undefined && this.obj instanceof type) {
+            this.result = fn(this.obj);
+        }
+        return this;
+    }
+
+    otherwise<U>(value: U): R | U {
         if (this.result !== undefined) {
             return this.result;
         } else {
@@ -39,7 +62,7 @@ export class Matcher<T> {
         }
     }
 
-    get otherwiseThrow() {
+    get otherwiseThrow(): R {
         if (this.result !== undefined) {
             return this.result;
         } else {
@@ -52,22 +75,22 @@ export class Matcher<T> {
 export function purematch<T, R>(obj: T) {
     return new PureMatcher<T, R>(obj);
 }
-export class PureMatcher<T, R> extends Matcher<T> {
-    when<U extends T, C extends Extractable<U, ConstructorParameters<C>>>(type: C, fn: (...args: ConstructorParameters<C>) => R | null) {
+export class PureMatcher<T, R> extends Matcher<T, R> {
+    when<U extends T, C extends Extractable<U, ConstructorParameters<C>>>(type: C, fn: (...args: ConstructorParameters<C>) => R) {
         if (this.result === undefined && this.obj instanceof type) {
-            this.result = fn(...type.unapply(this.obj)) || null;
+            this.result = fn(...type.unapply(this.obj));
         }
         return this;
     }
 
-    whenInstance<C extends (new (...args: any[]) => InstanceType<C>)>(type: C, fn: (inst: InstanceType<C>) => R | null) {
+    whenInstance<C extends (new (...args: any[]) => InstanceType<C>)>(type: C, fn: (inst: InstanceType<C>) => R) {
         if (this.result === undefined && this.obj instanceof type) {
-            this.result = fn(this.obj) || null;
+            this.result = fn(this.obj);
         }
         return this;
     }
 
-    get otherwiseThrow(): R | null {
+    get otherwiseThrow(): R {
         return super.otherwiseThrow
     }
 }

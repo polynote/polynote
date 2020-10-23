@@ -24,6 +24,8 @@ import {DialogModal} from "../ui/layout/modal";
 import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
+import {StreamingDataRepr} from "../data/value_repr";
+import {PlotDefinition} from "../ui/input/plot_selector";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -426,7 +428,17 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 link.click()
             })
             .when(ShowValueInspector, (result, tab) => {
-                ValueInspector.get.inspect(this, this.handler, result, tab)
+                if (result.reprs.findIndex(repr => repr instanceof StreamingDataRepr) >= 0) {
+                    // TODO: this is temporary behavior, fix me
+                    this.insertCell("below", {
+                        id: result.sourceCell,
+                        language: 'plot',
+                        metadata: new CellMetadata(false, false, false),
+                        content: JSON.stringify(PlotDefinition.empty(result.name))
+                    })
+                } else {
+                    ValueInspector.get.inspect(this, this.handler, result, tab)
+                }
             })
             .when(HideValueInspector, () => {
                 ValueInspector.get.hide()

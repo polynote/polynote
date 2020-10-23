@@ -29,7 +29,7 @@ export class ValueInspector extends FullScreenModal {
         return ValueInspector.inst;
     }
 
-    inspect(dispatcher: NotebookMessageDispatcher, nbState: NotebookStateHandler, resultValue: ResultValue, whichTab?: string) {
+    inspect(dispatcher: NotebookMessageDispatcher, nbState: NotebookStateHandler, resultValue: ResultValue, whichTab?: string): Promise<void> {
         this.content.innerHTML = "";
         let tabsPromise = Promise.resolve({} as Record<string, TagElement<any>>);
 

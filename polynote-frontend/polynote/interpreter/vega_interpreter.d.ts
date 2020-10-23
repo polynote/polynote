@@ -7,3 +7,5 @@ export const VegaInterpreter: IClientInterpreter;
 export const VegaClientResult: {
     plotToOutput(plot: VegaResult): Promise<Output>
 };
+
+export const PlotInterpreter: IClientInterpreter;

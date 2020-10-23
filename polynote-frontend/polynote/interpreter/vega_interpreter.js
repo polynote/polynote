@@ -4,6 +4,7 @@ import * as acorn from "acorn"
 import {Position, KernelReport, CompileErrors, Output, RuntimeError, ClientResult} from "../data/result";
 import embed from "vega-embed";
 import {DataStream} from "../messaging/datastream";
+import {parsePlotDefinition, plotToVega, plotToVegaCode} from "../ui/input/plot_selector";
 
 export const VegaInterpreter = {
 
@@ -47,6 +48,25 @@ export const VegaInterpreter = {
 
 
 };
+
+export const PlotInterpreter = {
+    languageTitle: "Plot",
+    highlightLanguage: "json",
+    interpret(code, cellContext) {
+        // for now, will just generate vega code and delegate to vega interpreter.
+        const plotDef = parsePlotDefinition(code);
+        const value = cellContext.availableValues[plotDef.value];
+        if (!value) {
+            return [new CompileErrors(new KernelReport(new Position(cellContext.id, 0, 0), `No such value: ${plotDef.value}`, 2))]
+        }
+        if (!value.dataType) {
+            return [new CompileErrors(new KernelReport(new Position(cellContext.id, 0, 0), `Value ${plotDef.value} is not table-like`, 2))]
+        }
+        const plotCode = plotToVegaCode(plotDef, value.dataType);
+        VegaInterpreter.interpret(plotCode, cellContext);
+    },
+    hidden: true
+}
 
 function splitOutput(outputStr) {
     return outputStr.match(/[^\n]+\n?/g);

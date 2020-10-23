@@ -2846,6 +2846,56 @@ img.icon, svg.icon {
   font-family: @text-fonts;
 }
 
+/** Plot selector **/
+.plot-selector {
+  padding: 1em;
+
+  label {
+    .label-title {
+      font-weight: bold;
+      padding-right: 1em;
+    }
+    .label-title:after {
+      content: ':';
+    }
+  }
+
+  .available-measures {
+    display: inline-block;
+  }
+
+  .measure-pickers {
+
+    .measure-picker {
+      position: relative;
+      display: grid;
+      grid-template-columns: auto min-content;
+      align-items: center;
+
+      > span {
+        vertical-align: middle;
+        align-content: center;
+      }
+
+      > button {
+        color: green;
+        size: inherit;
+      }
+    }
+  }
+
+  .measures-popup {
+    position: absolute;
+    left: 100%;
+  }
+
+  &.bar, &.line, &.area {
+    .x-axis-config, .y-axis-config {
+      display: none;
+    }
+  }
+}
+
 /*
 Loader (adapted from https://github.com/lukehaas/css-loaders/blob/step2/less/loader.less)
 License follows:

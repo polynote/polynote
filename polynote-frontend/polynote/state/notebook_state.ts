@@ -1,4 +1,4 @@
-import {StateHandler} from "./state_handler";
+import {StateHandler, StateView} from "./state_handler";
 import {
     ClientResult, CompileErrors,
     Output,
@@ -11,6 +11,8 @@ import {CellComment, CellMetadata, NotebookConfig} from "../data/data";
 import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {availableResultValues} from "../interpreter/client_interpreter";
 
 export interface CellState {
     id: number,
@@ -62,6 +64,10 @@ export interface NotebookState {
 export class NotebookStateHandler extends StateHandler<NotebookState> {
     constructor(state: NotebookState) {
         super(state);
+    }
+
+    availableValuesAt(id: number, dispatcher: NotebookMessageDispatcher): StateView<Record<string, ResultValue> | undefined> {
+        return this.mapView("cells", cells => availableResultValues(cells, this, dispatcher, id))
     }
 
     // wait for cell to transition to a specific state

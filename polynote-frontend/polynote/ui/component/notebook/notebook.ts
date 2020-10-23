@@ -55,7 +55,7 @@ export class Notebook {
 
             added.forEach(state => {
                 const handler = new StateHandler(state, notebookState);
-                const cell = new CellContainer(dispatcher, handler, notebookState.state.path);
+                const cell = new CellContainer(dispatcher, notebookState, handler);
                 this.cells[state.id] = {cell, handler, el: div(['cell-and-divider'], [cell.el, this.newCellDivider()])}
             });
             removed.forEach(cell => {
