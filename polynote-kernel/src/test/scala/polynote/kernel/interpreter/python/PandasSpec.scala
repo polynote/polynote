@@ -25,7 +25,7 @@ class PandasSpec extends FreeSpec with Matchers with InterpreterSpec {
             |""".stripMargin)
 
         result.state.scope.head match {
-          case ResultValue(name, typeName, _, _, value: TypedPythonObject[Witness.`"DataFrame"`.T @unchecked], _, _) =>
+          case ResultValue(name, typeName, _, _, value: TypedPythonObject[Witness.`"DataFrame"`.T @unchecked], _, _, _) =>
             name shouldEqual "Out"
             typeName shouldEqual "TypedPythonObject[DataFrame]"
             val reprs = TypedPythonObject.dataFrameReprs(value)
@@ -62,7 +62,7 @@ class PandasSpec extends FreeSpec with Matchers with InterpreterSpec {
             |""".stripMargin)
 
         result.state.scope.head match {
-          case ResultValue(name, typeName, _, _, value: TypedPythonObject[Witness.`"DataFrame"`.T@unchecked], _, _) =>
+          case ResultValue(name, typeName, _, _, value: TypedPythonObject[Witness.`"DataFrame"`.T@unchecked], _, _, _) =>
             name shouldEqual "Out"
             typeName shouldEqual "TypedPythonObject[DataFrame]"
             val reprs = TypedPythonObject.dataFrameReprs(value)

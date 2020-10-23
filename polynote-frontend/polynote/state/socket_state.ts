@@ -39,19 +39,20 @@ export class SocketStateHandler extends StateHandler<SocketState> {
     }
 
     constructor(socket: SocketSession, initial: SocketState = {status: "disconnected", error: undefined}) {
-        super(initial);
+        const view = new StateView(initial)
+        super(view);
 
         this.socketKey = socket.url.href;
         Sockets.set(this.socketKey, socket);
 
         socket.addEventListener('open', evt => {
-            this.updateState(s => {
+            this.update(s => {
                 return { ...s, status: "connected" }
             })
         });
 
         socket.addEventListener('close', evt => {
-            this.updateState(s => {
+            this.update(s => {
                 return { ...s, status: "disconnected" }
             })
         });
@@ -62,7 +63,7 @@ export class SocketStateHandler extends StateHandler<SocketState> {
             const req = new XMLHttpRequest();
             req.responseType = "arraybuffer";
             const updateError = (error: ConnectionError) => {
-                this.updateState(s => {
+                this.update(s => {
                     return {
                         error: error,
                         status: "disconnected"
@@ -133,7 +134,7 @@ export class SocketStateHandler extends StateHandler<SocketState> {
         return this.socket.handleMessage(...args)
     }
     public close(...args: Parameters<SocketSession["close"]>): ReturnType<SocketSession["close"]> {
-        this.clearObservers()
+        this.dispose()
         return this.socket.close(...args)
     }
 }

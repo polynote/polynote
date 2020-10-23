@@ -1,27 +1,25 @@
 import {UserPreferences, UserPreferencesHandler} from "../state/preferences";
 import {FaviconHandler} from "./favicon_handler";
+import {Disposable} from "../state/state_handler";
 
-export class NotificationHandler {
-    private static inst: NotificationHandler;
-    static get get() {
-        if (!NotificationHandler.inst) {
-            NotificationHandler.inst = new NotificationHandler()
-        }
-        return NotificationHandler.inst;
+class NotificationStorageHandler extends Disposable {
+    private enabled?: boolean;
+    constructor() {
+        super()
+        UserPreferencesHandler.view("notifications").addObserver(pref => this.handlePref(pref), this)
     }
 
-    private enabled: boolean = false;
-    private constructor() {
-        const handlePref = (pref: typeof UserPreferences["notifications"]) => {
-            if (pref.value) {
-                Notification.requestPermission().then((result) => {
-                    console.log(`Requested notification permission and got: '${result}'`)
-                });
-            }
-            this.enabled = pref.value;
+    handlePref(pref: typeof UserPreferences["notifications"]) {
+        if (pref.value) {
+            Notification.requestPermission().then((result) => {
+                console.log(`Requested notification permission and got: '${result}'`)
+                if (result === 'denied') {
+                    // user changed their mind, so update the preference accordingly
+                    UserPreferencesHandler.update1("notifications", s => ({...s, value: false}))
+                }
+            });
         }
-        handlePref(UserPreferencesHandler.state.notifications)
-        UserPreferencesHandler.view("notifications").addObserver(pref => handlePref(pref))
+        this.enabled = pref.value ?? this.enabled;
     }
 
     /**
@@ -34,6 +32,9 @@ export class NotificationHandler {
      * @param body      Body text for the notification.
      */
     notify(title: string, body: string) {
+        if (this.enabled === undefined) {
+            this.handlePref(UserPreferencesHandler.state.notifications)
+        }
         if (this.enabled && !document.hasFocus()) {
             return new Promise((resolve, reject) => {
                 const n = new Notification(title, {body: body, icon: FaviconHandler.get.faviconUrl});
@@ -45,3 +46,5 @@ export class NotificationHandler {
         } else return new Promise((resolve, reject) => {})
     }
 }
+
+export const NotificationHandler = new NotificationStorageHandler()

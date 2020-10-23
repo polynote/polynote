@@ -1,4 +1,5 @@
 import {ServerStateHandler} from "./server_state";
+import {Disposable} from "./state_handler";
 
 jest.mock("../messaging/comms");
 
@@ -6,12 +7,14 @@ beforeEach(() => {
     ServerStateHandler.clear()
 })
 
+const d = new Disposable()
+
 test('Changes to the ServerStateHandler are observable', done => {
     ServerStateHandler.get.addObserver(state => {
         expect(state.currentNotebook).toEqual("nb")
         done()
-    })
-    ServerStateHandler.get.updateState(s => ({...s, currentNotebook: "nb"}))
+    }, d)
+    ServerStateHandler.get.update(s => ({...s, currentNotebook: "nb"}))
 })
 
 test('ServerStateHandler supports views', done => {
@@ -21,8 +24,8 @@ test('ServerStateHandler supports views', done => {
             expect(prev).toBeUndefined()
             expect(next).toEqual("nb")
             resolve()
-        })
-        ServerStateHandler.get.updateState(s => ({...s, currentNotebook: "nb"}))
+        }, d)
+        ServerStateHandler.get.update(s => ({...s, currentNotebook: "nb"}))
         view.removeObserver(obs)
     }).then(_ => {
         return new Promise(resolve => {
@@ -31,8 +34,8 @@ test('ServerStateHandler supports views', done => {
                 expect(prev).toEqual("nb")
                 expect(next).toEqual("newNb")
                 resolve()
-            })
-            ServerStateHandler.get.updateState(s => ({...s, currentNotebook: "newNb"}))
+            }, d)
+            ServerStateHandler.get.update(s => ({...s, currentNotebook: "newNb"}))
             view.removeObserver(obs)
         })
     }).then(_ => {
@@ -43,13 +46,13 @@ test('ServerStateHandler supports views', done => {
                     "path": true
                 })
                 resolve()
-            })
-            ServerStateHandler.get.updateState(s => {
+            }, d)
+            ServerStateHandler.get.update(s => {
                 return {
                     ...s,
                     notebooks: {
                         ...s.notebooks,
-                        ["path"]: ServerStateHandler.loadNotebook("path").loaded
+                        ["path"]: true
                     }
                 }
             })

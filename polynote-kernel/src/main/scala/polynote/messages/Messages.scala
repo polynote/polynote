@@ -314,19 +314,13 @@ object Comment {
   implicit val decoder: Decoder[Comment] = deriveDecoder
 }
 
-final case class CreateComment(globalVersion: Int, localVersion: Int, cellId: CellID, comment: Comment) extends Message with NotebookUpdate {
-  override def echoOriginatingSubscriber: Boolean = true
-}
+final case class CreateComment(globalVersion: Int, localVersion: Int, cellId: CellID, comment: Comment) extends Message with NotebookUpdate
 object CreateComment extends NotebookUpdateCompanion[CreateComment](29)
 
-final case class UpdateComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID, range: CellRange, content: ShortString) extends Message with NotebookUpdate {
-  override def echoOriginatingSubscriber: Boolean = true
-}
+final case class UpdateComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID, range: CellRange, content: ShortString) extends Message with NotebookUpdate
 object UpdateComment extends NotebookUpdateCompanion[UpdateComment](30)
 
-final case class DeleteComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID) extends Message with NotebookUpdate {
-  override def echoOriginatingSubscriber: Boolean = true
-}
+final case class DeleteComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID) extends Message with NotebookUpdate
 object DeleteComment extends NotebookUpdateCompanion[DeleteComment](31)
 
 final case class CompletionsAt(id: CellID, pos: Int, completions: ShortList[Completion]) extends Message
@@ -338,9 +332,7 @@ object ParametersAt extends MessageCompanion[ParametersAt](8)
 final case class KernelStatus(update: KernelStatusUpdate) extends Message
 object KernelStatus extends MessageCompanion[KernelStatus](9)
 
-final case class UpdateConfig(globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate {
-  override def echoOriginatingSubscriber: Boolean = true
-}
+final case class UpdateConfig(globalVersion: Int, localVersion: Int, config: NotebookConfig) extends Message with NotebookUpdate
 object UpdateConfig extends NotebookUpdateCompanion[UpdateConfig](10)
 
 final case class SetCellLanguage(globalVersion: Int, localVersion: Int, id: CellID, language: TinyString) extends Message with NotebookUpdate {

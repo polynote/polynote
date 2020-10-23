@@ -3,8 +3,9 @@ import {UserPreferences, UserPreferencesHandler} from "../../../state/preference
 import {editor} from "monaco-editor";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import {createVim} from "../../input/monaco/vim";
+import {Disposable} from "../../../state/state_handler";
 
-export class VimStatus {
+export class VimStatus extends Disposable {
     private static inst: VimStatus;
     static get get() {
         if (! VimStatus.inst) {
@@ -19,6 +20,7 @@ export class VimStatus {
     private currentVimId?: string;
     private enabled: boolean = false;
     private constructor() {
+        super()
         this.statusLine = div(["status"], []);
         this.el = div(["vim-status", "hide"], [this.statusLine])
         const stateHandler = (pref: typeof UserPreferences["vim"]) => {
@@ -31,7 +33,7 @@ export class VimStatus {
         }
         const vimState = UserPreferencesHandler.view("vim")
         stateHandler(vimState.state)
-        vimState.addObserver(state => stateHandler(state))
+        vimState.addObserver(state => stateHandler(state), this)
     }
 
     show() {

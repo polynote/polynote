@@ -1,18 +1,21 @@
 import {div, TagElement} from "../tags";
-import {ViewPrefsHandler} from "../../state/preferences";
+import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
+import {Disposable} from "../../state/state_handler";
 
 /**
  * Holds a classic three-pane display, where the left and right panes can be both resized and collapsed.
  */
 
 export type Pane = { header: TagElement<"h2">, el: TagElement<"div">}
-export class SplitView {
+export class SplitView extends Disposable {
     readonly el: TagElement<"div">;
     constructor(leftPane: Pane, center: TagElement<"div">, rightPane: Pane) {
+        super()
+
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
                 leftPane.header.click(evt => {
-                    ViewPrefsHandler.updateState(s => {
+                    ViewPrefsHandler.update(s => {
                         return {
                             ...s,
                             leftPane: {
@@ -20,14 +23,15 @@ export class SplitView {
                                 collapsed: !s.leftPane.collapsed
                             }
                         }
-                    })
+                    });
+                    window.dispatchEvent(new CustomEvent('resize'));
                 }),
                 div(['ui-panel-content'], [leftPane.el])])]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
                 rightPane.header.click(evt => {
-                    ViewPrefsHandler.updateState(s => {
+                    ViewPrefsHandler.update(s => {
                         return {
                             ...s,
                             rightPane: {
@@ -36,6 +40,7 @@ export class SplitView {
                             }
                         }
                     })
+                    window.dispatchEvent(new CustomEvent('resize'))
                 }),
                 div(['ui-panel-content'], [rightPane.el])])]);
 
@@ -66,7 +71,7 @@ export class SplitView {
             }
         });
         leftDragger.addEventListener('dragend', () => {
-            ViewPrefsHandler.updateState(s => {
+            ViewPrefsHandler.update(s => {
                 return {
                     ...s,
                     leftPane: {
@@ -102,7 +107,7 @@ export class SplitView {
             }
         });
         rightDragger.addEventListener('dragend', evt => {
-            ViewPrefsHandler.updateState(s => {
+            ViewPrefsHandler.update(s => {
                 return {
                     ...s,
                     rightPane: {
@@ -113,9 +118,17 @@ export class SplitView {
             });
         });
 
-        this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
+        const initialClasses = [];
+        if (initialPrefs.leftPane.collapsed) {
+            initialClasses.push('left-collapsed');
+        }
+        if (initialPrefs.rightPane.collapsed) {
+            initialClasses.push('right-collapsed');
+        }
 
-        ViewPrefsHandler.addObserver(prefs => {
+        this.el = div(['split-view', ...initialClasses], [left, leftDragger, center, rightDragger, right]);
+
+        const collapseStatus = (prefs: ViewPreferences) => {
             if (prefs.leftPane.collapsed) {
                 this.el.classList.add('left-collapsed');
             } else {
@@ -126,6 +139,8 @@ export class SplitView {
             } else {
                 this.el.classList.remove('right-collapsed');
             }
-        })
+        }
+        collapseStatus(initialPrefs)
+        ViewPrefsHandler.addObserver(collapseStatus, this)
     }
 }

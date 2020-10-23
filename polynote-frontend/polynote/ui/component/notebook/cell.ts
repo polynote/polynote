@@ -1,17 +1,14 @@
-import {blockquote, button, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
+import {blockquote, button, Content, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
 import {
-    ClearCellEdits,
-    CurrentSelection,
     NotebookMessageDispatcher,
-    RequestCellRun,
-    RequestCompletions,
-    RequestSignature,
-    SetCellLanguage,
-    SetSelectedCell,
-    UpdateCell, ShowValueInspector, DeselectCell, RemoveCellError
 } from "../../../messaging/dispatcher";
-import {Disposable, StateView} from "../../../state/state_handler";
-import {CellState, CompletionHint, SignatureHint} from "../../../state/notebook_state";
+import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
+import {
+    CellState,
+    CompletionHint,
+    NotebookStateHandler, Outputs,
+    SignatureHint
+} from "../../../state/notebook_state";
 import * as monaco from "monaco-editor";
 // @ts-ignore (ignore use of non-public monaco api)
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
@@ -26,13 +23,11 @@ import {
     SelectionDirection
 } from "monaco-editor";
 import {
-    ClearResults,
     ClientResult,
     CompileErrors,
-    ExecutionInfo,
+    ExecutionInfo, MIMEClientResult,
     Output,
     PosRange,
-    Result,
     ResultValue,
     RuntimeError
 } from "../../../data/result";
@@ -40,8 +35,15 @@ import {ServerStateHandler} from "../../../state/server_state";
 import {CellMetadata} from "../../../data/data";
 import {FoldingController, SuggestController} from "../../input/monaco/extensions";
 import {ContentEdit, Delete, Insert} from "../../../data/content_edit";
-import {displayContent, displayData, displaySchema, parseContentType, prettyDuration} from "../../display/display_content";
-import {matchS} from "../../../util/match";
+import {
+    displayContent,
+    displayData,
+    displaySchema, mimeEl,
+    MIMEElement,
+    parseContentType,
+    prettyDuration
+} from "../../display/display_content";
+import match, {matchS} from "../../../util/match";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
@@ -52,18 +54,31 @@ import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import { CommentHandler } from "./comment";
 import {RichTextEditor} from "../../input/text_editor";
 import {Diff} from "../../../util/diff";
-import {DataRepr, MIMERepr, StreamingDataRepr} from "../../../data/value_repr";
+import {DataRepr, MIMERepr, StreamingDataRepr, ValueRepr} from "../../../data/value_repr";
 import {DataReader} from "../../../data/codec";
-import {StructType} from "../../../data/data_type";
+import {BoolType, DoubleType, IntType, StringType, StructField, StructType} from "../../../data/data_type";
 import {FaviconHandler} from "../../../notification/favicon_handler";
 import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
-import {ClientInterpreters} from "../../../interpreter/client_interpreter";
+import {cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl} from "../../display/error";
 import {Error} from "../../../data/messages";
 import IMarkerData = editor.IMarkerData;
-import { deepEquals } from "../../../util/helpers";
+import {
+    collect,
+    collectInstances,
+    collectMatch,
+    deepCopy,
+    deepEquals,
+    diffArray,
+    Deferred,
+    findInstance,
+    removeKeys
+} from "../../../util/helpers";
+import {parsePlotDefinition, PlotDefinition, PlotSelector, savePlotDefinition} from "../../input/plot_selector";
+import {isViz, parseMaybeViz, parseViz, saveViz, Viz, VizSelector} from "../../input/viz_selector";
+import {VegaClientResult, VizInterpreter, vizResult} from "../../../interpreter/vega_interpreter";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -71,35 +86,37 @@ export type CodeCellModel = editor.ITextModel & {
     requestSignatureHelp(pos: number): Promise<SignatureHelpResult>
 };
 
-export type MIMEElement = TagElement<"div", HTMLDivElement & { rel?: string, "mime-type"?: string}>;
-
 export class CellContainer extends Disposable {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
     private cell: Cell;
+    private path: string;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private cellState: StateView<CellState>, private path: string) {
+    constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler, private cellState: StateHandler<CellState>) {
         super()
         this.cellId = `Cell${cellState.state.id}`;
         this.cell = this.cellFor(cellState.state.language);
+        this.path = notebookState.state.path;
         this.el = div(['cell-component'], [this.cell.el]);
         this.el.click(evt => this.cell.doSelect());
         cellState.view("language").addObserver((newLang, oldLang) => {
             // Need to create a whole new cell if the language switches between code and text
             if (oldLang !== undefined && (oldLang === "text" || newLang === "text")) {
                 const newCell = this.cellFor(newLang)
-                this.cell = newCell.replace(this.cell)
-
+                newCell.replace(this.cell).then(cell => {
+                    this.cell = cell
+                    this.layout()
+                })
             }
         }, this);
 
-        ServerStateHandler.view("connectionStatus", this).addObserver((currentStatus, previousStatus) => {
+        ServerStateHandler.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
             if (currentStatus === "disconnected") {
                 this.cell.setDisabled(true)
             } else if (previousStatus === "disconnected") {
                 this.cell.setDisabled(false)
             }
-        })
+        }, this)
 
         cellState.onDispose.then(() => {
             this.dispose()
@@ -107,7 +124,14 @@ export class CellContainer extends Disposable {
     }
 
     private cellFor(lang: string) {
-        return lang === "text" ? new TextCell(this.dispatcher, this.cellState, this.path) : new CodeCell(this.dispatcher, this.cellState, this.path);
+        switch (lang) {
+            case "text":
+                return new TextCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+            case "viz":
+                return new VizCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+            default:
+                return new CodeCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+        }
     }
 
     layout() {
@@ -115,7 +139,7 @@ export class CellContainer extends Disposable {
     }
 
     delete() {
-        this.cellState.clearObservers();
+        this.cellState.dispose()
         this.cell.delete()
     }
 }
@@ -142,19 +166,23 @@ abstract class Cell extends Disposable {
     protected cellId: string;
     public el: TagElement<"div">;
 
-    protected constructor(protected dispatcher: NotebookMessageDispatcher, protected cellState: StateView<CellState>) {
+    protected constructor(protected dispatcher: NotebookMessageDispatcher, protected notebookState: NotebookStateHandler, protected cellState: StateHandler<CellState>) {
         super()
         this.id = cellState.state.id;
         this.cellId = `Cell${this.id}`;
 
         const updateSelected = (selected: boolean | undefined, prevSelected?: boolean) => {
+            console.log("Updating selected status for cell", this.id)
             if (selected && ! prevSelected) {
+                console.log("Selected cell", this.id)
                 this.onSelected()
             } else if (! selected && prevSelected){
+                console.log("Deselected cell", this.id)
                 this.onDeselected()
             }
         }
-        cellState.view("selected").addObserver((selected, prevSelected) => updateSelected(selected, prevSelected), this);
+        const cellSelected = cellState.view("selected")
+        cellSelected.addObserver((selected, prevSelected) => updateSelected(selected, prevSelected), this);
 
         cellState.onDispose.then(() => {
             this.dispose()
@@ -163,7 +191,7 @@ abstract class Cell extends Disposable {
 
     doSelect(){
         if (! this.cellState.state.selected) {
-            this.dispatcher.dispatch(new SetSelectedCell(this.id))
+            this.notebookState.selectCell(this.id)
         }
     }
 
@@ -171,18 +199,19 @@ abstract class Cell extends Disposable {
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
             if (this.cellState.state.selected // prevent blurring a different cell
                 && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
-                this.dispatcher.dispatch(new DeselectCell(this.id))
+                this.cellState.update1("selected", () => false)
             }
         }
     }
 
-    replace(oldCell: Cell) {
-        oldCell.dispose()
-        oldCell.el.replaceWith(this.el);
-        if (this.cellState.state.selected || oldCell.cellState.state.selected) {
-            this.onSelected()
-        }
-        return this
+    replace(oldCell: Cell): Promise<Cell> {
+        return oldCell.dispose().then(() => {
+            oldCell.el.replaceWith(this.el);
+            if (this.cellState.state.selected || oldCell.cellState.state.selected) {
+                this.onSelected()
+            }
+            return Promise.resolve(this)
+        })
     }
 
     protected onSelected() {
@@ -207,13 +236,18 @@ abstract class Cell extends Disposable {
             const elTop = this.el.offsetTop - viewport.offsetTop;
             const elBottom = elTop + this.el.offsetHeight;
 
-            const needToScrollUp = elTop < viewportScrollTop;
-            const needToScrollDown = elBottom > viewportScrollBottom;
+            const buffer = 30 // 30 px buffer for visibility calculation
+            const topVisible = elTop > viewportScrollTop && elTop < (viewportScrollBottom - 30)
+            const bottomVisible = elBottom > (viewportScrollTop + 30) && elBottom < viewportScrollBottom
+            if (!topVisible && !bottomVisible) {
+                const needToScrollUp = elTop < viewportScrollTop;
+                const needToScrollDown = elBottom > viewportScrollBottom;
 
-            if (needToScrollUp && !needToScrollDown) {
-                this.el.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
-            } else if(!needToScrollUp && needToScrollDown) {
-                this.el.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
+                if (needToScrollUp && !needToScrollDown) {
+                    this.el.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
+                } else if(!needToScrollUp && needToScrollDown) {
+                    this.el.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
+                }
             }
         }
     }
@@ -255,6 +289,15 @@ abstract class Cell extends Disposable {
             }
         }
     }
+
+    protected selectOrInsertCell(direction: "above" | "below", skipHiddenCode = true, doInsert = true) {
+        const selected = this.notebookState.selectCell(this.id, {relative: direction, skipHiddenCode, editing: true})
+        // if a new cell wasn't selected, we probably need to insert a cell
+        if (doInsert && (selected === undefined || selected === this.id)) {
+            this.notebookState.insertCell(direction).then(id => this.notebookState.selectCell(id))
+        }
+    }
+
     protected abstract keyAction(key: string, pos: IPosition, range: IRange, selection: string): boolean | undefined
 
     protected abstract getPosition(): IPosition
@@ -274,6 +317,7 @@ abstract class Cell extends Disposable {
 
 type ErrorMarker = {error: CompileErrors | RuntimeError, markers: IMarkerData[]};
 
+
 class CodeCell extends Cell {
     private readonly editor: IStandaloneCodeEditor;
     private readonly editorEl: TagElement<"div">;
@@ -284,17 +328,17 @@ class CodeCell extends Cell {
     private vim?: any;
     private commentHandler: CommentHandler;
 
-    private errorMarkers: ErrorMarker[] = []
+    private errorMarkers: ErrorMarker[] = [];
 
-    constructor(dispatcher: NotebookMessageDispatcher, cellState: StateView<CellState>, private path: string) {
-        super(dispatcher, cellState);
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cellState: StateHandler<CellState>, private path: string) {
+        super(dispatcher, notebookState, cellState);
 
         const langSelector = dropdown(['lang-selector'], ServerStateHandler.state.interpreters);
         langSelector.setSelectedValue(this.state.language);
         langSelector.addEventListener("input", evt => {
             const selectedLang = langSelector.getSelectedValue();
             if (selectedLang !== this.state.language) {
-                dispatcher.dispatch(new SetCellLanguage(this.id, selectedLang))
+                notebookState.setCellLanguage(this.id, selectedLang)
             }
         });
 
@@ -342,6 +386,8 @@ class CodeCell extends Cell {
             }
         });
         this.editor.onDidChangeCursorSelection(evt => {
+            if (this.applyingServerEdits) return // ignore when applying server edits.
+
             // deep link - we only care if the user has selected more than a single character
             if ([0, 3].includes(evt.reason)) { // 0 -> NotSet, 3 -> Explicit
                 this.setUrl(evt.selection);
@@ -351,14 +397,14 @@ class CodeCell extends Cell {
             if (model) {
                 const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
                 if (evt.selection.getDirection() === SelectionDirection.RTL) {
-                    this.dispatcher.dispatch(new CurrentSelection(this.id, range.reversed));
+                    this.cellState.update1("currentSelection", () => range.reversed)
                 } else {
-                    this.dispatcher.dispatch(new CurrentSelection(this.id, range));
+                    this.cellState.update1("currentSelection", () => range)
                 }
             }
         });
-        (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()!.then(
-            foldingModel => foldingModel!.onDidChange(() => this.layout())
+        (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
+            foldingModel => foldingModel?.onDidChange(() => this.layout())
         );
         this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
@@ -370,11 +416,11 @@ class CodeCell extends Cell {
         //       we'll need to rethink this stuff.
         this.editor.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
 
-        cellState.view("editing").addObserver(editing => {
+        this.cellState.view("editing").addObserver(editing => {
             if (editing) {
                 this.editor.focus()
             }
-        })
+        }, this)
 
         const compileErrorsState = cellState.mapView<"compileErrors", CellErrorMarkers[][]>("compileErrors", (errors: CompileErrors[]) => {
             if (errors.length > 0) {
@@ -426,12 +472,17 @@ class CodeCell extends Cell {
             }
         }, (errEl1: ErrorEl, errEl2: ErrorEl) => deepEquals(errEl1, errEl2, ["el"])) // remove `el` from equality check because dom elements are never equal.
         let cellOutput = new CodeCellOutput(dispatcher, cellState, compileErrorsState, runtimeErrorState);
+        this.onDispose.then(() => {
+            compileErrorsState.dispose()
+            runtimeErrorState.dispose()
+            cellOutput.dispose()
+        })
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
-                        dispatcher.dispatch(new RequestCellRun([this.state.id]))
+                        dispatcher.runCells([this.state.id])
                     }),
                     div(['cell-label'], [this.state.id.toString()]),
                     div(['lang-selector'], [langSelector]),
@@ -451,6 +502,7 @@ class CodeCell extends Cell {
             const oldHighlightLang = ClientInterpreters[oldLang]?.highlightLanguage ?? oldLang;
             this.el.classList.replace(oldHighlightLang, newHighlightLang);
             langSelector.setSelectedValue(newHighlightLang);
+            console.log("Setting monaco language to ", newHighlightLang)
             monaco.editor.setModelLanguage(this.editor.getModel()!, newHighlightLang)
         }, this);
 
@@ -475,12 +527,14 @@ class CodeCell extends Cell {
         updateMetadata(this.state.metadata);
         cellState.view("metadata").addObserver(metadata => updateMetadata(metadata), this);
 
-        cellState.view("pendingEdits").addObserver(edits => {
+        cellState.view("incomingEdits").addObserver(edits => {
             if (edits.length > 0) {
+                // console.log("applying edits", edits)
                 this.applyEdits(edits);
-                dispatcher.dispatch(new ClearCellEdits(this.id));
+                // we might not really need to clear these edits...
+                cellState.update1("incomingEdits", () => [])
             }
-        }, this);
+        }, this, `incomingEdits of cell ${this.id}`);
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
@@ -495,12 +549,18 @@ class CodeCell extends Cell {
         const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
                 this.el.classList.add("running");
+                // clear results when a cell starts running:
+                this.cellState.update1("results", () => [])
+
+                // update Execution Status (in case this is an initial load)
+                if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
+
             } else {
                 this.el.classList.remove("running");
                 if (previously) {
                     const status = this.state.error ? "Error" : "Complete"
-                    NotificationHandler.get.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
-                        this.dispatcher.dispatch(new SetSelectedCell(this.id))
+                    NotificationHandler.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
+                        this.notebookState.selectCell(this.id)
                     })
                     // clear the execution duration updater if it hasn't been cleared already.
                     if (this.execDurationUpdater) {
@@ -580,16 +640,30 @@ class CodeCell extends Cell {
             }
         }
         cellState.state.presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
-        cellState.view("presence").addObserver(presence => presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range)), this)
+        cellState.view("presence").addObserver((newPresence, oldPresence) => {
+            const removed = diffArray(newPresence, oldPresence)[1]
+
+            removed.forEach(p => {
+                const marker = presenceMarkers[p.id]
+                if (marker) {
+                    this.editor.deltaDecorations(marker, [])
+                }
+                delete presenceMarkers[p.id]
+            })
+
+            newPresence.forEach(p => {
+                updatePresence(p.id, p.name, p.color, p.range)
+            })
+        }, this)
 
         // make sure to create the comment handler.
-       this.commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
+       this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), this.editor);
 
         this.onDispose.then(() => {
             this.commentHandler.dispose()
             this.getModelMarkers()?.forEach(marker => {
                 this.setModelMarkers([], marker.owner)
-            })
+            });
             this.editor.dispose()
         })
     }
@@ -609,6 +683,8 @@ class CodeCell extends Cell {
             this.setModelMarkers(keep)
         }
 
+        // TODO: remove cell highlights here?
+
         const edits = event.changes.flatMap((contentChange) => {
             if (contentChange.rangeLength > 0 && contentChange.text.length > 0) {
                 return [new Delete(contentChange.rangeOffset, contentChange.rangeLength), new Insert(contentChange.rangeOffset, contentChange.text)];
@@ -618,14 +694,24 @@ class CodeCell extends Cell {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.getValue()));
+        console.log("model content changed! sending these edits:", edits)
+        this.cellState.update(s => ({...s, outgoingEdits: edits, content: this.editor.getValue()}))
+        const obs = this.cellState.addObserver(s => {
+            if (s.outgoingEdits === edits) {
+                this.cellState.removeObserver(obs)
+                // this.cellState.update(s => ({...s, outgoingEdits: []}))
+            }
+        }, this)
+
+        // update comments
+        this.commentHandler.triggerCommentUpdate()
     }
 
-    requestCompletion(pos: number): Promise<CompletionList> {
-        return new Promise<CompletionHint>(
-            (resolve, reject) =>
-                this.dispatcher.dispatch(new RequestCompletions(this.id, pos, resolve, reject))
-        ).then(({cell, offset, completions}) => {
+    requestCompletion(offset: number): Promise<CompletionList> {
+        return new Promise<CompletionHint>((resolve, reject) => {
+            this.notebookState.state.activeCompletion?.reject() // remove previously active completion if present
+            return this.notebookState.update1("activeCompletion", () => ({cellId: this.id, offset, resolve, reject}))
+        }).then(({cell, offset, completions}) => {
             const len = completions.length;
             const indexStrLen = ("" + len).length;
             const completionResults = completions.map((candidate, index) => {
@@ -644,7 +730,7 @@ class CodeCell extends Cell {
 
                 // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
                 const model = this.editor.getModel()!;
-                const p = model.getPositionAt(pos);
+                const p = model.getPositionAt(offset);
                 const word = model.getWordUntilPosition(p);
                 const range = new Range(p.lineNumber, word.startColumn, p.lineNumber, word.endColumn);
                 return {
@@ -662,10 +748,11 @@ class CodeCell extends Cell {
         })
     }
 
-    requestSignatureHelp(pos: number): Promise<SignatureHelpResult> {
-        return new Promise<SignatureHint>((resolve, reject) =>
-            this.dispatcher.dispatch(new RequestSignature(this.id, pos, resolve, reject))
-        ).then(({cell, offset, signatures}) => {
+    requestSignatureHelp(offset: number): Promise<SignatureHelpResult> {
+        return new Promise<SignatureHint>((resolve, reject) => {
+            this.notebookState.state.activeSignature?.reject() // remove previous active signature if present.
+            return this.notebookState.update1("activeSignature", () => ({cellId: this.id, offset, resolve, reject}))
+        }).then(({cell, offset, signatures}) => {
             let sigHelp: SignatureHelp;
             if (signatures) {
                 sigHelp = {
@@ -707,7 +794,11 @@ class CodeCell extends Cell {
     private removeErrorMarker(marker: ErrorMarker) {
         this.errorMarkers = this.errorMarkers.filter(m => m !== marker)
         this.setModelMarkers(this.errorMarkers.flatMap(m => m.markers))
-        this.dispatcher.dispatch(new RemoveCellError(this.id, marker.error))
+        if (marker.error instanceof RuntimeError) {
+            this.cellState.update1("runtimeError", () => undefined)
+        } else {
+            this.cellState.update1("compileErrors", errors => errors.filter(e => ! deepEquals(e, marker.error)))
+        }
     }
 
     private clearErrorMarkers(type?: "runtime" | "compiler") {
@@ -716,15 +807,11 @@ class CodeCell extends Cell {
     }
 
     private toggleCode() {
-        const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideSource: !prevMetadata.hideSource})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
+        this.cellState.update1("metadata", prevMetadata => prevMetadata.copy({hideSource: !prevMetadata.hideSource}))
     }
 
     private toggleOutput() {
-        const prevMetadata = this.state.metadata;
-        const newMetadata = prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})
-        this.dispatcher.dispatch(new UpdateCell(this.id, [], undefined, newMetadata))
+        this.cellState.update1("metadata", prevMetadata => prevMetadata.copy({hideOutput: !prevMetadata.hideOutput}))
     }
 
     layout() {
@@ -809,7 +896,7 @@ class CodeCell extends Cell {
     protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
         const ifNoSuggestion = (fun: () => void) => () => {
             // this is really ugly, is there a better way to tell whether the widget is visible??
-            const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController).widget._value.suggestWidgetVisible.get();
+            const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController)?.widget?._value.suggestWidgetVisible?.get();
             if (!suggestionsVisible) { // don't do stuff when suggestions are visible
                 fun()
             }
@@ -817,7 +904,7 @@ class CodeCell extends Cell {
         return matchS<boolean>(key)
             .when("MoveUp", ifNoSuggestion(() => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", skipHiddenCode: true, editing: true}))
+                    this.selectOrInsertCell("above")
                 }
             }))
             .when("MoveDown", ifNoSuggestion(() => {
@@ -826,36 +913,36 @@ class CodeCell extends Cell {
                     lastColumn -= 1
                 }
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", skipHiddenCode: true, editing: true}))
+                    this.selectOrInsertCell("below")
                 }
             }))
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                this.selectOrInsertCell("below", false)
                 return true // preventDefault
             })
             .when("RunAndInsertBelow", () => {
                 this.dispatcher.runActiveCell()
-                this.dispatcher.insertCell("below").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
+                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
                 return true // preventDefault
             })
             .when("SelectPrevious", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
+                this.notebookState.selectCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
             }))
             .when("SelectNext", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                this.notebookState.selectCell(this.id, {relative: "below", skipHiddenCode: true, editing: true})
             }))
             .when("InsertAbove", ifNoSuggestion(() => {
-                this.dispatcher.insertCell("above").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
+                this.notebookState.insertCell("above").then(id => this.notebookState.selectCell(id))
             }))
             .when("InsertBelow", ifNoSuggestion(() => {
-                this.dispatcher.insertCell("below").then(id => this.dispatcher.dispatch(new SetSelectedCell(id)))
+                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
             }))
             .when("Delete", ifNoSuggestion(() => {
-                this.dispatcher.deleteCell()
+                this.notebookState.deleteCell()
             }))
             .when("RunAll", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new RequestCellRun([]))
+                this.dispatcher.runCells([])
             }))
             .when("RunToCursor", ifNoSuggestion(() => {
                 this.dispatcher.runToActiveCell()
@@ -863,7 +950,7 @@ class CodeCell extends Cell {
             .when("MoveUpK", ifNoSuggestion(() => {
                 if (!this.vim?.state.vim.insertMode) {
                     if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                        this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", skipHiddenCode: true, editing: true}))
+                        this.notebookState.selectCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
                     }
                 }
             }))
@@ -871,7 +958,7 @@ class CodeCell extends Cell {
                 if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
                     let lastColumn = range.endColumn - 1;
                     if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                        this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative:"below", skipHiddenCode: true, editing: true}))
+                        this.notebookState.selectCell(this.id, {relative:"below", skipHiddenCode: true, editing: true})
                     }
                 }
             }))
@@ -909,12 +996,13 @@ class CodeCell extends Cell {
     protected onSelected() {
         super.onSelected()
         this.vim = VimStatus.get.activate(this.editor)
-        this.editor.focus()
     }
 
     protected onDeselected() {
         super.onDeselected();
         this.commentHandler.hide()
+        // hide parameter hints on blur
+        this.editor.trigger('keyboard', 'closeParameterHints', null);
     }
 
     setDisabled(disabled: boolean) {
@@ -937,7 +1025,7 @@ class CodeCell extends Cell {
         const model = this.editor.getModel()
         if (model && maybeSelection && !maybeSelection.isEmpty()) {
             const pos = PosRange.fromRange(maybeSelection, model)
-            currentURL.hash += `,${pos.toString}`
+            currentURL.hash += `,${pos.rangeStr}`
         }
         return currentURL
     }
@@ -988,7 +1076,7 @@ class CodeCellOutput extends Disposable {
             }
         }
         handleResults(resultsHandler.state)
-        resultsHandler.addObserver(results => handleResults(results), this);
+        resultsHandler.addObserver((results: (ClientResult | ResultValue)[]) => handleResults(results), this);
 
         compileErrorsHandler.addObserver(errors => this.setErrors(errors), this);
 
@@ -997,13 +1085,15 @@ class CodeCellOutput extends Disposable {
             this.setRuntimeError(error)
         }, this);
 
-        const handleOutput = (output: Output[]) => {
-            if (output.length > 0) {
+        const handleOutput = (output: Outputs) => {
+            if (output.clear || !output.length) {
+                this.clearOutput();
+            }
+
+            if (output.length) {
                 output.forEach(o => {
                     this.addOutput(o.contentType, o.content.join(''))
                 })
-            } else {
-                this.clearOutput()
             }
         }
         handleOutput(outputHandler.state)
@@ -1024,7 +1114,7 @@ class CodeCellOutput extends Disposable {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
                             evt => {
-                                this.dispatcher.dispatch(new ShowValueInspector(result))
+                                this.dispatcher.showValueInspector(result)
                             }
                         )
                     ]
@@ -1039,6 +1129,7 @@ class CodeCellOutput extends Disposable {
                     const [mimeType, args] = parseContentType(mime);
                     this.buildOutput(mime, args, content).then((el: MIMEElement) => {
                         this.resultTabs.appendChild(el);
+                        el.dispatchEvent(new CustomEvent('becameVisible'));
                         this.cellOutputTools.classList.add('output');
                     })
                 })
@@ -1046,10 +1137,8 @@ class CodeCellOutput extends Disposable {
         } else {
             this.cellOutputTools.classList.add('output');
             this.resultTabs.innerHTML = '';
-            result.toOutput().then(o => {
-                this.clearOutput()
-                this.addOutput(o.contentType, o.content.join(''))
-            })
+            this.clearOutput();
+            result.display(this.cellOutputDisplay);
         }
     }
 
@@ -1100,11 +1189,11 @@ class CodeCellOutput extends Disposable {
                     h4(['result-name-and-type'], [
                         span(['result-name'], [result.name]), ': ', resultType,
                         iconButton(['view-data'], 'View data', 'table', '[View]')
-                            .click(_ => this.dispatcher.dispatch(new ShowValueInspector(result, 'View data'))),
+                            .click(_ => this.dispatcher.showValueInspector(result, 'table')),
                         repr.dataType instanceof StructType
                             ? iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
                                 .click(_ => {
-                                    this.dispatcher.dispatch(new ShowValueInspector(result, 'Plot data'))
+                                    this.dispatcher.showValueInspector(result, 'plot')
                                 })
                             : undefined
                     ]),
@@ -1115,22 +1204,10 @@ class CodeCellOutput extends Disposable {
             })
         }
 
-        // next, if it's a MIMERepr we want to follow this order
-        const mimeOrder = [
-            "image/",
-            "application/x-latex",
-            "text/html",
-            "text/",
-        ];
-
-        for (const partialMime of mimeOrder) {
-            index = result.reprs.findIndex(repr => repr instanceof MIMERepr && repr.mimeType.startsWith(partialMime));
-            if (index >= 0) return Promise.resolve(MIMERepr.unapply(result.reprs[index] as MIMERepr));
+        const preferredMIME = result.preferredMIMERepr;
+        if (preferredMIME) {
+            return Promise.resolve(MIMERepr.unapply(preferredMIME));
         }
-
-        // ok, maybe there's some other mime type we didn't expect?
-        index = result.reprs.findIndex(repr => repr instanceof MIMERepr);
-        if (index >= 0) return Promise.resolve(MIMERepr.unapply(result.reprs[index] as MIMERepr));
 
         // just give up and show some plaintext...
         return Promise.resolve(["text/plain", result.valueText]);
@@ -1180,7 +1257,7 @@ class CodeCellOutput extends Disposable {
         }
     }
 
-    private clearOutput() {
+    clearOutput() {
         this.clearErrors();
         [...this.cellOutputDisplay.children].forEach(child => this.cellOutputDisplay.removeChild(child));
         this.cellOutputDisplay.innerHTML = "";
@@ -1195,14 +1272,9 @@ class CodeCellOutput extends Disposable {
         this.cellErrorDisplay = undefined;
     }
 
-    private mimeEl(mimeType: string, args: Record<string, string>, content: string): MIMEElement {
-        const rel = args.rel || 'none';
-        return (div(['output'], content) as MIMEElement).attr('rel', rel).attr('mime-type', mimeType);
-    }
-
-    private buildOutput(mimeType: string, args: Record<string, string>, content: string | DocumentFragment) {
+    private buildOutput(mimeType: string, args: Record<string, string>, content: string | DocumentFragment): Promise<HTMLElement> {
         return displayContent(mimeType, content, args).then(
-            (result: TagElement<any>) => this.mimeEl(mimeType, args, result)
+            (result: TagElement<any>) => mimeEl(mimeType, args, result).listener('becameVisible', () => result.dispatchEvent(new CustomEvent('becameVisible')))
         ).catch(function(err: any) {
             return div(['output'], err);
         });
@@ -1224,7 +1296,7 @@ class CodeCellOutput extends Disposable {
 
 
             if (! this.stdOutEl?.parentNode) {
-                this.stdOutEl = this.mimeEl(mimeType, args, "");
+                this.stdOutEl = mimeEl(mimeType, args, "");
                 this.stdOutLines = lines.length;
                 this.cellOutputDisplay.appendChild(this.stdOutEl);
             } else {
@@ -1303,7 +1375,7 @@ class CodeCellOutput extends Disposable {
         } else {
             this.buildOutput(mimeType, args, content).then((el: MIMEElement) => {
                 this.cellOutputDisplay.appendChild(el);
-
+                el.dispatchEvent(new CustomEvent('becameVisible'));
                 // <script> tags won't be executed when they come in through `innerHTML`. So take them out, clone them, and
                 // insert them as DOM nodes instead
                 const scripts = el.querySelectorAll('script');
@@ -1320,14 +1392,41 @@ class CodeCellOutput extends Disposable {
     }
 }
 
+export function diffEdits(oldContent: string, newContent: string): ContentEdit[] {
+    const diff = Diff.diff(oldContent, newContent);
+    const edits: ContentEdit[] = [];
+    let i = 0;
+    let pos = 0;
+    while (i < diff.length) {
+        // skip through any untouched pieces
+        while (i < diff.length && !diff[i].added && !diff[i].removed) {
+            pos += diff[i].value.length;
+            i++;
+        }
+
+        if (i < diff.length) {
+            const d = diff[i];
+            const text = d.value;
+            if (d.added) {
+                edits.push(new Insert(pos, text));
+                pos += text.length;
+            } else if (d.removed) {
+                edits.push(new Delete(pos, text.length));
+            }
+            i++;
+        }
+    }
+    return edits;
+}
+
 
 export class TextCell extends Cell {
     private editor: RichTextEditor;
     private lastContent: string;
     private listeners: [string, (evt: Event) => void][];
 
-    constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateView<CellState>, private path: string) {
-        super(dispatcher, stateHandler)
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>, private path: string) {
+        super(dispatcher, notebookState, stateHandler)
 
         const editorEl = div(['cell-input-editor', 'markdown-body'], [])
 
@@ -1363,34 +1462,12 @@ export class TextCell extends Cell {
     // not private because it is also used by latex-editor
     onInput() {
         const newContent = this.editor.markdownContent;
-        const diff = Diff.diff(this.lastContent, newContent);
-        const edits = [];
-        let i = 0;
-        let pos = 0;
-        while (i < diff.length) {
-            // skip through any untouched pieces
-            while (i < diff.length && !diff[i].added && !diff[i].removed) {
-                pos += diff[i].value.length;
-                i++;
-            }
-
-            if (i < diff.length) {
-                const d = diff[i];
-                const text = d.value;
-                if (d.added) {
-                    edits.push(new Insert(pos, text));
-                    pos += text.length;
-                } else if (d.removed) {
-                    edits.push(new Delete(pos, text.length));
-                }
-                i++;
-            }
-        }
+        const edits = diffEdits(this.lastContent, newContent);
         this.lastContent = newContent;
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.dispatcher.dispatch(new UpdateCell(this.id, edits, this.editor.markdownContent))
+            this.cellState.update(s => ({...s, outgoingEdits: edits, content: this.editor.markdownContent}))
         }
     }
 
@@ -1441,39 +1518,39 @@ export class TextCell extends Cell {
         return matchS<boolean>(key)
             .when("MoveUp", () => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
+                    this.notebookState.selectCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
                 }
             })
             .when("MoveDown", () => {
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
-                    this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                    this.notebookState.selectCell(this.id, {relative: "below", skipHiddenCode: true, editing: true})
                 }
             })
             .when("RunAndSelectNext", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                this.selectOrInsertCell("below")
                 return true // preventDefault
             })
             .when("RunAndInsertBelow", () => {
-                this.dispatcher.insertCell("below")
+                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
                 return true // preventDefault
             })
             .when("SelectPrevious", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "above", editing: true}))
+                this.notebookState.selectCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
             })
             .when("SelectNext", () => {
-                this.dispatcher.dispatch(new SetSelectedCell(this.id, {relative: "below", editing: true}))
+                this.notebookState.selectCell(this.id, {relative: "below", skipHiddenCode: true, editing: true})
             })
             .when("InsertAbove", () => {
-                this.dispatcher.insertCell("above")
+                this.notebookState.insertCell("above").then(id => this.notebookState.selectCell(id))
             })
             .when("InsertBelow", () => {
-                this.dispatcher.insertCell("below")
+                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
             })
             .when("Delete", () => {
-                this.dispatcher.deleteCell()
+                this.notebookState.deleteCell()
             })
             .when("RunAll", () => {
-                this.dispatcher.dispatch(new RequestCellRun([]))
+                this.dispatcher.runCells([])
             })
             .when("RunToCursor", () => {
                 this.dispatcher.runToActiveCell()
@@ -1489,4 +1566,292 @@ export class TextCell extends Cell {
     setDisabled(disabled: boolean) {
         this.editor.disabled = disabled
     }
+}
+
+
+export class VizCell extends Cell {
+
+    private editor: VizSelector;
+    private editorEl: TagElement<'div'>;
+    private cellInputTools: TagElement<'div'>;
+    private execDurationUpdater: number;
+    private viz: Viz;
+    private cellOutput: CodeCellOutput;
+
+    private valueName: string;
+    private resultValue?: ResultValue;
+    private previousViews: Record<string, [Viz, Output | ClientResult]> = {};
+
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cellState: StateHandler<CellState>, private path: string) {
+        super(dispatcher, notebookState, cellState);
+
+        const initialViz = parseMaybeViz(this.cellState.state.content);
+        if (isViz(initialViz)) {
+            this.viz = initialViz;
+            this.valueName = this.viz.value;
+        } else if (initialViz && initialViz.value) {
+            this.valueName = initialViz.value;
+        } else {
+            throw new window.Error("No value defined for viz cell");
+        }
+
+
+        this.editorEl = div(['viz-selector', 'loading'], 'Notebook is loading...');
+
+        if (cellState.state.output.length > 0) {
+            this.previousViews[this.viz.type] = [this.viz, cellState.state.output[0]];
+        }
+
+        // TODO: extract the common stuff with CodeCell
+
+        const execInfoEl = div(["exec-info"], []);
+
+        this.cellOutput = new CodeCellOutput(dispatcher, cellState, StateHandler.from(undefined, this), StateHandler.from(undefined, this));
+
+        // after the cell is run, cache the viz and result and hide input
+        cellState.view('results').addObserver(results => {
+            const result = findInstance(results, ClientResult);
+            if (result) {
+                const viz = deepCopy(this.viz);
+                // don't cache a "preview" plot view, only a real one.
+                if (viz.type !== 'plot' || result instanceof VegaClientResult) {
+                    result.toOutput().then(output => this.previousViews[viz.type] = [viz, output]);
+                }
+            }
+        }, this);
+
+        this.el = div(['cell-container', this.state.language, 'code-cell'], [
+            div(['cell-input'], [
+                this.cellInputTools = div(['cell-input-tools'], [
+                    iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
+                        dispatcher.runCells([this.state.id]);
+                        this.toggleCode(true);
+                    }),
+                    div(['cell-label'], [this.state.id.toString()]),
+                    div(['value-name'], ['Inspecting ', span(['name'], [this.valueName])]),
+                    execInfoEl,
+                    div(["options"], [
+                        button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
+                    ])
+                ]),
+                this.editorEl
+            ]),
+            this.cellOutput.el
+        ]);
+
+        /**
+         * Keep watching the available values, so the plot UI can be updated when the value changes.
+         */
+        const updateValues = (newValues: Record<string, ResultValue>) => {
+            if (newValues && newValues[this.valueName] && newValues[this.valueName].live) {
+                this.setValue(newValues[this.valueName]);
+                return true;
+            }
+            return false;
+        }
+
+        const watchValues = () => {
+            const valuesView = this.notebookState.viewAvailableValuesAt(cellState.state.id, dispatcher);
+            valuesView.addObserver(updateValues, this);
+        }
+
+        if (notebookState.isLoading) {
+            // wait until the notebook is done loading before populating the result, to make sure we have the result
+            // and that it's the correct one.
+            notebookState.loaded.then(() => {
+                if (!updateValues(notebookState.availableValuesAt(cellState.state.id, dispatcher))) {
+                    // notebook isn't live. We should wait for the value to become available.
+                    // TODO: once we have metadata about which names a cell declares, we can be smarter about
+                    //       exactly which cell to wait for. Right now, if the value was declared and then re-declared,
+                    //       we'll get the first one (which could be bad). Alternatively, if we had stable cell IDs
+                    //       (e.g. UUID) then the viz could refer to the stable source cell of the value being visualized.
+                    if (this.editorEl.classList.contains('loading')) {
+                        this.editorEl.innerHTML = `Waiting for value <code>${this.valueName}</code>...`;
+                    }
+                }
+                watchValues();
+            })
+        } else {
+            // If notebook is live & kernel is active, we should have the value right now.
+            updateValues(notebookState.availableValuesAt(cellState.state.id, dispatcher));
+            watchValues();
+        }
+
+        const updateMetadata = (metadata: CellMetadata) => {
+            if (metadata.hideSource) {
+                this.el.classList.add("hide-code")
+            } else {
+                this.el.classList.remove("hide-code");
+                this.layout();
+            }
+
+            if (metadata.hideOutput) {
+                this.el.classList.add("hide-output");
+            } else {
+                this.el.classList.remove("hide-output");
+            }
+
+            if (metadata.executionInfo) {
+                this.setExecutionInfo(execInfoEl, metadata.executionInfo)
+            }
+        }
+        updateMetadata(this.state.metadata);
+        cellState.view("metadata").addObserver(metadata => updateMetadata(metadata), this);
+    }
+
+    private setValue(value: ResultValue): void {
+        this.resultValue = value;
+        this.viz = this.viz || parseMaybeViz(this.cellState.state.content);
+        if (!isViz(this.viz)) {
+            this.updateViz(this.selectDefaultViz(this.resultValue));
+            this.valueName = this.viz!.value;
+        }
+
+        if (this.editor) {
+            this.editor.tryDispose();
+        }
+
+        const editor = this.editor = new VizSelector(this.valueName, this.resultValue, this.dispatcher, this.notebookState, deepCopy(this.viz));
+
+        // handle external edits
+        // TODO: fix this pendingEdits thing
+        this.cellState.view("incomingEdits").addObserver(edits => {
+            if (edits.length > 0) {
+                this.cellState.update1("incomingEdits", () => []);
+                const newViz = parseMaybeViz(this.cellState.state.content);
+                if (isViz(newViz)) {
+                    editor.currentViz = newViz;
+                }
+            }
+        }, this);
+
+        this.editor.onChange(viz => this.updateViz(viz));
+
+        if (this.editorEl.parentNode) {
+            this.editorEl.parentNode.replaceChild(this.editor.el, this.editorEl);
+        }
+        this.editorEl = this.editor.el;
+
+        if (!this.cellState.state.output.length || this.viz.type !== 'plot') {
+            const result = this.vizResult(this.viz);
+            if (result) {
+                this.previousViews[this.viz.type] = [this.viz, result];
+                this.dispatcher.setCellOutput(this.cellState.state.id, result);
+            }
+        }
+    }
+
+    private selectDefaultViz(resultValue: ResultValue): Viz {
+        // select the default viz for the given result value
+        // TODO: this should be preference-driven
+        return match(resultValue.preferredRepr).typed<Viz>()
+            .whenInstance(StreamingDataRepr, _ => ({ type: "schema", value: resultValue.name }))
+            .whenInstance(DataRepr, _ => ({ type: "data", value: resultValue.name }))
+            .whenInstance(MIMERepr, repr => ({ type: "mime", mimeType: repr.mimeType, value: resultValue.name }))
+            // TODO: viz handling for lazy & updating
+            .otherwise({ type: "string", value: resultValue.name })
+    }
+
+    private updateViz(viz: Viz) {
+        const newCode = saveViz(viz);
+        const oldViz = this.viz;
+        const edits = diffEdits(this.cellState.state.content, newCode);
+        if (edits.length > 0) {
+            this.viz = deepCopy(viz);
+            const cellId = this.cellState.state.id;
+            this.cellState.update1("outgoingEdits", () => edits);
+            if (this.previousViews[viz.type] && deepEquals(this.previousViews[viz.type][0], viz)) {
+                const result = this.previousViews[viz.type][1];
+                this.cellOutput.clearOutput();
+                this.dispatcher.setCellOutput(cellId, result);
+            } else if (this.resultValue) {
+                const result = this.vizResult(viz);
+
+                if (result) {
+                    this.cellOutput.clearOutput();
+                    this.dispatcher.setCellOutput(cellId, result);
+                } else if (viz.type !== oldViz?.type) {
+                    this.cellOutput.clearOutput();
+                }
+            }
+
+        }
+    }
+
+    private vizResult(viz: Viz): ClientResult | undefined {
+        try {
+            switch (viz.type) {
+                case "table": return new MIMEClientResult(new MIMERepr("text/html", this.editor.tableHTML));
+                case "plot": return undefined;
+                default:
+                    return collectInstances(
+                        VizInterpreter.interpret(saveViz(viz), cellContext(this.notebookState, this.dispatcher, this.cellState.state.id)),
+                        ClientResult)[0];
+            }
+        } catch (err) {
+
+        }
+        return undefined;
+    }
+
+    protected getCurrentSelection(): string {
+        return "";
+    }
+
+    protected getPosition(): IPosition {
+        // plots don't really have a position.
+        return {
+            lineNumber: 0,
+            column: 0
+        };
+    }
+
+    protected getRange(): IRange {
+        // plots don't really have a range
+        return {
+            startLineNumber: 0,
+            startColumn: 0,
+            endLineNumber: 0,
+            endColumn: 0
+        };
+    }
+
+    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string): boolean | undefined {
+        return undefined;
+    }
+
+    setDisabled(disabled: boolean): void {
+        if (this.editor)
+            this.editor.disabled = disabled;
+    }
+
+    private toggleCode(hide?: boolean) {
+        this.cellState.update1("metadata", meta => meta.copy({hideSource: hide ?? !meta.hideSource}));
+    }
+
+    private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
+        const start = new Date(Number(executionInfo.startTs));
+        // clear display
+        el.innerHTML = '';
+        window.clearInterval(this.execDurationUpdater);
+        delete this.execDurationUpdater;
+
+        // populate display
+        el.appendChild(span(['exec-start'], [start.toLocaleString("en-US", {timeZoneName: "short"})]));
+        el.classList.add('output');
+
+        if (this.state.running || executionInfo.endTs) {
+            const endTs = executionInfo.endTs ?? Date.now();
+            const duration = Number(endTs) - Number(executionInfo.startTs);
+            el.appendChild(span(['exec-duration'], [prettyDuration(duration)]));
+
+            if (executionInfo.endTs === undefined || executionInfo.endTs === null) {
+                // update exec info every so often
+                if (this.execDurationUpdater === undefined) {
+                    this.execDurationUpdater = window.setInterval(() => this.setExecutionInfo(el, executionInfo), 333)
+                }
+            }
+        }
+    }
+
 }

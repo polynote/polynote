@@ -73,7 +73,8 @@ export class DialogModal extends Modal {
     private onSubmit: (value: string) => void;
 
     constructor(title: string, inputPlaceholder: string, okButtonText: string) {
-        const input = textbox([], inputPlaceholder)
+        const input = textbox([], "", inputPlaceholder)
+        input.select();
         input.addEventListener('Accept', evt => this.submit());
         input.addEventListener('Cancel', evt => this.hide());
 

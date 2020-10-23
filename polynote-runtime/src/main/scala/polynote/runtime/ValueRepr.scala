@@ -256,6 +256,10 @@ sealed trait TableOp
 final case class GroupAgg(columns: List[String], aggregations: List[(String, String)]) extends TableOp
 final case class QuantileBin(column: String, binCount: Int, err: Double) extends TableOp
 final case class Select(columns: List[String]) extends TableOp
+final case class Sample(sampleRate: Double) extends TableOp
+final case class SampleN(n: Int) extends TableOp
+final case class Histogram(field: String, binCount: Int) extends TableOp
+
 
 // the standard structure to hold quartile data
 final case class Quartiles(min: Double, q1: Double, median: Double, mean: Double, q3: Double, max: Double)
@@ -285,3 +289,23 @@ object Quartiles {
     }
 }
 
+// structure to hold histogram data
+final case class HistogramBin(start: Double, end: Double, count: Long)
+object HistogramBin {
+  val dataType: StructType = StructType(List(StructField("start", DoubleType), StructField("end", DoubleType), StructField("count", LongType)))
+  implicit val encoder: DataEncoder.StructDataEncoder[HistogramBin] = new DataEncoder.StructDataEncoder[HistogramBin](dataType) {
+    override def field(name: String): Option[(HistogramBin => Any, DataEncoder[_])] = name match {
+      case "start" => Some((_.start, DataEncoder.double))
+      case "end"   => Some((_.end, DataEncoder.double))
+      case "count" => Some((_.count, DataEncoder.long))
+    }
+
+    override def encode(dataOutput: DataOutput, value: HistogramBin): Unit = {
+      dataOutput.writeDouble(value.start)
+      dataOutput.writeDouble(value.end)
+      dataOutput.writeLong(value.count)
+    }
+
+    override def sizeOf(t: HistogramBin): Int = 24
+  }
+}
