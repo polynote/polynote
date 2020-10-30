@@ -10,7 +10,7 @@ import {
 } from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
-import {arrDeleteFirstItem, deepEquals, removeKey} from "../util/helpers";
+import {arrDeleteFirstItem, deepEquals, removeKeys} from "../util/helpers";
 import {EditBuffer} from "../data/edit_buffer";
 
 export type NotebookInfo = {
@@ -40,7 +40,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     private static notebooks: Record<string, NotebookInfo> = {};
 
     private constructor(state: ServerState) {
-        super(state);
+        const view = new StateView(state)
+        super(view);
     }
 
     private static inst: ServerStateHandler;
@@ -64,14 +65,11 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     /**
      * Create a temporary view into the ServerState.
      *
-     * Since ServerStateHandler is a singleton, callers are required to provide a Disposable to clean up unneeded Views.
-     * If the view will never be cleaned up, use `ServerStateHandler.get.view` instead.
-     *
      * @param key
      * @param disposeWhen
      */
-    static view<T extends keyof ServerState>(key: T, disposeWhen: Disposable): StateView<ServerState[T]> {
-        return ServerStateHandler.get.view(key, undefined, disposeWhen)
+    static view<T extends keyof ServerState>(key: T): StateView<ServerState[T]> {
+        return ServerStateHandler.get.view(key)
     }
 
     /**
@@ -88,7 +86,6 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     // only for testing
     static clear() {
         if (ServerStateHandler.inst) {
-            ServerStateHandler.inst.clearObservers();
             ServerStateHandler.inst.dispose()
 
             ServerStateHandler.inst = new ServerStateHandler({
@@ -132,7 +129,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     resolve(maybeLoaded)
                 }
             }
-            const loading = nbInfo.handler.addObserver(checkIfLoaded)
+            const loading = nbInfo.handler.addObserver(checkIfLoaded, nbInfo.handler)
             checkIfLoaded()
         })
     }
@@ -196,7 +193,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                 return {
                     ...s,
                     notebooks: {
-                        ...removeKey(s.notebooks, oldPath),
+                        ...removeKeys(s.notebooks, oldPath),
                         [newPath]: prev
                     }
                 }
@@ -215,7 +212,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             return {
                 ...s,
                 notebooks: {
-                    ...removeKey(s.notebooks, path),
+                    ...removeKeys(s.notebooks, path),
                 }
             }
         })

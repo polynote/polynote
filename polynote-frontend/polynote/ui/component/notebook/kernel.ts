@@ -1,4 +1,4 @@
-import {KernelInfo, KernelState, KernelStateHandler, KernelSymbols, KernelTasks} from "../../../state/kernel_state";
+import {KernelInfo, KernelState, KernelSymbols, KernelTasks} from "../../../state/kernel_state";
 import {
     Content,
     div,
@@ -19,23 +19,24 @@ import {
     ServerMessageDispatcher,
     ShowValueInspector
 } from "../../../messaging/dispatcher";
-import {StateHandler, StateView} from "../../../state/state_handler";
+import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../../../state/preferences";
 import {KernelStatusString, TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {ServerStateHandler} from "../../../state/server_state";
-import {changedKeys, diffArray, removeKey} from "../../../util/helpers";
+import {changedKeys, diffArray, removeKeys} from "../../../util/helpers";
 import {ErrorEl} from "../../display/error";
 import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
-export class KernelPane {
+export class KernelPane extends Disposable {
     el: TagElement<"div">;
     header: TagElement<"div">;
     private kernels: Record<string, Kernel> = {};
 
     constructor(serverMessageDispatcher: ServerMessageDispatcher) {
+        super()
         const placeholderEl = div(['kernel-ui-placeholder'], []);
         const placeholderHeader = div(["kernel-header-placeholder"], []);
         this.el = placeholderEl;
@@ -73,16 +74,16 @@ export class KernelPane {
             }
         }
         handleCurrentNotebook(ServerStateHandler.state.currentNotebook)
-        ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path))
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path), this)
     }
 
 }
 
-export class Kernel {
+export class Kernel extends Disposable {
     readonly el: TagElement<"div">;
     readonly statusEl: TagElement<"h2">;
     private status: TagElement<"span">;
-    private kernelState: KernelStateHandler;
+    private kernelState: StateHandler<KernelState>;
 
     // TODO: this implementation will no longer appear on the welcome screen, which means that errors won't show.
     //       another solution for showing errors on the welcome screen needs to be implemented.
@@ -90,12 +91,13 @@ export class Kernel {
                 private dispatcher: NotebookMessageDispatcher,
                 private notebookState: NotebookStateHandler,
                 private whichPane: keyof ViewPreferences) {
+        super()
 
-        this.kernelState = notebookState.lens("kernel", KernelStateHandler);
+        this.kernelState = notebookState.lens("kernel");
 
         const info = new KernelInfoEl(this.kernelState);
         const symbols = new KernelSymbolsEl(dispatcher, notebookState);
-        const tasks = new KernelTasksEl(notebookState.view("path"), serverMessageDispatcher, this.kernelState.kernelTasks);
+        const tasks = new KernelTasksEl(notebookState.view("path"), serverMessageDispatcher, this.kernelState.view("tasks"));
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -113,10 +115,10 @@ export class Kernel {
             tasks.el
         ]);
 
-        this.setKernelStatus(this.kernelState.kernelStatus.state)
-        this.kernelState.kernelStatus.addObserver(status => {
+        this.setKernelStatus(this.kernelState.state.status)
+        this.kernelState.view("status").addObserver(status => {
             this.setKernelStatus(status)
-        })
+        }, this)
 
     }
 
@@ -158,12 +160,13 @@ export class Kernel {
     }
 }
 
-class KernelInfoEl {
+class KernelInfoEl extends Disposable {
     readonly el: TagElement<"div">;
     private toggleEl: TagElement<"h3">;
     private infoEl: TableElement;
 
-    constructor(kernelStateHandler: KernelStateHandler) {
+    constructor(kernelStateHandler: StateHandler<KernelState>) {
+        super()
         this.el = div(['kernel-info'], [
             this.toggleEl = h3(['toggle'], ['...']).click(() => this.toggleCollapse()),
             h3(['title'], ['Info']),
@@ -174,16 +177,16 @@ class KernelInfoEl {
             }),
         ]);
 
-        this.renderInfo(kernelStateHandler.kernelInfo.state);
-        kernelStateHandler.kernelInfo.addObserver(info => this.renderInfo(info));
+        this.renderInfo(kernelStateHandler.state.info);
+        kernelStateHandler.view("info").addObserver(info => this.renderInfo(info), this);
 
-        kernelStateHandler.kernelStatus.addObserver(status => {
+        kernelStateHandler.view("status").addObserver(status => {
             if (status === "dead") {
                 this.el.style.display = "none";
             } else {
                 this.el.style.display = "block";
             }
-        })
+        }, this)
     }
 
     private toggleCollapse() {
@@ -220,7 +223,7 @@ type KernelTask = TagElement<"div"> & {
     childTasks: Record<string, KernelTask>
 }
 
-class KernelTasksEl {
+class KernelTasksEl extends Disposable {
     readonly el: TagElement<"div">;
     private notebookPath: string;
     private taskContainer: TagElement<"div">;
@@ -229,14 +232,15 @@ class KernelTasksEl {
 
     constructor(private notebookPathHandler: StateView<string>,
                 private serverMessageDispatcher: ServerMessageDispatcher,
-                private kernelTasksHandler: StateHandler<KernelTasks>) {
+                private kernelTasksHandler: StateView<KernelTasks>) {
+        super()
         this.el = div(['kernel-tasks'], [
             h3([], ['Tasks']),
             this.taskContainer = div(['task-container'], [])
         ]);
 
         this.notebookPath = notebookPathHandler.state
-        notebookPathHandler.addObserver(path => this.notebookPath = path)
+        notebookPathHandler.addObserver(path => this.notebookPath = path, this)
 
         Object.values(kernelTasksHandler.state).forEach(task => this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent));
         kernelTasksHandler.addObserver((currentTasks, oldTasks) => {
@@ -254,7 +258,7 @@ class KernelTasksEl {
             Object.values(currentTasks).forEach(task => {
                 this.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
             })
-        })
+        }, this)
 
         this.errors = {}
         const handleErrors = (errs: DisplayError[]) => {
@@ -280,7 +284,7 @@ class KernelTasksEl {
                 this.errors = {}
             }
         }
-        ErrorStateHandler.get.addObserver(errors => handleErrors([...errors.serverErrors, ...errors[this.notebookPath] ?? []]))
+        ErrorStateHandler.get.addObserver(errors => handleErrors([...errors.serverErrors, ...errors[this.notebookPath] ?? []]), this)
     }
 
     private addError(id: string, err: ServerErrorWithCause) {
@@ -388,7 +392,7 @@ class KernelTasksEl {
         const task = this.tasks[id];
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
-        this.kernelTasksHandler.update(s => removeKey(s, id))
+        // this.kernelTasksHandler.update(s => removeKey(s, id))
     }
 }
 
@@ -400,7 +404,7 @@ interface ResultRow extends TableRowElement {
     }
 }
 
-class KernelSymbolsEl {
+class KernelSymbolsEl extends Disposable {
     readonly el: TagElement<"div">;
     private tableEl: TableElement;
     private resultSymbols: TagElement<"tbody">;
@@ -412,6 +416,7 @@ class KernelSymbolsEl {
     private visibleCells: number[] = [];
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
+        super()
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
             this.tableEl = table(['kernel-symbols-table'], {
@@ -437,9 +442,9 @@ class KernelSymbolsEl {
                 })
             }
         }
-        const symbolHandler = notebookState.view("kernel", KernelStateHandler).kernelSymbols;
+        const symbolHandler = notebookState.view("kernel").view("symbols");
         handleSymbols(symbolHandler.state)
-        symbolHandler.addObserver(symbols => handleSymbols(symbols))
+        symbolHandler.addObserver(symbols => handleSymbols(symbols), this)
 
         const handleActiveCell = (cellId?: number) => {
             if (cellId === undefined) {
@@ -453,7 +458,7 @@ class KernelSymbolsEl {
         }
         const activeCellHandler = notebookState.view("activeCellId");
         handleActiveCell(activeCellHandler.state)
-        activeCellHandler.addObserver(cell => handleActiveCell(cell))
+        activeCellHandler.addObserver(cell => handleActiveCell(cell), this)
     }
 
     private updateRow(tr: ResultRow, resultValue: ResultValue) {

@@ -20,8 +20,8 @@ import {
     StopDataStream
 } from "./dispatcher";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {Observer, StateHandler, StateView} from "../state/state_handler";
-import {deepCopy, removeKey} from "../util/helpers";
+import {Disposable, Observer, StateHandler, StateView} from "../state/state_handler";
+import {deepCopy, removeKeys} from "../util/helpers";
 
 export const QuartilesType = new StructType([
     new StructField("min", DoubleType),
@@ -35,7 +35,7 @@ export const QuartilesType = new StructType([
 /**
  * An API for streaming data out of a StreamingDataRepr
  */
-export class DataStream {
+export class DataStream extends Disposable {
     private readonly mods: TableOp[];
     readonly dataType: StructType;
     private batchSize = 50;
@@ -60,6 +60,7 @@ export class DataStream {
         currentDataType?: StructType,
         private unsafeLongs: boolean = false
     ) {
+        super();
         this.repr = originalRepr;
         this.dataType = currentDataType ?? originalRepr.dataType;
         this.mods = mods ?? [];
@@ -73,7 +74,6 @@ export class DataStream {
         }
 
         this.observer = this.activeStreams.addObserver(handles => {
-            console.log("activeStreams:", handles, this.repr.handle)
             const data = handles[this.repr.handle];
             if (data && data.length > 0) {
                 data.forEach(message => {
@@ -108,9 +108,9 @@ export class DataStream {
                 })
 
                 // clear messages now that they have been processed.
-                this.activeStreams.update(streams => removeKey(streams, this.repr.handle))
+                this.activeStreams.update(streams => removeKeys(streams, this.repr.handle))
             }
-        })
+        }, this)
     }
 
     batch(batchSize: number) {
@@ -147,6 +147,8 @@ export class DataStream {
         if (this.nextPromise) {
             this.nextPromise.reject("Stream was terminated")
         }
+
+        this.dispose()
     }
 
     private withOps(ops: TableOp[], forceUnsafeLongs?: boolean): DataStream {
@@ -308,7 +310,7 @@ export class DataStream {
                             }
                         })
                     }
-                })
+                }, this)
             }).then(message => {
                 this.attachListener();
                 return message;

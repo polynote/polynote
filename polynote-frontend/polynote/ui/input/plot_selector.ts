@@ -731,7 +731,7 @@ class MeasurePicker {
     }
 }
 
-class MeasuresUI {
+class MeasuresUI extends Disposable {
     readonly el: HTMLDivElement;
     private selectedMeasuresEl: TagElement<"div">;
     private availableMeasuresEl: TagElement<"div">;
@@ -745,6 +745,7 @@ class MeasuresUI {
     get selectedMeasures(): PlotSeries[] { return deepCopy(this._selectedMeasures); }
 
     constructor(private availableFields: StructField[], initialSeries?: PlotSeries[], private mode: 'single' | 'multiple' = 'multiple') {
+        super();
         this.pickers = Object.fromEntries(
             availableFields.map(
                 field => [
@@ -779,6 +780,14 @@ class MeasuresUI {
         }
 
         this.setMode(mode);
+
+        this.onDispose.then(() => {
+            this.listeners = [];
+            for (let picker of Object.keys(this.pickers)) {
+                this.pickers[picker].dispose();
+            }
+            this.el.innerHTML = "";
+        })
     }
 
     setMode(mode: 'single' | 'multiple') {
@@ -886,16 +895,8 @@ class MeasuresUI {
                     this.removeMeasure(s.field, s.aggregation);
             }
             this.listeners = listeners;
-        });
+        }, this);
         return this;
-    }
-
-    dispose() {
-        this.listeners = [];
-        for (let picker of Object.keys(this.pickers)) {
-            this.pickers[picker].dispose();
-        }
-        this.el.innerHTML = "";
     }
 }
 
@@ -927,7 +928,7 @@ export class PlotSelector {
         const measureOptions   = Object.fromEntries(measureFields.map(field => [field.name, field.name]));
 
         const state = initialState ? PlotSelectorState.fromPlotDef(initialState, dimensionFields[0].name) : PlotSelectorState.empty(name, dimensionFields[0].name, name);
-        const stateHandler = this.stateHandler = new StateHandler<PlotSelectorState>(state, this._disposer);
+        const stateHandler = this.stateHandler = StateHandler.from(state, this._disposer);
 
         const typeHandler         = stateHandler.viewUpdatable("type");
         const facetHandler        = stateHandler.viewUpdatable<"facet", Facet>("facet");
@@ -936,11 +937,12 @@ export class PlotSelector {
         const singleSeriesHandler = stateHandler.viewUpdatable<"singleY", string>("singleY");
         const multiSeriesHandler  = stateHandler.viewUpdatable<"multiY", PlotSeries[]>("multiY");
 
-        typeHandler.addObserver(this.onSetType)
-        singleSeriesHandler.addObserver(field => this.measuresUI.setMode(field ? 'single' : 'multiple'));
+        typeHandler.addObserver(this.onSetType, this._disposer);
+        singleSeriesHandler.addObserver(field => this.measuresUI.setMode(field ? 'single' : 'multiple'), this._disposer);
 
         this.publishObserver = stateHandler.addObserver(
-            (newState, oldState) => this.listeners.forEach(l => l(newState.toPlotDef(), oldState.toPlotDef()))
+            (newState, oldState) => this.listeners.forEach(l => l(newState.toPlotDef(), oldState.toPlotDef())),
+            this._disposer
         );
         stateHandler.addObserver(newState => {
             if (newState.facet) {
@@ -950,7 +952,7 @@ export class PlotSelector {
                 this.el.classList.remove('facet');
                 this.facetCheckbox.querySelector('input')!.checked = false;
             }
-        });
+        }, this._disposer);
 
         this.el = div(['plot-selector', state.type, ...(state.facet ? ['facet'] : [])], [
             div(['top-tools'], [
@@ -1050,7 +1052,7 @@ export class PlotSelector {
         if (!deepEquals(state, this.stateHandler.state)) {
             this.stateHandler.removeObserver(this.publishObserver);
             this.stateHandler.updateState(_ => state);
-            this.stateHandler.addObserver(this.publishObserver[0], undefined, this.publishObserver[1]);
+            this.stateHandler.addObserver(this.publishObserver[0], this._disposer, this.publishObserver[1]);
         }
     }
 

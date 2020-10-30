@@ -11,7 +11,7 @@ import {
     RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
-import {NoUpdate, StateHandler, StateView} from "../state/state_handler";
+import {Disposable, NoUpdate, StateHandler, StateView} from "../state/state_handler";
 import {CellState, CompletionHint, NotebookState, NotebookStateHandler, outputs, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../data/content_edit";
 import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_state";
@@ -26,7 +26,7 @@ import {
     equalsByKey,
     mapValues,
     partition,
-    removeKey
+    removeKeys
 } from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
@@ -37,15 +37,16 @@ import {ErrorStateHandler} from "../state/error_state";
 import {StreamingDataRepr} from "../data/value_repr";
 import {PlotDefinition} from "../ui/input/plot_selector";
 import {ViewType} from "../ui/input/viz_selector";
-import {IgnoreServerUpdatesView} from "./receiver";
+import {IgnoreServerUpdatesWrapper} from "./receiver";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
  * It knows whether an Action should be translated to a message and then sent on the socket, or if it should be
  * handled by something else.
  */
-export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHandler<S>> {
+export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHandler<S>> extends Disposable{
     protected constructor(protected socket: SocketStateHandler, protected handler: H) {
+        super()
         handler.onDispose.then(() => {
             this.socket.close()
         })
@@ -62,25 +63,25 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             if (next === "connected") {
                 socket.send(new messages.KernelStatus(new messages.KernelBusyState(false, false)))
             }
-        });
+        }, this);
         const errorView = socket.view("error")
         errorView.addObserver(err => {
             if (err) {
                 ErrorStateHandler.addKernelError(state.state.path, err.error)
             }
-        })
+        }, this)
 
         state.view("activeSignature").addObserver(sig => {
             if (sig) {
                 this.socket.send(new messages.ParametersAt(sig.cellId, sig.offset))
             }
-        })
+        }, this)
 
         state.view("activeCompletion").addObserver(sig => {
             if (sig) {
                 this.socket.send(new messages.CompletionsAt(sig.cellId, sig.offset, []))
             }
-        })
+        }, this)
 
         state.updateHandler.addObserver(updates => {
             if (updates.length > 0) {
@@ -88,7 +89,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 updates.forEach(update => this.sendUpdate(update))
                 state.updateHandler.update(() => [])
             }
-        })
+        }, this)
 
         const cells: Record<number, StateView<CellState>> = {};
         const cellsState = state.view("cells");
@@ -100,10 +101,9 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 cells[id] = handler
                 this.watchCell(handler)
             })
-        })
+        }, this)
     }
 
-    // TODO: make sure this isn't being set every time
     private watchCell(cellView: StateView<CellState>) {
         const id = cellView.state.id;
         console.log("dispatcher: watching cell", id)
@@ -112,23 +112,24 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             if (range) {
                 this.socket.send(new messages.CurrentSelection(id, range))
             }
-        })
+        }, this)
+
     }
 
     dispatch(action: UIAction) {
         match(action)
-            .when(Reconnect, (onlyIfClosed: boolean) => {
+            .when(Reconnect, (onlyIfClosed: boolean) => { // TODO: reconnect method already created but didn't update callers.
                 console.log("Attempting to reconnect to notebook")
                 this.socket.reconnect(onlyIfClosed)
-                const errorView = this.socket.view("error")
+                const errorView = this.socket.lens("error")
                 errorView.addObserver(err => {
                     // if there was an error on reconnect, push it to the notebook state so it can be displayed
                     if (err) {
                         console.error("error on reconnecting notebook", err)
                         ErrorStateHandler.addKernelError(this.handler.state.path, err.error)
                     }
-                })
-                this.socket.view("status", undefined, errorView).addObserver(status => {
+                }, this)
+                this.socket.view("status").addObserver(status => {
                     if (status === "connected") {
                         this.handler.update(s => {
                             return {
@@ -138,19 +139,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                         })
                         errorView.dispose()
                     }
-                })
-            })
-            .when(CreateComment, (cellId, comment) => {
-                const state = this.handler.updateHandler
-                this.sendUpdate(new messages.CreateComment(state.globalVersion, state.localVersion, cellId, comment))
-            })
-            .when(UpdateComment, (cellId, commentId, range, content) => {
-                const state = this.handler.updateHandler
-                this.sendUpdate(new messages.UpdateComment(state.globalVersion, state.localVersion, cellId, commentId, range, content))
-            })
-            .when(DeleteComment, (cellId, commentId) => {
-                const state = this.handler.updateHandler
-                this.sendUpdate(new messages.DeleteComment(state.globalVersion, state.localVersion, cellId, commentId))
+                }, errorView)
             })
             .when(RequestNotebookVersion, version => {
                 const state = this.handler.state
@@ -243,6 +232,34 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             .catch(err => console.error("Error backing up update", err))
     }
 
+    /*******************************
+     ** Kernel management methods **
+     *******************************/
+
+    reconnect(onlyIfClosed: boolean): void {
+        console.log("Attempting to reconnect to notebook")
+        this.socket.reconnect(onlyIfClosed)
+        const errorView = this.socket.lens("error")
+        errorView.addObserver(err => {
+            // if there was an error on reconnect, push it to the notebook state so it can be displayed
+            if (err) {
+                console.error("error on reconnecting notebook", err)
+                ErrorStateHandler.addKernelError(this.handler.state.path, err.error)
+            }
+        }, this)
+        this.socket.view("status").addObserver(status => {
+            if (status === "connected") {
+                this.handler.update(s => {
+                    return {
+                        ...s,
+                        errors: [] // any errors from before are no longer relevant, right?
+                    }
+                })
+                errorView.dispose()
+            }
+        }, errorView)
+    }
+
     // Helper methods
 
     setCellOutput(cellId: number, output: Output | ClientResult) {
@@ -293,11 +310,11 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             if (err) {
                 ErrorStateHandler.addServerError(err.error)
             }
-        })
+        }, this)
 
         this.handler.view("openNotebooks").addObserver(nbs => {
             OpenNotebooksHandler.update(() => nbs)
-        })
+        }, this)
     }
 
     dispatch(action: UIAction): void {
@@ -305,7 +322,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             .when(Reconnect, (onlyIfClosed: boolean) => {
                 console.warn("Attempting to reconnect to server") // TODO: once we have a proper place for server errors, we can display this log there.
                 this.socket.reconnect(onlyIfClosed)
-                const errorView = this.socket.view("error")
+                const errorView = this.socket.lens("error")
                 errorView.addObserver(err => {
                     if (err) {
                         // We don't want to reload if the connection is offline, instead we just want to display the
@@ -318,9 +335,9 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                             ErrorStateHandler.addServerError(err.error)
                         }
                     }
-                })
+                }, this)
                 // TODO: depending on how complicated reconnecting is, maybe we should just reload the page every time?
-                this.socket.view("status", undefined, errorView).addObserver(status => {
+                this.socket.view("status").addObserver(status => {
                     if (status === "connected") {
                         console.warn("Reconnected successfully, now reconnecting to notebook sockets")
                         this.handler.update(s => {
@@ -332,26 +349,27 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                         ServerStateHandler.reconnectNotebooks(onlyIfClosed)
                         errorView.dispose()
                     }
-                })
+                }, errorView)
             })
             .when(RequestNotebooksList, () => {
                 this.socket.send(new messages.ListNotebooks([]))
             })
             .when(CreateNotebook, (path, content) => {
                 const waitForNotebook = (nbPath: string) => {
+                    const disposable = new Disposable()
                     const nbs = this.handler.view("notebooks")
                     nbs.addObserver((current, prev) => {
                         const [added, _] = diffArray(Object.keys(current), Object.keys(prev))
                         added.forEach(newNb => {
                             if (newNb.includes(nbPath)) {
-                                nbs.dispose()
+                                disposable.dispose()
                                 ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {
                                     nbInfo.handler.update1("config", conf => ({...conf, open: true}))
                                     ServerStateHandler.selectNotebook(newNb)
                                 })
                             }
                         })
-                    })
+                    }, disposable)
                 }
                 if (path) {
                     this.socket.send(new messages.CreateNotebook(path, content))
@@ -382,7 +400,9 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 }
             })
             .when(DeleteNotebook, (path) => {
-                this.socket.send(new messages.DeleteNotebook(path))
+                if (confirm(`Permanently delete ${path}?`)) {
+                    this.socket.send(new messages.DeleteNotebook(path))
+                }
             })
             .when(ViewAbout, section => {
                 About.show(this, section)
@@ -390,6 +410,10 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             .when(RequestRunningKernels, () => {
                 this.socket.send(new messages.RunningKernels([]))
             })
+    }
+
+    reconnect(onlyIfClosed: Boolean) {
+
     }
 }
 
@@ -410,39 +434,6 @@ export class Reconnect extends UIAction {
     }
 }
 
-
-export class CreateComment extends UIAction {
-    constructor(readonly cellId: number, readonly comment: CellComment) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: CreateComment): ConstructorParameters<typeof CreateComment> {
-        return [inst.cellId, inst.comment];
-    }
-}
-
-export class UpdateComment extends UIAction {
-    constructor(readonly cellId: number, readonly commentId: string, readonly range: PosRange, readonly content: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: UpdateComment): ConstructorParameters<typeof UpdateComment> {
-        return [inst.cellId, inst.commentId, inst.range, inst.content];
-    }
-}
-
-export class DeleteComment extends UIAction {
-    constructor(readonly cellId: number, readonly commentId: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: DeleteComment): ConstructorParameters<typeof DeleteComment> {
-        return [inst.cellId, inst.commentId];
-    }
-}
 
 export class CreateCell extends UIAction {
     constructor(readonly language: string, readonly content: string, readonly metadata: CellMetadata, readonly prev: number) {

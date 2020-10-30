@@ -314,19 +314,13 @@ object Comment {
   implicit val decoder: Decoder[Comment] = deriveDecoder
 }
 
-final case class CreateComment(globalVersion: Int, localVersion: Int, cellId: CellID, comment: Comment) extends Message with NotebookUpdate {
-  override def echoOriginatingSubscriber: Boolean = true
-}
+final case class CreateComment(globalVersion: Int, localVersion: Int, cellId: CellID, comment: Comment) extends Message with NotebookUpdate
 object CreateComment extends NotebookUpdateCompanion[CreateComment](29)
 
-final case class UpdateComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID, range: CellRange, content: ShortString) extends Message with NotebookUpdate {
-  override def echoOriginatingSubscriber: Boolean = true
-}
+final case class UpdateComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID, range: CellRange, content: ShortString) extends Message with NotebookUpdate
 object UpdateComment extends NotebookUpdateCompanion[UpdateComment](30)
 
-final case class DeleteComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID) extends Message with NotebookUpdate {
-  override def echoOriginatingSubscriber: Boolean = true
-}
+final case class DeleteComment(globalVersion: Int, localVersion: Int, cellId: CellID, commentId: CommentID) extends Message with NotebookUpdate
 object DeleteComment extends NotebookUpdateCompanion[DeleteComment](31)
 
 final case class CompletionsAt(id: CellID, pos: Int, completions: ShortList[Completion]) extends Message

@@ -16,6 +16,7 @@ import {
 import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
 import {ServerStateHandler} from "../state/server_state";
+import {Disposable} from "../state/state_handler";
 import {KernelSymbols} from "../state/kernel_state";
 
 export interface CellContext {
@@ -89,13 +90,14 @@ export class ClientInterpreter {
 
             if (waitCellId) {
                 return new Promise(resolve => {
+                    const disposable = new Disposable()
                     const obs = this.notebookState.addObserver(state => {
                         const maybeCellReady = state.cells[waitCellId!];
                         if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
-                            this.notebookState.removeObserver(obs)
+                            disposable.dispose()
                             resolve()
                         }
-                    })
+                    }, disposable)
                 })
             } else return Promise.resolve()
         }).then(() => { // finally, interpret the cell

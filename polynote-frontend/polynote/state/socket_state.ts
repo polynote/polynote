@@ -39,7 +39,8 @@ export class SocketStateHandler extends StateHandler<SocketState> {
     }
 
     constructor(socket: SocketSession, initial: SocketState = {status: "disconnected", error: undefined}) {
-        super(initial);
+        const view = new StateView(initial)
+        super(view);
 
         this.socketKey = socket.url.href;
         Sockets.set(this.socketKey, socket);
@@ -133,7 +134,7 @@ export class SocketStateHandler extends StateHandler<SocketState> {
         return this.socket.handleMessage(...args)
     }
     public close(...args: Parameters<SocketSession["close"]>): ReturnType<SocketSession["close"]> {
-        this.clearObservers()
+        this.dispose()
         return this.socket.close(...args)
     }
 }

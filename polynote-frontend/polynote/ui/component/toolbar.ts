@@ -10,7 +10,7 @@ import {
 } from "../../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
 import {ServerStateHandler} from "../../state/server_state";
-import {Observer, StateView} from "../../state/state_handler";
+import {Disposable, Observer, StateView} from "../../state/state_handler";
 import {CellState, NotebookState, NotebookStateHandler} from "../../state/notebook_state";
 import {FakeSelect} from "../display/fake_select";
 import {LaTeXEditor} from "../input/latex_editor";
@@ -20,9 +20,10 @@ import {ClientInterpreters} from "../../interpreter/client_interpreter";
  * The Toolbar. Its contents change depending on the current cell selected, and buttons are disabled when there is
  * no connection.
  */
-export class Toolbar {
+export class Toolbar extends Disposable {
     readonly el: TagElement<"div">;
     constructor(dispatcher: ServerMessageDispatcher) {
+        super()
 
         const connectionStatus = ServerStateHandler.get.view("connectionStatus");
 
@@ -55,7 +56,7 @@ export class Toolbar {
                                 this.el.classList.add('editing-code');
                             }
                         }
-                    });
+                    }, this);
                     if (currentNotebookHandler) {
                         if (cellSelectionListener !== undefined) currentNotebookHandler.removeObserver(cellSelectionListener);
                         cellSelectionListener = newListener;
@@ -78,7 +79,7 @@ export class Toolbar {
             }
         }
         updateToolbar(ServerStateHandler.state.currentNotebook)
-        ServerStateHandler.get.view("currentNotebook").addObserver(path => updateToolbar(path))
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => updateToolbar(path), this)
     }
 }
 
@@ -87,10 +88,12 @@ interface FancyButtonConfig {
     elems: TagElement<any>[]
 }
 
-abstract class ToolbarElement {
+abstract class ToolbarElement extends Disposable {
     el: TagElement<"div">;
 
     protected constructor(connectionStatus: StateView<"disconnected" | "connected">, disableOnDisconnect: boolean = true) {
+        super()
+
         if (disableOnDisconnect ) {
             connectionStatus.addObserver((currentStatus, previousStatus) => {
                 if (currentStatus === "disconnected" && previousStatus === "connected") {
@@ -98,7 +101,7 @@ abstract class ToolbarElement {
                 } else if (currentStatus === "connected" && previousStatus === "disconnected") {
                     this.el.classList.remove("disabled")
                 }
-            })
+            }, this)
         }
     }
 
@@ -177,6 +180,7 @@ class NotebookToolbar extends ToolbarElement {
 class CellToolbar extends ToolbarElement {
     private nbHandler?: NotebookStateHandler;
     private activeCellHandler?: StateView<number|undefined>;
+    private enabled = new Disposable()
     private langSelector: FakeSelect;
     private disabledLangSelector: FakeSelect;
     constructor(connectionStatus: StateView<"disconnected" | "connected">) {
@@ -226,7 +230,7 @@ class CellToolbar extends ToolbarElement {
             }
         }
         updateSelectorLanguages(ServerStateHandler.state.interpreters)
-        ServerStateHandler.get.view("interpreters").addObserver(langs => updateSelectorLanguages(langs))
+        ServerStateHandler.get.view("interpreters").addObserver(langs => updateSelectorLanguages(langs), this)
 
         this.langSelector.addListener(change => {
             const id = this.activeCellHandler?.state;
@@ -237,6 +241,7 @@ class CellToolbar extends ToolbarElement {
     }
 
     enable(currentNotebookHandler: NotebookStateHandler) {
+        this.enabled = new Disposable()
         this.nbHandler = currentNotebookHandler;
         this.activeCellHandler = currentNotebookHandler.view("activeCellId");
         this.activeCellHandler.addObserver(cellId => {
@@ -256,14 +261,13 @@ class CellToolbar extends ToolbarElement {
                     this.langSelector.setState(cell.language)
                 }
             }
-        })
+        }, this.enabled)
         this.setDisabled(false);
     }
 
     disable() {
         this.nbHandler = undefined;
-        this.activeCellHandler?.clearObservers()
-        this.activeCellHandler?.dispose()
+        this.enabled.dispose();
         this.activeCellHandler = undefined;
         this.setDisabled(true);
     }

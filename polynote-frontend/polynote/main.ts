@@ -42,11 +42,11 @@ class Main {
             } else {
                 window.removeEventListener("focus", reconnectOnWindowFocus)
             }
-        })
+        }, this.receiver)
 
         const nbList = new NotebookList(dispatcher)
         const leftPane = { header: nbList.header, el: nbList.el };
-        const home = new Home(dispatcher)
+        const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;
         const kernelPane = new KernelPane(dispatcher)
@@ -60,7 +60,7 @@ class Main {
 
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             Main.handlePath(path)
-        })
+        }, this.receiver)
 
         const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.state.map(path => {

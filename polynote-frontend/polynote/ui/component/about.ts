@@ -10,7 +10,7 @@ import {
     RecentNotebooksHandler,
     UserPreferencesHandler, ViewPrefsHandler
 } from "../../state/preferences";
-import {Disposable, Observer, StateView} from "../../state/state_handler";
+import {Disposable, IDisposable, Observer, StateView} from "../../state/state_handler";
 import {
     RequestRunningKernels,
     ServerMessageDispatcher,
@@ -18,9 +18,8 @@ import {
 import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
 
-export class About extends FullScreenModal {
-    readonly observers: [StateView<any>, [Observer<any>, string]][] = []
-    private cleanup: (()=> void)[] = []
+export class About extends FullScreenModal implements IDisposable {
+    private disposable: Disposable;
     private constructor(private serverMessageDispatcher: ServerMessageDispatcher) {
         super(
             div([], []),
@@ -168,10 +167,9 @@ export class About extends FullScreenModal {
             };
             setValueEl(handler.state);
 
-            const obs = handler.addObserver(next => {
+            handler.addObserver(next => {
                 setValueEl(next)
-            })
-            this.observers.push([handler, obs])
+            }, this)
 
             const clearEl = iconButton(["clear"], `Clear ${handler.key}`, "trash-alt", "Clear")
                 .click(() => handler.clear())
@@ -225,10 +223,9 @@ export class About extends FullScreenModal {
                 setValueEl(handler.state);
             }, 0)
 
-            const obs = handler.addObserver(next => {
+            handler.addObserver(next => {
                 setValueEl(next)
-            })
-            this.observers.push([handler, obs])
+            }, this)
 
             stateTable.addRow({
                 key,
@@ -288,12 +285,11 @@ export class About extends FullScreenModal {
 
                 const rowEl = tableEl.addRow({ path, status: statusEl, actions });
                 rowEl.classList.add('kernel-status', status)
-                const obs = info.handler.addObserver((state, prev) => {
+                info.handler.addObserver((state, prev) => {
                     const status = state.kernel.status;
                     rowEl.classList.replace(prev.kernel.status, status)
                     statusEl.innerText = status;
-                })
-                this.observers.push([info.handler, obs])
+                }, this)
 
                 // load the notebook if it hasn't been already
                 if (!info.loaded) {
@@ -303,7 +299,7 @@ export class About extends FullScreenModal {
                         rowEl.classList.remove("loading");
                     })
 
-                    this.cleanup.push(() => {
+                    this.onDispose.then(() => {
                         if (ServerStateHandler.state.currentNotebook !== path) {
                             ServerStateHandler.closeNotebook(path)
                         }
@@ -317,9 +313,7 @@ export class About extends FullScreenModal {
         }
         this.serverMessageDispatcher.dispatch(new RequestRunningKernels())
         onNotebookUpdate()
-        const nbs = ServerStateHandler.get.view("notebooks")
-        const watcher = nbs.addObserver(() => onNotebookUpdate())
-        this.observers.push([nbs, watcher])
+        ServerStateHandler.view("notebooks").addObserver(() => onNotebookUpdate(), this)
 
         return el;
     }
@@ -394,6 +388,7 @@ export class About extends FullScreenModal {
 
 
     show(section?: string) {
+        this.disposable = new Disposable();
         const tabs = {
             'About': this.aboutMain.bind(this),
             'Hotkeys': this.hotkeys.bind(this),
@@ -410,13 +405,21 @@ export class About extends FullScreenModal {
     }
 
     hide() {
-        while(this.observers.length > 0) {
-            const item = this.observers.pop()!;
-            const handler = item[0];
-            const obs = item[1];
-            handler.removeObserver(obs)
-        }
-        this.cleanup.forEach(f => f())
+        this.dispose()
         super.hide()
+    }
+
+
+    // implement IDisposable
+    dispose() {
+        return this.disposable.dispose()
+    }
+
+    get onDispose() {
+        return this.disposable.onDispose
+    }
+
+    get isDisposed() {
+        return this.disposable.isDisposed
     }
 }

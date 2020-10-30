@@ -1,7 +1,7 @@
 'use strict';
 
 import {loadIcon} from "./icons";
-import {StateHandler} from "../state/state_handler";
+import {IDisposable, StateHandler} from "../state/state_handler";
 
 type ContentElement = (Node | {el: Node} | string | undefined)
 export type Content = ContentElement | ContentElement[];
@@ -123,8 +123,8 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
 }
 
 export interface BindableTag<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> {
-    bind(state: StateHandler<ValueType>): BindableTagElement<ValueType, K, T>
-    bindPartial(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T>
+    bind(state: StateHandler<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+    bindPartial(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
 }
 
 export type BindableTagElement<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> =
@@ -137,17 +137,19 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
         eventType: string = 'change'
     ): E & BindableTagElement<ValueType, K, T> {
     const result: E & BindableTagElement<ValueType, K, T> = Object.assign(self, {
-        bind(state: StateHandler<ValueType>): BindableTagElement<ValueType, K, T> {
+        bind(state: StateHandler<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
-            const observer = state.addObserver((newValue: ValueType, oldValue: ValueType) => update(self, newValue));
+            const observer = state.addObserver((newValue: ValueType, oldValue: ValueType) => update(self, newValue), disposeWhen ?? state);
             const listener = (evt: Event) => state.updateState(currentState => getValue(self));
             self.addEventListener(eventType, listener);
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));
             return result;
         },
-        bindPartial(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T> {
+        bindPartial(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
-            const observer = state.addObserver((newValue: ValueType | null | undefined, oldValue: ValueType | null | undefined) => update(self, newValue ?? defaultValue));
+            const observer = state.addObserver(
+                (newValue: ValueType | null | undefined, oldValue: ValueType | null | undefined) => update(self, newValue ?? defaultValue),
+                disposeWhen ?? state);
             const listener = (evt: Event) => state.updateState(currentState => { const v = getValue(self); return v === defaultValue ? defaultState : v });
             self.addEventListener(eventType, listener);
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));

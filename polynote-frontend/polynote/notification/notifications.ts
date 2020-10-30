@@ -1,7 +1,8 @@
 import {UserPreferences, UserPreferencesHandler} from "../state/preferences";
 import {FaviconHandler} from "./favicon_handler";
+import {Disposable} from "../state/state_handler";
 
-export class NotificationHandler {
+export class NotificationHandler extends Disposable {
     private static inst: NotificationHandler;
     static get get() {
         if (!NotificationHandler.inst) {
@@ -12,6 +13,7 @@ export class NotificationHandler {
 
     private enabled: boolean = false;
     private constructor() {
+        super()
         const handlePref = (pref: typeof UserPreferences["notifications"]) => {
             if (pref.value) {
                 Notification.requestPermission().then((result) => {
@@ -21,7 +23,7 @@ export class NotificationHandler {
             this.enabled = pref.value;
         }
         handlePref(UserPreferencesHandler.state.notifications)
-        UserPreferencesHandler.view("notifications").addObserver(pref => handlePref(pref))
+        UserPreferencesHandler.view("notifications").addObserver(pref => handlePref(pref), this)
     }
 
     /**
