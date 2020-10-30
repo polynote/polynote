@@ -1,8 +1,7 @@
-import {CreateComment, DeleteComment, NotebookMessageDispatcher, UpdateComment} from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {CellComment} from "../../../data/data";
 import {PosRange} from "../../../data/result";
-import {diffArray} from "../../../util/helpers";
+import {deepEquals, diffArray, mapValues, removeKeys} from "../../../util/helpers";
 import {button, div, img, span, tag, TagElement, textarea} from "../../tags";
 import * as monaco from "monaco-editor";
 import {editor} from "monaco-editor";
@@ -33,15 +32,25 @@ export class CommentHandler extends Disposable {
     readonly rootRanges: Record<string, string> = {};
     private commentButton?: CommentButton;
 
-    constructor(dispatcher: NotebookMessageDispatcher,
-                commentsState: StateView<Record<string, CellComment>>,
+    constructor(allCommentsState: StateHandler<Record<string, CellComment>>,
                 currentSelection: StateView<PosRange | undefined>,
-                editor: editor.ICodeEditor,
-                cellId: number) {
+                editor: editor.ICodeEditor) {
        super()
 
        const handleComments = (currentComments: Record<string, CellComment>, oldComments: Record<string, CellComment> = {}) => {
+           // console.log("comments changed:", currentComments, oldComments)
            const [removed, added] = diffArray(Object.keys(oldComments), Object.keys(currentComments));
+
+           // first pass to update range of existing roots:
+           Object.keys(this.commentRoots).forEach(rootId => {
+               const rootRange = Object.entries(this.rootRanges).find(([k, v]) => v === rootId)?.[0]
+               const rangeForId = currentComments[rootId].range.rangeStr;
+
+               // check if we need to update this range
+               if (rootRange !== undefined && rootRange !== rangeForId) {
+                   this.rootRanges[rangeForId] = rootId
+               }
+           })
 
            // For added and removed comments, we only need to update the comment roots here.
            // Child comments are handled by their roots.
@@ -51,17 +60,18 @@ export class CommentHandler extends Disposable {
                if (maybeRootId === undefined) {
                    // this is a fresh new root
                    this.commentRoots[newComment.uuid] =
-                       new CommentRoot(dispatcher, new StateHandler(newComment, commentsState), new StateHandler([], commentsState), currentSelection, editor, cellId);
+                       new CommentRoot(newComment.uuid, allCommentsState, currentSelection, editor);
                    this.rootRanges[newComment.range.rangeStr] = newComment.uuid;
                } else { // there is already a root at this location, but it might need to be replaced by this one
                    const maybeRoot = this.commentRoots[maybeRootId];
-                   if (maybeRoot.rootState.state.createdAt > newComment.createdAt) {
+                   if (maybeRoot.createdAt > newComment.createdAt) {
                        // this comment is older than the current root at this position, we need to remove the root and set this one in its place.
                        delete this.commentRoots[maybeRoot.uuid]
                        delete this.rootRanges[maybeRoot.range.rangeStr]
+                       maybeRoot.dispose()
 
                        this.commentRoots[newComment.uuid] =
-                           new CommentRoot(dispatcher, new StateHandler(newComment, commentsState), new StateHandler([], commentsState), currentSelection, editor, cellId);
+                           new CommentRoot(newComment.uuid, allCommentsState, currentSelection, editor);
                        this.rootRanges[newComment.range.rangeStr] = newComment.uuid;
                    } // else, the comment is a child and will be handled later.
                }
@@ -71,7 +81,11 @@ export class CommentHandler extends Disposable {
                const removedComment = oldComments[commentId];
                const maybeRoot = this.commentRoots[removedComment.uuid];
                if (maybeRoot && maybeRoot.uuid === commentId) {
-                   // If this is a root comment, we delete it (it will handle deleting all it's children)
+                   // If this is a root comment, we delete it and it's children
+                   // First, the children
+                   Object.keys(maybeRoot.rootChildren(currentComments)).forEach(commentId => allCommentsState.update(comments => removeKeys(comments, commentId)))
+
+                   // then the root itself.
                    maybeRoot.dispose();
                    delete this.commentRoots[removedComment.uuid];
                    delete this.rootRanges[removedComment.range.rangeStr];
@@ -82,36 +96,14 @@ export class CommentHandler extends Disposable {
            Object.values(this.commentRoots).forEach(root => {
                const maybeChanged = currentComments[root.uuid];
                if (root.range.rangeStr !== maybeChanged.range.rangeStr) {
+                   console.log("Moved comment root", root.uuid, "from", root.range.rangeStr, "to", maybeChanged.range.rangeStr)
                    delete this.rootRanges[root.range.rangeStr];
                    this.rootRanges[maybeChanged.range.rangeStr] = root.uuid
                }
            })
-
-           // ok, now we update all the root comments and their children
-           const rootChildren: Record<string, CellComment[]> = {}; // root uuid -> comment
-           Object.values(currentComments).forEach(comment => {
-               // at this point, we should have a root for this comment's range.
-               const maybeRootId = this.rootRanges[comment.range.rangeStr];
-               const maybeRoot = this.commentRoots[maybeRootId];
-               if (maybeRootId && maybeRoot) {
-                   if (comment.uuid === maybeRoot.uuid) {
-                       // if this is a root comment, we update its state
-                       maybeRoot.rootState.update(() => comment);
-                   } else {
-                       // Otherwise, it's a child comment, so we add it to rootChildren.
-                       rootChildren[maybeRoot.uuid] = [...rootChildren[maybeRoot.uuid] ?? [], comment];
-                   }
-               } // else, this comment's root was either deleted or its range was updated. Either way, the root will handle dealing with it so we can ignore it for now.
-           });
-
-           // Finally, we update all the root children
-           Object.values(this.commentRoots).forEach(root => {
-               const children = rootChildren[root.uuid] ?? [];
-               root.childrenState.update(() => children)
-           })
        }
-       handleComments(commentsState.state)
-       commentsState.addObserver((current, old) => handleComments(current, old), this);
+       handleComments(allCommentsState.state)
+       allCommentsState.addObserver((current, old) => handleComments(current, old), this);
 
        const handleSelection = (currentSelection?: PosRange) => {
            const model = editor.getModel();
@@ -122,7 +114,7 @@ export class CommentHandler extends Disposable {
                if (maybeEquals === undefined) {
                    // show the new comment button
                    if (this.commentButton) this.commentButton.hide();
-                   this.commentButton = new CommentButton(dispatcher, editor, currentSelection, cellId);
+                   this.commentButton = new CommentButton(allCommentsState, editor, currentSelection);
                    this.commentButton.show();
                    return
                } // else the CommentRoot will handle showing itself.
@@ -137,13 +129,18 @@ export class CommentHandler extends Disposable {
        currentSelection.addObserver(s => handleSelection(s), this);
     }
 
-    activeComment(): CommentRoot | undefined {
-        return Object.values(this.commentRoots).find(root => root.visible)
+    activeComment(): boolean {
+        return Object.values(this.commentRoots).some(root => root.visible) || (this.commentButton?.clicked ?? false)
     }
 
     hide() {
         Object.values(this.commentRoots).forEach(root => root.hide())
         this.commentButton?.hide()
+    }
+
+    // Cause comments to recompute
+    triggerCommentUpdate() {
+        Object.values(this.commentRoots).forEach(root => root.triggerCommentUpdate())
     }
 }
 
@@ -198,100 +195,132 @@ abstract class MonacoRightGutterOverlay extends Disposable {
 class CommentRoot extends MonacoRightGutterOverlay {
     readonly el: TagElement<"div">;
     private highlights: string[] = [];
+    private children: Record<string, Comment> = {};
+    private rootState: StateHandler<CellComment>;
+    private rootComment: Comment;
 
-    constructor(readonly dispatcher: NotebookMessageDispatcher,
-                readonly rootState: StateHandler<CellComment>,
-                readonly childrenState: StateHandler<CellComment[]>,
+    constructor(readonly uuid: string,
+                readonly allCommentsState: StateHandler<Record<string, CellComment>>,
                 readonly currentSelection: StateView<PosRange | undefined>,
-                editor: editor.ICodeEditor,
-                private cellId: number) {
+                editor: editor.ICodeEditor) {
         super(editor);
+
+        this.rootState = allCommentsState.lens(uuid)
+
+        this.rootState.onDispose.then(() => {
+            if (! this.isDisposed) this.dispose()
+        })
+
         this.handleSelection();
         currentSelection.addObserver(() => this.handleSelection(), this);
 
         this.el.classList.add('comment-container');
 
-        let root = new Comment(dispatcher, cellId, rootState.state);
-        const commentList = div(['comments-list'], [root.el]);
+        this.rootComment = new Comment(uuid, allCommentsState);
+        const commentList = div(['comments-list'], [this.rootComment.el]);
         this.el.appendChild(commentList);
-        rootState.addObserver((currentRoot, previousRoot) => {
-            console.log(currentRoot.uuid, "updating to new root!")
-            const newRoot = new Comment(dispatcher, cellId, currentRoot);
-            root.el.replaceWith(newRoot.el);
-            root = newRoot;
-
-            if (currentRoot.range.rangeStr !== previousRoot.range.rangeStr) {
-                this.handleSelection()  // TODO: sometimes this is too slow :(
-                this.childrenState.state.forEach(child => {
-                    dispatcher.dispatch(new UpdateComment(cellId, child.uuid, currentRoot.range, child.content))
-                })
+        this.rootState.addObserver((currentRoot, previousRoot) => {
+            if (currentRoot.uuid !== previousRoot.uuid) {
+                // console.log(currentRoot.uuid, "updating to new root!", currentRoot, previousRoot)
+                const newRoot = new Comment(currentRoot.uuid, allCommentsState);
+                this.rootComment.el.replaceWith(newRoot.el);
+                this.rootComment.commentState.dispose();
+                this.rootComment = newRoot;
             }
         }, this);
 
-        const newComment = new NewComment(dispatcher, () => this.range, cellId);
+        const newComment = new NewComment(allCommentsState, () => this.range);
 
-        const handleNewChildren = (newChildren: CellComment[]) => {
-            // replace all the children. if this causes perf issues, we will need to do something more granular.
-            commentList.innerHTML = "";
-            commentList.appendChild(root.el);
-            newChildren
-                .slice() // `newChildren` is frozen since it's coming from a state change
-                // descending sort by creation time. Since createdAt is a bigInt, we can't just subtract the numbers, apparently.
-                .sort((a, b) =>
-                    a.createdAt === b.createdAt
-                        ? 0
-                        : a.createdAt > b.createdAt
+        const handledChangedComments = (maybeChildren: Record<string, CellComment>, prevChildren?: Record<string, CellComment>) => {
+            const children = this.rootChildren(maybeChildren)
+
+            // check if any child has changed
+            if (prevChildren === undefined || children.some(child => !deepEquals(child, prevChildren[child.uuid]) || Object.values(maybeChildren).length !== Object.values(prevChildren).length)) {
+                // replace all the children. if this causes perf issues, we will need to do something more granular.
+                commentList.innerHTML = "";
+                commentList.appendChild(this.rootComment.el);
+                // console.log(this, "got changed children", children)
+                children
+                    .slice() // `maybeChildren` is frozen since it's coming from a state change
+                    // descending sort by creation time. Since createdAt is a bigInt, we can't just subtract the numbers, apparently.
+                    .sort((a, b) =>
+                        a.createdAt === b.createdAt
+                            ? 0
+                            : a.createdAt > b.createdAt
                             ? 1
                             : -1
-                )
-                .forEach(comment => {
-                    commentList.appendChild(new Comment(dispatcher, cellId, comment).el);
-                });
-            commentList.appendChild(newComment.el);
+                    )
+                    .forEach(comment => {
+                        const maybeChild = this.children[comment.uuid]
+                        if (maybeChild) {
+                            commentList.appendChild(maybeChild.el)
+                        } else {
+                            const newChild = new Comment(comment.uuid, allCommentsState)
+                            commentList.appendChild(newChild.el)
+                            this.children[comment.uuid] = newChild
+                        }
+                    });
+                commentList.appendChild(newComment.el);
+            }
         }
 
-        handleNewChildren(childrenState.state)
-        childrenState.addObserver(c => handleNewChildren(c), this);
+        handledChangedComments(this.allCommentsState.state)
+        this.allCommentsState.addObserver((curr, prev) => handledChangedComments(curr, prev), this)
 
-        const modelChangeListener = editor.onDidChangeModelContent(() => {
-            const model = this.editor.getModel();
-            if (model) {
-                const modelDecorations = model.getAllDecorations();
-                const maybeDecoration = modelDecorations.find(d => this.highlights.includes(d.id));
-                if (maybeDecoration && !maybeDecoration.range.isEmpty()) {
-                    const startPos = model.getPositionAt(this.range.start);
-                    const endPos = model.getPositionAt(this.range.end);
-                    const mRange = monaco.Range.fromPositions(startPos, endPos);
-                    if (!monaco.Range.equalsRange(maybeDecoration.range, mRange)) {
-                        // we have a highlight with the same ID, but a different range. This means there is some drift.
-                        const newRange = new PosRange(model.getOffsetAt(maybeDecoration.range.getStartPosition()), model.getOffsetAt(maybeDecoration.range.getEndPosition()));
-                        dispatcher.dispatch(new UpdateComment(cellId, rootState.state.uuid, newRange, rootState.state.content));
-                    }
-                } else {
-                    // decoration wasn't found or was empty, so we need to delete it.
-                    dispatcher.dispatch(new DeleteComment(cellId, rootState.state.uuid));
-                    this.highlights = [];
+        if (this.visible) {
+            newComment.text.focus()
+        }
 
-                    // if the range was empty, remove it.
-                    if (maybeDecoration) model.deltaDecorations([maybeDecoration.id], [])
-                }
-            }
-        })
         this.onDispose.then(() => {
-            // we need to delete all children when the root is deleted.
-            this.childrenState.state.forEach(comment => this.dispatcher.dispatch(new DeleteComment(this.cellId, comment.uuid)))
             this.hide()
             this.editor.deltaDecorations(this.highlights, []) // clear highlights
-            modelChangeListener.dispose()
         })
     }
 
-    get uuid() {
-        return this.rootState.state.uuid;
+    rootChildren(allComments = this.allCommentsState.state) {
+        return Object.values(allComments).filter(comment => comment.uuid !== this.uuid && comment.range.rangeStr === this.range.rangeStr)
     }
 
     get range() {
         return this.rootState.state.range;
+    }
+
+    get createdAt() {
+        return this.rootState.state.createdAt;
+    }
+
+    triggerCommentUpdate() {
+        // console.log("Triggered root update for", this.uuid)
+        const model = this.editor.getModel();
+        if (model) {
+            const modelDecorations = model.getAllDecorations();
+            const maybeDecoration = modelDecorations.find(d => this.highlights.includes(d.id));
+            if (maybeDecoration && !maybeDecoration.range.isEmpty()) {
+                const startPos = model.getPositionAt(this.range.start);
+                const endPos = model.getPositionAt(this.range.end);
+                const mRange = monaco.Range.fromPositions(startPos, endPos);
+                if (!monaco.Range.equalsRange(maybeDecoration.range, mRange)) {
+                    // we have a highlight with the same ID, but a different range. This means there is some drift.
+                    const newRange = new PosRange(model.getOffsetAt(maybeDecoration.range.getStartPosition()), model.getOffsetAt(maybeDecoration.range.getEndPosition()));
+                    // update all comments that share a range with this root
+                    this.allCommentsState.update(comments => {
+                        Object.values(comments).filter(c => c.range.rangeStr === this.range.rangeStr)
+                        return mapValues(comments, comment => {
+                            if (comment.range.rangeStr === this.range.rangeStr) {
+                                return {...comment, range: newRange}
+                            } else return comment
+                        })
+                    })
+                }
+            } else {
+                // decoration wasn't found or was empty, so we need to delete it.
+                this.rootComment.delete()
+                this.highlights = [];
+
+                // if the range was empty, remove it.
+                if (maybeDecoration) model.deltaDecorations([maybeDecoration.id], [])
+            }
+        }
     }
 
     handleSelection() {
@@ -299,7 +328,9 @@ class CommentRoot extends MonacoRightGutterOverlay {
         if (model) {
             const mRange = this.range.toMRange(model);
             const currentPosition = this.editor.getPosition();
-            const selected = this.editor.hasTextFocus() && currentPosition && mRange.containsPosition(currentPosition);
+            const selected = currentPosition
+                && mRange.containsPosition(currentPosition)
+                && this.currentSelection.state?.toMRange(model).containsPosition(currentPosition);
             let highlightClass = "comment-highlight";
             if (selected) {
                 highlightClass = "comment-highlight-strong";
@@ -331,18 +362,26 @@ class CommentRoot extends MonacoRightGutterOverlay {
 }
 
 class CommentButton extends MonacoRightGutterOverlay{
-    constructor(readonly dispatcher: NotebookMessageDispatcher, editor: editor.ICodeEditor, readonly range: PosRange, readonly cellId: number) {
+    clicked: boolean = false;
+    constructor(readonly commentsState: StateHandler<Record<string, CellComment>>, editor: editor.ICodeEditor, readonly range: PosRange) {
         super(editor);
 
         const button = div(['new-comment-button'], []).mousedown(evt => {
             evt.stopPropagation();
             evt.preventDefault();
 
-            const newComment = new NewComment(dispatcher, () => range, cellId)
+            this.clicked = true;
+
+            const newComment = new NewComment(commentsState, () => range)
             newComment.display(this)
                 .then(() => this.hide())
         });
         this.el.appendChild(button);
+    }
+
+    hide() {
+        this.clicked = false;
+        super.hide();
     }
 }
 
@@ -350,23 +389,24 @@ class NewComment extends Disposable {
     readonly el: TagElement<"div">;
     private currentIdentity: Identity;
     onCreate?: () => void;
+    text: TagElement<"textarea">;
 
-    constructor(readonly dispatcher: NotebookMessageDispatcher,
-                readonly range: () => PosRange,
-                readonly cellId: number) {
+    constructor(readonly commentsState: StateHandler<Record<string, CellComment>>,
+                readonly range: () => PosRange) {
 
         super()
         this.currentIdentity = ServerStateHandler.state.identity;
 
         const doCreate = () => {
-            this.dispatcher.dispatch(new CreateComment(cellId, createCellComment({
+            const comment = createCellComment({
                 range: range(),
                 author: this.currentIdentity.name,
                 authorAvatarUrl: this.currentIdentity?.avatar ?? undefined,
                 createdAt: Date.now(),
-                content: text.value
-            })));
-            text.value = ""
+                content: this.text.value
+            })
+            this.commentsState.update(comments => ({...comments, [comment.uuid]: comment}))
+            this.text.value = ""
             if (this.onCreate) this.onCreate()
         };
 
@@ -378,7 +418,7 @@ class NewComment extends Disposable {
             }),
             button(['cancel'], {}, ['Cancel']).mousedown(() => controls.classList.add("hide"))
         ])
-        const text = textarea(['comment-text'], '', '')
+        this.text = textarea(['comment-text'], '', '')
             .listener('keydown', (evt: KeyboardEvent) => {
                 if (this.currentIdentity.name && evt.shiftKey && evt.key === "Enter") {
                     doCreate();
@@ -397,19 +437,19 @@ class NewComment extends Disposable {
                     span(['author'], [this.currentIdentity.name]),
                 ]),
                 div(['comment-content'], [
-                    text,
+                    this.text,
                     controls
                 ])
             ])
         ])
 
-        ServerStateHandler.view("connectionStatus", this).addObserver((currentStatus, previousStatus) => {
+        ServerStateHandler.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
             if (currentStatus === "disconnected" && previousStatus === "connected") {
                 this.el.classList.add("hide")
             } else if (currentStatus === "connected" && previousStatus === "disconnected") {
                 this.el.classList.remove("hide")
             }
-        })
+        }, this)
     }
 
     // display using the provided overlay
@@ -417,23 +457,38 @@ class NewComment extends Disposable {
         overlay.el.innerHTML = "";
         overlay.el.appendChild(this.el);
         overlay.el.classList.add("comment-container");
+        this.text.focus()
         return new Promise(resolve => {
             this.onCreate = resolve
         })
     }
 }
 
-class Comment {
+class Comment extends Disposable {
     readonly el: TagElement<"div">;
     private currentIdentity: Identity;
+    private editing: boolean = false;
+    commentState: StateHandler<CellComment>;
 
-    constructor(readonly dispatcher: NotebookMessageDispatcher,
-                readonly cellId: number,
-                readonly comment: CellComment) {
+    constructor(readonly uuid: string,
+                readonly allCommentsState: StateHandler<Record<string, CellComment>>) {
+
+        super();
 
         this.currentIdentity = ServerStateHandler.state.identity;
 
-        this.el = this.commentElement(comment);
+        this.commentState = allCommentsState.lens(uuid)
+
+        this.commentState.onDispose.then(() => {
+            if (! this.isDisposed) this.dispose()
+        })
+
+        this.el = this.commentElement(this.commentState.state);
+        this.commentState.addObserver((curr, prev) => {
+            if (!this.editing && !deepEquals(curr, prev, ["range"])) {
+                this.setComment(curr)
+            }
+        }, this)
     }
 
     private commentElement(comment: CellComment) {
@@ -472,12 +527,14 @@ class Comment {
 
     setEditable(b: boolean) {
         if (b) {
+            this.editing = true;
             const doEdit = (content: string) => {
-                this.dispatcher.dispatch(new UpdateComment(this.cellId, this.comment.uuid, this.comment.range, content));
+                this.commentState.update1("content", () => content)
+                this.setEditable(false)
             };
 
             this.el.innerHTML = "";
-            const text = textarea(['comment-text'], '', this.comment.content).listener('keydown', (evt: KeyboardEvent) => {
+            const text = textarea(['comment-text'], '', this.commentState.state.content).listener('keydown', (evt: KeyboardEvent) => {
                 if (this.currentIdentity?.name && evt.shiftKey && evt.key === "Enter") {
                     doEdit(text.value);
                     evt.stopPropagation();
@@ -500,12 +557,17 @@ class Comment {
                 ])
             )
         } else {
-            this.el.innerHTML = "";
-            this.el.appendChild(this.commentElement(this.comment))
+            this.editing = false;
+            this.setComment(this.commentState.state)
         }
     }
 
-    private delete() {
-        this.dispatcher.dispatch(new DeleteComment(this.cellId, this.comment.uuid))
+    setComment(comment: CellComment) {
+        this.el.innerHTML = "";
+        this.el.appendChild(this.commentElement(comment))
+    }
+
+    delete() {
+        this.allCommentsState.update(comments => removeKeys(comments, this.commentState.state.uuid))
     }
 }

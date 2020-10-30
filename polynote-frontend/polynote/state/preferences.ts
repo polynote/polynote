@@ -1,5 +1,5 @@
 import {storage} from "./storage";
-import {StateHandler} from "./state_handler";
+import {StateHandler, StateView} from "./state_handler";
 import {deepEquals, diffArray} from "../util/helpers";
 
 export type RecentNotebooks = {name: string, path: string}[];
@@ -18,7 +18,7 @@ export interface ViewPreferences {
 
 export class LocalStorageHandler<T> extends StateHandler<T> {
     constructor(readonly key: string, private initial: T) {
-        super(initial);
+        super(new StateView(initial));
 
         // watch storage to detect when it was cleared
         const handleStorageChange = (next: T | null | undefined) => {

@@ -1,4 +1,5 @@
 import {
+    arrayStartsWith,
     arrDelete, arrDeleteFirstItem,
     arrInsert,
     arrReplace,
@@ -8,7 +9,7 @@ import {
     equalsByKey,
     isObject, mapSome,
     mapValues, partition,
-    removeKey, unzip
+    removeKeys, unzip
 } from "./helpers";
 import * as messages from "../data/messages";
 import {ServerErrorWithCause} from "../data/result";
@@ -96,9 +97,9 @@ describe("equalsByKey", () => {
 
 describe("removeKey", () => {
     it("removes a key from an object", () => {
-        expect(removeKey({a: 1, b: 2, c: 3}, "a")).toEqual({b: 2, c: 3})
-        expect(removeKey({[1]: 1, b: 2, c: 3}, 1)).toEqual({b: 2, c: 3})
-        expect(removeKey({[1]: 1, b: 2, c: 3}, "b")).toEqual({[1]: 1, c: 3})
+        expect(removeKeys({a: 1, b: 2, c: 3}, "a")).toEqual({b: 2, c: 3})
+        expect(removeKeys({[1]: 1, b: 2, c: 3}, 1)).toEqual({b: 2, c: 3})
+        expect(removeKeys({[1]: 1, b: 2, c: 3}, "b")).toEqual({[1]: 1, c: 3})
     })
 })
 
@@ -169,6 +170,21 @@ describe("partition", () => {
 describe("mapSome", () => {
     it("applies a function to elements of an array that satisfy some predicate", () => {
         expect(mapSome([1, 2, 3, 4, 5, 6], i => i % 2 === 0, i => i * 100)).toEqual([1, 200, 3, 400, 5, 600])
+    })
+})
+
+describe("arrayStartsWith", () => {
+    it("Checks whether an array starts with another array", () => {
+        expect(arrayStartsWith([1, 2, 3, 4], [1])).toBeTruthy()
+        expect(arrayStartsWith([1, 2, 3, 4], [1, 2])).toBeTruthy()
+        expect(arrayStartsWith([1, 2, 3, 4], [1, 2, 3])).toBeTruthy()
+        expect(arrayStartsWith([1, 2, 3, 4], [1, 2, 3, 4])).toBeTruthy()
+        expect(arrayStartsWith([1, 2, 3, 4], [1, 2, 3, 4, 5])).toBeFalsy()
+        expect(arrayStartsWith([1, 2, 3, 4], [0, 1, 2, 3])).toBeFalsy()
+        expect(arrayStartsWith([1, 2, 3, 4], [])).toBeTruthy()
+        expect(arrayStartsWith([], [])).toBeTruthy()
+        expect(arrayStartsWith([1], [])).toBeTruthy()
+        expect(arrayStartsWith([], [1])).toBeFalsy()
     })
 })
 

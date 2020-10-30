@@ -12,7 +12,7 @@ export class ErrorStateHandler extends StateHandler<ErrorState> {
     private static inst: ErrorStateHandler;
     static get get() {
         if (!ErrorStateHandler.inst) {
-            ErrorStateHandler.inst = new ErrorStateHandler({
+            ErrorStateHandler.inst = ErrorStateHandler.from({
                 serverErrors: []
             })
         }

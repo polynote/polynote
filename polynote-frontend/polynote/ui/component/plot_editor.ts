@@ -27,6 +27,7 @@ import {StreamingDataRepr} from "../../data/value_repr";
 import {NotebookStateHandler} from "../../state/notebook_state";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {mapValues, deepEquals} from "../../util/helpers";
+import {Disposable} from "../../state/state_handler";
 
 function isDimension(dataType: DataType): boolean {
     if (dataType instanceof OptionalType) {
@@ -519,14 +520,15 @@ export class PlotEditor {
                     results: [...cell.results, clientResult]
                 }))
                 return new Promise(resolve => {
-                    const obs = this.nbState.addObserver(state => {
+                    const disposable = new Disposable()
+                    this.nbState.addObserver(state => {
                         const maybeHasOutput = state.cells[newCellId]
                         if (maybeHasOutput && maybeHasOutput.output.includes(output)) {
-                            this.nbState.removeObserver(obs);
+                            disposable.dispose()
                             this.dispatcher.dispatch(new HideValueInspector())
                             resolve()
                         }
-                    })
+                    }, disposable)
                 })
             })
         })

@@ -1,7 +1,7 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
-import {StateHandler} from "../../../state/state_handler";
+import {Disposable, StateHandler} from "../../../state/state_handler";
 import {CellMetadata} from "../../../data/data";
 import {diffArray} from "../../../util/helpers";
 import {CellContainer} from "./cell";
@@ -11,11 +11,12 @@ import {PosRange} from "../../../data/result";
 import {NotebookScrollLocationsHandler} from "../../../state/preferences";
 import {ServerStateHandler} from "../../../state/server_state";
 
-export class Notebook {
+export class Notebook extends Disposable {
     readonly el: TagElement<"div">;
     readonly cells: Record<number, {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
+        super()
         const path = notebookState.state.path;
         const config = new NotebookConfigEl(dispatcher, notebookState.lens("config"), notebookState.view("kernel").view("status"));
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
@@ -47,7 +48,7 @@ export class Notebook {
             }
         }
         handleVisibility(ServerStateHandler.state.currentNotebook)
-        ServerStateHandler.view("currentNotebook", notebookState).addObserver((current, previous) => handleVisibility(current, previous))
+        ServerStateHandler.view("currentNotebook").addObserver((current, previous) => handleVisibility(current, previous), notebookState)
 
         const cellsHandler = notebookState.cellsHandler
 
@@ -97,7 +98,7 @@ export class Notebook {
             });
         }
         handleCells(notebookState.state.cellOrder)
-        notebookState.view("cellOrder").addObserver((newOrder, prevOrder) => handleCells(newOrder, prevOrder));
+        notebookState.view("cellOrder").addObserver((newOrder, prevOrder) => handleCells(newOrder, prevOrder), this);
 
         console.debug("initial active cell ", this.notebookState.state.activeCellId)
         this.notebookState.view("activeCellId").addObserver(cell => {
@@ -105,7 +106,7 @@ export class Notebook {
             if (cell === undefined) {
                 VimStatus.get.hide()
             }
-        })
+        }, this)
 
         // select cell + highlight based on the current hash
         const hash = document.location.hash;
@@ -170,7 +171,7 @@ export class Notebook {
                         resolve(cellId)
                     })
                 }
-            })
+            }, this)
         }).then((cellId: number) => {
             // wait for the cell to appear on the page
             return new Promise(resolve => {
@@ -183,10 +184,6 @@ export class Notebook {
                 }, 100)
             })
         })
-    }
-
-    dispose() {
-        this.notebookState.clearObservers();
     }
 }
 

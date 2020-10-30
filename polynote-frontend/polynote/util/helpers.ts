@@ -5,10 +5,10 @@ import * as fastEquals from 'fast-deep-equal/es6';
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
     if (ignoreKeys && a && b) {
         a = ignoreKeys.reduce((acc: T, key: keyof T) => {
-            return removeKey(acc, key)
+            return removeKeys(acc, key)
         }, a)
         b = ignoreKeys.reduce((acc: T, key: keyof T) => {
-            return removeKey(acc, key)
+            return removeKeys(acc, key)
         }, b)
     }
     return fastEquals(a, b)
@@ -79,9 +79,15 @@ export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & key
     })
 }
 
-export function removeKey<T>(obj: T, k: keyof T): T {
+export function removeKeys<T>(obj: T, k: (keyof T)[] | keyof T): T {
+    let keyStrings: string[];
+    if (k instanceof Array) {
+        keyStrings = k.map(key => key.toString())
+    } else {
+        keyStrings = [k.toString()]
+    }
     return Object.keys(obj).reduce((acc: T, key: string) => {
-        if (key !== k.toString()) {
+        if (! keyStrings.includes(key)) {
             return { ...acc, [key]: obj[key as keyof T] }
         }
 
@@ -155,6 +161,18 @@ export function mapSome<T>(arr: T[], cond: (t: T) => boolean, fn: (t: T) => T): 
             return fn(item)
         } else return item
     })
+}
+
+export function arrayStartsWith<T>(base: T[], start: T[]) {
+    if (start.length > base.length) return false;
+
+    for (let i = 0; i < start.length; i++) {
+        if (base[i] !== start[i]) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 //****************

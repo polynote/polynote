@@ -54,19 +54,29 @@ export class ClientBackup {
         return get(path)
             .then((iBackups?: IBackups) => {
                 if (iBackups) {
-                    const backups = Backups.fromI(iBackups);
-                    backups.addUpdate(upd);
-                    return set(path, backups.toI())
-                        .then(() => {
-                            return backups
+                    return ClientBackup.addBackup(iBackups, upd)
+                        .then(backups => {
+                            return set(path, backups.toI())
+                                .then(() => {
+                                    return backups
+                                })
+                                .catch(err => {
+                                    console.error("Error while updating backups", err);
+                                    throw err;
+                                })
                         })
-                        .catch(err => {
-                            console.error("Error while updating backups", err);
-                            throw err;
-                        })
+                } else {
+                    throw new Error(`Unable to find a current backup for notebook at ${path}`)
                 }
-                throw new Error(`Unable to find a current backup for notebook at ${path}`)
             })
+    }
+
+    private static addBackup(iBackups: IBackups, upd: NotebookUpdate): Promise<Backups> {
+        return new Promise(() => {
+            const backups = Backups.fromI(iBackups);
+            backups.addUpdate(upd);
+            return backups
+        })
     }
 
     static clearBackups() {

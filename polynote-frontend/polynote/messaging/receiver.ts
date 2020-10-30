@@ -20,15 +20,17 @@ import {
     ResultValue,
     RuntimeError
 } from "../data/result";
-import {NoUpdate, StateHandler, StateView} from "../state/state_handler";
+import {Disposable, NoUpdate, StateHandler, StateView, StateWrapper} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrDelete, arrInsert, deepEquals, mapValues, removeKey, unzip} from "../util/helpers";
+import {arrDelete, arrInsert, collect, deepEquals, mapValues, removeKeys, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
 
-class MessageReceiver<S> {
-    constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {}
+class MessageReceiver<S> extends Disposable {
+    constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {
+        super()
+    }
 
     receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => S | typeof NoUpdate) {
         this.socket.addMessageListener(msgType, (...args: ConstructorParameters<typeof msgType>) => {
@@ -45,13 +47,17 @@ class MessageReceiver<S> {
 }
 
 // A View whose observers ignore state updates from the server
-export class IgnoreServerUpdatesView<S> extends StateView<S> {
-    constructor(s: S) {
-        super(s);
-    }
-
+export class IgnoreServerUpdatesWrapper<S> extends StateWrapper<S> {
     protected matchSource(updateSource: any, x: any): boolean {
         return ! (updateSource instanceof MessageReceiver)
+    }
+
+    protected compare(s1: any, s2: any): boolean {
+        return deepEquals(s1, s2)
+    }
+
+    view<K extends keyof S>(key: K): StateView<S[K]> {
+        return new IgnoreServerUpdatesWrapper(super.view(key));
     }
 }
 
@@ -87,7 +93,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     }
                 })
             }
-        })
+        }, state)
 
         this.receive(messages.CompletionsAt, (s, cell, offset, completions) => {
             if (s.activeCompletion) {
@@ -157,11 +163,16 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         acc[next.id] = next
                         return acc
                     }, {})
+                    const completedTasks = collect(Object.values({...s.kernel.tasks, ...taskMap}), task => {
+                        if (task.status === TaskStatus.Complete) {
+                            return task.id
+                        } else return undefined
+                    })
                     return {
                         ...s,
                         kernel: {
                             ...s.kernel,
-                            tasks: {...s.kernel.tasks, ...taskMap}
+                            tasks: removeKeys({...s.kernel.tasks, ...taskMap}, completedTasks)
                         }
                     }
                 })
@@ -212,7 +223,8 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
 
                     return {
                         ...s,
-                        activePresence: activePresence
+                        activePresence: activePresence,
+                        cells: mapValues(s.cells, cell => ({ ...cell, presence: cell.presence.filter(p => ! removed.includes(p.id))}))
                     }
                 })
                 .when(messages.PresenceSelection, (id, cellId, range) => {
@@ -320,7 +332,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                             const x = {
                                 ...s,
                                 cells: {
-                                    ...removeKey(s.cells, id),
+                                    ...removeKeys(s.cells, id),
                                     [nextCellId]: {
                                         ...s.cells[nextCellId],
                                         selected: true
@@ -544,7 +556,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                     ...s, connectionStatus: status
                 }
             })
-        });
+        }, this.state);
 
         this.receive(messages.Error, (s, code, err) => {
             ErrorStateHandler.addServerError(err)

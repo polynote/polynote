@@ -20,8 +20,8 @@ import {
     StopDataStream
 } from "./dispatcher";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {Observer, StateHandler, StateView} from "../state/state_handler";
-import {removeKey} from "../util/helpers";
+import {Disposable, Observer, StateHandler, StateView} from "../state/state_handler";
+import {removeKeys} from "../util/helpers";
 
 export const QuartilesType = new StructType([
     new StructField("min", DoubleType),
@@ -35,7 +35,7 @@ export const QuartilesType = new StructType([
 /**
  * An API for streaming data out of a StreamingDataRepr
  */
-export class DataStream {
+export class DataStream extends Disposable {
     readonly mods: TableOp[];
     readonly dataType: StructType;
     private batchSize = 50;
@@ -53,6 +53,7 @@ export class DataStream {
     private observer?: [Observer<NotebookState["activeStreams"]>, string];
 
     constructor(private readonly dispatcher: NotebookMessageDispatcher, private readonly nbState: NotebookStateHandler, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
+        super()
         this.mods = mods ?? [];
         this.repr = originalRepr;
         this.dataType = originalRepr.dataType;
@@ -60,7 +61,6 @@ export class DataStream {
 
         this.activeStreams = nbState.lens("activeStreams")
         this.observer = this.activeStreams.addObserver(handles => {
-            console.log("activeStreams:", handles, this.repr.handle)
             const data = handles[this.repr.handle];
             if (data && data.length > 0) {
                 data.forEach(message => {
@@ -97,9 +97,9 @@ export class DataStream {
                 })
 
                 // clear messages now that they have been processed.
-                this.activeStreams.update(streams => removeKey(streams, this.repr.handle))
+                this.activeStreams.update(streams => removeKeys(streams, this.repr.handle))
             }
-        })
+        }, this)
     }
 
     batch(batchSize: number) {
@@ -136,6 +136,8 @@ export class DataStream {
         if (this.nextPromise) {
             this.nextPromise.reject("Stream was terminated")
         }
+
+        this.dispose()
     }
 
     aggregate(groupCols: string[], aggregations: Record<string, string> | Record<string, string>[]) {
@@ -256,7 +258,7 @@ export class DataStream {
                             }
                         })
                     }
-                })
+                }, this)
             })
         }
 

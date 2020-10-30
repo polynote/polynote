@@ -13,7 +13,7 @@ import {ContentEdit} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
 import {deepEquals, diffArray, equalsByKey, mapValues} from "../util/helpers";
 import * as messages from "../data/messages";
-import {IgnoreServerUpdatesView} from "../messaging/receiver";
+import {IgnoreServerUpdatesWrapper} from "../messaging/receiver";
 
 export interface CellState {
     id: number,
@@ -62,7 +62,7 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
     readonly cellsHandler: StateHandler<Record<number, CellState>>;
     updateHandler: NotebookUpdateHandler;
     constructor(state: NotebookState) {
-        super(state);
+        super(new StateView(state));
 
         this.cellsHandler = this.lens("cells")
         this.updateHandler = new NotebookUpdateHandler(this, -1, -1, new EditBuffer())
@@ -74,12 +74,15 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                     if (! s.selected) {
                         console.log("deselected", cellId)
                         activeCellWatcher.removeObserver(obs)
-                        activeCellWatcher.dispose()
                         this.update1("activeCellId", () => undefined)
                     }
-                })
+                }, this)
             }
-        })
+        }, this)
+    }
+
+    protected compare(s1: any, s2: any): boolean {
+        return deepEquals(s1, s2)
     }
 
     getCellIndex(cellId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
@@ -188,10 +191,9 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                     return newer && matches
                 });
                 if (insertedCellId !== undefined) {
-                    cellOrder.dispose()
                     resolve(insertedCellId)
                 }
-            })
+            }, this)
         })
     }
 
@@ -227,7 +229,7 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                     this.removeObserver(obs)
                     resolve()
                 }
-            })
+            }, this)
         })
     }
 }
@@ -236,22 +238,21 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
 export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
     cellWatchers: Record<number, StateView<CellState>> = {};
     constructor(state: NotebookStateHandler, public globalVersion: number, public localVersion: number, public edits: EditBuffer) {
-        super([])
+        super(new StateView([]))
 
-        state.view("config", IgnoreServerUpdatesView).addObserver((current, prev) => {
+        new IgnoreServerUpdatesWrapper(state.view("config")).addObserver((current, prev) => {
             if (! deepEquals(current.config, prev.config)) {
                 this.updateConfig(current.config)
             }
-        })
+        }, this)
 
         state.view("cellOrder").addObserver((newOrder, prevOrder) => {
             const [removed, added] = diffArray(prevOrder, newOrder)
-            added.forEach(cellId => this.watchCell(cellId, state.cellsHandler.view(cellId, IgnoreServerUpdatesView)) )
+            added.forEach(cellId => this.watchCell(cellId, new IgnoreServerUpdatesWrapper(state.cellsHandler.view(cellId))))
             removed.forEach(cellId => {
-                this.cellWatchers[cellId].dispose()
                 delete this.cellWatchers[cellId]
             })
-        })
+        }, this)
     }
 
     addUpdate(update: NotebookUpdate) {
@@ -279,6 +280,19 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
         this.localVersion++;
         const update = new messages.UpdateCell(this.globalVersion, this.localVersion, id, changed.edits ?? [], changed.metadata)
         this.addUpdate(update)
+    }
+
+    createComment(cellId: number, comment: CellComment): void {
+        this.addUpdate(new messages.CreateComment(this.globalVersion, this.localVersion, cellId, comment));
+    }
+
+    deleteComment(cellId: number, commentId: string): void {
+        console.log("deleting comment", commentId, cellId)
+        this.addUpdate(new messages.DeleteComment(this.globalVersion, this.localVersion, cellId, commentId));
+    }
+
+    updateComment(cellId: number, commentId: string, range: PosRange, content: string): void {
+        this.addUpdate(new messages.UpdateComment(this.globalVersion, this.localVersion, cellId, commentId, range, content));
     }
 
     setCellOutput(cellId: number, output: Output) {
@@ -315,22 +329,36 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
                 console.log("got new output! Gonna send it to the server", id, o, o instanceof Output)
                 this.addUpdate(new messages.SetCellOutput(this.globalVersion, this.localVersion, id, o))
             })
-        })
+        }, this)
 
         handler.view("language").addObserver(lang => {
             this.addUpdate(new messages.SetCellLanguage(this.globalVersion, this.localVersion, id, lang))
-        })
+        }, this)
 
         handler.view("outgoingEdits").addObserver(edits => {
             console.log("got outgoing edits!", edits)
             if (edits.length > 0) {
                 this.updateCell(id, {edits})
             }
-        })
+        }, this)
 
         handler.view("metadata").addObserver(metadata => {
             this.updateCell(id, {metadata})
-        })
+        }, this)
+
+        handler.view("comments").addObserver((current, previous) => {
+            const [removed, added] = diffArray(Object.keys(previous), Object.keys(current));
+
+            added.forEach(commentId => this.createComment(id, current[commentId]))
+            removed.forEach(commentId => this.deleteComment(id, commentId))
+
+            Object.keys(current).filter(k => ! added.includes(k) && ! deepEquals(current[k], previous[k])).forEach(maybeChangedId => {
+                const currentComment = current[maybeChangedId]
+                if (! deepEquals(current[maybeChangedId], previous[maybeChangedId])) {
+                    this.updateComment(id, currentComment.uuid, currentComment.range, currentComment.content)
+                }
+            })
+        }, this)
     }
 
     protected compare(s1: any, s2: any): boolean {

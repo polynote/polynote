@@ -26,7 +26,7 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
         fullPath: "foo/bar/baz",
         value: "baz"
     };
-    const leafState = new StateHandler(leaf);
+    const leafState = StateHandler.from(leaf);
     const comp = new LeafEl(dispatcher, leafState);
     const leafEl  = () => comp.el.querySelector("a.name")!;
     expect(leafEl()).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
@@ -49,7 +49,7 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
 });
 
 describe("BranchComponent", () => {
-    const branchState = new StateHandler<Branch>({
+    const branchState = StateHandler.from<Branch>({
         fullPath: "foo",
         value: "foo",
         children: {}

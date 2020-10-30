@@ -1,10 +1,11 @@
-import {deepEquals, deepFreeze, Deferred, shallowEquals} from "../util/helpers";
+import {arrayStartsWith, deepEquals, deepFreeze, Deferred, shallowEquals} from "../util/helpers";
 
-/**
- * An implementer of Disposable must have a dispose function which disposes the implementer, and a didDispose Promise
- * that resolves when the implementer has been disposed.
- */
-export class Disposable {
+export interface IDisposable {
+    onDispose: Promise<void>,
+    dispose: () => Deferred<void>,
+    isDisposed: boolean
+}
+export class Disposable implements IDisposable {
     private deferred: Deferred<void> = new Deferred()
     onDispose: Promise<void> = this.deferred
 
@@ -25,15 +26,12 @@ export class Disposable {
 
 export const NoUpdate: unique symbol = Symbol()
 
-export class StateView<S> extends Disposable {
+export class StateView<S> {
 
     protected _state: S
 
     // the current value of S
     get state(): S {
-        if (this.isDisposed) {
-            throw new Error("Operations on disposed states are not supported")
-        }
         return this._state
     }
 
@@ -42,97 +40,105 @@ export class StateView<S> extends Disposable {
      *
      * Note: this should be a setter but typescript won't allow a protected setter with a public getter, sigh.
      */
-    protected setState(newState: S, updateSource?: any) {
-        if (this.isDisposed) {
-            throw new Error("Operations on disposed states are not supported")
-        }
+    protected setState(newState: S, updateSource?: any, updatePath: string[] = this.path) {
         if (! this.compare(newState, this._state)) {
             const oldState = this._state;
             const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
             this._state = frozenState;
+            // view Observers are always called (to ensure state is accurately updated)
+            this.viewObservers.forEach(([obs, desc]) => {
+                const x = desc
+                obs(frozenState, oldState, updateSource)
+            });
             if (this.matchSource(updateSource, frozenState)) {
-                this.observers.forEach(([obs, desc]) => {
-                    const x = desc
-                    obs(frozenState, oldState, updateSource)
-                });
+                // update observers IFF the current path is <= the update path. Otherwise, the update should not apply.
+                if (arrayStartsWith(this.path, updatePath)) {
+                    this.observers.forEach(([obs, desc]) => {
+                        const x = desc
+                        obs(frozenState, oldState, updateSource)
+                    });
+                }
             }
         }
     }
 
-    protected handleView<K extends keyof S, V extends StateView<any>>(view: V, key: keyof S, disposeWhen: Disposable | undefined, onStateChange: (view: V, s: S[K], src?: any) => void) {
-        const obs = this.addObserver((s, _, updateSource) => {
-            if (s === undefined) { // if state is undefined it's impossible to have a view into it!
-                view.dispose()
-            } else {
-                if ((s as any).hasOwnProperty(key)) { // if the key was deleted we need to dispose the lens.
-                    const observedVal = s[key] as S[K];
-                    if (! this.compare(observedVal, view.state)) {
-                        onStateChange(view, observedVal, updateSource)
-                    }
-                } else {
-                    view.dispose()
-                }
-            }
-        }, undefined, `handleView of key ${key}`)
-        view.onDispose.then(() => {
-            this.removeObserver(obs)
-        })
-        Promise.race([this.onDispose, ...(disposeWhen === undefined ? [] : [disposeWhen.onDispose])]).then(() => {
-            if (! view.isDisposed) view.dispose()
-        })
-    }
+    private views: Record<keyof any, StateView<S[keyof S]>> = {};
 
     // Create a child 'view' of this state. Changes to this state will propagate to the view.
     // Optionally, caller can provide the constructor to use to instantiate the view StateHandler.
-    view<K extends keyof S, C extends StateView<S[K]>>(key: K, constructor?: { new(s: S[K]): C}, disposeWhen?: Disposable): C {
-        const view: StateView<S[K]> = constructor ? new constructor(this.state[key]) : new StateView(this.state[key]);
-        this.handleView(view, key, disposeWhen, (view, s: S[K], src) => view.setState(s, src))
-        return view as C
+    view<K extends keyof S>(key: K): StateView<S[K]> {
+        const maybeView = this.views[key];
+        if (maybeView) {
+            if (! this.compare(maybeView.state, this.state[key])) {
+                // this can happen when the view is created within a state change
+                // in this case, the view will not yet have been updated, so we force the update now
+                throw new Error("yikes!")
+            }
+            return maybeView as StateView<S[K]>
+        } else {
+            const view: StateView<S[K]> = new StateView(this.state[key], [...this.path, key.toString()]);
+            const viewDispose = new Disposable()
+
+            const obs = this.addObserver((s, _, updateSource) => {
+                if (s === undefined) { // if state is undefined it's impossible to have a view into it!
+                    if (! viewDispose.isDisposed) viewDispose.dispose()
+                } else {
+                    if ((s as any).hasOwnProperty(key)) { // if the key was deleted we need to dispose the lens.
+                        const observedVal = s[key] as S[K];
+                        if (! this.compare(observedVal, view.state)) {
+                            view.setState(observedVal, updateSource, this.path)
+                        }
+                    } else {
+                        if (! viewDispose.isDisposed) viewDispose.dispose()
+                    }
+                }
+            }, viewDispose, `handleView of key ${key}`, 'viewObserver')
+            viewDispose.onDispose.then(() => {
+                console.log("removed view:", view)
+                delete this.views[key]
+                this.removeObserver(obs)
+            })
+
+            this.views[key] = view;
+            return view
+        }
     }
 
     // a child view and a one-way transformation.
-    mapView<K extends keyof S, T>(key: K, toT: (s: S[K]) => T | typeof NoUpdate, tEquals: (t1?: T, t2?: T) => boolean = deepEquals): StateView<T | undefined> {
-        const initialT = toT(this.state[key]);
-        const mapView = new StateView(initialT === NoUpdate ? undefined : initialT);
-        this.handleView(mapView, key, undefined, (mapView, s: S[K], src?: any) => {
-            const t = toT(s)
-            if (t !== NoUpdate && ! tEquals(t, mapView.state)) {
-                mapView.setState(t, src)
-            }
-        })
-        return mapView;
+    mapView<K extends keyof S, T>(key: K, toT: (s: S[K]) => T | typeof NoUpdate, tEquals: (t1?: T, t2?: T) => boolean = deepEquals): MapView<S[K], T> {
+        const view = this.view(key)
+        return new MapView(view, toT, tEquals)
     }
 
-    protected constructor(state: S, disposeWhen?: Disposable) {
-        super()
+    protected constructor(state: S, readonly path: string[] = ["root"]) {
         this.setState(deepFreeze(state))
-        this.onDispose.then(() => {
-            this.clearObservers()
-        })
-        disposeWhen?.onDispose.then(() => {
-            this.dispose()
-        })
     }
 
     // Comparison function to use. Subclasses can provide a different comparison function (e.g., deepEquals) but should
     // be aware of the performance implications.
     protected compare(s1: any, s2: any) {
+        // return deepEquals(s1, s2)
         return shallowEquals(s1, s2)
     }
 
     protected observers: [Observer<S>, string][] = [];
+    protected viewObservers: [Observer<S>, string][] = [];  // view Observers get updated first
 
     /**
      * Add an Observer to this State Handler.
-     * If a Disposable is passed to `disposeWhen`, the Observer will be removed following `disposeWhen`'s disposal.
+     * The Observer will be removed following `disposeWhen`'s disposal.
      *
      * @param disposeWhen
      * @param f
      */
-    addObserver(f: Observer<S>, disposeWhen?: Disposable, description = "obs"): [Observer<S>, string] {
+    addObserver(f: Observer<S>, disposeWhen: IDisposable, description: string = "obs", type: "observer" | "viewObserver" = "observer"): [Observer<S>, string] {
         const obs: [Observer<S>, string] = [f, description]
-        this.observers.push(obs);
-        disposeWhen?.onDispose.then(() => {
+        if (type === "observer") {
+            this.observers.push(obs);
+        } else {
+            this.viewObservers.push(obs)
+        }
+        disposeWhen.onDispose.then(() => {
             this.removeObserver(obs)
         })
         return obs;
@@ -155,35 +161,61 @@ export class StateView<S> extends Disposable {
     }
 }
 
+export class StateWrapper<S> extends StateView<S> implements IDisposable{
+    disposable = new Disposable()
+
+    constructor(view: StateView<S>) {
+        super(view.state, view.path);
+
+        view.addObserver((s, _, src) => {
+            this.setState(s, src, view.path)
+        }, this.disposable, `wrapper observer of ${this.path}`, "viewObserver")
+
+    }
+
+    // implement IDisposable
+    dispose() {
+        return this.disposable.dispose()
+    }
+
+    get onDispose() {
+        return this.disposable.onDispose
+    }
+
+    get isDisposed() {
+        return this.disposable.isDisposed
+    }
+}
+
 /**
  * An updatable StateView.
  */
-export class StateHandler<S> extends StateView<S> {
+export class StateHandler<S> extends StateWrapper<S> {
 
     // handle with which to modify the state, given the old state. All observers get notified of the new state.
-    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any): StateHandler<S> {
+    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any, path = this.path) {
         const currentState = this.state
         const newState = f(currentState);
-        if (! this.compare(newState, NoUpdate)) {
-            this.setState(newState as S, updateSource)
+        if (! this.compare(newState, NoUpdate) && ! this.compare(currentState, newState)) {
+            this.setState(newState as S, updateSource, path)
         }
-        return this
     }
 
     update1<K extends keyof S, C extends StateHandler<S[K]>>(key: K, f: (s: S[K]) => S[K] | typeof NoUpdate, updateSource?: any) {
-        this.update(s => ({...s, [key]: f(s[key])}), updateSource)
+        this.update(s => ({...s, [key]: f(s[key])}), updateSource, [...this.path, key.toString()])
     }
 
     // A lens is like a view except changes to the lens propagate back to its parent
-    lens<K extends keyof S, C extends StateHandler<S[K]>>(key: K, constructor?: { new(s: S[K]): C}, disposeWhen?: Disposable): C {
-        const lens: StateHandler<S[K]> = constructor ? new constructor(this.state[key]) : new StateHandler(this.state[key]);
-        this.handleView(lens, key, disposeWhen, (lens, s: S[K], src) => lens.setState(s, src))
+    lens<K extends keyof S, C extends StateHandler<S[K]>>(key: K): StateHandler<S[K]> {
+        const view = this.view(key)
+        const lens: StateHandler<S[K]> = new StateHandler(view);
         lens.addObserver((viewState, _, src) => {
             this.setState({
                 ...this.state,
                 [key]: viewState
-            }, src ?? lens)
-        }, undefined, `lens of key ${key}`)
+            }, src ?? lens, lens.path)
+        }, this, `lens of key ${key}`, "viewObserver")
+        this.onDispose.then(() => lens.dispose())
         return lens as C
     }
 
@@ -191,9 +223,42 @@ export class StateHandler<S> extends StateView<S> {
         return deepEquals(s1, s2);
     }
 
-    constructor(state: S, disposeWhen?: Disposable) {
-        super(state, disposeWhen)
+    constructor(private _view: StateView<S>) {
+        super(_view)
+    }
+
+    static from<S>(s: S) {
+        return new this(new StateView(s))
     }
 }
 
 export type Observer<S> = (currentS: S, previousS: S, updateSource: any) => void;
+
+
+// Map view from U to S
+export class MapView<U, S> extends StateWrapper<S | undefined> {
+    equals?: (s1?: S, s2?: S) => boolean;
+
+    // setState is a hack allowing us to set state on a view... is there a better way to do this? :\
+    constructor(view: StateView<U>, toS: (u: U) => S | typeof NoUpdate, equals?: (s1?: S, s2?: S) => boolean) {
+
+        const s = toS(view.state)
+        const mappedView = new StateView(s === NoUpdate ? undefined : s, view.path)
+
+        super(mappedView);
+
+        view.addObserver((u, _, src) => {
+            const s = toS(u)
+            if (s !== NoUpdate && !this.compare(s, mappedView.state)) {
+                this.setState(s, src)
+            }
+        }, this)
+
+        this.equals = equals;
+
+    }
+
+    protected compare(s1: any, s2: any): boolean {
+        return (this.equals ?? super.compare)(s1, s2)
+    }
+}

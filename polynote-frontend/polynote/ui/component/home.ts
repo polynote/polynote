@@ -1,13 +1,13 @@
 import {div, h2, h3, img, para, polynoteLogo, span, tag, TagElement} from "../tags";
-import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {RecentNotebooks, RecentNotebooksHandler} from "../../state/preferences";
 import {ServerStateHandler} from "../../state/server_state";
+import {Disposable} from "../../state/state_handler";
 
-export class Home {
+export class Home extends Disposable {
     readonly el: TagElement<"div">;
 
-    constructor(dispatcher: ServerMessageDispatcher) {
-
+    constructor() {
+        super()
         const recentNotebooks = tag('ul', ['recent-notebooks'], {}, []);
         this.el = div(['welcome-page'], [
             polynoteLogo(),
@@ -32,6 +32,6 @@ export class Home {
             })
         }
         handleRecents(RecentNotebooksHandler.state)
-        RecentNotebooksHandler.addObserver(nbs => handleRecents(nbs))
+        RecentNotebooksHandler.addObserver(nbs => handleRecents(nbs), this)
     }
 }

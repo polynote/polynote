@@ -1,14 +1,17 @@
 import {div, TagElement} from "../tags";
 import {ViewPrefsHandler} from "../../state/preferences";
+import {Disposable} from "../../state/state_handler";
 
 /**
  * Holds a classic three-pane display, where the left and right panes can be both resized and collapsed.
  */
 
 export type Pane = { header: TagElement<"h2">, el: TagElement<"div">}
-export class SplitView {
+export class SplitView extends Disposable {
     readonly el: TagElement<"div">;
     constructor(leftPane: Pane, center: TagElement<"div">, rightPane: Pane) {
+        super()
+
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
                 leftPane.header.click(evt => {
@@ -126,6 +129,6 @@ export class SplitView {
             } else {
                 this.el.classList.remove('right-collapsed');
             }
-        })
+        }, this)
     }
 }

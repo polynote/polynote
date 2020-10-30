@@ -60,7 +60,7 @@ import {ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl} from "../../display/error";
 import {Error} from "../../../data/messages";
 import IMarkerData = editor.IMarkerData;
-import { deepEquals } from "../../../util/helpers";
+import {deepEquals, diffArray, removeKeys} from "../../../util/helpers";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -92,13 +92,13 @@ export class CellContainer extends Disposable {
             }
         }, this);
 
-        ServerStateHandler.view("connectionStatus", this).addObserver((currentStatus, previousStatus) => {
+        ServerStateHandler.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
             if (currentStatus === "disconnected") {
                 this.cell.setDisabled(true)
             } else if (previousStatus === "disconnected") {
                 this.cell.setDisabled(false)
             }
-        })
+        }, this)
 
         cellState.onDispose.then(() => {
             this.dispose()
@@ -156,7 +156,7 @@ abstract class Cell extends Disposable {
                 this.onDeselected()
             }
         }
-        const cellSelected = cellState.view("selected", undefined, this)
+        const cellSelected = cellState.view("selected")
         cellSelected.addObserver((selected, prevSelected) => updateSelected(selected, prevSelected), this);
 
         cellState.onDispose.then(() => {
@@ -355,6 +355,8 @@ class CodeCell extends Cell {
             }
         });
         this.editor.onDidChangeCursorSelection(evt => {
+            if (this.applyingServerEdits) return // ignore when applying server edits.
+
             // deep link - we only care if the user has selected more than a single character
             if ([0, 3].includes(evt.reason)) { // 0 -> NotSet, 3 -> Explicit
                 this.setUrl(evt.selection);
@@ -370,8 +372,8 @@ class CodeCell extends Cell {
                 }
             }
         });
-        (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()!.then(
-            foldingModel => foldingModel!.onDidChange(() => this.layout())
+        (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
+            foldingModel => foldingModel?.onDidChange(() => this.layout())
         );
         this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
@@ -387,7 +389,7 @@ class CodeCell extends Cell {
             if (editing) {
                 this.editor.focus()
             }
-        })
+        }, this)
 
         const compileErrorsState = cellState.mapView<"compileErrors", CellErrorMarkers[][]>("compileErrors", (errors: CompileErrors[]) => {
             if (errors.length > 0) {
@@ -464,14 +466,14 @@ class CodeCell extends Cell {
             cellOutput.el
         ]);
 
-        cellState.view("language", undefined, this).addObserver((newLang, oldLang) => {
+        cellState.view("language").addObserver((newLang, oldLang) => {
             const newHighlightLang = ClientInterpreters[newLang]?.highlightLanguage ?? newLang;
             const oldHighlightLang = ClientInterpreters[oldLang]?.highlightLanguage ?? oldLang;
             this.el.classList.replace(oldHighlightLang, newHighlightLang);
             langSelector.setSelectedValue(newHighlightLang);
             console.log("Setting monaco language to ", newHighlightLang)
             monaco.editor.setModelLanguage(this.editor.getModel()!, newHighlightLang)
-        });
+        }, this);
 
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
@@ -492,15 +494,16 @@ class CodeCell extends Cell {
             }
         }
         updateMetadata(this.state.metadata);
-        cellState.view("metadata", undefined, this).addObserver(metadata => updateMetadata(metadata));
+        cellState.view("metadata").addObserver(metadata => updateMetadata(metadata), this);
 
-        cellState.view("incomingEdits", undefined, this).addObserver(edits => {
+        cellState.view("incomingEdits").addObserver(edits => {
             if (edits.length > 0) {
-                console.log("applying edits", edits)
+                // console.log("applying edits", edits)
                 this.applyEdits(edits);
+                // we might not really need to clear these edits...
                 cellState.update1("incomingEdits", () => [])
             }
-        }, undefined, `incomingEdits of cell ${this.id}`);
+        }, this, `incomingEdits of cell ${this.id}`);
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
@@ -510,7 +513,7 @@ class CodeCell extends Cell {
             }
         }
         updateError(this.state.error)
-        cellState.view("error", undefined, this).addObserver(error => updateError(error));
+        cellState.view("error").addObserver(error => updateError(error), this);
 
         const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
@@ -533,7 +536,7 @@ class CodeCell extends Cell {
             }
         }
         updateRunning(this.state.running)
-        cellState.view("running", undefined, this).addObserver((curr, prev) => updateRunning(curr, prev));
+        cellState.view("running").addObserver((curr, prev) => updateRunning(curr, prev), this);
 
         const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
             if (queued) {
@@ -549,7 +552,7 @@ class CodeCell extends Cell {
             }
         }
         updateQueued(this.state.queued)
-        cellState.view("queued", undefined, this).addObserver((curr, prev) => updateQueued(curr, prev));
+        cellState.view("queued").addObserver((curr, prev) => updateQueued(curr, prev), this);
 
         const updateHighlight = (h: { range: PosRange , className: string} | undefined) => {
             if (h) {
@@ -569,7 +572,7 @@ class CodeCell extends Cell {
             }
         }
         updateHighlight(this.state.currentHighlight)
-        cellState.view("currentHighlight", undefined, this).addObserver(h => updateHighlight(h))
+        cellState.view("currentHighlight").addObserver(h => updateHighlight(h), this)
 
         const presenceMarkers: Record<number, string[]> = {};
         const updatePresence = (id: number, name: string, color: string, range: PosRange) => {
@@ -602,10 +605,24 @@ class CodeCell extends Cell {
             }
         }
         cellState.state.presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
-        cellState.view("presence", undefined, this).addObserver(presence => presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range)))
+        cellState.view("presence").addObserver((newPresence, oldPresence) => {
+            const removed = diffArray(newPresence, oldPresence)[1]
+
+            removed.forEach(p => {
+                const marker = presenceMarkers[p.id]
+                if (marker) {
+                    this.editor.deltaDecorations(marker, [])
+                }
+                delete presenceMarkers[p.id]
+            })
+
+            newPresence.forEach(p => {
+                updatePresence(p.id, p.name, p.color, p.range)
+            })
+        }, this)
 
         // make sure to create the comment handler.
-       this.commentHandler = new CommentHandler(dispatcher, cellState.view("comments"), cellState.view("currentSelection"), this.editor, this.id);
+       this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), this.editor);
 
         this.onDispose.then(() => {
             this.commentHandler.dispose()
@@ -647,9 +664,12 @@ class CodeCell extends Cell {
         const obs = this.cellState.addObserver(s => {
             if (s.outgoingEdits === edits) {
                 this.cellState.removeObserver(obs)
-                this.cellState.update(s => ({...s, outgoingEdits: []}))
+                // this.cellState.update(s => ({...s, outgoingEdits: []}))
             }
-        })
+        }, this)
+
+        // update comments
+        this.commentHandler.triggerCommentUpdate()
     }
 
     requestCompletion(offset: number): Promise<CompletionList> {
@@ -941,7 +961,6 @@ class CodeCell extends Cell {
     protected onSelected() {
         super.onSelected()
         this.vim = VimStatus.get.activate(this.editor)
-        this.editor.focus()
     }
 
     protected onDeselected() {
@@ -997,8 +1016,8 @@ class CodeCellOutput extends Disposable {
         runtimeErrorHandler: StateView<ErrorEl | undefined>) {
         super()
 
-        const outputHandler = cellState.view("output", undefined, this);
-        const resultsHandler = cellState.view("results", undefined, this);
+        const outputHandler = cellState.view("output");
+        const resultsHandler = cellState.view("results");
 
         this.el = div(['cell-output'], [
             div(['cell-output-margin'], []),
@@ -1022,9 +1041,9 @@ class CodeCellOutput extends Disposable {
             }
         }
         handleResults(resultsHandler.state)
-        resultsHandler.addObserver(results => handleResults(results));
+        resultsHandler.addObserver((results: (ClientResult | ResultValue)[]) => handleResults(results), this);
 
-        compileErrorsHandler.addObserver(errors => this.setErrors(errors));
+        compileErrorsHandler.addObserver(errors => this.setErrors(errors), this);
 
         this.setRuntimeError(runtimeErrorHandler.state)
         runtimeErrorHandler.addObserver(error => {

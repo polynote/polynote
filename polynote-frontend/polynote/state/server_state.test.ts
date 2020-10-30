@@ -1,4 +1,5 @@
 import {ServerStateHandler} from "./server_state";
+import {Disposable} from "./state_handler";
 
 jest.mock("../messaging/comms");
 
@@ -6,11 +7,13 @@ beforeEach(() => {
     ServerStateHandler.clear()
 })
 
+const d = new Disposable()
+
 test('Changes to the ServerStateHandler are observable', done => {
     ServerStateHandler.get.addObserver(state => {
         expect(state.currentNotebook).toEqual("nb")
         done()
-    })
+    }, d)
     ServerStateHandler.get.update(s => ({...s, currentNotebook: "nb"}))
 })
 
@@ -21,7 +24,7 @@ test('ServerStateHandler supports views', done => {
             expect(prev).toBeUndefined()
             expect(next).toEqual("nb")
             resolve()
-        })
+        }, d)
         ServerStateHandler.get.update(s => ({...s, currentNotebook: "nb"}))
         view.removeObserver(obs)
     }).then(_ => {
@@ -31,7 +34,7 @@ test('ServerStateHandler supports views', done => {
                 expect(prev).toEqual("nb")
                 expect(next).toEqual("newNb")
                 resolve()
-            })
+            }, d)
             ServerStateHandler.get.update(s => ({...s, currentNotebook: "newNb"}))
             view.removeObserver(obs)
         })
@@ -43,7 +46,7 @@ test('ServerStateHandler supports views', done => {
                     "path": true
                 })
                 resolve()
-            })
+            }, d)
             ServerStateHandler.get.update(s => {
                 return {
                     ...s,

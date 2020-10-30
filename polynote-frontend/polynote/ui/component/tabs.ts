@@ -1,18 +1,19 @@
 import {div, icon, span, TagElement} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
-import {Observer} from "../../state/state_handler";
+import {Disposable, Observer} from "../../state/state_handler";
 import {NotebookStateHandler} from "../../state/notebook_state";
 import {Notebook} from "./notebook/notebook";
 import {VimStatus} from "./notebook/vim_status";
 
-export class Tabs {
+export class Tabs extends Disposable {
     readonly el: TagElement<"div">;
     private readonly tabs: Record<string, { tab: TagElement<"div">, content: TagElement<"div">, handler: NotebookStateHandler, obs: [Observer<any>, string]}> = {};
     private tabContainer: TagElement<"div">;
     private currentTab?: { path: string, tab: TagElement<"div">, content: TagElement<"div">};
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private homeTab: TagElement<"div">) {
+        super()
         this.el = div(['tab-view'], [
             this.tabContainer = div(['tabbed-pane', 'tab-container'], []),
             VimStatus.get.el
@@ -33,7 +34,7 @@ export class Tabs {
             } else {
                 Object.keys(this.tabs).forEach(tab => this.remove(tab))
             }
-        })
+        }, this)
 
         const handleCurrentNotebook = (path?: string) => {
             if (path) {
@@ -50,7 +51,7 @@ export class Tabs {
                 this.activate("home")
             }
         }
-        ServerStateHandler.get.view("currentNotebook").addObserver(n => handleCurrentNotebook(n))
+        ServerStateHandler.get.view("currentNotebook").addObserver(n => handleCurrentNotebook(n), this)
         handleCurrentNotebook(ServerStateHandler.get.state.currentNotebook)
     }
 
@@ -91,7 +92,7 @@ export class Tabs {
                 this.tabs[newPath] = tab;
                 activate = () => this.activate(newPath);
                 remove = () => this.remove(newPath);
-            });
+            }, this);
 
             this.tabs[path] = {tab, content, handler, obs};
         }
