@@ -134,7 +134,11 @@ class PySparkInterpreter(
     .readTimeout(GatewayServer.DEFAULT_READ_TIMEOUT)
     .customCommands(null)
 
-  private def startPySparkGateway(spark: SparkSession, doAuth: Boolean) = effectBlocking {
+  /**
+    * Start the py4j gateway, ensuring it's run on the Jep thread so it sees the proper classloader.
+    */
+  private def startPySparkGateway(spark: SparkSession, doAuth: Boolean) = jep {
+    _ =>
     val builder = if (doAuth) {
       // use try here just to be extra careful
       try gwBuilder.authToken(py4jToken) catch {

@@ -53,7 +53,11 @@ class PythonInterpreter private[python] (
     }
 
     def hasAttribute(obj: PythonObject, name: String): Boolean = run {
-      hasAttr(obj.unwrap, name)
+      try {
+        hasAttr(obj.unwrap, name)
+      } catch  {
+        case _: JepException => false
+      }
     }
 
     def asScalaList(obj: PythonObject): List[PythonObject] = run {
