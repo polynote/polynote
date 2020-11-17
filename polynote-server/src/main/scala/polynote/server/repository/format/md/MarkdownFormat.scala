@@ -101,7 +101,7 @@ class MarkdownFormat extends NotebookFormat {
       </div>.toString()
 
     case ClearResults() => ""
-    case ResultValue(_, _, _, _, _, _, _) => "" // TODO
+    case ResultValue(_, _, _, _, _, _, _, _) => "" // TODO
     case ExecutionInfo(_, _) => "" // TODO
   }
 

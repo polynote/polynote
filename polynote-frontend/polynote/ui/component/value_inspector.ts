@@ -57,7 +57,7 @@ export class ValueInspector extends FullScreenModal {
                                 tabs['Schema'] = displaySchema(dataType);
                                 tabs['Plot data'] = new PlotEditor(dispatcher, nbState, repr, resultValue.name, resultValue.sourceCell).container;
                             }
-                            tabs['View data'] = new TableView(dispatcher, nbState, repr).el;
+                            tabs['View data'] = TableView.create(dispatcher, nbState, repr).el;
                         } catch(err) {
                             console.error(err);
                         }
@@ -76,7 +76,9 @@ export class ValueInspector extends FullScreenModal {
                 if (whichTab && tabs[whichTab]) {
                     nav.showItem(whichTab);
                 } else {
-                    Object.values(tabs).shift().dispatchEvent(new CustomEvent('TabDisplayed'))
+                    const el = Object.values(tabs).shift();
+                    el.dispatchEvent(new CustomEvent('TabDisplayed'))
+                    el.dispatchEvent(new CustomEvent('becameVisible'))
                 }
             }
         })

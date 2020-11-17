@@ -155,7 +155,7 @@ val sparkSettings = Seq(
   sparkVersion := {
     scalaVersion.value match {
       case ver if ver startsWith "2.11" => "2.1.1"
-      case ver                          => "2.4.4"  // Spark 2.4 is first version to publish for scala 2.12
+      case ver                          => "2.4.7"  // Spark 2.4 is first version to publish for scala 2.12
     }
   },
   libraryDependencies ++= Seq(

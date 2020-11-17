@@ -11,9 +11,11 @@ import {PosRange} from "../../../data/result";
 import {NotebookScrollLocationsHandler} from "../../../state/preferences";
 import {ServerStateHandler} from "../../../state/server_state";
 
+type CellInfo = {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">};
+
 export class Notebook {
     readonly el: TagElement<"div">;
-    readonly cells: Record<number, {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
+    readonly cells: Record<number, CellInfo> = {};
     cellOrder: Record<number, number> = {}; // index -> cell id;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
@@ -51,13 +53,44 @@ export class Notebook {
         ServerStateHandler.view("currentNotebook", notebookState).addObserver((current, previous) => handleVisibility(current, previous))
 
         const handleCells = (newCells: CellState[], oldCells: CellState[] = []) => {
+            // TODO: this is kind of a mess. For example, if we wanted to support moving a cell, the diff would show
+            //       it as removed and added. This is a case where it would be nice to know the actual op we're handling
+            //       rather than doing an opaque diff.
             const [removed, added] = diffArray(oldCells, newCells, (o, n) => o.id === n.id);
 
+            // set up states and create elements for new cells
             added.forEach(state => {
                 const handler = new StateHandler(state, notebookState);
-                const cell = new CellContainer(dispatcher, notebookState, handler);
-                this.cells[state.id] = {cell, handler, el: div(['cell-and-divider'], [cell.el, this.newCellDivider()])}
+                try {
+                    const cell = new CellContainer(dispatcher, notebookState, handler);
+                    this.cells[state.id] = {
+                        cell,
+                        handler,
+                        el: div(['cell-and-divider'], [cell.el, this.newCellDivider()])
+                    }
+                } catch (err) {
+                    console.log(err);
+                }
             });
+
+            // update the cell ordering
+            this.cellOrder = newCells.reduce<Record<number, number>>((acc, next, idx) => {
+                if (this.cells[next.id]) {
+                    acc[idx] = next.id;
+                }
+                return acc;
+            }, {})
+
+            // insert new cell elements into the document in the appropriate place
+            added.forEach(state => {
+                const cellInfo = this.cells[state.id];
+                const idx = newCells.findIndex(s => s.id === state.id)!;
+                const nextCellId = newCells[idx + 1]?.id;
+                const nextCellEl = nextCellId ? this.cells[nextCellId]?.el : undefined;
+                cellsEl.insertBefore(cellInfo.el, (nextCellEl && nextCellEl.parentNode && nextCellEl) || null);
+            });
+
+            // remove delete cells and replace them with "undo" elements.
             removed.forEach(cell => {
                 this.cells[cell.id].cell.delete();
                 const cellEl = this.cells[cell.id].el!;
@@ -95,29 +128,14 @@ export class Notebook {
                 }
             });
 
+            // update each cell with its new state (most of them will be unchanged)
             newCells.forEach((cell, idx) => {
-                const cellEl = this.cells[cell.id].el;
-                const cellIdAtIdx = this.cellOrder[idx];
-                if (cellIdAtIdx !== undefined) {
-                    if (cellIdAtIdx !== cell.id) {
-                        // there's a different cell at this index. we need to insert this cell above the existing cell
-                        const prevCellEl = this.cells[cellIdAtIdx].el;
-                        // note that inserting a node that is already in the DOM will move it from its current location to here.
-                        cellsEl.insertBefore(cellEl, prevCellEl);
-                        this.cellOrder[idx] = cell.id;
-                        this.cellOrder[idx + 1] = cellIdAtIdx;
-                    }
-                } else {
-                    // index not found, must be at the end
-                    this.cellOrder[idx] = cell.id;
-                    cellsEl.appendChild(cellEl);
+                const cellInfo = this.cells[cell.id];
+                if (cellInfo) {
+                    cellInfo.handler.updateState(() => cell);
                 }
-                this.cells[cell.id].handler.updateState(() => cell);
             })
-            this.cellOrder = newCells.reduce<Record<number, number>>((acc, next, idx) => {
-                acc[idx] = next.id
-                return acc
-            }, {})
+
         }
         handleCells(notebookState.state.cells)
         notebookState.view("cells").addObserver((newCells, oldCells) => handleCells(newCells, oldCells));

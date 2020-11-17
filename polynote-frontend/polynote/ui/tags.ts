@@ -36,7 +36,7 @@ export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElem
     click(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     mousedown(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     change(handler: EventListenerOrEventListenerObject): TagElement<K, T>
-    onValueChange(fn: (newValue: string) => void): TagElement<K, T>
+    onValueChange<V = string>(fn: (newValue: V) => void): TagElement<K, T>
     listener(name: string, handler: EventListenerOrEventListenerObject): TagElement<K, T>
     withKey(key: string, value: any): TagElement<K, T>
     disable(): TagElement<K, T>
@@ -47,7 +47,13 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
     name: T,
     classes: string[] = [],
     attributes?: AllowedElAttrs<HTMLElementTagNameMap[T]>,
-    content: AsyncContent = []): TagElement<T> {
+    content: AsyncContent = [],
+    eventDelegate?: TagElement<any>): TagElement<T> {
+
+    let eventEl: TagElement<any>;
+    if (eventDelegate) {
+        eventEl = eventDelegate;
+    }
 
     const el: TagElement<T> = Object.assign(document.createElement(name), {
         attr(a: keyof HTMLElementTagNameMap[T], v: string | boolean) {
@@ -71,22 +77,28 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
             return el;
         },
         click(handler: EventListenerOrEventListenerObject) {
-            return el.listener('click', handler);
+            eventEl.listener('click', handler);
+            return el;
         },
         mousedown(handler: EventListenerOrEventListenerObject) {
-            return el.listener('mousedown', handler);
+            eventEl.listener('mousedown', handler);
+            return el;
         },
         change(handler: EventListenerOrEventListenerObject) {
-            return el.listener('change', handler);
+            eventEl.listener('change', handler);
+            return el;
         },
-        onValueChange(fn: (newValue: string) => void) {
-            if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
-                return el.change(evt => fn(el.value))
-            else throw new Error("Element is not an input")
+        onValueChange<V = string>(fn: (newValue: V) => void) {
+            if (eventEl instanceof HTMLInputElement && eventEl.type === 'checkbox') {
+                (eventEl as any).change((evt: Event) => fn(eventEl.checked))
+            } else if (eventEl instanceof HTMLInputElement || eventEl instanceof HTMLTextAreaElement) {
+                (eventEl as any).change((evt: Event) => fn(eventEl.value))
+            } else throw new Error("Element is not an input");
+            return el;
         },
         listener(name: string, handler: EventListenerOrEventListenerObject) {
-            el.addEventListener(name, handler);
-            return el
+            eventEl.addEventListener(name, handler);
+            return el;
         },
         withKey(key: string, value: any) {
             return Object.assign(el, {[key]: value})
@@ -99,7 +111,9 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
             return el;
         }
     });
-
+    if (!eventEl) {
+        eventEl = el;
+    }
     el.classList.add(...classes);
     if (attributes) el.attrs(attributes);
     appendContent(el, content);
@@ -179,7 +193,7 @@ export function iconButton(classes: string[], title: string, iconName: string, a
     return button(classes, {title: title}, icon([], iconName, alt));
 }
 
-export function textbox(classes: string[], placeholder: string, value: string = "", type: "text" | "number" = "text") {
+export function textbox(classes: string[], placeholder?: string, value: string = "", type: "text" | "number" = "text") {
     const input = tag('input', classes, {type, placeholder: placeholder}, []);
     if (value) {
         input.value = value;
@@ -267,10 +281,11 @@ export function fakeSelectElem(classes: string[], buttons: TagElement<"button">[
 
 export function checkbox(classes: string[], label: string, value: boolean = false) {
     const attrs = {type:'checkbox', checked: value};
+    const cb = tag('input', [], attrs, []);
     return tag('label', classes, {}, [
-        tag('input', [], attrs, []),
+        cb,
         span([], [label])
-    ]);
+    ], cb);
 }
 
 export function radio(classes: string[], label: string, name: string, value: boolean = false) {

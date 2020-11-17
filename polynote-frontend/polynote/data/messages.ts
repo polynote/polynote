@@ -11,6 +11,7 @@ import {CellComment, CellMetadata, NotebookCell, NotebookConfig, SparkPropertySe
 import {ContentEdit} from "./content_edit";
 import {Left, Right} from "./codec_types";
 import {deepEquals} from "../util/helpers";
+import {DoubleType, LongType, StructField, StructType} from "./data_type";
 
 export abstract class Message extends CodecContainer {
     static codec: Codec<Message>;
@@ -735,10 +736,62 @@ export class Select extends TableOp {
     }
 }
 
+export class Sample extends TableOp {
+    static codec = combined(float64).to(Sample);
+    static get msgTypeId() { return 3; }
+    static unapply(inst: Sample): ConstructorParameters<typeof Sample> { return [inst.sampleRate]; }
+    constructor(readonly sampleRate: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    streamCode(on: string): string {
+        return `${on}.sample(${this.sampleRate})`
+    }
+}
+
+export class SampleN extends TableOp {
+    static codec = combined(int32).to(SampleN);
+    static get msgTypeId() { return 4; }
+    static unapply(inst: SampleN): ConstructorParameters<typeof Sample> { return [inst.n]; }
+    constructor(readonly n: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    streamCode(on: string): string {
+        return `${on}.sampleN(${this.n})`
+    }
+}
+
+export class Histogram extends TableOp {
+    static codec = combined(str, int32).to(Histogram);
+    static get msgTypeId() { return 5; }
+    static unapply(inst: Histogram): ConstructorParameters<typeof Histogram> { return [inst.field, inst.binCount]; }
+
+    static readonly dataType: StructType = new StructType([
+        new StructField("start", DoubleType),
+        new StructField("end", DoubleType),
+        new StructField("count", LongType)
+    ]);
+
+    constructor(readonly field: string, readonly binCount: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    streamCode(on: string): string {
+        return `${on}.histogram(${JSON.stringify(this.field)}, ${this.binCount})`;
+    }
+}
+
 TableOp.codecs = [
     GroupAgg,
     QuantileBin,
-    Select
+    Select,
+    Sample,
+    SampleN,
+    Histogram
 ];
 
 TableOp.codec = discriminated(uint8, msgTypeId => TableOp.codecs[msgTypeId].codec, msg => (msg.constructor as typeof Message).msgTypeId);

@@ -1,7 +1,7 @@
 "use strict";
 
-import { VegaInterpreter } from "./vega_interpreter";
-import {ClientResult, ExecutionInfo, Result, ResultValue, RuntimeError} from "../data/result";
+import {VizInterpreter, VegaInterpreter} from "./vega_interpreter";
+import {ClientResult, CompileErrors, ExecutionInfo, Result, ResultValue, RuntimeError} from "../data/result";
 import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {NotebookMessageDispatcher, SetCellOutput} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
@@ -16,21 +16,24 @@ import {
 import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
 import {ServerStateHandler} from "../state/server_state";
+import {KernelSymbols} from "../state/kernel_state";
 
 export interface CellContext {
     id: number,
     availableValues: Record<string, any>
+    resultValues: Record<string, ResultValue>
 }
 
 export interface IClientInterpreter {
     languageTitle: string;
     highlightLanguage: string;
-    interpret(code: string, cellContext: CellContext): (ClientResult | RuntimeError)[];
+    interpret(code: string, cellContext: CellContext): (ClientResult | CompileErrors | RuntimeError)[];
     hidden?: boolean
 }
 
 export const ClientInterpreters: Record<string, IClientInterpreter> = {
-    "vega": VegaInterpreter
+    "vega": VegaInterpreter,
+    "viz": VizInterpreter
 };
 
 /**
@@ -111,14 +114,14 @@ export class ClientInterpreter {
             }
             updateStatus(1)
 
-            const availableValues = availableClientValues(this.notebookState.state.cells, this.notebookState, dispatcher, id);
-            const results = ClientInterpreters[cell.language].interpret(cell.content, {id, availableValues})
+            const results = ClientInterpreters[cell.language].interpret(cell.content, cellContext(this.notebookState, dispatcher, id));
             updateStatus(256)
             results.forEach(res => {
-                if (res instanceof RuntimeError) {
-                    this.receiver.inject(new CellResult(id, res))
-                } else {
+                if (res instanceof ClientResult) {
                     dispatcher.dispatch(new SetCellOutput(id, res))
+                } else {
+                    console.log(res);
+                    this.receiver.inject(new CellResult(id, res))
                 }
             })
         })
@@ -126,23 +129,33 @@ export class ClientInterpreter {
 
 }
 
-export function availableResultValues(cells: CellState[], notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, id?: number): Record<string, ResultValue> {
-    const currentState = notebookState.state;
-    let cellIdx = id !== undefined ? cells.findIndex(cell => cell.id === id) : cells.length - 1;
-    if (cellIdx < 0) {
-        return {};
-    }
-    return cells.slice(0, cellIdx).reduce<Record<string, ResultValue>>((acc, next) => {
-        next.results
-            .filter(res => res instanceof ResultValue) // for now, ClientResults can't be used in other cells
-            .forEach((result: ResultValue) => acc[result.name] = result)
-        return acc
-    }, {})
+export function cellContext(notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, cellId: number): CellContext {
+    const resultValues = availableResultValues(notebookState.state.kernel.symbols, notebookState, dispatcher, cellId);
+    const availableValues = availableClientValues(resultValues, notebookState, dispatcher);
+    return {id: cellId, availableValues, resultValues};
 }
 
-function availableClientValues(cells: CellState[], notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, id?: number): Record<string, any> {
+export function availableResultValues(symbols: KernelSymbols, notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, id?: number): Record<string, ResultValue> {
+    const currentState = notebookState.state;
+    const cells = notebookState.state.cells;
+    const availableCells = Object.keys(symbols);
+    const whichCells = availableCells.filter(id => id.startsWith('-'));
+    const cellIdx = id !== undefined ? cells.findIndex(cell => cell.id === id) : cells.length - 1;
+
+    if (cellIdx >= 0) {
+        whichCells.push(...cells.slice(0, cellIdx).map(cell => cell.id.toString()))
+    }
+
+    return whichCells.reduce<Record<string, ResultValue>>((acc, next) => {
+        Object.values(symbols[next] || {})
+            .forEach((result: ResultValue) => acc[result.name] = result);
+        return acc;
+    }, {});
+}
+
+function availableClientValues(resultValues: Record<string, ResultValue>, notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher): Record<string, any> {
     return Object.fromEntries(
-        Object.entries(availableResultValues(cells, notebookState, dispatcher, id)).map(
+        Object.entries(resultValues).map(
             entry => {
                 const [name, result] = entry;
                 let bestValue: any = result.valueText;

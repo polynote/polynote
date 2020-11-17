@@ -6,7 +6,7 @@ import {
     ResultValue, RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
-import {CompletionCandidate, HandleData, ModifyStream, Signatures} from "../data/messages";
+import {CompletionCandidate, HandleData, ModifyStream, Signatures, TaskStatus} from "../data/messages";
 import {CellComment, CellMetadata, NotebookConfig} from "../data/data";
 import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../data/content_edit";
@@ -14,13 +14,22 @@ import {EditBuffer} from "../data/edit_buffer";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {availableResultValues} from "../interpreter/client_interpreter";
 
+export type Outputs = Output[] & { clear?: boolean }
+export function outputs(outputs: Output[], clear?: boolean): Outputs {
+    const result = outputs as Outputs;
+    if (clear !== undefined) {
+        result.clear = clear;
+    }
+    return result;
+}
+
 export interface CellState {
     id: number,
     language: string,
     content: string,
     metadata: CellMetadata,
     comments: Record<string, CellComment>,
-    output: Output[],
+    output: Outputs,
     results: (ResultValue | ClientResult)[],
     compileErrors: CompileErrors[],
     runtimeError?: RuntimeError,
@@ -66,8 +75,12 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         super(state);
     }
 
-    availableValuesAt(id: number, dispatcher: NotebookMessageDispatcher): StateView<Record<string, ResultValue> | undefined> {
-        return this.mapView("cells", cells => availableResultValues(cells, this, dispatcher, id))
+    availableValuesAt(id: number, dispatcher: NotebookMessageDispatcher): Record<string, ResultValue> {
+        return availableResultValues(this.state.kernel.symbols, this, dispatcher, id);
+    }
+
+    viewAvailableValuesAt(id: number, dispatcher: NotebookMessageDispatcher): StateView<Record<string, ResultValue> | undefined> {
+        return this.view("kernel").mapView("symbols", symbols => availableResultValues(symbols, this, dispatcher, id));
     }
 
     // wait for cell to transition to a specific state
@@ -78,6 +91,25 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                 if (maybeChanged && maybeChanged[targetState]) {
                     this.removeObserver(obs)
                     resolve()
+                }
+            })
+        })
+    }
+
+    get isLoading(): boolean {
+        return !!(this.state.kernel.tasks[this.state.path] ?? false)
+    }
+
+    get loaded(): Promise<void> {
+        if (!this.isLoading) {
+            return Promise.resolve();
+        }
+        return new Promise<void>(resolve => {
+            const tasksView = this.view('kernel').view('tasks');
+            tasksView.addObserver((current, prev) => {
+                if (!current[this.state.path] || current[this.state.path].status === TaskStatus.Complete) {
+                    tasksView.dispose();
+                    resolve();
                 }
             })
         })

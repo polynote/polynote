@@ -20,7 +20,8 @@ export class SplitView {
                                 collapsed: !s.leftPane.collapsed
                             }
                         }
-                    })
+                    });
+                    window.dispatchEvent(new CustomEvent('resize'));
                 }),
                 div(['ui-panel-content'], [leftPane.el])])]);
 
@@ -36,6 +37,7 @@ export class SplitView {
                             }
                         }
                     })
+                    window.dispatchEvent(new CustomEvent('resize'))
                 }),
                 div(['ui-panel-content'], [rightPane.el])])]);
 
@@ -113,7 +115,15 @@ export class SplitView {
             });
         });
 
-        this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
+        const initialClasses = [];
+        if (initialPrefs.leftPane.collapsed) {
+            initialClasses.push('left-collapsed');
+        }
+        if (initialPrefs.rightPane.collapsed) {
+            initialClasses.push('right-collapsed');
+        }
+
+        this.el = div(['split-view', ...initialClasses], [left, leftDragger, center, rightDragger, right]);
 
         ViewPrefsHandler.addObserver(prefs => {
             if (prefs.leftPane.collapsed) {

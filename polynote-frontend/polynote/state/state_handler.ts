@@ -16,6 +16,12 @@ export class Disposable {
         this.deferred.resolve()
     };
 
+    readonly tryDispose = () => {
+        if (!this.isDisposed) {
+            this.deferred.resolve();
+        }
+    }
+
     get isDisposed() {
         return this.deferred.isSettled
     }
@@ -71,7 +77,7 @@ export class StateView<S> extends Disposable {
         view.onDispose.then(() => {
             this.removeObserver(obs);
         })
-        Promise.race([this.onDispose, ...(disposeWhen === undefined ? [] : [disposeWhen.onDispose])]).then(() => view.dispose())
+        Promise.race([this.onDispose, ...(disposeWhen === undefined ? [] : [disposeWhen.onDispose])]).then(() => view.tryDispose())
         return view as C
     }
 

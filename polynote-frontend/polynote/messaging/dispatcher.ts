@@ -12,7 +12,7 @@ import {
     ServerErrorWithCause
 } from "../data/result";
 import {NoUpdate, StateHandler} from "../state/state_handler";
-import {CompletionHint, NotebookState, NotebookStateHandler, SignatureHint} from "../state/notebook_state";
+import {CompletionHint, NotebookState, NotebookStateHandler, outputs, SignatureHint} from "../state/notebook_state";
 import {ContentEdit} from "../data/content_edit";
 import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_state";
 import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
@@ -26,6 +26,7 @@ import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
 import {StreamingDataRepr} from "../data/value_repr";
 import {PlotDefinition} from "../ui/input/plot_selector";
+import {ViewType} from "../ui/input/viz_selector";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -133,7 +134,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                                 ...state,
                                 cells: state.cells.map(cell => {
                                     if (cell.id === cellId) {
-                                        return {...cell, output: [output]}
+                                        return {...cell, output: outputs([output], true)}
                                     } else return cell
                                 })
                             }
@@ -141,18 +142,20 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     } else {
                         // ClientResults are special. The Client treats them like a Result, but the Server treats them like an Output.
                         output.toOutput().then(o => {
-                            this.handler.updateState(state => {
-                                this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
-                                return {
-                                    ...state,
-                                    cells: state.cells.map(cell => {
-                                        if (cell.id === cellId) {
-                                            return {...cell, results: [...cell.results, output]}
-                                        } else return cell
-                                    })
-                                }
-                            })
-                        })
+                            const state = this.handler.state;
+                            this.sendUpdate(new messages.SetCellOutput(state.globalVersion, state.localVersion, cellId, o))
+                        });
+
+                        this.handler.updateState(state => {
+                            return {
+                                ...state,
+                                cells: state.cells.map(cell => {
+                                    if (cell.id === cellId) {
+                                        return {...cell, results: [output]}
+                                    } else return cell
+                                })
+                            }
+                        });
                     }
             })
             .when(SetCellLanguage, (cellId, language) => {
@@ -271,7 +274,11 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                             })
                         }
                     })
-                    this.socket.send(new messages.RunCell(serverCells));
+
+                    if (serverCells.length) {
+                        this.socket.send(new messages.RunCell(serverCells));
+                    }
+
                     return {
                         ...state,
                         cells: state.cells.map(cell => {
@@ -427,18 +434,13 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 link.setAttribute("download", this.handler.state.path);
                 link.click()
             })
-            .when(ShowValueInspector, (result, tab) => {
-                if (result.reprs.findIndex(repr => repr instanceof StreamingDataRepr) >= 0) {
-                    // TODO: this is temporary behavior, fix me
-                    this.insertCell("below", {
-                        id: result.sourceCell,
-                        language: 'plot',
-                        metadata: new CellMetadata(false, false, false),
-                        content: JSON.stringify(PlotDefinition.empty(result.name))
-                    })
-                } else {
-                    ValueInspector.get.inspect(this, this.handler, result, tab)
-                }
+            .when(ShowValueInspector, (result, viewType) => {
+                this.insertCell("below", {
+                    id: result.sourceCell,
+                    language: 'viz',
+                    metadata: new CellMetadata(false, false, false),
+                    content: JSON.stringify({type: viewType, value: result.name})
+                }).then(id => this.dispatch(new SetSelectedCell(id)))
             })
             .when(HideValueInspector, () => {
                 ValueInspector.get.hide()
@@ -507,9 +509,16 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         }
         const anchorIdx = currentState.cells.findIndex(cell => cell.id === anchor!.id);
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
-        const maybePrev = currentState.cells[prevIdx];
-        const createMsg = new CreateCell(anchor.language, anchor.content ?? '', anchor.metadata, maybePrev.id)
-        this.dispatch(createMsg)
+        const maybePrev = currentState.cells[prevIdx] || {id: -1};
+
+        // Can't insert a viz cell with no content; if we're doing that then we should choose a different language.
+        if (anchor.language === 'viz' && !anchor.content) {
+            anchor.language = 'scala';
+            // TODO: should back up and look at cell-before-previous for the language
+        }
+
+        const createMsg = new CreateCell(anchor.language, anchor.content ?? '', anchor.metadata, maybePrev.id);
+        this.dispatch(createMsg);
         return new Promise((resolve, reject) => {
             const obs = this.handler.addObserver(state => {
                 const anchorCellIdx = state.cells.findIndex(cell => cell.id === maybePrev.id)
@@ -1178,13 +1187,13 @@ export class ViewAbout extends UIAction {
 }
 
 export class ShowValueInspector extends UIAction {
-    constructor(readonly result: ResultValue, readonly tab?: string) {
+    constructor(readonly result: ResultValue, readonly viewType?: ViewType) {
         super();
         Object.freeze(this);
     }
 
     static unapply(inst: ShowValueInspector): ConstructorParameters<typeof ShowValueInspector> {
-        return [inst.result, inst.tab];
+        return [inst.result, inst.viewType];
     }
 }
 

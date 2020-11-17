@@ -177,7 +177,8 @@ final case class ResultValue(
   sourceCell: CellID,
   value: Any,
   scalaType: Universe#Type,
-  pos: Option[CellRange]
+  pos: Option[CellRange],
+  live: Boolean = true
 ) extends Result {
 
   def isCellResult: Boolean = name == "Out"
@@ -187,11 +188,11 @@ final case class ResultValue(
 object ResultValue extends ResultCompanion[ResultValue](4) {
   // manual codec - we'll never encode nor decode `value` nor `scalaType`.
   implicit val codec: Codec[ResultValue] =
-    (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec(ValueReprCodec.codec) ~ short16 ~ optional(bool(8), int32 ~ int32)).xmap(
+    (tinyStringCodec ~ tinyStringCodec ~ tinyListCodec(ValueReprCodec.codec) ~ short16 ~ optional(bool(8), int32 ~ int32) ~ bool(8)).xmap(
       {
-        case ((((name, typeName), reprs), sourceCell), optPos) => ResultValue(name, typeName, reprs, sourceCell, (), scala.reflect.runtime.universe.NoType, optPos)
+        case (((((name, typeName), reprs), sourceCell), optPos), live) => ResultValue(name, typeName, reprs, sourceCell, (), scala.reflect.runtime.universe.NoType, optPos, live)
       },
-      v => ((((v.name, v.typeName), v.reprs), v.sourceCell), v.pos)
+      v => (((((v.name, v.typeName), v.reprs), v.sourceCell), v.pos),  v.live)
     )
 }
 

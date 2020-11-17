@@ -38,6 +38,21 @@ body {
 
 }
 
+// Some basic form styling, because Chrome made form controls look like crap
+input[type=text], input[type=number], textarea {
+  box-sizing: border-box;
+  border: 1px solid;
+  border-radius: 3px;
+  padding: .25em;
+}
+
+select {
+  box-sizing: border-box;
+  border: 1px solid;
+  border-radius: 3px;
+  padding: .25em;
+}
+
 .main-ui {
   display: grid;
   grid-template-areas: "header"
@@ -190,6 +205,10 @@ body {
     border-radius: 4px;
   }
 
+  &.disabled {
+    opacity: 0.5;
+  }
+
   .marker {
     position: absolute;
     right: 0;
@@ -201,7 +220,7 @@ body {
     z-index: 3;
   }
 
-  button {
+  button, .item {
     height: 0;
     width: auto;
     padding: 0 2em 0 1em;
@@ -209,11 +228,12 @@ body {
     overflow: visible;
     display: block;
     border-width: 0 1px;
+    border-style: solid;
     font-size: 12px;
     border-radius: 0;
   }
 
-  button.selected, &.open button {
+  button.selected, &.open button, &.open .item {
     padding: .5em 2em .5em 1em;
     line-height: 1;
     width: auto;
@@ -228,7 +248,7 @@ body {
     border-radius: 4px;
   }
 
-  &.open button:enabled {
+  &.open button:enabled, &.open .item {
     border-radius: 0;
 
     &:first-of-type, &.first-visible {
@@ -242,7 +262,7 @@ body {
     }
   }
 
-  &.open button:disabled {
+  &.open button:disabled, &.open .item.disabled {
     display: none;
   }
 
@@ -274,6 +294,9 @@ body {
     border-style: solid;
     border-left-width: 8px;
     //box-shadow: -1px 1px 3px 0px rgba(0, 0, 0, 0.5);
+    .cell-input {
+      z-index: 11;
+    }
   }
 
   .cell-input {
@@ -285,7 +308,7 @@ body {
       display: grid;
       font-size: 11pt;
       grid-template-areas: "button label lang options exec-info";
-      grid-template-columns: min-content 10ch min-content 2fr 1fr;
+      grid-template-columns: min-content 10ch auto 2fr min-content;
       grid-template-rows: min-content;
       border-bottom-width: 1px;
       border-bottom-style: solid;
@@ -329,10 +352,18 @@ body {
         }
       }
 
-      .lang-selector {
+      .lang-selector, .value-name {
         grid-area: lang;
         display: flex;
         align-items: center;
+        white-space: nowrap;
+      }
+
+      .value-name .name {
+        font-family: @code-fonts;
+        padding: .25em;
+        border: 1px solid;
+        margin-left: .5em;
       }
 
       .options {
@@ -355,6 +386,7 @@ body {
         line-height: 11pt;
         display: none;
         grid-area: exec-info;
+        white-space: nowrap;
 
         &.output {
           display: block;
@@ -434,7 +466,7 @@ body {
   }
 
   &.hide-code .cell-input {
-    .cell-input-editor {
+    .cell-input-editor, .viz-selector {
       display: none;
     }
 
@@ -1027,7 +1059,7 @@ body {
 
     .markdown-body pre code {
       display: inline;
-      max-width: auto;
+      max-width: none;
       padding: 0;
       margin: 0;
       overflow: visible;
@@ -1190,7 +1222,15 @@ body {
 
     }
   }
-
+  &.viz {
+    .cell-output-container .cell-output-display {
+      padding: 0;
+      margin-bottom: 0;
+      .output {
+        padding-left: 0;
+      }
+    }
+  }
   &.errors .cell-output .cell-output-tools {
     display: block;
   }
@@ -1316,6 +1356,7 @@ button.inspect.icon-button {
   & > h2 {
     grid-area: head;
     position: relative;
+    user-select: none;
     .buttons {
       position: absolute;
       right: 0;
@@ -1360,7 +1401,7 @@ button.inspect.icon-button {
 .kernel-ui {
   max-height: 100%;
   width: 100%;
-
+  box-sizing: border-box;
   > .ui-panel-content {
     grid-template-areas: "info" "symbols" "tasks";
     grid-template-rows:   auto   auto      1fr;
@@ -1684,7 +1725,7 @@ button.inspect.icon-button {
 
   .resolver-row {
     display: grid;
-    grid-template-columns: 7em 2fr 1fr 1fr 32px 32px;
+    grid-template-columns: min-content 2fr 1fr 1fr 32px 32px;
 
     select {
       width: 7em;
@@ -2236,6 +2277,11 @@ button.dialog-button {
   }
 }
 
+.table-view .paginator {
+  text-align: center;
+
+}
+
 .plot-editor {
   display: grid;
   border-width: 1px;
@@ -2613,7 +2659,7 @@ button.dialog-button {
 }
 
 
-.tab-nav {
+.tab-nav.vertical {
   display: grid;
   grid-template-columns: max-content 1fr;
   overflow: auto;
@@ -2639,6 +2685,44 @@ button.dialog-button {
     }
   }
 
+}
+
+.tab-nav.horizontal {
+  .tab-nav-items {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    padding-top: 2px;
+    padding-left: 1px;
+    border-bottom: 1px solid;
+
+    .tab-nav-item {
+      border-style: solid;
+      border-width: 1px 1px 0 1px;
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+      padding: .25em .5em;
+      margin-left: -2px;
+      position: relative;
+      z-index: 1;
+
+      span {
+        display: block;
+      }
+    }
+
+    .tab-nav-item.active {
+      z-index: 2;
+      margin-top: -2px;
+      position: relative;
+      border-bottom-width: 1px;
+      top: 1px;
+      span {
+        padding-top: 1px;
+      }
+    }
+  }
 }
 
 
@@ -2846,54 +2930,227 @@ img.icon, svg.icon {
   font-family: @text-fonts;
 }
 
+.viz-selector.loading {
+  padding: 2em 0;
+  text-align: center;
+  font-style: italic;
+}
+
 /** Plot selector **/
 .plot-selector {
   padding: 1em;
 
+  display: grid;
+  grid-template-areas: 'type x y other';
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+
+  h3 {
+    margin-top: 0;
+  }
+
+  h4 {
+    margin: 0;
+  }
+
   label {
+    margin-bottom: 1em;
+    display: block;
     .label-title {
       font-weight: bold;
       padding-right: 1em;
+      display: block;
     }
     .label-title:after {
       content: ':';
     }
   }
 
-  .available-measures {
+  .measure-selector {
+    position: relative;
     display: inline-block;
+    button.icon-button {
+      padding: 2px;
+    }
+    .available-measures {
+
+      h4 { display: none; }
+
+      position: absolute;
+      top: 0;
+      left: 100%;
+    }
+
+    .selected-measures {
+      margin-bottom: 1em;
+      h4 {
+        display: grid;
+        grid-template-columns: auto min-content;
+        align-items: center;
+      }
+    }
+
+    .selected-measures > div:empty::before {
+      content: 'none selected';
+      font-style: italic;
+    }
+  }
+
+  .measure-selector.single .selected-measures {
+    .selected-measure {
+      display: none;
+    }
+
+    .selected-measure:first-child {
+      display: block;
+    }
   }
 
   .measure-pickers {
 
+    .quartiles {
+      display: none;
+    }
     .measure-picker {
       position: relative;
-      display: grid;
-      grid-template-columns: auto min-content;
       align-items: center;
+      padding: 0;
 
-      > span {
-        vertical-align: middle;
-        align-content: center;
+      .field {
+        display: grid;
+        grid-template-columns: auto min-content;
+        width: 100%;
+
+        span {
+          align-content: center;
+        }
+
+        .name {
+          padding: .5em;
+        }
+
+        .indicator {
+          padding: .5em .25em;
+        }
+
       }
 
-      > button {
-        color: green;
-        size: inherit;
+      .measures-popup {
+        display: none;
+        position: absolute;
+        left: 100%;
+        top: 0;
+        button {
+          white-space: nowrap;
+        }
       }
+
+      &:hover .measures-popup {
+        display: grid;
+      }
+    }
+
+    button {
+      size: inherit;
     }
   }
 
-  .measures-popup {
-    position: absolute;
-    left: 100%;
+  .top-tools {
+    grid-area: type;
   }
 
-  &.bar, &.line, &.area {
-    .x-axis-config, .y-axis-config {
+  .y-axis-config {
+    grid-area: y;
+  }
+
+  .x-axis-config {
+    grid-area: x;
+  }
+
+  .additional-config {
+    grid-area: other;
+  }
+
+  &.line, &.bar {
+    .measure-pickers .quartiles {
+      display: inline-block;
+    }
+  }
+
+  &.bar, &.line, &.area, &.boxplot, &.pie, &.histogram {
+    .x-field {
       display: none;
     }
   }
+
+  &.bar, &.line, &.area {
+    .y-field {
+      display: none;
+    }
+  }
+
+  &.bar, &.line, &.area {
+    .series-field {
+      display: block;
+    }
+  }
+
+  &.xy, &.boxplot, &.pie, &.histogram {
+    .measure-configs {
+      display: none;
+    }
+  }
+
+  .bar-options, .xy-options, .histogram-options, .facet-options, .series-field {
+    display: none;
+  }
+
+  &.bar {
+    .bar-options {
+      display: block;
+    }
+  }
+
+  &.xy {
+    .dimension-field {
+      display: none;
+    }
+
+    .xy-options {
+      display: block;
+    }
+  }
+
+  &.histogram {
+    grid-template-areas: 'type x other';
+    grid-template-columns: 1fr 1fr 2fr;
+
+    .histogram-options {
+      display: block;
+    }
+
+    .y-axis-config {
+      display: none;
+    }
+
+    .dimension-field {
+      display: none;
+    }
+
+    .x-field {
+      display: block;
+    }
+  }
+
+  &.facet {
+    .facet-options {
+      display: block;
+    }
+  }
+}
+
+.vega-result .vega-embed {
+  padding-right: 0;
+  margin-right: 38px;
 }
 
 /*

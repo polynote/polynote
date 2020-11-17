@@ -10,6 +10,7 @@ import {
     str,
     uint8
 } from './codec'
+import match from "../util/match";
 
 export abstract class DataType extends CodecContainer {
     static codec: Codec<DataType>;
@@ -36,7 +37,7 @@ export abstract class DataType extends CodecContainer {
 // Factory that creates DataTypes as Singleton classes that are instances of their own class constructor
 // Thus, they have access to both static and instance properties defined in SDT.
 // NOTE: in order for this trick to work, we can't have any static methods - Object.assign only assigns properties!
-function SingletonDataType<T>(msgTypeId: number, readBuf: (reader: DataReader) => T, name: string, isNumeric: boolean = false) {
+function SingletonDataType<T>(msgTypeId: number, readBuf: (reader: DataReader) => T, name: string, isNumeric: boolean = false): DataType & typeof DataType {
     class SDT extends DataType {
         static msgTypeId = msgTypeId;
         static typeName = () => { return name };
@@ -55,7 +56,9 @@ function SingletonDataType<T>(msgTypeId: number, readBuf: (reader: DataReader) =
     };
 
     // NOTE: this only assigns properties on SDT - so static methods *won't go through*.
-    return Object.assign(sdt, SDT);
+    const result = Object.assign(sdt, SDT);
+    Object.freeze(result);
+    return result;
 }
 
 export const ByteType = SingletonDataType(0, reader => reader.readUint8(), 'byte');
@@ -63,12 +66,13 @@ export const BoolType = SingletonDataType(1, reader => reader.readBoolean(), 'bo
 export const ShortType = SingletonDataType(2, reader => reader.readInt16(), 'int2', true);
 export const IntType = SingletonDataType(3, reader => reader.readInt32(), 'int4', true);
 export const LongType = SingletonDataType(4, reader => reader.readInt64(), 'int8', true);
+export const UnsafeLongType = SingletonDataType(4, reader => reader.readUnsafeInt64(), 'int8', true);
 export const FloatType = SingletonDataType(5, reader => reader.readFloat32(), 'float4', true);
 export const DoubleType = SingletonDataType(6, reader => reader.readFloat64(), 'float8', true);
 export const BinaryType = SingletonDataType(7, reader => reader.readBuffer(), 'binary');
 export const StringType = SingletonDataType(8, reader => reader.readString(), 'string');
 
-export const NumericTypes: DataType[] = [ShortType, IntType, LongType, FloatType, DoubleType];
+export const NumericTypes: DataType[] = [ShortType, IntType, LongType, UnsafeLongType, FloatType, DoubleType];
 Object.freeze(NumericTypes);
 
 export class StructField {
@@ -104,6 +108,25 @@ export class StructType extends DataType {
             obj[field.name] = field.dataType.decodeBuffer(reader)
         });
         return obj;
+    }
+
+    replaceType(fn: (typ: DataType) => DataType | undefined): StructType {
+        function newType(type: DataType): DataType {
+            return fn(type) || match(type)
+                .when(StructType, fields => new StructType(fields.map(field => new StructField(field.name, newType(field.dataType)))))
+                .when(ArrayType, elementType => new ArrayType(fn(elementType) || elementType))
+                .when(MapType, (keyType, valueType) => new MapType(fn(keyType) || keyType, fn(valueType) || valueType))
+                .when(OptionalType, underlying => new OptionalType(fn(underlying) || underlying))
+                .otherwise(type)
+        }
+        return new StructType(this.fields.map(
+            field => new StructField(field.name, newType(field.dataType))
+        ))
+    }
+
+    fieldType(fieldName: string): DataType | undefined {
+        const field = this.fields.find(field => field.name === fieldName);
+        return field?.dataType
     }
 }
 

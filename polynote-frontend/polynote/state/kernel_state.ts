@@ -3,7 +3,8 @@ import {StateView} from "./state_handler";
 import {KernelStatusString, TaskInfo} from "../data/messages";
 import {NotebookStateHandler} from "./notebook_state";
 
-export type KernelSymbols = (ResultValue)[];
+// id -> (name -> ResultValue)
+export type KernelSymbols = Record<string, Record<string, ResultValue>>;
 export type KernelInfo = Record<string, string>;
 export type KernelTasks = Record<string, TaskInfo>; // taskId -> TaskInfo
 

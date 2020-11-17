@@ -8,6 +8,7 @@ import {displayData} from "../display/display_content";
 import {div, iconButton, span, table, TableElement, tag, TagElement} from "../tags";
 import {DataStream} from "../../messaging/datastream";
 import {StreamingDataRepr} from "../../data/value_repr";
+import {Output, splitOutput} from "../../data/result";
 
 function renderData(fieldName: string | undefined, dataType: DataType, data: any): HTMLElement {
     // TODO: nicer display
@@ -21,17 +22,31 @@ function renderData(fieldName: string | undefined, dataType: DataType, data: any
 
 export class TableView {
     private fields: StructField[];
-    el: TagElement<"div">;
+    readonly el: TagElement<"div">;
     private table: TableElement;
     private paginator: TagElement<"div">;
     private prevButton: TagElement<"button">;
     private nextButton: TagElement<"button">;
-    private stream: DataStream;
-    private rows: Record<string, any>[]; // TODO: anything better than `any` here?
-    private currentPos: number;
+    private rows: Record<string, any>[] = []; // TODO: anything better than `any` here?
+    private start: number = 0;
+    private end: number = 0;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private nbState: NotebookStateHandler, readonly repr: StreamingDataRepr) {
-        const dataType = repr.dataType;
+    private listeners: (() => any)[] = [];
+
+    get range(): [number, number] {
+        return [this.start, this.end];
+    }
+
+    get asHTML(): string {
+        return `<div class="table-view">${this.table.outerHTML}</div>`;
+    }
+
+    static create(dispatcher: NotebookMessageDispatcher, state: NotebookStateHandler, repr: StreamingDataRepr, hideTable: boolean = false): TableView {
+        return new TableView(new DataStream(dispatcher, state, repr), hideTable);
+    }
+
+    constructor(private stream: DataStream, private hideTable: boolean = false) {
+        const dataType = stream.dataType;
         this.fields = dataType.fields || [new StructField("entries", dataType)]; // if dataType is not a StructType, create a dummy entry for it.
         const fieldClasses = this.fields.map(field => field.name);
         const fieldNames = this.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
@@ -44,12 +59,14 @@ export class TableView {
             return;
         }
 
+        this.table = table([], {
+            header: fieldNames,
+            classes: fieldClasses,
+            rows: []
+        });
+
         this.el = div(['table-view'], [
-            this.table = table([], {
-                header: fieldNames,
-                classes: fieldClasses,
-                rows: []
-            }),
+            ...(hideTable ? [] : [this.table]),
             this.paginator = div(['paginator'], [
                 this.prevButton = iconButton([], 'Previous page', 'step-backward', '<< Prev').disable().click(() => this.pagePrev()),
                 this.nextButton = iconButton([], 'Next page', 'step-forward', 'Next >>').click(() => this.pageNext())
@@ -64,9 +81,7 @@ export class TableView {
                 ])])
         );
 
-        this.stream = new DataStream(this.dispatcher, this.nbState, repr).batch(20);
-        this.rows = [];
-        this.currentPos = 0;
+        this.stream = stream.batch(20);
     }
 
     // TODO: replace any with real type
@@ -84,28 +99,45 @@ export class TableView {
             const row = this.fields.map(field => renderData(field.name, field.dataType, this.rows[i].hasOwnProperty(field.name) ? this.rows[i][field.name] : this.rows[i]));
             this.table.addRow(row);
         }
-        this.currentPos = start;
+        this.start = start;
+        this.end = end;
+        this.trigger();
     }
 
-    pageNext() {
-        if (this.currentPos + 20 < this.rows.length) {
-            this.displayItems(this.currentPos + 20, this.currentPos + 40);
+    pageNext(): Promise<void> {
+        if (this.start + 20 < this.rows.length) {
+            this.displayItems(this.start + 20, this.start + 40);
+            return Promise.resolve();
         } else if (!this.stream.terminated) {
-            this.stream.requestNext().then(batch => this.addBatch(batch)).then(_ => this.prevButton.disabled = false);
+            return this.stream.requestNext().then(batch => this.addBatch(batch)).then(_ => this.prevButton.disabled = false).then();
         } else {
             this.nextButton.disabled = true;
+            return Promise.resolve();
         }
     }
 
     pagePrev() {
-        if (this.currentPos > 0) {
-            this.displayItems(this.currentPos - 20, this.currentPos);
+        if (this.start > 0) {
+            this.displayItems(this.start - 20, this.start);
             this.nextButton.disabled = false;
         }
 
-        if (this.currentPos === 0) {
+        if (this.start === 0) {
             this.prevButton.disabled = true;
         }
+    }
+
+    private trigger() {
+        this.listeners.forEach(listener => listener());
+    }
+
+    onChange(fn: () => any): TableView {
+        this.listeners.push(fn);
+        return this;
+    }
+
+    dispose() {
+        this.listeners = [];
     }
 
 }
