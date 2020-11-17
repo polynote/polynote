@@ -1,6 +1,8 @@
 'use strict';
 
 import * as fastEquals from 'fast-deep-equal/es6';
+import {StateHandler} from "../state/state_handler";
+import match, {Extractable, Matcher} from "./match";
 
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
     if (ignoreKeys && a && b) {
@@ -44,6 +46,9 @@ export function changedKeys<T extends Record<string, any>>(oldT: T, newT: T): (k
 
 export function deepFreeze<T>(obj: T) {
     function go(obj: T) {
+        if (obj instanceof StateHandler) {
+            throw new Error("Attempting to freeze a StateHandler – is there a StateHandler embedded in the state?")
+        }
         if (obj && typeof obj === "object") {
             Object.values(obj).forEach(v => go(v))
             return Object.isFrozen(obj) ? obj : Object.freeze(obj)
@@ -53,6 +58,23 @@ export function deepFreeze<T>(obj: T) {
     }
 
     return go(obj)
+}
+
+export function deepCopy<T>(obj: T, keepFrozen: boolean = false): T {
+    if (obj instanceof Array) {
+        return [...obj].map(item => deepCopy(item)) as any as T;
+    } else if (obj === null || typeof obj === 'undefined') {
+        return obj;
+    } else if (typeof obj === 'object' && (!keepFrozen || !Object.isFrozen(obj))) {
+        const result: any = {};
+        const objAny = obj as any;
+        for (let key of Object.getOwnPropertyNames(objAny)) {
+            result[key] = deepCopy(objAny[key]);
+        }
+        Object.setPrototypeOf(result, Object.getPrototypeOf(obj));
+        return result as T;
+    }
+    return obj;
 }
 
 export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B)>): boolean {
@@ -111,10 +133,45 @@ export function unzip<A, B>(arr: [A, B][]): [A[], B[]] {
 export function collect<T, U>(arr: T[], fun: (t: T) => U | undefined | null): U[] {
     return arr.flatMap(t => {
         const newT = fun(t)
-        if (newT) {
+        if (newT !== undefined && newT !== null) {
             return [newT]
         } else return []
     })
+}
+
+export function collectMatch<T, R>(arr: T[], fn: (matcher: Matcher<T>) => Matcher<T, R>): R[] {
+    const result: R[] = [];
+    arr.forEach(value => {
+        const matched = fn(new Matcher(value)).orUndefined;
+        if (matched) {
+            result.push(matched);
+        }
+    })
+    return result;
+}
+
+export function collectInstances<T, R extends T>(arr: T[], constructor: new (...args: any[]) => R): R[] {
+    const result: R[] = [];
+    arr.forEach(t => {
+        if (t instanceof constructor) {
+            result.push(t);
+        }
+    });
+    return result;
+}
+
+export function collectFirstMatch<T, R>(arr: T[], fn: (matcher: Matcher<T>) => Matcher<T, R>): R | undefined {
+    for (let i = 0; i < arr.length; i++) {
+        const result = fn(match(arr[i])).orUndefined;
+        if (result)
+            return result;
+    }
+    return undefined;
+}
+
+export function findInstance<T, U>(arr: T[], u: new (...args: any[]) => U): U | undefined {
+    const result = arr.find(t => t instanceof u);
+    return result ? result as any as U : undefined;
 }
 
 export function partition<T>(arr: T[], fun: (t: T) => boolean): [T[], T[]] {
@@ -136,8 +193,64 @@ export function mapSome<T>(arr: T[], cond: (t: T) => boolean, fn: (t: T) => T): 
 }
 
 //****************
+//* String Helpers
+//****************
+
+/**
+ * Split a string by line breaks, keeping the line breaks in the results
+ */
+export function splitWithBreaks(outputStr: string): string[] {
+    const result: string[] = [];
+    const matches = outputStr.match(/[^\n]+\n?/g);
+    if (matches)
+        matches.forEach(line => result.push(line));
+    return result;
+}
+
+export function positionIn(str: string, line: number, column: number): number {
+    const lines = splitWithBreaks(str);
+    const targetLine = Math.min(line - 1, lines.length);
+    let pos = 0;
+    let currentLine = 0;
+    for (currentLine = 0; currentLine < targetLine; currentLine++) {
+        pos += lines[currentLine].length;
+    }
+
+    if (currentLine < lines.length) {
+        pos += column;
+    }
+    return pos;
+}
+
+//****************
 //* Other Helpers
 //****************
+
+export function isDescendant(el: HTMLElement, maybeAncestor: HTMLElement, bound?: HTMLElement): boolean {
+    let current: HTMLElement | null = el;
+    while (current && current !== bound) {
+        if (current === maybeAncestor) {
+            return true;
+        }
+        current = current.parentElement;
+    }
+    return false;
+}
+
+export function mapOpt<T, U>(value: T | undefined, fn: (arg: T) => U): U | undefined {
+    if (value !== undefined) {
+        return fn(value);
+    }
+    return undefined;
+}
+
+export type InterfaceOf<T> =
+    T extends string ? T :
+    T extends Array<infer U> ? Array<InterfaceOf<U>> :
+    T extends Object ? {
+        [P in keyof T]: InterfaceOf<T[P]>
+    } :
+    T
 
 export class Deferred<T> implements Promise<T> {
     private _promise: Promise<T>;

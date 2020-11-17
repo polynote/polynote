@@ -3,6 +3,7 @@
     "outDir": "./dist/",
     "module": "es6",
     "target": "es6",
+    "incremental": true,
     "lib": [
       "esnext", // needed for BigInt. Hopefully this is ok?
       "es2019", // needed for array.flatMap. Hopefully this is ok?

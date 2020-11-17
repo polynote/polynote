@@ -1,13 +1,13 @@
 import {
     Error as ErrorMsg,
     GroupAgg,
-    HandleData,
+    HandleData, Histogram,
     Message, ModifyStream,
-    QuantileBin,
+    QuantileBin, Sample, SampleN,
     Select,
     TableOp
 } from "../data/messages";
-import {DoubleType, LongType, NumericTypes, StructField, StructType} from "../data/data_type";
+import {DoubleType, LongType, NumericTypes, StructField, StructType, UnsafeLongType} from "../data/data_type";
 import {DataReader, Pair} from "../data/codec";
 import {Either} from "../data/codec_types";
 import match from "../util/match";
@@ -22,6 +22,7 @@ import {
 } from "./dispatcher";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {Observer, StateView} from "../state/state_handler";
+import {deepCopy} from "../util/helpers";
 
 export const QuartilesType = new StructType([
     new StructField("min", DoubleType),
@@ -36,7 +37,7 @@ export const QuartilesType = new StructType([
  * An API for streaming data out of a StreamingDataRepr
  */
 export class DataStream {
-    readonly mods: TableOp[];
+    private readonly mods: TableOp[];
     readonly dataType: StructType;
     private batchSize = 50;
     private receivedCount = 0;
@@ -52,13 +53,26 @@ export class DataStream {
     private activeStreams: StateView<NotebookState["activeStreams"]>;
     private observer?: Observer<NotebookState["activeStreams"]>;
 
-    constructor(private readonly dispatcher: NotebookMessageDispatcher, private readonly nbState: NotebookStateHandler, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
-        this.mods = mods ?? [];
+    constructor(
+        private readonly dispatcher: NotebookMessageDispatcher,
+        private readonly nbState: NotebookStateHandler,
+        private readonly originalRepr: StreamingDataRepr,
+        mods?: TableOp[],
+        currentDataType?: StructType,
+        private unsafeLongs: boolean = false
+    ) {
         this.repr = originalRepr;
-        this.dataType = originalRepr.dataType;
-        this.dataType = this.finalDataType();
+        this.dataType = currentDataType ?? originalRepr.dataType;
+        this.mods = mods ?? [];
 
-        this.activeStreams = nbState.view("activeStreams")
+        this.activeStreams = nbState.view("activeStreams");
+    }
+
+    private attachListener() {
+        if (this.observer) {
+            this.activeStreams.removeObserver(this.observer);
+        }
+
         this.observer = this.activeStreams.addObserver(handles => {
             const data = handles[this.repr.handle];
             if (data && data.length > 0) {
@@ -87,9 +101,6 @@ export class DataStream {
                             } else {
                                 throw new Error(`Unexpected HandleData message! ${[handleType, handleId, count, data]}`)
                             }
-                        })
-                        .when(ModifyStream, (fromHandle, ops, newRepr) => {
-                            if (newRepr) this.repr = newRepr
                         })
                 })
 
@@ -135,6 +146,11 @@ export class DataStream {
         }
     }
 
+    private withOps(ops: TableOp[], forceUnsafeLongs?: boolean): DataStream {
+        const newType = DataStream.finalDataType(this.dataType, ops);
+        return new DataStream(this.dispatcher, this.nbState, this.originalRepr, [...this.mods, ...ops], newType, forceUnsafeLongs ?? this.unsafeLongs);
+    }
+
     aggregate(groupCols: string[], aggregations: Record<string, string> | Record<string, string>[]) {
         if (!(aggregations instanceof Array)) {
             aggregations = [aggregations];
@@ -154,7 +170,7 @@ export class DataStream {
         });
 
         const mod = new GroupAgg(groupCols, aggPairs);
-        return new DataStream(this.dispatcher, this.nbState, this.originalRepr, [...this.mods, mod]);
+        return this.withOps([mod]);
     }
 
     bin(col: string, binCount: number, err?: number) {
@@ -165,13 +181,39 @@ export class DataStream {
         if (NumericTypes.indexOf(field.dataType) < 0) {
             throw new Error(`Field ${col} must be a numeric type to use bin()`);
         }
-        return new DataStream(this.dispatcher, this.nbState, this.originalRepr, [...this.mods, new QuantileBin(col, binCount, err)]);
+        const mod = new QuantileBin(col, binCount, err);
+        return this.withOps([mod]);
     }
 
     select(...cols: string[]) {
         const fields = cols.map(col => this.requireField(col));
         const mod = new Select(cols);
-        return new DataStream(this.dispatcher, this.nbState, this.originalRepr, [...this.mods, mod]);
+        return this.withOps([mod]);
+    }
+
+    /**
+     * Sample (without replacement) at the given rate
+     * @param sampleRate sample rate, 0 < n < 1
+     */
+    sample(sampleRate: number) {
+        return this.withOps([new Sample(sampleRate)]);
+    }
+
+    /**
+     * Sample (without replacement) approximately n items
+     * @param n The number of items to sample
+     */
+    sampleN(n: number) {
+        return this.withOps([new SampleN(n)]);
+    }
+
+    histogram(field: string, binCount: number) {
+        binCount = Math.floor(binCount);
+        return this.withOps([new Histogram(field, binCount)]);
+    }
+
+    useUnsafeLongs() {
+        return this.withOps([], true);
     }
 
     onError(fn: (cause: any) => void) {
@@ -240,47 +282,52 @@ export class DataStream {
 
     private setupStream() {
         if (!this.setupPromise) {
-            this.setupPromise = new Promise((resolve, reject) => {
+            this.setupPromise = new Promise<ModifyStream>((resolve, reject) => {
                 const handleId = this.repr.handle;
                 this.dispatcher.dispatch(new ModifyDataStream(handleId, this.mods))
                 const obs = this.activeStreams.addObserver(handles => {
                     const messages = handles[handleId]
                     if (messages.length > 0) {
-                        messages.forEach(msg => {
-                            if (msg instanceof ModifyStream && msg.fromHandle === handleId) {
-                                resolve(msg)
+                        messages.forEach(message => {
+                            if (message instanceof ModifyStream && message.fromHandle === handleId) {
+                                if (message.newRepr) {
+                                    if (this.unsafeLongs) {
+                                        this.repr = new StreamingDataRepr(
+                                            message.newRepr.handle,
+                                            message.newRepr.dataType.replaceType(typ => typ === LongType ? UnsafeLongType : undefined),
+                                            message.newRepr.knownSize)
+                                    } else {
+                                        this.repr = message.newRepr;
+                                    }
+                                }
+                                resolve(message)
                                 this.activeStreams.removeObserver(obs)
                             }
                         })
                     }
                 })
+            }).then(message => {
+                this.attachListener();
+                return message;
             })
         }
 
         return this.setupPromise;
     }
 
-    private finalDataType() {
-        let dataType = this.repr.dataType;
-        const mods = this.mods;
+    private static finalDataType(structType: StructType, mods: TableOp[]): StructType {
+        let dataType = structType;
 
         if (!mods || !mods.length)
             return dataType;
 
-        if (!(dataType instanceof StructType)) {
-            throw Error("Illegal state: table modifications on a non-struct stream")
-        }
-
-        for (let mod of this.mods) {
+        for (let mod of mods) {
             match(mod)
                 .when(GroupAgg, (groupCols: string[], aggregations: Pair<string, string>[]) => {
-                    const groupFields = groupCols.map(name => this.requireField(name));
+                    const groupFields = groupCols.map(name => DataStream.requireField(dataType, name));
                     const aggregateFields = aggregations.map(pair => {
                         const [name, agg] = Pair.unapply(pair);
-                        let aggregatedType = this.requireField(name).dataType;
-                        if (!aggregatedType) {
-                            throw new Error(`Field ${name} not present in data type`);
-                        }
+                        let aggregatedType = DataStream.requireField(dataType, name).dataType;
                         switch (agg) {
                             case "count":
                             case "approx_count_distinct":
@@ -288,6 +335,9 @@ export class DataStream {
                                 break;
                             case "quartiles":
                                 aggregatedType = QuartilesType;
+                                break;
+                            case "mean":
+                                aggregatedType = DoubleType;
                                 break;
                         }
                         return new StructField(`${agg}(${name})`, aggregatedType);
@@ -298,18 +348,31 @@ export class DataStream {
                     dataType = new StructType([...dataType.fields, new StructField(`${column}_quantized`, DoubleType)]);
                 })
                 .when(Select, (columns: string[]) => {
-                    const fields = columns.map(name => this.requireField(name));
+                    const fields = columns.map(name => DataStream.requireField(dataType, name));
                     dataType = new StructType(fields);
-                });
+                }).when(Histogram, () => Histogram.dataType);
         }
         return dataType;
     }
 
     private requireField(name: string) {
-        const field = this.dataType.fields.find((field: StructField) => field.name === name);
+        return DataStream.requireField(this.dataType, name);
+    }
+
+    private static requireField(dataType: StructType, name: string): StructField {
+        const path = name.indexOf('(') >= 0 ? [name] : name.split('.');
+        const fieldName = path.shift();
+        const field = dataType.fields.find((field: StructField) => field.name === fieldName);
         if (!field) {
             throw new Error(`Field ${name} not present in data type`);
         }
-        return field;
+
+        if (!path.length) {
+            return field;
+        } else if (field.dataType instanceof StructType) {
+            return DataStream.requireField(field.dataType, path.join('.'));
+        } else {
+            throw new Error(`No field ${path[0]} in ${fieldName} (${field.dataType.typeName()} is not a struct)`)
+        }
     }
 }

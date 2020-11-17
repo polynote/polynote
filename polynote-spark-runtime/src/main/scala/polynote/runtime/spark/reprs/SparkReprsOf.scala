@@ -217,6 +217,22 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
             }
 
             case Select(columns) => tryEither(df.select(columns.head, columns.tail: _*))
+            case Sample(sampleRate) => tryEither(df.sample(withReplacement = false, sampleRate))
+            case SampleN(n) => tryEither {
+              val count = df.select(lit(1)).count()
+              if (n >= count)
+                df
+              else
+                df.sample(withReplacement = false, n.toDouble / count)
+            }
+            case Histogram(field, binCount) => tryEither {
+              import df.sparkSession.implicits._
+              val (bins, counts) = df.select(df(field).as[Double]).rdd.histogram(binCount)
+              val entries = bins.sliding(2, 1).toSeq.zip(counts).map {
+                case (Array(start, end), count) => HistogramBin(start, end, count)
+              }
+              df.sparkSession.createDataFrame(entries)
+            }
           }
         }
       }.right.map {
@@ -282,8 +298,8 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         //  We should have a better way to inject data for display instead of doing this.
         val config = Seq(
           """
-            |<details class="object-display">
-            |  <summary class="object-summary"><span class="summary-content"><span>SparkConf</span></span></summary>
+            |<details class="object-display" open>
+            |  <summary class="object-summary"><span class="summary-content"><span>Configuration</span></span></summary>
             |  <ul class="object-fields">
           """.stripMargin) ++ sess.conf.getAll.map {
           case (k, v) =>
@@ -299,7 +315,8 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         val html =
           s"""
              |<div class="object-display spark-ui">
-             |  $uiLink
+             |  <div>Spark Version ${sess.version}</div>
+             |  <div>$uiLink</div>
              |</div>
              |${config.mkString("\n")}
            """.stripMargin

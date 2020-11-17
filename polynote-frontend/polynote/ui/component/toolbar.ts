@@ -15,6 +15,7 @@ import {Observer, StateView} from "../../state/state_handler";
 import {CellState, NotebookState, NotebookStateHandler} from "../../state/notebook_state";
 import {FakeSelect} from "../display/fake_select";
 import {LaTeXEditor} from "../input/latex_editor";
+import {ClientInterpreters} from "../../interpreter/client_interpreter";
 
 /**
  * The Toolbar. Its contents change depending on the current cell selected, and buttons are disabled when there is
@@ -177,11 +178,15 @@ class CellToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
     private activeCellHandler?: StateView<CellState>;
     private langSelector: FakeSelect;
+    private disabledLangSelector: FakeSelect;
     constructor(connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
 
         const selectEl = fakeSelectElem(["cell-language"], [
             button(["selected"], {value: "text"}, ["Text"])
+        ]);
+        const disabledSelectEl = fakeSelectElem(["cell-language"], [
+            button(["selected"], {}, "")
         ]);
         this.el = this.toolbarElem("cell", [
             [
@@ -205,6 +210,9 @@ class CellToolbar extends ToolbarElement {
         ]);
 
         this.langSelector = new FakeSelect(selectEl);
+        this.disabledLangSelector = new FakeSelect(disabledSelectEl);
+        this.disabledLangSelector.disabled = true;
+
         const updateSelectorLanguages = (langs: Record<string, string>) => {
             const langEntries = Object.entries(langs)
             if (langEntries.length > 0) {
@@ -233,7 +241,19 @@ class CellToolbar extends ToolbarElement {
         this.activeCellHandler = cellState;
         this.activeCellHandler.addObserver(cell => {
             if (cell) {
-                this.langSelector.setState(cell.language)
+                const lang = cell.language;
+                if (ClientInterpreters[lang] && ClientInterpreters[lang].hidden) {
+                    this.disabledLangSelector.element.querySelector('button')!.innerHTML = ClientInterpreters[lang].languageTitle;
+                    if (this.langSelector.element.parentNode) {
+                        this.disabledLangSelector.element.style.width = `${this.langSelector.element.offsetWidth}px`;
+                        this.langSelector.element.parentNode.replaceChild(this.disabledLangSelector.element, this.langSelector.element);
+                    }
+                } else {
+                    if (this.disabledLangSelector.element.parentNode) {
+                        this.disabledLangSelector.element.parentNode.replaceChild(this.langSelector.element, this.disabledLangSelector.element);
+                    }
+                    this.langSelector.setState(cell.language)
+                }
             }
         })
         this.setDisabled(false);

@@ -232,7 +232,7 @@ class SocketTransport(
       channel <- effectBlockingCancelable(server.accept())(ZIO.effectTotal(server.close()))
       framed  <- FramedSocket(channel, keepalive = true)
     } yield framed
-  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to start after ${timeout.render}"))(timeout)
+  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to connect after ${timeout.asScala}"))(timeout).tapError(Logging.error)
 
   private def monitorProcess(process: SocketTransport.DeployedProcess) = {
     val checkExit = ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus
@@ -246,15 +246,21 @@ class SocketTransport(
 
   private[polynote] def deployAndServe(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, (TransportServer[InetSocketAddress], SocketTransport.DeployedProcess)] =
     TaskManager.run("RemoteKernel", "Remote kernel", "Starting remote kernel") {
-      for {
-        socketServer  <- openServerChannel
-        serverAddress  = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
-        process       <- deploy.deployKernel(this, serverAddress)
-        _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
-        connection    <- startConnection(socketServer).raceFirst(monitorProcess(process))
-        connection2   <- startConnection(socketServer)
-        server        <- SocketTransportServer(socketServer, connection, connection2, process)
-      } yield (server, process)
+      openServerChannel.flatMap {
+        socketServer =>
+          val serverAddress = socketServer.getLocalAddress.asInstanceOf[InetSocketAddress]
+          deploy.deployKernel(this, serverAddress).flatMap {
+            process =>
+              val connect = for {
+                _             <- CurrentTask.update(_.progress(0.5, Some("Waiting for remote kernel")))
+                connection    <- startConnection(socketServer).raceFirst(monitorProcess(process))
+                connection2   <- startConnection(socketServer)
+                server        <- SocketTransportServer(socketServer, connection, connection2, process)
+              } yield (server, process)
+
+              connect.tapError(_ => process.kill())
+          }
+      }
     }
 
   def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[InetSocketAddress]] =

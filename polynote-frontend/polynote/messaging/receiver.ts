@@ -2,7 +2,7 @@
  * The MessageReceiver is used to translate external events into state changes.
  * So far, the only external events are socket messages.
  */
-import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {CellState, NotebookState, NotebookStateHandler, outputs} from "../state/notebook_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import * as messages from "../data/messages";
 import {Identity, Message, TaskInfo, TaskStatus} from "../data/messages";
@@ -22,7 +22,7 @@ import {
 } from "../data/result";
 import {NoUpdate, StateHandler} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrInsert, unzip} from "../util/helpers";
+import {arrInsert, deepCopy, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {ClientBackup} from "../state/client_backup";
 
@@ -109,15 +109,27 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             return NoUpdate
         });
         this.receive(messages.NotebookCells, (s: NotebookState, path: string, cells: NotebookCell[], config?: NotebookConfig) => {
-            const [cellStates, results] = unzip(cells.map(cell => {
-                const cellState = this.cellToState(cell)
+            const symbols = {...s.kernel.symbols};
+            const cellStates = cells.map(cell => {
+                const cellState = this.cellToState(cell);
+                if (!symbols[cell.id]) {
+                    symbols[cell.id] = {};
+                }
                 // unfortunately, this can't be an anonymous function if we want TS to correctly narrow the type.
                 function isRV(maybe: ResultValue | ClientResult): maybe is ResultValue {
                     return maybe instanceof ResultValue
                 }
-                const resultsValues = cellState.results.filter(isRV)
-                return [cellState, resultsValues]
-            }));
+
+                const newResults = cellState.results.filter(isRV);
+                if (newResults.length > 0) {
+                    const cellResults = {...symbols[cell.id]};
+                    newResults.forEach(rv => {
+                        cellResults[rv.name] = rv;
+                    });
+                    symbols[cell.id] = cellResults;
+                }
+                return cellState;
+            });
 
             // add this notebook to the backups
             ClientBackup.addNb(path, cells, config)
@@ -131,7 +143,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 config: {...s.config, config: config ?? NotebookConfig.default},
                 kernel: {
                     ...s.kernel,
-                    symbols: [...s.kernel.symbols, ...results.flat()]
+                    symbols
                 }
             }
         });
@@ -157,7 +169,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         kernel: {
                             ...s.kernel,
                             status,
-                            symbols: status === 'dead' ? [] : s.kernel.symbols
+                            symbols: status === 'dead' ? {} : s.kernel.symbols
                         }
                     }
                 })
@@ -377,7 +389,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                 ...s,
                                 cells: s.cells.map(c => {
                                     if (c.id === id) {
-                                        return {...c, output: [output]}
+                                        return {...c, output: outputs([output], true) }
                                     } else return c
                                 })
                             }
@@ -464,12 +476,12 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     .whenInstance(RuntimeError, result => {
                         return {...s, errors: [...s.errors, result.error]}
                     })
-                    .otherwiseThrow ?? NoUpdate
+                    .otherwise(NoUpdate)
             } else {
-
-                let symbols = s.kernel.symbols
+                const symbols = {...s.kernel.symbols};
                 if (['busy', 'idle'].includes(s.kernel.status) && result instanceof ResultValue) {
-                    symbols = [...s.kernel.symbols, result];
+                    symbols[cellId] = {...(symbols[cellId] || {})};
+                    symbols[cellId][result.name] = result;
                 }
                 return {
                     ...s,

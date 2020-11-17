@@ -33,7 +33,7 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
           }.toSet
 
           val datasets = state.scope.collect {
-            case ResultValue(name, _, _, _, value: Dataset[_], _, _) if idents contains name => name -> value
+            case ResultValue(name, _, _, _, value: Dataset[_], _, _, _) if idents contains name => name -> value
           }
 
           datasets.foreach {

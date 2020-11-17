@@ -118,3 +118,24 @@ ValueRepr.codec = discriminated(
 );
 
 
+// Order of preference of reprs, after preferred MIME repr (TODO: should be a preference?)
+export const reprOrder = [
+    StreamingDataRepr,
+    DataRepr,
+    LazyDataRepr,
+    MIMERepr,
+    StringRepr
+]
+
+export function reprPriority(repr: ValueRepr, ordering?: (new (...args: any) => ValueRepr)[]): number {
+    return maybeReprPriority(repr, ordering) ?? Number.MAX_SAFE_INTEGER;
+}
+
+export function maybeReprPriority(repr: ValueRepr, ordering?: (new (...args: any) => ValueRepr)[]): number | undefined {
+    ordering = ordering ?? reprOrder;
+    const index = ordering.findIndex(c => repr instanceof c);
+    if (index < 0) {
+        return undefined;
+    }
+    return index;
+}

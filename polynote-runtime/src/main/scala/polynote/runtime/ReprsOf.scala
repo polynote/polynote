@@ -129,11 +129,10 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       Array(repr)
   }
 
+  private case class PendingHandle[A, B](data: Seq[A], transform: Seq[A] => Seq[B], enc: DataEncoder.StructDataEncoder[B])
+    extends (Int => StructSeqStreamHandle[A, B]) {
+    def apply(handle: Int): StructSeqStreamHandle[A, B] =  StructSeqStreamHandle(handle, data, transform, enc)
 
-  private[runtime] case class StructSeqStreamHandle[A, B](handle: Int, data: Seq[A], transform: Seq[A] => Seq[B], enc: DataEncoder.StructDataEncoder[B]) extends StreamingDataRepr.Handle {
-    def dataType: DataType = enc.dataType
-    lazy val knownSize: Option[Int] = if (data.hasDefiniteSize) Some(data.size) else None
-    def iterator: Iterator[ByteBuffer] = transform(data).iterator.map(b => DataEncoder.writeSized[B](b)(enc))
 
     private trait Aggregator[T] {
       def accumulate(value: B): Unit
@@ -225,80 +224,161 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       }
     }
 
-    def modify(ops: List[TableOp]): Either[Throwable, Int => StreamingDataRepr.Handle] = {
-      ops match {
-        case Nil => Right(StructSeqStreamHandle[A, B](_, data, transform, enc))
-        case GroupAgg(cols, aggs) :: rest if cols.nonEmpty =>
-          try {
-            val groupingFields = cols.map {
-              col => enc.field(col).getOrElse(throw new IllegalArgumentException(s"No field $col in struct"))
+    // TODO: this needs a refactor
+    private def applyOp(op: TableOp): PendingHandle[A, _] = op match {
+      case GroupAgg(cols, aggs) if cols.nonEmpty =>
+        val groupingFields = cols.map {
+          col => enc.field(col).getOrElse(throw new IllegalArgumentException(s"No field $col in struct"))
+        }
+
+        val getters = groupingFields.map(_._1)
+
+        val (aggregateResultTypes, aggregateEncoders) = aggs.map {
+          case (col, aggName) =>
+            val a = aggregate(col, aggName)
+            (a.resultName -> a.encoder.dataType, a.encoder.asInstanceOf[DataEncoder[Any]])
+        }.unzip
+
+        val groupTransform = (bs: Seq[B]) => bs.groupBy(b => getters.map(_.apply(b))).toSeq.map {
+          case (groupCols, group) =>
+            val aggregators = aggs.map {
+              case (col, aggName) => aggregate(col, aggName)
             }
 
-            val getters = groupingFields.map(_._1)
-
-            val (aggregateResultTypes, aggregateEncoders) = aggs.map {
-              case (col, aggName) =>
-                val a = aggregate(col, aggName)
-                (a.resultName -> a.encoder.dataType, a.encoder.asInstanceOf[DataEncoder[Any]])
-            }.unzip
-
-            val groupTransform = (bs: Seq[B]) => bs.groupBy(b => getters.map(_.apply(b))).toSeq.map {
-              case (groupCols, group) =>
-                val aggregators = aggs.map {
-                  case (col, aggName) => aggregate(col, aggName)
-                }
-
-                group.foreach {
-                  b => aggregators.foreach {
-                    agg => agg.accumulate(b)
-                  }
-                }
-
-                val aggregates = aggregators.map(_.summarize())
-                (groupCols ::: aggregates).toArray
-            }
-
-            val groupedType = StructType(
-              (cols.zip(groupingFields.map(_._2.dataType)) ++ aggregateResultTypes)
-                .map((StructField.apply _).tupled))
-
-            val groupedEncoders = groupingFields.map(_._2.asInstanceOf[DataEncoder[Any]]) ++ aggregateEncoders
-
-            val groupedEncoder = new runtime.DataEncoder.StructDataEncoder[Array[Any]](groupedType) {
-              def field(name: String): Option[(Array[Any] => Any, DataEncoder[_])] = {
-                groupedType.fields.indexWhere(_.name == name) match {
-                  case -1 => None
-                  case index => Some((arr => arr(index), groupedEncoders(index)))
-                }
-              }
-
-              def encode(dataOutput: DataOutput, value: Array[Any]): Unit = {
-                val encs = groupedEncoders.iterator
-                var i = 0
-                while (i < value.length) {
-                  encs.next().encode(dataOutput, value(i))
-                  i += 1
-                }
-              }
-
-              def sizeOf(t: Array[Any]): Int = {
-                val encs = groupedEncoders.iterator
-                var size = encs.next().sizeOf(t(0))
-                var i = 1
-                while (i < t.length) {
-                  size = DataEncoder.combineSize(size, encs.next().sizeOf(t(i)))
-                  i += 1
-                }
-                size
+            group.foreach {
+              b => aggregators.foreach {
+                agg => agg.accumulate(b)
               }
             }
 
-            Right((newHandle: Int) => new StructSeqStreamHandle[A, Array[Any]](newHandle, data, transform andThen groupTransform, groupedEncoder))
-          } catch {
-            case err: Throwable => Left(err)
+            val aggregates = aggregators.map(_.summarize())
+            (groupCols ::: aggregates).toArray
+        }
+
+        val groupedType = StructType(
+          (cols.zip(groupingFields.map(_._2.dataType)) ++ aggregateResultTypes)
+            .map((StructField.apply _).tupled))
+
+        val groupedEncoders = groupingFields.map(_._2.asInstanceOf[DataEncoder[Any]]) ++ aggregateEncoders
+
+        val groupedEncoder = new runtime.DataEncoder.StructDataEncoder[Array[Any]](groupedType) {
+          def field(name: String): Option[(Array[Any] => Any, DataEncoder[_])] = {
+            groupedType.fields.indexWhere(_.name == name) match {
+              case -1 => None
+              case index => Some((arr => arr(index), groupedEncoders(index)))
+            }
           }
+
+          def encode(dataOutput: DataOutput, value: Array[Any]): Unit = {
+            val encs = groupedEncoders.iterator
+            var i = 0
+            while (i < value.length) {
+              encs.next().encode(dataOutput, value(i))
+              i += 1
+            }
+          }
+
+          def sizeOf(t: Array[Any]): Int = {
+            val encs = groupedEncoders.iterator
+            var size = encs.next().sizeOf(t(0))
+            var i = 1
+            while (i < t.length) {
+              size = DataEncoder.combineSize(size, encs.next().sizeOf(t(i)))
+              i += 1
+            }
+            size
+          }
+        }
+        copy[A, Array[Any]](transform = transform andThen groupTransform, enc = groupedEncoder)
+
+      case QuantileBin(col, binCount, err) =>
+        ??? // TODO
+
+      case Select(cols) =>
+        val prevFields = enc.dataType.fields.map(field => field.name -> field).toMap
+        val (fieldEncoders, fieldSizes) = cols
+          .map(col => enc.field(col).getOrElse(throw new UnsupportedOperationException(s"$col cannot be selected (its parent encoder cannot encode it separately)")))
+          .map {
+            case (extractor, encoder) =>
+              val castEncoder = encoder.asInstanceOf[DataEncoder[Any]]
+              val encodeFn = (output: DataOutput, value: B) => castEncoder.encode(output, extractor(value))
+              val sizeFn = (value: B) => castEncoder.sizeOf(extractor(value))
+              (encodeFn, sizeFn)
+          }.unzip
+
+        val dataType = StructType(cols.map(prevFields))
+        val encoder = new DataEncoder.StructDataEncoder[B](
+          dataType
+        ) {
+          override def field(name: String): Option[(B => Any, DataEncoder[_])] = enc.field(name)
+          override def encode(dataOutput: DataOutput, value: B): Unit =
+            fieldEncoders.foreach(_.apply(dataOutput, value))
+
+          override def sizeOf(t: B): Int =
+            fieldSizes.map(_.apply(t)).sum
+        }
+        copy(enc = encoder)
+
+      case Sample(sampleRate) =>
+        val sampled = transform andThen {
+          seq => seq.filter(_ => scala.util.Random.nextDouble() <= sampleRate)
+        }
+        copy(transform = sampled)
+
+      case SampleN(n) =>
+        val sampleRate = n.toDouble / data.size
+        val sampled = transform andThen {
+          seq => seq.filter(_ => scala.util.Random.nextDouble() <= sampleRate)
+        }
+        copy(transform = sampled)
+
+      case Histogram(field, binCount) =>
+        val (getField, fieldEncoder) = enc.field(field).getOrElse(throw new IllegalArgumentException(s"Field $field does not exist in the schema"))
+        val fieldNumeric = fieldEncoder.numeric
+          .getOrElse(throw new IllegalArgumentException(s"Field $field is not numeric"))
+          .asInstanceOf[Numeric[Any]]
+
+        // TODO: this is a pretty inefficient implementation
+        val mkHistogram: Seq[B] => Seq[HistogramBin] = {
+          bs =>
+            val values = bs.map(b => fieldNumeric.toDouble(getField(b)))
+            val min = values.min
+            val max = values.max
+            val binWidth = (max - min) / binCount;
+            val boundaries = (min to max by binWidth).dropRight(1) :+ max
+
+            val binned = values.groupBy {
+              value => math.floor((value - min) / binWidth).toInt
+            }.mapValues(_.size)
+
+            boundaries.sliding(2, 1).zipWithIndex.toSeq.map {
+              case (Seq(start, end), index) =>
+                val count = binned.getOrElse(index, 0)
+                HistogramBin(start, end, count)
+            }
+        }
+        copy(transform = transform andThen mkHistogram, enc = HistogramBin.encoder)
+    }
+
+    def modify(ops: List[TableOp]): Either[Throwable, Int => StreamingDataRepr.Handle] = {
+      try {
+        Right(ops.foldLeft(this.asInstanceOf[PendingHandle[A, Any]]) {
+          (accum, op) => accum.applyOp(op).asInstanceOf[PendingHandle[A, Any]]
+        })
+      } catch {
+        case err: Throwable => Left(err)
       }
     }
+  }
+
+  private[runtime] case class StructSeqStreamHandle[A, B](handle: Int, data: Seq[A], transform: Seq[A] => Seq[B], enc: DataEncoder.StructDataEncoder[B]) extends StreamingDataRepr.Handle {
+    def dataType: DataType = enc.dataType
+    lazy val knownSize: Option[Int] = if (data.hasDefiniteSize) Some(data.size) else None
+    def iterator: Iterator[ByteBuffer] = transform(data).iterator.map(b => DataEncoder.writeSized[B](b)(enc))
+
+
+    def modify(ops: List[TableOp]): Either[Throwable, Int => StreamingDataRepr.Handle] =
+      PendingHandle(data, transform, enc).modify(ops)
   }
 
 

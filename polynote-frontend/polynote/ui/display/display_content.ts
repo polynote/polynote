@@ -4,6 +4,7 @@ import * as monaco from "monaco-editor";
 import * as katex from "katex";
 import {Content, details, div, span, tag, TagElement} from "../tags";
 import {ArrayType, MapType, OptionalType, StructField, StructType} from "../../data/data_type";
+import embed from "vega-embed";
 
 export function displayContent(contentType: string, content: string | DocumentFragment, contentTypeArgs?: Record<string, string>): Promise<TagElement<any>> {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);
@@ -32,6 +33,27 @@ export function displayContent(contentType: string, content: string | DocumentFr
         const node = div([], []);
         katex.render(content, node, { displayMode: true, throwOnError: false });
         result = Promise.resolve(node);
+    } else if (mimeType.startsWith("application/vnd.vegalite")) {
+        const targetEl = div([], []);
+        targetEl.style.display = 'block';
+        const wrapperEl = div(['vega-result'], [targetEl]);
+        const spec = JSON.parse(content);
+
+        if (spec?.width === 'container') {
+            // must wait until the element is in the DOM before embedding, in case it's responsive sized.
+            const onVisible = () => {
+                embed(targetEl, spec);
+                wrapperEl.removeEventListener('becameVisible', onVisible);
+            }
+            wrapperEl.addEventListener('becameVisible', onVisible);
+
+            // must set the target element to have display: block, or it will be inline block and have no width
+            targetEl.style.display = 'block';
+            result = Promise.resolve(wrapperEl);
+        } else {
+            result = embed(targetEl, spec).then(_ => wrapperEl);
+        }
+
     } else if (mimeType.startsWith("image/")) {
         const img = document.createElement('img');
         img.setAttribute('src', `data:${mimeType};base64,${content}`);
@@ -85,7 +107,13 @@ export function truncate(string: any, len?: number) {
     return string;
 }
 
-export function displayData(data: any, fieldName?: string, expandObjects: boolean | number = false) {
+export type MIMEElement = TagElement<"div", HTMLDivElement & { rel?: string, "mime-type"?: string}>;
+export function mimeEl(mimeType: string, args: Record<string, string>, content: Content): MIMEElement {
+    const rel = args.rel || 'none';
+    return (div(['output'], content) as MIMEElement).attr('rel', rel).attr('mime-type', mimeType);
+}
+
+export function displayData(data: any, fieldName?: string, expandObjects: boolean | number = false): TagElement<any> {
     const expandNext: boolean | number = typeof(expandObjects) === "number" ? (expandObjects > 0 ? expandObjects - 1 : false) : expandObjects;
 
     function shortDisplay(data: any) {

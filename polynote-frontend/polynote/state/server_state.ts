@@ -143,7 +143,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     config: {open: false, config: NotebookConfig.default},
                     errors: [],
                     kernel: {
-                        symbols: [],
+                        symbols: {},
                         status: ServerStateHandler.state.connectionStatus === "connected" ? 'dead' : 'disconnected',
                         info: {},
                         tasks: {},

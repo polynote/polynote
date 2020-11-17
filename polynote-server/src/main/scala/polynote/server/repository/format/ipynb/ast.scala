@@ -102,7 +102,7 @@ object JupyterOutput {
             case ("text/plain", json) => StringRepr(jsonToStr(json))
             case (mime, json) => MIMERepr(mime, jsonToStr(json))
           }
-          ResultValue(name, typ, reprs, cellId, (), scala.reflect.runtime.universe.NoType, None)
+          ResultValue(name, typ, reprs, cellId, (), scala.reflect.runtime.universe.NoType, None, live = false)
         } { _ =>
           // yep, it's a CompileError!
           data.get("application/json")
@@ -149,7 +149,7 @@ object JupyterOutput {
       Error(typ, Option(msg).getOrElse(""), err.getStackTrace.map(el => Seq(el.getClassName, el.getMethodName, el.getFileName, el.getLineNumber).mkString(",")).toList) :: Nil
 
     case ClearResults() => Nil
-    case rv @ ResultValue(name, typeName, reprs, _, _, _, _) if rv.isCellResult =>
+    case rv @ ResultValue(name, typeName, reprs, _, _, _, _, _) if rv.isCellResult =>
 
       reprs.collect {
         case StringRepr(str) => "text/plain" -> Json.arr(str.linesWithSeparators.toSeq.map(_.asJson): _*)
@@ -164,7 +164,7 @@ object JupyterOutput {
           List(ExecuteResult(execId, results.toMap, Some(JsonObject(meta: _*))))
       }
 
-    case ResultValue(_, _, _, _, _, _, _) => Nil
+    case ResultValue(_, _, _, _, _, _, _, _) => Nil
     case ExecutionInfo(_, _) => Nil
   }
 }

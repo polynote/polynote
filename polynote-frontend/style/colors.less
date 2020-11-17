@@ -9,6 +9,20 @@ button {
   color: @ui-text;
 }
 
+// Some basic form styling, because Chrome made form controls look like crap
+input[type=text], input[type=number], textarea {
+  border-color: @ui-border;
+  background: @ui-panel-bg;
+  color: @ui-text;
+  box-shadow: @input-shadow;
+}
+
+select {
+  border-color: @ui-border;
+  background: @ui-panel-bg;
+  color: @ui-text;
+}
+
 .toolbar-container {
   background: @ui-background;
   border-bottom-color: @ui-border;
@@ -33,17 +47,17 @@ button {
     background-color: @dropdown-bg;
   }
 
-  button {
+  button, .item {
     background: @button-bg;
     border-color: transparent @ui-border;
     color: @ui-text;
   }
 
-  button.selected, button:hover {
+  button.selected, button:hover, .item:hover {
     border-color: @ui-border;
   }
 
-  &.open button:enabled {
+  &.open button:enabled, &.open .item {
     border-color: transparent @ui-border;
 
     &:first-of-type, &.first-visible {
@@ -55,7 +69,7 @@ button {
     }
   }
 
-  &.open button:hover {
+  &.open button:hover, &.open .item:hover {
     background-color: @ui-selected;
     color: @ui-selected-fg;
   }
@@ -89,6 +103,15 @@ button {
     .cell-input-tools {
       background: @ui-background;
       border-bottom-color: @ui-border;
+
+      .value-name {
+        color: @ui-text;
+      }
+
+      .value-name .name {
+        border-color: @ui-border;
+        background: @ui-panel-bg;
+      }
 
       .exec-info {
         color: #808080;
@@ -750,7 +773,7 @@ button.dialog-button {
   }
 }
 
-.tab-nav {
+.tab-nav.vertical {
   .tab-nav-items {
     background: @ui-background;
     border-right-color: @ui-border;
@@ -768,6 +791,24 @@ button.dialog-button {
 
   .tab-nav-content {
     background: @ui-panel-bg;
+  }
+}
+
+.tab-nav.horizontal {
+  .tab-nav-items {
+    background: @ui-background;
+    border-bottom-color: @ui-border;
+
+    .tab-nav-item {
+      border-color: @ui-border;
+      user-select: none;
+      background: @ui-background-dark;
+    }
+
+    .tab-nav-item.active {
+      background: @ui-panel-bg;
+      border-bottom-color: @ui-panel-bg;
+    }
   }
 }
 
@@ -844,12 +885,23 @@ button.dialog-button {
   }
 }
 
+.viz-selector.loading {
+  background-color: @ui-background;
+  color: @ui-text;
+}
+
 /** Plot selector **/
 .plot-selector {
   background: @ui-background;
-  .measure-picker {
-    background: @ui-background;
+  color: @ui-text;
+  .measure-selector {
+    .selected-measures > div:empty::before {
+      color: @ui-text;
+    }
+  }
 
+  button.add {
+    color: @icon-green;
   }
 }
 
