@@ -37,11 +37,11 @@ object Main extends polynote.app.App {
       }.as(1)
     }
 
-  override def main(args: List[String]): ZIO[Environment, Nothing, Int] = main.provideSomeLayer[BaseEnv] {
+  override def main(args: List[String]): ZIO[Environment, Nothing, Int] = main.provideSomeLayer[BaseEnv](
     Args.parse(args).orDie andThen
       ((Config.layer.orDie ++ kernelFactory ++ FileSystems.live) andThen
-        globalEnv.orDie andThen NotebookRepository.live)
-  }
+        (globalEnv.orDie andThen NotebookRepository.live))
+  )
 
   private val kernelFactory: ULayer[Kernel.Factory] = ZLayer.succeed {
     Kernel.Factory.choose {

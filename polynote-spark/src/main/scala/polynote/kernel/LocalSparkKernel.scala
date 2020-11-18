@@ -53,7 +53,7 @@ class LocalSparkKernel private[kernel] (
     }
   }
 
-  override protected def chooseInterpreterFactory(factories: List[Interpreter.Factory]): ZIO[Any, Unit, Interpreter.Factory] =
+  override protected def chooseInterpreterFactory(factories: List[Interpreter.Factory]): ZIO[Any, Option[Nothing], Interpreter.Factory] =
     ZIO.fromOption(factories.headOption)
 
 }

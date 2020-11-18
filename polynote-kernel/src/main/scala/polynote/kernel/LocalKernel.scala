@@ -206,7 +206,7 @@ class LocalKernel private[kernel] (
       }
     }
 
-  protected def chooseInterpreterFactory(factories: List[Interpreter.Factory]): ZIO[Any, Unit, Interpreter.Factory] =
+  protected def chooseInterpreterFactory(factories: List[Interpreter.Factory]): ZIO[Any, Option[Nothing], Interpreter.Factory] =
     ZIO.fromOption(factories.filterNot(_.requireSpark).headOption)
 
   /**

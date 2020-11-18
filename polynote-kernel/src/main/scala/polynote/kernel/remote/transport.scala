@@ -18,8 +18,8 @@ import scodec.codecs.implicits._
 import scodec.bits.BitVector
 import scodec.stream.decode
 import zio.blocking.{Blocking, effectBlocking, effectBlockingCancelable, effectBlockingInterrupt}
-import zio.{Cause, Promise, RIO, Schedule, Task, ZIO}
-import zio.duration.{durationInt, Duration => ZDuration}
+import zio.{Cause, Promise, RIO, Schedule, Task, URIO, ZIO}
+import zio.duration.{DurationOps, durationInt, Duration => ZDuration}
 import zio.interop.catz._
 
 import scala.concurrent.TimeoutException
@@ -124,7 +124,7 @@ class SocketTransportServer private (
 object SocketTransportServer {
   private def selectChannels(channel1: FramedSocket, channel2: FramedSocket, address: InetSocketAddress): TaskB[SocketTransport.Channels] = {
     def identify(channel: FramedSocket) = channel.read().repeat {
-      Schedule.doUntil[Option[Option[ByteBuffer]]] {
+      Schedule.recurUntil[Option[Option[ByteBuffer]]] {
         case Some(Some(_)) => true
         case _ => false
       }
@@ -142,7 +142,7 @@ object SocketTransportServer {
 
   private def monitorProcess(process: SocketTransport.DeployedProcess) =
     for {
-      status <- (ZIO.sleep(ZDuration(1, TimeUnit.SECONDS)) *> process.exitStatus.orDie).doUntil(_.nonEmpty).someOrFail(SocketTransport.ProcessDied)
+      status <- (ZIO.sleep(ZDuration(1, TimeUnit.SECONDS)) *> process.exitStatus).repeatUntil(_.nonEmpty).someOrFail(SocketTransport.ProcessDied)
       _      <- Logging.info(s"Kernel process ended with $status")
       _      <- ZIO.when(status != 0)(ZIO.fail(SocketTransport.ProcessDied))
     } yield ()
@@ -232,12 +232,12 @@ class SocketTransport(
       channel <- effectBlockingCancelable(server.accept())(ZIO.effectTotal(server.close()))
       framed  <- FramedSocket(channel, keepalive = true)
     } yield framed
-  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to connect after ${timeout.asScala}"))(timeout).tapError(Logging.error)
+  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to connect after ${timeout.render}"))(timeout).tapError(Logging.error)
 
   private def monitorProcess(process: SocketTransport.DeployedProcess) = {
-    val checkExit = ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus.orDie
+    val checkExit = ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus
     val exited    = for {
-      status <- checkExit.doUntil(_.nonEmpty).get
+      status <- checkExit.repeatUntil(_.nonEmpty).get
       _      <- Logging.info(s"Kernel process ended with $status")
     } yield ()
 
@@ -303,7 +303,7 @@ object SocketTransport {
     * An interface to the process created by [[Deploy]]
     */
   trait DeployedProcess {
-    def exitStatus: RIO[BaseEnv, Option[Int]]
+    def exitStatus: URIO[BaseEnv, Option[Int]]
     def awaitExit(timeout: Long, timeUnit: java.util.concurrent.TimeUnit): RIO[BaseEnv, Option[Int]]
     def kill(): RIO[BaseEnv, Unit]
     def awaitOrKill(gracePeriodSeconds: Long): RIO[BaseEnv, Unit] = awaitExit(gracePeriodSeconds, TimeUnit.SECONDS).flatMap {
@@ -326,7 +326,7 @@ object SocketTransport {
         stream => effectBlocking(stream.readLine()).tap {
           case null => ZIO.unit
           case line => CurrentNotebook.path.flatMap(path => Logging.remote(path, line))
-        }.repeat(Schedule.doUntil(line => line == null)).unit
+        }.repeatUntil(_ == null).unit
       }
     }
 
@@ -379,8 +379,8 @@ object SocketTransport {
     }
 
     class Subprocess(process: Process) extends DeployedProcess {
-      override def exitStatus: RIO[Blocking, Option[Int]] = for {
-        alive <- effectBlocking(process.isAlive)
+      override def exitStatus: URIO[Blocking, Option[Int]] = for {
+        alive <- effectBlocking(process.isAlive).orDie
       } yield if (alive) None else Option(process.exitValue())
 
       override def kill(): RIO[Blocking, Unit] = effectBlocking {

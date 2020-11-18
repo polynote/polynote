@@ -176,7 +176,7 @@ package object task {
           onUpdate     = (fn: TaskInfo => TaskInfo) => runtime.unsafeRun(updateTasks.offer(fn).unit)
           cancel       = cancelCallback(onUpdate)
           process     <- updateTasks.take.flatMap(updater => statusRef.update(updater) *> statusRef.get)
-            .doUntil(_.status.isDone).unit
+            .repeatUntil(_.status.isDone).unit
             .ensuring(ZIO.effectTotal(tasks.remove(id)))
             .onInterrupt(statusRef.update(_.done(errorWith)).orDie.ensuring(cancel))
             .forkDaemon

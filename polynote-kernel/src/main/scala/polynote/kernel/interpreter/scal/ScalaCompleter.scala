@@ -8,6 +8,7 @@ import ZIO.{effect, effectTotal}
 import polynote.kernel.ScalaCompiler.OriginalPos
 import polynote.kernel.interpreter.scal.ScalaCompleter.NoTree
 import zio.blocking.{Blocking, effectBlocking}
+import zio.clock.Clock
 
 import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
@@ -136,7 +137,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
 
 
-    cellCode.typedTreeAt(pos).filterOrFail(_ != EmptyTree)(NoTree).retry(Schedule.recurs(2)).flatMap(completeTree).catchAll {
+    cellCode.typedTreeAt(pos).filterOrFail(_ != EmptyTree)(NoTree).retryN(2).flatMap(completeTree).catchAll {
       case NonFatal(err) => ZIO.succeed(Nil)
     }
   }

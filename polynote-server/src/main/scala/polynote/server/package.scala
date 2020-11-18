@@ -82,17 +82,17 @@ package object server {
             case _ => ZIO.none
           }.catchAll {
             err => ZStream.fromEffect(Logging.error(err)).drain
-          }.unNone.ensuring {
+          }.ensuring {
             onClose.catchAll {
               err => Logging.error("Websocket close handler failed", err)
             }
-          }
+          }.collectSome
       }
   }
 
   def closeQueueIf[A](promise: Promise[Throwable, Unit], queue: Queue[Take[Nothing, A]]): UIO[Unit] =
     promise.succeed(()).flatMap {
-      case true => queue.offer(Take.End).unit
+      case true => queue.offer(Take.end).unit
       case false => ZIO.unit
     }
 
@@ -103,9 +103,7 @@ package object server {
     ZStream.fromSchedule(Schedule.fixed(zio.duration.Duration(10, SECONDS)).as(Ping)).interruptWhen(closed)
 
   def parallelStreams[R, E, A](streams: ZStream[R, E, A]*): ZStream[R, E, A] =
-    ZStream.flattenPar(streams.size)(ZStream(streams: _*)).catchAllCause(_ => ZStream.empty)
-
-  def streamEffects[R, E, A](effects: ZIO[R, E, A]*): ZStream[R, E, A] = ZStream.flatten(ZStream(effects.map(e => ZStream.fromEffect(e)): _*))
+    ZStream(streams: _*).flattenParUnbounded(streams.size).catchAllCause(_ => ZStream.empty)
 
   type NotebookManager = Has[NotebookManager.Service]
 

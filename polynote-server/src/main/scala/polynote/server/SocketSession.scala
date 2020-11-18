@@ -31,7 +31,7 @@ object SocketSession {
       _               <- broadcastAll.subscribe(32).unNone.interruptAndIgnoreWhen(closed).through(publishMessage.publish).compile.drain.forkDaemon
       close            = closeQueueIf(closed, output)
     } yield parallelStreams(
-        toFrames(ZStream.fromEffect(handshake) ++ Stream.fromQueue(output).unTake),
+        toFrames(ZStream.fromEffect(handshake) ++ Stream.fromQueue(output).flattenTake),
         in.handleMessages(close)(handler andThen errorHandler) ++ closeStream(closed, output),
         keepaliveStream(closed)).provide(env).catchAllCause {
       cause =>

@@ -16,7 +16,7 @@ import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.internal.Executor
 import zio.interop.catz._
-import zio.{Has, Layer, RIO, Tagged, Task, UIO, ULayer, URIO, ZIO, ZLayer, ZManaged}
+import zio.{Has, Layer, RIO, Tag, Task, UIO, ULayer, URIO, ZIO, ZLayer, ZManaged}
 //import zio.syntax.zioTuple3Syntax
 
 //////////////////////////////////////////////////////////////////////
@@ -201,7 +201,7 @@ object Env {
   private val addMPartialInst: AddMPartial[Has[Any]] = new AddMPartial[Has[Any]]
 
   class AddM[RO <: Has[_], -RA, RB, +E](val rbTask: ZIO[RA, E, RB]) extends AnyVal {
-    def flatMap[E1 >: E, A](zio: RB => ZIO[RO with Has[RB], E1, A])(implicit ev: Tagged[RB], ev1: Tagged[Has[RB]]): ZIO[RO with RA, E1, A] =
+    def flatMap[E1 >: E, A](zio: RB => ZIO[RO with Has[RB], E1, A])(implicit ev: Tag[RB], ev1: Tag[Has[RB]]): ZIO[RO with RA, E1, A] =
       ZLayer.fromEffect(rbTask).build.use(r => zio(r.get[RB]).provideSomeLayer[RO](ZLayer.succeed(r.get[RB])))
   }
 
@@ -240,7 +240,7 @@ object Env {
   private val addPartialInstance: AddPartial[Has[Any]] = new AddPartial[Has[Any]]
 
   class Add[RO <: Has[_], R](val r: R) extends AnyVal {
-    def flatMap[E, A](zio: R => ZIO[RO with Has[R], E, A])(implicit ev: Tagged[Has[R]], ev1: Tagged[R]): ZIO[RO, E, A] =
+    def flatMap[E, A](zio: R => ZIO[RO with Has[R], E, A])(implicit ev: Tag[Has[R]], ev1: Tag[R]): ZIO[RO, E, A] =
       zio(r).provideSomeLayer[RO](ZLayer.succeed(r))
   }
 
@@ -252,7 +252,7 @@ object Env {
   private val addManyPartialInstance: AddManyPartial[Has[Any]] = new AddManyPartial[Has[Any]]
 
   class AddMany[RO <: Has[_], R <: Has[_]](val r: R) extends AnyVal {
-    def flatMap[E, A](zio: R => ZIO[RO with R, E, A])(implicit ev: Tagged[R]): ZIO[RO, E, A] =
+    def flatMap[E, A](zio: R => ZIO[RO with R, E, A])(implicit ev: Tag[R]): ZIO[RO, E, A] =
       zio(r).provideSomeLayer[RO](ZLayer.succeedMany(r))
   }
 
@@ -260,7 +260,7 @@ object Env {
     new AddLayer(layer)
 
   class AddLayer[RO <: Has[_], E, R <: Has[_]](val layer: ZLayer[RO, E, R]) extends AnyVal {
-    def flatMap[E1 >: E, A](zio: R => ZIO[RO with R, E1, A])(implicit ev: Tagged[R]): ZIO[RO, E1, A] =
+    def flatMap[E1 >: E, A](zio: R => ZIO[RO with R, E1, A])(implicit ev: Tag[R]): ZIO[RO, E1, A] =
       ZIO.environment[R].flatMap(r => zio(r)).provideSomeLayer[RO](layer)
   }
 
@@ -268,14 +268,14 @@ object Env {
     new AddManagedLayer(layer)
 
   class AddManagedLayer[RO <: Has[_], E, R <: Has[_]](val layer: ZLayer[RO, E, R]) extends AnyVal {
-    def flatMap[E1 >: E, A](zio: R => ZManaged[RO with R, E1, A])(implicit ev: Tagged[R]): ZManaged[RO, E1, A] =
+    def flatMap[E1 >: E, A](zio: R => ZManaged[RO with R, E1, A])(implicit ev: Tag[R]): ZManaged[RO, E1, A] =
       ZManaged.environment[R].flatMap(r => zio(r)).provideSomeLayer[RO](layer)
   }
 
-  implicit class LayerOps[RIn, E, ROut <: Has[_]](val self: ZLayer[RIn, E, ROut]) extends AnyVal {
+  implicit class LayerOps[-RIn, +E, ROut <: Has[_]](val self: ZLayer[RIn, E, ROut]) extends AnyVal {
     def andThen[E1 >: E, RIn1 <: Has[_], ROut1 <: Has[_]](
       next: ZLayer[ROut with RIn1, E1, ROut1]
-    )(implicit ev: Tagged[ROut], ev1: Tagged[ROut1], ev2: Tagged[RIn1]): ZLayer[RIn1 with RIn, E1, ROut with ROut1] = {
+    )(implicit ev: Tag[ROut], ev1: Tag[ROut1], ev2: Tag[RIn1]): ZLayer[RIn1 with RIn, E1, ROut with ROut1] = {
       val next1: ZLayer[RIn with RIn1, E1, ROut1] = (self ++ ZLayer.identity[RIn1]) >>> next
       self.zipWithPar[E1, RIn with RIn1, ROut, ROut1, ROut with ROut1](next1) {
         (rOut, rOut1) => rOut.union[ROut1](rOut1)
