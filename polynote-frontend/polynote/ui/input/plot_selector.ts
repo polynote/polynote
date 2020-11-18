@@ -20,8 +20,8 @@ import match from "../../util/match";
 import {GroupAgg, Histogram, Select, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {deepCopy, deepEquals, isDescendant, mapOpt} from "../../util/helpers";
-import {PositionFieldDef} from "vega-lite/src/channeldef";
-import {Field} from "vega-lite/build/src/channeldef";
+// import {PositionFieldDef} from "vega-lite/src/channeldef";
+// import {Field} from "vega-lite/build/src/channeldef";
 
 export interface DimensionAxis {
     title?: string
@@ -254,7 +254,7 @@ function isDimension(dataType: DataType): boolean {
 
 type TopLevelUnitSpec = TopLevelSpec & {
     mark: AnyMark
-    encoding: Encoding<any> & {y: PositionFieldDef<Field>, x: PositionFieldDef<Field> }
+    encoding: Encoding<any>
 }
 
 function basicPlot(plotDef: PlotDefinition, plot: BasicPlot, schema: StructType, xType?: 'nominal' | 'ordinal' | 'quantitative'): TopLevelUnitSpec {
@@ -348,7 +348,7 @@ function barPlot(plotDef: PlotDefinition, plot: BarPlot, schema: StructType): To
         if (transform) {
             base.transform = transform;
         }
-        base.encoding.y.field = `${base.encoding.y.field}.median`;
+        (base.encoding.y as any).field += ".median";
     }
 
 
