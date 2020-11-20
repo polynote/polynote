@@ -5,6 +5,12 @@ import {StateHandler} from "../state/state_handler";
 import match, {Extractable, Matcher} from "./match";
 
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
+    if ((a === undefined && b !== undefined) || (b === undefined && a !== undefined)) {
+        return false;
+    }
+    if ((a === null && b !== null) || (b === null && a !== null)) {
+        return false;
+    }
     if (ignoreKeys && a && b) {
         a = ignoreKeys.reduce((acc: T, key: keyof T) => {
             return removeKey(acc, key)

@@ -10,6 +10,7 @@ import {parseContentType} from "../display/display_content";
 import {TableView} from "../layout/table_view";
 import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
 import {NotebookStateHandler} from "../../state/notebook_state";
+import {Disposable} from "../../state/state_handler";
 
 export interface PlotViz {
     type: "plot",
@@ -106,14 +107,21 @@ function viewTitle(viz: Viz): string {
     }
 }
 
-export class VizSelector {
+export class VizSelector extends Disposable {
     private listeners: ((newViz: Viz, oldViz: Viz) => any)[] = [];
     private plotSelector?: PlotSelector;
     private tableView?: TableView;
     private tabNav: TabNav;
+    private _disabled: boolean = false;
     readonly el: TagElement<'div'>;
 
     constructor(private value: string, private resultValue: ResultValue, dispatcher: NotebookMessageDispatcher, state: NotebookStateHandler, private viz: Viz) {
+        super();
+
+        this.onDispose.then(() => {
+            this.listeners = [];
+            this.plotSelector?.dispose();
+        });
 
         const opts: Record<string, TagElement<'div'>> = {};
 
@@ -169,7 +177,20 @@ export class VizSelector {
         this.el = div(['viz-selector'], [this.tabNav.el]);
 
         this.plotSelector?.onChange((newPlot) => this.update({ type: 'plot', value: value, plotDefinition: newPlot }));
-        this.tableView?.onChange(() => this.update({ type: 'table', value: value, rowRange: this.tableView!.range }))
+        this.tableView?.onChange(() => this.update({ type: 'table', value: value, rowRange: this.tableView!.range }));
+
+    }
+
+    get currentViz(): Viz {
+        return deepCopy(this.viz);
+    }
+
+    set currentViz(viz: Viz) {
+        this.viz = viz;
+        if (viz.type === 'plot' && this.plotSelector) {
+            this.plotSelector.setPlot(viz.plotDefinition);
+        }
+        this.tabNav.showItem(viewTitle(viz));
     }
 
     private update(newViz: Viz) {
@@ -185,9 +206,18 @@ export class VizSelector {
         return this;
     }
 
-    dispose() {
-        this.listeners = [];
-        this.plotSelector?.dispose();
+    set disabled(disabled: boolean) {
+        this._disabled = disabled;
+        if (disabled)
+            this.el.classList.add('disabled');
+        else
+            this.el.classList.remove('disabled');
+
+        this.tabNav.disabled =  disabled;
+    }
+
+    get disabled(): boolean {
+        return this._disabled;
     }
 
     get tableHTML(): string {

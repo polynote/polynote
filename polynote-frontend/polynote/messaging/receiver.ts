@@ -309,6 +309,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                     return <CellState>{
                                         ...c,
                                         pendingEdits: edits,
+                                        content: edits.reduce<string>((content, edit) => edit.apply(content), c.content),
                                         metadata: metadata || c.metadata,
                                     }
                                 } else return c
