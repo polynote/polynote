@@ -1767,6 +1767,8 @@ export class VizCell extends Cell {
     }
 
     setDisabled(disabled: boolean): void {
+        if (this.editor)
+            this.editor.disabled = disabled;
     }
 
     private toggleCode(hide?: boolean) {

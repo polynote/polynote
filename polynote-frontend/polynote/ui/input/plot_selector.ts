@@ -740,6 +740,7 @@ class MeasuresUI {
     private addButton: TagElement<'button'>;
     private title: TagElement<'span'>;
 
+    private _disabled: boolean = false;
     private _selectedMeasures: PlotSeries[] = [];
     get selectedMeasures(): PlotSeries[] { return deepCopy(this._selectedMeasures); }
 
@@ -843,6 +844,25 @@ class MeasuresUI {
         );
     }
 
+    get disabled(): boolean {
+        return this._disabled;
+    }
+
+    set disabled(disabled: boolean) {
+        if (disabled !== this._disabled) {
+            this._disabled = disabled;
+            if (disabled)
+                this.el.classList.add('disabled');
+            else
+                this.el.classList.remove('disabled');
+            this.el.querySelectorAll("button").forEach(el => {
+                if (el.style.display !== 'none')
+                    el.disabled = disabled
+            });
+            this.addButton.disabled = this.mode === 'single' && this._selectedMeasures.length > 0
+        }
+    }
+
     onChange(fn: (selected: PlotSeries[], added?: PlotSeries, removed?: PlotSeries) => void): MeasuresUI {
         this.listeners.push(fn);
         return this;
@@ -893,6 +913,7 @@ export class PlotSelector {
     private colorChannel: TagElement<'select'>;
     private facetCheckbox: TagElement<'label'>;
     private _disposer: Disposable = new Disposable();
+    private _disabled: boolean = false;
 
     constructor(private name: string, schema: StructType, initialState?: PlotDefinition) {
         const dimensionFields = this.dimensionFields = deepDimensionFields(schema.fields);
@@ -941,7 +962,7 @@ export class PlotSelector {
                 div(['title-input'], [
                     label([], "Title",
                         textbox([], "Plot title", initialState?.title || initialState?.value || "")
-                            .bind(stateHandler.view('title')))
+                            .bind(stateHandler.viewUpdatable('title')))
                 ]),
                 this.facetCheckbox = checkbox(['facet'], 'Facet', !!(state.facet)).onValueChange<boolean>(checked => {
                     if (checked) {
@@ -1062,6 +1083,23 @@ export class PlotSelector {
 
     get currentPlot(): PlotDefinition {
         return this.stateHandler.state.toPlotDef();
+    }
+
+    get disabled(): boolean {
+        return this._disabled;
+    }
+
+    set disabled(disabled: boolean) {
+        if (this._disabled !== disabled) {
+            this._disabled = disabled;
+            if (disabled) {
+                this.el.classList.add('disabled');
+            } else {
+                this.el.classList.remove('disabled');
+            }
+            this.el.querySelectorAll<Element & {disabled: boolean}>("input, select, textarea").forEach(el => el.disabled = disabled);
+            this.measuresUI.disabled = disabled;
+        }
     }
 
     onChange(fn: (newPlot: PlotDefinition, oldPlot?: PlotDefinition) => any): PlotSelector {
