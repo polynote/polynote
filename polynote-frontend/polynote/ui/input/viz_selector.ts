@@ -206,12 +206,28 @@ export class VizSelector extends Disposable {
         return this;
     }
 
+    private disabler = (evt: Event) => {
+        evt.stopPropagation();
+        evt.preventDefault();
+    }
+
     set disabled(disabled: boolean) {
         this._disabled = disabled;
-        if (disabled)
+        this.tabNav.disabled = disabled;
+        if (this.plotSelector)
+            this.plotSelector.disabled = disabled;
+
+        if (disabled) {
             this.el.classList.add('disabled');
-        else
+            this.el.addEventListener("mousedown", this.disabler, true);
+            this.el.addEventListener("click", this.disabler, true);
+            this.el.addEventListener("focus", this.disabler, true);
+        } else {
             this.el.classList.remove('disabled');
+            this.el.removeEventListener("mousedown", this.disabler, true);
+            this.el.removeEventListener("click", this.disabler, true);
+            this.el.removeEventListener("focus", this.disabler, true);
+        }
 
         this.tabNav.disabled =  disabled;
     }
