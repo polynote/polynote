@@ -1563,7 +1563,7 @@ export class VizCell extends Cell {
                     result.toOutput().then(output => this.previousViews[viz.type] = [viz, output]);
                 }
             }
-        })
+        });
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
@@ -1646,17 +1646,29 @@ export class VizCell extends Cell {
 
     private setValue(value: ResultValue): void {
         this.resultValue = value;
-
+        this.viz = this.viz || parseMaybeViz(this.cellState.state.content);
         if (!this.viz) {
             this.updateViz(this.selectDefaultViz(this.resultValue));
             this.valueName = this.viz!.value;
         }
 
         if (this.editor) {
-            this.editor.dispose();
+            this.editor.tryDispose();
         }
 
-        this.editor = new VizSelector(this.valueName, this.resultValue, this.dispatcher, this.notebookState, deepCopy(this.viz));
+        const editor = this.editor = new VizSelector(this.valueName, this.resultValue, this.dispatcher, this.notebookState, deepCopy(this.viz));
+
+        // handle external edits
+        // TODO: fix this pendingEdits thing
+        this.cellState.view("pendingEdits").addObserver(edits => {
+            if (edits.length > 0) {
+                this.dispatcher.dispatch(new ClearCellEdits(this.cellState.state.id));
+                const newViz = parseMaybeViz(this.cellState.state.content);
+                if (isViz(newViz)) {
+                    editor.currentViz = newViz;
+                }
+            }
+        }, editor);
 
         this.editor.onChange(viz => this.updateViz(viz));
 

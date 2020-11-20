@@ -19,7 +19,8 @@ import {Mark, AnyMark} from "vega-lite/build/src/mark";
 import match from "../../util/match";
 import {GroupAgg, Histogram, Select, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
-import {deepCopy, deepEquals, isDescendant, mapOpt} from "../../util/helpers";
+import {deepCopy, deepEquals, diffArray, isDescendant, mapOpt} from "../../util/helpers";
+import {Disposable, Observer, StateHandler} from "../../state/state_handler";
 // import {PositionFieldDef} from "vega-lite/src/channeldef";
 // import {Field} from "vega-lite/build/src/channeldef";
 
@@ -847,6 +848,28 @@ class MeasuresUI {
         return this;
     }
 
+    bind(handler: StateHandler<PlotSeries[]>): MeasuresUI {
+        this.onChange(selected => {
+            if (!deepEquals(selected, handler.state))
+                handler.updateState(s => selected);
+        });
+        handler.addObserver(series => {
+            const [added, removed] = diffArray(series, this.selectedMeasures);
+            const listeners = this.listeners;
+            this.listeners = [];
+            for (let s of added) {
+                if (this.pickers[s.field] && s.aggregation)
+                    this.addMeasure(s.field, s.aggregation, this.pickers[s.field]);
+            }
+            for (let s of removed) {
+                if (s.aggregation)
+                    this.removeMeasure(s.field, s.aggregation);
+            }
+            this.listeners = listeners;
+        });
+        return this;
+    }
+
     dispose() {
         this.listeners = [];
         for (let picker of Object.keys(this.pickers)) {
@@ -858,161 +881,174 @@ class MeasuresUI {
 
 export class PlotSelector {
     readonly el: TagElement<'div'>;
-    private state: PlotSelectorState;
+    private readonly stateHandler: StateHandler<PlotSelectorState>;
     private listeners: ((newPlot: PlotDefinition, oldPlot?: PlotDefinition) => any)[] = [];
+    private publishObserver: Observer<PlotSelectorState>;
 
+    private dimensionFields: StructField[];
     private measuresUI: MeasuresUI;
     private xField: TagElement<'select'>;
     private xDimension: TagElement<'select'>;
     private yField: TagElement<'select'>;
     private colorChannel: TagElement<'select'>;
+    private facetCheckbox: TagElement<'label'>;
+    private _disposer: Disposable = new Disposable();
 
     constructor(private name: string, schema: StructType, initialState?: PlotDefinition) {
-        const dimensionFields = deepDimensionFields(schema.fields);
+        const dimensionFields = this.dimensionFields = deepDimensionFields(schema.fields);
 
         if (dimensionFields.length === 0) {
             throw new Error("No possible dimension fields");
         }
 
         const dimensionOptions = Object.fromEntries(dimensionFields.map(field => [field.name, field.name]));
-        const measureFields = deepNumericFields(schema.fields);
-        const measureOptions = Object.fromEntries(measureFields.map(field => [field.name, field.name]));
+        const measureFields    = deepNumericFields(schema.fields);
+        const measureOptions   = Object.fromEntries(measureFields.map(field => [field.name, field.name]));
 
-        this.state = initialState ? PlotSelectorState.fromPlotDef(initialState, dimensionFields[0].name) : PlotSelectorState.empty(name, dimensionFields[0].name, name);
+        const state = initialState ? PlotSelectorState.fromPlotDef(initialState, dimensionFields[0].name) : PlotSelectorState.empty(name, dimensionFields[0].name, name);
+        const stateHandler = this.stateHandler = new StateHandler<PlotSelectorState>(state, this._disposer);
 
-        const update: (fn: () => any) => void = fn => this.update(fn);
+        const typeHandler         = stateHandler.viewUpdatable("type");
+        const facetHandler        = stateHandler.viewUpdatable<"facet", Facet>("facet");
+        const xHandler            = stateHandler.viewUpdatable("x");
+        const colorSeriesHandler  = stateHandler.viewUpdatable("seriesColorChannel");
+        const singleSeriesHandler = stateHandler.viewUpdatable<"singleY", string>("singleY");
+        const multiSeriesHandler  = stateHandler.viewUpdatable<"multiY", PlotSeries[]>("multiY");
 
-        this.el = div(['plot-selector', this.state.type, ...(this.state.facet ? ['facet'] : [])], [
+        typeHandler.addObserver(this.onSetType)
+        singleSeriesHandler.addObserver(field => this.measuresUI.setMode(field ? 'single' : 'multiple'));
+
+        this.publishObserver = stateHandler.addObserver(
+            (newState, oldState) => this.listeners.forEach(l => l(newState.toPlotDef(), oldState.toPlotDef()))
+        );
+        stateHandler.addObserver(newState => {
+            if (newState.facet) {
+                this.el.classList.add('facet');
+                this.facetCheckbox.querySelector('input')!.checked = true;
+            } else {
+                this.el.classList.remove('facet');
+                this.facetCheckbox.querySelector('input')!.checked = false;
+            }
+        });
+
+        this.el = div(['plot-selector', state.type, ...(state.facet ? ['facet'] : [])], [
             div(['top-tools'], [
                 h3(['table-name'], 'Plot'),
                 div(['type-selector'], [
                     label([], "Type",
-                        dropdown(['plot-type'], plotTypes, this.state.type).onSelect(value => this.setType(value)))
+                        dropdown(['plot-type'], plotTypes, state.type).bind(typeHandler))
                 ]),
                 div(['title-input'], [
                     label([], "Title",
                         textbox([], "Plot title", initialState?.title || initialState?.value || "")
-                            .onValueChange(value => update(() => this.state.title = value)))
+                            .bind(stateHandler.view('title')))
                 ]),
-                checkbox(['facet'], 'Facet', !!(this.state.facet)).onValueChange<boolean>(checked => update(() => {
+                this.facetCheckbox = checkbox(['facet'], 'Facet', !!(state.facet)).onValueChange<boolean>(checked => {
                     if (checked) {
                         this.el.classList.add('facet');
                     } else {
                         this.el.classList.remove('facet');
                     }
-                })),
+                }),
                 div(['facet-options'], [
                     label(['facet-row'], "Facet row",
-                        dropdown([], { "": "None", ...dimensionOptions}, this.state.facet?.row || undefined)
-                            .onSelect(value => update(() => this.setFacet('row', value || undefined)))),
+                        dropdown([], { "": "None", ...dimensionOptions}, state.facet?.row || undefined)
+                            .bindPartial(facetHandler.viewUpdatable("row"), "")),
                     label(['facet-col'], "Facet column",
-                        dropdown([], { "": "None", ...dimensionOptions}, this.state.facet?.col || undefined)
-                            .onSelect(value => update(() => this.setFacet('col', value || undefined)))),
+                        dropdown([], { "": "None", ...dimensionOptions}, state.facet?.col || undefined)
+                            .bindPartial(facetHandler.viewUpdatable("col"), "")),
                     label(['facet-width'], "Width",
-                        textbox([], "Width", this.state.facet?.width?.toString() || undefined, "number")
-                            .attr("step", "1")
-                            .onValueChange(value => update(() => this.setFacet('width', value ? +value : undefined)))),
+                        textbox([], "Width", state.facet?.width?.toString() || undefined, "number")
+                            .bindPartial(facetHandler.viewUpdatable("width"), 50)
+                            .attr("step", "1")),
                     label(['facet-width'], "Height",
-                        textbox([], "Height", this.state.facet?.height?.toString() || undefined, "number")
-                            .attr("step", "1")
-                            .onValueChange(value => update(() => this.setFacet('height', value ? +value : undefined))))
+                        textbox([], "Height", state.facet?.height?.toString() || undefined, "number")
+                            .bindPartial(facetHandler.viewUpdatable("height"), 50)
+                            .attr("step", "1"))
                 ])
             ]),
             div(['x-axis-config'], [
                 h3([], "X Axis"),
                 label(['title'], "Title",
                     textbox([], "Axis title", initialState?.plot?.x.title)
-                        .onValueChange(value => update(() => this.state.x.title = value))),
+                        .bind(xHandler.viewUpdatable("title"))),
                 label(['dimension-field'], "Dimension",
                     this.xDimension = dropdown([], dimensionOptions, initialState?.plot?.x.field)
-                        .onSelect(value => update(() => this.state.x.field = value))
-                ),
+                        .bind(xHandler.viewUpdatable("field"))),
                 label(['x-field'], "Field",
                     this.xField = dropdown([], measureOptions, initialState?.plot?.x.field)
-                        .onSelect(value => update(() => this.state.x.field = value))
-                )
+                        .bind(xHandler.viewUpdatable("field")))
             ]),
             div(['y-axis-config'], [
                 h3([], "Y Axis"),
                 label(['title'], "Title",
-                    textbox([], "Axis title", this.state.yTitle || undefined)
-                        .onValueChange(value => update(() => this.state.yTitle = value))),
+                    textbox([], "Axis title", state.yTitle || undefined)
+                        .bind(stateHandler.viewUpdatable("yTitle"))),
                 label(['series-field'], "Series",
-                    this.colorChannel = dropdown([], { "": "Measures", ...dimensionOptions }, this.state.seriesColorChannel || undefined)
-                        .onSelect(value => this.updateSeriesField(value))
-                ),
+                    this.colorChannel = dropdown([], { "": "Measures", ...dimensionOptions }, state.seriesColorChannel || undefined)
+                        .bindPartial(colorSeriesHandler, "")),
                 div(['measure-configs'], [
-                    this.measuresUI = new MeasuresUI(measureFields, this.state.multiY || undefined, this.state.seriesColorChannel ? 'single' : 'multiple').onChange(
-                        (selected) => this.updateSeries(selected)
-                    )
+                    this.measuresUI = new MeasuresUI(measureFields, state.multiY || undefined, state.seriesColorChannel ? 'single' : 'multiple')
+                        .bind(multiSeriesHandler)
                 ]),
                 label(['y-field'], "Field",
-                    this.yField = dropdown([], measureOptions, this.state.singleY || undefined)
-                        .onSelect(value => update(() => this.state.singleY = value))
-                ),
-                checkbox(['force-zero'], 'Force zero', this.state.forceZero)
-                    .onValueChange<boolean>(value => update(() => this.state.forceZero = value))
+                    this.yField = dropdown([], measureOptions, state.singleY || undefined)
+                        .bind(singleSeriesHandler)),
+                checkbox(['force-zero'], 'Force zero', state.forceZero)
+                    .bind(stateHandler.viewUpdatable("forceZero"))
             ]),
             div(['additional-config'], [
                 div(['bar-options'], [
                     h4([], 'Options'),
-                    checkbox(['stack-bar'], "Stacked", this.state.stackBar)
-                        .onValueChange<boolean>(stack => update(() => this.state.stackBar = stack))
+                    checkbox(['stack-bar'], "Stacked", state.stackBar)
+                        .bind(stateHandler.viewUpdatable("stackBar"))
                 ]),
                 div(['xy-options'], [
                     h4([], 'Options'),
                     label(['point-color'], "Point color",
-                        dropdown([], { "": "None", ...dimensionOptions}, this.state.pointColorChannel || undefined)
-                            .onSelect(value => update(() => this.state.pointColorChannel = value || null))
-                    ),
+                        dropdown([], { "": "None", ...dimensionOptions}, state.pointColorChannel || undefined)
+                            .bindPartial(stateHandler.viewUpdatable("pointColorChannel"), "")),
                     label(['bubble-size'], "Bubble size",
-                        dropdown([], {"": "None", ...measureOptions}, this.state.bubbleSizeChannel || undefined)
-                            .onSelect(value => update(() => this.state.bubbleSizeChannel = value || null))
-                    )
+                        dropdown([], {"": "None", ...measureOptions}, state.bubbleSizeChannel || undefined)
+                            .bindPartial(stateHandler.viewUpdatable("bubbleSizeChannel"), ""))
                 ]),
                 div(['histogram-options'], [
                     h4([],'Options'),
                     label(['bin-count'], "Bin count",
-                        textbox([], undefined, this.state.binCount.toString(), "number")
+                        textbox([], undefined, state.binCount.toString(), "number")
+                            .bind(stateHandler.viewUpdatable("binCount"))
                             .attrs({step: "1", min: "2"})
-                            .onValueChange(value => update(() => this.state.binCount = Math.round(parseInt(value, 10))))
                     )
                 ])
             ])
         ]);
     }
 
-    private updateSeries(series: PlotSeries[]) {
-        this.update(() => {
-            this.state.multiY = series;
-        })
-    }
-
-    private updateSeriesField(field: string) {
-        this.update(() => {
-            this.state.seriesColorChannel = field || null;
-            this.measuresUI.setMode(field ? 'single' : 'multiple');
-        });
-    }
-
-    private setFacet<K extends keyof Facet>(field: K, value?: Facet[K]) {
-        if (!this.state.facet || typeof this.state.facet !== 'object') {
-            this.state.facet = {};
+    setPlot(plotDef: PlotDefinition): void {
+        const state = PlotSelectorState.fromPlotDef(plotDef, plotDef.plot?.x?.field || this.dimensionFields[0].name)
+        if (!deepEquals(state, this.stateHandler.state)) {
+            this.stateHandler.removeObserver(this.publishObserver);
+            this.stateHandler.updateState(_ => state);
+            this.stateHandler.addObserver(this.publishObserver);
         }
-        this.state.facet[field] = value;
     }
 
-    private setType(typ: string) {
-        this.el.classList.remove(this.state.type);
-        this.update(() => this.state.type = typ);
+    private get hasFacet() {
+        const state = this.stateHandler.state;
+        return state.facet && (state.facet.col || state.facet.row);
+    }
+
+    private onSetType: (typ: string) => void = (typ: string) => {
+        this.el.className = 'plot-selector';
         this.el.classList.add(typ);
+        if (this.hasFacet)
+            this.el.classList.add('facet');
 
         // make sure state from newly-visible dropdowns gets noticed
         this.el.querySelectorAll('select').forEach(
             el => {
                 if (!el.classList.contains('plot-type') && el.offsetParent !== null)
-                    el.dispatchEvent(new CustomEvent('change'));
-
+                    el.dispatchEvent(new CustomEvent('input'));
             }
         );
 
@@ -1025,18 +1061,7 @@ export class PlotSelector {
     }
 
     get currentPlot(): PlotDefinition {
-        return this.state.toPlotDef();
-    }
-
-    private update<A>(fn: () => A): A {
-        const oldState = deepCopy(this.state);
-        const result = fn();
-        if (!deepEquals(this.state, oldState)) {
-            const oldPlot = oldState.toPlotDef();
-            const newPlot = this.state.toPlotDef();
-            this.listeners.forEach(fn => fn(newPlot, oldPlot));
-        }
-        return result;
+        return this.stateHandler.state.toPlotDef();
     }
 
     onChange(fn: (newPlot: PlotDefinition, oldPlot?: PlotDefinition) => any): PlotSelector {
@@ -1046,6 +1071,7 @@ export class PlotSelector {
 
     dispose() {
         this.measuresUI.dispose();
+        this._disposer.tryDispose();
         this.listeners = [];
         this.el.innerHTML = "";
     }
@@ -1055,23 +1081,23 @@ class PlotSelectorState {
     constructor(
         public name: string,
         public type: string,
-        public title: string | null = null,
+        public title: string | undefined = undefined,
         public x: DimensionAxis,
-        public singleY: string | null = null,
-        public multiY: PlotSeries[] | null = null,
-        public yTitle: string | null = null,
-        public seriesColorChannel: string | null = null,
-        public pointColorChannel: string | null = null,
-        public bubbleSizeChannel: string | null = null,
+        public singleY: string | undefined = undefined,
+        public multiY: PlotSeries[] | undefined = undefined,
+        public yTitle: string | undefined = undefined,
+        public seriesColorChannel: string | undefined = undefined,
+        public pointColorChannel: string | undefined = undefined,
+        public bubbleSizeChannel: string | undefined = undefined,
         public stackBar: boolean = true,
         public point: boolean = false,
         public forceZero: boolean = true,
         public binCount: number = 10,
-        public facet: Facet | null = null
+        public facet: Facet | undefined = undefined
     ) {}
 
     public static empty(name: string, defaultX: string, title?: string) {
-        return new PlotSelectorState(name, "bar", title || null, { field: defaultX })
+        return new PlotSelectorState(name, "bar", title, { field: defaultX })
     }
 
     static fromPlotDef(plotDef: PlotDefinition, defaultX: string): PlotSelectorState {
@@ -1081,10 +1107,10 @@ class PlotSelectorState {
             return state;
         }
         state.type = plot.type;
-        state.title = plotDef.title ?? null;
+        state.title = plotDef.title;
         state.forceZero = plotDef.forceZero ?? true;
         state.x = plot.x;
-        state.facet = plotDef.facet || null;
+        state.facet = plotDef.facet;
 
         switch (plot.type) {
             // @ts-ignore
@@ -1093,21 +1119,21 @@ class PlotSelectorState {
             case "line":
             case "area":
                 state.multiY = plot.y.series;
-                state.yTitle = plot.y.title || null;
-                state.seriesColorChannel = plot.y.colorChannel || null;
+                state.yTitle = plot.y.title;
+                state.seriesColorChannel = plot.y.colorChannel;
                 break;
 
             // @ts-ignore
             case "xy":
-                state.pointColorChannel = plot.color?.field || null;
-                state.bubbleSizeChannel = plot.bubble?.field || null;
+                state.pointColorChannel = plot.color?.field;
+                state.bubbleSizeChannel = plot.bubble?.field;
             case "boxplot":
             case "pie":
                 if (plot.type === 'boxplot') {
-                    state.seriesColorChannel = plot.color?.field || null;
+                    state.seriesColorChannel = plot.color?.field;
                 }
                 state.singleY = plot.y.field;
-                state.yTitle = plot.y.title || null;
+                state.yTitle = plot.y.title;
         }
         return state;
     }
@@ -1115,9 +1141,9 @@ class PlotSelectorState {
     toPlotDef() {
         const plotDef: PlotDefinition = {
             value: this.name,
-            title: this.title || undefined,
+            title: this.title,
             forceZero: this.forceZero,
-            facet: this.facet || undefined
+            facet: this.facet
         };
 
         let plot: Plot | undefined;
@@ -1126,21 +1152,20 @@ class PlotSelectorState {
             case "bar":
             case "line":
             case "area":
-                if (this.multiY) {
-                    plot = {
-                        type: this.type,
-                        x: this.x,
-                        y: {
-                            series: this.seriesColorChannel ? [this.multiY[0]] : this.multiY,
-                            title: this.yTitle || undefined,
-                            colorChannel: this.seriesColorChannel || undefined
-                        },
-                        point: this.point || undefined
-                    }
+                const multiY = this.multiY ?? [];
+                plot = {
+                    type: this.type,
+                    x: this.x,
+                    y: {
+                        series: this.seriesColorChannel ? multiY.slice(0, 1) : multiY,
+                        title: this.yTitle || undefined,
+                        colorChannel: this.seriesColorChannel || undefined
+                    },
+                    point: this.point || undefined
+                }
 
-                    if (plot && plot.type === 'bar') {
-                        plot.stacked = this.stackBar || undefined;
-                    }
+                if (plot && plot.type === 'bar') {
+                    plot.stacked = this.stackBar || undefined;
                 }
                 break;
             case "xy":

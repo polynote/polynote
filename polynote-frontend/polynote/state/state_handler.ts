@@ -46,16 +46,18 @@ export class StateView<S> extends Disposable {
      *
      * Note: this should be a setter but typescript won't allow a protected setter with a public getter, sigh.
      */
-    protected setState(newState: S) {
+    protected setState(newState: S, quiet?: boolean) {
         if (this.isDisposed) {
             throw new Error("Operations on disposed states are not supported")
         }
-        if (! this.compare(newState, this._state)) {
+        if (!this.compare(newState, this._state)) {
             const oldState = this._state;
             this._state = newState;
-            this.observers.forEach(obs => {
-                obs(newState, oldState)
-            });
+            if (!quiet) {
+                this.observers.forEach(obs => {
+                    obs(newState, oldState)
+                });
+            }
         }
     }
 
@@ -69,7 +71,7 @@ export class StateView<S> extends Disposable {
     view<K extends keyof S, C extends StateView<S[K]>>(key: K, constructor?: { new(s: S[K]): C}, disposeWhen?: Disposable): C {
         const view: StateView<S[K]> = constructor ? new constructor(this.state[key]) : new StateView(this.state[key]);
         const obs = this.addObserver(s => {
-            const observedVal = s[key];
+            const observedVal = (s !== null && s !== undefined) ? s[key] : (s as unknown as S[K]);
             if (! this.compare(observedVal, view.state)) {
                 view.setState(observedVal)
             }
@@ -151,14 +153,50 @@ export class StateView<S> extends Disposable {
  */
 export class StateHandler<S> extends StateView<S> {
 
-    // handle with which to modify the state, given the old state. All observers get notified of the new state.
-    updateState(f: (s: S) => S | typeof NoUpdate) {
+    private doUpdateState(f: (s: S) => S | typeof NoUpdate, quiet?: boolean) {
         const currentState = this.state
         const newState = f(currentState);
         if (! this.compare(newState, NoUpdate)) {
             const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
-            this.setState(frozenState as S)
+            this.setState(frozenState as S, quiet);
         }
+    }
+
+    // handle with which to modify the state, given the old state. All observers get notified of the new state.
+    updateState(f: (s: S) => S | typeof NoUpdate) {
+        this.doUpdateState(f);
+    }
+
+    updateStateQuiet(f: (s: S) => S | typeof NoUpdate) {
+        this.doUpdateState(f, true);
+    }
+
+    viewUpdatable<K extends keyof S, V extends S[K], C extends StateHandler<V> = StateHandler<V>>(key: K, constructor?: { new(s: S[K]): C}, disposeWhen?: Disposable): C {
+        const view: StateHandler<S[K]> = constructor ? new constructor(this.state?.[key] as S[K]) : new StateHandler(this.state?.[key] as S[K]);
+        const thisObs = this.addObserver(s => {
+            const observedVal = (s !== null && s !== undefined) ? s[key] : (s as unknown as S[K]);
+            if (! this.compare(observedVal, view.state)) {
+                view.setState(observedVal)
+            }
+        });
+        view.onDispose.then(() => {
+            this.removeObserver(thisObs);
+        })
+
+        const thatObs = view.addObserver((vNew, vOld) => {
+            this.removeObserver(thisObs);
+            if (!this.compare(vNew, vOld)) {
+                const newState = {...this.state, [key]: vNew};
+                const ctor = this.state && (this.state as any).constructor;
+                if (ctor && ctor.prototype) {
+                    Object.setPrototypeOf(newState, ctor.prototype);
+                }
+                this.setState(newState);
+            }
+            this.addObserver(thisObs);
+        })
+        Promise.race([this.onDispose, ...(disposeWhen === undefined ? [] : [disposeWhen.onDispose])]).then(() => view.tryDispose())
+        return view as C
     }
 
     constructor(state: S, disposeWhen?: Disposable) {

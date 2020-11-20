@@ -186,7 +186,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                         editBuffer: state.editBuffer.push(state.localVersion, update),
                         cells: state.cells.map(cell => {
                             if (cell.id === cellId) {
-                                return {...cell, content: newContent ?? cell.content, metadata: metadata ?? cell.metadata}
+                                return {...cell, content: newContent ?? edits.reduce<string>((content, edit) => edit.apply(content), cell.content), metadata: metadata ?? cell.metadata}
                             } else return cell
                         })
                     }
