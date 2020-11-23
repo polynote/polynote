@@ -164,7 +164,7 @@ export class VizSelector extends Disposable {
                         );
             })
             .when(StringRepr, string =>
-                opts[StringTitle] = div(['string-repr'], [span(['plaintext'], string)])
+                opts[StringTitle] = div([], [])
                     .listener('TabDisplayed',  () => this.update({ type: 'string', value: value })))
             );
 

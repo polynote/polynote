@@ -1647,7 +1647,7 @@ export class VizCell extends Cell {
     private setValue(value: ResultValue): void {
         this.resultValue = value;
         this.viz = this.viz || parseMaybeViz(this.cellState.state.content);
-        if (!this.viz) {
+        if (!isViz(this.viz)) {
             this.updateViz(this.selectDefaultViz(this.resultValue));
             this.valueName = this.viz!.value;
         }
