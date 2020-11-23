@@ -232,7 +232,7 @@ class SocketTransport(
       channel <- effectBlockingCancelable(server.accept())(ZIO.effectTotal(server.close()))
       framed  <- FramedSocket(channel, keepalive = true)
     } yield framed
-  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to connect after ${timeout.asScala}"))(timeout).tapError(Logging.error)
+  }.timeoutFail(new TimeoutException(s"Remote kernel process failed to connect after ${timeout.render}"))(timeout).tapError(Logging.error)
 
   private def monitorProcess(process: SocketTransport.DeployedProcess) = {
     val checkExit = ZIO.sleep(ZDuration(100, TimeUnit.MILLISECONDS)) *> process.exitStatus
