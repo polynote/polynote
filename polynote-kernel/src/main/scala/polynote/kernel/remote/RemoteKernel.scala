@@ -114,12 +114,16 @@ class RemoteKernel[ServerAddress](
     }
   }
 
-  override def cancelAll(): RIO[BaseEnv with TaskManager, Unit] = request(CancelAllRequest(nextReq)) {
+  override def cancelAll(): RIO[BaseEnv with TaskManager, Unit] = super.cancelAll() &> request(CancelAllRequest(nextReq)) {
     case UnitResponse(reqId) => done(reqId, ())
   }
 
-  override def tasks(): RIO[BaseEnv with TaskManager, List[TaskInfo]] = request(ListTasksRequest(nextReq)) {
-    case ListTasksResponse(reqId, result) => done(reqId, result)
+  override def tasks(): RIO[BaseEnv with TaskManager, List[TaskInfo]] = super.tasks().zip {
+    request(ListTasksRequest(nextReq)) {
+      case ListTasksResponse(reqId, result) => done(reqId, result)
+    }
+  }.map {
+    case (a, b) => a ++ b
   }
 
   def completionsAt(id: CellID, pos: Int): RIO[BaseEnv with GlobalEnv with CellEnv, List[Completion]] =

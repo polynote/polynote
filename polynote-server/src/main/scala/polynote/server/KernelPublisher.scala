@@ -147,10 +147,12 @@ class KernelPublisher private (
   } yield busyState
 
   def cancelAll(): TaskB[Unit] = {
-    for {
+    val cancelKernelTasks = for {
       kernel <- kernelRef.get.get
       _      <- kernel.cancelAll().provideSomeLayer[BaseEnv](baseLayer)
     } yield ()
+
+    taskManager.cancelAll() *> cancelKernelTasks
   }.ignore
 
   def tasks(): TaskB[List[TaskInfo]] =
