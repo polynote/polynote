@@ -14,7 +14,7 @@ import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMes
 import polynote.messages.{CellID, CellResult, Error, Message, Notebook, NotebookUpdate, ShortList}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
-import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ZIO, ZLayer}
+import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ULayer, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
@@ -41,8 +41,10 @@ class KernelPublisher private (
 ) {
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
+  private val taskManagerLayer: ULayer[TaskManager] = ZLayer.succeed(taskManager)
+
   private val baseLayer: ZLayer[Any, Nothing, CurrentNotebook with TaskManager with PublishStatus] =
-    ZLayer.succeedMany(Has(versionedNotebook) ++ Has(taskManager) ++ Has(publishStatus))
+    ZLayer.succeedMany(Has(versionedNotebook) ++ Has(publishStatus)) ++ taskManagerLayer
 
   private def cellLayer(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, PublishResult] = {
     val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(cellID, result)))
@@ -91,7 +93,7 @@ class KernelPublisher private (
           case Some(kernel) =>
             ZIO.succeed(kernel)
           case None =>
-            taskManager.run("StartKernel", "Starting kernel") {
+            taskManager.run[BaseEnv with GlobalEnv, Kernel]("StartKernel", "Starting kernel") {
               for {
                 kernel <- createKernel()
                 _      <- kernelRef.set(Some(kernel))
@@ -99,10 +101,12 @@ class KernelPublisher private (
                 _      <- kernel.init().provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
                 _      <- kernel.info() >>= publishStatus.publish1
               } yield kernel
-            }
+            }.forkDaemon.flatMap(_.join)
+            // Note: this forkDaemon is so that interruptions coming from client disconnect won't interrupt the
+            //       starting kernel.
         }
       }.tapError {
-        err => shutdownKernel() *> status.publish1(KernelError(err))
+        err => Logging.error("Error starting kernel; shutting it down", err) *> shutdownKernel() *> status.publish1(KernelError(err))
       }
   }
 
@@ -149,9 +153,13 @@ class KernelPublisher private (
     } yield ()
   }.ignore
 
-  def tasks(): TaskB[List[TaskInfo]] = kernelRef.get.get.flatMap {
-    kernel => kernel.tasks().provideSomeLayer[BaseEnv](baseLayer)
-  } orElse taskManager.list
+  def tasks(): TaskB[List[TaskInfo]] =
+    ZIO.ifM(kernelStarting.available.map(_ == 0))(
+      taskManager.list,
+      kernelRef.get.get.flatMap {
+        kernel => kernel.tasks().provideSomeLayer[BaseEnv](baseLayer)
+      } orElse taskManager.list
+    )
 
   // TODO: A bit ugly. There's probably a better way to keep track of cell status.
   private val extract = """Cell (\d*)""".r
