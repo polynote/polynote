@@ -9,7 +9,7 @@ import polynote.env.ops.Enrich
 import polynote.kernel.interpreter.CellExecutor
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
-import polynote.kernel.{BaseEnv, CellEnv, ExecutionStatus, GlobalEnv, InterpreterEnv, KernelStatusUpdate, NotebookRef, Output, Result, TaskInfo}
+import polynote.kernel.{BaseEnv, CellEnv, Complete, ExecutionStatus, GlobalEnv, InterpreterEnv, KernelStatusUpdate, NotebookRef, Output, Result, TaskInfo}
 import polynote.messages.{CellID, Message, Notebook, NotebookCell, NotebookConfig, NotebookUpdate}
 import polynote.runtime.KernelRuntime
 import zio.blocking.Blocking
@@ -87,6 +87,17 @@ object CurrentTask {
     value <- ref.get
     _     <- if (fn(value) != value) ref.update(fn) else ZIO.unit
   } yield ()
+
+  def update(detail: String = "", progress: Double = Double.NaN): RIO[CurrentTask, Unit] =
+    update {
+      taskInfo =>
+        val progressByte = if (progress.isNaN) taskInfo.progress else Math.round(progress * 255).toByte
+        val status = if (progressByte == 255) Complete else taskInfo.status
+        taskInfo.copy(detail = detail, progress = progressByte, status = status)
+    }
+
+  def setProgress(progress: Byte): RIO[CurrentTask, Unit] = update(_.copy(progress = progress))
+  def setProgress(progress: Double): RIO[CurrentTask, Unit] = setProgress(Math.round(progress * 255).toByte)
 
   def of(ref: Ref[Task, TaskInfo]): CurrentTask = Has(ref)
 

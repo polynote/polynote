@@ -50,7 +50,7 @@ package object task {
         * reference; it can update this reference to broadcast task updates. The first update will be broadcast when the
         * task is evaluated, and a completion update will be broadcast when it completes or fails.
         */
-      def run[R <: CurrentTask, A, R1 >: R <: Has[_]](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, A]
+      def run[R <: Has[_], A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[CurrentTask with R, A]): RIO[R, A]
 
       /**
         * Run the given task as a subtask of the current task.
@@ -130,34 +130,34 @@ package object task {
         } yield taskFiber.join
       }
 
-      private def runImpl[R <: CurrentTask, A, R1 >: R <: Has[_]](
+      private def runImpl[R <: Has[_], A](
+        task: RIO[R with CurrentTask, A],
         id: String,
         label: String,
         detail: String,
         parent: Option[TinyString],
-        errorWith: Cause[Throwable] => TaskInfo => TaskInfo)
-        (task: RIO[R, A])
-        (implicit ev: R1 with CurrentTask <:< R): RIO[R1, A] = for {
+        errorWith: Cause[Throwable] => TaskInfo => TaskInfo
+      ): RIO[R, A] = for {
         statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Running, progress = 0, parent = parent))
         remove         = ZIO.effectTotal(tasks.remove(id))
         updater       <- statusRef.discrete
           .terminateAfter(_.status.isDone)
           .through(updates.publish)
           .compile.drain.uninterruptible.ensuring(remove).fork
-        taskBody       = task.provideSomeLayer[R1](CurrentTask.layer(statusRef))
+        taskBody       = task.provideSomeLayer[R](CurrentTask.layer(statusRef))
         taskFiber     <- (taskBody <* statusRef.update(_.completed) <* updater.join).onError(cause => statusRef.update(errorWith(cause)).orDie).fork
         descriptor     = (statusRef, taskFiber, taskCounter.getAndIncrement())
         _             <- Option(tasks.put(id, descriptor)).map(_._2.interrupt).getOrElse(ZIO.unit)
         result        <- taskFiber.join.onInterrupt(taskFiber.interrupt)
       } yield result
 
-      override def run[R <: CurrentTask, A, R1 >: R <: Has[_]](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo)(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, A] =
-        runImpl(id, label, detail, None, errorWith)(task)
+      override def run[R <: Has[_], A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo)(task: RIO[CurrentTask with R, A]): RIO[R, A] =
+        runImpl[R, A](task, id, label, detail, None, errorWith)
 
       override def runSubtask[R <: CurrentTask, A](id: String, label: String, detail: String, errorWith: Cause[Throwable] => TaskInfo => TaskInfo)(task: RIO[R, A]): RIO[R, A] =
         ZIO.accessM[CurrentTask](_.get.get).map(_.id).flatMap {
           parent =>
-            runImpl[R, A, R](id, label, detail, Some(parent), errorWith)(task)
+            runImpl[R, A](task, id, label, detail, Some(parent), errorWith)
         }
 
       override def register(id: String, label: String = "", detail: String = "", parent: Option[String], errorWith: DoneStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => ZIO[Logging, Nothing, Unit]): RIO[Blocking with Clock with Logging, Fiber[Throwable, Unit]] =
@@ -229,8 +229,8 @@ package object task {
     def queue[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] =
       access.flatMap(_.queue[R, A, R1](id, label, detail, errorWith)(task))
 
-    def run[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, A] =
-      access.flatMap(_.run[R, A, R1](id, label, detail, errorWith)(task))
+    def run[R <: TaskManager, A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[CurrentTask with R, A]): RIO[R, A] =
+      access.flatMap(_.run[R, A](id, label, detail, errorWith)(task))
 
     def runSubtask[R <: CurrentTask, A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A]): RIO[R with TaskManager, A] =
       access.flatMap(_.runSubtask[R, A](id, label, detail, errorWith)(task))

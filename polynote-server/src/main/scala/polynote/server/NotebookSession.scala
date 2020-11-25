@@ -176,10 +176,9 @@ object NotebookSession {
   def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: Topic[Task, Option[Message]]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
     for {
       _                <- NotebookManager.assertValidPath(path)
-      publisher        <- NotebookManager.open(path).orElseFail(NotFound(path))
       output           <- ZQueue.unbounded[Take[Nothing, Message]]
-      publishMessage   <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])
-      subscriber       <- publisher.subscribe().orDie
+      _                <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])
+      subscriber       <- NotebookManager.subscribe(path).orElseFail(NotFound(path))
       sessionId        <- nextSessionId
       streamingHandles <- StreamingHandles.make(sessionId).orDie
       closed           <- Promise.make[Throwable, Unit]

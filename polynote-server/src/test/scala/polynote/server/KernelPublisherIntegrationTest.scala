@@ -3,14 +3,11 @@ package polynote.server
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 
-import cats.instances.list._
-import cats.syntax.traverse._
 import fs2.concurrent.Topic
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
-import polynote.kernel.environment.{Config, Env, NotebookUpdates, PublishResult}
+import polynote.kernel.environment.{Config, NotebookUpdates, PublishResult}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.remote.SocketTransport.DeploySubprocess
 import polynote.kernel.remote.{RemoteKernel, SocketTransport, SocketTransportServer}
@@ -20,7 +17,7 @@ import polynote.messages.{CellID, Message, Notebook, NotebookCell, ShortList}
 import polynote.testing.ExtConfiguredZIOSpec
 import polynote.testing.kernel.MockNotebookRef
 import zio.duration.Duration
-import zio.{Promise, RIO, Schedule, Tag, Task, ZIO, ZLayer}
+import zio.{Promise, RIO, Tag, Task, ZIO, ZLayer}
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory {
   val tagged: Tag[Interpreter.Factories] = implicitly

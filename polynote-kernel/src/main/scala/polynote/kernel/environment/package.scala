@@ -15,9 +15,9 @@ package object environment {
   type PublishStatus = Has[Publish[Task, KernelStatusUpdate]]
   type PublishResult = Has[Publish[Task, Result]]
   type PublishMessage = Has[Publish[Task, Message]]
-  type CurrentTask = Has[Ref[Task, TaskInfo]]
   type CurrentRuntime = Has[KernelRuntime]
   type CurrentNotebook = Has[NotebookRef]
   type NotebookUpdates = Has[Stream[Task, NotebookUpdate]]
 
+  type CurrentTask = Has[Ref[Task, TaskInfo]]
 }

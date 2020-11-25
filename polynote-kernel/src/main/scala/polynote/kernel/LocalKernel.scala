@@ -116,7 +116,7 @@ class LocalKernel private[kernel] (
       publishStatus <- PublishStatus.access
       busyUpdater   <- busyState.discrete.terminateAfter(!_.alive).through(publishStatus.publish).compile.drain.forkDaemon
       initialState  <- initScala().onError(err => (PublishResult(ErrorResult(err.squash)) *> busyState.update(_.setIdle)).orDie)
-      _             <- initialState.values.map(PublishResult.apply).sequence
+      _             <- ZIO.foreach_(initialState.values)(PublishResult.apply)
       _             <- busyState.update(_.setIdle)
     } yield ()
   }

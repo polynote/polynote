@@ -26,6 +26,7 @@ import zio.duration.Duration
 import zio.stream.{Take, ZStream}
 import zio.{Chunk, Fiber, Has, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
 import polynote.server.repository.format.NotebookFormat
+import zio.ZIO.not
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{DurationInt, SECONDS}
@@ -54,6 +55,18 @@ package object server {
 
   def toFrames[R](stream: ZStream[R, Throwable, Message]): ZStream[R with Logging, Throwable, Binary] =
     stream.mapM(toFrame)
+
+
+  // Some ZIO syntax sugar
+  implicit class ZIOBooleanOps[-R, +E](val self: ZIO[R, E, Boolean]) extends AnyVal {
+    def &&[R1 <: R, E1 >: E](that: ZIO[R1, E1, Boolean]): ZIO[R1, E1, Boolean] =
+      for {
+        a <- self
+        b <- that
+      } yield a && b
+
+    def unary_! : ZIO[R, E, Boolean] = not(self)
+  }
 
   implicit class FrameStreamOps[R](val self: ZStream[R, Throwable, Frame]) extends AnyVal {
     def handleMessages[R1 <: Logging with R, A](onClose: ZIO[R, Throwable, Any])(fn: Message => ZIO[R1, Throwable, Option[Message]]): ZStream[R1, Throwable, Frame] =
@@ -117,6 +130,7 @@ package object server {
 
     def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
+    def subscribe(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = open(path).flatMap(_.subscribe())
     def fetchIfOpen(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[(String, String)]] = access.flatMap(_.fetchIfOpen(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
     def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())
