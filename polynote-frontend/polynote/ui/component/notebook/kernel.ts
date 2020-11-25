@@ -217,6 +217,7 @@ class KernelTasksEl extends Disposable {
     readonly el: TagElement<"div">;
     private notebookPath: string;
     private taskContainer: TagElement<"div">;
+    private cancelButton: TagElement<"button">;
     private tasks: Record<string, KernelTask> = {};
     private errors: Record<string, DisplayError>;
     private errorTimeouts: Record<string, number> = {};
@@ -229,7 +230,11 @@ class KernelTasksEl extends Disposable {
         this.notebookPathHandler = notebookPathHandler = notebookPathHandler.fork(this);
         this.kernelTasksHandler = kernelTasksHandler = kernelTasksHandler.fork(this);
         this.el = div(['kernel-tasks'], [
-            h3([], ['Tasks']),
+            h3([], [
+                'Tasks',
+                this.cancelButton = iconButton(["stop-cell"], "Cancel all tasks", "stop", "Cancel All")
+                    .click(_ => dispatcher.dispatch(new RequestCancelTasks()))
+            ]),
             this.taskContainer = div(['task-container'], [])
         ]);
 
@@ -337,6 +342,8 @@ class KernelTasksEl extends Disposable {
                 container.insertBefore(taskEl, before);
 
                 this.tasks[id] = taskEl;
+                this.el.classList.add("nonempty");
+                this.cancelButton.disabled = false;
             }
         }
     }
@@ -389,6 +396,10 @@ class KernelTasksEl extends Disposable {
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
         this.kernelTasksHandler.update(() => removeKey(id))
+        if (Object.keys(this.tasks).length === 0) {
+            this.el.classList.remove('nonempty');
+            this.cancelButton.disabled = true;
+        }
     }
 }
 
