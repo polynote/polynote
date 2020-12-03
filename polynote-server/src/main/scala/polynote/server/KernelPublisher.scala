@@ -10,7 +10,7 @@ import cats.syntax.traverse._
 import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.kernel.util.{Publish, RefMap}
-import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
+import polynote.kernel.environment.{CurrentNotebook, CurrentTask, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
 import polynote.messages.{CellID, CellResult, Error, Message, Notebook, NotebookUpdate, ShortList}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
@@ -93,11 +93,12 @@ class KernelPublisher private (
           case Some(kernel) =>
             ZIO.succeed(kernel)
           case None =>
-            taskManager.run[BaseEnv with GlobalEnv, Kernel]("StartKernel", "Starting kernel") {
+            taskManager.run[BaseEnv with GlobalEnv, Kernel]("StartKernel", "Starting kernel", "Launching") {
               for {
                 kernel <- createKernel()
                 _      <- kernelRef.set(Some(kernel))
                 _      <- handleKernelClosed(kernel).forkDaemon
+                _      <- CurrentTask.update("Initializing", 0.5)
                 _      <- kernel.init().provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
                 _      <- kernel.info() >>= publishStatus.publish1
               } yield kernel

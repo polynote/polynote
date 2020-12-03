@@ -1174,6 +1174,8 @@ class CodeCellOutput extends Disposable {
     }
 
     private clearResults() {
+        // notify iframes that they'll be removed
+        [...this.resultTabs.getElementsByTagName('iframe')].forEach(frame => frame.dispatchEvent(new CustomEvent('dispose')));
         this.resultTabs.innerHTML = '';
         this.cellResultMargin.innerHTML = '';
     }

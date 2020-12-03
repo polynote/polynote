@@ -8,3 +8,4 @@ build_less () {
 build_less "styles"
 build_less "colors-light"
 build_less "colors-dark"
+build_less "content"

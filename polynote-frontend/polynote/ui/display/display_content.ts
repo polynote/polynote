@@ -6,6 +6,96 @@ import {Content, details, div, span, tag, TagElement} from "../tags";
 import {ArrayType, MapType, OptionalType, StructField, StructType} from "../../data/data_type";
 import embed from "vega-embed";
 
+const frames: Record<number, HTMLIFrameElement> = {};
+let nextFrameId = 1;
+
+function getNextFrameId() {
+    return nextFrameId++;
+}
+
+// listen for sizing events from the frames
+window.addEventListener('message', evt => {
+   if (evt.data.command && evt.data.command === 'size' && evt.data.id && frames[evt.data.id]) {
+       const frame = frames[evt.data.id];
+       if (frame.offsetWidth !== evt.data.height) {
+           frame.style.height = evt.data.height + 'px';
+       }
+       // if (frame.offsetWidth !== evt.data.width) {
+       //     frame.style.width = evt.data.width + 'px';
+       // }
+   }
+});
+
+let resizeTimeout: number;
+// recheck sizes when the document resizes
+window.addEventListener('resize', evt => {
+    if (resizeTimeout) {
+        window.clearTimeout(resizeTimeout);
+    }
+    resizeTimeout = window.setTimeout(updateSizes, 250);
+})
+
+function updateSizes() {
+    Object.values(frames).forEach(frame => {
+        if (frame.style.width != "100%") {
+            frame.style.width = "100%";
+        }
+        frame.contentWindow?.postMessage({command: 'size'}, "*")
+    });
+}
+
+function buildContainerFrame(content: string): HTMLIFrameElement {
+    const doc = document.implementation.createHTMLDocument("Polynote output container");
+    const head = doc.documentElement.appendChild(doc.createElement('head'));
+    [...document.head.getElementsByTagName('link')].forEach((stylesheet: HTMLLinkElement) => {
+        const link = doc.importNode(stylesheet, true);
+        link.href = new URL(link.href, document.location.href).href;
+        head.appendChild(link);
+    });
+    const style = head.appendChild(doc.createElement('style'));
+    style.setAttribute('type', 'text/css');
+    style.innerText = `
+        html, body { margin: 0; padding: 0 }
+    `;
+    const body = doc.documentElement.appendChild(doc.createElement('body'));
+    const container = body.appendChild(doc.createElement('div'));
+    container.classList.add('htmltext');
+    container.id = 'polynote-sandbox-container';
+    container.innerHTML = content;
+
+    const frameId = getNextFrameId();
+
+    const sizerScript = doc.body.appendChild(doc.createElement('script'));
+    sizerScript.setAttribute('type', 'application/javascript');
+    sizerScript.appendChild(doc.createTextNode(
+        `
+            function sendSize(event) {
+              var container = document.getElementById('polynote-sandbox-container');
+              event.source.postMessage({command: "size", id: ${frameId}, width: container.scrollWidth, height: container.scrollHeight}, "*");
+            }
+            
+            window.addEventListener("message", function(event) {
+                switch (event.data.command) {
+                  case "size": return sendSize(event);        
+                }
+            });
+        `
+        // TODO: mutation observer to update size
+    ));
+
+    const iframe = document.createElement('iframe');
+    iframe.style.border = '0';
+    iframe.style.width = '100%';
+    iframe.setAttribute('data-frame-id', frameId.toString());
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.addEventListener('dispose', () => delete frames[frameId]);
+    iframe.src = `data:text/html;charset=UTF-8,${doc.documentElement.outerHTML}`;
+    iframe.onload = () => iframe.contentWindow?.postMessage({command: 'size'}, "*");
+    frames[frameId] = iframe;
+
+    return iframe;
+}
+
 export function displayContent(contentType: string, content: string | DocumentFragment, contentTypeArgs?: Record<string, string>): Promise<TagElement<any>> {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);
 
@@ -13,9 +103,12 @@ export function displayContent(contentType: string, content: string | DocumentFr
     if (mimeType === "text/html" || mimeType === "image/svg" || mimeType === "image/svg+xml" || content instanceof DocumentFragment) {
         const node = div(['htmltext'], []);
         if (content instanceof DocumentFragment) {
+            // fragment was created by Polynote; trust it
             node.appendChild(content);
         } else {
-            node.innerHTML = content;
+            // arbitrary HTML string – sandbox it into an iframe
+            const frame = buildContainerFrame(content);
+            node.appendChild(frame);
         }
         result = Promise.resolve(node);
     } else if (mimeType === "text/plain") {
@@ -64,6 +157,7 @@ export function displayContent(contentType: string, content: string | DocumentFr
         const iframe = document.createElement('iframe');
         iframe.className = 'unknown-content';
         iframe.setAttribute("src", `data:${mimeType};base64,${content}`);
+        iframe.setAttribute('sandbox', '');
         result = Promise.resolve(iframe);
     }
 
