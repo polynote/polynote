@@ -5,6 +5,7 @@ import {Disposable, Observer} from "../../state/state_handler";
 import {NotebookStateHandler} from "../../state/notebook_state";
 import {Notebook} from "./notebook/notebook";
 import {VimStatus} from "./notebook/vim_status";
+import {nameFromPath} from "../../util/helpers";
 
 export class Tabs extends Disposable {
     readonly el: TagElement<"div">;
@@ -27,7 +28,7 @@ export class Tabs extends Disposable {
                     if (this.getTab(path) === undefined && path !== "home") {
                         const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
                         if (nbInfo?.info) {
-                            this.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
+                            this.add(path, this.mkTitle(path), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
                         }
                     }
                 })
@@ -41,7 +42,7 @@ export class Tabs extends Disposable {
                 if (path && this.getTab(path) === undefined && path !== "home") {
                     const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
                     if (nbInfo?.info) {
-                        this.add(path, span(['notebook-tab-title'], [path.split(/\//g).pop()!]), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
+                        this.add(path, this.mkTitle(path), new Notebook(nbInfo.info.dispatcher, nbInfo.handler).el);
                         this.activate(path)
                     }
                 } else {
@@ -62,25 +63,25 @@ export class Tabs extends Disposable {
     add(path: string, title: TagElement<"span">, content: TagElement<"div">) {
         if (this.tabs[path] === undefined) {
 
-            // define callbacks here so we can change the path if the tab is renamed.
-            let activate = () => this.activate(path);
-            let remove = () => this.remove(path);
+            const mkTab = (tabPath: string, tabTitle: TagElement<"span">): TagElement<"div"> => {
+                return div(['tab'], [
+                    tabTitle,
+                    icon(['close-button'], 'times', 'close icon').mousedown(evt => {
+                        evt.stopPropagation();
+                        this.remove(tabPath)
+                    })
+                ])
+                    .attr('title', tabPath)
+                    .mousedown((evt: MouseEvent) => {
+                        if (evt.button === 0) { // left click
+                            this.activate(tabPath)
+                        } else if (evt.button === 1) { // middle click
+                            this.remove(tabPath)
+                        } // nothing on right click...
+                    });
+            }
 
-            const tab: TagElement<"div"> = div(['tab'], [
-                title,
-                icon(['close-button'], 'times', 'close icon').mousedown(evt => {
-                    evt.stopPropagation();
-                    remove()
-                })
-            ])
-                .attr('title', path)
-                .mousedown((evt: MouseEvent) => {
-                    if (evt.button === 0) { // left click
-                        activate()
-                    } else if (evt.button === 1) { // middle click
-                        remove()
-                    } // nothing on right click...
-                });
+            const tab: TagElement<"div"> = mkTab(path, title)
 
             this.tabContainer.appendChild(tab);
 
@@ -89,9 +90,12 @@ export class Tabs extends Disposable {
             const obs = handler.view("path").addObserver((newPath, oldPath) => {
                 const tab = this.tabs[oldPath];
                 delete this.tabs[oldPath];
-                this.tabs[newPath] = tab;
-                activate = () => this.activate(newPath);
-                remove = () => this.remove(newPath);
+                const newTab = mkTab(newPath, this.mkTitle(newPath))
+                this.tabContainer.replaceChild(newTab, tab.tab)
+                this.tabs[newPath] = {...tab, tab: newTab};
+                if (this.currentTab?.path === oldPath) {
+                    this.activate(newPath)
+                }
             }, this);
 
             this.tabs[path] = {tab, content, handler, obs};
@@ -143,5 +147,9 @@ export class Tabs extends Disposable {
 
     private addHome() {
         this.add("home", span([], "Home"), this.homeTab);
+    }
+
+    private mkTitle(path: string): TagElement<"span"> {
+       return span(['notebook-tab-title'], [nameFromPath(path)]);
     }
 }

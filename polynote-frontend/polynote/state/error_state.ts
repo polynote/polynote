@@ -54,8 +54,11 @@ export class ErrorStateHandler extends StateHandler<ErrorState> {
     static notebookRenamed(oldPath: string, newPath: string) {
         ErrorStateHandler.get.update(s => {
             const newState = {...s}
-            newState[newPath] = newState[oldPath]
-            delete newState[oldPath]
+            const maybeOldState = newState[oldPath]
+            if (maybeOldState) {
+                newState[newPath] = maybeOldState
+                delete newState[oldPath]
+            }
             return newState
         })
     }

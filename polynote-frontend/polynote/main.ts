@@ -17,6 +17,7 @@ import {Home} from "./ui/component/home";
 import {OpenNotebooksHandler, RecentNotebooksHandler} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
 import {CodeCellModel} from "./ui/component/notebook/cell";
+import {nameFromPath} from "./util/helpers";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -83,7 +84,7 @@ class Main {
 
             const href = window.location.href;
             const hash = window.location.hash;
-            const title = `${path.split(/\//g).pop()} | Polynote`;
+            const title = `${nameFromPath(path)} | Polynote`;
             document.title = title; // looks like chrome ignores history title so we need to be explicit here.
 
             if (hash && window.location.href === (tabUrl.href + hash)) {
@@ -97,7 +98,7 @@ class Main {
                 if (maybeExists) {
                     return [maybeExists, ...recents.filter(r => r.path !== path)];
                 } else {
-                    const name = path.split(/\//g).pop()!;
+                    const name = nameFromPath(path);
                     return [{path, name}, ...recents];
                 }
             })
