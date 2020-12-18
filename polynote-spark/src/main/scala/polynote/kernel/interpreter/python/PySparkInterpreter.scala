@@ -98,10 +98,15 @@ class PySparkInterpreter(
        |# grab the pyspark included in the spark distribution, if available.
        |spark_home = os.environ.get("SPARK_HOME")
        |if spark_home:
-       |    sys.path.insert(1, os.path.join(spark_home, "python"))
+       |    spark_python = os.path.join(spark_home, "python")
+       |    sys.path.insert(1, spark_python)
        |    import glob
        |    py4j_path = glob.glob(os.path.join(spark_home, 'python', 'lib', 'py4j-*.zip'))[0]  # we want to use the py4j distributed with pyspark
        |    sys.path.insert(1, py4j_path)
+       |
+       |    pythonpath = os.pathsep.join(filter(lambda x: x is not None, [spark_python, py4j_path, os.environ.get("PYTHONPATH", None)]))
+       |    os.environ["PYTHONPATH"] = pythonpath
+       |    # TODO: we need to set spark.executorEnv.PYTHONPATH somehow (before the session is created)!
        |
        |from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters, CallbackServerParameters
        |from pyspark.conf import SparkConf
@@ -201,20 +206,39 @@ class PySparkInterpreter(
       gateway.resetCallbackClient(py4j.GatewayServer.defaultAddress(), pythonPort)
 
       jep.exec(
-        """java_import(gateway.jvm, "org.apache.spark.SparkEnv")
-          |java_import(gateway.jvm, "org.apache.spark.SparkConf")
-          |java_import(gateway.jvm, "org.apache.spark.api.java.*")
-          |java_import(gateway.jvm, "org.apache.spark.api.python.*")
-          |java_import(gateway.jvm, "org.apache.spark.mllib.api.python.*")
-          |java_import(gateway.jvm, "org.apache.spark.sql.*")
-          |java_import(gateway.jvm, "org.apache.spark.sql.hive.*")
-          |
-          |__sparkConf = SparkConf(_jvm = gateway.jvm, _jconf = gateway.entry_point.sparkContext().getConf())
-          |sc = SparkContext(jsc = gateway.jvm.org.apache.spark.api.java.JavaSparkContext(gateway.entry_point.sparkContext()), gateway = gateway, conf = __sparkConf)
-          |spark = SparkSession(sc, gateway.entry_point)
-          |sqlContext = spark._wrapped
-          |from pyspark.sql import DataFrame
-          |""".stripMargin)
+        s"""java_import(gateway.jvm, "org.apache.spark.SparkEnv")
+           |java_import(gateway.jvm, "org.apache.spark.SparkConf")
+           |java_import(gateway.jvm, "org.apache.spark.api.java.*")
+           |java_import(gateway.jvm, "org.apache.spark.api.python.*")
+           |java_import(gateway.jvm, "org.apache.spark.mllib.api.python.*")
+           |java_import(gateway.jvm, "org.apache.spark.sql.*")
+           |java_import(gateway.jvm, "org.apache.spark.sql.hive.*")
+           |
+           |__sparkConf = SparkConf(_jvm = gateway.jvm, _jconf = gateway.entry_point.sparkContext().getConf())
+           |sc = SparkContext(jsc = gateway.jvm.org.apache.spark.api.java.JavaSparkContext(gateway.entry_point.sparkContext()), gateway = gateway, conf = __sparkConf)
+           |spark = SparkSession(sc, gateway.entry_point)
+           |sqlContext = spark._wrapped
+           |from pyspark.sql import DataFrame
+           |
+           |
+           |""".stripMargin)
+
+      // Archive venv and send it to Spark
+      venvPath.foreach {
+        path =>
+          jep.exec(
+            s"""
+               |from pathlib import Path
+               |import shutil
+               |
+               |for dep in Path('$path', 'deps').glob('*.whl'):
+               |    # we need to rename the wheels to zips because that's what spark wants... sigh
+               |    as_zip = dep.with_suffix('.zip')
+               |    if not as_zip.exists():
+               |        shutil.copy(dep, as_zip)
+               |    sc.addPyFile(str(as_zip))
+               |""".stripMargin)
+      }
   }
 
   override protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = super.convertToPython(jep) orElse {
