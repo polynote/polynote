@@ -338,3 +338,7 @@ export class Deferred<T> implements Promise<T> {
     }
 
 }
+
+export function nameFromPath(path: string): string {
+    return path.split(/\//g).pop()!;
+}

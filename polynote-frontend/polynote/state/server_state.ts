@@ -10,8 +10,9 @@ import {
 } from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
-import {arrDeleteFirstItem, deepEquals, removeKeys} from "../util/helpers";
+import {arrDeleteFirstItem, arrReplace, deepEquals, nameFromPath, removeKeys} from "../util/helpers";
 import {EditBuffer} from "../data/edit_buffer";
+import {OpenNotebooksHandler, RecentNotebooksHandler} from "./preferences";
 
 export type NotebookInfo = {
     handler: NotebookStateHandler,
@@ -173,6 +174,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         }
     }
 
+    // TODO: should all this rename stuff be handled by state changes somewhere?
     static renameNotebook(oldPath: string, newPath: string) {
         const nbInfo = ServerStateHandler.notebooks[oldPath]
         if (nbInfo) {
@@ -197,6 +199,22 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                         [newPath]: prev
                     }
                 }
+            })
+
+            // update recent notebooks
+            RecentNotebooksHandler.update(nbs => {
+                const prevIdx = nbs.findIndex(nb => nb.path === oldPath)
+                if (prevIdx > -1) {
+                    return arrReplace(nbs, prevIdx, {name: nameFromPath(newPath), path: newPath})
+                } else return nbs // not a recent notebook
+            })
+
+            // update open notebooks
+            OpenNotebooksHandler.update(nbs => {
+                const prevIdx = nbs.findIndex(nb => nb === oldPath)
+                if (prevIdx) {
+                    return arrReplace(nbs, prevIdx, newPath)
+                } else return nbs
             })
         }
     }
