@@ -23,7 +23,7 @@ export class Tabs extends Disposable {
         this.addHome()
 
         ServerStateHandler.get.view("openNotebooks").addObserver(nbs => {
-            if (nbs) {
+            if (nbs.length > 0) {
                 nbs.forEach(path => {
                     if (this.getTab(path) === undefined && path !== "home") {
                         const nbInfo = ServerStateHandler.getOrCreateNotebook(path);

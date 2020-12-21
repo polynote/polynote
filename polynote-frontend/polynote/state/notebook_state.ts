@@ -68,7 +68,7 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         this.updateHandler = new NotebookUpdateHandler(this, -1, -1, new EditBuffer())
 
         this.view("activeCellId").addObserver(cellId => {
-            if (cellId) {
+            if (cellId !== undefined) {
                 const activeCellWatcher = this.cellsHandler.view(cellId)
                 const obs = activeCellWatcher.addObserver(s => {
                     if (! s.selected) {
@@ -138,7 +138,6 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
             }
         }
         id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
-        console.log("cell 6 output is", this.state.cells[6]?.output)
         this.update(s => ({
             ...s,
             activeCellId: id,
@@ -181,17 +180,19 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
         const cellTemplate = {cellId: maxId + 1, language: anchor!.language, content: anchor!.content ?? '', metadata: anchor!.metadata, prev: maybePrevId}
         this.updateHandler.insertCell(maxId + 1, anchor!.language, anchor.content ?? '', anchor.metadata, maybePrevId)
+        // wait for the InsertCell message to go to the server and come back.
         return new Promise(resolve => {
             const cellOrder = this.view("cellOrder")
-            cellOrder.addObserver(order => {
-                const anchorCellIdx = order.indexOf(maybePrevId)
-                const insertedCellId = order.slice(anchorCellIdx).find((id, idx) => {
-                    const newer = id > maybePrevId;
-                    const matches = equalsByKey(this.state.cells[id], cellTemplate, ["language", "content", "metadata"]);
-                    return newer && matches
-                });
-                if (insertedCellId !== undefined) {
-                    resolve(insertedCellId)
+            const obs = cellOrder.addObserver((order, prev) => {
+                const added = diffArray(prev, order)[1][0]
+                const addedCellIdx = order.indexOf(added)
+
+                // ensure the new cell is the one we're waiting for
+                const addedCell = this.state.cells[added]
+                const matches = equalsByKey(addedCell, cellTemplate, ["language", "content", "metadata"])
+                if (addedCellIdx - 1 === maybePrevId && matches && addedCell.id > maxId) {
+                    resolve(addedCell.id)
+                    cellOrder.removeObserver(obs)
                 }
             }, this)
         })
@@ -321,7 +322,7 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
     }
 
     private watchCell(id: number, handler: StateView<CellState>) {
-        console.log("notebookupdatehandler: watching cell", id)
+        console.log("notebookupdatehandler: watching cell", id, handler)
         this.cellWatchers[id] = handler
         handler.view("output").addObserver((newOutput, oldOutput, source) => {
             const added = diffArray(oldOutput, newOutput)[1]

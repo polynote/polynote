@@ -15,7 +15,7 @@ export class NotificationHandler extends Disposable {
     private constructor() {
         super()
         const handlePref = (pref: typeof UserPreferences["notifications"]) => {
-            if (pref.value) {
+            if (pref.value !== undefined) {
                 Notification.requestPermission().then((result) => {
                     console.log(`Requested notification permission and got: '${result}'`)
                 });

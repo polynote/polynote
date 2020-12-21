@@ -44,10 +44,10 @@ export class CommentHandler extends Disposable {
            // first pass to update range of existing roots:
            Object.keys(this.commentRoots).forEach(rootId => {
                const rootRange = Object.entries(this.rootRanges).find(([k, v]) => v === rootId)?.[0]
-               const rangeForId = currentComments[rootId].range.rangeStr;
+               const rangeForId = currentComments[rootId]?.range?.rangeStr;
 
                // check if we need to update this range
-               if (rootRange !== undefined && rootRange !== rangeForId) {
+               if (rangeForId && rootRange !== undefined && rootRange !== rangeForId) {
                    this.rootRanges[rangeForId] = rootId
                }
            })

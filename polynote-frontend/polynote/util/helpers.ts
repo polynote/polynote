@@ -139,7 +139,7 @@ export function unzip3<A, B, C>(arr: [A, B, C][]): [A[], B[], C[]] {
 export function collect<T, U>(arr: T[], fun: (t: T) => U | undefined | null): U[] {
     return arr.flatMap(t => {
         const newT = fun(t)
-        if (newT) {
+        if (newT !== undefined && newT !== null) {
             return [newT]
         } else return []
     })

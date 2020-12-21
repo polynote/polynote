@@ -37,7 +37,7 @@ export class LocalStorageHandler<T> extends StateHandler<T> {
     }
     get state(): T {
         const recent = storage.get(this.key);
-        if (recent) {
+        if (recent !== undefined && recent !== null) {
             return recent;
         } else {
             this.setState(this.initial);

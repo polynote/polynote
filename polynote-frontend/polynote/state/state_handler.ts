@@ -83,7 +83,7 @@ export class StateView<S> {
                 if (s === undefined) { // if state is undefined it's impossible to have a view into it!
                     if (! viewDispose.isDisposed) viewDispose.dispose()
                 } else {
-                    if ((s as any).hasOwnProperty(key)) { // if the key was deleted we need to dispose the lens.
+                    if ((s as any).hasOwnProperty(key)) { // if the key was deleted we need to dispose the view.
                         const observedVal = s[key] as S[K];
                         if (! this.compare(observedVal, view.state)) {
                             view.setState(observedVal, updateSource, this.path)
@@ -95,6 +95,7 @@ export class StateView<S> {
             }, viewDispose, `handleView of key ${key}`, 'viewObserver')
             viewDispose.onDispose.then(() => {
                 console.log("removed view:", view)
+                view.clearObservers() // any observers of this view are no longer relevant
                 delete this.views[key]
                 this.removeObserver(obs)
             })
@@ -148,6 +149,12 @@ export class StateView<S> {
         const idx = this.observers.indexOf(f);
         if (idx >= 0) {
             this.observers.splice(idx, 1)
+        } else {
+            // maybe it's a viewobserver
+            const idx = this.viewObservers.indexOf(f);
+            if (idx >= 0) {
+                this.viewObservers.splice(idx, 1)
+            }
         }
     }
 
@@ -161,7 +168,7 @@ export class StateView<S> {
     }
 }
 
-export class StateWrapper<S> extends StateView<S> implements IDisposable{
+export class StateWrapper<S> extends StateView<S> implements IDisposable {
     disposable = new Disposable()
 
     constructor(view: StateView<S>) {
@@ -175,6 +182,7 @@ export class StateWrapper<S> extends StateView<S> implements IDisposable{
 
     // implement IDisposable
     dispose() {
+        console.log("StateWrapper disposed", this, this.state)
         return this.disposable.dispose()
     }
 
@@ -215,7 +223,9 @@ export class StateHandler<S> extends StateWrapper<S> {
                 [key]: viewState
             }, src ?? lens, lens.path)
         }, this, `lens of key ${key}`, "viewObserver")
-        this.onDispose.then(() => lens.dispose())
+        this.onDispose.then(() => {
+            if (! lens.isDisposed) lens.dispose()
+        })
         return lens as C
     }
 
