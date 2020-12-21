@@ -212,7 +212,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             // update open notebooks
             OpenNotebooksHandler.update(nbs => {
                 const prevIdx = nbs.findIndex(nb => nb === oldPath)
-                if (prevIdx) {
+                if (prevIdx > -1) {
                     return arrReplace(nbs, prevIdx, newPath)
                 } else return nbs
             })

@@ -65,7 +65,7 @@ export class Notebook extends Disposable {
                 this.cells[id] = {cell, handler, el}
                 const cellIdx = newOrder.indexOf(id)
                 const nextCellIdAtIdx = prevOrder[cellIdx]
-                if (nextCellIdAtIdx) {
+                if (nextCellIdAtIdx !== undefined) {
                     // there's a different cell at this index. we need to insert this cell above the existing cell
                     const nextCellEl = this.cells[nextCellIdAtIdx].el;
                     // note that inserting a node that is already in the DOM will move it from its current location to here.

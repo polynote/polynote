@@ -197,6 +197,30 @@ describe("StateHandler", () => {
             expect(obFn).toHaveBeenCalledTimes(1)
         })
     })
+    test("view stop updating after their key is removed", done => {
+        const d = new Disposable()
+        const parent = StateHandler.from({a: 1, b: 2})
+        const view = parent.view("a");
+        const obFn = jest.fn()
+        view.addObserver(obFn, d)
+        parent.update(s => ({...s, a: 2}))
+        expect(obFn).toHaveBeenCalledTimes(1)
+        parent.update(s => {
+            const st = {...s}
+            delete st["a"]
+            return st
+        })
+        // to ensure that the view promise settles
+        setTimeout(() => {
+            expect(obFn).toHaveBeenCalledTimes(1)
+            parent.update(s => ({...s, a: 3}))
+            parent.update(s => ({...s, a: 4}))
+            parent.update(s => ({...s, a: 5}))
+            expect(obFn).toHaveBeenCalledTimes(1)
+            done()
+        }, 0)
+
+    })
     test("views can be wrapped", () => {
         const parent = StateHandler.from({a: 1, b: 2});
 
