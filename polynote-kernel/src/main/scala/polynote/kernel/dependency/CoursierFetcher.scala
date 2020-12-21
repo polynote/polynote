@@ -21,7 +21,7 @@ import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentia
 import coursier.error.ResolutionError
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
-import coursier.util.{EitherT, Sync}
+import coursier.util.{EitherT, Sync, Artifact}
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
 import polynote.config.{RepositoryConfig, ivy, maven, Credentials => CredentialsConfig}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
@@ -81,10 +81,7 @@ object CoursierFetcher {
         changing = changing
       )).toValidatedNel
     case maven(base, changing) =>
-      val repo = MavenRepository(
-        base,
-        changing = changing
-      )
+      val repo = MavenRepository(base).withChanging(changing)
       Validated.validNel(repo)
   }.sequence[ValidatedNel[String, ?], Repository].leftMap {
     errs => new RuntimeException(s"Errors parsing repositories:\n- ${errs.toList.mkString("\n- ")}")
@@ -113,7 +110,7 @@ object CoursierFetcher {
           case Array(org, name, typ, config, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration(config), Classifier(classifier), ver)
           case _ => throw new Exception(s"Unable to parse dependency '$moduleStr'")
         }
-        Dependency.of(Module(org, name), ver)
+        Dependency(Module(org, name), ver)
           .withConfiguration(config)
           .withAttributes(Attributes(typ, classifier))
           .withExclusions(coursierExclude)
