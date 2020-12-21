@@ -223,22 +223,30 @@ class PySparkInterpreter(
            |
            |""".stripMargin)
 
-      // Archive venv and send it to Spark
-      venvPath.foreach {
-        path =>
-          jep.exec(
-            s"""
-               |from pathlib import Path
-               |import shutil
-               |
-               |for dep in Path('$path', 'deps').glob('*.whl'):
-               |    # we need to rename the wheels to zips because that's what spark wants... sigh
-               |    as_zip = dep.with_suffix('.zip')
-               |    if not as_zip.exists():
-               |        shutil.copy(dep, as_zip)
-               |    sc.addPyFile(str(as_zip))
-               |""".stripMargin)
-      }
+      // Archive venv dependencies and send it to Spark. We also add pyspark and py4j just in case.
+        jep.exec(
+          s"""
+             |from pathlib import Path
+             |import shutil
+             |
+             |venv_path = "${venvPath.getOrElse("")}"
+             |dependencies = []
+             |if venv_path:
+             |    dependencies += list(Path(venv_path, 'deps').glob('*.whl'))
+             |
+             |# Add pyspark and py4j modules too.
+             |spark_home = os.environ.get("SPARK_HOME")
+             |if spark_home:
+             |    spark_py_libs = list(Path(spark_home, 'python', 'lib').glob('*.zip'))
+             |    dependencies += spark_py_libs
+             |
+             |for dep in dependencies:
+             |    # we need to rename the wheels to zips because that's what spark wants... sigh
+             |    as_zip = dep.with_suffix('.zip')
+             |    if not as_zip.exists():
+             |        shutil.copy(dep, as_zip)
+             |    sc.addPyFile(str(as_zip))
+             |""".stripMargin)
   }
 
   override protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = super.convertToPython(jep) orElse {
