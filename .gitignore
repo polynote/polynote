@@ -17,3 +17,4 @@ metastore_db
 tmp
 npm-debug.log.*
 run-jar.sh
+/.bsp
