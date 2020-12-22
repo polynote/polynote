@@ -73,6 +73,7 @@ object Interpreter {
     def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter]
     def requireSpark: Boolean = false
     def priority: Int = 0
+    def sparkConfig(config: Map[String, String]): RIO[BaseEnv with GlobalEnv, Map[String, String]] = ZIO.succeed(config)
   }
 
   type Factories = Has[Map[String, List[Interpreter.Factory]]]

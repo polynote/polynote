@@ -206,16 +206,25 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       _           <- ZIO(session.sparkContext.addSparkListener(new KernelListener(taskManager, session, zioRuntime)))
     } yield ()
 
+    def interpreterSparkConfigs = for {
+      factories <- Interpreter.Factories.access
+      configs   <- ZIO.foldLeft(factories.values.map(_.head))(Map.empty[String, String])((configs, factory) => factory.sparkConfig(configs))
+    } yield configs
+
     TaskManager.run("Spark", "Spark", "Starting Spark session") {
       for {
-        config         <- Config.access
-        notebookConfig <- CurrentNotebook.config
-        path           <- CurrentNotebook.path
-        executor       <- mkExecutor()
-        session        <- mkSpark(config.spark.map(SparkConfig.toMap).getOrElse(Map.empty) ++ notebookConfig.sparkConfig.getOrElse(Map.empty), path).lock(executor)
-        _              <- ensureJars(session).lock(executor)
-        _              <- ZIO(SparkEnv.get.serializer.setDefaultClassLoader(classLoader)).lock(executor)
-        _              <- attachListener(session)
+        config             <- Config.access
+        notebookConfig     <- CurrentNotebook.config
+        path               <- CurrentNotebook.path
+        executor           <- mkExecutor()
+        interpreterConfigs <- interpreterSparkConfigs
+        serverConfigs       = config.spark.map(SparkConfig.toMap).getOrElse(Map.empty)
+        notebookConfigs     = notebookConfig.sparkConfig.getOrElse(Map.empty)
+        sparkConfigs        = interpreterConfigs ++ serverConfigs ++ notebookConfigs
+        session            <- mkSpark(sparkConfigs, path).lock(executor)
+        _                  <- ensureJars(session).lock(executor)
+        _                  <- ZIO(SparkEnv.get.serializer.setDefaultClassLoader(classLoader)).lock(executor)
+        _                  <- attachListener(session)
       } yield session
     }
   }
