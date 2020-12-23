@@ -299,12 +299,12 @@ object PySparkInterpreter {
     } yield new PySparkInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api, venv)
   }
 
+  // Grab the locations of the pyspark modules that are packaged with Spark: pyspark itself, and py4j.
   lazy val pysparkModules: Option[List[Path]] = for {
     spark_home <- sys.env.get("SPARK_HOME")
     path       <- Try(FileSystems.getDefault.getPath(spark_home, "python", "lib")).toOption
     files      <- Try(Files.newDirectoryStream(path, "*.zip").iterator().asScala.toList).toOption
   } yield files
-
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
@@ -313,11 +313,16 @@ object PySparkInterpreter {
     override val requireSpark: Boolean = true
     override val priority: Int = 1
 
+    // Add the pyspark modules that are packaged with Spark to the executor's PYTHONPATH. We ship these modules over to the
+    // executors in [[PySparkInterpreter#registerGateway]] (alongside the other python libs), since the executors aren't
+    // guaranteed to have pyspark installed on them.
     override def sparkConfig(config: Map[String, String]): RIO[BaseEnv with GlobalEnv, Map[String, String]] = {
       val cfg = pysparkModules.fold(config) {
         files =>
           val pythonPath = files.map(f => s"./${f.getFileName}").mkString(":")
-          config ++ Map("spark.executorEnv.PYTHONPATH" -> pythonPath)
+          val augmentedPythonPath = config.get("spark.executorEnv.PYTHONPATH").map(env => s"$env:$pythonPath").getOrElse(pythonPath)
+
+          config ++ Map("spark.executorEnv.PYTHONPATH" -> augmentedPythonPath)
       }
       super.sparkConfig(cfg)
     }
