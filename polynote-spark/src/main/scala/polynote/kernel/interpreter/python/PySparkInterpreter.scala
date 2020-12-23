@@ -320,9 +320,7 @@ object PySparkInterpreter {
       val cfg = pysparkModules.fold(config) {
         files =>
           val pythonPath = files.map(f => s"./${f.getFileName}").mkString(":")
-          val augmentedPythonPath = config.get("spark.executorEnv.PYTHONPATH").map(env => s"$env:$pythonPath").getOrElse(pythonPath)
-
-          config ++ Map("spark.executorEnv.PYTHONPATH" -> augmentedPythonPath)
+          config ++ Map("spark.executorEnv.PYTHONPATH" -> pythonPath)
       }
       super.sparkConfig(cfg)
     }
