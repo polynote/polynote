@@ -1,7 +1,7 @@
 package polynote.kernel.interpreter.python
 
 import java.net.InetAddress
-import java.nio.file.Path
+import java.nio.file.{FileSystems, Files, Path}
 import java.util.concurrent.atomic.AtomicReference
 
 import jep.Jep
@@ -20,7 +20,8 @@ import zio.{RIO, Runtime, Task, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.internal.Executor
 
-import scala.util.Properties
+import scala.util.{Properties, Try}
+import scala.collection.JavaConverters._
 
 class PySparkInterpreter(
   _compiler: ScalaCompiler,
@@ -224,29 +225,30 @@ class PySparkInterpreter(
            |""".stripMargin)
 
       // Archive venv dependencies and send it to Spark. We also add pyspark and py4j just in case.
-        jep.exec(
-          s"""
-             |from pathlib import Path
-             |import shutil
-             |
-             |venv_path = "${venvPath.getOrElse("")}"
-             |dependencies = []
-             |if venv_path:
-             |    dependencies += list(Path(venv_path, 'deps').glob('*.whl'))
-             |
-             |# Add pyspark and py4j modules too.
-             |spark_home = os.environ.get("SPARK_HOME")
-             |if spark_home:
-             |    spark_py_libs = list(Path(spark_home, 'python', 'lib').glob('*.zip'))
-             |    dependencies += spark_py_libs
-             |
-             |for dep in dependencies:
-             |    # we need to rename the wheels to zips because that's what spark wants... sigh
-             |    as_zip = dep.with_suffix('.zip')
-             |    if not as_zip.exists():
-             |        shutil.copy(dep, as_zip)
-             |    sc.addPyFile(str(as_zip))
-             |""".stripMargin)
+      val pysparkModulesList = PySparkInterpreter.pysparkModules.fold(List.empty[String])(_.map(_.toString))
+      jep.set("spark_py_libs", pysparkModulesList.toArray)
+
+      jep.exec(
+        s"""
+           |from pathlib import Path
+           |import shutil
+           |
+           |venv_path = "${venvPath.getOrElse("")}"
+           |dependencies = []
+           |if venv_path:
+           |    dependencies += list(Path(venv_path, 'deps').glob('*.whl'))
+           |
+           |# Add pyspark and py4j modules too.
+           |if spark_py_libs:
+           |    dependencies += [Path(x) for x in spark_py_libs]
+           |
+           |for dep in dependencies:
+           |    # we need to rename the wheels to zips because that's what spark wants... sigh
+           |    as_zip = dep.with_suffix('.zip')
+           |    if not as_zip.exists():
+           |        shutil.copy(dep, as_zip)
+           |    sc.addPyFile(str(as_zip))
+           |""".stripMargin)
   }
 
   override protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = super.convertToPython(jep) orElse {
@@ -297,12 +299,28 @@ object PySparkInterpreter {
     } yield new PySparkInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api, venv)
   }
 
+  lazy val pysparkModules: Option[List[Path]] = for {
+    spark_home <- sys.env.get("SPARK_HOME")
+    path       <- Try(FileSystems.getDefault.getPath(spark_home, "python", "lib")).toOption
+    files      <- Try(Files.newDirectoryStream(path, "*.zip").iterator().asScala.toList).toOption
+  } yield files
+
+
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
     def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = PySparkInterpreter()
 
     override val requireSpark: Boolean = true
     override val priority: Int = 1
+
+    override def sparkConfig(config: Map[String, String]): RIO[BaseEnv with GlobalEnv, Map[String, String]] = {
+      val cfg = pysparkModules.fold(config) {
+        files =>
+          val pythonPath = files.map(f => s"./${f.getFileName}").mkString(":")
+          config ++ Map("spark.executorEnv.PYTHONPATH" -> pythonPath)
+      }
+      super.sparkConfig(cfg)
+    }
   }
 
 }
