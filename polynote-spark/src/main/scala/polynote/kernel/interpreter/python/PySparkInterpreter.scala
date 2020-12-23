@@ -242,12 +242,19 @@ class PySparkInterpreter(
            |if spark_py_libs:
            |    dependencies += [Path(x) for x in spark_py_libs]
            |
+           |# Unfortunately pyspark's `sc.addPyFile` modifies the sys.path, but we don't want that to happen in this case.
+           |# so, we'll just add the files ourselves.
+           |def addPyFile(path):
+           |    sc.addFile(path)
+           |    filename = os.path.basename(path)
+           |    sc._python_includes.append(filename)
+           |
            |for dep in dependencies:
            |    # we need to rename the wheels to zips because that's what spark wants... sigh
            |    as_zip = dep.with_suffix('.zip')
            |    if not as_zip.exists():
            |        shutil.copy(dep, as_zip)
-           |    sc.addPyFile(str(as_zip))
+           |    addPyFile(str(as_zip))
            |""".stripMargin)
   }
 
