@@ -3,9 +3,10 @@ package polynote.runtime.spark.reprs
 import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
 
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
-import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
 import org.apache.spark.storage.StorageLevel
 import polynote.runtime._
 
@@ -270,9 +271,14 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
           (r: org.apache.spark.sql.Row) =>
             r2b(InternalRow.fromSeq(r.toSeq))
         }
-        arr.map(r => DataRepr(structType, ByteBuffer.wrap(encoder(r))): ValueRepr)
+        Array(
+          StreamingDataRepr(
+            structType,
+            Some(arr.length),
+            arr.iterator.map(r => ByteBuffer.wrap(encoder(r)))
+          )
+        )
       }
-
     }
   }
 
