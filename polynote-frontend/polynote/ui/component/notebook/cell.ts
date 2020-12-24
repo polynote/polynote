@@ -211,13 +211,18 @@ abstract class Cell extends Disposable {
             const elTop = this.el.offsetTop - viewport.offsetTop;
             const elBottom = elTop + this.el.offsetHeight;
 
-            const needToScrollUp = elTop < viewportScrollTop;
-            const needToScrollDown = elBottom > viewportScrollBottom;
+            const buffer = 30 // 30 px buffer for visibility calculation
+            const topVisible = elTop > viewportScrollTop && elTop < (viewportScrollBottom - 30)
+            const bottomVisible = elBottom > (viewportScrollTop + 30) && elBottom < viewportScrollBottom
+            if (!topVisible && !bottomVisible) {
+                const needToScrollUp = elTop < viewportScrollTop;
+                const needToScrollDown = elBottom > viewportScrollBottom;
 
-            if (needToScrollUp && !needToScrollDown) {
-                this.el.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
-            } else if(!needToScrollUp && needToScrollDown) {
-                this.el.scrollIntoView({behavior: "auto", block: "end", inline: "nearest"})
+                if (needToScrollUp && !needToScrollDown) {
+                    this.el.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
+                } else if(!needToScrollUp && needToScrollDown) {
+                    this.el.scrollIntoView({behavior: "auto", block: "start", inline: "nearest"})
+                }
             }
         }
     }
