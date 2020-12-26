@@ -139,6 +139,7 @@
 #    spark.executor.userClasspathFirst: true
 #  spark_submit_args: "--some --arguments"
 #  dist_classpath_filter: hadoop.*\.jar
+#  jars_as_urls: false
 
 
 ########## Front-end Configuration ################################################################################

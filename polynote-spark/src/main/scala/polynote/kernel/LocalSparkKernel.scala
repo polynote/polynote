@@ -120,6 +120,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
   }
 
   def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
+    polynoteConfig   <- Config.access
     scalaDeps        <- CoursierFetcher.fetch("scala")
     (main, transitive) = scalaDeps.partition(_._1)
     sparkRuntimeJar   = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
@@ -128,7 +129,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map { case (_, uri, file) => (uri, file) }
     compiler         <- ScalaCompiler(main.map(_._3), sparkRuntimeJar :: transitive.map(_._3), sparkClasspath, updateSettings)
     classLoader       = compiler.classLoader
-    session          <- startSparkSession(sparkJars, classLoader)
+    session          <- startSparkSession(sparkJars, classLoader, jarsAsUrls = polynoteConfig.spark.flatMap(_.jarsAsUrls).getOrElse(polynoteConfig.credentials.coursier.isEmpty))
     busyState        <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
     scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
@@ -136,11 +137,11 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     closed           <- Promise.make[Throwable, Unit]
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)
 
-  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
+  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader, jarsAsUrls: Boolean): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
 
-    // TODO: config option for using downloaded deps vs. giving the urls
-    //       for now we'll just give Spark the urls to the deps
-    val jars = deps.map(_._1)
+    val jars =
+      if (jarsAsUrls) deps.map(_._1)
+      else deps.map(_._2.getAbsolutePath)
 
     /**
       * We create a dedicated [[Executor]] for starting Spark, so that its context classloader can be fixed to the
