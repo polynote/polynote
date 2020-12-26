@@ -1,5 +1,6 @@
 package polynote.kernel
 import java.io.File
+import java.net.URI
 import java.nio.file.{FileSystems, Files}
 import java.util.concurrent.{Executors, ThreadFactory}
 import java.util.concurrent.atomic.AtomicInteger
@@ -8,11 +9,12 @@ import java.util.regex.Pattern
 import cats.effect.concurrent.Ref
 import cats.instances.list._
 import cats.syntax.traverse._
+import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentials}
 import fs2.concurrent.SignallingRef
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import polynote.buildinfo.BuildInfo
-import polynote.config.{PolynoteConfig, SparkConfig}
+import polynote.config.{Credentials, PolynoteConfig, SparkConfig}
 import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
@@ -25,7 +27,7 @@ import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Promise, RIO, Task, ZIO, ZLayer}
+import zio.{Promise, RIO, Task, UIO, URIO, ZIO, ZLayer}
 import zio.interop.catz._
 import zio.system.{env, property}
 
@@ -119,7 +121,15 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     settings
   }
 
+  private def loadCredentials(credentials: Credentials): URIO[Logging, List[DirectCredentials]] = credentials.coursier match {
+    case Some(Credentials.Coursier(path)) =>
+      Task(CoursierCredentials(new File(path), optional = false).get().toList)
+        .catchAll(err => Logging.error("Failed to load credentials", err).as(Nil))
+    case None => UIO(Nil)
+  }
+
   def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
+    polynoteConfig   <- Config.access
     scalaDeps        <- CoursierFetcher.fetch("scala")
     (main, transitive) = scalaDeps.partition(_._1)
     sparkRuntimeJar   = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
@@ -128,7 +138,8 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map { case (_, uri, file) => (uri, file) }
     compiler         <- ScalaCompiler(main.map(_._3), sparkRuntimeJar :: transitive.map(_._3), sparkClasspath, updateSettings)
     classLoader       = compiler.classLoader
-    session          <- startSparkSession(sparkJars, classLoader)
+    credentials      <- loadCredentials(polynoteConfig.credentials)
+    session          <- startSparkSession(sparkJars, classLoader, credentials)
     busyState        <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
     scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
@@ -136,11 +147,15 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     closed           <- Promise.make[Throwable, Unit]
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)
 
-  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
+  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader,
+                                directCredentials: List[DirectCredentials]): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
 
-    // TODO: config option for using downloaded deps vs. giving the urls
-    //       for now we'll just give Spark the urls to the deps
-    val jars = deps.map(_._1)
+    val passwordProtectedHosts = directCredentials.map(_.host).toSet
+
+    val jars = deps.map { case (url, file) =>
+      if (passwordProtectedHosts.contains(URI.create(url).getHost)) file.getAbsolutePath
+      else url
+    }
 
     /**
       * We create a dedicated [[Executor]] for starting Spark, so that its context classloader can be fixed to the
