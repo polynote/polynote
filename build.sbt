@@ -143,7 +143,8 @@ val `polynote-server` = project.settings(
     "org.scodec" %% "scodec-core" % "1.10.3",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
-    "org.slf4j" % "slf4j-simple" % "1.7.25"
+    "org.slf4j" % "slf4j-simple" % "1.7.25",
+    "net.java.dev.jets3t" % "jets3t" % "0.7.1" // same as Spark one
   ),
   //unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist",
   packageBin := {
