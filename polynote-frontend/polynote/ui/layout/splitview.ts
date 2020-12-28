@@ -1,5 +1,5 @@
 import {div, TagElement} from "../tags";
-import {ViewPrefsHandler} from "../../state/preferences";
+import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 import {Disposable} from "../../state/state_handler";
 
 /**
@@ -128,7 +128,7 @@ export class SplitView extends Disposable {
 
         this.el = div(['split-view', ...initialClasses], [left, leftDragger, center, rightDragger, right]);
 
-        ViewPrefsHandler.addObserver(prefs => {
+        const collapseStatus = (prefs: ViewPreferences) => {
             if (prefs.leftPane.collapsed) {
                 this.el.classList.add('left-collapsed');
             } else {
@@ -139,6 +139,8 @@ export class SplitView extends Disposable {
             } else {
                 this.el.classList.remove('right-collapsed');
             }
-        }, this)
+        }
+        collapseStatus(initialPrefs)
+        ViewPrefsHandler.addObserver(collapseStatus, this)
     }
 }

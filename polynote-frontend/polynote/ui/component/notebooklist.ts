@@ -122,7 +122,7 @@ export class NotebookList extends Disposable {
     constructor(readonly dispatcher: ServerMessageDispatcher) {
         super()
 
-        this.header = h2(['notebooks-list-header'], [
+        this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
