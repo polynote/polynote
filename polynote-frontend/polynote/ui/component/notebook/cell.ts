@@ -525,6 +525,10 @@ class CodeCell extends Cell {
                 this.el.classList.add("running");
                 // clear results when a cell starts running:
                 this.cellState.update1("results", () => [])
+
+                // update Execution Status (in case this is an initial load)
+                if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
+
             } else {
                 this.el.classList.remove("running");
                 if (previously) {
