@@ -33,14 +33,16 @@ import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 export class KernelPane extends Disposable {
     el: TagElement<"div">;
     header: TagElement<"div">;
+    statusEl: TagElement<"div">;
     private kernels: Record<string, Kernel> = {};
 
     constructor(serverMessageDispatcher: ServerMessageDispatcher) {
         super()
         const placeholderEl = div(['kernel-ui-placeholder'], []);
-        const placeholderHeader = div(["kernel-header-placeholder"], []);
+        const placeholderStatus = div(['kernel-header-placeholder'], []);
         this.el = placeholderEl;
-        this.header = placeholderHeader;
+        this.statusEl = placeholderStatus;
+        this.header = div(['ui-panel-header'], [this.statusEl]);
 
         const handleCurrentNotebook = (path?: string) => {
             if (path && path !== "home") {
@@ -58,8 +60,8 @@ export class KernelPane extends Disposable {
                     this.el.replaceWith(kernel.el);
                     this.el = kernel.el
 
-                    this.header.replaceWith(kernel.statusEl);
-                    this.header = kernel.statusEl;
+                    this.statusEl.replaceWith(kernel.statusEl);
+                    this.statusEl = kernel.statusEl;
                 } else {
                     console.warn("Requested notebook at path", path, "but it wasn't loaded. This is unexpected...")
                 }
@@ -69,8 +71,8 @@ export class KernelPane extends Disposable {
                 this.el.replaceWith(placeholderEl);
                 this.el = placeholderEl
 
-                this.header.replaceWith(placeholderHeader);
-                this.header = placeholderHeader;
+                this.statusEl.replaceWith(placeholderStatus);
+                this.statusEl = placeholderStatus;
             }
         }
         handleCurrentNotebook(ServerStateHandler.state.currentNotebook)
@@ -107,7 +109,7 @@ export class Kernel extends Disposable {
                 iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
                 iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(evt => this.killKernel(evt))
             ])
-        ]).click(evt => this.collapse())
+        ]);
 
         this.el = div(['kernel-ui'], [
             info.el,
@@ -135,18 +137,6 @@ export class Kernel extends Disposable {
     private killKernel(evt: Event) {
         evt.stopPropagation();
         this.dispatcher.kernelCommand('kill')
-    }
-
-    private collapse() {
-        ViewPrefsHandler.update(state => {
-            return {
-                ...state,
-                [this.whichPane]: {
-                    ...state[this.whichPane],
-                    collapsed: !state[this.whichPane].collapsed
-                }
-            }
-        })
     }
 
     private setKernelStatus(state: KernelStatusString) {
