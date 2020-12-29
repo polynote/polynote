@@ -104,10 +104,10 @@ describe("StateHandler", () => {
         })
     })
     it("supports views of object states", () => {
-        const sh = StateHandler.from({a: 1, b: 2})
+        const sh = StateHandler.from<{a?: number, b?: number}>({a: undefined, b: 2})
         const view = sh.view("a")
-        expect(sh.state).toEqual({a: 1, b: 2})
-        expect(view.state).toEqual(1)
+        expect(sh.state).toEqual({a: undefined, b: 2})
+        expect(view.state).toEqual(undefined)
 
         const obState = jest.fn()
         sh.addObserver(obState, sh)
@@ -115,14 +115,23 @@ describe("StateHandler", () => {
         const obA = jest.fn()
         view.addObserver(obA, sh)
 
+        sh.update(s => ({...s, a: 1}))
+        expect(view.state).toEqual(1)
+
         sh.update(s => ({...s, a: 2}))
         expect(view.state).toEqual(2)
 
         sh.update(s => ({...s, b: 100}))
         expect(view.state).toEqual(2) // stays the same
 
-        expect(obState).toHaveBeenCalledTimes(2)
-        expect(obA).toHaveBeenCalledTimes(1)
+        sh.update(s => ({...s, a: undefined}))
+        expect(view.state).toEqual(undefined)
+
+        sh.update(s => ({...s, a: 100}))
+        expect(view.state).toEqual(100)
+
+        expect(obState).toHaveBeenCalledTimes(5)
+        expect(obA).toHaveBeenCalledTimes(4)
     })
     it("supports nested views", () => {
         const sh = StateHandler.from<{s: {a: Record<string, number>}, c: number}>({
@@ -162,11 +171,11 @@ describe("StateHandler", () => {
 
     })
     it("supports mapViews", () => {
-        const sh = StateHandler.from({a: 1, b: 2})
-        const view = sh.mapView("a", a => a.toString())
+        const sh = StateHandler.from<{a?: number, b?: number}>({a: undefined, b: 2})
+        const view = sh.mapView("a", a => a?.toString())
 
-        expect(sh.state).toEqual({a: 1, b: 2})
-        expect(view.state).toEqual("1")
+        expect(sh.state).toEqual({a: undefined, b: 2})
+        expect(view.state).toEqual(undefined)
 
         const obState = jest.fn()
         sh.addObserver(obState, sh)
@@ -174,14 +183,23 @@ describe("StateHandler", () => {
         const obA = jest.fn()
         view.addObserver(obA, sh)
 
+        sh.update(s => ({...s, a: 1}))
+        expect(view.state).toEqual("1")
+
         sh.update(s => ({...s, a: 2}))
         expect(view.state).toEqual("2")
 
         sh.update(s => ({...s, b: 100}))
         expect(view.state).toEqual("2") // stays the same
 
-        expect(obState).toHaveBeenCalledTimes(2)
-        expect(obA).toHaveBeenCalledTimes(1)
+        sh.update(s => ({...s, a: undefined}))
+        expect(view.state).toEqual(undefined)
+
+        sh.update(s => ({...s, a: 100}))
+        expect(view.state).toEqual("100")
+
+        expect(obState).toHaveBeenCalledTimes(5)
+        expect(obA).toHaveBeenCalledTimes(4)
     })
     test("views can also synchronize with another Disposable", () => {
         const d = new Disposable()
