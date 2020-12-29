@@ -3,7 +3,7 @@ package polynote.runtime.python
 import java.util.concurrent.{Callable, ExecutorService}
 
 import jep.python.PyCallable
-import shapeless.Witness
+import polynote.macros.LiteralStr
 
 import scala.collection.JavaConverters._
 import scala.language.dynamics
@@ -36,5 +36,5 @@ class PythonFunction(callable: PyCallable, runner: PythonObject.Runner) extends 
 }
 
 object PythonFunction {
-  type function = Witness.`"function"`.T
+  type function = LiteralStr.`function`.T
 }

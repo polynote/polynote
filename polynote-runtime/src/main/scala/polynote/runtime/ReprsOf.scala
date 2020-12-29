@@ -1,11 +1,10 @@
 package polynote.runtime
 
-import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
+import java.io.DataOutput
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 import polynote.runtime
-import shapeless.HNil
 
 import scala.collection.GenSeq
 import scala.concurrent.Future

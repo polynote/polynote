@@ -1,13 +1,12 @@
 package polynote.kernel
 package remote
 
-import java.io.{BufferedReader, IOException, InputStreamReader}
+import java.io.{BufferedReader, File, IOException, InputStreamReader}
 import java.net.{BindException, ConnectException, InetSocketAddress, Socket}
 import java.nio.ByteBuffer
 import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, ServerSocketChannel, SocketChannel}
-import java.nio.file.Paths
+import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.{Semaphore, TimeUnit}
-
 import fs2.Stream
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
@@ -18,7 +17,7 @@ import scodec.codecs.implicits._
 import scodec.bits.BitVector
 import scodec.stream.decode
 import zio.blocking.{Blocking, effectBlocking, effectBlockingCancelable, effectBlockingInterrupt}
-import zio.{Cause, Promise, RIO, Schedule, Task, URIO, ZIO}
+import zio.{Cause, Promise, RIO, Schedule, Task, URIO, ZIO, system => ZSystem}
 import zio.duration.{DurationOps, durationInt, Duration => ZDuration}
 import zio.interop.catz._
 
@@ -29,6 +28,7 @@ import cats.~>
 import polynote.kernel.task.TaskManager
 import zio.clock.Clock
 
+import java.util.function.IntFunction
 import scala.util.Random
 
 trait Transport[ServerAddress] {
@@ -324,10 +324,45 @@ object SocketTransport {
       }
     }
 
+    private def findScalaVersion: URIO[GlobalEnv with CurrentNotebook, String] = for {
+      serverConfig   <- Config.access
+      notebookConfig <- CurrentNotebook.config
+    } yield notebookConfig.scalaVersion
+      .orElse(serverConfig.kernel.scalaVersion)
+      .getOrElse(DeploySubprocess.DefaultScalaVersion)
+
+    private def listJars(path: Path): RIO[Blocking, Seq[Path]] = effectBlocking {
+      Files.list(path).toArray(new IntFunction[Array[Path]] {
+        override def apply(size: Int): Array[Path] = new Array[Path](size)
+      }).filter(_.endsWith(".jar")).toSeq
+    }.catchSome {
+      case err: IOException => ZIO.succeed(Seq.empty)
+    }.flatMap {
+      paths => ZIO.collect(paths)(path => effectBlocking(path.toRealPath().toAbsolutePath).asSomeError)
+    }
+
+    private def listJarsForVersion(dir: String, scalaVersion: String) =
+      ZSystem.property("user.dir").flatMap {
+        case Some(cwd) => ZIO(Paths.get(cwd, "deps", scalaVersion)).flatMap(listJars)
+        case None      => ZIO.succeed(Seq.empty)
+      }
+
+    private def buildClassPath(scalaVersion: String): RIO[BaseEnv, Seq[Path]] = for {
+      deps    <- listJarsForVersion("deps", scalaVersion)
+      plugins <- listJarsForVersion("plugins.d", scalaVersion)
+    } yield deps ++ plugins
+
+    private def buildCommand(
+      serverAddress: InetSocketAddress
+    ): RIO[BaseEnv with GlobalEnv with CurrentNotebook, Seq[String]] = for {
+      classPath <- findScalaVersion >>= buildClassPath
+      command   <- deployCommand(serverAddress, classPath)
+    } yield command
+
     override def deployKernel(
       transport: SocketTransport,
       serverAddress: InetSocketAddress
-    ): RIO[BaseEnv with GlobalEnv with CurrentNotebook, DeployedProcess] = deployCommand(serverAddress).flatMap {
+    ): RIO[BaseEnv with GlobalEnv with CurrentNotebook, DeployedProcess] = buildCommand(serverAddress).flatMap {
       command =>
         val displayCommand = command.map {
           str => if (str contains " ") s""""$str"""" else str
@@ -351,19 +386,24 @@ object SocketTransport {
   }
 
   object DeploySubprocess {
+    val DefaultScalaVersion = "2.11"
+
     trait DeployCommand {
-      def apply(serverAddress: InetSocketAddress): RIO[Config with CurrentNotebook, Seq[String]]
+      def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[Config with CurrentNotebook, Seq[String]]
     }
 
     /**
       * Deploy by starting a Java process that inherits classpath and environment variables from this process
       */
     class DeployJava[KernelFactory <: Kernel.Factory.Service : ClassTag] extends DeployCommand {
-      override def apply(serverAddress: InetSocketAddress): RIO[Config with CurrentNotebook, Seq[String]] = ZIO {
+      override def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[Config with CurrentNotebook, Seq[String]] = ZIO {
         val java = Paths.get(System.getProperty("java.home"), "bin", "java").toString
         val javaArgs = sys.process.javaVmArguments.filterNot(_ startsWith "-agentlib")
-        val classPath = System.getProperty("java.class.path")
-        java :: "-cp" :: classPath :: javaArgs :::
+        val fullClassPath = (classPath.map(_.toString) :+ System.getProperty("java.class.path"))
+          .filterNot(_.isEmpty)
+          .mkString(File.pathSeparator)
+
+        java :: "-cp" :: fullClassPath :: javaArgs :::
           classOf[RemoteKernelClient].getName ::
           "--address" :: serverAddress.getAddress.getHostAddress ::
           "--port" :: serverAddress.getPort.toString ::

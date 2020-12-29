@@ -173,7 +173,7 @@ class LocalKernel private[kernel] (
     */
   private def cellInterpreter(id: CellID, forceStart: Boolean = false): ZIO[BaseEnv with GlobalEnv with CellEnv, NoSuchElementException, (NotebookCell, Interpreter, State)] = {
     for {
-      notebook    <- CurrentNotebook.get.orDie
+      notebook    <- CurrentNotebook.get
       cell        <- CurrentNotebook.getCell(id)
       state       <- interpreterState.get.orDie
       prevCells    = notebook.cells.takeWhile(_.id != cell.id)
