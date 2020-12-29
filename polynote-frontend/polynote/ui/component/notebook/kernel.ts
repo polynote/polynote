@@ -15,7 +15,6 @@ import {
 } from "../../tags";
 import {
     NotebookMessageDispatcher,
-    Reconnect,
     ServerMessageDispatcher,
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
@@ -125,7 +124,7 @@ export class Kernel extends Disposable {
 
     private connect(evt: Event) {
         evt.stopPropagation();
-        this.serverMessageDispatcher.dispatch(new Reconnect(true))
+        this.serverMessageDispatcher.reconnect(true)
     }
 
     private startKernel(evt: Event) {

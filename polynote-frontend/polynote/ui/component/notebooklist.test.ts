@@ -1,9 +1,6 @@
 import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList, NotebookListContextMenu} from "./notebooklist";
 import {StateHandler} from "../../state/state_handler";
 import {
-    DeleteNotebook,
-    RenameNotebook,
-    RequestNotebooksList,
     ServerMessageDispatcher
 } from "../../messaging/dispatcher";
 import {fireEvent, getByText, queryAllByText, queryByText, queryHelpers, waitFor} from "@testing-library/dom";
@@ -106,13 +103,13 @@ describe("BranchComponent", () => {
         waitFor(() => {
             expect(contextMenu.el).toBeInTheDocument()
         }).then(() => {
-            const mockDispatch = jest.spyOn(dispatcher, 'dispatch').mockImplementation((() => {}))
+            const dispatchRename = jest.spyOn(dispatcher, 'renameNotebook').mockImplementation((() => {}))
             const rename = contextMenu.el.querySelector('.rename')!;
             fireEvent(rename, new MouseEvent('click'))
             return waitFor(() => {
-                expect(mockDispatch).toHaveBeenCalledWith(new RenameNotebook(leaf.fullPath))
+                expect(dispatchRename).toHaveBeenCalledWith(leaf.fullPath)
             }).then(() => {
-                mockDispatch.mockRestore()
+                dispatchRename.mockRestore()
             })
         }).then(done)
     })
@@ -127,13 +124,13 @@ describe("BranchComponent", () => {
         waitFor(() => {
             expect(contextMenu.el).toBeInTheDocument()
         }).then(() => {
-            const mockDispatch = jest.spyOn(dispatcher, 'dispatch').mockImplementation((() => {}))
+            const mockDelete = jest.spyOn(dispatcher, 'deleteNotebook').mockImplementation((() => {}))
             const del = contextMenu.el.querySelector('.delete')!;
             fireEvent(del, new MouseEvent('click'))
             return waitFor(() => {
-                expect(mockDispatch).toHaveBeenCalledWith(new DeleteNotebook(leaf.fullPath))
+                expect(mockDelete).toHaveBeenCalledWith(leaf.fullPath)
             }).then(() => {
-                mockDispatch.mockRestore()
+                mockDelete.mockRestore()
             })
         }).then(done)
     })
