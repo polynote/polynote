@@ -12,7 +12,6 @@ import {
 } from "../../state/preferences";
 import {Disposable, IDisposable, Observer, StateView} from "../../state/state_handler";
 import {
-    RequestRunningKernels,
     ServerMessageDispatcher,
 } from "../../messaging/dispatcher";
 import {TabNav} from "../layout/tab_nav";
@@ -311,7 +310,7 @@ export class About extends FullScreenModal implements IDisposable {
                 }
             })
         }
-        this.serverMessageDispatcher.dispatch(new RequestRunningKernels())
+        this.serverMessageDispatcher.requestRunningKernels()
         onNotebookUpdate()
         ServerStateHandler.view("notebooks").addObserver(() => onNotebookUpdate(), this)
 

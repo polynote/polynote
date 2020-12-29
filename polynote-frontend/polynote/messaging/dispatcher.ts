@@ -43,8 +43,6 @@ export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHand
     get state() {
         return this.handler.state;
     }
-
-    dispatch(action: UIAction): void {}
 }
 
 export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, NotebookStateHandler> {
@@ -292,208 +290,111 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         }, this)
     }
 
-    dispatch(action: UIAction): void {
-        match(action)
-            .when(Reconnect, (onlyIfClosed: boolean) => {
-                console.warn("Attempting to reconnect to server") // TODO: once we have a proper place for server errors, we can display this log there.
-                this.socket.reconnect(onlyIfClosed)
-                const errorView = this.socket.lens("error")
-                errorView.addObserver(err => {
-                    if (err) {
-                        // We don't want to reload if the connection is offline, instead we just want to display the
-                        // error to the user
-                        const reload = err.status === ConnectionStatus.ONLINE
-                        if (reload) {
-                            console.error("Error reconnecting, trying to reload the page")
-                            document.location.reload();
-                        } else {
-                            ErrorStateHandler.addServerError(err.error)
-                        }
+    /*******************************
+     ** Server management methods **
+     *******************************/
+
+    reconnect(onlyIfClosed: boolean) {
+        console.warn("Attempting to reconnect to server") // TODO: once we have a proper place for server errors, we can display this log there.
+        this.socket.reconnect(onlyIfClosed)
+        const errorView = this.socket.lens("error")
+        errorView.addObserver(err => {
+            if (err) {
+                // We don't want to reload if the connection is offline, instead we just want to display the
+                // error to the user
+                const reload = err.status === ConnectionStatus.ONLINE
+                if (reload) {
+                    console.error("Error reconnecting, trying to reload the page")
+                    document.location.reload();
+                } else {
+                    ErrorStateHandler.addServerError(err.error)
+                }
+            }
+        }, this)
+        // TODO: depending on how complicated reconnecting is, maybe we should just reload the page every time?
+        this.socket.view("status").addObserver(status => {
+            if (status === "connected") {
+                console.warn("Reconnected successfully, now reconnecting to notebook sockets")
+                this.handler.update(s => {
+                    return {
+                        ...s,
+                        errors: [] // any errors from before are no longer relevant, right?
                     }
-                }, this)
-                // TODO: depending on how complicated reconnecting is, maybe we should just reload the page every time?
-                this.socket.view("status").addObserver(status => {
-                    if (status === "connected") {
-                        console.warn("Reconnected successfully, now reconnecting to notebook sockets")
-                        this.handler.update(s => {
-                            return {
-                                ...s,
-                                errors: [] // any errors from before are no longer relevant, right?
-                            }
+                })
+                ServerStateHandler.reconnectNotebooks(onlyIfClosed)
+                errorView.dispose()
+            }
+        }, errorView)
+    }
+
+    requestNotebookList() {
+        this.socket.send(new messages.ListNotebooks([]))
+    }
+
+    requestRunningKernels() {
+        this.socket.send(new messages.RunningKernels([]))
+    }
+
+    createNotebook(path?: string, content?: string) {
+        const waitForNotebook = (nbPath: string) => {
+            const disposable = new Disposable()
+            const nbs = this.handler.view("notebooks")
+            nbs.addObserver((current, prev) => {
+                const [added, _] = diffArray(Object.keys(current), Object.keys(prev))
+                added.forEach(newNb => {
+                    if (newNb.includes(nbPath)) {
+                        disposable.dispose()
+                        ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {
+                            nbInfo.handler.update1("config", conf => ({...conf, open: true}))
+                            ServerStateHandler.selectNotebook(newNb)
                         })
-                        ServerStateHandler.reconnectNotebooks(onlyIfClosed)
-                        errorView.dispose()
                     }
-                }, errorView)
+                })
+            }, disposable)
+        }
+        if (path) {
+            this.socket.send(new messages.CreateNotebook(path, content))
+            waitForNotebook(path)
+        } else {
+            new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create').show().then(newPath => {
+                this.socket.send(new messages.CreateNotebook(newPath, content))
+                waitForNotebook(newPath)
             })
-            .when(RequestNotebooksList, () => {
-                this.socket.send(new messages.ListNotebooks([]))
+        }
+    }
+
+    renameNotebook(oldPath: string, newPath?: string) {
+        if (newPath) {
+            this.socket.send(new messages.RenameNotebook(oldPath, newPath))
+        } else {
+            new DialogModal('Rename Notebook', oldPath, 'Rename').show().then(newPath => {
+                this.socket.send(new messages.RenameNotebook(oldPath, newPath))
             })
-            .when(CreateNotebook, (path, content) => {
-                const waitForNotebook = (nbPath: string) => {
-                    const disposable = new Disposable()
-                    const nbs = this.handler.view("notebooks")
-                    nbs.addObserver((current, prev) => {
-                        const [added, _] = diffArray(Object.keys(current), Object.keys(prev))
-                        added.forEach(newNb => {
-                            if (newNb.includes(nbPath)) {
-                                disposable.dispose()
-                                ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {
-                                    nbInfo.handler.update1("config", conf => ({...conf, open: true}))
-                                    ServerStateHandler.selectNotebook(newNb)
-                                })
-                            }
-                        })
-                    }, disposable)
-                }
-                if (path) {
-                    this.socket.send(new messages.CreateNotebook(path, content))
-                    waitForNotebook(path)
-                } else {
-                    new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create').show().then(newPath => {
-                        this.socket.send(new messages.CreateNotebook(newPath, content))
-                        waitForNotebook(newPath)
-                    })
-                }
+        }
+    }
+
+    copyNotebook(oldPath: string, newPath?: string) {
+        if (newPath) {
+            this.socket.send(new messages.CopyNotebook(oldPath, newPath))
+        } else {
+            new DialogModal('Copy Notebook', oldPath, 'Copy').show().then(newPath => {
+                this.socket.send(new messages.CopyNotebook(oldPath, newPath))
             })
-            .when(RenameNotebook, (oldPath, newPath) => {
-                if (newPath) {
-                    this.socket.send(new messages.RenameNotebook(oldPath, newPath))
-                } else {
-                    new DialogModal('Rename Notebook', oldPath, 'Rename').show().then(newPath => {
-                        this.socket.send(new messages.RenameNotebook(oldPath, newPath))
-                    })
-                }
-            })
-            .when(CopyNotebook, (oldPath, newPath) => {
-                if (newPath) {
-                    this.socket.send(new messages.CopyNotebook(oldPath, newPath))
-                } else {
-                    new DialogModal('Copy Notebook', oldPath, 'Copy').show().then(newPath => {
-                        this.socket.send(new messages.CopyNotebook(oldPath, newPath))
-                    })
-                }
-            })
-            .when(DeleteNotebook, (path) => {
-                if (confirm(`Permanently delete ${path}?`)) {
-                    this.socket.send(new messages.DeleteNotebook(path))
-                }
-            })
-            .when(ViewAbout, section => {
-                About.show(this, section)
-            })
-            .when(RequestRunningKernels, () => {
-                this.socket.send(new messages.RunningKernels([]))
-            })
+        }
     }
 
-    reconnect(onlyIfClosed: Boolean) {
-
-    }
-}
-
-export class UIAction {
-    // All empty classes are equivalent in typescript (because structural typing), so we need a dummy parameter here for typing.
-    private __UIAction = undefined
-
-    static unapply(inst: UIAction): any[] {return []}
-
-    constructor(...args: any[]) {}
-}
-
-export class Reconnect extends UIAction {
-    constructor(readonly onlyIfClosed: boolean) { super() }
-
-    static unapply(inst: Reconnect): ConstructorParameters<typeof Reconnect> {
-        return [inst.onlyIfClosed]
-    }
-}
-
-
-export class CreateCell extends UIAction {
-    constructor(readonly language: string, readonly content: string, readonly metadata: CellMetadata, readonly prev: number) {
-        super();
-        Object.freeze(this);
+    deleteNotebook(path: string) {
+        if (confirm(`Permanently delete ${path}?`)) {
+            this.socket.send(new messages.DeleteNotebook(path))
+        }
     }
 
-    static unapply(inst: CreateCell): ConstructorParameters<typeof CreateCell> {
-        return [inst.language, inst.content, inst.metadata, inst.prev];
-    }
-}
+    /*******************************
+     ** UI methods (which don't   **
+     ** really belong here)       **
+     *******************************/
 
-export class CreateNotebook extends UIAction {
-    constructor(readonly path?: string, readonly content?: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: CreateNotebook): ConstructorParameters<typeof CreateNotebook> {
-        return [inst.path, inst.content];
-    }
-}
-
-export class RenameNotebook extends UIAction {
-    constructor(readonly oldPath: string, readonly newPath?: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RenameNotebook): ConstructorParameters<typeof RenameNotebook> {
-        return [inst.oldPath, inst.newPath];
-    }
-}
-
-export class CopyNotebook extends UIAction {
-    constructor(readonly oldPath: string, readonly newPath?: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: CopyNotebook): ConstructorParameters<typeof CopyNotebook> {
-        return [inst.oldPath, inst.newPath];
-    }
-}
-
-export class DeleteNotebook extends UIAction {
-    constructor(readonly path: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
-        return [inst.path];
-    }
-}
-
-export class RequestNotebooksList extends UIAction {
-    constructor() {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestNotebooksList): ConstructorParameters<typeof RequestNotebooksList> {
-        return [];
-    }
-}
-
-export class RequestRunningKernels extends UIAction {
-    constructor() {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestRunningKernels): ConstructorParameters<typeof RequestRunningKernels> {
-        return [];
-    }
-}
-
-export class ViewAbout extends UIAction {
-    constructor(readonly section: string) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: ViewAbout): ConstructorParameters<typeof ViewAbout> {
-        return [inst.section];
+    viewAbout(section: string) {
+        About.show(this, section)
     }
 }

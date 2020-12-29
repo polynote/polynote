@@ -1,7 +1,6 @@
 import {
     NotebookMessageDispatcher,
     ServerMessageDispatcher,
-    ViewAbout
 } from "../../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
 import {ServerStateHandler} from "../../state/server_state";
@@ -455,12 +454,12 @@ class SettingsToolbar extends ToolbarElement {
         this.el = this.toolbarElem("about", [[
             iconButton(["preferences"], "View UI Preferences", "cogs", "Preferences")
                 .click(() => {
-                    this.dispatcher.dispatch(new ViewAbout("Preferences"))
+                    this.dispatcher.viewAbout("Preferences")
                 })
                 .withKey('neverDisabled', true),
             iconButton(["help"], "help", "question", "Help")
                 .click(() => {
-                    this.dispatcher.dispatch(new ViewAbout("Hotkeys"))
+                    this.dispatcher.viewAbout("Hotkeys")
                 })
                 .withKey('neverDisabled', true),
         ]]);

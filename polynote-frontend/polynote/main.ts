@@ -5,7 +5,7 @@ import * as monaco from "monaco-editor";
 import {themes} from "./ui/input/monaco/themes";
 import {SocketSession} from "./messaging/comms";
 import {ServerMessageReceiver} from "./messaging/receiver";
-import {Reconnect, ServerMessageDispatcher} from "./messaging/dispatcher";
+import {ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
 import {SplitView} from "./ui/layout/splitview";
 import {ServerStateHandler} from "./state/server_state";
@@ -35,7 +35,7 @@ class Main {
         // handle reconnecting
         const reconnectOnWindowFocus = () => {
             console.warn("Window was focused! Attempting to reconnect.")
-            dispatcher.dispatch(new Reconnect(true))
+            dispatcher.reconnect(true)
         }
         ServerStateHandler.get.view("connectionStatus").addObserver(status => {
             if (status === "disconnected") {

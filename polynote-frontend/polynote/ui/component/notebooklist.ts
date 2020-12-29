@@ -1,10 +1,5 @@
 import {a, button, div, h2, iconButton, span, tag, TagElement} from "../tags";
 import {
-    CopyNotebook,
-    CreateNotebook,
-    DeleteNotebook,
-    RenameNotebook,
-    RequestNotebooksList,
     ServerMessageDispatcher
 } from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
@@ -40,7 +35,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new DeleteNotebook(this.targetItem))
+            this.dispatcher.deleteNotebook(this.targetItem)
         }
     }
 
@@ -50,7 +45,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new RenameNotebook(this.targetItem))
+            this.dispatcher.renameNotebook(this.targetItem)
         }
     }
 
@@ -60,7 +55,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new CopyNotebook(this.targetItem))
+            this.dispatcher.copyNotebook(this.targetItem)
         }
     }
 
@@ -69,7 +64,7 @@ export class NotebookListContextMenu{
             evt.stopPropagation();
         }
         this.hide();
-        this.dispatcher.dispatch(new CreateNotebook())
+        this.dispatcher.createNotebook()
     }
 
     showFor(evt: Event, targetItem?: LeafEl | BranchEl) {
@@ -127,7 +122,7 @@ export class NotebookList extends Disposable {
             span(['buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
-                    dispatcher.dispatch(new CreateNotebook())
+                    dispatcher.createNotebook()
                 })
             ])
         ]);
@@ -166,7 +161,7 @@ export class NotebookList extends Disposable {
         }, this);
 
         // we're ready to request the notebooks list now!
-        dispatcher.dispatch(new RequestNotebooksList())
+        dispatcher.requestNotebookList()
     }
 
     private fileHandler(evt: DragEvent) {
@@ -193,7 +188,7 @@ export class NotebookList extends Disposable {
                     reader.onloadend = () => {
                         if (reader.result) {
                             // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
-                            this.dispatcher.dispatch(new CreateNotebook(file.name, reader.result as string));
+                            this.dispatcher.createNotebook(file.name, reader.result as string);
                         } else {
                             throw new Error(`Didn't get any file contents when reading ${file.name}! `)
                         }
