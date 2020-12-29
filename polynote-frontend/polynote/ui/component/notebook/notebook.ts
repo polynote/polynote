@@ -105,7 +105,7 @@ export class Notebook extends Disposable {
 
         console.debug("initial active cell ", this.notebookState.state.activeCellId)
         this.notebookState.view("activeCellId").addObserver(cell => {
-            console.debug("activeCell = ", cell)
+            console.trace("activeCell = ", cell)
             if (cell === undefined) {
                 VimStatus.get.hide()
             }

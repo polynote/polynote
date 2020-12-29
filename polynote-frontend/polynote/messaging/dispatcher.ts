@@ -1,32 +1,23 @@
 import match from "../util/match";
 import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
-import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
+import {CellMetadata} from "../data/data";
 import {
     ClientResult,
-    CompileErrors,
     Output,
-    PosRange,
     ResultValue,
-    RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
-import {Disposable, NoUpdate, StateHandler, StateView} from "../state/state_handler";
-import {CellState, CompletionHint, NotebookState, NotebookStateHandler, outputs, SignatureHint} from "../state/notebook_state";
-import {ContentEdit} from "../data/content_edit";
-import {NotebookInfo, ServerState, ServerStateHandler} from "../state/server_state";
+import {Disposable, StateHandler, StateView} from "../state/state_handler";
+import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {ServerState, ServerStateHandler} from "../state/server_state";
 import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
 import {About} from "../ui/component/about";
 import {ValueInspector} from "../ui/component/value_inspector";
 import {
-    arrDeleteFirstItem,
     collect,
-    deepEquals,
     diffArray,
-    equalsByKey,
-    mapValues,
-    partition,
-    removeKeys
+    partition
 } from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
@@ -34,10 +25,7 @@ import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_inter
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
-import {StreamingDataRepr} from "../data/value_repr";
-import {PlotDefinition} from "../ui/input/plot_selector";
 import {ViewType} from "../ui/input/viz_selector";
-import {IgnoreServerUpdatesWrapper} from "./receiver";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -50,6 +38,10 @@ export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHand
         handler.onDispose.then(() => {
             this.socket.close()
         })
+    }
+
+    get state() {
+        return this.handler.state;
     }
 
     abstract dispatch(action: UIAction): void
@@ -141,55 +133,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                     }
                 }, errorView)
             })
-            .when(RequestNotebookVersion, version => {
-                const state = this.handler.state
-                this.socket.send(new messages.NotebookVersion(state.path, version))
-            })
-            .when(RequestCellRun, cellIds => {
-                const state = this.handler.state
-                // empty cellIds means run all of them!
-                if (cellIds.length === 0) {
-                    cellIds = state.cellOrder
-                }
-
-                cellIds = collect(cellIds, id => state.cells[id]?.language !== "text" ? id : undefined);
-
-                const [clientCells, serverCells] = partition(cellIds, id => {
-                    const cell = state.cells[id]
-                    if (cell) {
-                        return Object.keys(ClientInterpreters).includes(cell.language)
-                    } else {
-                        console.warn("Run requested for cell with ID", id, "but a cell with that ID was not found in", state.cells)
-                        return true // should this fail?
-                    }
-                })
-                clientCells.forEach(id => {
-                    const idx = cellIds.indexOf(id)
-                    const prevId = cellIds[idx - 1]
-                    const clientInterpreter = ClientInterpreter.forPath(state.path);
-                    if (clientInterpreter) {
-                        clientInterpreter.runCell(id, this, prevId)
-                    } else {
-                        const cell = state.cells[id];
-                        const message = `Missing Client Interpreter for cell ${cell.id} of type ${cell.language}`
-                        console.error(message)
-                        ErrorStateHandler.addKernelError(this.handler.state.path, new ServerErrorWithCause("Missing Client Interpreter", message, []))
-                    }
-                })
-
-                if (serverCells.length) {
-                    this.socket.send(new messages.RunCell(serverCells));
-                }
-
-                return {
-                    ...state,
-                    cells: mapValues(state.cells, cell => {
-                        if (cellIds.includes(cell.id)) {
-                            return { ...cell, results: [] }
-                        } else return cell
-                    })
-                }
-            })
             .when(RequestCancelTasks, () => {
                 const state = this.handler.state
                 this.socket.send(new messages.CancelTasks(state.path))
@@ -260,7 +203,42 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         }, errorView)
     }
 
-    // Helper methods
+    /*******************************
+     ** Cell management methods **
+     *******************************/
+
+    runCells(cellIds: number[]) {
+        // empty cellIds means run all of them!
+        if (cellIds.length === 0) {
+            cellIds = this.state.cellOrder
+        }
+
+        cellIds = collect(cellIds, id => this.state.cells[id]?.language !== "text" ? id : undefined);
+
+        const [clientCells, serverCells] = partition(cellIds, id => {
+            const cell = this.state.cells[id]
+            if (cell) {
+                return Object.keys(ClientInterpreters).includes(cell.language)
+            } else {
+                console.warn("Run requested for cell with ID", id, "but a cell with that ID was not found in", this.state.cells)
+                return true // should this fail?
+            }
+        })
+        clientCells.forEach(id => {
+            const idx = cellIds.indexOf(id)
+            const prevId = cellIds[idx - 1]
+            const clientInterpreter = ClientInterpreter.forPath(this.state.path);
+            if (clientInterpreter) {
+                clientInterpreter.runCell(id, this, prevId)
+            } else {
+                const cell = this.state.cells[id];
+                const message = `Missing Client Interpreter for cell ${cell.id} of type ${cell.language}`
+                console.error(message)
+                ErrorStateHandler.addKernelError(this.handler.state.path, new ServerErrorWithCause("Missing Client Interpreter", message, []))
+            }
+        })
+        this.socket.send(new messages.RunCell(serverCells));
+    }
 
     setCellOutput(cellId: number, output: Output | ClientResult) {
         if (output instanceof Output) {
@@ -273,7 +251,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     runActiveCell() {
         const id = this.handler.state.activeCellId;
         if (id !== undefined) {
-            this.dispatch(new RequestCellRun([id]));
+            this.runCells([id]);
         }
     }
 
@@ -284,7 +262,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             const activeIdx = state.cellOrder.indexOf(id)
             const cellsToRun = state.cellOrder.slice(0, activeIdx + 1);
             if (cellsToRun.length > 0) {
-                this.dispatch(new RequestCellRun(cellsToRun))
+                this.runCells(cellsToRun)
             }
         }
     }
@@ -487,28 +465,6 @@ export class DeleteNotebook extends UIAction {
 
     static unapply(inst: DeleteNotebook): ConstructorParameters<typeof DeleteNotebook> {
         return [inst.path];
-    }
-}
-
-export class RequestNotebookVersion extends UIAction {
-    constructor(readonly version: number) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestNotebookVersion): ConstructorParameters<typeof RequestNotebookVersion> {
-        return [inst.version];
-    }
-}
-
-export class RequestCellRun extends UIAction {
-    constructor(readonly cells: number[]) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestCellRun): ConstructorParameters<typeof RequestCellRun> {
-        return [inst.cells];
     }
 }
 
