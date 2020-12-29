@@ -1,14 +1,14 @@
 package polynote.runtime.spark.reprs
 
-import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
-import java.nio.ByteBuffer
-
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
+import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
 import org.apache.spark.storage.StorageLevel
 import polynote.runtime._
+
+import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
+import java.nio.ByteBuffer
 
 trait SparkReprsOf[A] extends ReprsOf[A]
 
@@ -264,18 +264,13 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         // I assume that the schema is always the same for all elements of the array
         // (it's reasonable since this is probably a Dataframe.collect result
         val prototype = arr.head
-        val (structType, encode) = structDataTypeAndEncoder(prototype.schema)
-
-        val encoder = {
-          val r2b = rowToBytes(structType, encode)
-          (r: org.apache.spark.sql.Row) =>
-            r2b(InternalRow.fromSeq(r.toSeq))
-        }
+        val rowEncoder = RowEncoder(prototype.schema) // to go from Row to InternalRow
+        val (structType, encode) = structDataTypeAndEncoder(prototype.schema) // reuse code from InternalRow
         Array(
           StreamingDataRepr(
             structType,
             Some(arr.length),
-            arr.iterator.map(r => ByteBuffer.wrap(encoder(r)))
+            arr.iterator.map(r => ByteBuffer.wrap(rowToBytes(structType, encode)(rowEncoder.toRow(r))))
           )
         )
       }
