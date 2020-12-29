@@ -1,21 +1,20 @@
 package polynote.runtime.spark.reprs
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.encoders.RowEncoder
-import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
-import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
-import org.apache.spark.storage.StorageLevel
-import polynote.runtime._
-
 import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
 
+import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.encoders.RowEncoder
+import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
+import org.apache.spark.storage.StorageLevel
+import polynote.runtime._
+
 trait SparkReprsOf[A] extends ReprsOf[A]
 
-private[reprs] sealed trait LowPrioritySparkReprsOf {
-  self: SparkReprsOf.type =>
+private[reprs] sealed trait LowPrioritySparkReprsOf { self: SparkReprsOf.type =>
 
-  implicit def dataset[T]: SparkReprsOf[Dataset[T]] = instance {
+  implicit def dataset[T]: SparkReprsOf[Dataset[T]]= instance {
     ds => dataFrame(ds.toDF())
   }
 
@@ -29,25 +28,23 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         case (dt, encode) => OptionalType(dt) -> {
           out => {
             val encodeUnderlying = encode(out)
-            row =>
-              index =>
-                if (row.isNullAt(index)) out.writeBoolean(false) else {
-                  out.writeBoolean(true)
-                  encodeUnderlying(row)(index)
-                }
+            row => index => if (row.isNullAt(index)) out.writeBoolean(false) else {
+              out.writeBoolean(true)
+              encodeUnderlying(row)(index)
+            }
           }
         }
       }
     } else Option(dataType).collect {
-      case sparkTypes.ByteType => ByteType -> (out => row => index => DataEncoder.byte.encode(out, row.getByte(index)))
+      case sparkTypes.ByteType    => ByteType -> (out => row => index => DataEncoder.byte.encode(out, row.getByte(index)))
       case sparkTypes.BooleanType => BoolType -> (out => row => index => DataEncoder.boolean.encode(out, row.getBoolean(index)))
-      case sparkTypes.ShortType => ShortType -> (out => row => index => DataEncoder.short.encode(out, row.getShort(index)))
+      case sparkTypes.ShortType   => ShortType -> (out => row => index => DataEncoder.short.encode(out, row.getShort(index)))
       case sparkTypes.IntegerType => IntType -> (out => row => index => DataEncoder.int.encode(out, row.getInt(index)))
-      case sparkTypes.LongType => LongType -> (out => row => index => DataEncoder.long.encode(out, row.getLong(index)))
-      case sparkTypes.FloatType => FloatType -> (out => row => index => DataEncoder.float.encode(out, row.getFloat(index)))
-      case sparkTypes.DoubleType => DoubleType -> (out => row => index => DataEncoder.double.encode(out, row.getDouble(index)))
-      case sparkTypes.BinaryType => BinaryType -> (out => row => index => DataEncoder.byteArray.encode(out, row.getBinary(index)))
-      case sparkTypes.StringType => StringType -> (out => row => index => DataEncoder.string.encode(out, row.getUTF8String(index).toString))
+      case sparkTypes.LongType    => LongType ->(out => row => index => DataEncoder.long.encode(out, row.getLong(index)))
+      case sparkTypes.FloatType   => FloatType -> (out => row => index => DataEncoder.float.encode(out, row.getFloat(index)))
+      case sparkTypes.DoubleType  => DoubleType -> (out => row => index => DataEncoder.double.encode(out, row.getDouble(index)))
+      case sparkTypes.BinaryType  => BinaryType -> (out => row => index => DataEncoder.byteArray.encode(out, row.getBinary(index)))
+      case sparkTypes.StringType  => StringType -> (out => row => index => DataEncoder.string.encode(out, row.getUTF8String(index).toString))
       case sparkTypes.ArrayType(sparkElementType, nullable) if dataTypeAndEncoder(sparkElementType, nullable).nonEmpty =>
         val (elementType, encode) = dataTypeAndEncoder(sparkElementType, nullable).get
         ArrayType(elementType) -> {
@@ -67,11 +64,11 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
 
           }
         }
-      case struct@sparkTypes.StructType(_) =>
+      case struct @ sparkTypes.StructType(_) =>
         val (structType, encode) = structDataTypeAndEncoder(struct)
         structType -> (out => row => index => encode(out, row.getStruct(index, struct.fields.length)))
       case sparkTypes.MapType(sparkKeyType, sparkValueType, nullValues)
-        if dataTypeAndEncoder(sparkKeyType, nullable = false).nonEmpty && dataTypeAndEncoder(sparkValueType, nullValues).nonEmpty =>
+          if dataTypeAndEncoder(sparkKeyType, nullable = false).nonEmpty && dataTypeAndEncoder(sparkValueType, nullValues).nonEmpty =>
         val (keyType, encodeKey) = dataTypeAndEncoder(sparkKeyType, nullable = false).get
         val (valueType, encodeValue) = dataTypeAndEncoder(sparkValueType, nullValues).get
         MapType(keyType, valueType) -> {
@@ -115,9 +112,8 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
 
   private[polynote] class FixedSizeDataFrameDecoder(structType: StructType, encode: (DataOutput, InternalRow) => Unit) extends (InternalRow => Array[Byte]) with Serializable {
     assert(structType.size >= 0)
-
     override def apply(row: InternalRow): Array[Byte] = {
-      // TODO: share/reuse this buffer? Any reason to be threadsafe?
+        // TODO: share/reuse this buffer? Any reason to be threadsafe?
       val arr = new Array[Byte](structType.size)
       val buf = ByteBuffer.wrap(arr)
       encode(new DataEncoder.BufferOutput(buf), row)
@@ -146,9 +142,9 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
     }
 
   private[polynote] class DataFrameHandle(
-                                           val handle: Int,
-                                           dataFrame: DataFrame
-                                         ) extends StreamingDataRepr.Handle with Serializable {
+    val handle: Int,
+    dataFrame: DataFrame
+  ) extends StreamingDataRepr.Handle with Serializable {
 
     private val originalStorage = dataFrame.storageLevel
     private val (structType, encode) = structDataTypeAndEncoder(dataFrame.schema)
@@ -196,35 +192,34 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         case (name, "mean") => List(avg(col(name)) as s"mean($name)") -> None
 
 
+
         case (_, op) => throw new UnsupportedOperationException(op)
       }
 
       ops.foldLeft(tryEither(dataFrame)) {
-        (dfOrErr, op) =>
-          dfOrErr.right.flatMap {
-            df =>
-              op match {
-                case GroupAgg(cols, aggs) => tryEither {
-                  val (aggCols, postFns) = aggs.map(toAggregate).unzip match {
-                    case (aggColss, postFns) => aggColss.flatten -> postFns.flatten
-                  }
-                  val post = postFns.foldLeft(identity[DataFrame] _)(_ andThen _)
-                  post(df.groupBy(cols.head, cols.tail: _*).agg(aggCols.head, aggCols.tail: _*))
-                }
-
-                case QuantileBin(column, binCount, err) => tryEither {
-                  val probabilities = (BigDecimal(0.0) to BigDecimal(1.0) by (BigDecimal(1.0) / binCount)).map(_.doubleValue).toArray
-                  val quantiles = df.stat.approxQuantile(column, probabilities, err)
-                  val c = col(column)
-                  val cases = (1 until quantiles.length - 1).foldLeft(when(c < quantiles(1), quantiles.head)) {
-                    (accum, index) => accum.when(c >= quantiles(index) && c < quantiles(index + 1), quantiles(index))
-                  }.otherwise(quantiles.last)
-                  df.withColumn(s"${column}_quantized", cases)
-                }
-
-                case Select(columns) => tryEither(df.select(columns.head, columns.tail: _*))
+        (dfOrErr, op) => dfOrErr.right.flatMap {
+          df => op match {
+            case GroupAgg(cols, aggs) => tryEither {
+              val (aggCols, postFns) = aggs.map(toAggregate).unzip match {
+                case (aggColss, postFns) => aggColss.flatten -> postFns.flatten
               }
+              val post = postFns.foldLeft(identity[DataFrame] _)(_ andThen _)
+              post(df.groupBy(cols.head, cols.tail: _*).agg(aggCols.head, aggCols.tail: _*))
+            }
+
+            case QuantileBin(column, binCount, err) => tryEither {
+              val probabilities = (BigDecimal(0.0) to BigDecimal(1.0) by (BigDecimal(1.0) / binCount)).map(_.doubleValue).toArray
+              val quantiles = df.stat.approxQuantile(column, probabilities, err)
+              val c = col(column)
+              val cases = (1 until quantiles.length - 1).foldLeft(when(c < quantiles(1), quantiles.head)) {
+                (accum, index) => accum.when(c >= quantiles(index) && c < quantiles(index + 1), quantiles(index))
+              }.otherwise(quantiles.last)
+              df.withColumn(s"${column}_quantized", cases)
+            }
+
+            case Select(columns) => tryEither(df.select(columns.head, columns.tail: _*))
           }
+        }
       }.right.map {
         modifiedDataFrame => new DataFrameHandle(_, modifiedDataFrame)
       }
@@ -294,8 +289,8 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
           """.stripMargin) ++ sess.conf.getAll.map {
           case (k, v) =>
             s"""<li>
-               |<span class="field-name">$k</span><span class="string">$v</span>
-               |</li>
+              |<span class="field-name">$k</span><span class="string">$v</span>
+              |</li>
             """.stripMargin
         } ++ Seq(
           """
