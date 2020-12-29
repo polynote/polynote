@@ -20,10 +20,14 @@ val versions = new {
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
+val scalaVersions = Seq("2.11.12", "2.12.12")
+lazy val scalaBinaryVersions = scalaVersions.map {
+  ver => ver.split('.').take(2).mkString(".")
+}.distinct
 
 val commonSettings = Seq(
   scalaVersion := "2.11.12",
-  crossScalaVersions := Seq("2.11.12", "2.12.12"),
+  crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,
   homepage := Some(url("https://polynote.org")),
@@ -260,6 +264,10 @@ val dist = Command.command(
     val distDir = targetDir / "dist"
     val resolvedFiles = files.map {
       case (srcFile, targetPath) => srcFile -> (distDir / targetPath)
+    }
+    
+    scalaBinaryVersions.foreach {
+      binaryVersion => (distDir / "polynote" / "plugins" / binaryVersion).mkdirs()
     }
 
     IO.copy(resolvedFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
