@@ -217,6 +217,7 @@ lazy val `polynote-spark` = project.settings(
   distFiles := Seq(assembly.value)
 ) dependsOn (
   `polynote-kernel` % "provided",
+  `polynote-kernel` % "test->test",
   `polynote-spark-runtime` % "provided",
   `polynote-spark-runtime` % "test",
   `polynote-runtime` % "provided",
