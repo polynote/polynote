@@ -161,12 +161,11 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
 
 
     def modify(ops: List[TableOp]): Either[Throwable, Int => StreamingDataRepr.Handle] = {
-      import org.apache.spark.sql.functions
-      import functions._
+      import org.apache.spark.sql.functions, functions.{when, col, sum, lit, struct, count, approx_count_distinct, avg}
       import org.apache.spark.sql.Column
       import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
-      import org.apache.spark.sql.catalyst.expressions.Literal
       import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
+      import org.apache.spark.sql.catalyst.expressions.Literal
 
 
       @inline def tryEither[T](thunk: => T): Either[Throwable, T] = try Right(thunk) catch {
