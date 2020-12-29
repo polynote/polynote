@@ -6,7 +6,6 @@ import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {
     NotebookMessageDispatcher,
-    Reconnect
 } from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
@@ -259,7 +258,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     static reconnectNotebooks(onlyIfClosed: boolean) {
         Object.entries(ServerStateHandler.notebooks).forEach(([path, notebook]) => {
             if (notebook.loaded && notebook.info) {
-                notebook.info.dispatcher.dispatch(new Reconnect(onlyIfClosed))
+                notebook.info.dispatcher.reconnect(onlyIfClosed)
             }
         })
     }

@@ -17,7 +17,6 @@ import {
     NotebookMessageDispatcher,
     Reconnect,
     ServerMessageDispatcher,
-    ShowValueInspector
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../../../state/preferences";
@@ -464,7 +463,7 @@ class KernelSymbolsEl extends Disposable {
         tr.onmousedown = (evt) => {
             evt.preventDefault();
             evt.stopPropagation();
-            this.dispatcher.dispatch(new ShowValueInspector(tr.resultValue))
+            this.dispatcher.showValueInspector(tr.resultValue)
         };
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;

@@ -44,7 +44,7 @@ export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHand
         return this.handler.state;
     }
 
-    abstract dispatch(action: UIAction): void
+    dispatch(action: UIAction): void {}
 }
 
 export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, NotebookStateHandler> {
@@ -108,71 +108,52 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 
     }
 
-    dispatch(action: UIAction) {
-        match(action)
-            .when(Reconnect, (onlyIfClosed: boolean) => { // TODO: reconnect method already created but didn't update callers.
-                console.log("Attempting to reconnect to notebook")
-                this.socket.reconnect(onlyIfClosed)
-                const errorView = this.socket.lens("error")
-                errorView.addObserver(err => {
-                    // if there was an error on reconnect, push it to the notebook state so it can be displayed
-                    if (err) {
-                        console.error("error on reconnecting notebook", err)
-                        ErrorStateHandler.addKernelError(this.handler.state.path, err.error)
-                    }
-                }, this)
-                this.socket.view("status").addObserver(status => {
-                    if (status === "connected") {
-                        this.handler.update(s => {
-                            return {
-                                ...s,
-                                errors: [] // any errors from before are no longer relevant, right?
-                            }
-                        })
-                        errorView.dispose()
-                    }
-                }, errorView)
-            })
-            .when(RequestCancelTasks, () => {
-                const state = this.handler.state
-                this.socket.send(new messages.CancelTasks(state.path))
-            })
-            .when(RequestClearOutput, () => {
-                this.socket.send(new messages.ClearOutput())
-            })
-            .when(DownloadNotebook, () => {
-                const path = window.location.pathname + "?download=true"
-                const link = document.createElement('a');
-                link.setAttribute("href", path);
-                link.setAttribute("download", this.handler.state.path);
-                link.click()
-            })
-            .when(ShowValueInspector, (result, viewType) => {
-                this.handler.insertCell("below", {
-                    id: result.sourceCell,
-                    language: 'viz',
-                    metadata: new CellMetadata(false, false, false),
-                    content: JSON.stringify({type: viewType, value: result.name})
-                }).then(id => this.handler.selectCell(id))
-            })
-            .when(HideValueInspector, () => {
-                ValueInspector.get.hide()
-            })
-            .when(RequestDataBatch, (handleType, handleId, size) => {
-                this.socket.send(new HandleData(handleType, handleId, size, Either.right([])))
-            })
-            .when(ModifyDataStream, (handleId, mods) => {
-                this.socket.send(new ModifyStream(handleId, mods))
-            })
-            .when(StopDataStream, (handleType, handleId) => {
-                this.socket.send(new ReleaseHandle(handleType, handleId))
-            })
-    }
-
     private sendUpdate(upd: NotebookUpdate) {
         this.socket.send(upd)
         ClientBackup.updateNb(this.handler.state.path, upd)
             .catch(err => console.error("Error backing up update", err))
+    }
+
+    /*******************************
+     ** Task management methods **
+     *******************************/
+
+    cancelTasks() {
+        this.socket.send(new messages.CancelTasks(this.state.path))
+    }
+
+    /*******************************
+     ** UI methods (which don't   **
+     ** really belong here)       **
+     *******************************/
+
+    showValueInspector(result: ResultValue, viewType?: string) {
+        this.handler.insertCell("below", {
+            id: result.sourceCell,
+            language: 'viz',
+            metadata: new CellMetadata(false, false, false),
+            content: JSON.stringify({type: viewType, value: result.name})
+        }).then(id => this.handler.selectCell(id))
+    }
+
+    hideValueInspector() {
+        ValueInspector.get.hide()
+    }
+
+    /*******************************
+     ** Notebook management methods **
+     *******************************/
+
+    clearOutput() {
+        this.socket.send(new messages.ClearOutput())
+    }
+
+    downloadNotebook() {
+        const path = window.location.pathname + "?download=true"
+        const link = document.createElement('a');
+        link.setAttribute("href", path);
+        link.setAttribute("download", this.state.path);
+        link.click()
     }
 
     /*******************************
@@ -201,6 +182,16 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 errorView.dispose()
             }
         }, errorView)
+    }
+
+    kernelCommand(command: "start" | "kill") {
+        if (command === "start") {
+            this.socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
+        } else if (command === "kill") {
+            if (confirm("Kill running kernel? State will be lost.")) {
+                this.socket.send(new messages.StartKernel(messages.StartKernel.Kill));
+            }
+        }
     }
 
     /*******************************
@@ -267,14 +258,20 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         }
     }
 
-    kernelCommand(command: "start" | "kill") {
-        if (command === "start") {
-            this.socket.send(new messages.StartKernel(messages.StartKernel.NoRestart));
-        } else if (command === "kill") {
-            if (confirm("Kill running kernel? State will be lost.")) {
-                this.socket.send(new messages.StartKernel(messages.StartKernel.Kill));
-            }
-        }
+    /*******************************
+     ** Data streaming methods **
+     *******************************/
+
+    requestDataBatch(handleType: number, handleId: number, batchSize: number) {
+        this.socket.send(new HandleData(handleType, handleId, batchSize, Either.right([])))
+    }
+
+    modifyDataStream(handleId: number, mods: TableOp[]) {
+        this.socket.send(new ModifyStream(handleId, mods))
+    }
+
+    stopDataStream(handleType: number, handleId: number) {
+        this.socket.send(new ReleaseHandle(handleType, handleId))
     }
 }
 
@@ -468,28 +465,6 @@ export class DeleteNotebook extends UIAction {
     }
 }
 
-export class RequestCancelTasks extends UIAction {
-    constructor() {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestCancelTasks): ConstructorParameters<typeof RequestCancelTasks> {
-        return [];
-    }
-}
-
-export class RequestClearOutput extends UIAction {
-    constructor() {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestClearOutput): ConstructorParameters<typeof RequestClearOutput> {
-        return [];
-    }
-}
-
 export class RequestNotebooksList extends UIAction {
     constructor() {
         super();
@@ -512,17 +487,6 @@ export class RequestRunningKernels extends UIAction {
     }
 }
 
-export class DownloadNotebook extends UIAction {
-    constructor() {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: DownloadNotebook): ConstructorParameters<typeof DownloadNotebook> {
-        return [];
-    }
-}
-
 export class ViewAbout extends UIAction {
     constructor(readonly section: string) {
         super();
@@ -531,60 +495,5 @@ export class ViewAbout extends UIAction {
 
     static unapply(inst: ViewAbout): ConstructorParameters<typeof ViewAbout> {
         return [inst.section];
-    }
-}
-
-export class ShowValueInspector extends UIAction {
-    constructor(readonly result: ResultValue, readonly viewType?: ViewType) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: ShowValueInspector): ConstructorParameters<typeof ShowValueInspector> {
-        return [inst.result, inst.viewType];
-    }
-}
-
-export class HideValueInspector extends UIAction {
-    constructor() {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: HideValueInspector): ConstructorParameters<typeof HideValueInspector> {
-        return [];
-    }
-}
-
-export class RequestDataBatch extends UIAction {
-    constructor(readonly handleType: number, readonly handleId: number, readonly size: number) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: RequestDataBatch): ConstructorParameters<typeof RequestDataBatch> {
-        return [inst.handleType, inst.handleId, inst.size]
-    }
-}
-
-export class ModifyDataStream extends UIAction {
-    constructor(readonly handleId: number, readonly mods: TableOp[]) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: ModifyDataStream): ConstructorParameters<typeof ModifyDataStream> {
-        return [inst.handleId, inst.mods]
-    }
-}
-
-export class StopDataStream extends UIAction {
-    constructor(readonly handleType: number, readonly handleId: number) {
-        super();
-        Object.freeze(this);
-    }
-
-    static unapply(inst: StopDataStream): ConstructorParameters<typeof StopDataStream> {
-        return [inst.handleType, inst.handleId]
     }
 }

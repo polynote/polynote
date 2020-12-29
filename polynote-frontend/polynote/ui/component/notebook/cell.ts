@@ -1,7 +1,6 @@
 import {blockquote, button, Content, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
 import {
     NotebookMessageDispatcher,
-    ShowValueInspector,
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {
@@ -1115,7 +1114,7 @@ class CodeCellOutput extends Disposable {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
                             evt => {
-                                this.dispatcher.dispatch(new ShowValueInspector(result))
+                                this.dispatcher.showValueInspector(result)
                             }
                         )
                     ]
@@ -1190,11 +1189,11 @@ class CodeCellOutput extends Disposable {
                     h4(['result-name-and-type'], [
                         span(['result-name'], [result.name]), ': ', resultType,
                         iconButton(['view-data'], 'View data', 'table', '[View]')
-                            .click(_ => this.dispatcher.dispatch(new ShowValueInspector(result, 'table'))),
+                            .click(_ => this.dispatcher.showValueInspector(result, 'table')),
                         repr.dataType instanceof StructType
                             ? iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
                                 .click(_ => {
-                                    this.dispatcher.dispatch(new ShowValueInspector(result, 'plot'))
+                                    this.dispatcher.showValueInspector(result, 'plot')
                                 })
                             : undefined
                     ]),

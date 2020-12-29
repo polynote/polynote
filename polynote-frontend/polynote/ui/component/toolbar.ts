@@ -1,10 +1,6 @@
 import {
-    DownloadNotebook,
     NotebookMessageDispatcher,
-    RequestCancelTasks,
-    RequestClearOutput,
     ServerMessageDispatcher,
-    UIAction,
     ViewAbout
 } from "../../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
@@ -153,16 +149,12 @@ class NotebookToolbar extends ToolbarElement {
                 iconButton(["run-cell", "run-all"], "Run all cells", "forward", "Run all")
                     .click(() => this.dispatcher?.runCells([])),
                 iconButton(["branch"], "Create branch", "code-branch", "Branch").disable().withKey('alwaysDisabled', true),
-                iconButton(["download"], "Download", "download", "Download").click(() => this.dispatch(new DownloadNotebook())),
-                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatch(new RequestClearOutput()))
+                iconButton(["download"], "Download", "download", "Download").click(() => this.dispatcher?.downloadNotebook()),
+                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatcher?.clearOutput())
             ], [
                 iconButton(["schedule-notebook"], "Schedule notebook", "clock", "Schedule").disable().withKey('alwaysDisabled', true),
             ]
         ]);
-    }
-
-    private dispatch(action: UIAction) {
-        if (this.dispatcher) this.dispatcher.dispatch(action)
     }
 
     enable(dispatcher: NotebookMessageDispatcher) {
@@ -289,7 +281,7 @@ class CodeToolbar extends ToolbarElement {
                     }),
                 iconButton(["stop-cell"], "Stop/cancel this cell", "stop", "Cancel")
                     .click(() => {
-                        if (this.dispatcher) this.dispatcher.dispatch(new RequestCancelTasks())
+                        this.dispatcher?.cancelTasks();
                     }),
             ]
         ]);

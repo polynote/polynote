@@ -20,7 +20,7 @@ import {ServerStateHandler} from "../../state/server_state";
 import {GroupAgg, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {ClientResult, Output} from "../../data/result";
-import {HideValueInspector, NotebookMessageDispatcher} from "../../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
 import {CellMetadata} from "../../data/data";
 import {DataStream} from "../../messaging/datastream";
 import {StreamingDataRepr} from "../../data/value_repr";
@@ -525,7 +525,7 @@ export class PlotEditor {
                         const maybeHasOutput = state.cells[newCellId]
                         if (maybeHasOutput && maybeHasOutput.output.includes(output)) {
                             disposable.dispose()
-                            this.dispatcher.dispatch(new HideValueInspector())
+                            this.dispatcher.hideValueInspector()
                             resolve()
                         }
                     }, disposable)
