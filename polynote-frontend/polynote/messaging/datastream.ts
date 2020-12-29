@@ -13,11 +13,7 @@ import {Either} from "../data/codec_types";
 import match from "../util/match";
 import {StreamingDataRepr} from "../data/value_repr";
 import {
-    ModifyDataStream,
     NotebookMessageDispatcher,
-    RequestCancelTasks,
-    RequestDataBatch,
-    StopDataStream
 } from "./dispatcher";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {Disposable, Observer, StateHandler, StateView} from "../state/state_handler";
@@ -123,7 +119,7 @@ export class DataStream extends Disposable {
     kill() {
         this.terminated = true;
         if (this.repr.handle != this.originalRepr.handle) {
-            this.dispatcher.dispatch(new StopDataStream(StreamingDataRepr.handleTypeId, this.repr.handle))
+            this.dispatcher.stopDataStream(StreamingDataRepr.handleTypeId, this.repr.handle)
         }
 
         if (this.observer)  {
@@ -211,7 +207,7 @@ export class DataStream extends Disposable {
     }
 
     abort() {
-        this.dispatcher.dispatch(new RequestCancelTasks())
+        this.dispatcher.cancelTasks()
         this.kill();
     }
 
@@ -237,7 +233,7 @@ export class DataStream extends Disposable {
     }
 
     private _requestNext() {
-        this.dispatcher.dispatch(new RequestDataBatch(StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize))
+        this.dispatcher.requestDataBatch(StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize)
     }
     private decodeValues(data: ArrayBuffer[]) {
         return data.map(buf => this.repr.dataType.decodeBuffer(new DataReader(buf)));
@@ -247,7 +243,7 @@ export class DataStream extends Disposable {
         if (!this.setupPromise) {
             this.setupPromise = new Promise((resolve, reject) => {
                 const handleId = this.repr.handle;
-                this.dispatcher.dispatch(new ModifyDataStream(handleId, this.mods))
+                this.dispatcher.modifyDataStream(handleId, this.mods)
                 const obs = this.activeStreams.addObserver(handles => {
                     const messages = handles[handleId]
                     if (messages.length > 0) {

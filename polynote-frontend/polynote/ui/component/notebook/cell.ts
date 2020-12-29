@@ -1,7 +1,6 @@
 import {blockquote, button, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
 import {
     NotebookMessageDispatcher,
-    ShowValueInspector,
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {
@@ -60,6 +59,7 @@ import {ErrorEl} from "../../display/error";
 import {Error} from "../../../data/messages";
 import IMarkerData = editor.IMarkerData;
 import {deepEquals, diffArray, removeKeys} from "../../../util/helpers";
+import {ValueInspector} from "../value_inspector";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -1085,7 +1085,7 @@ class CodeCellOutput extends Disposable {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
                             evt => {
-                                this.dispatcher.dispatch(new ShowValueInspector(result))
+                                this.dispatcher.showValueInspector(result)
                             }
                         )
                     ]
@@ -1161,11 +1161,11 @@ class CodeCellOutput extends Disposable {
                     h4(['result-name-and-type'], [
                         span(['result-name'], [result.name]), ': ', resultType,
                         iconButton(['view-data'], 'View data', 'table', '[View]')
-                            .click(_ => this.dispatcher.dispatch(new ShowValueInspector(result, 'View data'))),
+                            .click(_ => this.dispatcher.showValueInspector(result, 'View data')),
                         repr.dataType instanceof StructType
                             ? iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
                                 .click(_ => {
-                                    this.dispatcher.dispatch(new ShowValueInspector(result, 'Plot data'))
+                                    this.dispatcher.showValueInspector(result, 'Plot data')
                                 })
                             : undefined
                     ]),
