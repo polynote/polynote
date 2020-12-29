@@ -23,7 +23,7 @@ import {KernelStatusString, TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {ServerStateHandler} from "../../../state/server_state";
-import {changedKeys, diffArray, removeKeys} from "../../../util/helpers";
+import {changedKeys, deepEquals, diffArray, removeKeys} from "../../../util/helpers";
 import {ErrorEl} from "../../display/error";
 import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 
@@ -97,7 +97,7 @@ export class Kernel extends Disposable {
 
         const info = new KernelInfoEl(this.kernelState);
         const symbols = new KernelSymbolsEl(dispatcher, notebookState);
-        const tasks = new KernelTasksEl(notebookState.view("path"), serverMessageDispatcher, this.kernelState.view("tasks"));
+        const tasks = new KernelTasksEl(notebookState.view("path"), serverMessageDispatcher, this.kernelState.lens("tasks"));
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -217,10 +217,11 @@ class KernelTasksEl extends Disposable {
     private taskContainer: TagElement<"div">;
     private tasks: Record<string, KernelTask> = {};
     private errors: Record<string, DisplayError>;
+    private errorTimeouts: Record<string, number> = {};
 
     constructor(private notebookPathHandler: StateView<string>,
                 private serverMessageDispatcher: ServerMessageDispatcher,
-                private kernelTasksHandler: StateView<KernelTasks>) {
+                private kernelTasksHandler: StateHandler<KernelTasks>) {
         super()
         this.el = div(['kernel-tasks'], [
             h3([], ['Tasks']),
@@ -244,7 +245,9 @@ class KernelTasksEl extends Disposable {
             })
 
             Object.values(currentTasks).forEach(task => {
-                this.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
+                if (! deepEquals(task, oldTasks[task.id])) {
+                    this.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
+                }
             })
         }, this)
 
@@ -363,10 +366,13 @@ class KernelTasksEl extends Disposable {
 
             const statusClass = (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase();
             if (!task.classList.contains(statusClass)) {
+                console.log("task ", id, "status", statusClass)
                 task.className = 'task';
                 task.classList.add(statusClass);
+                const maybeTimeout = this.errorTimeouts[id]
+                if (maybeTimeout) window.clearTimeout(maybeTimeout)
                 if (statusClass === "complete") {
-                    window.setTimeout(() => {
+                    this.errorTimeouts[id] = window.setTimeout(() => {
                         this.removeTask(id)
                     }, 100);
                 }
@@ -380,7 +386,7 @@ class KernelTasksEl extends Disposable {
         const task = this.tasks[id];
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
-        // this.kernelTasksHandler.update(s => removeKey(s, id))
+        this.kernelTasksHandler.update(s => removeKeys(s, [id]))
     }
 }
 
