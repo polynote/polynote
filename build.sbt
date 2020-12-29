@@ -265,7 +265,7 @@ val dist = Command.command(
     val resolvedFiles = files.map {
       case (srcFile, targetPath) => srcFile -> (distDir / targetPath)
     }
-    
+
     scalaBinaryVersions.foreach {
       binaryVersion => (distDir / "polynote" / "plugins" / binaryVersion).mkdirs()
     }

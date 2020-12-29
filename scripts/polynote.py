@@ -7,9 +7,7 @@ import shlex
 if not os.environ.get('PYTHONPATH'):
     os.environ['PYTHONPATH'] = sys.prefix
 
-scala_version = os.environ.get('POLYNOTE_SCALA_VERSION')
-if not scala_version:
-    scala_version = '2.11'
+scala_version = os.environ.get('POLYNOTE_SCALA_VERSION', '2.11')
 
 polynote_dir = os.path.dirname(os.path.realpath(__file__))
 os.chdir(polynote_dir)
