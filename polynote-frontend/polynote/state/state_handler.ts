@@ -293,17 +293,14 @@ export type Observer<S> = (currentS: S, previousS: S, updateSource: any) => void
 export class MapView<U, S> extends StateWrapper<S | undefined> {
     equals?: (s1?: S, s2?: S) => boolean;
 
-    // setState is a hack allowing us to set state on a view... is there a better way to do this? :\
     constructor(view: StateView<U>, toS: (u: U) => S | typeof NoUpdate, equals?: (s1?: S, s2?: S) => boolean) {
 
         const s = toS(view.state)
-        const mappedView = new StateView(s === NoUpdate ? undefined : s, view.path)
-
-        super(mappedView);
+        super(new StateView(s === NoUpdate ? undefined : s, view.path));
 
         view.addObserver((u, _, src) => {
             const s = toS(u)
-            if (s !== NoUpdate && !this.compare(s, mappedView.state)) {
+            if (s !== NoUpdate && !this.compare(s, this.state)) {
                 this.setState(s, src)
             }
         }, this)
