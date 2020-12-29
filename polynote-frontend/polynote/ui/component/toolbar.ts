@@ -2,7 +2,6 @@ import {
     DownloadNotebook,
     NotebookMessageDispatcher,
     RequestCancelTasks,
-    RequestCellRun,
     RequestClearOutput,
     ServerMessageDispatcher,
     UIAction,
@@ -151,7 +150,7 @@ class NotebookToolbar extends ToolbarElement {
         this.el = this.toolbarElem("notebook", [
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "forward", "Run all")
-                    .click(() => this.dispatch(new RequestCellRun([]))),
+                    .click(() => this.dispatcher?.runCells([])),
                 iconButton(["branch"], "Create branch", "code-branch", "Branch").disable().withKey('alwaysDisabled', true),
                 iconButton(["download"], "Download", "download", "Download").click(() => this.dispatch(new DownloadNotebook())),
                 iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatch(new RequestClearOutput()))

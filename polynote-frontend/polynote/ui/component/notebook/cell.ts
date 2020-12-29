@@ -1,7 +1,6 @@
 import {blockquote, button, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
 import {
     NotebookMessageDispatcher,
-    RequestCellRun,
     ShowValueInspector,
 } from "../../../messaging/dispatcher";
 import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
@@ -456,7 +455,7 @@ class CodeCell extends Cell {
             div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
-                        dispatcher.dispatch(new RequestCellRun([this.state.id]))
+                        dispatcher.runCells([this.state.id])
                     }),
                     div(['cell-label'], [this.state.id.toString()]),
                     div(['lang-selector'], [langSelector]),
@@ -916,7 +915,7 @@ class CodeCell extends Cell {
                 this.notebookState.deleteCell()
             }))
             .when("RunAll", ifNoSuggestion(() => {
-                this.dispatcher.dispatch(new RequestCellRun([]))
+                this.dispatcher.runCells([])
             }))
             .when("RunToCursor", ifNoSuggestion(() => {
                 this.dispatcher.runToActiveCell()
@@ -1535,7 +1534,7 @@ export class TextCell extends Cell {
                 this.notebookState.deleteCell()
             })
             .when("RunAll", () => {
-                this.dispatcher.dispatch(new RequestCellRun([]))
+                this.dispatcher.runCells([])
             })
             .when("RunToCursor", () => {
                 this.dispatcher.runToActiveCell()
