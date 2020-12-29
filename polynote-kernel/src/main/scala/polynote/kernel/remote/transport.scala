@@ -340,7 +340,7 @@ object SocketTransport {
     private def listJars(path: Path): RIO[Blocking, Seq[Path]] = effectBlocking {
       Files.list(path).toArray(new IntFunction[Array[Path]] {
         override def apply(size: Int): Array[Path] = new Array[Path](size)
-      }).filter(_.endsWith(".jar")).toSeq
+      }).filter(_.getFileName.toString.endsWith(".jar")).toSeq
     }.catchSome {
       case err: IOException => ZIO.succeed(Seq.empty)
     }.flatMap {
@@ -349,7 +349,7 @@ object SocketTransport {
 
     private def listJarsForVersion(dir: String, scalaVersion: String) =
       ZSystem.property("user.dir").flatMap {
-        case Some(cwd) => ZIO(Paths.get(cwd, "deps", scalaVersion)).flatMap(listJars)
+        case Some(cwd) => ZIO(Paths.get(cwd, dir, scalaVersion)).flatMap(listJars)
         case None      => ZIO.succeed(Seq.empty)
       }
 
