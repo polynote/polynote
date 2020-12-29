@@ -163,16 +163,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         acc[next.id] = next
                         return acc
                     }, {})
-                    const completedTasks = collect(Object.values({...s.kernel.tasks, ...taskMap}), task => {
-                        if (task.status === TaskStatus.Complete) {
-                            return task.id
-                        } else return undefined
-                    })
                     return {
                         ...s,
                         kernel: {
                             ...s.kernel,
-                            tasks: removeKeys({...s.kernel.tasks, ...taskMap}, completedTasks)
+                            tasks: {...s.kernel.tasks, ...taskMap}
                         }
                     }
                 })
