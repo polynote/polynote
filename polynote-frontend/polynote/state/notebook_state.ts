@@ -83,9 +83,10 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                 const activeCellWatcher = this.cellsHandler.view(cellId)
                 const obs = activeCellWatcher.addObserver(s => {
                     if (! s.selected) {
-                        console.log("deselected", cellId)
                         activeCellWatcher.removeObserver(obs)
-                        this.update1("activeCellId", () => undefined)
+                        if (this.state.activeCellId === cellId) {
+                            this.update1("activeCellId", () => undefined)
+                        }
                     }
                 }, this)
             }

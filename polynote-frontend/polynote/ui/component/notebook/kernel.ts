@@ -366,7 +366,6 @@ class KernelTasksEl extends Disposable {
 
             const statusClass = (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase();
             if (!task.classList.contains(statusClass)) {
-                console.log("task ", id, "status", statusClass)
                 task.className = 'task';
                 task.classList.add(statusClass);
                 const maybeTimeout = this.errorTimeouts[id]
