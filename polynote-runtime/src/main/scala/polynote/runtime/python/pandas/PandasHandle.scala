@@ -6,7 +6,6 @@ import java.nio.ByteBuffer
 import jep.python.{PyCallable, PyObject}
 import polynote.runtime._
 import polynote.runtime.python.{PythonObject, TypedPythonObject}
-import shapeless.Witness
 
 import scala.collection.immutable.ListMap
 import scala.reflect.ClassTag

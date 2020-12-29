@@ -6,7 +6,7 @@ import jep.{Jep, JepException}
 import jep.python.{PyCallable, PyObject}
 import polynote.runtime._
 import polynote.runtime.python.PythonObject.ReturnTypeFor
-import shapeless.Witness
+import polynote.macros.LiteralStr
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.ListMap
@@ -233,7 +233,7 @@ object PythonObject {
   * will be assigned a type like this (i.e. `TypedPythonObject["DataFrame"]`) so that we can use its python type to
   * find specific reprs for that type. For example, we could make an instance of type:
   *
-  *     ReprsOf[ TypedPythonObject[Witness.`"DataFrame"`.T] ]
+  *     ReprsOf[ TypedPythonObject[LiteralStr.`DataFrame`.T] ]
   *
   * which would be selected for a PythonObject["DataFrame"]. Then, this instance could (for example) return a similar
   * streaming data representation to what the Scala DataFrame instance does, enabling the built-in data viz.
@@ -249,8 +249,8 @@ object TypedPythonObject extends PandasReprs {
 
 
 private[runtime] trait PandasReprs extends AnyPythonReprs { self: TypedPythonObject.type =>
-  implicit val dataFrameReprs: ReprsOf[TypedPythonObject[Witness.`"DataFrame"`.T]] = new ReprsOf[TypedPythonObject[Witness.`"DataFrame"`.T]] {
-    override def apply(value: TypedPythonObject[Witness.`"DataFrame"`.T]): Array[ValueRepr] = {
+  implicit val dataFrameReprs: ReprsOf[TypedPythonObject[LiteralStr.`DataFrame`.T]] = new ReprsOf[TypedPythonObject[LiteralStr.`DataFrame`.T]] {
+    override def apply(value: TypedPythonObject[LiteralStr.`DataFrame`.T]): Array[ValueRepr] = {
       // this should be a Pandas DataFrame, as a PySpark DataFrame gets converted to a Scala value and shouldn't be wrapped in Python object.
       StreamingDataRepr.fromHandle(new pandas.PandasHandle(_, value)) +: PythonObject.defaultReprs(value)
     }

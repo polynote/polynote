@@ -85,7 +85,8 @@ final case class NotebookConfig(
   repositories: Option[TinyList[RepositoryConfig]],
   sparkConfig: Option[ShortMap[String, String]],
   sparkTemplate: Option[SparkPropertySet],
-  env: Option[ShortMap[String, String]]
+  env: Option[ShortMap[String, String]],
+  scalaVersion: Option[String] = None
 )
 
 object NotebookConfig {
@@ -110,7 +111,8 @@ object NotebookConfig {
         propSets    <- spark.propertySets
         default     <- propSets.find(_.name == defaultName)
       } yield default,
-      env = Option(config.env)
+      env = Option(config.env),
+      scalaVersion = config.kernel.scalaVersion
     )
   }
 

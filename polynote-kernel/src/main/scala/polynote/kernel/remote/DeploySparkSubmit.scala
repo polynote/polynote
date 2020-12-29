@@ -1,18 +1,18 @@
 package polynote.kernel.remote
 
 import java.io.File
-import java.net.InetSocketAddress
-
+import java.net.{InetSocketAddress, URL}
 import polynote.buildinfo.BuildInfo
 import polynote.config.{PolynoteConfig, SparkConfig}
-import polynote.kernel.{Kernel, LocalSparkKernelFactory, ScalaCompiler, remote}
+import polynote.kernel.{Kernel, ScalaCompiler, remote}
 import polynote.kernel.environment.{Config, CurrentNotebook}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployCommand
 import polynote.kernel.util.pathOf
 import polynote.messages.NotebookConfig
 import polynote.runtime.KernelRuntime
-import polynote.runtime.spark.reprs.SparkReprsOf
-import zio.RIO
+import zio.{RIO, ZIO}
+
+import java.nio.file.Path
 
 object DeploySparkSubmit extends DeployCommand {
   def parseQuotedArgs(str: String): List[String] = str.split('"').toList.sliding(2, 2).toList.flatMap {
@@ -25,6 +25,7 @@ object DeploySparkSubmit extends DeployCommand {
     config: PolynoteConfig,
     nbConfig: NotebookConfig,
     notebookPath: String,
+    classPath: Seq[URL],
     mainClass: String = classOf[RemoteKernelClient].getName,
     jarLocation: String = getClass.getProtectionDomain.getCodeSource.getLocation.getPath,
     serverArgs: List[String] = Nil
@@ -58,7 +59,7 @@ object DeploySparkSubmit extends DeployCommand {
         case (name, value) => s"-D$name=$value"
       } mkString " "
 
-    val additionalJars = pathOf(classOf[SparkReprsOf[_]]) :: pathOf(classOf[KernelRuntime]) :: Nil
+    val additionalJars = classPath.toList.filter(_.getFile.endsWith(".jar"))
 
     val appName = sparkConfig.getOrElse("spark.app.name", s"Polynote ${BuildInfo.version}: $notebookPath")
 
@@ -70,7 +71,7 @@ object DeploySparkSubmit extends DeployCommand {
       sparkArgs ++ Seq(jarLocation) ++ serverArgs
   }
 
-  override def apply(serverAddress: InetSocketAddress): RIO[Config with CurrentNotebook, Seq[String]] = for {
+  override def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[Config with CurrentNotebook, Seq[String]] = for {
     config   <- Config.access
     nbConfig <- CurrentNotebook.config
     path     <- CurrentNotebook.path
@@ -78,10 +79,11 @@ object DeploySparkSubmit extends DeployCommand {
     config,
     nbConfig,
     path,
+    classPath.map(_.toUri.toURL),
     serverArgs =
       "--address" :: serverAddress.getAddress.getHostAddress ::
       "--port" :: serverAddress.getPort.toString ::
-      "--kernelFactory" :: classOf[LocalSparkKernelFactory].getName ::
+      "--kernelFactory" :: "polynote.kernel.LocalSparkKernelFactory" ::
       Nil
   )
 }

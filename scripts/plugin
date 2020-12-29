@@ -13,10 +13,26 @@ fi
 
 case $1 in
   enable)
-    ln -s "../plugins/$2.jar" plugins.d/
+    for dir in `ls plugins`
+    do
+      version_dir="plugins.d/$dir"
+      if ! test -e $version_dir
+      then
+        mkdir -p $version_dir
+      fi
+      target_jar="$version_dir/$2.jar"
+      source_jar="plugins/$dir/$2.jar"
+      if test -e $source_jar
+      then
+        ln -s "../../$source_jar" $target_jar
+      fi
+    done
     ;;
   disable)
-    unlink "plugins.d/$2.jar"
+    for dir in `ls plugins`
+    do
+      unlink "plugins.d/$dir/$2.jar"
+    done
     ;;
   *)
     echo "Usage: plugin enable [plugin-name]"

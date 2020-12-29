@@ -4,9 +4,6 @@ import java.io.DataOutput
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
-import shapeless.labelled.FieldType
-import shapeless.{::, Generic, HList, HNil, LabelledGeneric, Lazy, Witness}
-
 import scala.collection.GenTraversable
 import polynote.runtime.macros.StructDataEncoderMacros
 
@@ -261,52 +258,9 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
   }
 
   object StructDataEncoder {
-
-//    implicit val hnil: StructDataEncoder[HNil] = new StructDataEncoder[HNil](StructType(Nil)) {
-//      def encode(dataOutput: DataOutput, value: HNil): Unit = ()
-//      def sizeOf(t: HNil): Int = 0
-//      def field(name: String): Option[(HNil => Any, DataEncoder[_])] = None
-//    }
-//
-//    implicit def hcons[K <: Symbol, H, T <: HList](implicit
-//      label: Witness.Aux[K],
-//      encoderH: DataEncoder[H],
-//      encoderT: StructDataEncoder[T]
-//    ): StructDataEncoder[FieldType[K, H] :: T] =
-//      new StructDataEncoder[FieldType[K, H] :: T](StructType(StructField(label.value.name, encoderH.dataType) :: encoderT.dataType.fields)) {
-//        val fieldName: String = label.value.name
-//        def encode(output: DataOutput, value: FieldType[K, H] :: T): Unit = encoderT.encode(encoderH.encodeAnd(output, value.head), value.tail)
-//        def sizeOf(value: FieldType[K, H] :: T): Int = combineSize(encoderH.sizeOf(value.head), encoderT.sizeOf(value.tail))
-//
-//        // Note: the returned getter here is very slow.
-//        def field(name: String): Option[((FieldType[K, H] :: T) => Any, DataEncoder[_])] = if (name == fieldName) {
-//          val getter: (FieldType[K, H] :: T) => Any = ht => ht.head
-//          Some(getter -> encoderH)
-//        } else {
-//          encoderT.field(name).map {
-//            case (getterT, enc) =>
-//              val getter: (FieldType[K, H] :: T) => Any = getterT.compose(_.tail)
-//              getter -> enc
-//          }
-//        }
-//      }
-
     implicit def caseClassMacro[A <: Product]: StructDataEncoder[A] = macro StructDataEncoderMacros.materialize[A]
-
   }
 
-  trait LowPriorityStructDataEncoder { self: StructDataEncoder.type =>
-
-    // This is lower priority, so that the macro (which is specialized and voids O(N) field access overhead) can be preferred
-    implicit def caseClass[A <: Product, L <: HList](implicit gen: LabelledGeneric.Aux[A, L], encoderL: Lazy[StructDataEncoder[L]]): StructDataEncoder[A] =
-      new StructDataEncoder[A](encoderL.value.dataType) {
-        def encode(output: DataOutput, a: A): Unit = encoderL.value.encode(output, gen.to(a))
-        def sizeOf(a: A): Int = encoderL.value.sizeOf(gen.to(a))
-        def field(name: String): Option[(A => Any, DataEncoder[_])] = encoderL.value.field(name).map {
-          case (getter, enc) => getter.compose(gen.to) -> enc
-        }
-      }
-  }
 
   implicit def fromStructDataEncoder[T](implicit structDataEncoderT: StructDataEncoder[T]): DataEncoder[T] = structDataEncoderT
 

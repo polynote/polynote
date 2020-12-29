@@ -1,18 +1,36 @@
 package polynote.runtime.macros
 
-import java.nio.charset.StandardCharsets
-
-import polynote.runtime.{DataEncoder, DataType, StringType, StructField, StructType}
+import polynote.runtime.{DataEncoder, DataType, StructField, StructType}
 
 import scala.reflect.macros.whitebox
 import polynote.runtime.DataEncoder.StructDataEncoder
-import shapeless.CaseClassMacros
 
-class StructDataEncoderMacros(val c: whitebox.Context) extends CaseClassMacros {
+class StructDataEncoderMacros(val c: whitebox.Context) {
 
   import c.universe._
 
   private val DataEncoderTC = weakTypeOf[DataEncoder[_]].typeConstructor
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // The following methods were transplanted from shapeless CaseClassMacros:                                                //
+  //   https://github.com/milessabin/shapeless/blob/master/core/src/main/scala/shapeless/generic.scala#L275 //                                                                          //
+  // in order to avoid a 5MB dependency. They are used under the Apache license:                            //
+  //   https://github.com/milessabin/shapeless/blob/master/LICENSE                                          //
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private def isAnonOrRefinement(sym: Symbol): Boolean = {
+    val nameStr = sym.name.toString
+    nameStr.contains("$anon") || nameStr == "<refinement>"
+  }
+
+  private def isCaseAccessorLike(sym: TermSymbol): Boolean = {
+    def isGetter = if (sym.owner.asClass.isCaseClass) sym.isCaseAccessor else sym.isGetter
+    sym.isPublic && isGetter
+  }
+
+  ////////////////////////////////////////
+  // End shapeless transplanted methods //
+  ////////////////////////////////////////
 
   def fieldSymbolsOf(tpe: Type): List[(TermSymbol, Type)] = {
     val tSym = tpe.typeSymbol
