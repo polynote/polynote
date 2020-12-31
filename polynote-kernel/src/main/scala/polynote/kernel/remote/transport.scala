@@ -8,6 +8,7 @@ import java.nio.channels.{AsynchronousCloseException, ClosedChannelException, Se
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.{Semaphore, TimeUnit}
 import fs2.Stream
+import polynote.buildinfo.BuildInfo
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.remote.SocketTransport.FramedSocket
@@ -26,10 +27,12 @@ import scala.reflect.{ClassTag, classTag}
 import Update.notebookUpdateCodec
 import cats.~>
 import polynote.kernel.task.TaskManager
+import polynote.kernel.util.listFiles
 import zio.clock.Clock
 
 import java.util.function.IntFunction
 import scala.util.Random
+import scala.util.control.NonFatal
 
 trait Transport[ServerAddress] {
   def serve(): RIO[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager, TransportServer[ServerAddress]]
@@ -324,22 +327,22 @@ object SocketTransport {
       }
     }
 
-    private def findScalaVersion: URIO[GlobalEnv with CurrentNotebook, String] = for {
+    private def findScalaVersion: URIO[BaseEnv with GlobalEnv with CurrentNotebook, String] = for {
       serverConfig   <- Config.access
       notebookConfig <- CurrentNotebook.config
-    } yield notebookConfig.scalaVersion
-      .orElse(serverConfig.kernel.scalaVersion)
-      .getOrElse(DeploySubprocess.DefaultScalaVersion)
+      scalaVersion   <- ZIO.succeed(notebookConfig.scalaVersion).some
+        .orElse(ZIO.succeed(serverConfig.kernel.scalaVersion).some)
+        .orElse(deployCommand.detectScalaVersion.some)
+        .orElse(ZIO.succeed(DeploySubprocess.DefaultScalaVersion))
+    } yield scalaVersion
 
-    private def listJars(path: Path): RIO[Blocking, Seq[Path]] = effectBlocking {
-      Files.list(path).toArray(new IntFunction[Array[Path]] {
-        override def apply(size: Int): Array[Path] = new Array[Path](size)
-      }).filter(_.getFileName.toString.endsWith(".jar")).toSeq
-    }.catchSome {
-      case err: IOException => ZIO.succeed(Seq.empty)
-    }.flatMap {
-      paths => ZIO.collect(paths)(path => effectBlocking(path.toRealPath().toAbsolutePath).asSomeError)
-    }
+    private def listJars(path: Path): RIO[BaseEnv, Seq[Path]] = listFiles(path)
+      .map(_.filter(_.getFileName.toString.endsWith(".jar")))
+      .catchSome {
+        case NonFatal(err) => Logging.error(s"Failed to list JARs in $path", err).as(Seq.empty)
+      }.flatMap {
+        paths => ZIO.collect(paths)(path => effectBlocking(path.toRealPath().toAbsolutePath).asSomeError)
+      }
 
     private def listJarsForVersion(dir: String, scalaVersion: String) =
       ZSystem.property("user.dir").flatMap {
@@ -390,6 +393,8 @@ object SocketTransport {
 
     trait DeployCommand {
       def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[Config with CurrentNotebook, Seq[String]]
+      def detectScalaVersion: URIO[BaseEnv with Config with CurrentNotebook, Option[String]] =
+        ZIO(BuildInfo.scalaBinaryVersion).option
     }
 
     /**

@@ -24,6 +24,7 @@ package object logging {
       def errorSync(msg: Option[String], err: Throwable)(implicit location: Location): Unit
       def error(msg: Option[String], err: zio.Cause[Throwable])(implicit location: Location): UIO[Unit]
       def warn(msg: String)(implicit location: Location): UIO[Unit]
+      def warn(msg: Option[String], err: Throwable)(implicit location: Location): UIO[Unit]
       def warnSync(msg: String)(implicit location: Location): Unit
       def info(msg: String)(implicit location: Location): UIO[Unit]
       def remote(path: String, msg: String): UIO[Unit]
@@ -63,23 +64,26 @@ package object logging {
           }
         }.ignore
 
-        override def errorSync(msg: Option[String], err: Throwable)(implicit location: Location): Unit = {
-          out.print(Red)
-          out.print(errorPrefix)
+        private def logStackTraceSync(msg: Option[String], err: Throwable, prefix: String, indent: String, color: String = "")(implicit location: Location): Unit = {
+          out.print(color)
+          out.print(prefix)
           msg.foreach(out.print)
           if (location.file != "")
             out.println(s" (Logged from ${location.file}:${location.line})")
           else
             out.println("")
-          out.print(errorIndent)
+          out.print(indent)
           out.println(err)
           err.getStackTrace.foreach {
             el =>
-              out.print(errorIndent)
+              out.print(indent)
               out.println(el)
           }
           out.print(Reset)
         }
+
+        override def errorSync(msg: Option[String], err: Throwable)(implicit location: Location): Unit =
+          logStackTraceSync(msg, err, errorPrefix, errorIndent, Red)
 
         override def error(msg: Option[String], err: Throwable)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
           out.synchronized {
@@ -142,6 +146,14 @@ package object logging {
           lastRemote.lazySet(null)
           printWithPrefix(warnPrefix, warnIndent, msg)
         }
+
+        override def warn(msg: Option[String], err: Throwable)(implicit location: Location): UIO[Unit] = blocking.effectBlocking {
+          out.synchronized {
+            lastRemote.lazySet(null)
+            logStackTraceSync(msg, err, warnPrefix, warnIndent)
+          }
+        }.ignore
+
         override def info(msg: String)(implicit location: Location): UIO[Unit] = {
           lastRemote.lazySet(null)
           printWithPrefix(infoPrefix, infoIndent, msg)
@@ -165,6 +177,8 @@ package object logging {
     def error(msg: String, cause: zio.Cause[Throwable])(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.error(Some(msg), cause))
     def error(cause: zio.Cause[Throwable])(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.error(None, cause))
     def warn(msg: String)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.warn(msg))
+    def warn(msg: String, err: Throwable)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.warn(Some(msg), err))
+    def warn(err: Throwable)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.warn(None, err))
     def info(msg: String)(implicit location: Location): URIO[Logging, Unit] = access.flatMap(_.info(msg))
     def remote(path: String, msg: String): URIO[Logging, Unit] = access.flatMap(_.remote(path, msg))
     def access: ZIO[Logging, Nothing, Service] = ZIO.access[Logging](_.get)

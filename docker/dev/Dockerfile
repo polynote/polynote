@@ -1,7 +1,5 @@
 FROM openjdk:8-slim-buster
 
-ARG SCALA_VERSION="2.11"
-
 WORKDIR /opt
 
 RUN apt update -y && \
@@ -18,12 +16,9 @@ ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
 # for example (don't forget the dot at the end!):
 #   sbt dist
 #   docker build -t polynote:dev -f docker/dev/Dockerfile .
-# or, to build for 2.12:
-#   sbt +dist
-#   SCALA_VERSION=2.12 docker build --build-arg SCALA_VERSION -t polynote:dev_2.12 -f docker/dev/Dockerfile .
-COPY target/scala-$SCALA_VERSION/polynote-dist*.tar.gz .
-RUN tar xfzp polynote-dist*.tar.gz && \
-    rm polynote-dist*.tar.gz
+COPY target/polynote-dist.tar.gz .
+RUN tar xfzp polynote-dist.tar.gz && \
+    rm polynote-dist.tar.gz
 
 RUN pip3 install -r ./polynote/requirements.txt
 

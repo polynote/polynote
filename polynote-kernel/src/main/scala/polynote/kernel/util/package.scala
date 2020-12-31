@@ -1,6 +1,11 @@
 package polynote.kernel
 
+import zio.RIO
+
 import java.net.URL
+import java.nio.file.{Files, Path}
+import java.util.function.IntFunction
+import zio.blocking.{Blocking, effectBlocking}
 
 package object util {
 
@@ -9,5 +14,18 @@ package object util {
   // Since the environment is immutable, use this helper so tests can modify the "env" through system properties.
   def envOrProp(key: String, alternative: String): String = {
     sys.env.getOrElse(key, sys.props.getOrElse(key, alternative))
+  }
+
+  /**
+    * For collecting results of Files.list into an array
+    */
+  object NewPathArray extends IntFunction[Array[Path]] {
+    override def apply(size: Int): Array[Path] = new Array[Path](size)
+  }
+
+  def listFiles(dir: Path): RIO[Blocking, Seq[Path]] = effectBlocking(Files.list(dir)).map {
+    paths =>
+      val arr = paths.toArray(NewPathArray)
+      arr.toSeq
   }
 }
