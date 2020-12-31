@@ -273,6 +273,9 @@ object PolynoteConfig {
       defaultJson <- default
       merged = defaultJson.deepMerge(configJson) // priority goes to configJson
       parsedConfig <- ZIO.fromEither(merged.as[PolynoteConfig])
+      _ <- ZIO.when(parsedConfig.behavior.kernelIsolation == KernelIsolation.Never) {
+        Logging.warn("Configuration value `behavior.kernel_isolation: never` is deprecated and will be removed")
+      }
     } yield parsedConfig
 
     Logging.info(s"Loading configuration from $file") *> configIO

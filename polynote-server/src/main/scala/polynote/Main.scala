@@ -56,6 +56,7 @@ object Main extends polynote.app.App {
 
         config.behavior.kernelIsolation match {
           case KernelIsolation.Always | KernelIsolation.SparkOnly if isSpark => RemoteSparkKernel
+          case KernelIsolation.Never if isSpark => RemoteSparkKernel // Remove me when Never is removed
           case KernelIsolation.Always                                        => RemoteKernel
           case _                                                             => LocalKernel
         }
