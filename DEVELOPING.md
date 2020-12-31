@@ -24,16 +24,16 @@ npm install
 npm run dist
 ```
 
-- Build the backend 
+- Build the distribution
 
 ```
-sbt +dist
+sbt dist
 ```
 
 # Running
 
 ```
-cd target/scala-2.12/polynote
+cd target/dist/polynote
 ./polynote.py
 ```
 
