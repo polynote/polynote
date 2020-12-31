@@ -3,9 +3,9 @@ package polynote.runtime.spark.reprs
 import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
 
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
 import org.apache.spark.storage.StorageLevel
 import polynote.runtime._
@@ -17,11 +17,11 @@ private[reprs] sealed trait LowPrioritySparkReprsOf { self: SparkReprsOf.type =>
   implicit def dataset[T]: SparkReprsOf[Dataset[T]]= instance {
     ds => dataFrame(ds.toDF())
   }
-  
+
 }
 
 object SparkReprsOf extends LowPrioritySparkReprsOf {
-  
+
   private def dataTypeAndEncoder(dataType: sparkTypes.DataType, nullable: Boolean): Option[(DataType, DataOutput => SpecializedGetters => Int => Unit)] =
     if (nullable) {
       dataTypeAndEncoder(dataType, nullable = false).map {
@@ -134,6 +134,13 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
   }
 
 
+  private def rowToBytes(structType: StructType, encode: (DataOutput, InternalRow) => Unit): InternalRow => Array[Byte] =
+    if (structType.size >= 0) {
+      new FixedSizeDataFrameDecoder(structType, encode)
+    } else {
+      new VariableSizeDataFrameDecoder(structType, encode)
+    }
+
   private[polynote] class DataFrameHandle(
     val handle: Int,
     dataFrame: DataFrame
@@ -147,15 +154,8 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
     val knownSize: Option[Int] = None
 
     // TODO: It might be nice to iterate instead of collect, but maybe in a better way than toLocalIterator...
-    private lazy val collectedData = {
-      val rowToBytes: InternalRow => Array[Byte] = if (structType.size >= 0) {
-        new FixedSizeDataFrameDecoder(structType, encode)
-      } else {
-        new VariableSizeDataFrameDecoder(structType, encode)
-      }
-
-      dataFrame.limit(1000000).queryExecution.toRdd.map(rowToBytes).collect()
-    }
+    private lazy val collectedData =
+      dataFrame.limit(1000000).queryExecution.toRdd.map(rowToBytes(structType, encode)).collect()
 
     def iterator: Iterator[ByteBuffer] = collectedData.iterator.map(ByteBuffer.wrap)
 
@@ -238,7 +238,7 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
     }
   }
 
-  import org.apache.spark.sql.{Dataset, DataFrame, SparkSession}
+  import org.apache.spark.sql.{DataFrame, SparkSession}
 
   def instance[T](reprs: T => Array[ValueRepr]): SparkReprsOf[T] = new SparkReprsOf[T] {
     def apply(value: T): Array[ValueRepr] = reprs(value)
@@ -247,6 +247,27 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
   implicit val dataFrame: SparkReprsOf[DataFrame] = {
     instance {
       df => Array(StreamingDataRepr.fromHandle(new DataFrameHandle(_, df)))
+    }
+  }
+
+  implicit def arrayOfRows: SparkReprsOf[Array[org.apache.spark.sql.Row]] = {
+    instance { arr =>
+      if (arr.isEmpty) {
+        Array.empty[ValueRepr]
+      } else {
+        // I assume that the schema is always the same for all elements of the array
+        // (it's reasonable since this is probably a Dataframe.collect result
+        val prototype = arr.head
+        val rowEncoder = RowEncoder(prototype.schema) // to go from Row to InternalRow
+        val (structType, encode) = structDataTypeAndEncoder(prototype.schema) // reuse code from InternalRow
+        Array(
+          StreamingDataRepr(
+            structType,
+            Some(arr.length),
+            arr.iterator.map(r => ByteBuffer.wrap(rowToBytes(structType, encode)(rowEncoder.toRow(r))))
+          )
+        )
+      }
     }
   }
 

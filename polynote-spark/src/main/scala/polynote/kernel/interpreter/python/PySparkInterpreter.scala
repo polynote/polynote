@@ -1,7 +1,7 @@
 package polynote.kernel.interpreter.python
 
 import java.net.InetAddress
-import java.nio.file.Path
+import java.nio.file.{FileSystems, Files, Path}
 import java.util.concurrent.atomic.AtomicReference
 
 import jep.Jep
@@ -20,7 +20,8 @@ import zio.{RIO, Runtime, Task, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.internal.Executor
 
-import scala.util.Properties
+import scala.util.{Properties, Try}
+import scala.collection.JavaConverters._
 
 class PySparkInterpreter(
   _compiler: ScalaCompiler,
@@ -98,10 +99,15 @@ class PySparkInterpreter(
        |# grab the pyspark included in the spark distribution, if available.
        |spark_home = os.environ.get("SPARK_HOME")
        |if spark_home:
-       |    sys.path.insert(1, os.path.join(spark_home, "python"))
+       |    spark_python = os.path.join(spark_home, "python")
+       |    sys.path.insert(1, spark_python)
        |    import glob
        |    py4j_path = glob.glob(os.path.join(spark_home, 'python', 'lib', 'py4j-*.zip'))[0]  # we want to use the py4j distributed with pyspark
        |    sys.path.insert(1, py4j_path)
+       |
+       |    pythonpath = os.pathsep.join(filter(lambda x: x is not None, [spark_python, py4j_path, os.environ.get("PYTHONPATH", None)]))
+       |    os.environ["PYTHONPATH"] = pythonpath
+       |    # TODO: we need to set spark.executorEnv.PYTHONPATH somehow (before the session is created)!
        |
        |from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters, CallbackServerParameters
        |from pyspark.conf import SparkConf
@@ -201,20 +207,55 @@ class PySparkInterpreter(
       gateway.resetCallbackClient(py4j.GatewayServer.defaultAddress(), pythonPort)
 
       jep.exec(
-        """java_import(gateway.jvm, "org.apache.spark.SparkEnv")
-          |java_import(gateway.jvm, "org.apache.spark.SparkConf")
-          |java_import(gateway.jvm, "org.apache.spark.api.java.*")
-          |java_import(gateway.jvm, "org.apache.spark.api.python.*")
-          |java_import(gateway.jvm, "org.apache.spark.mllib.api.python.*")
-          |java_import(gateway.jvm, "org.apache.spark.sql.*")
-          |java_import(gateway.jvm, "org.apache.spark.sql.hive.*")
-          |
-          |__sparkConf = SparkConf(_jvm = gateway.jvm, _jconf = gateway.entry_point.sparkContext().getConf())
-          |sc = SparkContext(jsc = gateway.jvm.org.apache.spark.api.java.JavaSparkContext(gateway.entry_point.sparkContext()), gateway = gateway, conf = __sparkConf)
-          |spark = SparkSession(sc, gateway.entry_point)
-          |sqlContext = spark._wrapped
-          |from pyspark.sql import DataFrame
-          |""".stripMargin)
+        s"""java_import(gateway.jvm, "org.apache.spark.SparkEnv")
+           |java_import(gateway.jvm, "org.apache.spark.SparkConf")
+           |java_import(gateway.jvm, "org.apache.spark.api.java.*")
+           |java_import(gateway.jvm, "org.apache.spark.api.python.*")
+           |java_import(gateway.jvm, "org.apache.spark.mllib.api.python.*")
+           |java_import(gateway.jvm, "org.apache.spark.sql.*")
+           |java_import(gateway.jvm, "org.apache.spark.sql.hive.*")
+           |
+           |__sparkConf = SparkConf(_jvm = gateway.jvm, _jconf = gateway.entry_point.sparkContext().getConf())
+           |sc = SparkContext(jsc = gateway.jvm.org.apache.spark.api.java.JavaSparkContext(gateway.entry_point.sparkContext()), gateway = gateway, conf = __sparkConf)
+           |spark = SparkSession(sc, gateway.entry_point)
+           |sqlContext = spark._wrapped
+           |from pyspark.sql import DataFrame
+           |
+           |
+           |""".stripMargin)
+
+      // Archive venv dependencies and send it to Spark. We also add pyspark and py4j just in case.
+      val pysparkModulesList = PySparkInterpreter.pysparkModules.fold(List.empty[String])(_.map(_.toString))
+      jep.set("spark_py_libs", pysparkModulesList.toArray)
+
+      jep.exec(
+        s"""
+           |from pathlib import Path
+           |import shutil
+           |
+           |venv_path = "${venvPath.getOrElse("")}"
+           |dependencies = []
+           |if venv_path:
+           |    dependencies += list(Path(venv_path, 'deps').glob('*.whl'))
+           |
+           |# Add pyspark and py4j modules too.
+           |if spark_py_libs:
+           |    dependencies += [Path(x) for x in spark_py_libs]
+           |
+           |# Unfortunately pyspark's `sc.addPyFile` modifies the sys.path, but we don't want that to happen in this case.
+           |# so, we'll just add the files ourselves.
+           |def addPyFile(path):
+           |    sc.addFile(path)
+           |    filename = os.path.basename(path)
+           |    sc._python_includes.append(filename)
+           |
+           |for dep in dependencies:
+           |    # we need to rename the wheels to zips because that's what spark wants... sigh
+           |    as_zip = dep.with_suffix('.zip')
+           |    if not as_zip.exists():
+           |        shutil.copy(dep, as_zip)
+           |    addPyFile(str(as_zip))
+           |""".stripMargin)
   }
 
   override protected def convertToPython(jep: Jep): PartialFunction[(String, Any), AnyRef] = super.convertToPython(jep) orElse {
@@ -265,12 +306,31 @@ object PySparkInterpreter {
     } yield new PySparkInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api, venv)
   }
 
+  // Grab the locations of the pyspark modules that are packaged with Spark: pyspark itself, and py4j.
+  lazy val pysparkModules: Option[List[Path]] = for {
+    spark_home <- sys.env.get("SPARK_HOME")
+    path       <- Try(FileSystems.getDefault.getPath(spark_home, "python", "lib")).toOption
+    files      <- Try(Files.newDirectoryStream(path, "*.zip").iterator().asScala.toList).toOption
+  } yield files
+
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
     def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = PySparkInterpreter()
 
     override val requireSpark: Boolean = true
     override val priority: Int = 1
+
+    // Add the pyspark modules that are packaged with Spark to the executor's PYTHONPATH. We ship these modules over to the
+    // executors in [[PySparkInterpreter#registerGateway]] (alongside the other python libs), since the executors aren't
+    // guaranteed to have pyspark installed on them.
+    override def sparkConfig(config: Map[String, String]): RIO[BaseEnv with GlobalEnv, Map[String, String]] = {
+      val cfg = pysparkModules.fold(config) {
+        files =>
+          val pythonPath = files.map(f => s"./${f.getFileName}").mkString(":")
+          config ++ Map("spark.executorEnv.PYTHONPATH" -> pythonPath)
+      }
+      super.sparkConfig(cfg)
+    }
   }
 
 }

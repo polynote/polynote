@@ -125,7 +125,8 @@ class PythonInterpreter private[python] (
   } yield resState
 
   private def extractParams(jep: Jep, jediDefinition: PyObject): List[(String, String)] = {
-    val getParams = jep.getValue("lambda jediDef: list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], jediDef.params))", classOf[PyCallable])
+    // TODO: this lambda is getting a bit unwieldy.
+    val getParams = jep.getValue("lambda jediDef: list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], sum([s.params for s in jediDef.get_signatures()], [])))", classOf[PyCallable])
     getParams.callAs(classOf[java.util.List[java.util.List[String]]], jediDefinition).asScala.map {
       tup =>
         val name = tup.get(0)
