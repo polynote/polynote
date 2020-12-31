@@ -113,6 +113,7 @@ lazy val `polynote-runtime` = project.settings(
     buildInfoKeys := Seq[BuildInfoKey](
       name,
       version,
+      scalaBinaryVersion,
       BuildInfoKey.action("commit") {
         git.gitHeadCommit.value.getOrElse("unknown")
       },
@@ -222,6 +223,7 @@ lazy val `polynote-spark` = project.settings(
 ) dependsOn (
   `polynote-kernel` % "provided",
   `polynote-kernel` % "test->test",
+  `polynote-server` % "provided",
   `polynote-spark-runtime` % "provided",
   `polynote-spark-runtime` % "test",
   `polynote-runtime` % "provided",
