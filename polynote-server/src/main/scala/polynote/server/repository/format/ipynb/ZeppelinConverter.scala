@@ -30,7 +30,8 @@ class ZeppelinToIpynbFormat extends NotebookFormat {
     } yield {
       val nbConfig = Option(NotebookConfig.empty.copy(sparkConfig = config.spark.map(SparkConfig.toMap)))
       val content = JupyterNotebook.toNotebook(zep.toJupyterNotebook).copy(config = nbConfig)
-      content.toNotebook(s"$noExtPath.ipynb") // Note the extension being overridden to ipynb here.
+      val nbName = if (zep.name == "") noExtPath else zep.name
+      content.toNotebook(s"$nbName.ipynb") // Note the extension being overridden to ipynb here.
     }
   }
 
