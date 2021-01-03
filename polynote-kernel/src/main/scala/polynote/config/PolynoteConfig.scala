@@ -192,7 +192,7 @@ object SparkConfig {
     None,
     None,
     None,
-    properties.get("jarsAsUrls").map(_.toLowerCase.trim != "false")
+    None
   )
 
   // TODO: remove once NotebookConfig no longer uses the Map with magic sparkSubmitArgs field
