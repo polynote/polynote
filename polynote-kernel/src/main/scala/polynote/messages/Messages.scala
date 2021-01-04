@@ -86,7 +86,8 @@ final case class NotebookConfig(
   sparkConfig: Option[ShortMap[String, String]],
   sparkTemplate: Option[SparkPropertySet],
   env: Option[ShortMap[String, String]],
-  scalaVersion: Option[String] = None
+  scalaVersion: Option[String] = None,
+  jvmArgs: Option[String] = None
 )
 
 object NotebookConfig {
@@ -112,7 +113,8 @@ object NotebookConfig {
         default     <- propSets.find(_.name == defaultName)
       } yield default,
       env = Option(config.env),
-      scalaVersion = config.kernel.scalaVersion
+      scalaVersion = config.kernel.scalaVersion,
+      jvmArgs = config.kernel.jvmArgs
     )
   }
 

@@ -48,7 +48,8 @@ object Mount {
 final case class KernelConfig(
   listen: Option[String] = None,
   portRange: Option[Range] = None,
-  scalaVersion: Option[String] = None
+  scalaVersion: Option[String] = None,
+  jvmArgs: Option[String] = None
 )
 
 object KernelConfig {
