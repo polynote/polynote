@@ -91,7 +91,7 @@ export class ClientInterpreter {
             if (waitCellId) {
                 return new Promise(resolve => {
                     const disposable = new Disposable()
-                    const obs = this.notebookState.addObserver(state => {
+                    this.notebookState.addObserver(state => {
                         const maybeCellReady = state.cells[waitCellId!];
                         if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
                             disposable.dispose()
