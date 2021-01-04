@@ -345,30 +345,32 @@ object SocketTransport {
 
     private def listJars(path: Path): RIO[BaseEnv, Seq[Path]] = listFiles(path)
       .map(_.filter(_.getFileName.toString.endsWith(".jar")))
-      .catchSome {
-        case NonFatal(err) => Logging.error(s"Failed to list JARs in $path", err).as(Seq.empty)
+      .tapError {
+        case NonFatal(err) => Logging.warn(s"Failed to list JARs in $path", err).as(Seq.empty)
       }.flatMap {
         paths => ZIO.collect(paths)(path => effectBlocking(path.toRealPath().toAbsolutePath).asSomeError)
       }
 
-    private def listJarsForVersion(dir: String, scalaVersion: String) =
+    private def listJarsForVersion(dir: String, scalaVersion: String): RIO[BaseEnv, Seq[Path]] =
       ZSystem.property("user.dir").flatMap {
         case Some(cwd) => ZIO(Paths.get(cwd, dir, scalaVersion)).flatMap(listJars)
         case None      => ZIO.succeed(Seq.empty)
       }
 
+    // For inheriting the classpath of the server process – this is mainly so that you can run from the IDE
+    // without having built the distribution.
+    private def currentClasspath: URIO[zio.system.System, List[Path]] = zio.system.property("java.class.path").some
+      .map(_.split(File.pathSeparatorChar).toList.map(path => Paths.get(path)))
+      .orElse(ZIO.succeed(Nil))
+
     private def buildClassPath(scalaVersion: String): RIO[BaseEnv, Seq[Path]] = zio.system.env("POLYNOTE_INHERIT_CLASSPATH").flatMap {
       case None =>
         for {
-          deps    <- listJarsForVersion("deps", scalaVersion)
-          plugins <- listJarsForVersion("plugins.d", scalaVersion)
+          deps    <- listJarsForVersion("deps", scalaVersion).orElse(currentClasspath)
+          plugins <- listJarsForVersion("plugins.d", scalaVersion).orElseSucceed(Nil)
         } yield deps ++ plugins
 
-      case Some(_) =>
-        // to make it possible to run from IDE
-        zio.system.property("java.class.path").some
-          .map(_.split(File.pathSeparatorChar).toList.map(path => Paths.get(path)))
-          .orElse(ZIO.succeed(Nil))
+      case Some(_) => currentClasspath
     }
 
     private def buildCommand(
