@@ -72,10 +72,10 @@ export class ClientBackup {
     }
 
     private static addBackup(iBackups: IBackups, upd: NotebookUpdate): Promise<Backups> {
-        return new Promise(() => {
+        return new Promise(resolve => {
             const backups = Backups.fromI(iBackups);
             backups.addUpdate(upd);
-            return backups
+            resolve(backups)
         })
     }
 
