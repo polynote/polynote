@@ -33,15 +33,15 @@ export class NotebookConfigEl extends Disposable {
         super()
 
         const configState = stateHandler.view("config");
-        const dependencies = new Dependencies(configState.view("dependencies"))
-        const exclusions = new Exclusions(configState.view("exclusions"))
-        const resolvers = new Resolvers(configState.view("repositories"))
-        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates");
-        const spark = new SparkConf(configState.view("sparkConfig"), configState.view("sparkTemplate"), serverTemplatesHandler)
-        const env = new EnvConf(configState.view("env"))
+        const dependencies = new Dependencies(configState.view("dependencies"));
+        const exclusions = new Exclusions(configState.view("exclusions"));
+        const resolvers = new Resolvers(configState.view("repositories"));
+        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates", configState);
+        const spark = new SparkConf(configState.view("sparkConfig"), configState.view("sparkTemplate"), serverTemplatesHandler);
+        const kernel = new KernelConf(configState);
 
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
-            const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, env.conf);
+            const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, kernel.scalaVersion, kernel.jvmArgs);
             this.el.classList.remove("open");
             stateHandler.updateField("config", () => setValue(conf))
         })
@@ -53,7 +53,7 @@ export class NotebookConfigEl extends Disposable {
                 resolvers.el,
                 exclusions.el,
                 spark.el,
-                env.el,
+                kernel.el,
                 div(['controls'], [
                     saveButton,
                     button(['cancel'], {}, ['Cancel']).click(evt => {
@@ -332,7 +332,7 @@ class SparkConf extends Disposable {
         this.container = div(['spark-config-list'], []);
 
         this.el = div(['notebook-spark-config', 'notebook-config-section'], [
-            h3([], ['Spark Config']),
+            h3([], ['Spark configuration']),
             para([], ['Set Spark configuration for this notebook here. Please note that it is possible that your environment may override some of these settings at runtime :(']),
             div([], [h4([], ['Spark template:']), this.templateEl, h4([], ['Spark properties:']), this.container])
         ])
@@ -408,16 +408,34 @@ class SparkConf extends Disposable {
 
 }
 
-class EnvConf extends Disposable {
+class KernelConf extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
+    private jvmArgsInput: TagElement<"input">;
+    private scalaVersionInput: DropdownElement;
 
-    constructor(envHandler: StateView<Record<string, string> | undefined>) {
-        super()
+    constructor(configState: StateView<NotebookConfig>) {
+        super();
+        const envHandler = configState.view("env");
+        const jvmArgsHandler = configState.view("jvmArgs");
+        const scalaVersionHandler = configState.view("scalaVersion");
+
+        // TODO: this could come from the server
+        const availableScalaVersions = {
+            "2.11": "2.11",
+            "2.12": "2.12"
+        }
+
         this.el = div(['notebook-env', 'notebook-config-section'], [
-            h3([], ['Environment Variables']),
-            para([], ['Set environment variables here. Please note this is only supported when kernels are launched as a subprocess (default).']),
-            this.container = div(['env-list'], [])
+            h3([], ['Kernel configuration']),
+            para([], ['Please note this is only supported when kernels are launched as a subprocess (default).']),
+            h4([], 'Scala version:'),
+            para([], `If using Spark, the Scala version must match that of your Spark installation. "Default" will use Polynote's configured Scala version, or auto-detect the appropriate version.`),
+            this.scalaVersionInput = dropdown(['scala-version'], {"": "Default", ...availableScalaVersions}, scalaVersionHandler.state || ""),
+            h4([], 'Environment variables:'),
+            this.container = div(['env-list'], []),
+            para([], ['Additional JVM arguments:']),
+            this.jvmArgsInput = textbox(['jvm-args'], "JVM Arguments", jvmArgsHandler.state).attr("size", "64")
         ])
 
         const setEnv = (env: Record<string, string> | undefined) => {
@@ -431,8 +449,9 @@ class EnvConf extends Disposable {
                 this.addEnv()
             }
         }
-        setEnv(envHandler.state)
-        envHandler.addObserver(env => setEnv(env)).disposeWith(this)
+        setEnv(envHandler.state);
+        envHandler.addObserver(env => setEnv(env));
+        jvmArgsHandler.addObserver(str => this.jvmArgsInput.value = str || "");
     }
 
     private addEnv(item?: {key: string, val: string}) {
@@ -461,10 +480,18 @@ class EnvConf extends Disposable {
         this.container.appendChild(row)
     }
 
-    get conf() {
+    get envVars() {
         return Array.from(this.container.children).reduce<Record<string, string>>((acc, row: HTMLDivElement & {data: {key: string, val: string}}) => {
             if (row.data.key) acc[row.data.key] = row.data.val
             return acc
         }, {})
+    }
+
+    get jvmArgs(): string | undefined {
+        return this.jvmArgsInput.value || undefined;
+    }
+
+    get scalaVersion(): string | undefined {
+        return this.scalaVersionInput.getSelectedValue() || undefined;
     }
 }

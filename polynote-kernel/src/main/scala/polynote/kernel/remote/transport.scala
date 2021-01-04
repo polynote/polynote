@@ -21,6 +21,7 @@ import zio.blocking.{Blocking, effectBlocking, effectBlockingCancelable, effectB
 import zio.{Cause, Promise, RIO, Schedule, Task, URIO, ZIO, system => ZSystem}
 import zio.duration.{DurationOps, durationInt, Duration => ZDuration}
 import zio.interop.catz._
+import zio.system.{env, property}
 
 import scala.concurrent.TimeoutException
 import scala.reflect.{ClassTag, classTag}
@@ -28,9 +29,9 @@ import Update.notebookUpdateCodec
 import cats.~>
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.listFiles
-import zio.clock.Clock
 
 import java.util.function.IntFunction
+import scala.annotation.tailrec
 import scala.util.Random
 import scala.util.control.NonFatal
 
@@ -356,10 +357,19 @@ object SocketTransport {
         case None      => ZIO.succeed(Seq.empty)
       }
 
-    private def buildClassPath(scalaVersion: String): RIO[BaseEnv, Seq[Path]] = for {
-      deps    <- listJarsForVersion("deps", scalaVersion)
-      plugins <- listJarsForVersion("plugins.d", scalaVersion)
-    } yield deps ++ plugins
+    private def buildClassPath(scalaVersion: String): RIO[BaseEnv, Seq[Path]] = zio.system.env("POLYNOTE_INHERIT_CLASSPATH").flatMap {
+      case None =>
+        for {
+          deps    <- listJarsForVersion("deps", scalaVersion)
+          plugins <- listJarsForVersion("plugins.d", scalaVersion)
+        } yield deps ++ plugins
+
+      case Some(_) =>
+        // to make it possible to run from IDE
+        zio.system.property("java.class.path").some
+          .map(_.split(File.pathSeparatorChar).toList.map(path => Paths.get(path)))
+          .orElse(ZIO.succeed(Nil))
+    }
 
     private def buildCommand(
       serverAddress: InetSocketAddress
@@ -398,7 +408,7 @@ object SocketTransport {
     val DefaultScalaVersion = "2.11"
 
     trait DeployCommand {
-      def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[Config with CurrentNotebook, Seq[String]]
+      def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[BaseEnv with Config with CurrentNotebook, Seq[String]]
       def detectScalaVersion: URIO[BaseEnv with Config with CurrentNotebook, Option[String]] =
         ZIO(BuildInfo.scalaBinaryVersion).option
     }
@@ -407,19 +417,61 @@ object SocketTransport {
       * Deploy by starting a Java process that inherits classpath and environment variables from this process
       */
     class DeployJava[KernelFactory <: Kernel.Factory.Service : ClassTag] extends DeployCommand {
-      override def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[Config with CurrentNotebook, Seq[String]] = ZIO {
-        val java = Paths.get(System.getProperty("java.home"), "bin", "java").toString
-        val javaArgs = sys.process.javaVmArguments.filterNot(_ startsWith "-agentlib")
-        val fullClassPath = (classPath.map(_.toString) :+ System.getProperty("java.class.path"))
-          .filterNot(_.isEmpty)
-          .mkString(File.pathSeparator)
+      private def findJava: URIO[BaseEnv, String] =
+        property("java.home").mapError(_.getMessage).someOrFail("No java.home property is set")
+          .map(home => Paths.get(home, "bin", "java").toString)
+          .tapError(err => Logging.warn("Couldn't find java executable; will just use 'java' ($err)"))
+          .orElse(ZIO.succeed("java"))
 
-        java :: "-cp" :: fullClassPath :: javaArgs :::
-          classOf[RemoteKernelClient].getName ::
-          "--address" :: serverAddress.getAddress.getHostAddress ::
-          "--port" :: serverAddress.getPort.toString ::
-          "--kernelFactory" :: classTag[KernelFactory].runtimeClass.getName ::
-          Nil
+      // parse a JVM args string into a list of args
+      private def parseJVMArgs(str: String): List[String] = {
+        val searchQuoted = raw"""^((?:[^"\\]|\\.)*)"""".r
+
+        def parseQuoted(rest: String): (String, String) = searchQuoted.findFirstMatchIn(rest) match {
+          case None    => (rest, "")
+          case Some(m) => (m.group(1), rest.drop(m.end))
+        }
+
+        def parseUnquoted(rest: String): (String, String) = rest.indexOf(' ') match {
+          case -1 => (rest, "")
+          case n  => (rest.take(n), rest.drop(n + 1).dropWhile(_ == ' '))
+        }
+
+        def parseNext(rest: String): (String, String) = rest match {
+          case ""                     => ("", "")
+          case str if str.head == '"' => parseQuoted(str.tail)
+          case str                    => parseUnquoted(str)
+        }
+
+        @tailrec
+        def parse(rest: String, accum: List[String]): List[String] = rest match {
+          case ""   => accum.reverse
+          case rest =>
+            val (arg, remainder) = parseNext(rest)
+            parse(remainder, arg :: accum)
+        }
+
+        parse(str, Nil)
+      }
+
+      override def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[BaseEnv with Config with CurrentNotebook, Seq[String]] = {
+        for {
+          notebookConfig   <- CurrentNotebook.config
+          java             <- findJava
+        } yield {
+          val fullClassPath = classPath.map(_.toString)
+            .filterNot(_.isEmpty)
+            .mkString(File.pathSeparator)
+
+          val javaArgs = notebookConfig.jvmArgs.toList.flatMap(parseJVMArgs)
+
+          java :: "-cp" :: fullClassPath :: javaArgs :::
+            classOf[RemoteKernelClient].getName ::
+            "--address" :: serverAddress.getAddress.getHostAddress ::
+            "--port" :: serverAddress.getPort.toString ::
+            "--kernelFactory" :: classTag[KernelFactory].runtimeClass.getName ::
+            Nil
+        }
       }
     }
 

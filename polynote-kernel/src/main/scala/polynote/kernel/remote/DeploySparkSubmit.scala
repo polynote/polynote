@@ -56,11 +56,13 @@ object DeploySparkSubmit extends DeployCommand {
       "java.library.path"   -> libraryPath
     )
 
-    val allDriverOptions =
+    val allDriverOptions = {
+      nbConfig.jvmArgs.toList ++
       sparkConfig.get("spark.driver.extraJavaOptions").toList ++
       javaOptions.toList.map {
         case (name, value) => s"-D$name=$value"
       } mkString " "
+    }
 
     val additionalJars = classPath.toList.filter(_.getFile.endsWith(".jar"))
 
