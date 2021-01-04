@@ -8,7 +8,7 @@ import {
     h4,
     iconButton,
     para,
-    span,
+    span, tag,
     TagElement,
     textbox
 } from "../../tags";
@@ -426,7 +426,8 @@ class KernelConf {
             this.scalaVersionInput = dropdown(['scala-version'], {"": "Default", ...availableScalaVersions}, scalaVersionHandler.state || ""),
             h4([], 'Environment variables:'),
             this.container = div(['env-list'], []),
-            para([], ['Additional JVM arguments:']),
+            h4([], ['Additional JVM arguments:']),
+            para([], ['Extra command-line arguments to the JVM, e.g. ', tag('code', [], {}, '"-Dmy.prop=a value" -Xmx200m')]),
             this.jvmArgsInput = textbox(['jvm-args'], "JVM Arguments", jvmArgsHandler.state).attr("size", "64")
         ])
 
