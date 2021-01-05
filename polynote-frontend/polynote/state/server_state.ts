@@ -224,6 +224,9 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         // update our notebooks dictionary
         delete ServerStateHandler.notebooks[path]
 
+        // update recent notebooks
+        RecentNotebooksHandler.update(nbs => arrDeleteFirstItem(nbs, {name: nameFromPath(path), path: path}))
+
         // update the server state's notebook dictionary
         ServerStateHandler.get.update(s => {
             return {

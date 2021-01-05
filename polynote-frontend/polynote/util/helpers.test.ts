@@ -160,6 +160,9 @@ describe("arrDeleteItem", () => {
         expect(arrDeleteFirstItem([0, 1, 2, 3, 4], 4)).toEqual([0, 1, 2, 3])
         expect(arrDeleteFirstItem([0, 1, 2, 3, 4], 100)).toEqual([0, 1, 2, 3, 4])
     })
+    it("works with objects as well as primitives", () => {
+        expect(arrDeleteFirstItem([{a: 1, b: 2}, {a: 2, b: 2}], {a: 1, b: 2})).toEqual([{a: 2, b: 2}])
+    })
 })
 
 describe("unzip", () => {
