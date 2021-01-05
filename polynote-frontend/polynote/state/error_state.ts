@@ -8,6 +8,13 @@ export interface ErrorState {
     serverErrors: DisplayError[],
     [path: string]: DisplayError[]
 }
+
+/**
+ * Unified error display handler. Allows for a single observer to get all errors, no matter where they come from, which
+ * makes it easier to display them all in one place.
+ *
+ * A singleton, which makes it easy to add errors from anywhere in the UI.
+ */
 export class ErrorStateHandler extends StateHandler<ErrorState> {
     private static inst: ErrorStateHandler;
     static get get() {
