@@ -87,7 +87,7 @@ final case class NotebookConfig(
   sparkTemplate: Option[SparkPropertySet],
   env: Option[ShortMap[String, String]],
   scalaVersion: Option[String] = None,
-  jvmArgs: Option[String] = None
+  jvmArgs: Option[TinyList[String]] = None
 )
 
 object NotebookConfig {
@@ -114,7 +114,7 @@ object NotebookConfig {
       } yield default,
       env = Option(config.env),
       scalaVersion = config.kernel.scalaVersion,
-      jvmArgs = config.kernel.jvmArgs
+      jvmArgs = config.kernel.jvmArgs.map(_.toList)
     )
   }
 

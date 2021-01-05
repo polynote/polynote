@@ -331,6 +331,59 @@ export function positionIn(str: string, line: number, column: number): number {
 }
 
 //****************
+//* String Helpers
+//****************
+
+export function parseQuotedArgs(args: string): string[] {
+    function parseQuoted(rest: string): [string, string] {
+        const match = /^((?:[^"\\]|\\.)*)"/.exec(rest);
+        if (!match || !match[1])
+            return [rest, ""];
+        const arg = match[1];
+        return [arg.replace('\\"', '"'), rest.substr(arg.length + 1)]
+    }
+
+    function parseUnquoted(rest: string): [string, string] {
+        const nextSpace = rest.indexOf(' ');
+        if (nextSpace === -1)
+            return [rest, ""];
+        return [rest.substring(0, nextSpace), rest.substring(nextSpace + 1)];
+    }
+
+    function parseNext(rest: string): [string, string] {
+        rest = rest.trimLeft();
+        if (!rest)
+            return ["", ""];
+        if (rest.charAt(0) === '"')
+            return parseQuoted(rest.substring(1));
+        return parseUnquoted(rest);
+    }
+
+    const result = [];
+    let remaining = args;
+    while (remaining.length) {
+        const next = parseNext(remaining);
+        if (next[0])
+            result.push(next[0]);
+        remaining = next[1];
+    }
+    return result;
+}
+
+
+function quoted(str: string | undefined): string {
+    if (str && (str.indexOf('"') !== -1 || str.indexOf(' ') !== -1)) {
+        return ['"', str.replace('\\', '\\\\').replace('"', '\\"'), '"'].join('');
+    } else {
+        return str || "";
+    }
+}
+
+export function joinQuotedArgs(strs: string[] | undefined): string | undefined {
+    return strs?.map(quoted).join(' ')
+}
+
+//****************
 //* Other Helpers
 //****************
 

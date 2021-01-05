@@ -24,6 +24,7 @@ import {
 } from "../../../data/data";
 import {KernelStatusString} from "../../../data/messages";
 import {NBConfig} from "../../../state/notebook_state";
+import {joinQuotedArgs, parseQuotedArgs} from "../../../util/helpers";
 import {ServerStateHandler} from "../../../state/server_state";
 
 export class NotebookConfigEl extends Disposable {
@@ -436,7 +437,7 @@ class KernelConf extends Disposable {
             this.container = div(['env-list'], []),
             h4([], ['Additional JVM arguments:']),
             para([], ['Extra command-line arguments to the JVM, e.g. ', tag('code', [], {}, '"-Dmy.prop=a value" -Xmx200m')]),
-            this.jvmArgsInput = textbox(['jvm-args'], "JVM Arguments", jvmArgsHandler.state).attr("size", "64")
+            this.jvmArgsInput = textbox(['jvm-args'], "JVM Arguments", joinQuotedArgs(jvmArgsHandler.state)).attr("size", "64")
         ])
 
         const setEnv = (env: Record<string, string> | undefined) => {
@@ -452,7 +453,7 @@ class KernelConf extends Disposable {
         }
         setEnv(envHandler.state);
         envHandler.addObserver(env => setEnv(env));
-        jvmArgsHandler.addObserver(str => this.jvmArgsInput.value = str || "");
+        jvmArgsHandler.addObserver(strs => this.jvmArgsInput.value = joinQuotedArgs(strs) || "");
     }
 
     private addEnv(item?: {key: string, val: string}) {
@@ -488,8 +489,11 @@ class KernelConf extends Disposable {
         }, {})
     }
 
-    get jvmArgs(): string | undefined {
-        return this.jvmArgsInput.value || undefined;
+    get jvmArgs(): string[] | undefined {
+        if (this.jvmArgsInput.value) {
+            return parseQuotedArgs(this.jvmArgsInput.value);
+        }
+        return undefined;
     }
 
     get scalaVersion(): string | undefined {

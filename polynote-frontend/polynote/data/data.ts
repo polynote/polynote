@@ -151,7 +151,7 @@ export class NotebookConfig {
         optional(SparkPropertySet.codec),
         optional(mapCodec(uint16, str as Codec<string>, str)),
         optional(str),
-        optional(str)
+        optional(arrayCodec(uint8, str))
     ).to(NotebookConfig);
     static unapply(inst: NotebookConfig): ConstructorParameters<typeof NotebookConfig> {
         return [inst.dependencies, inst.exclusions, inst.repositories, inst.sparkConfig, inst.sparkTemplate, inst.env, inst.scalaVersion, inst.jvmArgs];
@@ -161,7 +161,7 @@ export class NotebookConfig {
                 readonly repositories?: RepositoryConfig[], readonly sparkConfig?: Record<string, string>,
                 readonly sparkTemplate?: SparkPropertySet,
                 readonly env?: Record<string, string>,
-                readonly scalaVersion?: string, readonly jvmArgs?: string) {
+                readonly scalaVersion?: string, readonly jvmArgs?: string[]) {
         Object.freeze(this);
     }
 
