@@ -21,7 +21,6 @@ import zio.blocking.{Blocking, effectBlocking, effectBlockingCancelable, effectB
 import zio.{Cause, Promise, RIO, Schedule, Task, URIO, ZIO, system => ZSystem}
 import zio.duration.{DurationOps, durationInt, Duration => ZDuration}
 import zio.interop.catz._
-import zio.system.{env, property}
 
 import scala.concurrent.TimeoutException
 import scala.reflect.{ClassTag, classTag}
@@ -353,11 +352,11 @@ object SocketTransport {
 
     // For inheriting the classpath of the server process – this is mainly so that you can run from the IDE
     // without having built the distribution.
-    private def currentClasspath: URIO[zio.system.System, List[Path]] = zio.system.property("java.class.path").some
+    private def currentClasspath: URIO[zio.system.System, List[Path]] = ZSystem.property("java.class.path").some
       .map(_.split(File.pathSeparatorChar).toList.map(path => Paths.get(path)))
       .orElse(ZIO.succeed(Nil))
 
-    private def buildClassPath(scalaVersion: String): RIO[BaseEnv, Seq[Path]] = zio.system.env("POLYNOTE_INHERIT_CLASSPATH").flatMap {
+    private def buildClassPath(scalaVersion: String): RIO[BaseEnv, Seq[Path]] = ZSystem.env("POLYNOTE_INHERIT_CLASSPATH").flatMap {
       case None =>
         for {
           deps    <- listJarsForVersion("deps", scalaVersion).orElse(currentClasspath)
@@ -414,41 +413,10 @@ object SocketTransport {
       */
     class DeployJava[KernelFactory <: Kernel.Factory.Service : ClassTag] extends DeployCommand {
       private def findJava: URIO[BaseEnv, String] =
-        property("java.home").mapError(_.getMessage).someOrFail("No java.home property is set")
+        ZSystem.property("java.home").mapError(_.getMessage).someOrFail("No java.home property is set")
           .map(home => Paths.get(home, "bin", "java").toString)
           .tapError(err => Logging.warn("Couldn't find java executable; will just use 'java' ($err)"))
           .orElse(ZIO.succeed("java"))
-
-      // parse a JVM args string into a list of args
-      private def parseJVMArgs(str: String): List[String] = {
-        val searchQuoted = raw"""^((?:[^"\\]|\\.)*)"""".r
-
-        def parseQuoted(rest: String): (String, String) = searchQuoted.findFirstMatchIn(rest) match {
-          case None    => (rest, "")
-          case Some(m) => (m.group(1), rest.drop(m.end))
-        }
-
-        def parseUnquoted(rest: String): (String, String) = rest.indexOf(' ') match {
-          case -1 => (rest, "")
-          case n  => (rest.take(n), rest.drop(n + 1).dropWhile(_ == ' '))
-        }
-
-        def parseNext(rest: String): (String, String) = rest match {
-          case ""                     => ("", "")
-          case str if str.head == '"' => parseQuoted(str.tail)
-          case str                    => parseUnquoted(str)
-        }
-
-        @tailrec
-        def parse(rest: String, accum: List[String]): List[String] = rest match {
-          case ""   => accum.reverse
-          case rest =>
-            val (arg, remainder) = parseNext(rest)
-            parse(remainder, arg :: accum)
-        }
-
-        parse(str, Nil)
-      }
 
       override def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[BaseEnv with Config with CurrentNotebook, Seq[String]] = {
         for {
@@ -459,7 +427,7 @@ object SocketTransport {
             .filterNot(_.isEmpty)
             .mkString(File.pathSeparator)
 
-          val javaArgs = notebookConfig.jvmArgs.toList.flatMap(parseJVMArgs)
+          val javaArgs = notebookConfig.jvmArgs.toList.flatten
 
           java :: "-cp" :: fullClassPath :: javaArgs :::
             classOf[RemoteKernelClient].getName ::

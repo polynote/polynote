@@ -43,13 +43,11 @@ object Mount {
   implicit val decoder: Decoder[Mount] = deriveConfigDecoder[Mount]
 }
 
-
-
 final case class KernelConfig(
   listen: Option[String] = None,
   portRange: Option[Range] = None,
   scalaVersion: Option[String] = None,
-  jvmArgs: Option[String] = None
+  jvmArgs: Option[Seq[String]] = None
 )
 
 object KernelConfig {

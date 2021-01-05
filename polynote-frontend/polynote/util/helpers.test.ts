@@ -7,7 +7,7 @@ import {
     diffArray,
     equalsByKey,
     isObject, mapSome,
-    mapValues, partition,
+    mapValues, parseQuotedArgs, partition,
     removeKey, unzip
 } from "./helpers";
 import * as messages from "../data/messages";
@@ -169,6 +169,20 @@ describe("partition", () => {
 describe("mapSome", () => {
     it("applies a function to elements of an array that satisfy some predicate", () => {
         expect(mapSome([1, 2, 3, 4, 5, 6], i => i % 2 === 0, i => i * 100)).toEqual([1, 200, 3, 400, 5, 600])
+    })
+})
+
+describe("parseQuotedArgs", () => {
+    it ("parses simple space-separated arguments", () => {
+        expect(parseQuotedArgs(`first second third`)).toEqual(['first', 'second', 'third'])
+    })
+
+    it ("allows quoting things", () => {
+        expect(parseQuotedArgs(`first "two words" third`)).toEqual(['first', 'two words', 'third'])
+    })
+
+    it ("allows escaping things inside quotes", () => {
+        expect(parseQuotedArgs(`first "there is an \\" escaped quote" third`)).toEqual(['first', `there is an " escaped quote`, 'third'])
     })
 })
 
