@@ -5,7 +5,6 @@ import java.net.{InetSocketAddress, URI}
 import java.nio.file.Path
 import java.util.UUID
 import java.util.regex.Pattern
-
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
 import io.circe.syntax._
@@ -14,9 +13,9 @@ import polynote.kernel.{BaseEnv, TaskB}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
 import polynote.messages.ShortMap
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, Err}
 import scodec.codecs.implicits._
-import scodec.codecs.utf8_32
+import scodec.codecs.{int32, utf8_32}
 import zio.{ZIO, ZLayer}
 import zio.blocking.{Blocking, effectBlocking}
 import shapeless.cachedImplicit
@@ -34,6 +33,7 @@ final case class Listen(
 object Listen {
   implicit val encoder: ObjectEncoder[Listen] = deriveEncoder
   implicit val decoder: Decoder[Listen] = deriveConfigDecoder
+  implicit val codec: Codec[Listen] = cachedImplicit
 }
 
 final case class Mount(dir: String, mounts: Map[String, Mount] = Map.empty)
@@ -47,7 +47,7 @@ final case class KernelConfig(
   listen: Option[String] = None,
   portRange: Option[Range] = None,
   scalaVersion: Option[String] = None,
-  jvmArgs: Option[Seq[String]] = None
+  jvmArgs: Option[List[String]] = None
 )
 
 object KernelConfig {
@@ -62,8 +62,11 @@ object KernelConfig {
     portRange.start + ":" + portRange.end
   }
 
+  private implicit val rangeCodec: Codec[Range] = (int32 ~ int32).xmap(tup => Range.inclusive(tup._1, tup._2), range => (range.start, range.end))
+
   implicit val encoder: ObjectEncoder[KernelConfig] = deriveEncoder
   implicit val decoder: Decoder[KernelConfig] = deriveConfigDecoder[KernelConfig]
+  implicit val codec: Codec[KernelConfig] = cachedImplicit
 }
 
 final case class Wal(
@@ -73,6 +76,7 @@ final case class Wal(
 object Wal {
   implicit val encoder: ObjectEncoder[Wal] = deriveEncoder
   implicit val decoder: Decoder[Wal] = deriveConfigDecoder[Wal]
+  implicit val codec: Codec[Wal] = cachedImplicit
 }
 
 final case class Storage(
@@ -85,6 +89,7 @@ final case class Storage(
 object Storage {
   implicit val encoder: ObjectEncoder[Storage] = deriveEncoder
   implicit val decoder: Decoder[Storage] = deriveConfigDecoder[Storage]
+  implicit val codec: Codec[Storage] = cachedImplicit
 }
 
 sealed trait KernelIsolation
@@ -93,18 +98,26 @@ object KernelIsolation {
   case object Always extends KernelIsolation
   case object SparkOnly extends KernelIsolation
 
-  implicit val encoder: Encoder[KernelIsolation] = Encoder.instance {
-    case Never     => Json.fromString("never")
-    case Always    => Json.fromString("always")
-    case SparkOnly => Json.fromString("spark")
+  def asString(value: KernelIsolation): String = value match {
+    case Never     => "never"
+    case Always    => "always"
+    case SparkOnly => "spark"
   }
 
-  implicit val decoder: Decoder[KernelIsolation] = Decoder.decodeString.emap {
+  def fromString(string: String): Either[String, KernelIsolation] = string match {
     case "never"  => Right(Never)
     case "always" => Right(Always)
     case "spark"  => Right(SparkOnly)
     case other    => Left(s"Invalid value for kernel_isolation: $other (expected one of: never, always, spark)")
   }
+
+  implicit val encoder: Encoder[KernelIsolation] = Encoder.instance((asString _) andThen Json.fromString)
+
+  implicit val decoder: Decoder[KernelIsolation] = Decoder.decodeString.emap(fromString)
+
+  implicit val codec: Codec[KernelIsolation] = utf8_32.exmap(
+    str => Attempt.fromEither(fromString(str).leftMap(err => Err(err))),
+    value => Attempt.successful(asString(value)))
 }
 
 final case class Behavior(
@@ -120,13 +133,15 @@ final case class Behavior(
 object Behavior {
   implicit val encoder: ObjectEncoder[Behavior] = deriveEncoder
   implicit val decoder: Decoder[Behavior] = deriveConfigDecoder
+  implicit val codec: Codec[Behavior] = cachedImplicit
 }
 
-final case class AuthProvider(provider: String, config: JsonObject)
+final case class AuthProvider(provider: String, config: ConfigNode.ObjectNode)
 
 object AuthProvider {
   implicit val encoder: ObjectEncoder[AuthProvider] = deriveEncoder
   implicit val decoder: Decoder[AuthProvider] = deriveConfigDecoder
+  implicit val codec: Codec[AuthProvider]
 }
 
 final case class Security(

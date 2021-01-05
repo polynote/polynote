@@ -58,12 +58,8 @@ object StartupRequest extends RemoteRequestCompanion[StartupRequest](1) {
     },
     msg => Attempt.successful(msg)
   )
-
-  // we'll just use JSON to encode the polynote config
-  private implicit val configCodec: Codec[PolynoteConfig] = scodec.codecs.string32(StandardCharsets.UTF_8).exmap(
-    str => PolynoteConfig.parse(str).fold(err => Attempt.failure(Err(Option(err.getMessage).getOrElse(err.toString))), Attempt.successful),
-    config => Attempt.successful(PolynoteConfig.encoder(config).noSpaces)
-  )
+  
+  private implicit val configCodec: Codec[PolynoteConfig] = cachedImplicit
 
   implicit val codec: Codec[StartupRequest] = cachedImplicit
 }

@@ -98,6 +98,17 @@ lazy val `polynote-macros` = project.settings(
   )
 )
 
+lazy val `polynote-config` = project.settings(
+  commonSettings,
+  libraryDependencies ++= Seq(
+    "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided",
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
+  ),
+  scalacOptions ++= Seq(
+    "-language:experimental.macros"
+  )
+)
+
 lazy val `polynote-runtime` = project.settings(
   commonSettings,
   scalacOptions ++= Seq(
@@ -163,7 +174,7 @@ val `polynote-kernel` = project.settings(
     case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") => jar.data
   },
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
-).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
+).dependsOn(`polynote-config`, `polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
 
 val `polynote-server` = project.settings(
   commonSettings,
