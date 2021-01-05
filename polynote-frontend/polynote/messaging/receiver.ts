@@ -46,7 +46,10 @@ class MessageReceiver<S> extends Disposable {
     }
 }
 
-// A View whose observers ignore state updates from the server
+/**
+ *  Filter out state updates that originate from the server. Useful if you need to do something IFF the update was
+ *  triggered by a user action in this UI.
+ */
 export class IgnoreServerUpdatesWrapper<S> extends StateWrapper<S> {
     protected matchSource(updateSource: any, x: any): boolean {
         return ! (updateSource instanceof MessageReceiver)

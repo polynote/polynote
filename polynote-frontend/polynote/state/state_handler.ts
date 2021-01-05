@@ -47,14 +47,13 @@ export class StateView<S> {
             this._state = frozenState;
             // view Observers are always called (to ensure state is accurately updated)
             this.viewObservers.forEach(([obs, desc]) => {
-                const x = desc
                 obs(frozenState, oldState, updateSource)
             });
+            // Check if matchSource filtered this update out.
             if (this.matchSource(updateSource, frozenState)) {
                 // update observers IFF the current path is <= the update path. Otherwise, the update should not apply.
                 if (arrayStartsWith(this.path, updatePath)) {
                     this.observers.forEach(([obs, desc]) => {
-                        const x = desc
                         obs(frozenState, oldState, updateSource)
                     });
                 }
@@ -70,9 +69,10 @@ export class StateView<S> {
         const maybeView = this.views[key];
         if (maybeView) {
             if (! this.compare(maybeView.state, this.state[key])) {
-                // this can happen when the view is created within a state change
-                // in this case, the view will not yet have been updated, so we force the update now
-                throw new Error("yikes!")
+                // This might happen when a view is created within a state change.
+                // Not quite sure what to do about this, so we throw for now.
+                console.trace("View state doesn't match parent! View state:", maybeView.state, "parent state", this.state[key], "parent", this, "key", key)
+                throw new Error("View state doesn't match parent! This shouldn't happen, if you see this please let the Polynote Developers know and provide the log above.")
             }
             return maybeView as StateView<S[K]>
         } else {
@@ -162,7 +162,7 @@ export class StateView<S> {
         this.observers = [];
     }
 
-    // Optional filter for update sources
+    // Optional filter for update sources. Prevents observers from being triggered if the update source doesn't match.
     protected matchSource(updateSource: any, x: any) {
         return updateSource !== this;
     }

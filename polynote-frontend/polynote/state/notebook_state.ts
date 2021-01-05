@@ -67,6 +67,7 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         this.cellsHandler = this.lens("cells")
         this.updateHandler = new NotebookUpdateHandler(this, -1, -1, new EditBuffer())
 
+        // Update activeCellId when the active cell is deselected.
         this.view("activeCellId").addObserver(cellId => {
             if (cellId !== undefined) {
                 const activeCellWatcher = this.cellsHandler.view(cellId)
@@ -236,7 +237,14 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
     }
 }
 
-// Handle Notebook Updates, keeping track of versions and local edits.
+/**
+ * Handles Notebook Updates.
+ *
+ * Keeps track of `globalVersion`, `localVersion` and the Edit Buffer, making sure they are updated when necessary.
+ *
+ * Watches the state of this notebook's cells, translating their state changes into NotebookUpdates which are then
+ * observed by the dispatcher and sent to the server.
+ */
 export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
     cellWatchers: Record<number, StateView<CellState>> = {};
     constructor(state: NotebookStateHandler, public globalVersion: number, public localVersion: number, public edits: EditBuffer) {
