@@ -29,8 +29,8 @@ import {ViewType} from "../ui/input/viz_selector";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
- * It knows whether an Action should be translated to a message and then sent on the socket, or if it should be
- * handled by something else.
+ *
+ * It connects a `socket` instance with the UI `state`. Only the Dispatcher should be sending messages on a `socket`.
  */
 export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHandler<S>> extends Disposable{
     protected constructor(protected socket: SocketStateHandler, protected handler: H) {
