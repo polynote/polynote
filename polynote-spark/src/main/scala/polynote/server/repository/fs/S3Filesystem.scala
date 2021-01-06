@@ -174,14 +174,10 @@ object S3Filesystem {
   def resolveOne[A](propName: String,
                     envName: String,
                     builder: String => A): ZIO[system.System, RuntimeException, A] = {
-    zio.system.properties.flatMap { map =>
-      ZIO.fromOption(map.get(propName))
-        .mapError(_ => new RuntimeException(s"Cannot find $propName as system property"))
-    }.catchAll { _ =>
-      zio.system
-        .env(envName)
-        .flatMap(o => ZIO.fromOption(o).mapError(_ => new RuntimeException(s"Cannot find $envName as environment variable")))
-    }.map(builder)
+    zio.system.property(propName).some
+      .orElse(zio.system.env(envName).some)
+      .orElseFail(new RuntimeException(s"Cannot find system property $propName or environment variable $envName"))
+      .map(builder)
   }
 }
 

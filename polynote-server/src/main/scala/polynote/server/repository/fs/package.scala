@@ -27,12 +27,13 @@ package object fs {
     private final class LoadingServices(val defaultFilesystem: NotebookFilesystem,
                                         val filesystemList: List[NotebookFilesystemFactory]) extends Service {
       override def forScheme(scheme: String, props: Map[String, String]): RIO[BaseEnv with GlobalEnv, NotebookFilesystem] =
-        filesystemList.find(_.scheme == scheme)
-          .map(_.create(props))
-          .getOrElse(RIO.fail(new IllegalArgumentException(s"Cannot find filesystem for scheme: $scheme")))
+        filesystemList.find(_.scheme == scheme) match {
+          case None =>
+            RIO.fail(new IllegalArgumentException(s"Cannot find filesystem for scheme: $scheme"))
+          case Some(factory) =>
+            factory.create(props)
+        }
     }
-
-
 
     def local(fs: NotebookFilesystem): Service = new LocalOnly(fs)
 
