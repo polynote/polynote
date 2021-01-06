@@ -5,8 +5,9 @@ import org.jets3t.service.S3ServiceException
 import org.jets3t.service.impl.rest.httpclient.RestS3Service
 import org.jets3t.service.model.{S3Bucket, S3Object}
 import org.jets3t.service.security.AWSCredentials
-import polynote.kernel.BaseEnv
+import polynote.kernel.{BaseEnv, GlobalEnv}
 import polynote.server.repository.fs.LocalFilesystem.FileChannelWALWriter
+import polynote.server.repository.fs.S3Filesystem.buildS3Client
 import zio.blocking.{Blocking, effectBlocking}
 import zio.interop.catz._
 import zio.{RIO, Task, ZIO, system}
@@ -146,12 +147,6 @@ class S3Filesystem(service: RestS3Service) extends NotebookFilesystem {
 
 object S3Filesystem {
 
-  def apply(): ZIO[BaseEnv, Throwable, S3Filesystem] = {
-    for {
-      client <- buildS3Client
-    } yield new S3Filesystem(client)
-  }
-
   private val ACCESS_KEY_ID_PROP = "aws.accessKeyId"
   private val ACCESS_KEY_ID_ENV = "AWS_ACCESS_KEY_ID"
 
@@ -190,3 +185,12 @@ object S3Filesystem {
   }
 }
 
+final class S3FilesystemFactory extends NotebookFilesystemFactory {
+  override def name: String = "s3"
+
+  override def scheme: String = "s3"
+
+  override def create(props: Map[String, String]): RIO[BaseEnv with GlobalEnv, NotebookFilesystem] = for {
+    client <- buildS3Client
+  } yield new S3Filesystem(client)
+}
