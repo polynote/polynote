@@ -113,6 +113,11 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
     }
   }
 
+  private def sendVersion: RIO[BaseEnv with GlobalEnv with PublishMessage, Unit] = for {
+    versioned <- subscriber.publisher.latestVersion
+    _ <- PublishMessage(NotebookVersion(versioned._2.path, versioned._1))
+  } yield ()
+
   private def sendTasks: RIO[BaseEnv with PublishMessage, Unit] =
     subscriber.publisher.tasks().map(tasks => KernelStatus(UpdatedTasks(tasks))) >>= PublishMessage
 
@@ -162,7 +167,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
   def sendNotebook: RIO[SessionEnv with PublishMessage, Unit] =
     subscriber.checkPermission(Permission.ReadNotebook).flatMap { _ =>
       // make sure to send status first, so client knows whether this notebook is up or not.
-      sendStatus *> sendNotebookContents *> sendTasks *> sendPresence *> sendCellStatuses
+      sendStatus *> sendNotebookContents *> sendVersion *> sendTasks *> sendPresence *> sendCellStatuses
     }.catchAll(err => PublishMessage(Error(0, err)))
 }
 

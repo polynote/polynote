@@ -138,15 +138,19 @@ export function arrInsert<T>(arr: T[], idx: number, t: T) {
 }
 
 export function arrReplace<T>(arr: T[], idx: number, t: T) {
-    return [...arr.slice(0, idx), t, ...arr.slice(idx + 1)]
+    if (idx > -1) {
+        return [...arr.slice(0, idx), t, ...arr.slice(idx + 1)]
+    } else return [t, ...arr]
 }
 
 export function arrDelete<T>(arr: T[], idx: number) {
-    return [...arr.slice(0, idx), ...arr.slice(idx + 1)]
+    if (idx > -1) {
+        return [...arr.slice(0, idx), ...arr.slice(idx + 1)]
+    } else return arr
 }
 
 export function arrDeleteFirstItem<T>(arr: T[], item: T) {
-    const idx = isObject(item)
+    const idx = isObject(item) || Array.isArray(item)
         ? arr.findIndex(i => deepEquals(i, item))
         : arr.indexOf(item)
 
@@ -211,9 +215,18 @@ export function findInstance<T, U>(arr: T[], u: new (...args: any[]) => U): U | 
     return result ? result as any as U : undefined;
 }
 
-export function partition<T>(arr: T[], fun: (t: T) => boolean): [T[], T[]] {
+/**
+ * Partitions an array into two arrays according to the predicate.
+ *
+ * @param arr   T[]
+ * @param pred  A predicate of T => boolean
+ * @return      A pair of T[]s. The first T[] consists of all elements that satisfy the predicate, the second T[]
+ *              consists of all elements that don't. The relative order of the elements in the resulting T[] is the same
+ *              as in the original T[].
+ */
+export function partition<T>(arr: T[], pred: (t: T) => boolean): [T[], T[]] {
     return arr.reduce<[T[], T[]]>((acc, next) => {
-        if (fun(next)) {
+        if (pred(next)) {
             return [[...acc[0], next], acc[1]]
         } else {
             return [acc[0], [...acc[1], next]]
@@ -233,7 +246,7 @@ export function arrayStartsWith<T>(base: T[], start: T[]) {
     if (start.length > base.length) return false;
 
     for (let i = 0; i < start.length; i++) {
-        if (base[i] !== start[i]) {
+        if (! deepEquals(base[i], start[i])) {
             return false;
         }
     }

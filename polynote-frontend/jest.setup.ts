@@ -2,6 +2,7 @@
 // but that wasn't working for me.
 import '@testing-library/jest-dom'
 
+
 // Mock functions that are not implemented in JSDOM (see: https://jestjs.io/docs/en/manual-mocks#mocking-methods-which-are-not-implemented-in-jsdom )
 Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -57,3 +58,10 @@ jest.mock("monaco-vim/lib/cm/keymap_vim", () => ({
         }
     }
 }))
+
+// Make these available to jest.
+import {TextEncoder, TextDecoder} from "util";
+// @ts-ignore
+global.TextEncoder = TextEncoder
+// @ts-ignore
+global.TextDecoder = TextDecoder

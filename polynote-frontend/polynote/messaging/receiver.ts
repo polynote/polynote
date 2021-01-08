@@ -123,7 +123,10 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             }
         });
         this.receive(messages.NotebookVersion, (s, path, serverGlobalVersion) => {
-            if (state.updateHandler.globalVersion !== serverGlobalVersion){
+            if (state.updateHandler.globalVersion === -1) {
+                // first version, just set it
+                state.updateHandler.globalVersion = serverGlobalVersion
+            } else if (state.updateHandler.globalVersion !== serverGlobalVersion){
                 // this means we must have been disconnected for a bit and the server state has changed.
                 document.location.reload() // is it ok to trigger the reload here?
             }
