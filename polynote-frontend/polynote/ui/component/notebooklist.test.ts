@@ -52,7 +52,7 @@ describe("BranchComponent", () => {
         children: {}
     });
     const branch = new BranchEl(dispatcher, branchState);
-    expect(branch.childrenEl).toBeEmpty();
+    expect(branch.childrenEl).toBeEmptyDOMElement();
 
     const leaf = {
         fullPath: "bar",
@@ -68,7 +68,7 @@ describe("BranchComponent", () => {
         }
     });
     test('is updated when its state changes', done => {
-        expect(branch.childrenEl).not.toBeEmpty();
+        expect(branch.childrenEl).not.toBeEmptyDOMElement();
         expect(branch.childrenEl).toHaveTextContent(leaf.value);
 
         const newLeaf = {
@@ -257,7 +257,7 @@ test("stress test", () => {
 test("NotebookList e2e test", done => {
     const nbList = new NotebookList(dispatcher);
     expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
-    expect(nbList.el.querySelector('.tree-view > ul')).toBeEmpty();
+    expect(nbList.el.querySelector('.tree-view > ul')).toBeEmptyDOMElement();
 
     // this will trigger the receiver to update global state
     const paths = [...Array(500).keys()].map(x => {
@@ -273,13 +273,13 @@ test("NotebookList e2e test", done => {
     SocketSession.global.send(new messages.ListNotebooks(paths));
 
     waitFor(() => {
-        expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmpty();
+        expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmptyDOMElement();
     }).then(() => {
         expect(nbList.el.outerHTML).toMatchSnapshot()
     })
     .then(() => {
         const path = `notebooks/${paths[0]}`;
-        expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmpty()
+        expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmptyDOMElement()
         SocketSession.global.send(new messages.DeleteNotebook(paths[0]))
         waitFor(() => {
             expect(nbList.el.querySelector(`[href='${path}']`)).toBeNull()

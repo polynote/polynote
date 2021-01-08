@@ -5,5 +5,6 @@ module.exports = {
   setupFilesAfterEnv: ['./jest.setup.ts', 'fake-indexeddb/auto'],
   transform: {
     "^.+\\.ts$": "ts-jest"
-  }
+  },
+  testEnvironment: 'jsdom'
 };
