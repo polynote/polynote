@@ -394,8 +394,6 @@ describe("partition", () => {
             fc.property(prop, arr => {
                 const [pos, neg] = partition(arr, i => i >= 0)
 
-                console.log("arr:", arr, "neg:", neg, "pos:", pos)
-
                 expect(neg.every(i => i < 0)).toBeTruthy()
                 expect(pos.every(i => i >= 0)).toBeTruthy()
                 expect(pos.filter(i => i !== 0).length).toEqual(neg.length) // half the numbers (barring zero) are negative
@@ -411,7 +409,7 @@ describe("mapSome", () => {
         fc.assert(
             fc.property(fc.array(fc.anything()), arr => {
                 const fun = (num: number) => num * 100
-                const pred = (x: any) => typeof x === "number"
+                const pred = (x: any) => (typeof x === "number" && !isNaN(x))
                 const mapped = mapSome(arr, pred, fun)
 
                 expect(mapped.every((i, idx) => {
