@@ -6,5 +6,9 @@ module.exports = {
   transform: {
     "^.+\\.ts$": "ts-jest"
   },
-  testEnvironment: 'jsdom'
+  testEnvironment: 'jsdom',
+  reporters: [
+      'default',
+      ['./vendor/jest-summarizing-reporter', {diffs: true}]
+  ]
 };
