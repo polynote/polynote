@@ -559,7 +559,7 @@ class CodeCell extends Cell {
                 this.el.classList.remove("running");
                 if (previously) {
                     const status = this.state.error ? "Error" : "Complete"
-                    NotificationHandler.get.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
+                    NotificationHandler.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
                         this.notebookState.selectCell(this.id)
                     })
                     // clear the execution duration updater if it hasn't been cleared already.
