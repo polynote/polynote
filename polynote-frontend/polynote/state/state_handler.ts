@@ -46,28 +46,26 @@ export class StateView<S> {
      *
      * Note: this should be a setter but typescript won't allow a protected setter with a public getter, sigh.
      */
-    protected setState(newState: S, updateSource?: any, updatePath: string[] = this.path, quiet?: boolean) {
+    protected setState(newState: S, updateSource?: any, updatePath: string[] = this.path) {
         if (! this.compare(newState, this._state)) {
             const oldState = this._state;
             const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
             this._state = frozenState;
 
-            if (!quiet) {
-                // view Observers are always called (to ensure state is accurately updated)
-                this.viewObservers.forEach(([obs, desc]) => {
-                    obs(frozenState, oldState, updateSource)
-                });
-                // Check if matchSource filtered this update out.
-                if (this.matchSource(updateSource, frozenState)) {
-                    // update observers IFF the current path is <= the update path. Otherwise, the update should not apply.
-                    if (arrayStartsWith(this.path, updatePath)) {
-                        this.observers.forEach(([obs, desc]) => {
-                                obs(frozenState, oldState, updateSource)
-                            });
-                        }
+            // view Observers are always called (to ensure state is accurately updated)
+            this.viewObservers.forEach(([obs, desc]) => {
+                obs(frozenState, oldState, updateSource)
+            });
+            // Check if matchSource filtered this update out.
+            if (this.matchSource(updateSource, frozenState)) {
+                // update observers IFF the current path is <= the update path. Otherwise, the update should not apply.
+                if (arrayStartsWith(this.path, updatePath)) {
+                    this.observers.forEach(([obs, desc]) => {
+                            obs(frozenState, oldState, updateSource)
+                        });
                     }
                 }
-        }
+            }
     }
 
     private views: Record<keyof any, StateView<S[keyof S]>> = {};
@@ -209,11 +207,11 @@ export class StateWrapper<S> extends StateView<S> implements IDisposable {
 export class StateHandler<S> extends StateWrapper<S> {
 
     // handle with which to modify the state, given the old state. All observers get notified of the new state.
-    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any, path = this.path, quiet?: boolean): StateHandler<S> {
+    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any, path = this.path): StateHandler<S> {
         const currentState = this.state
         const newState = f(currentState);
         if (! this.compare(newState, NoUpdate) && ! this.compare(currentState, newState)) {
-            this.setState(newState as S, updateSource, path, quiet);
+            this.setState(newState as S, updateSource, path);
         }
         return this
     }
@@ -241,10 +239,6 @@ export class StateHandler<S> extends StateWrapper<S> {
     // handle with which to modify the state, given the old state. All observers get notified of the new state.
     updateState(f: (s: S) => S | typeof NoUpdate) {
         this.update(f);
-    }
-
-    updateStateQuiet(f: (s: S) => S | typeof NoUpdate) {
-        this.update(f, undefined, this.path, true);
     }
 
     // TODO: replace with lens
