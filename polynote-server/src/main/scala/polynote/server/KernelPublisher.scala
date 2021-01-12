@@ -90,14 +90,19 @@ class KernelPublisher private (
           case None =>
             val initKernel = for {
                 kernel <- createKernel()
+                _      <- kernelRef.set(Some(kernel))
                 _      <- handleKernelClosed(kernel).forkDaemon
                 _      <- kernel.init().provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
-                _      <- kernelRef.set(Some(kernel))
                 _      <- kernel.info() >>= publishStatus.publish1
               } yield kernel
 
+            val killOnError = for {
+              kernel <- kernelRef.get
+              _      <- kernel.fold[TaskB[Unit]](ZIO.unit)(_.shutdown()).ensuring(kernelRef.set(None))
+            } yield ()
+
             initKernel.tapError {
-              err => kernelRef.set(None) *> status.publish1(KernelError(err))
+              err => killOnError *> status.publish1(KernelError(err))
             }
         }
       }
@@ -192,7 +197,7 @@ class KernelPublisher private (
   def close(): TaskB[Unit] =
     closed.succeed(()).unit *>
       subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit *>
-      kernelRef.get.flatMap(_.fold[TaskB[Unit]](ZIO.unit)(_.shutdown())) *>
+      kernelStarting.withPermit(kernelRef.get.flatMap(_.fold[TaskB[Unit]](ZIO.unit)(_.shutdown()))) *>
       taskManager.shutdown() *>
       versionedNotebook.close()
 

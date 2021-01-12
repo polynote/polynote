@@ -19,6 +19,12 @@ export class Disposable implements IDisposable {
         return this.deferred
     };
 
+    readonly tryDispose = () => {
+        if (!this.isDisposed) {
+            this.deferred.resolve();
+        }
+    }
+
     get isDisposed() {
         return this.deferred.isSettled
     }
@@ -40,24 +46,27 @@ export class StateView<S> {
      *
      * Note: this should be a setter but typescript won't allow a protected setter with a public getter, sigh.
      */
-    protected setState(newState: S, updateSource?: any, updatePath: string[] = this.path) {
+    protected setState(newState: S, updateSource?: any, updatePath: string[] = this.path, quiet?: boolean) {
         if (! this.compare(newState, this._state)) {
             const oldState = this._state;
             const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
             this._state = frozenState;
-            // view Observers are always called (to ensure state is accurately updated)
-            this.viewObservers.forEach(([obs, desc]) => {
-                obs(frozenState, oldState, updateSource)
-            });
-            // Check if matchSource filtered this update out.
-            if (this.matchSource(updateSource, frozenState)) {
-                // update observers IFF the current path is <= the update path. Otherwise, the update should not apply.
-                if (arrayStartsWith(this.path, updatePath)) {
-                    this.observers.forEach(([obs, desc]) => {
-                        obs(frozenState, oldState, updateSource)
-                    });
+
+            if (!quiet) {
+                // view Observers are always called (to ensure state is accurately updated)
+                this.viewObservers.forEach(([obs, desc]) => {
+                    obs(frozenState, oldState, updateSource)
+                });
+                // Check if matchSource filtered this update out.
+                if (this.matchSource(updateSource, frozenState)) {
+                    // update observers IFF the current path is <= the update path. Otherwise, the update should not apply.
+                    if (arrayStartsWith(this.path, updatePath)) {
+                        this.observers.forEach(([obs, desc]) => {
+                                obs(frozenState, oldState, updateSource)
+                            });
+                        }
+                    }
                 }
-            }
         }
     }
 
@@ -169,9 +178,8 @@ export class StateView<S> {
 }
 
 export class StateWrapper<S> extends StateView<S> implements IDisposable {
-    disposable = new Disposable()
 
-    constructor(view: StateView<S>) {
+    constructor(view: StateView<S>, private disposable: IDisposable = new Disposable()) {
         super(view.state, view.path);
 
         view.addObserver((s, _, src) => {
@@ -201,12 +209,13 @@ export class StateWrapper<S> extends StateView<S> implements IDisposable {
 export class StateHandler<S> extends StateWrapper<S> {
 
     // handle with which to modify the state, given the old state. All observers get notified of the new state.
-    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any, path = this.path) {
+    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any, path = this.path, quiet?: boolean): StateHandler<S> {
         const currentState = this.state
         const newState = f(currentState);
         if (! this.compare(newState, NoUpdate) && ! this.compare(currentState, newState)) {
-            this.setState(newState as S, updateSource, path)
+            this.setState(newState as S, updateSource, path, quiet);
         }
+        return this
     }
 
     update1<K extends keyof S, C extends StateHandler<S[K]>>(key: K, f: (s: S[K]) => S[K] | typeof NoUpdate, updateSource?: any) {
@@ -229,15 +238,49 @@ export class StateHandler<S> extends StateWrapper<S> {
         return lens as C
     }
 
-    protected compare(s1: any, s2: any): boolean {
-        return deepEquals(s1, s2);
+    // handle with which to modify the state, given the old state. All observers get notified of the new state.
+    updateState(f: (s: S) => S | typeof NoUpdate) {
+        this.update(f);
+    }
+
+    updateStateQuiet(f: (s: S) => S | typeof NoUpdate) {
+        this.update(f, undefined, this.path, true);
+    }
+
+    // TODO: replace with lens
+    viewUpdatable<K extends keyof S, V extends S[K], C extends StateHandler<V> = StateHandler<V>>(key: K, constructor?: { new(s: S[K]): C}, disposeWhen?: Disposable): C {
+        const d: IDisposable = disposeWhen ?? this
+        const view: StateHandler<S[K]> = constructor ? new constructor(this.state?.[key] as S[K]) : new StateHandler(StateHandler.from(this.state?.[key] as S[K]));
+        const thisObs = this.addObserver(s => {
+            const observedVal = (s !== null && s !== undefined) ? s[key] : (s as unknown as S[K]);
+            if (! this.compare(observedVal, view.state)) {
+                view.setState(observedVal)
+            }
+        }, d);
+        view.onDispose.then(() => {
+            this.removeObserver(thisObs);
+        })
+
+        const thatObs = view.addObserver((vNew, vOld) => {
+            this.removeObserver(thisObs);
+            if (!this.compare(vNew, vOld)) {
+                const newState = {...this.state, [key]: vNew};
+                const ctor = this.state && (this.state as any).constructor;
+                if (ctor && ctor.prototype) {
+                    Object.setPrototypeOf(newState, ctor.prototype);
+                }
+                this.setState(newState);
+            }
+            this.addObserver(thisObs[0], d, thisObs[1]);
+        }, d)
+        return view as C
     }
 
     constructor(private _view: StateView<S>) {
         super(_view)
     }
 
-    static from<S>(s: S) {
+    static from<S>(s: S, disposable: IDisposable = new Disposable()) {
         return new this(new StateView(s))
     }
 }

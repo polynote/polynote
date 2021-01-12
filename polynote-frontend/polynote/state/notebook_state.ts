@@ -1,4 +1,4 @@
-import {NoUpdate, StateHandler, StateView} from "./state_handler";
+import {Disposable, NoUpdate, StateHandler, StateView} from "./state_handler";
 import {
     ClientResult, CompileErrors,
     Output,
@@ -6,7 +6,7 @@ import {
     ResultValue, RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
-import {CompletionCandidate, HandleData, ModifyStream, NotebookUpdate, Signatures} from "../data/messages";
+import {CompletionCandidate, HandleData, ModifyStream, NotebookUpdate, Signatures, TaskStatus} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../data/content_edit";
@@ -14,6 +14,17 @@ import {EditBuffer} from "../data/edit_buffer";
 import {deepEquals, diffArray, equalsByKey, mapValues} from "../util/helpers";
 import * as messages from "../data/messages";
 import {IgnoreServerUpdatesWrapper} from "../messaging/receiver";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {availableResultValues} from "../interpreter/client_interpreter";
+
+export type Outputs = Output[] & { clear?: boolean }
+export function outputs(outputs: Output[], clear?: boolean): Outputs {
+    const result = outputs as Outputs;
+    if (clear !== undefined) {
+        result.clear = clear;
+    }
+    return result;
+}
 
 export interface CellState {
     id: number,
@@ -21,7 +32,7 @@ export interface CellState {
     content: string,
     metadata: CellMetadata,
     comments: Record<string, CellComment>,
-    output: Output[],
+    output: Outputs,
     results: (ResultValue | ClientResult)[],
     compileErrors: CompileErrors[],
     runtimeError: RuntimeError | undefined,
@@ -85,6 +96,14 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
 
     protected compare(s1: any, s2: any): boolean {
         return deepEquals(s1, s2)
+    }
+
+    availableValuesAt(id: number, dispatcher: NotebookMessageDispatcher): Record<string, ResultValue> {
+        return availableResultValues(this.state.kernel.symbols, this, dispatcher, id);
+    }
+
+    viewAvailableValuesAt(id: number, dispatcher: NotebookMessageDispatcher): StateView<Record<string, ResultValue> | undefined> {
+        return this.view("kernel").mapView("symbols", symbols => availableResultValues(symbols, this, dispatcher, id));
     }
 
     getCellIndex(cellId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
@@ -235,6 +254,26 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
             }, this)
         })
     }
+
+    get isLoading(): boolean {
+        return !!(this.state.kernel.tasks[this.state.path] ?? false)
+    }
+
+    get loaded(): Promise<void> {
+        if (!this.isLoading) {
+            return Promise.resolve();
+        }
+        return new Promise<void>(resolve => {
+            const tasksView = this.view('kernel').view('tasks');
+            const disposer = new Disposable();
+            tasksView.addObserver((current, prev) => {
+                if (!current[this.state.path] || current[this.state.path].status === TaskStatus.Complete) {
+                    disposer.dispose();
+                    resolve();
+                }
+            }, disposer)
+        })
+    }
 }
 
 /**
@@ -269,7 +308,7 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
         if (update.localVersion !== this.localVersion) {
             throw new Error(`Update Version mismatch! Update had ${update.localVersion}, but I had ${this.localVersion}`)
         }
-        this.edits = this.edits.push(update.localVersion, update)
+        this.edits.push(update.localVersion, update)
         this.update(s => [...s, update])
     }
 
@@ -335,9 +374,15 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
         this.cellWatchers[id] = handler
         handler.view("output").addObserver((newOutput, oldOutput, source) => {
             const added = diffArray(oldOutput, newOutput)[1]
-            added.forEach(o => {
-                this.setCellOutput(id, o)
-            })
+            added.forEach(o => this.setCellOutput(id, o))
+        }, this)
+
+        new IgnoreServerUpdatesWrapper(handler.view("results")).addObserver((newResults) => {
+            if (newResults[0] && newResults[0] instanceof ClientResult) {
+                newResults[0].toOutput().then(
+                    o => this.addUpdate(new messages.SetCellOutput(this.globalVersion, this.localVersion, id, o))
+                )
+            }
         }, this)
 
         handler.view("language").addObserver(lang => {

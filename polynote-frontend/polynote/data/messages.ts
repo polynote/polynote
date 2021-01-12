@@ -11,6 +11,7 @@ import {CellComment, CellMetadata, NotebookCell, NotebookConfig, SparkPropertySe
 import {ContentEdit} from "./content_edit";
 import {Left, Right} from "./codec_types";
 import {deepEquals} from "../util/helpers";
+import {DoubleType, LongType, StructField, StructType} from "./data_type";
 
 export abstract class Message extends CodecContainer {
     static codec: Codec<Message>;
@@ -677,9 +678,12 @@ export class CancelTasks extends Message {
     }
 }
 
-export class TableOp extends Message {
+export abstract class TableOp extends Message {
     static codecs: any[];
+
+    abstract streamCode(on: string): string
 }
+
 export class GroupAgg extends TableOp {
     static codec = combined(arrayCodec(int32, str), arrayCodec(int32, Pair.codec(str, str))).to(GroupAgg);
     static get msgTypeId() { return 0; }
@@ -691,6 +695,15 @@ export class GroupAgg extends TableOp {
         this.aggregations = aggregations;
         Object.freeze(this);
     }
+
+    streamCode(on: string): string {
+        const aggSpecs = this.aggregations.map(pair => {
+            const obj: Record<string, string> = {};
+            obj[pair.first] = pair.second;
+            return obj;
+        });
+        return `${on}.aggregate(${JSON.stringify(this.columns)}, ${JSON.stringify(aggSpecs)})`
+    }
 }
 
 export class QuantileBin extends TableOp {
@@ -700,6 +713,11 @@ export class QuantileBin extends TableOp {
     constructor(readonly column: string, readonly binCount: number, readonly err: number) {
         super();
         Object.freeze(this);
+    }
+
+    streamCode(on: string): string {
+        const args = [this.column, this.binCount, this.err].map(arg => JSON.stringify(arg)).join(', ');
+        return `${on}.bin(${args})`
     }
 }
 
@@ -711,12 +729,69 @@ export class Select extends TableOp {
         super();
         Object.freeze(this);
     }
+
+    streamCode(on: string): string {
+        const args = this.columns.map(arg => JSON.stringify(arg)).join(', ');
+        return `${on}.select(${args})`
+    }
+}
+
+export class Sample extends TableOp {
+    static codec = combined(float64).to(Sample);
+    static get msgTypeId() { return 3; }
+    static unapply(inst: Sample): ConstructorParameters<typeof Sample> { return [inst.sampleRate]; }
+    constructor(readonly sampleRate: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    streamCode(on: string): string {
+        return `${on}.sample(${this.sampleRate})`
+    }
+}
+
+export class SampleN extends TableOp {
+    static codec = combined(int32).to(SampleN);
+    static get msgTypeId() { return 4; }
+    static unapply(inst: SampleN): ConstructorParameters<typeof Sample> { return [inst.n]; }
+    constructor(readonly n: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    streamCode(on: string): string {
+        return `${on}.sampleN(${this.n})`
+    }
+}
+
+export class Histogram extends TableOp {
+    static codec = combined(str, int32).to(Histogram);
+    static get msgTypeId() { return 5; }
+    static unapply(inst: Histogram): ConstructorParameters<typeof Histogram> { return [inst.field, inst.binCount]; }
+
+    static readonly dataType: StructType = new StructType([
+        new StructField("start", DoubleType),
+        new StructField("end", DoubleType),
+        new StructField("count", LongType)
+    ]);
+
+    constructor(readonly field: string, readonly binCount: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    streamCode(on: string): string {
+        return `${on}.histogram(${JSON.stringify(this.field)}, ${this.binCount})`;
+    }
 }
 
 TableOp.codecs = [
     GroupAgg,
     QuantileBin,
-    Select
+    Select,
+    Sample,
+    SampleN,
+    Histogram
 ];
 
 TableOp.codec = discriminated(uint8, msgTypeId => TableOp.codecs[msgTypeId].codec, msg => (msg.constructor as typeof Message).msgTypeId);

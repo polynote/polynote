@@ -2,11 +2,22 @@
 
 import {
     Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, optional,
-    str, tinyStr, uint8, uint16, int32, CodecContainer, int16, int64
+    str, tinyStr, uint8, uint16, int32, CodecContainer, int16, int64, bool
 } from './codec'
 
-import {ValueRepr, StringRepr} from './value_repr'
+import {
+    ValueRepr,
+    StringRepr,
+    MIMERepr,
+    StreamingDataRepr,
+    LazyDataRepr,
+    reprPriority,
+    maybeReprPriority
+} from './value_repr'
 import * as monaco from "monaco-editor";
+import {displayContent, mimeEl, parseContentType} from "../ui/display/display_content";
+import {collectInstances, findInstance, splitWithBreaks} from "../util/helpers";
+import match from "../util/match";
 
 export class Result extends CodecContainer {
     static codec: Codec<Result>;
@@ -43,7 +54,8 @@ export class Position {
     }
 
     constructor(readonly source: string, readonly start: number, readonly end: number, readonly point: number) {
-        Object.freeze(this);}
+        Object.freeze(this);
+    }
 }
 
 export class KernelReport {
@@ -232,14 +244,21 @@ export class PosRange {
 
 
 export class ResultValue extends Result {
-    static codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), int16, optional(PosRange.codec)).to(ResultValue);
+    static codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), int16, optional(PosRange.codec), bool).to(ResultValue);
     static get msgTypeId() { return 4; }
 
     static unapply(inst: ResultValue) {
-        return [inst.name, inst.typeName, inst.reprs, inst.sourceCell, inst.pos];
+        return [inst.name, inst.typeName, inst.reprs, inst.sourceCell, inst.pos, inst.live];
     }
 
-    constructor(readonly name: string, readonly typeName: string, readonly reprs: ValueRepr[], readonly sourceCell: number, readonly pos?: PosRange) {
+    constructor(
+        readonly name: string,
+        readonly typeName: string,
+        readonly reprs: ValueRepr[],
+        readonly sourceCell: number,
+        readonly pos?: PosRange,
+        readonly live: boolean = false
+    ) {
         super();
         Object.freeze(this);
     }
@@ -249,8 +268,61 @@ export class ResultValue extends Result {
         if (index < 0) return "";
         return (this.reprs[index] as StringRepr).string;
     }
+
+    get preferredMIMERepr(): MIMERepr | undefined {
+        const mimeReprs = collectInstances(this.reprs, MIMERepr).sort((a, b) => -(mimePriority(b.mimeType) - mimePriority(a.mimeType)));
+        return mimeReprs[0];
+    }
+
+    get preferredRepr(): ValueRepr {
+        let result: ValueRepr | undefined = undefined;
+        const mimeRepr = this.preferredMIMERepr;
+        if (mimeRepr && maybeMimePriority(mimeRepr.mimeType, preferredMIME) !== undefined) {
+            return mimeRepr;
+        }
+
+        const sorted = [...this.reprs].sort((a, b) => -(reprPriority(b) - reprPriority(a)));
+        if (sorted[0] && maybeReprPriority(sorted[0]) !== undefined) {
+            return sorted[0];
+        }
+        return findInstance(this.reprs, StringRepr) || this.reprs[0];
+    }
 }
 
+// MIME types that are preferred over other reprs
+const preferredMIME = [
+    "application/vnd.vegalite",
+    "image/",
+    "application/x-latex",
+    "text/html"
+];
+
+// order of preference of MIME types (TODO: should be a preference?)
+export const mimeOrder = [
+    ...preferredMIME,
+    "text/",
+];
+
+/**
+ * Returns the priority of the given MIME type within the given prefixes (defaults to mimeOrder).
+ * Priority is >= 0; lower number = higher preference. Always returns a number.
+ */
+function mimePriority(mimeType: string, preferredPrefixes?: string[]): number {
+    return maybeMimePriority(mimeType, preferredPrefixes) ?? Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Returns the priority of the given MIME type within the given prefixes (defaults to mimeOrder).
+ * Priority is >= 0; lower number = higher preference. If no prefix matches, returns undefined.
+ */
+function maybeMimePriority(mimeType: string, preferredPrefixes?: string[]): number | undefined {
+    preferredPrefixes = preferredPrefixes || mimeOrder;
+    const index = preferredPrefixes.findIndex(prefix => mimeType.startsWith(prefix));
+    if (index < 0) {
+        return undefined;
+    }
+    return index;
+}
 
 
 /**
@@ -269,6 +341,44 @@ export class ClientResult extends Result {
     toOutput(): Promise<Output> {
         throw new Error(`Class ${this.constructor.name} does not implement toOutput()`);
     }
+}
+
+
+export class MIMEClientResult extends ClientResult {
+
+    private repr: Promise<MIMERepr>;
+
+    constructor(repr: Promise<MIMERepr> | MIMERepr) {
+        super();
+        if (repr instanceof MIMERepr) {
+            this.repr = Promise.resolve(repr);
+        } else {
+            this.repr = repr;
+        }
+    }
+
+    display(targetEl: HTMLElement) {
+        this.repr.then(
+            repr => {
+                const [mimeType, args] = parseContentType(repr.mimeType);
+                displayContent(mimeType, repr.content, args).then(displayEl => {
+                    const el = mimeEl(repr.mimeType, args, displayEl);
+                    targetEl.appendChild(el);
+                    displayEl.dispatchEvent(new CustomEvent('becameVisible'));
+                });
+            }
+        );
+    }
+
+    toOutput(): Promise<Output> {
+        return this.repr.then(
+            repr => new Output(repr.mimeType, splitOutput(repr.content))
+        );
+    }
+}
+
+export function splitOutput(outputStr: string): string[] {
+    return splitWithBreaks(outputStr);
 }
 
 export class ExecutionInfo extends Result {

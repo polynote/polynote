@@ -1,7 +1,8 @@
 import {ResultValue} from "../data/result";
 import {KernelStatusString, TaskInfo} from "../data/messages";
 
-export type KernelSymbols = (ResultValue)[];
+// id -> (name -> ResultValue)
+export type KernelSymbols = Record<string, Record<string, ResultValue>>;
 export type KernelInfo = Record<string, string>;
 export type KernelTasks = Record<string, TaskInfo>; // taskId -> TaskInfo
 

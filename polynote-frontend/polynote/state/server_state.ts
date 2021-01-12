@@ -8,7 +8,7 @@ import {
 } from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
-import {arrDeleteFirstItem, arrReplace, nameFromPath, removeKeys} from "../util/helpers";
+import {arrDeleteFirstItem, arrReplace, deepEquals, nameFromPath, removeKeys} from "../util/helpers";
 import {OpenNotebooksHandler, RecentNotebooksHandler} from "./preferences";
 
 export type NotebookInfo = {
@@ -151,7 +151,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
                     cellOrder: [],
                     config: {open: false, config: NotebookConfig.default},
                     kernel: {
-                        symbols: [],
+                        symbols: {},
                         status: 'disconnected',
                         info: {},
                         tasks: {},

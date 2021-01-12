@@ -31,7 +31,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.3.12",
+  version := "0.4.0-SNAPSHOT",
   publishTo := sonatypePublishToBundle.value,
   developers := List(
     Developer(id = "jeremyrsmith", name = "Jeremy Smith", email = "", url = url("https://github.com/jeremyrsmith")),
@@ -156,7 +156,7 @@ val sparkSettings = Seq(
   sparkVersion := {
     scalaVersion.value match {
       case ver if ver startsWith "2.11" => "2.1.1"
-      case ver                          => "2.4.4"  // Spark 2.4 is first version to publish for scala 2.12
+      case ver                          => "2.4.7"  // Spark 2.4 is first version to publish for scala 2.12
     }
   },
   libraryDependencies ++= Seq(

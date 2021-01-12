@@ -3,6 +3,8 @@ import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
 import {CellMetadata} from "../data/data";
 import {
+    ClientResult,
+    Output,
     ResultValue,
     ServerErrorWithCause
 } from "../data/result";
@@ -23,6 +25,7 @@ import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_inter
 import {OpenNotebooksHandler} from "../state/preferences";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
+import {ViewType} from "../ui/input/viz_selector";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -122,8 +125,13 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
      ** really belong here)       **
      *******************************/
 
-    showValueInspector(result: ResultValue, tab?: string) {
-        ValueInspector.get.inspect(this, this.handler, result, tab)
+    showValueInspector(result: ResultValue, viewType?: string) {
+        this.handler.insertCell("below", {
+            id: result.sourceCell,
+            language: 'viz',
+            metadata: new CellMetadata(false, false, false),
+            content: JSON.stringify({type: viewType, value: result.name})
+        }).then(id => this.handler.selectCell(id))
     }
 
     hideValueInspector() {
@@ -219,6 +227,14 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             }
         })
         this.socket.send(new messages.RunCell(serverCells));
+    }
+
+    setCellOutput(cellId: number, output: Output | ClientResult) {
+        if (output instanceof Output) {
+            this.handler.cellsHandler.update1(cellId, cellState => ({...cellState, output: [output]}));
+        } else {
+            this.handler.cellsHandler.update1(cellId, cellState => ({...cellState, results: [output]}));
+        }
     }
 
     runActiveCell() {

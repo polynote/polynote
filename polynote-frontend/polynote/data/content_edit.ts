@@ -95,6 +95,8 @@ export abstract class ContentEdit extends CodecContainer {
         return false;
     }
 
+    abstract apply(content: string): string
+
 }
 
 export class Insert extends ContentEdit {
@@ -114,6 +116,10 @@ export class Insert extends ContentEdit {
     isEmpty() {
         return this.content.length === 0;
     }
+
+    apply(content: string): string {
+        return content.substring(0, this.pos) + this.content + content.substring(this.pos);
+    }
 }
 
 export class Delete extends ContentEdit {
@@ -132,6 +138,10 @@ export class Delete extends ContentEdit {
 
     isEmpty() {
         return this.length === 0;
+    }
+
+    apply(content: string): string {
+        return content.substring(0, this.pos) + content.substring(this.pos + this.length);
     }
 }
 

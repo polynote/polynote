@@ -56,6 +56,9 @@ object TableOpCodec {
   implicit val groupAgg: Discriminator[TableOp, GroupAgg, Byte] = Discriminator(0)
   implicit val quantileBin: Discriminator[TableOp, QuantileBin, Byte] = Discriminator(1)
   implicit val select: Discriminator[TableOp, Select, Byte] = Discriminator(2)
+  implicit val sample: Discriminator[TableOp, Sample, Byte] = Discriminator(3)
+  implicit val sampleN: Discriminator[TableOp, SampleN, Byte] = Discriminator(4)
+  implicit val histogram: Discriminator[TableOp, Histogram, Byte] = Discriminator(5)
 
   implicit val tableOpCodec: Codec[TableOp] = cachedImplicit
 }
