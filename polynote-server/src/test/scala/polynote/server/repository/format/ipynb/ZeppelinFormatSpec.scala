@@ -137,7 +137,7 @@ class ZeppelinFormatSpec extends FreeSpec with Matchers with ConfiguredZIOSpec {
 
       nb.cells.head.language shouldEqual "scala"
       nb.cells(1).language shouldEqual "scala"
-      nb shouldEqual Notebook("My Zeppelin notebook", List(
+      nb shouldEqual Notebook("My Zeppelin notebook.ipynb", List(
         NotebookCell(0, "scala", "some scala code", List(ResultValue("Out", "", List(StringRepr("some results")), 0, (), scala.reflect.runtime.universe.NoType, None, false))),
         NotebookCell(1, "scala", "more scala code", List(ResultValue("Out", "", List(StringRepr("more scala results")), 1, (), scala.reflect.runtime.universe.NoType, None, false))),
         NotebookCell(2, "scala", "", List.empty[ResultValue])
