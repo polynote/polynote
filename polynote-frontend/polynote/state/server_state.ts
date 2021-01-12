@@ -1,5 +1,4 @@
-import {Disposable, NoUpdate, StateHandler, StateView} from "./state_handler";
-import {ServerErrorWithCause} from "../data/result";
+import {NoUpdate, StateHandler, StateView} from "./state_handler";
 import {Identity} from "../data/messages";
 import {NotebookStateHandler} from "./notebook_state";
 import {SocketSession} from "../messaging/comms";
@@ -9,8 +8,7 @@ import {
 } from "../messaging/dispatcher";
 import {SocketStateHandler} from "./socket_state";
 import {NotebookConfig, SparkPropertySet} from "../data/data";
-import {arrDeleteFirstItem, arrReplace, deepEquals, nameFromPath, removeKeys} from "../util/helpers";
-import {EditBuffer} from "../data/edit_buffer";
+import {arrDeleteFirstItem, arrReplace, nameFromPath, removeKeys} from "../util/helpers";
 import {OpenNotebooksHandler, RecentNotebooksHandler} from "./preferences";
 
 export type NotebookInfo = {

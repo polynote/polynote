@@ -269,7 +269,7 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
         if (update.localVersion !== this.localVersion) {
             throw new Error(`Update Version mismatch! Update had ${update.localVersion}, but I had ${this.localVersion}`)
         }
-        this.edits.push(update.localVersion, update)
+        this.edits = this.edits.push(update.localVersion, update)
         this.update(s => [...s, update])
     }
 
