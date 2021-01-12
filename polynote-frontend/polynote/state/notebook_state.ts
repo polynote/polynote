@@ -336,8 +336,7 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
         handler.view("output").addObserver((newOutput, oldOutput, source) => {
             const added = diffArray(oldOutput, newOutput)[1]
             added.forEach(o => {
-                console.log("got new output! Gonna send it to the server", id, o, o instanceof Output)
-                this.addUpdate(new messages.SetCellOutput(this.globalVersion, this.localVersion, id, o))
+                this.setCellOutput(id, o)
             })
         }, this)
 

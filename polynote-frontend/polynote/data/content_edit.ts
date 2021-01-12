@@ -9,13 +9,15 @@ export abstract class ContentEdit extends CodecContainer {
     static rebase(a: ContentEdit, b: ContentEdit): ContentEdit[][] // for some reason TS can't figure out that ContentEdit === Insert | Delete so we need to help it.
     static rebase(a: Insert | Delete, b: Insert | Delete): ContentEdit[][] {
         if (a instanceof Insert) {
-            if (b instanceof Insert) {
-                if (a.pos < b.pos || (a.pos === b.pos && (a.content.length < b.content.length || a.content < b.content))) {
+            if (b instanceof Insert) { // (Insert, Insert)
+                if (a.pos === b.pos && a.content.length === b.content.length && a.content === b.content) {
+                    return [[a], [b]]
+                } else if (a.pos < b.pos || (a.pos === b.pos && (a.content.length < b.content.length || (a.content.length === b.content.length && a.content < b.content)))) {
                     return [[a], [new Insert(b.pos + a.content.length, b.content)]];
                 } else {
                     return [[new Insert(a.pos + b.content.length, a.content)], [b]];
                 }
-            } else {
+            } else { // (Insert, Delete)
                 if (a.pos <= b.pos) {
                     return [[a], [new Delete(b.pos + a.content.length, b.length)]];
                 } else if (a.pos < b.pos + b.length) {
@@ -26,7 +28,7 @@ export abstract class ContentEdit extends CodecContainer {
                 }
             }
         } else {
-            if (b instanceof Insert) {
+            if (b instanceof Insert) { // (Delete, Insert)
                 if (b.pos <= a.pos) {
                     return [[new Delete(a.pos + b.content.length, a.length)], [b]];
                 } else if (b.pos < a.pos + a.length) {
@@ -35,7 +37,7 @@ export abstract class ContentEdit extends CodecContainer {
                 } else {
                     return [[a], [new Insert(b.pos - a.length, b.content)]];
                 }
-            } else {
+            } else { // (Delete, Delete)
                 if (a.pos + a.length <= b.pos) {
                     return [[a], [new Delete(b.pos - a.length, b.length)]];
                 } else if (b.pos + b.length <= a.pos) {
@@ -48,7 +50,7 @@ export abstract class ContentEdit extends CodecContainer {
                     const overlap = a.pos + a.length - b.pos;
                     return [[new Delete(a.pos, a.length - overlap)], [new Delete(a.pos, b.length - overlap)]];
                 } else {
-                    const overlap = b.pos + b.length - b.pos;
+                    const overlap = b.pos + b.length - a.pos;
                     return [[new Delete(b.pos, a.length - overlap)], [new Delete(b.pos, b.length - overlap)]];
                 }
             }
