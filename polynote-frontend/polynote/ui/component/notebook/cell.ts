@@ -66,19 +66,14 @@ import {ErrorEl} from "../../display/error";
 import {Error} from "../../../data/messages";
 import IMarkerData = editor.IMarkerData;
 import {
-    collect,
     collectInstances,
-    collectMatch,
     deepCopy,
     deepEquals,
     diffArray,
-    Deferred,
     findInstance,
-    removeKeys
 } from "../../../util/helpers";
-import {parsePlotDefinition, PlotDefinition, PlotSelector, savePlotDefinition} from "../../input/plot_selector";
-import {isViz, parseMaybeViz, parseViz, saveViz, Viz, VizSelector} from "../../input/viz_selector";
-import {VegaClientResult, VizInterpreter, vizResult} from "../../../interpreter/vega_interpreter";
+import {isViz, parseMaybeViz, saveViz, Viz, VizSelector} from "../../input/viz_selector";
+import {VegaClientResult, VizInterpreter} from "../../../interpreter/vega_interpreter";
 
 
 export type CodeCellModel = editor.ITextModel & {

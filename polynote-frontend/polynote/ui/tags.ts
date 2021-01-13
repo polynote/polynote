@@ -123,8 +123,26 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
 }
 
 export interface BindableTag<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> {
+
+    /**
+     * Bind the value of this form field to a state handler. When the state handler is updated, the form field will be
+     * updated with the new value. If value of the form field is changed by the user agent, the state handler will be
+     * updated with the new value.
+     */
     bind(state: StateHandler<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
-    bindPartial(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+
+    /**
+     * Like `bind`, but handles optional state values. If the state value is `undefined`, it does not propagate to the
+     * form field; the state change is instead ignored.
+     */
+    bindPartial(state: StateHandler<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+
+    /**
+     * Like `bind`, but handles optional state values. If the value is `undefined`, the form field is updated with a
+     * default value instead. If the form field is updated by the user agent to the default value, a default state value
+     * can be specified.
+     */
+    bindWithDefault(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
 }
 
 export type BindableTagElement<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> =
@@ -140,17 +158,32 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
         bind(state: StateHandler<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
             const observer = state.addObserver((newValue: ValueType, oldValue: ValueType) => update(self, newValue), disposeWhen ?? state);
-            const listener = (evt: Event) => state.updateState(currentState => getValue(self));
+            const listener = (evt: Event) => state.update(currentState => getValue(self));
             self.addEventListener(eventType, listener);
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));
             return result;
         },
-        bindPartial(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bindPartial(state: StateHandler<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
             const observer = state.addObserver(
-                (newValue: ValueType | null | undefined, oldValue: ValueType | null | undefined) => update(self, newValue ?? defaultValue),
-                disposeWhen ?? state);
-            const listener = (evt: Event) => state.updateState(currentState => { const v = getValue(self); return v === defaultValue ? defaultState : v });
+                (newValue, oldValue) => {
+                    if (newValue !== undefined)
+                        update(self, newValue)
+                },
+                disposeWhen ?? state
+            );
+            const listener = (evt: Event) => state.update(currentState => getValue(self));
+            self.addEventListener(eventType, listener);
+            state.onDispose.then(_ => self.removeEventListener(eventType, listener));
+            return result;
+        },
+        bindWithDefault(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+            update(self, getValue(self));
+            const observer = state.addObserver(
+                (newValue, oldValue) => update(self, newValue ?? defaultValue),
+                disposeWhen ?? state
+            );
+            const listener = (evt: Event) => state.update(currentState => { const v = getValue(self); return v === defaultValue ? defaultState : v });
             self.addEventListener(eventType, listener);
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));
             return result;
@@ -168,12 +201,16 @@ function delegateBinding<ValueType, K extends keyof HTMLElementTagNameMap, T ext
     to: TagElement<K, T>
 ): BindableTagElement<ValueType, K, T> {
     const result: BindableTagElement<ValueType, K, T> = Object.assign(to, {
-        bind(state: StateHandler<ValueType>): BindableTagElement<ValueType, K, T> {
-            from.bind(state);
+        bind(state: StateHandler<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+            from.bind(state, disposeWhen);
             return result;
         },
-        bindPartial(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T> {
-            from.bindPartial(state, defaultValue, defaultState);
+        bindPartial(state: StateHandler<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+            from.bindPartial(state, disposeWhen);
+            return result;
+        },
+        bindWithDefault(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+            from.bindWithDefault(state, defaultValue, defaultState, disposeWhen);
             return result;
         }
     }) //as unknown as E1 & BindableTagElement<ValueType, K1, T1>;

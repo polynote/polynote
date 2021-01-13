@@ -1,10 +1,10 @@
-import {Disposable, NoUpdate, StateHandler, StateView} from "./state_handler";
+import {Disposable, StateHandler, StateView} from "./state_handler";
 import {
     ClientResult, CompileErrors,
     Output,
     PosRange,
-    ResultValue, RuntimeError,
-    ServerErrorWithCause
+    ResultValue,
+    RuntimeError,
 } from "../data/result";
 import {CompletionCandidate, HandleData, ModifyStream, NotebookUpdate, Signatures, TaskStatus} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";

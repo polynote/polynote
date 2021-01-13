@@ -162,25 +162,6 @@ export class InferredMatcher<T, R = never> {
 export function purematch<T, R>(obj: T) {
     return new Matcher<T, R>(obj);
 }
-// export class PureMatcher<T, R> extends Matcher<T, R> {
-//     when<U extends T, C extends Extractable<U, ConstructorParameters<C>>>(type: C, fn: (...args: ConstructorParameters<C>) => R) {
-//         if (this.result === undefined && this.obj instanceof type) {
-//             this.result = fn(...type.unapply(this.obj));
-//         }
-//         return this;
-//     }
-//
-//     whenInstance<C extends (new (...args: any[]) => InstanceType<C>)>(type: C, fn: (inst: InstanceType<C>) => R) {
-//         if (this.result === undefined && this.obj instanceof type) {
-//             this.result = fn(this.obj);
-//         }
-//         return this;
-//     }
-//
-//     get otherwiseThrow(): R {
-//         return super.otherwiseThrow
-//     }
-// }
 
 // just a little helper which is more ergonomic than `switch` statements. No more forgetting to `break;`!
 export function matchS<R>(obj: string) {
