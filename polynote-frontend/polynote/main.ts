@@ -218,3 +218,17 @@ monaco.languages.registerCompletionItemProvider('sql', {
         return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
     }
 });
+
+monaco.languages.registerCompletionItemProvider('java', {
+    triggerCharacters: ['.'],
+    provideCompletionItems: (doc, pos, context, cancelToken) => {
+        return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
+    }
+});
+
+monaco.languages.registerSignatureHelpProvider('java', {
+    signatureHelpTriggerCharacters: ['(', ','],
+    provideSignatureHelp: (doc, pos, cancelToken, context) => {
+        return (doc as CodeCellModel).requestSignatureHelp(doc.getOffsetAt(pos));
+    }
+});

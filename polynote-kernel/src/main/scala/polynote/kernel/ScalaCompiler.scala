@@ -2,8 +2,8 @@ package polynote.kernel
 
 import java.io.File
 import java.net.URL
+import java.nio.file.{Files, Paths}
 import java.util.concurrent.atomic.AtomicInteger
-
 import cats.syntax.traverse._
 import cats.instances.list._
 import polynote.kernel.environment.Config
@@ -16,7 +16,7 @@ import zio.interop.catz._
 
 import scala.collection.mutable
 import scala.reflect.internal.util.{AbstractFileClassLoader, NoSourceFile, Position, SourceFile}
-import scala.reflect.io.VirtualDirectory
+import scala.reflect.io.{AbstractFile, Directory, PlainDirectory, VirtualDirectory}
 import scala.reflect.runtime.universe
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.{Global, NscThief}
@@ -89,12 +89,18 @@ class ScalaCompiler private (
     mirror => ZIO(mirror.reflect(value))
   }
 
+  def outputDir: String = global.settings.outputDirs.getSingleOutput.get.absolute.canonicalPath
 
   def formatType(typ: Type): RIO[Blocking, String] =
     zio.blocking.effectBlocking(formatTypeInternal(typ)).lock(compilerThread)
 
   def formatTypes(types: List[Type]): RIO[Blocking, List[String]] =
     zio.blocking.effectBlocking(types.map(formatTypeInternal)).lock(compilerThread)
+
+  def compileJava(javaFile: AbstractFile): RIO[Blocking, Unit] = ZIO {
+    val run = new Run()
+    run.compileFiles(List(javaFile))
+  }.lock(compilerThread)
 
   def compileCell(
     cellCode: CellCode
@@ -656,10 +662,18 @@ object ScalaCompiler {
   ).distinct.map(pathAsFile)
 
   def defaultSettings(initial: Settings, classPath: List[File] = Nil): Settings = {
-    val cp = classPath ++ requiredPaths
-
     val settings = initial.copy()
     settings.target.value = "jvm-1.8" // set Java8 by default
+
+    val outputDir = Files.createTempDirectory("polynote").toFile
+    val cp = classPath ++ requiredPaths ++ List(outputDir)
+
+    {
+      // TODO best way to clean this up?
+      java.lang.System.err.println(s"OutputDir: $outputDir")
+      settings.outputDirs.setSingleOutput(new PlainDirectory(new Directory(outputDir)))
+    }
+
     settings.classpath.append(cp.map(_.getCanonicalPath).mkString(File.pathSeparator))
     settings.Yrangepos.value = true
     try {
@@ -671,7 +685,7 @@ object ScalaCompiler {
     settings.Ymacroexpand.value = settings.MacroExpand.Normal
     settings.YpresentationAnyThread.value = true
     settings.Ydelambdafy.value = "inline"
-    settings.outputDirs.setSingleOutput(new VirtualDirectory("(memory)", None))
+
     settings
   }
 
