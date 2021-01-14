@@ -16,6 +16,7 @@ val versions = new {
   val zioInterop = "2.0.0.0-RC12"
 }
 
+
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
 
 val commonSettings = Seq(
@@ -69,7 +70,9 @@ val commonSettings = Seq(
     sys.process.Process(Seq("npm", "run", "dist"), new java.io.File("./polynote-frontend/")) ! streams.value.log
   },
   scalacOptions += "-deprecation",
-  test in assembly := {}
+  test in assembly := {},
+  resolvers += Resolver.mavenLocal,
+  resolvers += ("Bodar" at "http://repo.bodar.com").withAllowInsecureProtocol(true)
 )
 
 lazy val `polynote-runtime` = project.settings(
@@ -130,7 +133,8 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-generic-extras" % "0.11.1",
     "io.circe" %% "circe-parser" % "0.11.1",
     "net.sf.py4j" % "py4j" % "0.10.7",
-    "org.scalamock" %% "scalamock" % "4.4.0" % "test"
+    "org.scalamock" %% "scalamock" % "4.4.0" % "test",
+    "com.googlecode.totallylazy" % "totallylazy" % "2.249"
   ),
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-env`)
