@@ -69,21 +69,20 @@ export class StateView<S> {
     }
 
     private views: Record<keyof any, StateView<S[keyof S]>> = {};
-    private optViews: Record<keyof any, StateView<S[keyof S]>> = {};
 
     // Create a child 'view' of this state. Changes to this state will propagate to the view.
     view<K extends keyof S>(key: K): StateView<S[K]> {
-        return this.makeView(key, false);
+        return this.makeView(key);
     }
 
     // Create a child 'view' of this state. Changes to this state will propagate to the view. If this view is set to
     // `undefined`, the child view will also be updated to `undefined`.
-    viewOpt<K extends keyof S>(key: K): StateView<Exclude<S[K], undefined>> {
-        return this.makeView(key, true) as StateView<Exclude<S[K], undefined>>;
+    viewOpt<S1, K extends keyof S1>(this: StateView<S1 | undefined>, key: K): StateView<S1[K] | undefined> {
+        return (this as StateView<S1>).makeView(key);
     }
 
-    private makeView<K extends keyof S>(key: K, chainOptional: boolean): StateView<S[K]> {
-        const maybeView = chainOptional ? this.optViews[key] : this.views[key];
+    private makeView<K extends keyof S>(key: K): StateView<S[K]> {
+        const maybeView = this.views[key];
         if (maybeView) {
             if (! this.compare(maybeView.state, this.state[key])) {
                 // This might happen when a view is created within a state change.
@@ -96,8 +95,10 @@ export class StateView<S> {
             const view: StateView<S[K]> = new StateView(this.state[key], [...this.path, key.toString()]);
             const viewDispose = new Disposable();
             const obs = this.addObserver((s, _, updateSource) => {
-                if (chainOptional || (s && (s as any).hasOwnProperty(key))) {
-                    // optional chaining – propagate undefined values
+                if (s === undefined || (s && (s as any).hasOwnProperty(key))) {
+                    // for optional states (via viewOpt), perform optional chaining – propagate undefined values.
+                    // for optional states (via view), the type system should protect against creating further views.
+                    // for non-optional states, the type system should protect against setting them to undefined.
                     const observedVal = s !== undefined ? s[key] : s as unknown as S[K];
                     if (! this.compare(observedVal, view.state)) {
                         view.setState(observedVal, updateSource, this.path)
@@ -114,11 +115,7 @@ export class StateView<S> {
                 this.removeObserver(obs)
             })
 
-            if (chainOptional) {
-                this.optViews[key] = view;
-            } else {
-                this.views[key] = view;
-            }
+            this.views[key] = view;
 
             return view
         }
@@ -189,7 +186,7 @@ export class StateView<S> {
 
 export class StateWrapper<S> extends StateView<S> implements IDisposable {
 
-    constructor(view: StateView<S>, private disposable: IDisposable = new Disposable()) {
+    constructor(view: StateView<S>, protected disposable: IDisposable = new Disposable()) {
         super(view.state, view.path);
 
         view.addObserver((s, _, src) => {
@@ -216,31 +213,43 @@ export class StateWrapper<S> extends StateView<S> implements IDisposable {
 /**
  * An updatable StateView.
  */
-export class StateHandler<S> extends StateWrapper<S> {
+export abstract class UpdatableState<S> extends StateWrapper<S> {
 
     // handle with which to modify the state, given the old state. All observers get notified of the new state.
-    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any, path = this.path): StateHandler<S> {
+    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any, path = this.path) {
         const currentState = this.state
         const newState = f(currentState);
         if (! this.compare(newState, NoUpdate) && ! this.compare(currentState, newState)) {
             this.setState(newState as S, updateSource, path);
         }
-        return this
     }
 
     update1<K extends keyof S, C extends StateHandler<S[K]>>(key: K, f: (s: S[K]) => S[K] | typeof NoUpdate, updateSource?: any) {
         this.update(s => ({...s, [key]: f(s[key])}), updateSource, [...this.path, key.toString()])
     }
+}
+
+/**
+ * An updatable StateView for a non-optional state
+ */
+export class StateHandler<S> extends UpdatableState<S> {
 
     // A lens is like a view except changes to the lens propagate back to its parent
     lens<K extends keyof S>(key: K): StateHandler<S[K]> {
-        const view = this.view(key)
+        const view = this.view(key);
         const lens: StateHandler<S[K]> = new StateHandler(view);
         lens.addObserver((viewState, _, src) => {
-            this.setState({
+            const newState = {
                 ...this.state,
                 [key]: viewState
-            }, src ?? lens, lens.path)
+            };
+
+            const ctor = this.state && (this.state as any).constructor;
+            if (ctor && ctor.prototype) {
+                Object.setPrototypeOf(newState, ctor.prototype);
+            }
+
+            this.setState(newState, src ?? lens, lens.path)
         }, this, `lens of key ${key}`, "viewObserver")
         this.onDispose.then(() => {
             if (! lens.isDisposed) lens.dispose()
@@ -248,29 +257,72 @@ export class StateHandler<S> extends StateWrapper<S> {
         return lens;
     }
 
-    // Create a lens with optional chaining. If this state is set to `undefined`, the undefined value will propagate
-    // to the lens.
-    lensOpt<K extends keyof S>(key: K): StateHandler<Exclude<S[K], undefined>> {
-        const view = this.viewOpt(key);
-        const lens = new StateHandler(view);
+    /**
+     * If this is an optional state, create an optional-chaining lens onto a (possibly-optional) field
+     */
+    lensOpt<K extends keyof S>(key: K): OptionalStateHandler<Exclude<S[K], undefined>> {
+        const view = (this as StateHandler<S | undefined>).viewOpt<S, K>(key);
+        const lens = new OptionalStateHandler(view);
         lens.addObserver((viewState, _, src) => {
-            this.setState({
-                ...this.state,
-                [key]: viewState
-            }, src ?? lens, lens.path)
+            if (this.state === undefined && viewState === undefined)
+                return;
+
+            const newState: any = this.state !== undefined ? ({...this.state, [key]: viewState}) : {[key]: viewState};
+
+            const ctor = this.state && (this.state as any).constructor;
+            if (ctor && ctor.prototype) {
+                Object.setPrototypeOf(newState, ctor.prototype);
+            }
+
+            this.setState(newState as S, src ?? lens, lens.path);
         }, this, `lens of key ${key}`, "viewObserver")
         this.onDispose.then(() => {
             if (! lens.isDisposed) lens.dispose()
         })
-        return lens;
+        return lens as OptionalStateHandler<Exclude<S[K], undefined>>;
     }
 
-    constructor(private _view: StateView<S>, disposable: IDisposable = new Disposable()) {
+    constructor(protected _view: StateView<S>, disposable: IDisposable = new Disposable()) {
         super(_view, disposable)
     }
 
     static from<S>(s: S, disposable: IDisposable = new Disposable()) {
         return new this(new StateView(s), disposable)
+    }
+}
+
+/**
+ * An updatable StateView for a optional state
+ */
+export class OptionalStateHandler<S> extends UpdatableState<S | undefined> {
+    constructor(view: StateView<S | undefined>, disposable: IDisposable = new Disposable()) {
+        super(view, disposable);
+    }
+
+    lens<K extends keyof S>(key: K): OptionalStateHandler<Exclude<S[K], undefined>> {
+        return this.lensOpt(key)
+    }
+
+    lensOpt<K extends keyof S>(key: K): OptionalStateHandler<Exclude<S[K], undefined>> {
+        const view = this.viewOpt<S, K>(key);
+        const lens = new OptionalStateHandler(view);
+        lens.addObserver((viewState, _, src) => {
+            if (this.state === undefined && viewState === undefined)
+                return;
+
+            const newState: any = this.state !== undefined ? ({...this.state, [key]: viewState}) : {[key]: viewState};
+
+            const ctor = this.state && (this.state as any).constructor;
+            if (ctor && ctor.prototype) {
+                Object.setPrototypeOf(newState, ctor.prototype);
+            }
+
+            this.setState(newState, src ?? lens, lens.path);
+        }, this, `lens of key ${key}`, "viewObserver")
+        this.onDispose.then(() => {
+            if (! lens.isDisposed) lens.dispose()
+        })
+        return lens as OptionalStateHandler<Exclude<S[K], undefined>>;
     }
 }
 

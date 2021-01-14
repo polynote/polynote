@@ -1,4 +1,17 @@
-import {button, checkbox, div, dropdown, h3, h4, iconButton, label, span, TagElement, textbox} from "../tags";
+import {
+    button,
+    checkbox,
+    div,
+    dropdown,
+    h3,
+    h4,
+    iconButton,
+    label,
+    numberbox,
+    span,
+    TagElement,
+    textbox
+} from "../tags";
 import {
     BoolType,
     ByteType,
@@ -927,7 +940,7 @@ export class PlotSelector {
         const state = initialState ? PlotSelectorState.fromPlotDef(initialState, dimensionFields[0].name) : PlotSelectorState.empty(name, dimensionFields[0].name, name);
         const stateHandler = this.stateHandler = StateHandler.from(state, this._disposer);
 
-        const typeHandler         = stateHandler.lensOpt("type");
+        const typeHandler         = stateHandler.lens("type");
         const facetHandler        = stateHandler.lensOpt("facet");
         const xHandler            = stateHandler.lens("x");
         const colorSeriesHandler  = stateHandler.lens("seriesColorChannel");
@@ -978,11 +991,11 @@ export class PlotSelector {
                         dropdown([], { "": "None", ...dimensionOptions}, state.facet?.col || undefined)
                             .bindWithDefault(facetHandler.lens("col"), "")),
                     label(['facet-width'], "Width",
-                        textbox([], "Width", state.facet?.width?.toString() || undefined, "number")
+                        numberbox([], "Width", state.facet?.width)
                             .bindWithDefault(facetHandler.lens("width"), 50)
                             .attr("step", "1")),
                     label(['facet-width'], "Height",
-                        textbox([], "Height", state.facet?.height?.toString() || undefined, "number")
+                        numberbox([], "Height", state.facet?.height)
                             .bindWithDefault(facetHandler.lens("height"), 50)
                             .attr("step", "1"))
                 ])
@@ -1035,7 +1048,7 @@ export class PlotSelector {
                 div(['histogram-options'], [
                     h4([],'Options'),
                     label(['bin-count'], "Bin count",
-                        textbox([], undefined, state.binCount.toString(), "number")
+                        numberbox([], undefined, state.binCount)
                             .bind(stateHandler.lens("binCount"))
                             .attrs({step: "1", min: "2"})
                     )

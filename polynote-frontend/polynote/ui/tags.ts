@@ -1,7 +1,7 @@
 'use strict';
 
 import {loadIcon} from "./icons";
-import {IDisposable, StateHandler} from "../state/state_handler";
+import {IDisposable, StateHandler, UpdatableState} from "../state/state_handler";
 
 type ContentElement = (Node | {el: Node} | string | undefined)
 export type Content = ContentElement | ContentElement[];
@@ -129,20 +129,20 @@ export interface BindableTag<ValueType, K extends keyof HTMLElementTagNameMap, T
      * updated with the new value. If value of the form field is changed by the user agent, the state handler will be
      * updated with the new value.
      */
-    bind(state: StateHandler<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+    bind(state: UpdatableState<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
 
     /**
      * Like `bind`, but handles optional state values. If the state value is `undefined`, it does not propagate to the
      * form field; the state change is instead ignored.
      */
-    bindPartial(state: StateHandler<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+    bindPartial(state: UpdatableState<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
 
     /**
      * Like `bind`, but handles optional state values. If the value is `undefined`, the form field is updated with a
      * default value instead. If the form field is updated by the user agent to the default value, a default state value
      * can be specified.
      */
-    bindWithDefault(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+    bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
 }
 
 export type BindableTagElement<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> =
@@ -155,7 +155,7 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
         eventType: string = 'change'
     ): E & BindableTagElement<ValueType, K, T> {
     const result: E & BindableTagElement<ValueType, K, T> = Object.assign(self, {
-        bind(state: StateHandler<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bind(state: UpdatableState<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
             const observer = state.addObserver((newValue: ValueType, oldValue: ValueType) => update(self, newValue), disposeWhen ?? state);
             const listener = (evt: Event) => state.update(currentState => getValue(self));
@@ -163,7 +163,7 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));
             return result;
         },
-        bindPartial(state: StateHandler<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bindPartial(state: UpdatableState<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
             const observer = state.addObserver(
                 (newValue, oldValue) => {
@@ -177,7 +177,7 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));
             return result;
         },
-        bindWithDefault(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
             const observer = state.addObserver(
                 (newValue, oldValue) => update(self, newValue ?? defaultValue),
@@ -201,15 +201,15 @@ function delegateBinding<ValueType, K extends keyof HTMLElementTagNameMap, T ext
     to: TagElement<K, T>
 ): BindableTagElement<ValueType, K, T> {
     const result: BindableTagElement<ValueType, K, T> = Object.assign(to, {
-        bind(state: StateHandler<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bind(state: UpdatableState<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             from.bind(state, disposeWhen);
             return result;
         },
-        bindPartial(state: StateHandler<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bindPartial(state: UpdatableState<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             from.bindPartial(state, disposeWhen);
             return result;
         },
-        bindWithDefault(state: StateHandler<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
             from.bindWithDefault(state, defaultValue, defaultState, disposeWhen);
             return result;
         }
@@ -294,8 +294,8 @@ export interface InputType {
     number: number
 }
 
-export function textbox<Type extends "text" | "number" = "text">(classes: string[], placeholder?: string, value: string = "", type?: Type): BindableTagElement<InputType[Type], 'input'> {
-    const input = tag('input', classes, {type, placeholder: placeholder}, []);
+export function textbox(classes: string[], placeholder?: string, value: string = ""): BindableTagElement<string, 'input'> {
+    const input = tag('input', classes, {type: "text", placeholder: placeholder}, []);
     if (value) {
         input.value = value;
     }
@@ -306,18 +306,31 @@ export function textbox<Type extends "text" | "number" = "text">(classes: string
             input.dispatchEvent(new CustomEvent('Accept', { detail: { key: evt.key, event: evt}}));
         }
     });
-    switch (type) {
-        case "number":
-            return mkBindable(
-                input,
-                    el => parseFloat(el.value),
-                (el, value) => el.value = (value?.toString() ?? ""),
-                'input'
-            ) as BindableTagElement<InputType[Type], 'input'>;
-        default:
-            return bindableTextInput(input) as BindableTagElement<InputType[Type], 'input'>;
-    }
+
+    return bindableTextInput(input)
 }
+
+export function numberbox(classes: string[], placeholder?: string, value?: number): BindableTagElement<number, 'input'> {
+    const input = tag('input', classes, {type: "text", placeholder: placeholder}, []);
+    if (value !== undefined) {
+        input.value = value.toString();
+    }
+    input.addEventListener('keydown', (evt: KeyboardEvent) => {
+        if (evt.key === 'Escape' || evt.key == 'Cancel') {
+            input.dispatchEvent(new CustomEvent('Cancel', { detail: { key: evt.key, event: evt }}));
+        } else if (evt.key === 'Enter' || evt.key === 'Accept') {
+            input.dispatchEvent(new CustomEvent('Accept', { detail: { key: evt.key, event: evt}}));
+        }
+    });
+
+    return mkBindable(
+        input,
+        el => parseFloat(el.value),
+        (el, value) => el.value = (value?.toString() ?? ""),
+        'input'
+    );
+}
+
 
 export function textarea(classes: string[], placeholder: string, value: string =""): BindableTagElement<string, "textarea"> {
     const text = tag('textarea', classes, {placeholder: placeholder}, []);
