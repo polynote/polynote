@@ -10,9 +10,12 @@ import java.io.File;
 import static com.googlecode.totallylazy.Option.none;
 import static com.googlecode.totallylazy.Option.option;
 import static com.googlecode.totallylazy.Sequences.empty;
-import static com.googlecode.totallylazy.Sequences.*;
+import static com.googlecode.totallylazy.Sequences.join;
+import static com.googlecode.totallylazy.Sequences.sequence;
 import static com.googlecode.totallylazy.predicates.Predicates.equalTo;
-import static com.googlecode.totallylazy.predicates.Predicates.*;
+import static com.googlecode.totallylazy.predicates.Predicates.instanceOf;
+import static com.googlecode.totallylazy.predicates.Predicates.not;
+import static com.googlecode.totallylazy.predicates.Predicates.where;
 import static polynote.kernel.interpreter.jav.javarepl.Utils.javaVersionAtLeast;
 import static polynote.kernel.interpreter.jav.javarepl.Utils.randomOutputDirectory;
 
@@ -30,7 +33,13 @@ public class EvaluationContext {
     }
 
     public static EvaluationContext evaluationContext() {
-        return new EvaluationContext(randomOutputDirectory(), defaultExpressions(), empty(Result.class), none(String.class));
+        return evaluationContext(null);
+    }
+
+    public static EvaluationContext evaluationContext(final File outputDirectory) {
+        return new EvaluationContext(
+                outputDirectory != null ? outputDirectory : randomOutputDirectory(),
+                defaultExpressions(), empty(Result.class), none(String.class));
     }
 
     private static Sequence<Expression> defaultJavaImports() {

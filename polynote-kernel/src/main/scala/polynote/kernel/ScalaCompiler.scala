@@ -2,6 +2,7 @@ package polynote.kernel
 
 import java.io.File
 import java.net.URL
+import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.syntax.traverse._
@@ -16,12 +17,13 @@ import zio.interop.catz._
 
 import scala.collection.mutable
 import scala.reflect.internal.util.{AbstractFileClassLoader, NoSourceFile, Position, SourceFile}
-import scala.reflect.io.VirtualDirectory
+import scala.reflect.io.{Directory, PlainDirectory, VirtualDirectory}
 import scala.reflect.runtime.universe
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.{Global, NscThief}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import ScalaCompiler.OriginalPos
+import polynote.kernel.logging.Logging
 
 class ScalaCompiler private (
   val global: Global,
@@ -671,7 +673,14 @@ object ScalaCompiler {
     settings.Ymacroexpand.value = settings.MacroExpand.Normal
     settings.YpresentationAnyThread.value = true
     settings.Ydelambdafy.value = "inline"
-    settings.outputDirs.setSingleOutput(new VirtualDirectory("(memory)", None))
+
+    {
+      // TODO best way to clean this up?
+      val outputDir = Files.createTempDirectory("polynote")
+      java.lang.System.err.println(s"OutputDir: $outputDir")
+      settings.outputDirs.setSingleOutput(new PlainDirectory(new Directory(outputDir.toFile)))
+    }
+
     settings
   }
 

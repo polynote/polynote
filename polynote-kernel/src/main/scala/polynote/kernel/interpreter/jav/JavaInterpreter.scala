@@ -1,6 +1,8 @@
 package polynote.kernel.interpreter
 package jav
 
+import java.io.File
+
 import polynote.kernel.interpreter.jav.javarepl.{EvaluationClassLoader, EvaluationContext, Evaluator}
 import polynote.kernel.{Completion, InterpreterEnv, ResultValue, ScalaCompiler, Signatures}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
@@ -58,8 +60,9 @@ object JavaInterpreter {
     for {
       compiler <- ScalaCompiler.access
     } yield {
-      val context = EvaluationContext.evaluationContext()
-      val classLoader = EvaluationClassLoader.evaluationClassLoader(context)
+      val outputDirectory = new File(compiler.global.settings.outputDirs.getSingleOutput.get.absolute.canonicalPath)
+      val context = EvaluationContext.evaluationContext(outputDirectory)
+      val classLoader = compiler.classLoader // EvaluationClassLoader.evaluationClassLoader(context, compiler.classLoader)
       new JavaInterpreter(new Evaluator(context, classLoader))
     }
   }

@@ -27,6 +27,10 @@ import java.io.StringWriter;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.net.URL;
+import java.net.URLClassLoader;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.regex.MatchResult;
 
 import static com.googlecode.totallylazy.Either.left;
@@ -64,10 +68,10 @@ import static polynote.kernel.interpreter.jav.javarepl.rendering.ExpressionToken
 import static javax.tools.ToolProvider.getSystemJavaCompiler;
 
 public class Evaluator {
-    private EvaluationClassLoader classLoader;
+    private ClassLoader classLoader;
     private EvaluationContext context;
 
-    public Evaluator(EvaluationContext context, EvaluationClassLoader classLoader) {
+    public Evaluator(EvaluationContext context, ClassLoader classLoader) {
         initializeEvaluator(context, classLoader);
     }
 
@@ -164,16 +168,16 @@ public class Evaluator {
     public void reset() {
         clearOutputDirectory();
         EvaluationContext evaluationContext = evaluationContext();
-        initializeEvaluator(evaluationContext, evaluationClassLoader(evaluationContext));
+        initializeEvaluator(evaluationContext, evaluationClassLoader(evaluationContext, classLoader.getParent()));
     }
 
-    private void initializeEvaluator(EvaluationContext evaluationContext, EvaluationClassLoader evaluationClassLoader) {
+    private void initializeEvaluator(EvaluationContext evaluationContext, ClassLoader evaluationClassLoader) {
         context = evaluationContext;
         classLoader = evaluationClassLoader;
     }
 
     public final Either<Throwable, Evaluation> tryEvaluate(String expression) {
-        Evaluator localEvaluator = new Evaluator(context, evaluationClassLoader(context));
+        Evaluator localEvaluator = new Evaluator(context, evaluationClassLoader(context, classLoader.getParent()));
         return localEvaluator.evaluate(expression);
     }
 
@@ -205,7 +209,7 @@ public class Evaluator {
     }
 
     public void addClasspathUrl(URL classpathUrl) {
-        classLoader.registerURL(classpathUrl);
+        //classLoader.registerURL(classpathUrl);
     }
 
     public File outputDirectory() {
@@ -350,14 +354,32 @@ public class Evaluator {
                 : Option.<java.lang.reflect.Type>none();
     }
 
+    private static URL[] getClassLoaderUrls(final ClassLoader classLoader) {
+        final List<URL> result = new ArrayList<>();
+        getClassLoaderUrls(classLoader, result);
+        return result.toArray(new URL[result.size()]);
+    }
+
+    private static void getClassLoaderUrls(final ClassLoader classLoader, final List<URL> result) {
+        // recursively, get the URLs from this and all parent class loaders
+        if(classLoader == null) {
+            // noop
+        } else if(classLoader instanceof URLClassLoader) {
+            result.addAll(Arrays.asList(((URLClassLoader) classLoader).getURLs()));
+            getClassLoaderUrls(classLoader.getParent(), result);
+        } else {
+            getClassLoaderUrls(classLoader.getParent(), result);
+        }
+    }
+
     private void compile(File file) throws Exception {
         JavaCompiler compiler = getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<JavaFileObject>();
         StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null);
 
         String classpath =
-                sequence(System.getProperty("java.class.path"))
-                        .join(sequence(classLoader.getURLs()).map(urlAsFilePath()))
+                sequence(/*System.getProperty("java.class.path"),*/ outputDirectory().getAbsolutePath())
+                        .join(sequence(getClassLoaderUrls(this.classLoader)).map(urlAsFilePath()))
                         .toString(pathSeparator);
 
         Iterable<? extends JavaFileObject> compilationUnits = fileManager.getJavaFileObjectsFromFiles(sequence(file));
@@ -372,11 +394,10 @@ public class Evaluator {
         try {
             final boolean result = task.call();
             if (!result) {
-                /*
-                System.out.println("-----------------------------------");
-                System.out.println("OUTPUT:" + output.toString());
-                System.out.println("-----------------------------------");
-                 */
+                System.err.println("-----------------------------------");
+                System.err.println("compile(\"" + file.getAbsolutePath() + "\")");
+                System.err.println("OUTPUT:" + output.toString());
+                System.err.println("-----------------------------------");
                 throw new ExpressionCompilationException(file, diagnostics.getDiagnostics());
             }
         } finally {
