@@ -30,6 +30,7 @@ class ScalaInterpreter private[scal] (
       .flatMap(_.transformStats(transformCode).pruneInputs())
     inputNames      = cellCode.inputs.map(_.name.decodedName.toString)
     inputs          = inputNames.map(collectedState.values).map(_._2)
+    _ = System.err.println("Got here anyway")
     cls            <- scalaCompiler.compileCell(cellCode)
     resultInstance <- cls.map(cls => runClass(cls, cellCode, inputs, state).map(Some(_))).getOrElse(ZIO.succeed(None))
     resultValues   <- resultInstance.map(resultInstance => getResultValues(state.id, cellCode, resultInstance)).getOrElse(ZIO.succeed(Nil))

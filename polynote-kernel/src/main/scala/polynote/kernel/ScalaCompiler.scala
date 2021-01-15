@@ -4,7 +4,6 @@ import java.io.File
 import java.net.URL
 import java.nio.file.{Files, Paths}
 import java.util.concurrent.atomic.AtomicInteger
-
 import cats.syntax.traverse._
 import cats.instances.list._
 import polynote.kernel.environment.Config
@@ -17,7 +16,7 @@ import zio.interop.catz._
 
 import scala.collection.mutable
 import scala.reflect.internal.util.{AbstractFileClassLoader, NoSourceFile, Position, SourceFile}
-import scala.reflect.io.{Directory, PlainDirectory, VirtualDirectory}
+import scala.reflect.io.{AbstractFile, Directory, PlainDirectory, VirtualDirectory}
 import scala.reflect.runtime.universe
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.{Global, NscThief}
@@ -97,6 +96,11 @@ class ScalaCompiler private (
 
   def formatTypes(types: List[Type]): RIO[Blocking, List[String]] =
     zio.blocking.effectBlocking(types.map(formatTypeInternal)).lock(compilerThread)
+
+  def compileJava(javaFile: AbstractFile): RIO[Blocking, Unit] = ZIO {
+    val run = new Run()
+    run.compileFiles(List(javaFile))
+  }.lock(compilerThread)
 
   def compileCell(
     cellCode: CellCode

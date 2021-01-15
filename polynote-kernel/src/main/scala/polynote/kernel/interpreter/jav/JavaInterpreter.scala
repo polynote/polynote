@@ -2,7 +2,6 @@ package polynote.kernel.interpreter
 package jav
 
 import java.io.File
-
 import com.googlecode.totallylazy
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.interpreter.jav.javarepl.expressions.{Expression, Import}
@@ -13,9 +12,12 @@ import polynote.messages.CellID
 import zio.blocking.Blocking
 import zio.{RIO, Task, ZIO}
 
+import java.nio.file.{Files, Path}
+import java.util.function.{IntFunction, Predicate}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.reflect.api.Universe
+import scala.reflect.io.AbstractFile
 
 class JavaInterpreter private[jav] (
   val evaluator: Evaluator,
@@ -70,7 +72,20 @@ class JavaInterpreter private[jav] (
       evaluator.setResults(scope(state))
       evaluator.setExpressions(importExpressions(state))
       evaluator.evaluate(code)
+    }.tap {
+      _ =>
+        // hacky – listing all the java files just to see if this will work
+        zio.blocking.effectBlocking {
+          Files.walk(evaluator.outputDirectory().toPath).filter(new Predicate[Path] {
+            override def test(t: Path): Boolean = t.getFileName.toString.endsWith(".java")
+          }).toArray(new IntFunction[Array[Path]] {
+            override def apply(value: Int): Array[Path] = new Array[Path](value)
+          })
+        }.flatMap {
+          javaFiles => ZIO.foreach_(javaFiles.toSeq)(file => scalaCompiler.compileJava(AbstractFile.getFile(file.toFile)))
+        }
     }
+    
     eio.flatMap { e =>
       if(e.isRight) {
         val evaluation = e.right()
