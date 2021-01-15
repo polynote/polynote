@@ -110,6 +110,14 @@ export class StructType extends DataType {
         return obj;
     }
 
+    /**
+     * Recursively inspect (and possibly replace) every data type in this StructType, returning a new StructType
+     * with updated types.
+     *
+     * @param fn A "partial" function which receives every data type present in this struct, and may return a replacement
+     *           data type (which aborts further recursion) or `undefined`, which leaves that data type unchanged (but
+     *           will further recurse into it if it is a struct, array, map, or optional)
+     */
     replaceType(fn: (typ: DataType) => DataType | undefined): StructType {
         function newType(type: DataType): DataType {
             return fn(type) || match(type)

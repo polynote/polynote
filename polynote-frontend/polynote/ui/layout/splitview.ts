@@ -118,15 +118,7 @@ export class SplitView extends Disposable {
             });
         });
 
-        const initialClasses = [];
-        if (initialPrefs.leftPane.collapsed) {
-            initialClasses.push('left-collapsed');
-        }
-        if (initialPrefs.rightPane.collapsed) {
-            initialClasses.push('right-collapsed');
-        }
-
-        this.el = div(['split-view', ...initialClasses], [left, leftDragger, center, rightDragger, right]);
+        this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
 
         const collapseStatus = (prefs: ViewPreferences) => {
             if (prefs.leftPane.collapsed) {

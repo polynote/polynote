@@ -697,11 +697,7 @@ export class GroupAgg extends TableOp {
     }
 
     streamCode(on: string): string {
-        const aggSpecs = this.aggregations.map(pair => {
-            const obj: Record<string, string> = {};
-            obj[pair.first] = pair.second;
-            return obj;
-        });
+        const aggSpecs = this.aggregations.map(pair => ({[pair.first]: pair.second}));
         return `${on}.aggregate(${JSON.stringify(this.columns)}, ${JSON.stringify(aggSpecs)})`
     }
 }

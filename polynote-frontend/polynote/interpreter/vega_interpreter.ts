@@ -181,12 +181,6 @@ export const VizInterpreter: IClientInterpreter = {
     hidden: true
 }
 
-/**
- * Wrapper around a Vega plot result.
- *
- * Since the Vega result isn't serializable, the constructor takes in Promise<the Vega Result> rather than the Vega Result
- * itself
- */
 export class VegaClientResult extends ClientResult {
     private runWithOutputEl: (outputEl: HTMLElement) => void;
 

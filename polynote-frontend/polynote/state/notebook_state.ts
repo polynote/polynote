@@ -377,6 +377,7 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
             added.forEach(o => this.setCellOutput(id, o))
         }, this)
 
+        // TODO: can this be cleaned up? It's not a great look to be dealing with ClientResults here.
         new IgnoreServerUpdatesWrapper(handler.view("results")).addObserver((newResults) => {
             if (newResults[0] && newResults[0] instanceof ClientResult) {
                 newResults[0].toOutput().then(

@@ -124,7 +124,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
      ** UI methods (which don't   **
      ** really belong here)       **
      *******************************/
-
+    // TODO: move this out of dispatcher
     showValueInspector(result: ResultValue, viewType?: string) {
         this.handler.insertCell("below", {
             id: result.sourceCell,
@@ -134,6 +134,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         }).then(id => this.handler.selectCell(id))
     }
 
+    // TODO: this is pointless now, remove once ValueInspector goes away
     hideValueInspector() {
         ValueInspector.get.hide()
     }
@@ -229,6 +230,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         this.socket.send(new messages.RunCell(serverCells));
     }
 
+    // TODO: move this out of dispatcher. Maybe think about a better way to deal with this whole thing.
     setCellOutput(cellId: number, output: Output | ClientResult) {
         if (output instanceof Output) {
             this.handler.cellsHandler.update1(cellId, cellState => ({...cellState, output: [output]}));
