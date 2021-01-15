@@ -78,14 +78,22 @@ class JavaInterpreter private[jav] (
         if (resultOption.isDefined) {
           val result = resultOption.get()
           val javaType = result.`type`()
+
           // TODO figure out a consistent way to go from java Type to scala Type
-          val rv = scala.util.Try {
-            import scalaCompiler.global._
-            val scalaType = scalaCompiler.global.rootMirror.getClassByName(TypeName(javaType.getTypeName)).thisType
+          import scalaCompiler.global._
+          val rv = try {
+
+            // This will throw an exception on generic java types, e.g. `List<String>`.
+            val hackedTypeName = javaType.getTypeName.replace('<', '[').replace('>', ']')
+            val scalaType = scalaCompiler.global.rootMirror.getClassByName(TypeName(hackedTypeName)).thisType
             ResultValue(result.key(), javaType.getTypeName, Nil, state.id, result.value(), scalaType, None)
-          } getOrElse {
-            val scalaType = scala.reflect.runtime.universe.NoType
-            ResultValue(result.key(), javaType.getTypeName, Nil, state.id, result.value(), scalaType, None)
+          } catch {
+            case err: Throwable => {
+              err.printStackTrace()
+              //val scalaType = scala.reflect.runtime.universe.NoType
+              val scalaType = scalaCompiler.global.rootMirror.getClassByName(TypeName("java.lang.Object")).thisType
+              ResultValue(result.key(), "(*) " + javaType.getTypeName, Nil, state.id, result.value(), scalaType, None)
+            }
           }
 
           ZIO.succeed(JavaCellState(state.id, state.prev, List(rv), Some(result), None))
