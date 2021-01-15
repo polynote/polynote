@@ -6,6 +6,7 @@ import polynote.kernel.interpreter.jav.javarepl.expressions.Expression;
 import polynote.kernel.interpreter.jav.javarepl.expressions.Import;
 
 import java.io.File;
+import java.util.List;
 
 import static com.googlecode.totallylazy.Option.none;
 import static com.googlecode.totallylazy.Option.option;
@@ -116,5 +117,9 @@ public class EvaluationContext {
 
     public EvaluationContext removeExpressionWithKey(String key) {
         return new EvaluationContext(outputDirectory, expressions.filter(where(Expression::key, not(key))), results, lastSource);
+    }
+
+    public EvaluationContext setExpressions(final List<Expression> expressions) {
+        return new EvaluationContext(outputDirectory, defaultExpressions().join(expressions), results, lastSource);
     }
 }
