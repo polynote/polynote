@@ -2,7 +2,7 @@ package polynote.kernel
 
 import java.io.File
 import java.net.URL
-import java.nio.file.Files
+import java.nio.file.{Files, Paths}
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.syntax.traverse._
@@ -23,7 +23,6 @@ import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.{Global, NscThief}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import ScalaCompiler.OriginalPos
-import polynote.kernel.logging.Logging
 
 class ScalaCompiler private (
   val global: Global,
@@ -91,6 +90,7 @@ class ScalaCompiler private (
     mirror => ZIO(mirror.reflect(value))
   }
 
+  def outputDir: String = global.settings.outputDirs.getSingleOutput.get.absolute.canonicalPath
 
   def formatType(typ: Type): RIO[Blocking, String] =
     zio.blocking.effectBlocking(formatTypeInternal(typ)).lock(compilerThread)
@@ -658,10 +658,18 @@ object ScalaCompiler {
   ).distinct.map(pathAsFile)
 
   def defaultSettings(initial: Settings, classPath: List[File] = Nil): Settings = {
-    val cp = classPath ++ requiredPaths
-
     val settings = initial.copy()
     settings.target.value = "jvm-1.8" // set Java8 by default
+
+    val outputDir = Files.createTempDirectory("polynote").toFile
+    val cp = classPath ++ requiredPaths ++ List(outputDir)
+
+    {
+      // TODO best way to clean this up?
+      java.lang.System.err.println(s"OutputDir: $outputDir")
+      settings.outputDirs.setSingleOutput(new PlainDirectory(new Directory(outputDir)))
+    }
+
     settings.classpath.append(cp.map(_.getCanonicalPath).mkString(File.pathSeparator))
     settings.Yrangepos.value = true
     try {
@@ -673,13 +681,6 @@ object ScalaCompiler {
     settings.Ymacroexpand.value = settings.MacroExpand.Normal
     settings.YpresentationAnyThread.value = true
     settings.Ydelambdafy.value = "inline"
-
-    {
-      // TODO best way to clean this up?
-      val outputDir = Files.createTempDirectory("polynote")
-      java.lang.System.err.println(s"OutputDir: $outputDir")
-      settings.outputDirs.setSingleOutput(new PlainDirectory(new Directory(outputDir.toFile)))
-    }
 
     settings
   }

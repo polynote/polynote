@@ -3,26 +3,23 @@ package jav
 
 import java.io.File
 
-import polynote.kernel.interpreter.jav.javarepl.{EvaluationClassLoader, EvaluationContext, Evaluator}
-import polynote.kernel.{Completion, InterpreterEnv, ResultValue, ScalaCompiler, Signatures}
+import com.googlecode.totallylazy
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
+import polynote.kernel.interpreter.jav.javarepl.{EvaluationContext, Evaluator, Result}
 import polynote.kernel.task.TaskManager
+import polynote.kernel.{Completion, InterpreterEnv, ResultValue, ScalaCompiler, Signatures}
 import polynote.messages.CellID
-import zio.{RIO, Task, ZIO}
 import zio.blocking.Blocking
+import zio.{RIO, Task, ZIO}
 
-/**
-  * @author dray
-  */
+import scala.collection.JavaConverters._
+
 class JavaInterpreter private[jav] (
-  val evaluator: Evaluator) extends Interpreter {
+  val evaluator: Evaluator,
+  val scalaCompiler: ScalaCompiler) extends Interpreter {
 
   case class CellCode()
 
-  /**
-    * A [[State]] implementation for Java cells. It tracks the CellCode and the instance of the cell class, which
-    * we'll need to pass into future cells if they use types, classes, etc from this cell.
-    */
   case class JavaCellState(id: CellID, prev: State, values: List[ResultValue], cellCode: CellCode, instance: Option[AnyRef]) extends State {
     override def withPrev(prev: State): JavaCellState = copy(prev = prev)
     override def updateValues(fn: ResultValue => ResultValue): State = copy(values = values.map(fn))
@@ -30,19 +27,35 @@ class JavaInterpreter private[jav] (
       ZIO.collectAll(values.map(fn)).map(values => copy(values = values))
   }
 
-  override def run(code: String, state: State): RIO[InterpreterEnv, State] = zio.blocking.effectBlocking {
-    val e = evaluator.evaluate(code)
-    if(e.isRight) {
-      val resultOption = e.right().result()
-      if(resultOption.isDefined) {
-        val result = resultOption.get()
-        val rv = ResultValue(result.key(), result.`type`().getTypeName, Nil, state.id, result.value(), scala.reflect.runtime.universe.NoType, None)
-        JavaCellState(state.id, state.prev, List(rv), CellCode(), None)
+  def makeJavaResult(resultValue: ResultValue): Result = {
+    Result.result(resultValue.name, resultValue.value, totallylazy.Option.some(classOf[Object]))
+  }
+
+  def makeJavaResults(resultValues: List[ResultValue]): java.util.List[Result] = {
+    resultValues.map { rv => makeJavaResult(rv) }.asJava
+  }
+
+  override def run(code: String, state: State): RIO[InterpreterEnv, State] = {
+    val eio = zio.blocking.effectBlocking {
+      evaluator.setResults(makeJavaResults(state.scope))
+      evaluator.evaluate(code)
+    }
+    eio.flatMap { e =>
+      if(e.isRight) {
+        val resultOption = e.right().result()
+        if (resultOption.isDefined) {
+          val result = resultOption.get()
+          val javaType = result.`type`()
+          import scalaCompiler.global._
+          val scalaType = scalaCompiler.global.rootMirror.getClassByName(TypeName(javaType.getTypeName)).thisType
+          val rv = ResultValue(result.key(), javaType.getTypeName, Nil, state.id, result.value(), scalaType, None)
+          ZIO.succeed(JavaCellState(state.id, state.prev, List(rv), CellCode(), None))
+        } else {
+          ZIO.succeed(JavaCellState(state.id, state.prev, List(), CellCode(), None))
+        }
       } else {
-        JavaCellState(state.id, state.prev, List(), CellCode(), None)
+        ZIO.fail(e.left())
       }
-    } else {
-      JavaCellState(state.id, state.prev, List(), CellCode(), None)
     }
   }
 
@@ -60,10 +73,10 @@ object JavaInterpreter {
     for {
       compiler <- ScalaCompiler.access
     } yield {
-      val outputDirectory = new File(compiler.global.settings.outputDirs.getSingleOutput.get.absolute.canonicalPath)
+      val outputDirectory = new File(compiler.outputDir)
       val context = EvaluationContext.evaluationContext(outputDirectory)
-      val classLoader = compiler.classLoader // EvaluationClassLoader.evaluationClassLoader(context, compiler.classLoader)
-      new JavaInterpreter(new Evaluator(context, classLoader))
+      val classLoader = compiler.classLoader
+      new JavaInterpreter(new Evaluator(context, classLoader), compiler)
     }
   }
 

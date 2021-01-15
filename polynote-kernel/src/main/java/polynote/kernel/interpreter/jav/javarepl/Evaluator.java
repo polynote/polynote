@@ -113,6 +113,14 @@ public class Evaluator {
         context = context.addResults(result);
     }
 
+    public void addResults(List<Result> result) {
+        context = context.addResults(sequence(result));
+    }
+
+    public void setResults(List<Result> result) {
+        context = context.setResults(sequence(result));
+    }
+
     private Either<Throwable, Expression> createImport(String expression) {
         return right((Expression) new Import(expression, importPattern.match(expression).group(1)));
     }

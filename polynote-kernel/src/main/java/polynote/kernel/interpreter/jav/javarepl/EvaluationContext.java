@@ -106,6 +106,10 @@ public class EvaluationContext {
         return new EvaluationContext(outputDirectory, expressions, results.join(result), lastSource);
     }
 
+    public EvaluationContext setResults(Sequence<Result> result) {
+        return new EvaluationContext(outputDirectory, expressions, result, lastSource);
+    }
+
     public EvaluationContext addExpression(Expression expression) {
         return new EvaluationContext(outputDirectory, expressions.append(expression), results, lastSource);
     }
