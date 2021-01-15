@@ -3,13 +3,6 @@
 import {EventTarget} from 'event-target-shim'
 import {KeepAlive, Message} from "../data/messages";
 
-export class PolynoteMessageEvent<T extends Message> extends CustomEvent<any> {
-    constructor(readonly message: T) {
-        super('message');
-        Object.freeze(this);
-    }
-}
-
 type ListenerCallback = (...args: any[]) => void
 export type MessageListener = [typeof Message, ListenerCallback, boolean?];
 
@@ -23,16 +16,15 @@ function wsUrl(url: URL) {
     if (!url.searchParams.get("key") && socketKey) {
         url.searchParams.append("key", socketKey)
     }
-    url.protocol = url.protocol === "https:" || url.protocol == "wss" ? 'wss:' : 'ws';
+    url.protocol = url.protocol === "https:" || url.protocol == "wss:" ? 'wss:' : 'ws';
     return url;
 }
 
 function closeAll() {
-    for (const url in Object.keys(openSessions)) {
-        const sess = openSessions[url];
-        sess.close();
-        delete openSessions[url];
-    }
+    Object.entries(openSessions).forEach(([url, sess])=> {
+        sess.close()
+        delete openSessions[url]
+    })
 }
 
 window.addEventListener("beforeunload", closeAll);
@@ -53,13 +45,20 @@ export class SocketSession extends EventTarget {
         if (openSessions[url.href]) {
             return openSessions[url.href];
         }
-        return new SocketSession(url)
+        const session = new SocketSession(url)
+        openSessions[url.href] = session
+        return session
     }
 
     private socket?: WebSocket;
     listeners: any;
 
-    private constructor(readonly url: URL, public queue: Message[] = [], public messageListeners: MessageListener[] = []) {
+    private constructor(
+        readonly url: URL,
+        public queue: Message[] = [],
+        public messageListeners: MessageListener[] = [],
+        private keepaliveInterval: number = 10 * 1000 // 10 seconds
+    ) {
         super();
         this.mkSocket();
     }
@@ -80,7 +79,6 @@ export class SocketSession extends EventTarget {
         this.socket.addEventListener('error', this.listeners.error);
 
         // keepalive
-        const interval = 10 * 1000 // 10 seconds
         let latestPayload: number = 0; // Unsigned int. Can't be larger than 255.
         let receivedResponse: boolean = true;
         const ping = () => {
@@ -90,7 +88,7 @@ export class SocketSession extends EventTarget {
                 receivedResponse = false;
             } else {
                 console.error(this.url.href, "Did not receive response to latest ping!")
-                this.dispatchEvent(new CustomEvent('error', {detail: {cause: `KeepAlive timed out after ${interval} ms`}}));
+                this.dispatchEvent(new CustomEvent('error', {detail: {cause: `KeepAlive timed out after ${this.keepaliveInterval} ms`}}));
             }
         }
         this.addMessageListener(KeepAlive, payload => {
@@ -103,7 +101,7 @@ export class SocketSession extends EventTarget {
 
         this.pingIntervalId = window.setInterval(() => {
             ping()
-        }, interval)
+        }, this.keepaliveInterval)
     }
 
     onError(event: Event) {
@@ -161,7 +159,6 @@ export class SocketSession extends EventTarget {
         if (event instanceof MessageEvent) {
             if (event.data instanceof ArrayBuffer) {
                 const msg = Message.decode(event.data);
-                this.dispatchEvent(new PolynoteMessageEvent(msg)); // this is how `request` works.
                 this.handleMessage(msg)
             } else {
                 //console.log(event.data);
@@ -184,21 +181,6 @@ export class SocketSession extends EventTarget {
 
     listenOnceFor<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (...args: ConstructorParameters<typeof msgType>) => void) {
         return this.addMessageListener(msgType, fn, true);
-    }
-
-    /**
-     * Send a request and listen for the response. The message must properly implement the isResponse method.
-     */
-    request<T extends Message>(msg: T) {
-        return new Promise<T>((resolve, reject) => {
-            this.addEventListener('message', (evt: PolynoteMessageEvent<T>) => {
-               if (msg.isResponse(evt.message)) {
-                   resolve(evt.message);
-                   return true; // so it gets removed.
-               } else return false;
-            }, /*removeWhenFalse*/ true);
-            this.send(msg);
-        });
     }
 
     close() {
@@ -234,3 +216,6 @@ export class SocketSession extends EventTarget {
     }
 
 }
+
+// for testing visibility
+export const __testExports = {wsUrl, closeAll, openSessions}

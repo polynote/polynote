@@ -6,9 +6,16 @@ import {
     ResultValue, RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
-import {CompletionCandidate, HandleData, ModifyStream, NotebookUpdate, Signatures} from "../data/messages";
+import {
+    CompletionCandidate,
+    HandleData,
+    KernelStatusString,
+    ModifyStream,
+    NotebookUpdate,
+    Signatures,
+    TaskInfo
+} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
-import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
 import {deepEquals, diffArray, equalsByKey, mapValues} from "../util/helpers";
@@ -41,6 +48,17 @@ export interface CellState {
 export type CompletionHint = { cell: number, offset: number; completions: CompletionCandidate[] }
 export type SignatureHint = { cell: number, offset: number, signatures?: Signatures };
 export type NBConfig = {open: boolean, config: NotebookConfig}
+
+export type KernelSymbols = (ResultValue)[];
+export type KernelInfo = Record<string, string>;
+export type KernelTasks = Record<string, TaskInfo>; // taskId -> TaskInfo
+
+export interface KernelState {
+    symbols: KernelSymbols,
+    status: KernelStatusString,
+    info: KernelInfo,
+    tasks: KernelTasks
+}
 
 export interface NotebookState {
     // basic states

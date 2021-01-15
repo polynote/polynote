@@ -53,9 +53,16 @@ export class ErrorStateHandler extends StateHandler<ErrorState> {
             let state = { ...errorState };
             Object.keys(errorState).forEach(key => {
                 state = {...state, [key]: arrDeleteFirstItem(state[key], err)}
+                if (state[key].length === 0 && key !== "serverErrors") {
+                    delete state[key]
+                }
             })
             return state
         })
+    }
+
+    static clear() {
+        ErrorStateHandler.get.update(() => ({ serverErrors: []}))
     }
 
     static notebookRenamed(oldPath: string, newPath: string) {
