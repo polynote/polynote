@@ -59,7 +59,7 @@ describe("SocketSession", () => {
 
     test("sends and receives encoded messages", async () => {
         const server = new WS('ws://localhost/socket');
-        const client = createClient("cocket")
+        const client = createClient("socket")
         await server.connected
 
         const message = new LoadNotebook("test")

@@ -22,7 +22,7 @@ import {
 } from "../data/result";
 import {Disposable, NoUpdate, StateHandler, StateView, StateWrapper} from "../state/state_handler";
 import {SocketStateHandler} from "../state/socket_state";
-import {arrDelete, arrInsert, collect, deepEquals, mapValues, removeKeys, unzip} from "../util/helpers";
+import {arrDelete, arrInsert, deepEquals, mapValues, removeKeys, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
@@ -328,22 +328,14 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     .when(messages.DeleteCell, (g, l, id: number) => {
                         const idx = s.cellOrder.indexOf(id)
                         if (idx > -1) {
-                            // Upon deletion, we want to set the selected cell to be the cell below the deleted one, if present. Otherwise, we want to select the cell above.
-                            const nextCellId = s.cellOrder[idx + 1] ?? s.cellOrder[idx - 1]
-                            const x = {
+                            return {
                                 ...s,
                                 cells: {
                                     ...removeKeys(s.cells, id),
-                                    [nextCellId]: {
-                                        ...s.cells[nextCellId],
-                                        selected: true
-                                    }
                                 },
                                 cellOrder: arrDelete(s.cellOrder, idx),
-                                activeCellId: nextCellId,
+                                activeCellId: s.activeCellId === id ? undefined : s.activeCellId // clear activeCellId if it was deleted.
                             }
-                            console.log("DeleteCell", id, "nextCellId is", nextCellId, "state is now", x)
-                            return x
                         } else return s
                     })
                     .when(messages.UpdateConfig, (g, l, config: NotebookConfig) => {
