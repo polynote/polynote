@@ -1,4 +1,4 @@
-import {Disposable, StateHandler, StateView} from "./state_handler";
+import {Disposable, NoUpdate, StateHandler, StateView} from "./state_handler";
 import {
     ClientResult, CompileErrors,
     Output,
@@ -6,9 +6,16 @@ import {
     ResultValue,
     RuntimeError,
 } from "../data/result";
-import {CompletionCandidate, HandleData, ModifyStream, NotebookUpdate, Signatures, TaskStatus} from "../data/messages";
+import {
+    CompletionCandidate,
+    HandleData,
+    KernelStatusString,
+    ModifyStream,
+    NotebookUpdate,
+    Signatures,
+    TaskInfo, TaskStatus
+} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
-import {KernelState} from "./kernel_state";
 import {ContentEdit} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
 import {deepEquals, diffArray, equalsByKey, mapValues} from "../util/helpers";
@@ -53,6 +60,17 @@ export type CompletionHint = { cell: number, offset: number; completions: Comple
 export type SignatureHint = { cell: number, offset: number, signatures?: Signatures };
 export type NBConfig = {open: boolean, config: NotebookConfig}
 
+export type KernelSymbols = Record<string, Record<string, ResultValue>>;
+export type KernelInfo = Record<string, string>;
+export type KernelTasks = Record<string, TaskInfo>; // taskId -> TaskInfo
+
+export interface KernelState {
+    symbols: KernelSymbols,
+    status: KernelStatusString,
+    info: KernelInfo,
+    tasks: KernelTasks
+}
+
 export interface NotebookState {
     // basic states
     path: string,
@@ -94,6 +112,26 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         }, this)
     }
 
+    static forPath(path: string) {
+        return new NotebookStateHandler({
+            path,
+            cells: {},
+            cellOrder: [],
+            config: {open: false, config: NotebookConfig.default},
+            kernel: {
+                symbols: {},
+                status: 'disconnected',
+                info: {},
+                tasks: {},
+            },
+            activePresence: {},
+            activeCellId: undefined,
+            activeCompletion: undefined,
+            activeSignature: undefined,
+            activeStreams: {},
+        })
+    }
+
     protected compare(s1: any, s2: any): boolean {
         return deepEquals(s1, s2)
     }
@@ -116,12 +154,12 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
 
     getPreviousCellId(anchorId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
         const anchorIdx = this.getCellIndex(anchorId, cellOrder)
-        return anchorIdx ? cellOrder[anchorIdx - 1] : undefined
+        return anchorIdx !== undefined ? cellOrder[anchorIdx - 1] : undefined
     }
 
     getNextCellId(anchorId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
         const anchorIdx = this.getCellIndex(anchorId, cellOrder)
-        return anchorIdx ? cellOrder[anchorIdx + 1] : undefined
+        return anchorIdx !== undefined ? cellOrder[anchorIdx + 1] : undefined
     }
 
     /**
@@ -192,40 +230,55 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                 }
             }
             const currentCell = state.cells[currentCellId];
-            anchor = {id: currentCellId, language: currentCell.language, metadata: currentCell.metadata};
+            anchor = {id: currentCellId, language: currentCell?.language ?? 'scala', metadata: currentCell?.metadata ?? new CellMetadata()};
         }
         const anchorIdx = this.getCellIndex(anchor.id)!;
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
         const maybePrevId = state.cellOrder[prevIdx] ?? -1;
         // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
         const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
-        const cellTemplate = {cellId: maxId + 1, language: anchor!.language, content: anchor!.content ?? '', metadata: anchor!.metadata, prev: maybePrevId}
-        this.updateHandler.insertCell(maxId + 1, anchor!.language, anchor.content ?? '', anchor.metadata, maybePrevId)
+        const cellTemplate = {cellId: maxId + 1, language: anchor.language, content: anchor.content ?? '', metadata: anchor.metadata, prev: maybePrevId}
         // wait for the InsertCell message to go to the server and come back.
-        return new Promise(resolve => {
+        const waitForCell = new Promise<number>(resolve => {
             const cellOrder = this.view("cellOrder")
             const obs = cellOrder.addObserver((order, prev) => {
                 const added = diffArray(prev, order)[1][0]
-                const addedCellIdx = order.indexOf(added)
+                if (added !== undefined) {
+                    const addedCellIdx = order.indexOf(added)
 
-                // ensure the new cell is the one we're waiting for
-                const addedCell = this.state.cells[added]
-                const matches = equalsByKey(addedCell, cellTemplate, ["language", "content", "metadata"])
-                if (addedCellIdx - 1 === maybePrevId && matches && addedCell.id > maxId) {
-                    resolve(addedCell.id)
-                    cellOrder.removeObserver(obs)
+                    // ensure the new cell is the one we're waiting for
+                    const addedCell = this.state.cells[added]
+                    const matches = equalsByKey(addedCell, cellTemplate, ["language", "content", "metadata"])
+                    if (addedCellIdx - 1 === prevIdx && matches && addedCell.id > maxId) {
+                        resolve(addedCell.id)
+                        cellOrder.removeObserver(obs)
+                    }
                 }
             }, this)
         })
+        // trigger the insert
+        this.updateHandler.insertCell(maxId + 1, anchor.language, anchor.content ?? '', anchor.metadata, maybePrevId)
+
+        return waitForCell
     }
 
-    deleteCell(id?: number){
+    deleteCell(id?: number): Promise<number | undefined> {
         if (id === undefined) {
             id = this.state.activeCellId;
         }
         if (id !== undefined) {
+            const waitForDelete = new Promise<number>(resolve => {
+                const cellOrder = this.view("cellOrder")
+                const obs = cellOrder.addObserver((order, prev) => {
+                    if (! order.includes(id!)) {
+                        resolve(id)
+                        cellOrder.removeObserver(obs)
+                    }
+                }, this)
+            })
             this.updateHandler.deleteCell(id)
-        }
+            return waitForDelete
+        } else return Promise.resolve(undefined)
     }
 
     setCellLanguage(id: number, language: string) {
@@ -308,7 +361,7 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
         if (update.localVersion !== this.localVersion) {
             throw new Error(`Update Version mismatch! Update had ${update.localVersion}, but I had ${this.localVersion}`)
         }
-        this.edits.push(update.localVersion, update)
+        this.edits = this.edits.push(update.localVersion, update)
         this.update(s => [...s, update])
     }
 

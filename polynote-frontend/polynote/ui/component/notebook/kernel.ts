@@ -1,4 +1,4 @@
-import {KernelInfo, KernelState, KernelSymbols, KernelTasks} from "../../../state/kernel_state";
+import {KernelInfo, KernelState, KernelSymbols, KernelTasks} from "../../../state/notebook_state";
 import {
     Content,
     div,

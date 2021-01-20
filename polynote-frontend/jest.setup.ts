@@ -65,3 +65,11 @@ import {TextEncoder, TextDecoder} from "util";
 global.TextEncoder = TextEncoder
 // @ts-ignore
 global.TextDecoder = TextDecoder
+
+// mock the `Main` element
+import {div} from "./polynote/ui/tags";
+const main = div([], [])
+main.id = "Main"
+export const superSecretKey = "PolynoteRocks!";
+main.setAttribute('data-ws-key', superSecretKey)
+document.body.appendChild(main)

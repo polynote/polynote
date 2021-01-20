@@ -2,7 +2,7 @@
 
 import {VizInterpreter, VegaInterpreter} from "./vega_interpreter";
 import {ClientResult, CompileErrors, ExecutionInfo, Result, ResultValue, RuntimeError} from "../data/result";
-import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {CellState, KernelSymbols, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {
@@ -17,7 +17,6 @@ import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
 import {ServerStateHandler} from "../state/server_state";
 import {Disposable} from "../state/state_handler";
-import {KernelSymbols} from "../state/kernel_state";
 
 export interface CellContext {
     id: number,

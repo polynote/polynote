@@ -145,23 +145,7 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             return maybeExists
         } else {
             const nbInfo = {
-                handler: new NotebookStateHandler({
-                    path,
-                    cells: {},
-                    cellOrder: [],
-                    config: {open: false, config: NotebookConfig.default},
-                    kernel: {
-                        symbols: {},
-                        status: 'disconnected',
-                        info: {},
-                        tasks: {},
-                    },
-                    activePresence: {},
-                    activeCellId: undefined,
-                    activeCompletion: undefined,
-                    activeSignature: undefined,
-                    activeStreams: {},
-                }),
+                handler: NotebookStateHandler.forPath(path),
                 loaded: false,
                 info: undefined,
             }
