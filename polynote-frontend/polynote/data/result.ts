@@ -316,7 +316,7 @@ function mimePriority(mimeType: string, preferredPrefixes?: string[]): number {
  * Priority is >= 0; lower number = higher preference. If no prefix matches, returns undefined.
  */
 function maybeMimePriority(mimeType: string, preferredPrefixes?: string[]): number | undefined {
-    preferredPrefixes = preferredPrefixes || mimeOrder;
+    preferredPrefixes = [...(preferredPrefixes || []), ...mimeOrder];
     const index = preferredPrefixes.findIndex(prefix => mimeType.startsWith(prefix));
     if (index < 0) {
         return undefined;
