@@ -52,6 +52,11 @@ object ContentEdit {
   // rebase a onto b and b onto a
   def rebase(a: ContentEdit, b: ContentEdit): (List[ContentEdit], List[ContentEdit]) = (a, b) match {
 
+    // if A == B, no rebase is needed
+    case (a @ Insert(posA, contentA), b @ Insert(posB, contentB)) if
+      (posA == posB && contentA.length == contentB.length && contentA == contentB) =>
+      List(a) -> List(b)
+
     // if A is before B, or A and B are at the same spot but (A is shorter than B or equal in length but lexically before B)
     // then A comes before B.
     case (winner @ Insert(posA, contentA), Insert(posB, contentB)) if

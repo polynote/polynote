@@ -13,15 +13,11 @@ import {Either} from "../data/codec_types";
 import match from "../util/match";
 import {StreamingDataRepr} from "../data/value_repr";
 import {
-    ClearDataStream,
-    ModifyDataStream,
     NotebookMessageDispatcher,
-    RequestCancelTasks,
-    RequestDataBatch,
-    StopDataStream
 } from "./dispatcher";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {Observer, StateView} from "../state/state_handler";
+import {Disposable, Observer, StateHandler, StateView} from "../state/state_handler";
+import {removeKeys} from "../util/helpers";
 
 export const QuartilesType = new StructType([
     new StructField("min", DoubleType),
@@ -35,7 +31,7 @@ export const QuartilesType = new StructType([
 /**
  * An API for streaming data out of a StreamingDataRepr
  */
-export class DataStream {
+export class DataStream extends Disposable {
     readonly mods: TableOp[];
     readonly dataType: StructType;
     private batchSize = 50;
@@ -49,16 +45,17 @@ export class DataStream {
     private nextPromise?: {resolve: <T>(value?: T | PromiseLike<T>) => void, reject: (reason?: any) => void}; // holds a Promise's `resolve` and `reject` inputs.
     private setupPromise?: Promise<Message | void>;
     private repr: StreamingDataRepr;
-    private activeStreams: StateView<NotebookState["activeStreams"]>;
-    private observer?: Observer<NotebookState["activeStreams"]>;
+    private activeStreams: StateHandler<NotebookState["activeStreams"]>;
+    private observer?: [Observer<NotebookState["activeStreams"]>, string];
 
     constructor(private readonly dispatcher: NotebookMessageDispatcher, private readonly nbState: NotebookStateHandler, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
+        super()
         this.mods = mods ?? [];
         this.repr = originalRepr;
         this.dataType = originalRepr.dataType;
         this.dataType = this.finalDataType();
 
-        this.activeStreams = nbState.view("activeStreams")
+        this.activeStreams = nbState.lens("activeStreams")
         this.observer = this.activeStreams.addObserver(handles => {
             const data = handles[this.repr.handle];
             if (data && data.length > 0) {
@@ -89,14 +86,16 @@ export class DataStream {
                             }
                         })
                         .when(ModifyStream, (fromHandle, ops, newRepr) => {
-                            if (newRepr) this.repr = newRepr
+                            if (newRepr) {
+                                this.repr = newRepr
+                            }
                         })
                 })
 
                 // clear messages now that they have been processed.
-                this.dispatcher.dispatch(new ClearDataStream(this.repr.handle))
+                this.activeStreams.update(streams => removeKeys(streams, this.repr.handle))
             }
-        })
+        }, this)
     }
 
     batch(batchSize: number) {
@@ -120,7 +119,7 @@ export class DataStream {
     kill() {
         this.terminated = true;
         if (this.repr.handle != this.originalRepr.handle) {
-            this.dispatcher.dispatch(new StopDataStream(StreamingDataRepr.handleTypeId, this.repr.handle))
+            this.dispatcher.stopDataStream(StreamingDataRepr.handleTypeId, this.repr.handle)
         }
 
         if (this.observer)  {
@@ -133,6 +132,8 @@ export class DataStream {
         if (this.nextPromise) {
             this.nextPromise.reject("Stream was terminated")
         }
+
+        this.dispose()
     }
 
     aggregate(groupCols: string[], aggregations: Record<string, string> | Record<string, string>[]) {
@@ -206,7 +207,7 @@ export class DataStream {
     }
 
     abort() {
-        this.dispatcher.dispatch(new RequestCancelTasks())
+        this.dispatcher.cancelTasks()
         this.kill();
     }
 
@@ -232,7 +233,7 @@ export class DataStream {
     }
 
     private _requestNext() {
-        this.dispatcher.dispatch(new RequestDataBatch(StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize))
+        this.dispatcher.requestDataBatch(StreamingDataRepr.handleTypeId, this.repr.handle, this.batchSize)
     }
     private decodeValues(data: ArrayBuffer[]) {
         return data.map(buf => this.repr.dataType.decodeBuffer(new DataReader(buf)));
@@ -242,7 +243,7 @@ export class DataStream {
         if (!this.setupPromise) {
             this.setupPromise = new Promise((resolve, reject) => {
                 const handleId = this.repr.handle;
-                this.dispatcher.dispatch(new ModifyDataStream(handleId, this.mods))
+                this.dispatcher.modifyDataStream(handleId, this.mods)
                 const obs = this.activeStreams.addObserver(handles => {
                     const messages = handles[handleId]
                     if (messages.length > 0) {
@@ -253,7 +254,7 @@ export class DataStream {
                             }
                         })
                     }
-                })
+                }, this)
             })
         }
 

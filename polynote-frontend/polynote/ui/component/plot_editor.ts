@@ -20,13 +20,14 @@ import {ServerStateHandler} from "../../state/server_state";
 import {GroupAgg, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {ClientResult, Output} from "../../data/result";
-import {HideValueInspector, NotebookMessageDispatcher, SetCellOutput} from "../../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
 import {CellMetadata} from "../../data/data";
 import {DataStream} from "../../messaging/datastream";
 import {StreamingDataRepr} from "../../data/value_repr";
 import {NotebookStateHandler} from "../../state/notebook_state";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {mapValues, deepEquals} from "../../util/helpers";
+import {Disposable} from "../../state/state_handler";
 
 function isDimension(dataType: DataType): boolean {
     if (dataType instanceof OptionalType) {
@@ -506,23 +507,28 @@ export class PlotEditor {
         content = content.replace('"$DATA_STREAM$"', streamSpec);
 
         VegaClientResult.plotToOutput(this.plot).then(output => {
-            return this.dispatcher.insertCell("below", {
+            return this.nbState.insertCell("below", {
                 id: this.sourceCellId,
                 language: 'vega',
                 metadata: new CellMetadata(false, true, false),
                 content: `(${content})`
             }).then(newCellId => {
                 const clientResult = new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output);
-                this.dispatcher.dispatch(new SetCellOutput(newCellId, clientResult))
-                return new Promise((resolve, reject) => {
-                    const obs = this.nbState.addObserver(state => {
-                        const maybeHasOutput = state.cells.find(c => c.id === newCellId)
+                this.nbState.cellsHandler.update1(newCellId, cell => ({
+                    ...cell,
+                    output: [output],
+                    results: [...cell.results, clientResult]
+                }))
+                return new Promise(resolve => {
+                    const disposable = new Disposable()
+                    this.nbState.addObserver(state => {
+                        const maybeHasOutput = state.cells[newCellId]
                         if (maybeHasOutput && maybeHasOutput.output.includes(output)) {
-                            this.nbState.removeObserver(obs);
-                            this.dispatcher.dispatch(new HideValueInspector())
+                            disposable.dispose()
+                            this.dispatcher.hideValueInspector()
                             resolve()
                         }
-                    })
+                    }, disposable)
                 })
             })
         })

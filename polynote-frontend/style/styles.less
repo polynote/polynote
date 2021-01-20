@@ -1313,7 +1313,7 @@ button.inspect.icon-button {
     font-weight: normal;
   }
 
-  & > h2 {
+  & > h2, .ui-panel-header > h2 {
     grid-area: head;
     position: relative;
     .buttons {
@@ -2675,6 +2675,21 @@ button.dialog-button {
 
       .json {
         word-break: break-word;
+      }
+    }
+  }
+
+  .state-inspector {
+    .state {
+      border-radius: 6px;
+      padding: 1em;
+
+      .json {
+        word-break: break-word;
+      }
+
+      .key {
+        vertical-align: text-top;
       }
     }
   }

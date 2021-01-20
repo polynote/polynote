@@ -1,14 +1,10 @@
 import {a, button, div, h2, iconButton, span, tag, TagElement} from "../tags";
 import {
-    CopyNotebook,
-    CreateNotebook, DeleteNotebook,
-    LoadNotebook, RenameNotebook,
-    RequestNotebooksList,
-    ServerMessageDispatcher, SetSelectedNotebook
+    ServerMessageDispatcher
 } from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
-import {diffArray, removeKey} from "../../util/helpers";
-import {StateHandler, StateView} from "../../state/state_handler";
+import {diffArray, removeKeys} from "../../util/helpers";
+import {Disposable, StateHandler, StateView} from "../../state/state_handler";
 
 export class NotebookListContextMenu{
     readonly el: TagElement<"div">;
@@ -39,7 +35,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new DeleteNotebook(this.targetItem))
+            this.dispatcher.deleteNotebook(this.targetItem)
         }
     }
 
@@ -49,7 +45,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new RenameNotebook(this.targetItem))
+            this.dispatcher.renameNotebook(this.targetItem)
         }
     }
 
@@ -59,7 +55,7 @@ export class NotebookListContextMenu{
         }
         this.hide();
         if (this.targetItem) {
-            this.dispatcher.dispatch(new CopyNotebook(this.targetItem))
+            this.dispatcher.copyNotebook(this.targetItem)
         }
     }
 
@@ -68,7 +64,7 @@ export class NotebookListContextMenu{
             evt.stopPropagation();
         }
         this.hide();
-        this.dispatcher.dispatch(new CreateNotebook())
+        this.dispatcher.createNotebook()
     }
 
     showFor(evt: Event, targetItem?: LeafEl | BranchEl) {
@@ -111,7 +107,7 @@ export class NotebookListContextMenu{
     }
 }
 
-export class NotebookList {
+export class NotebookList extends Disposable {
     readonly el: TagElement<"div">;
     readonly header: TagElement<"h2">;
 
@@ -119,13 +115,14 @@ export class NotebookList {
     private tree: BranchEl;
 
     constructor(readonly dispatcher: ServerMessageDispatcher) {
+        super()
 
-        this.header = h2(['notebooks-list-header'], [
+        this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
-                    dispatcher.dispatch(new CreateNotebook())
+                    dispatcher.createNotebook()
                 })
             ])
         ]);
@@ -154,17 +151,17 @@ export class NotebookList {
                 this.el.classList.remove("disabled")
                 this.header.classList.remove("disabled")
             }
-        })
+        }, this)
 
         ServerStateHandler.get.view("notebooks").addObserver((newNotebooks, oldNotebooks) => {
             const [removed, added] = diffArray(Object.keys(oldNotebooks), Object.keys(newNotebooks));
 
             added.forEach(path => treeState.addPath(path));
             removed.forEach(path => treeState.removePath(path))
-        });
+        }, this);
 
         // we're ready to request the notebooks list now!
-        dispatcher.dispatch(new RequestNotebooksList())
+        dispatcher.requestNotebookList()
     }
 
     private fileHandler(evt: DragEvent) {
@@ -191,7 +188,7 @@ export class NotebookList {
                     reader.onloadend = () => {
                         if (reader.result) {
                             // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
-                            this.dispatcher.dispatch(new CreateNotebook(file.name, reader.result as string));
+                            this.dispatcher.createNotebook(file.name, reader.result as string);
                         } else {
                             throw new Error(`Didn't get any file contents when reading ${file.name}! `)
                         }
@@ -212,7 +209,7 @@ export type Branch = Leaf & {
 
 export class BranchHandler extends StateHandler<Branch> {
     constructor(state: Branch) {
-        super(state);
+        super(new StateView(state));
     }
 
     addPath(path: string) {
@@ -249,7 +246,7 @@ export class BranchHandler extends StateHandler<Branch> {
                 }
             }
         }
-        this.updateState(s => {
+        this.update(s => {
             return go(path, [], s)
         })
     }
@@ -260,7 +257,7 @@ export class BranchHandler extends StateHandler<Branch> {
             if (maybeChild) {
                 return {
                     ...parent,
-                    children: removeKey(parent.children, path)
+                    children: removeKeys(parent.children, path)
                 }
             } else {
                 return {
@@ -277,24 +274,26 @@ export class BranchHandler extends StateHandler<Branch> {
                 }
             }
         }
-        this.updateState(s => {
+        this.update(s => {
             return go(path, s)
         })
     }
 
 }
 
-export class BranchEl {
+export class BranchEl extends Disposable {
     readonly el: TagElement<"li" | "ul">;
     readonly childrenEl: TagElement<"ul">;
     private readonly branchEl: TagElement<"button">;
     private children: (BranchEl | LeafEl)[] = [];
     readonly path: string;
+    childrenState: StateView<Record<string, Leaf | Branch>>;
 
-    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly view: StateView<Branch>, private parent?: BranchEl) {
-        const initial = view.state;
+    constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly branch: StateView<Branch>, private parent?: BranchEl) {
+        super()
+        const initial = branch.state;
         this.childrenEl = tag('ul', [], {}, []);
-        this.path = this.view.state.fullPath;
+        this.path = this.branch.state.fullPath;
 
         Object.values(initial.children).forEach(child => this.addChild(child));
 
@@ -317,7 +316,7 @@ export class BranchEl {
             this.expanded = !this.expanded;
         });
 
-        view.addObserver((newNode, oldNode) => {
+        branch.addObserver((newNode, oldNode) => {
             const [removed, added] = diffArray(Object.keys(oldNode.children), Object.keys(newNode.children));
             removed.forEach(child => {
                 const idx = this.children.findIndex(c => c.path === oldNode.children[child].fullPath);
@@ -328,7 +327,7 @@ export class BranchEl {
             added.forEach(child => {
                 this.addChild(newNode.children[child]);
             })
-        })
+        }, this)
     }
 
     get expanded() {
@@ -350,14 +349,13 @@ export class BranchEl {
     private addChild(node: Branch | Leaf) {
         let child: BranchEl | LeafEl;
 
-        // TODO: Creation of views seems to be a tad expensive, so we might need to revisit this as it creates 2 views for every node in the notebook list!
-        const childStateHandler = this.view.view("children").view(node.fullPath);
+        const childStateHandler = this.branch.view("children").view(node.fullPath);
         // childStateHandler.addObserver((next, prev) => console.log("child state changed for", node.fullPath, ":", prev, next))
         if ("children" in node) {
-            // const childStateHandler = new StateHandler(node)
+            // const childStateHandler = StateHandler.from(node)
             child = new BranchEl(this.dispatcher, childStateHandler as StateView<Branch>, this);
         } else {
-            // const childStateHandler = new StateHandler(node)
+            // const childStateHandler = StateHandler.from(node)
             child = new LeafEl(this.dispatcher, childStateHandler);
         }
 
@@ -441,12 +439,13 @@ export class BranchEl {
     }
 }
 
-export class LeafEl {
+export class LeafEl extends Disposable {
     readonly el: TagElement<"li">;
     private leafEl: TagElement<"a">;
     readonly path: string;
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly view: StateView<Leaf>) {
+        super()
 
         const initial = view.state;
         this.leafEl = this.getEl(initial);
@@ -460,9 +459,9 @@ export class LeafEl {
                 this.leafEl = newEl;
             } else {
                 // this leaf was removed
-                view.dispose()
+                this.dispose()
             }
-        })
+        }, this)
     }
 
     focus() {
@@ -474,8 +473,10 @@ export class LeafEl {
             .click(evt => {
                 evt.preventDefault();
                 evt.stopPropagation();
-                this.dispatcher.loadNotebook(leaf.fullPath)
-                    .then(() => this.dispatcher.dispatch(new SetSelectedNotebook(leaf.fullPath)))
+                ServerStateHandler.loadNotebook(leaf.fullPath, true)
+                    .then(() => {
+                        ServerStateHandler.selectNotebook(leaf.fullPath)
+                    })
             })
     }
 }

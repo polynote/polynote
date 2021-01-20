@@ -1,0 +1,27 @@
+{
+  "name": "jest-summarizing-reporter",
+  "version": "1.1.4",
+  "description": "Custom reporter for jest, that only prints test result summary.",
+  "main": "./src/JestSummaryReporter.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sunfit/jest-summary-reporter.git"
+  },
+  "keywords": [
+    "jest",
+    "reporter",
+    "summary"
+  ],
+  "author": "Konstantin <lebedev.k90@gmail.com>",
+  "license": "Unlicense",
+  "bugs": {
+    "url": "https://github.com/sunfit/jest-summary-reporter/issues"
+  },
+  "homepage": "https://github.com/sunfit/jest-summary-reporter#readme",
+  "devDependencies": {
+    "jest": "^24.9.0"
+  }
+}

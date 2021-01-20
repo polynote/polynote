@@ -3,7 +3,7 @@
 import { VegaInterpreter } from "./vega_interpreter";
 import {ClientResult, ExecutionInfo, ResultValue, RuntimeError} from "../data/result";
 import {NotebookStateHandler} from "../state/notebook_state";
-import {NotebookMessageDispatcher, SetCellOutput} from "../messaging/dispatcher";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {
     CellResult,
@@ -16,6 +16,7 @@ import {
 import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
 import {ServerStateHandler} from "../state/server_state";
+import {Disposable} from "../state/state_handler";
 
 export interface CellContext {
     id: number,
@@ -60,16 +61,16 @@ export class ClientInterpreter {
         // we want to run the cell in order, so we need to find any cells above this one that are currently running/queued
         // and wait for them to complete
         const nbState = this.notebookState.state
-        const cellIdx = nbState.cells.findIndex(cell => cell.id === id)
+        const cellIdx = this.notebookState.getCellIndex(id)!
         const cell = nbState.cells[cellIdx]!;
 
         // first, queue up the cell, waiting for another cell to queue if necessary
         Promise.resolve().then(() => {
             if (queueAfter !== undefined) {
-                return this.notebookState.waitForCell(queueAfter, "queued")
+                return this.notebookState.waitForCellChange(queueAfter, "queued")
             } else return Promise.resolve()
         }).then(() => {
-            const promise = this.notebookState.waitForCell(cellIdx, "queued");
+            const promise = this.notebookState.waitForCellChange(cellIdx, "queued");
             this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Queued)))
             return promise
         }).then(() => { // next, wait for any cells queued up earlier.
@@ -85,13 +86,14 @@ export class ClientInterpreter {
 
             if (waitCellId) {
                 return new Promise(resolve => {
-                    const obs = this.notebookState.addObserver(state => {
-                        const maybeCellReady = state.cells.find(c => c.id === waitCellId)
+                    const disposable = new Disposable()
+                    this.notebookState.addObserver(state => {
+                        const maybeCellReady = state.cells[waitCellId!];
                         if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
-                            this.notebookState.removeObserver(obs)
+                            disposable.dispose()
                             resolve()
                         }
-                    })
+                    }, disposable)
                 })
             } else return Promise.resolve()
         }).then(() => { // finally, interpret the cell
@@ -111,8 +113,8 @@ export class ClientInterpreter {
             updateStatus(1)
 
             const currentState = this.notebookState.state;
-            const availableValues = currentState.cells.slice(0, cellIdx).reduce<Record<string, any>>((acc, next) => {
-                next.results
+            const availableValues = currentState.cellOrder.slice(0, cellIdx).reduce<Record<string, any>>((acc, next) => {
+                currentState.cells[next].results
                     .filter(res => res instanceof ResultValue) // for now, ClientResults can't be used in other cells
                     .forEach((result: ResultValue) => {
                         let bestValue: any = result.valueText;
@@ -135,7 +137,9 @@ export class ClientInterpreter {
                 if (res instanceof RuntimeError) {
                     this.receiver.inject(new CellResult(id, res))
                 } else {
-                    dispatcher.dispatch(new SetCellOutput(id, res))
+                    res.toOutput().then(o => {
+                        this.notebookState.cellsHandler.update1(id, s => ({ ...s, results: [...s.results, res], output: [o]}))
+                    })
                 }
             })
         })

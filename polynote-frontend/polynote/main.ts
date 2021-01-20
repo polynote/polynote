@@ -5,7 +5,7 @@ import * as monaco from "monaco-editor";
 import {themes} from "./ui/input/monaco/themes";
 import {SocketSession} from "./messaging/comms";
 import {ServerMessageReceiver} from "./messaging/receiver";
-import {LoadNotebook, Reconnect, ServerMessageDispatcher, SetSelectedNotebook} from "./messaging/dispatcher";
+import {ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
 import {SplitView} from "./ui/layout/splitview";
 import {ServerStateHandler} from "./state/server_state";
@@ -17,6 +17,7 @@ import {Home} from "./ui/component/home";
 import {OpenNotebooksHandler, RecentNotebooksHandler} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
 import {CodeCellModel} from "./ui/component/notebook/cell";
+import {nameFromPath} from "./util/helpers";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -34,7 +35,7 @@ class Main {
         // handle reconnecting
         const reconnectOnWindowFocus = () => {
             console.warn("Window was focused! Attempting to reconnect.")
-            dispatcher.dispatch(new Reconnect(true))
+            dispatcher.reconnect(true)
         }
         ServerStateHandler.get.view("connectionStatus").addObserver(status => {
             if (status === "disconnected") {
@@ -42,11 +43,11 @@ class Main {
             } else {
                 window.removeEventListener("focus", reconnectOnWindowFocus)
             }
-        })
+        }, this.receiver)
 
         const nbList = new NotebookList(dispatcher)
         const leftPane = { header: nbList.header, el: nbList.el };
-        const home = new Home(dispatcher)
+        const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;
         const kernelPane = new KernelPane(dispatcher)
@@ -60,17 +61,17 @@ class Main {
 
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             Main.handlePath(path)
-        })
+        }, this.receiver)
 
         const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.state.map(path => {
-            return dispatcher.loadNotebook(path, true)
+            return ServerStateHandler.loadNotebook(path, true)
         })).then(() => {
             const notebookBase = 'notebook/';
             if (path.startsWith(notebookBase)) {
                 const nbPath = path.substring(notebookBase.length)
-                dispatcher.loadNotebook(nbPath).then(() => {
-                    dispatcher.dispatch(new SetSelectedNotebook(nbPath))
+                ServerStateHandler.loadNotebook(nbPath, true).then(() => {
+                    ServerStateHandler.selectNotebook(nbPath)
                 })
             }
         })
@@ -83,7 +84,7 @@ class Main {
 
             const href = window.location.href;
             const hash = window.location.hash;
-            const title = `${path.split(/\//g).pop()} | Polynote`;
+            const title = `${nameFromPath(path)} | Polynote`;
             document.title = title; // looks like chrome ignores history title so we need to be explicit here.
 
             if (hash && window.location.href === (tabUrl.href + hash)) {
@@ -92,12 +93,12 @@ class Main {
                 window.history.pushState({notebook: path}, title, tabUrl.href);
             }
 
-            RecentNotebooksHandler.updateState(recents => {
+            RecentNotebooksHandler.update(recents => {
                 const maybeExists = recents.find(r => r.path === path);
                 if (maybeExists) {
                     return [maybeExists, ...recents.filter(r => r.path !== path)];
                 } else {
-                    const name = path.split(/\//g).pop()!;
+                    const name = nameFromPath(path);
                     return [{path, name}, ...recents];
                 }
             })

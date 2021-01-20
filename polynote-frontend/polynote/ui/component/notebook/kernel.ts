@@ -1,4 +1,4 @@
-import {KernelInfo, KernelState, KernelStateView, KernelSymbols, KernelTasks} from "../../../state/kernel_state";
+import {KernelInfo, KernelState, KernelSymbols, KernelTasks} from "../../../state/notebook_state";
 import {
     Content,
     div,
@@ -14,32 +14,33 @@ import {
     TagElement
 } from "../../tags";
 import {
-    KernelCommand,
     NotebookMessageDispatcher,
-    Reconnect, RemoveError, RemoveTask,
     ServerMessageDispatcher,
-    ShowValueInspector
 } from "../../../messaging/dispatcher";
-import {StateView} from "../../../state/state_handler";
+import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
 import {ViewPreferences, ViewPrefsHandler} from "../../../state/preferences";
-import {TaskStatus} from "../../../data/messages";
+import {KernelStatusString, TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
-import {ServerError, ServerStateHandler} from "../../../state/server_state";
-import {diffArray, removeKey} from "../../../util/helpers";
+import {ServerStateHandler} from "../../../state/server_state";
+import {deepEquals, diffArray, removeKeys} from "../../../util/helpers";
 import {ErrorEl} from "../../display/error";
+import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
-export class KernelPane {
+export class KernelPane extends Disposable {
     el: TagElement<"div">;
     header: TagElement<"div">;
+    statusEl: TagElement<"div">;
     private kernels: Record<string, Kernel> = {};
 
     constructor(serverMessageDispatcher: ServerMessageDispatcher) {
+        super()
         const placeholderEl = div(['kernel-ui-placeholder'], []);
-        const placeholderHeader = div(["kernel-header-placeholder"], []);
+        const placeholderStatus = div(['kernel-header-placeholder'], []);
         this.el = placeholderEl;
-        this.header = placeholderHeader;
+        this.statusEl = placeholderStatus;
+        this.header = div(['ui-panel-header'], [this.statusEl]);
 
         const handleCurrentNotebook = (path?: string) => {
             if (path && path !== "home") {
@@ -57,8 +58,8 @@ export class KernelPane {
                     this.el.replaceWith(kernel.el);
                     this.el = kernel.el
 
-                    this.header.replaceWith(kernel.statusEl);
-                    this.header = kernel.statusEl;
+                    this.statusEl.replaceWith(kernel.statusEl);
+                    this.statusEl = kernel.statusEl;
                 } else {
                     console.warn("Requested notebook at path", path, "but it wasn't loaded. This is unexpected...")
                 }
@@ -68,21 +69,21 @@ export class KernelPane {
                 this.el.replaceWith(placeholderEl);
                 this.el = placeholderEl
 
-                this.header.replaceWith(placeholderHeader);
-                this.header = placeholderHeader;
+                this.statusEl.replaceWith(placeholderStatus);
+                this.statusEl = placeholderStatus;
             }
         }
         handleCurrentNotebook(ServerStateHandler.state.currentNotebook)
-        ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path))
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path), this)
     }
 
 }
 
-export class Kernel {
+export class Kernel extends Disposable {
     readonly el: TagElement<"div">;
     readonly statusEl: TagElement<"h2">;
     private status: TagElement<"span">;
-    private kernelState: KernelStateView;
+    private kernelState: StateHandler<KernelState>;
 
     // TODO: this implementation will no longer appear on the welcome screen, which means that errors won't show.
     //       another solution for showing errors on the welcome screen needs to be implemented.
@@ -90,12 +91,13 @@ export class Kernel {
                 private dispatcher: NotebookMessageDispatcher,
                 private notebookState: NotebookStateHandler,
                 private whichPane: keyof ViewPreferences) {
+        super()
 
-        this.kernelState = notebookState.view("kernel", KernelStateView);
+        this.kernelState = notebookState.lens("kernel");
 
         const info = new KernelInfoEl(this.kernelState);
         const symbols = new KernelSymbolsEl(dispatcher, notebookState);
-        const tasks = new KernelTasksEl(dispatcher, serverMessageDispatcher, this.kernelState.kernelTasks, notebookState.view("errors"));
+        const tasks = new KernelTasksEl(notebookState.view("path"), serverMessageDispatcher, this.kernelState.lens("tasks"));
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -105,7 +107,7 @@ export class Kernel {
                 iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
                 iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(evt => this.killKernel(evt))
             ])
-        ]).click(evt => this.collapse())
+        ]);
 
         this.el = div(['kernel-ui'], [
             info.el,
@@ -113,41 +115,29 @@ export class Kernel {
             tasks.el
         ]);
 
-        this.setKernelStatus(this.kernelState.kernelStatus.state)
-        this.kernelState.kernelStatus.addObserver(status => {
+        this.setKernelStatus(this.kernelState.state.status)
+        this.kernelState.view("status").addObserver(status => {
             this.setKernelStatus(status)
-        })
+        }, this)
 
     }
 
     private connect(evt: Event) {
         evt.stopPropagation();
-        this.serverMessageDispatcher.dispatch(new Reconnect(true))
+        this.serverMessageDispatcher.reconnect(true)
     }
 
     private startKernel(evt: Event) {
         evt.stopPropagation();
-        this.dispatcher.dispatch(new KernelCommand('start'))
+        this.dispatcher.kernelCommand('start')
     }
 
     private killKernel(evt: Event) {
         evt.stopPropagation();
-        this.dispatcher.dispatch(new KernelCommand('kill'))
+        this.dispatcher.kernelCommand('kill')
     }
 
-    private collapse() {
-        ViewPrefsHandler.updateState(state => {
-            return {
-                ...state,
-                [this.whichPane]: {
-                    ...state[this.whichPane],
-                    collapsed: !state[this.whichPane].collapsed
-                }
-            }
-        })
-    }
-
-    private setKernelStatus(state: 'busy' | 'idle' | 'dead' | 'disconnected') {
+    private setKernelStatus(state: KernelStatusString) {
         this.statusEl.classList.remove('busy', 'idle', 'dead', 'disconnected');
         if (state === 'busy' || state === 'idle' || state === 'dead' || state === 'disconnected') {
             this.statusEl.classList.add(state);
@@ -158,12 +148,13 @@ export class Kernel {
     }
 }
 
-class KernelInfoEl {
+class KernelInfoEl extends Disposable {
     readonly el: TagElement<"div">;
     private toggleEl: TagElement<"h3">;
     private infoEl: TableElement;
 
-    constructor(kernelStateHandler: KernelStateView) {
+    constructor(kernelStateHandler: StateHandler<KernelState>) {
+        super()
         this.el = div(['kernel-info'], [
             this.toggleEl = h3(['toggle'], ['...']).click(() => this.toggleCollapse()),
             h3(['title'], ['Info']),
@@ -174,16 +165,16 @@ class KernelInfoEl {
             }),
         ]);
 
-        this.renderInfo(kernelStateHandler.kernelInfo.state);
-        kernelStateHandler.kernelInfo.addObserver(info => this.renderInfo(info));
+        this.renderInfo(kernelStateHandler.state.info);
+        kernelStateHandler.view("info").addObserver(info => this.renderInfo(info), this);
 
-        kernelStateHandler.kernelStatus.addObserver(status => {
+        kernelStateHandler.view("status").addObserver(status => {
             if (status === "dead") {
                 this.el.style.display = "none";
             } else {
                 this.el.style.display = "block";
             }
-        })
+        }, this)
     }
 
     private toggleCollapse() {
@@ -220,21 +211,25 @@ type KernelTask = TagElement<"div"> & {
     childTasks: Record<string, KernelTask>
 }
 
-class KernelTasksEl {
+class KernelTasksEl extends Disposable {
     readonly el: TagElement<"div">;
+    private notebookPath: string;
     private taskContainer: TagElement<"div">;
     private tasks: Record<string, KernelTask> = {};
-    private serverErrorIds: Record<string, ServerError>;
-    private kernelErrorIds: Record<string, ServerErrorWithCause>;
+    private errors: Record<string, DisplayError>;
+    private errorTimeouts: Record<string, number> = {};
 
-    constructor(private dispatcher: NotebookMessageDispatcher,
+    constructor(private notebookPathHandler: StateView<string>,
                 private serverMessageDispatcher: ServerMessageDispatcher,
-                private kernelTasksHandler: StateView<KernelTasks>,
-                private kernelErrors: StateView<ServerErrorWithCause[]>) {
+                private kernelTasksHandler: StateHandler<KernelTasks>) {
+        super()
         this.el = div(['kernel-tasks'], [
             h3([], ['Tasks']),
             this.taskContainer = div(['task-container'], [])
         ]);
+
+        this.notebookPath = notebookPathHandler.state
+        notebookPathHandler.addObserver(path => this.notebookPath = path, this)
 
         Object.values(kernelTasksHandler.state).forEach(task => this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent));
         kernelTasksHandler.addObserver((currentTasks, oldTasks) => {
@@ -250,65 +245,37 @@ class KernelTasksEl {
             })
 
             Object.values(currentTasks).forEach(task => {
-                this.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
+                if (! deepEquals(task, oldTasks[task.id])) {
+                    this.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
+                }
             })
-        })
+        }, this)
 
-        this.kernelErrorIds = {};
-        const handleKernelErrors = (errs: ServerErrorWithCause[]) => {
+        this.errors = {}
+        const handleErrors = (errs: DisplayError[]) => {
             if (errs.length > 0) {
                 errs.forEach(e => {
-                    const id = `KernelError ${e.className}`;
-                    if (this.kernelErrorIds[id] === undefined) {
-                        this.addError(id, e)
-                        this.kernelErrorIds[id] = e;
+                    if (this.errors[e.id] === undefined) {
+                        this.addError(e.id, e.err)
+                        this.errors[e.id] = e
                     }
                 })
 
                 // clear any old errors
-                Object.entries(this.kernelErrorIds).forEach(([id, err]) => {
+                Object.entries(this.errors).forEach(([id, err]) => {
                     if (! errs.includes(err)) {
                         this.removeTask(id)
-                        delete this.kernelErrorIds[id]
+                        delete this.errors[id]
                     }
                 })
             } else {
-                Object.keys(this.kernelErrorIds).forEach(id => this.removeTask(id))
-                this.kernelErrorIds = {};
-            }
-        }
-        handleKernelErrors(kernelErrors.state)
-        kernelErrors.addObserver(e => handleKernelErrors(e))
-
-        const serverErrors = ServerStateHandler.view("errors", kernelTasksHandler)
-        this.serverErrorIds = {};
-        const handleServerErrors = (errs: ServerError[]) => {
-            if (errs.length > 0) {
-                console.error("Got server errors", errs)
-                errs.forEach(e => {
-                    const id = `ServerError: ${e.err.className}`;
-                    if (this.serverErrorIds[id] === undefined) {
-                        this.addError(id, e.err)
-                        this.serverErrorIds[id] = e
-                    }
-                })
-
-                // clear any old errors
-                Object.entries(this.serverErrorIds).forEach(([id, err]) => {
-                    if (! errs.includes(err)) {
-                        this.removeTask(id)
-                        delete this.serverErrorIds[id]
-                    }
-                })
-            } else {
-                Object.keys(this.serverErrorIds).forEach(id => {
+                Object.keys(this.errors).forEach(id => {
                     this.removeTask(id)
                 })
-                this.serverErrorIds = {};
+                this.errors = {}
             }
         }
-        handleServerErrors(serverErrors.state)
-        serverErrors.addObserver(e => handleServerErrors(e))
+        ErrorStateHandler.get.addObserver(errors => handleErrors([...errors.serverErrors, ...errors[this.notebookPath] ?? []]), this)
     }
 
     private addError(id: string, err: ServerErrorWithCause) {
@@ -325,18 +292,14 @@ class KernelTasksEl {
     }
 
     private removeError(id: string) {
-        const maybeKernelError = this.kernelErrorIds[id]
-        if (maybeKernelError) {
-            this.dispatcher.dispatch(new RemoveError(maybeKernelError))
-        } else {
-            const maybeServerError = this.serverErrorIds[id]?.err;
-            if (maybeServerError) {
-                this.serverMessageDispatcher.dispatch(new RemoveError(maybeServerError))
-            }
+        const maybeError = this.errors[id];
+        if (maybeError) {
+            ErrorStateHandler.removeError(maybeError)
+            delete this.errors[id];
         }
     }
 
-    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.dispatcher.dispatch(new RemoveTask(id))) {
+    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.removeTask(id)) {
         // short-circuit if the task coming in is already completed.
         if (status === TaskStatus.Complete) {
             remove()
@@ -405,9 +368,11 @@ class KernelTasksEl {
             if (!task.classList.contains(statusClass)) {
                 task.className = 'task';
                 task.classList.add(statusClass);
+                const maybeTimeout = this.errorTimeouts[id]
+                if (maybeTimeout) window.clearTimeout(maybeTimeout)
                 if (statusClass === "complete") {
-                    window.setTimeout(() => {
-                        this.dispatcher.dispatch(new RemoveTask(id))
+                    this.errorTimeouts[id] = window.setTimeout(() => {
+                        this.removeTask(id)
                     }, 100);
                 }
             }
@@ -420,6 +385,7 @@ class KernelTasksEl {
         const task = this.tasks[id];
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
+        this.kernelTasksHandler.update(s => removeKeys(s, [id]))
     }
 }
 
@@ -431,7 +397,7 @@ interface ResultRow extends TableRowElement {
     }
 }
 
-class KernelSymbolsEl {
+class KernelSymbolsEl extends Disposable {
     readonly el: TagElement<"div">;
     private tableEl: TableElement;
     private resultSymbols: TagElement<"tbody">;
@@ -443,6 +409,7 @@ class KernelSymbolsEl {
     private visibleCells: number[] = [];
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
+        super()
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
             this.tableEl = table(['kernel-symbols-table'], {
@@ -464,24 +431,23 @@ class KernelSymbolsEl {
                 })
             }
         }
-        const symbolHandler = notebookState.view("kernel", KernelStateView).kernelSymbols;
+        const symbolHandler = notebookState.view("kernel").view("symbols");
         handleSymbols(symbolHandler.state)
-        symbolHandler.addObserver(symbols => handleSymbols(symbols))
+        symbolHandler.addObserver(symbols => handleSymbols(symbols), this)
 
-        const handleActiveCell = (cell?: CellState) => {
-            if (cell === undefined) {
-                // only show predef
+        const handleActiveCell = (cellId?: number) => {
+            if (cellId === undefined) {
+                // only show predef:
                 this.presentFor(-1, [])
             } else {
-                const cells = notebookState.state.cells;
-                const idx = cells.findIndex(c => c.id === cell.id);
-                const cellsBefore = cells.slice(0, idx).map(cell => cell.id)
-                this.presentFor(cell.id, cellsBefore)
+                const idx = notebookState.getCellIndex(cellId)
+                const cellsBefore = notebookState.state.cellOrder.slice(0, idx)
+                this.presentFor(cellId, cellsBefore)
             }
         }
-        const activeCellHandler = notebookState.view("activeCell");
+        const activeCellHandler = notebookState.view("activeCellId");
         handleActiveCell(activeCellHandler.state)
-        activeCellHandler.addObserver(cell => handleActiveCell(cell))
+        activeCellHandler.addObserver(cell => handleActiveCell(cell), this)
     }
 
     private updateRow(tr: ResultRow, resultValue: ResultValue) {
@@ -497,7 +463,7 @@ class KernelSymbolsEl {
         tr.onmousedown = (evt) => {
             evt.preventDefault();
             evt.stopPropagation();
-            this.dispatcher.dispatch(new ShowValueInspector(tr.resultValue))
+            this.dispatcher.showValueInspector(tr.resultValue)
         };
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;

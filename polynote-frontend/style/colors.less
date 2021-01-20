@@ -378,7 +378,7 @@ button {
 }
 
 .ui-panel {
-  & > h2 {
+  & > h2, .ui-panel-header > h2 {
     background-color: @ui-sidebar-header;
   }
 
@@ -781,6 +781,10 @@ button.dialog-button {
   }
 
   .preferences-storage .storage {
+    background: @ui-background;
+  }
+
+  .state-inspector .state{
     background: @ui-background;
   }
 }

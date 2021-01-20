@@ -1,9 +1,6 @@
 import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList, NotebookListContextMenu} from "./notebooklist";
 import {StateHandler} from "../../state/state_handler";
 import {
-    DeleteNotebook,
-    RenameNotebook,
-    RequestNotebooksList,
     ServerMessageDispatcher
 } from "../../messaging/dispatcher";
 import {fireEvent, getByText, queryAllByText, queryByText, queryHelpers, waitFor} from "@testing-library/dom";
@@ -26,13 +23,13 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
         fullPath: "foo/bar/baz",
         value: "baz"
     };
-    const leafState = new StateHandler(leaf);
+    const leafState = StateHandler.from(leaf);
     const comp = new LeafEl(dispatcher, leafState);
     const leafEl  = () => comp.el.querySelector("a.name")!;
     expect(leafEl()).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
 
     const newPath = "foo/bar/baz2";
-    leafState.updateState(() => ({
+    leafState.update(() => ({
         fullPath: newPath,
         value: "baz2"
     }));
@@ -49,19 +46,19 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
 });
 
 describe("BranchComponent", () => {
-    const branchState = new StateHandler<Branch>({
+    const branchState = StateHandler.from<Branch>({
         fullPath: "foo",
         value: "foo",
         children: {}
     });
     const branch = new BranchEl(dispatcher, branchState);
-    expect(branch.childrenEl).toBeEmpty();
+    expect(branch.childrenEl).toBeEmptyDOMElement();
 
     const leaf = {
         fullPath: "bar",
         value: "bar"
     };
-    branchState.updateState(s => {
+    branchState.update(s => {
         return {
             ...s,
             children: {
@@ -71,14 +68,14 @@ describe("BranchComponent", () => {
         }
     });
     test('is updated when its state changes', done => {
-        expect(branch.childrenEl).not.toBeEmpty();
+        expect(branch.childrenEl).not.toBeEmptyDOMElement();
         expect(branch.childrenEl).toHaveTextContent(leaf.value);
 
         const newLeaf = {
             fullPath: "baz",
             value: "baz"
         };
-        branchState.updateState(s => {
+        branchState.update(s => {
             return {
                 ...s,
                 children: {
@@ -106,13 +103,13 @@ describe("BranchComponent", () => {
         waitFor(() => {
             expect(contextMenu.el).toBeInTheDocument()
         }).then(() => {
-            const mockDispatch = jest.spyOn(dispatcher, 'dispatch').mockImplementation((() => {}))
+            const dispatchRename = jest.spyOn(dispatcher, 'renameNotebook').mockImplementation((() => {}))
             const rename = contextMenu.el.querySelector('.rename')!;
             fireEvent(rename, new MouseEvent('click'))
             return waitFor(() => {
-                expect(mockDispatch).toHaveBeenCalledWith(new RenameNotebook(leaf.fullPath))
+                expect(dispatchRename).toHaveBeenCalledWith(leaf.fullPath)
             }).then(() => {
-                mockDispatch.mockRestore()
+                dispatchRename.mockRestore()
             })
         }).then(done)
     })
@@ -127,13 +124,13 @@ describe("BranchComponent", () => {
         waitFor(() => {
             expect(contextMenu.el).toBeInTheDocument()
         }).then(() => {
-            const mockDispatch = jest.spyOn(dispatcher, 'dispatch').mockImplementation((() => {}))
+            const mockDelete = jest.spyOn(dispatcher, 'deleteNotebook').mockImplementation((() => {}))
             const del = contextMenu.el.querySelector('.delete')!;
             fireEvent(del, new MouseEvent('click'))
             return waitFor(() => {
-                expect(mockDispatch).toHaveBeenCalledWith(new DeleteNotebook(leaf.fullPath))
+                expect(mockDelete).toHaveBeenCalledWith(leaf.fullPath)
             }).then(() => {
-                mockDispatch.mockRestore()
+                mockDelete.mockRestore()
             })
         }).then(done)
     })
@@ -260,7 +257,7 @@ test("stress test", () => {
 test("NotebookList e2e test", done => {
     const nbList = new NotebookList(dispatcher);
     expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
-    expect(nbList.el.querySelector('.tree-view > ul')).toBeEmpty();
+    expect(nbList.el.querySelector('.tree-view > ul')).toBeEmptyDOMElement();
 
     // this will trigger the receiver to update global state
     const paths = [...Array(500).keys()].map(x => {
@@ -276,13 +273,13 @@ test("NotebookList e2e test", done => {
     SocketSession.global.send(new messages.ListNotebooks(paths));
 
     waitFor(() => {
-        expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmpty();
+        expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmptyDOMElement();
     }).then(() => {
         expect(nbList.el.outerHTML).toMatchSnapshot()
     })
     .then(() => {
         const path = `notebooks/${paths[0]}`;
-        expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmpty()
+        expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmptyDOMElement()
         SocketSession.global.send(new messages.DeleteNotebook(paths[0]))
         waitFor(() => {
             expect(nbList.el.querySelector(`[href='${path}']`)).toBeNull()

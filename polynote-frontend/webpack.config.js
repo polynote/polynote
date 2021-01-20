@@ -34,11 +34,13 @@ module.exports = {
     new HtmlWebpackPlugin({
         template: './index.html'
     }),
-    new CopyWebpackPlugin([
-      { from: 'style', to: 'style' },
-      { from: 'vendor', to: 'vendor' },
-      { from: 'favicon.ico', to: 'favicon.ico' },
-    ])
+    new CopyWebpackPlugin({
+      patterns: [
+        { from: 'style', to: 'style' },
+        { from: 'vendor', to: 'vendor' },
+        { from: 'favicon.ico', to: 'favicon.ico' },
+      ]
+    })
   ],
   mode: "development"
 };
