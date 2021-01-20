@@ -88,11 +88,12 @@ export class StateView<S> {
                 // This might happen when a view is created within a state change.
                 // Not quite sure what to do about this, so we throw for now.
                 console.trace("View state doesn't match parent! View state:", maybeView.state, "parent state", this.state[key], "parent", this, "key", key)
-                throw new Error("View state doesn't match parent! This shouldn't happen, if you see this please let the Polynote Developers know and provide the log above.")
+                //throw new Error("View state doesn't match parent! This shouldn't happen, if you see this please let the Polynote Developers know and provide the log above.")
             }
             return maybeView as StateView<S[K]>
         } else {
-            const view: StateView<S[K]> = new StateView(this.state[key], [...this.path, key.toString()]);
+            const initialState = this.state !== undefined ? this.state[key] : undefined;
+            const view: StateView<S[K]> = new StateView(initialState as S[K], [...this.path, key.toString()]);
             const viewDispose = new Disposable();
             const obs = this.addObserver((s, _, updateSource) => {
                 if (s === undefined || (s && (s as any).hasOwnProperty(key))) {

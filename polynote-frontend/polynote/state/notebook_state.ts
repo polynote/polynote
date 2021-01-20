@@ -89,6 +89,7 @@ export interface NotebookState {
 
 export class NotebookStateHandler extends StateHandler<NotebookState> {
     readonly cellsHandler: StateHandler<Record<number, CellState>>;
+    readonly loaded: Promise<void>;
     updateHandler: NotebookUpdateHandler;
     constructor(state: NotebookState) {
         super(new StateView(state));
@@ -109,7 +110,24 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                     }
                 }, this)
             }
-        }, this)
+        }, this);
+
+        if (this.isLoading) {
+            const tasksView = this.view('kernel').view('tasks');
+            this.loaded = new Promise<void>(resolve => {
+                const disposer = new Disposable();
+                tasksView.addObserver((current, prev) => {
+                    if (!current[this.state.path] || current[this.state.path].status === TaskStatus.Complete) {
+                        disposer.dispose();
+                        setTimeout(resolve, 0);
+                    }
+                }, disposer)
+            })
+        } else {
+            this.loaded = Promise.resolve()
+        }
+
+        this.loaded.then(_ => this.updateHandler.localVersion = 0)
     }
 
     static forPath(path: string) {
@@ -310,22 +328,6 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
 
     get isLoading(): boolean {
         return !!(this.state.kernel.tasks[this.state.path] ?? false)
-    }
-
-    get loaded(): Promise<void> {
-        if (!this.isLoading) {
-            return Promise.resolve();
-        }
-        return new Promise<void>(resolve => {
-            const tasksView = this.view('kernel').view('tasks');
-            const disposer = new Disposable();
-            tasksView.addObserver((current, prev) => {
-                if (!current[this.state.path] || current[this.state.path].status === TaskStatus.Complete) {
-                    disposer.dispose();
-                    resolve();
-                }
-            }, disposer)
-        })
     }
 }
 

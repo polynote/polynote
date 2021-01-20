@@ -1762,7 +1762,7 @@ export class VizCell extends Cell {
         if (edits.length > 0) {
             this.viz = deepCopy(viz);
             const cellId = this.cellState.state.id;
-            this.cellState.update1("outgoingEdits", () => edits);
+            this.cellState.update(cellState => ({...cellState, outgoingEdits: edits, content: newCode}))
             if (this.previousViews[viz.type] && deepEquals(this.previousViews[viz.type][0], viz)) {
                 const result = this.previousViews[viz.type][1];
                 this.cellOutput.clearOutput();
