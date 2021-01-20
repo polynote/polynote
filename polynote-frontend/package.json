@@ -1,6 +1,7 @@
 {
   "browser": "polynote",
   "dependencies": {
+    "@iktakahiro/markdown-it-katex": "4.0.1",
     "@types/katex": "0.11.0",
     "@types/tinycon": "0.6.1",
     "@types/uuid": "7.0.0",
@@ -8,9 +9,8 @@
     "event-target-shim": "5.0.1",
     "fast-deep-equal": "3.1.3",
     "idb-keyval": "3.2.0",
-    "katex": "0.11.1",
+    "katex": "0.12.0",
     "markdown-it": "10.0.0",
-    "markdown-it-katex": "2.0.3",
     "monaco-editor": "0.21.2",
     "monaco-vim": "0.1.7",
     "requirejs": "2.3.6",
@@ -45,7 +45,7 @@
     "monaco-editor-webpack-plugin": "2.1.0",
     "style-loader": "1.1.3",
     "ts-jest": "26.0.0",
-    "ts-loader": "6.2.1",
+    "ts-loader": "8.0.14",
     "typescript": "4.1.5",
     "webpack": "5.11.1",
     "webpack-cli": "4.3.1"
