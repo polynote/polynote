@@ -90,6 +90,27 @@ describe("SocketSession", () => {
         await expect(server).toReceiveMessage(encoded)
     })
 
+    test("can be opened after a previous client has closed", async () => {
+        const server = new WS('ws://localhost/socket');
+        const message = new LoadNotebook("test")
+        const encoded = Message.encode(message)
+
+        const client1 = createClient("socket")
+        await server.connected
+        expect(client1.queue.length).toEqual(0)
+
+        client1.send(message)
+        await expect(server).toReceiveMessage(encoded)
+        client1.close()
+
+        const client2 = createClient("socket")
+        await server.connected
+        expect(client2.queue.length).toEqual(0)
+
+        client2.send(message)
+        await expect(server).toReceiveMessage(encoded)
+    })
+
     test("enqueues messages sent while closed", async () => {
         const server = new WS('ws://localhost/socket');
         const client = createClient("socket")

@@ -48,6 +48,13 @@ export class MessageReceiver<S> extends Disposable {
         super();
         this.socket = socket.fork(this);
         this.state = state.fork(this);
+
+        this.state.onDispose.then(() => {
+            this.socket.close()
+        })
+        this.socket.onDispose.then(() => {
+            if (!this.isDisposed) this.dispose()
+        })
     }
 
     protected receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: Readonly<S>,...args: ConstructorParameters<typeof msgType>) => UpdateOf<S>) {
