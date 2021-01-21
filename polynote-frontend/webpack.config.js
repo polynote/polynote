@@ -6,11 +6,12 @@ const path = require('path');
 
 module.exports = {
   entry: './polynote/main.ts',
-  devtool: 'source-map',
+  devtool: 'eval-cheap-module-source-map',
   output: {
     path: path.resolve(__dirname, 'dist/static'),
     filename: 'app.[contenthash].js',
-    publicPath: 'static/'
+    publicPath: 'static/',
+    pathinfo: false
   },
   module: {
     rules: [{
@@ -19,7 +20,8 @@ module.exports = {
     }, {
       test: /\.ts$/,
       use: ['ts-loader'],
-      exclude: /node_modules/
+      include: path.resolve(__dirname, 'polynote'),
+      // exclude: /node_modules/
     }, {
       test: /\.ttf$/,  // these are bundled with monaco
       use: ['file-loader']
@@ -50,5 +52,11 @@ module.exports = {
       ]
     })
   ],
-  mode: "development"
+  mode: "development",
+  optimization: {
+    removeAvailableModules: false,
+    removeEmptyChunks: false,
+    splitChunks: false,
+    runtimeChunk: true
+  }
 };
