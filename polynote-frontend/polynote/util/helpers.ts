@@ -3,6 +3,12 @@
 import * as fastEquals from 'fast-deep-equal/es6';
 
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
+    if ((a === undefined && b !== undefined) || (b === undefined && a !== undefined)) {
+        return false;
+    }
+    if ((a === null && b !== null) || (b === null && a !== null)) {
+        return false;
+    }
     if (ignoreKeys && a && b) {
         a = ignoreKeys.reduce((acc: T, key: keyof T) => {
             return removeKeys(acc, key)
@@ -69,6 +75,23 @@ export function deepFreeze<T>(obj: T) {
     }
 
     return go(obj)
+}
+
+export function deepCopy<T>(obj: T, keepFrozen: boolean = false): T {
+    if (obj instanceof Array) {
+        return [...obj].map(item => deepCopy(item)) as any as T;
+    } else if (obj === null || typeof obj === 'undefined') {
+        return obj;
+    } else if (typeof obj === 'object' && (!keepFrozen || !Object.isFrozen(obj))) {
+        const result: any = {};
+        const objAny = obj as any;
+        for (let key of Object.getOwnPropertyNames(objAny)) {
+            result[key] = deepCopy(objAny[key]);
+        }
+        Object.setPrototypeOf(result, Object.getPrototypeOf(obj));
+        return result as T;
+    }
+    return obj;
 }
 
 export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B)>): boolean {
@@ -238,4 +261,9 @@ export class Deferred<T> implements Promise<T> {
 
 export function nameFromPath(path: string): string {
     return path.split(/\//g).pop()!;
+}
+
+export function TODO(): never {
+    console.error("An implementation is missing!")
+    throw new Error("An implementation is missing!")
 }

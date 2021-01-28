@@ -1,10 +1,34 @@
-import {arrayStartsWith, deepEquals, deepFreeze, Deferred, shallowEquals} from "../util/helpers";
+import {arrayStartsWith, deepCopy, deepEquals, deepFreeze, Deferred, shallowEquals} from "../util/helpers";
+import {UpdateObserver} from "./state_handler1";
 
 export interface IDisposable {
-    onDispose: Promise<void>,
-    dispose: () => Deferred<void>,
+    onDispose: Promise<void>
+    dispose: () => Promise<void>
+    tryDispose: () => void
     isDisposed: boolean
+    disposeWith(that: IDisposable): this
 }
+
+export function mkDisposable<T>(t: T): T & IDisposable {
+    let resolve: () => void;
+    const getResolve = () => resolve;
+    const promise = new Promise(r => resolve = r);
+    let disposed = false;
+    promise.then(() => disposed = true);
+    return Object.defineProperties(t, {
+        onDispose: { value: promise },
+        dispose: { get: getResolve },
+        tryDispose: { get: getResolve },
+        isDisposed: { get: () => disposed },
+        disposeWith: {
+            value: (that: IDisposable) => {
+                Promise.race([promise, that.onDispose]).then(() => resolve());
+                return t;
+            }
+        }
+    });
+}
+
 export class Disposable implements IDisposable {
     private deferred: Deferred<void> = new Deferred()
     onDispose: Promise<void> = this.deferred
@@ -19,8 +43,19 @@ export class Disposable implements IDisposable {
         return this.deferred
     };
 
+    readonly tryDispose = () => {
+        if (!this.isDisposed) {
+            this.deferred.resolve();
+        }
+    }
+
     get isDisposed() {
         return this.deferred.isSettled
+    }
+
+    disposeWith(that: IDisposable): this {
+        Promise.race([this.deferred, that.onDispose]).then(() => this.tryDispose());
+        return this;
     }
 }
 
@@ -101,6 +136,7 @@ export class StateView<S> {
             })
 
             this.views[key] = view;
+
             return view
         }
     }
@@ -169,15 +205,18 @@ export class StateView<S> {
 }
 
 export class StateWrapper<S> extends StateView<S> implements IDisposable {
-    disposable = new Disposable()
 
-    constructor(view: StateView<S>) {
+    constructor(view: StateView<S>, protected disposable: IDisposable = new Disposable()) {
         super(view.state, view.path);
 
         view.addObserver((s, _, src) => {
             this.setState(s, src, view.path)
         }, this.disposable, `wrapper observer of ${this.path}`, "viewObserver")
 
+    }
+
+    addObserver(f: Observer<S>, disposeWhen: IDisposable = this, description: string = "obs", type: "observer" | "viewObserver" = "observer"): [Observer<S>, string] {
+        return super.addObserver(f, disposeWhen, description, type);
     }
 
     // implement IDisposable
@@ -192,6 +231,15 @@ export class StateWrapper<S> extends StateView<S> implements IDisposable {
 
     get isDisposed() {
         return this.disposable.isDisposed
+    }
+
+    tryDispose(): void {
+        this.disposable.tryDispose();
+    }
+
+    disposeWith(that: IDisposable): this {
+        this.disposable.disposeWith(that);
+        return this;
     }
 }
 

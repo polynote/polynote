@@ -421,4 +421,13 @@ export class About extends FullScreenModal implements IDisposable {
     get isDisposed() {
         return this.disposable.isDisposed
     }
+
+    tryDispose() {
+        this.disposable.tryDispose()
+    }
+
+    disposeWith(that: IDisposable): this {
+        this.disposable.disposeWith(that);
+        return this;
+    }
 }
