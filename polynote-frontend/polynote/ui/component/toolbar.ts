@@ -37,7 +37,7 @@ export class Toolbar extends Disposable {
                 if (nbInfo?.info) {
                     currentNotebookHandler = nbInfo.handler
                     const newListener = currentNotebookHandler.addObserver(state => {
-                        if (state.activeCellId) {
+                        if (state.activeCellId !== undefined) {
                             const lang = state.cells[state.activeCellId].language
                             if (lang === "text") {
                                 this.el.classList.remove('editing-code');
@@ -222,7 +222,7 @@ class CellToolbar extends ToolbarElement {
 
         this.langSelector.addListener(change => {
             const id = this.activeCellHandler?.state;
-            if (this.nbHandler && id) {
+            if (this.nbHandler && id !== undefined) {
                 this.nbHandler.setCellLanguage(id, change.newValue)
             }
         })
@@ -233,7 +233,7 @@ class CellToolbar extends ToolbarElement {
         this.nbHandler = currentNotebookHandler;
         this.activeCellHandler = currentNotebookHandler.view("activeCellId");
         this.activeCellHandler.addObserver(cellId => {
-            if (cellId) {
+            if (cellId !== undefined) {
                 const cell = currentNotebookHandler.state.cells[cellId];
                 const lang = cell.language;
                 if (ClientInterpreters[lang] && ClientInterpreters[lang].hidden) {

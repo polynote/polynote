@@ -267,7 +267,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     runToActiveCell() {
         const state = this.handler.state;
         const id = state.activeCellId;
-        if (id) {
+        if (id !== undefined) {
             const activeIdx = state.cellOrder.indexOf(id)
             const cellsToRun = state.cellOrder.slice(0, activeIdx + 1);
             if (cellsToRun.length > 0) {

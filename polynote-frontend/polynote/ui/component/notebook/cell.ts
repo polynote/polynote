@@ -959,7 +959,7 @@ export class CodeCell extends Cell {
                 const nextId = this.notebookState.getNextCellId(this.id) ?? this.notebookState.getPreviousCellId(this.id)
                 this.notebookState.deleteCell().then(id => {
                     // select the next cell when this one is deleted
-                    if (id) {
+                    if (id !== undefined) {
                         if (nextId !== undefined) {
                             this.notebookState.selectCell(nextId)
                         }

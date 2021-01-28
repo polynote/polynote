@@ -80,7 +80,7 @@ export class ClientInterpreter {
                 }
             }
 
-            if (waitCellId) {
+            if (waitCellId !== undefined) {
                 return new Promise<void>(resolve => {
                     const disposable = this.notebookState.addObserver(state => {
                         const maybeCellReady = state.cells[waitCellId!];
