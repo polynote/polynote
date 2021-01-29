@@ -125,7 +125,7 @@ describe("ObjectStateHandler", () => {
                 expect(handler.observerCount).toEqual(0)
             })
 
-            handler.updateKey("num", setValue<number>(42))
+            handler.updateKey("num", setValue(42))
             expect(listener).toHaveBeenCalledTimes(1)
             expect(listener).toHaveBeenCalledWith(42, setValue(42), expect.anything())
             view.dispose()
