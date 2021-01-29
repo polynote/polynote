@@ -1,7 +1,8 @@
 import {div, para, span, TagElement, textbox} from "../tags";
 import * as katex from "katex";
+import {Disposable} from "../../state";
 
-export class LaTeXEditor {
+export class LaTeXEditor extends Disposable {
     readonly el: TagElement<"div">;
     private pointer: TagElement<"span">;
     private fakeEl: TagElement<"div">;
@@ -10,7 +11,10 @@ export class LaTeXEditor {
     private keyHandler: (evt: Event) => void;
     private valid: boolean;
 
+    static editorCells: HTMLElement[] = [];
+
     constructor(readonly outputEl: HTMLElement, readonly parentEl: HTMLElement, readonly deleteOnCancel: boolean, readonly displayMode: boolean = false) {
+        super()
         // TODO: should we put editor in an iframe to prevent it contaminating the document's undo history?
         this.el = div(['latex-editor'], [
             this.pointer = span(['pointer'], []),
@@ -31,6 +35,14 @@ export class LaTeXEditor {
             this.input.value = outputEl.getAttribute('data-tex-source')!;
             this.onInput();
         }
+
+        this.onDispose.then(() => {
+            this.input.removeEventListener('input', this.inputHandler);
+            this.input.removeEventListener('keydown', this.keyHandler);
+            this.el.innerHTML = '';
+            if (this.el.parentNode)
+                this.el.parentNode.removeChild(this.el);
+        })
     }
 
     show() {
@@ -121,30 +133,33 @@ export class LaTeXEditor {
         }
     }
 
-    dispose() {
-        this.input.removeEventListener('input', this.inputHandler);
-        this.input.removeEventListener('keydown', this.keyHandler);
-        this.el.innerHTML = '';
-        if (this.el.parentNode)
-            this.el.parentNode.removeChild(this.el);
-    }
-
     static forSelection() {
         const selection = document.getSelection()!;
+
+        const selectionNode = selection.focusNode || selection.anchorNode;
+        if (! selectionNode) {
+            console.error('No selection');
+            return;
+        }
 
         // TODO: this should be a function
         let notebookParent = selection.anchorNode as HTMLElement;
         let currentKatexEl = null;
+        let cellContainer: HTMLElement | null = null;
         while (notebookParent && (notebookParent.nodeType !== 1 || !(notebookParent.classList.contains('notebook-cells')))) {
             notebookParent = notebookParent.parentNode as HTMLElement;
             if (notebookParent.hasAttribute?.('data-tex-source'))
                 currentKatexEl = notebookParent;
+            if (notebookParent.classList.contains('text-cell'))
+                cellContainer = notebookParent;
         }
 
         if (!notebookParent) {
             console.error('Error: reached top of document without finding notebook');
             return;
         }
+
+        if (!cellContainer || this.editorCells.includes(cellContainer)) return; // prevent duplicates.
 
         let el = currentKatexEl;
         let deleteOnCancel = false;
@@ -183,6 +198,11 @@ export class LaTeXEditor {
 
         displayMode = displayMode || (el?.classList.contains('katex-block') || el?.classList.contains('katex-display'));
 
-        return new LaTeXEditor(el, notebookParent, deleteOnCancel, displayMode);
+        const editor = new LaTeXEditor(el, notebookParent, deleteOnCancel, displayMode);
+        this.editorCells.push(cellContainer)
+        editor.onDispose.then(() => {
+            this.editorCells = this.editorCells.filter(x => x !== cellContainer)
+        })
+        return editor
     }
 }

@@ -388,7 +388,7 @@ class TextToolbar extends ToolbarElement {
                 elems: [
                     iconButton(["image"], "Insert image", "image", "Image").disable().withKey('alwaysDisabled', true),
                     this.equationButton = button(["equation"], {title: "Insert/edit equation"}, "𝝨")
-                        .click(() => LaTeXEditor.forSelection()!.show())
+                        .click(() => LaTeXEditor.forSelection()?.show())
                         .withKey('getState', () => {
                             const selection = document.getSelection()!;
                             if (selection?.focusNode?.childNodes) {
