@@ -364,7 +364,7 @@ export class CodeCell extends Cell {
             fontSize: 15,
             fontLigatures: true,
             contextmenu: false,
-            fixedOverflowWidgets: true,
+            fixedOverflowWidgets: false,
             lineNumbers: 'on',
             lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
@@ -835,8 +835,9 @@ export class CodeCell extends Cell {
         const lineCount = this.editor.getModel()!.getLineCount();
         const lastPos = this.editor.getTopForLineNumber(lineCount);
         const lineHeight = this.editor.getOption(EditorOption.lineHeight);
-        this.editorEl.style.height = (lastPos + lineHeight) + "px";
-        this.editor.layout();
+        const height = lastPos + lineHeight;
+        this.editorEl.style.height = height + "px";
+        this.editor.layout({width: this.editorEl.clientWidth, height});
     }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
