@@ -1,29 +1,36 @@
 package polynote.kernel.interpreter
 package python
-import java.nio.file.{Files, Path, Paths}
+import java.io.{FileReader, PrintWriter, StringWriter}
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path, Paths, StandardOpenOption}
 import java.util
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
-import java.util.concurrent.{Executors, LinkedBlockingQueue, ThreadFactory}
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.{Executors, ThreadFactory}
 
 import cats.syntax.traverse._
+import cats.syntax.either._
 import cats.instances.list._
+import io.circe.generic.semiauto._
+import io.circe.syntax._
+import io.circe._
+import io.circe.yaml.syntax._
 import jep.python.{PyCallable, PyObject}
-import jep.{Jep, JepConfig, JepException, MainInterpreter, NamingConventionClassEnquirer, SharedInterpreter, SubInterpreter}
+import jep.{Jep, JepConfig, JepException, NamingConventionClassEnquirer, SharedInterpreter}
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.task.TaskManager
-import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures}
+import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, ResultValue, ScalaCompiler, Signatures}
 import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
-import zio.internal.{ExecutionMetrics, Executor}
+import zio.internal.Executor
 import zio.blocking.{Blocking, effectBlocking}
 import zio.{Has, RIO, Runtime, Task, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext
+import scala.reflect.io.Directory
 import scala.reflect.{ClassTag, classTag}
 import scala.util.Try
 
@@ -884,6 +891,16 @@ object PythonInterpreter {
 
 }
 
+final case class PythonDepConfig(
+  dependencies: List[String],
+  repositories: List[config.RepositoryConfig],
+  exclusions: List[String]
+)
+object PythonDepConfig {
+  implicit val encoder: Encoder[PythonDepConfig] = deriveEncoder[PythonDepConfig]
+  implicit val decoder: Decoder[PythonDepConfig] = deriveDecoder[PythonDepConfig]
+}
+
 object VirtualEnvFetcher {
 
   import scala.sys.process._
@@ -899,45 +916,112 @@ object VirtualEnvFetcher {
   private def buildVirtualEnv(config: PolynoteConfig, notebook: Notebook) = {
     val notebookConfig = notebook.config.getOrElse(NotebookConfig.empty)
     val dependencies = notebookConfig.dependencies.toList.flatMap(_.getOrElse("python", Nil))
+    val pipRepos = notebookConfig.repositories.toList.flatten.collect { case x: pip => x }
+    val pyConfig = PythonDepConfig(dependencies, pipRepos, notebookConfig.exclusions.toList.flatten)
     if (dependencies.nonEmpty) {
       for {
         dir <- effectBlocking(Paths.get(sanitize(config.storage.cache), sanitize(notebook.path), "venv").toAbsolutePath)
-        _   <- CurrentTask.update(_.progress(0.0, Some("Creating virtual environment")))
-        _   <- initVenv(dir)
+        _   <- CurrentTask.update(_.progress(0.0, Some("Initializing virtual environment")))
+        _   <- initVenv(dir, pyConfig)
         _   <- CurrentTask.update(_.progress(0.2, Some("Installing dependencies")))
-        _   <- installDependencies(dir, notebookConfig.repositories.toList.flatten, dependencies, notebookConfig.exclusions.toList.flatten)
+        _   <- installDependencies(dir, pyConfig)
       } yield Some(dir)
-    } else ZIO.succeed(None)
+    } else ZIO.none
   }
 
-  private def initVenv(path: Path) = effectBlocking(path.toFile.exists()).flatMap {
-    case true  => ZIO.unit
-    case false => effectBlocking {
-      Seq("virtualenv", "--system-site-packages", "--python=python3", path.toString).!
-    }.unit
+  private val depFileName = ".polynote-python-deps.yml"
+
+  // we could break this out into utils or something...
+  class StringLogger extends ProcessLogger {
+
+    private val writer = new StringWriter()
+    private val printer = new PrintWriter(writer)
+
+    override def out(s: => String): Unit = {
+      stdout.println(s)
+      printer.println(s)
+    }
+    override def err(s: => String): Unit = {
+      stderr.println(s)
+      printer.println(s)
+    }
+    override def buffer[T](f: => T): T = f
+
+    override def toString: String = writer.toString
+  }
+  private def runCommand(cmd: Seq[String]) = for {
+    (ret, log) <- effectBlocking {
+      val logger = new StringLogger
+      val ret = cmd.!(logger)
+      (ret, logger.toString)
+    }
+    _ <- ZIO.fail(new Exception(log)).unless(ret == 0)
+  } yield ()
+
+  /**
+    * Initialize virtual environment if it doesn't exist. If it already exists, check to see whether the configuration
+    * has changed (e.g., user added/removed a dependency); if so, clear out the venv.
+    * @param path     directory to create the venv
+    * @param depConf  current dependency config
+    */
+  private def initVenv(path: Path, depConf: PythonDepConfig): RIO[Blocking with CurrentTask, Unit] = {
+    val writeConfig = effectBlocking {
+      val configStr = depConf.asJson.asYaml.spaces2
+      Files.write(path.resolve(depFileName), configStr.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE_NEW) // write file, failing if file already exists
+    }
+    val init = for {
+      _ <- CurrentTask.update(_.progress(0.1, Some("Creating new virtual environment")))
+      _ <- runCommand(Seq("virtualenv", "--system-site-packages", "--python=python3", path.toString))
+      _ <- writeConfig
+    } yield ()
+
+    effectBlocking(path.toFile.exists()).flatMap {
+      case true  =>
+        // venv already exists. We need to parse the config (if it exists) and compare it to the current one.
+        val configFile = path.resolve(depFileName).toFile
+        effectBlocking(configFile.exists()).flatMap {
+          case true =>
+            for {
+              config <- effectBlocking(new FileReader(configFile)).bracketAuto {
+                reader =>
+                  ZIO.fromEither {
+                    yaml.parser.parse(reader).flatMap(_.as[PythonDepConfig])
+                  }
+              }
+              // if the configs aren't equal, delete the venv and create it anew.
+              _ <- ZIO.when(!config.equals(depConf)) {
+                CurrentTask.update(_.progress(0.1, Some("Clearing outdated virtual environment"))) *> effectBlocking(new Directory(path.toFile).deleteRecursively) *> init
+              }
+            } yield ()
+          case false =>
+            for {
+              _ <- CurrentTask.update(_.progress(0.1, Some("Initializing virtual environment")))
+              _ <- writeConfig
+            } yield ()
+        }
+      case false => init
+    }
   }
 
   private def installDependencies(
     venv: Path,
-    repositories: List[config.RepositoryConfig],
-    dependencies: List[String],
-    exclusions: List[String]
-  ): RIO[TaskManager with Blocking with CurrentTask, Unit] = {
+    depConf: PythonDepConfig
+  ): RIO[Blocking with CurrentTask, Unit] = {
 
-    val options: List[String] = repositories.collect {
+    val options: List[String] = depConf.repositories.collect {
       case pip(url) => Seq("--extra-index-url", url)
     }.flatten
 
     def pip(action: String, dep: String, extraOptions: List[String] = Nil): RIO[Blocking, Unit] = {
       val baseCmd = List(s"$venv/bin/pip", action)
       val cmd = baseCmd ::: options ::: extraOptions ::: dep :: Nil
-      effectBlocking(cmd.!)
+      runCommand(cmd)
     }
 
 
     CurrentTask.access.flatMap {
       task =>
-        val total = dependencies.size
+        val dependencies = depConf.dependencies
         val depProgress = 0.5 / dependencies.size
         dependencies.map {
           dep =>
