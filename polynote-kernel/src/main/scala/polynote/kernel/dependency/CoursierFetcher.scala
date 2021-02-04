@@ -47,7 +47,7 @@ object CoursierFetcher {
     for {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
-      dependencies    = config.dependencies.flatMap(_.toMap.get(language)).map(_.toList).getOrElse(Nil)
+      dependencies    = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
       splitRes       <- splitDependencies(dependencies)
       (deps, uris)    = splitRes
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
