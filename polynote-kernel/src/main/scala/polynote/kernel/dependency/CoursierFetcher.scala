@@ -21,13 +21,13 @@ import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentia
 import coursier.error.ResolutionError
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
-import coursier.util.{EitherT, Sync, Artifact}
+import coursier.util.{Artifact, EitherT, Sync}
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
 import polynote.config.{RepositoryConfig, ivy, maven, Credentials => CredentialsConfig}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
-import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider}
+import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider, LocalFile}
 import polynote.messages.NotebookConfig
 import zio.blocking.{Blocking, blocking, effectBlocking}
 import zio.interop.catz._
@@ -186,15 +186,14 @@ object CoursierFetcher {
       }
   }
 
-  private def downloadUris(uris: List[URI]): RIO[TaskManager with CurrentTask with Blocking, List[(Boolean, String, File)]] = {
-    ZIO.collectAllPar {
-      uris.map {
-        uri => for {
-          download <- TaskManager.runSubtask(uri.toString, uri.toString){
+  private def downloadUris(uris: List[URI]): RIO[TaskManager with CurrentTask with Blocking with Logging, List[(Boolean, String, File)]] = {
+    ZIO.foreachPar(uris) {
+      uri =>
+        for {
+          download <- TaskManager.runSubtask(uri.toString, uri.toString) {
             fetchUrl(uri, cacheLocation(uri).toFile)
           }
         } yield (true, uri.toString, download)
-      }
     }
   }
 
@@ -224,7 +223,10 @@ object CoursierFetcher {
 
     for {
       file        <- DownloadableFileProvider.getFile(uri)
-      inputAsFile  = Paths.get(uri.getPath).toFile
+      inputAsFile  = file match { // TODO: will need a way to bust the cache. Maybe a config parameter?
+        case LocalFile(u) => Paths.get(u.getPath).toFile
+        case _ => localFile
+      }
       exists      <- effectBlocking(inputAsFile.exists())
       download    <- if (exists) ZIO.succeed(inputAsFile) else downloadToFile(file, localFile).as(localFile)
     } yield download
