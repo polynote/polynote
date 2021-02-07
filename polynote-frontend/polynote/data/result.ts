@@ -1,11 +1,24 @@
 'use strict';
 
 import {
-    Codec, DataReader, DataWriter, discriminated, combined, arrayCodec, optional,
-    str, tinyStr, uint8, uint16, int32, CodecContainer, int16, int64
+    arrayCodec,
+    Codec,
+    CodecContainer,
+    combined,
+    DataReader,
+    DataWriter,
+    discriminated,
+    int16,
+    int32,
+    int64,
+    optional,
+    str,
+    tinyStr,
+    uint16,
+    uint8
 } from './codec'
 
-import {ValueRepr, StringRepr} from './value_repr'
+import {StringRepr, ValueRepr} from './value_repr'
 import * as monaco from "monaco-editor";
 
 export class Result extends CodecContainer {

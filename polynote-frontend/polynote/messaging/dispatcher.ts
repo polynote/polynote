@@ -1,28 +1,28 @@
-import match from "../util/match";
 import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
-import {CellMetadata} from "../data/data";
+import {ResultValue, ServerErrorWithCause} from "../data/result";
 import {
-    ResultValue,
-    ServerErrorWithCause
-} from "../data/result";
-import {Disposable, StateHandler, StateView} from "../state/state_handler";
-import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {ServerState, ServerStateHandler} from "../state/server_state";
-import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
+    CellState,
+    ClientBackup,
+    ConnectionStatus,
+    Disposable,
+    ErrorStateHandler,
+    NotebookState,
+    NotebookStateHandler,
+    OpenNotebooksHandler,
+    ServerState,
+    ServerStateHandler,
+    setValue,
+    SocketStateHandler,
+    StateHandler,
+    StateView
+} from "../state";
 import {About} from "../ui/component/about";
 import {ValueInspector} from "../ui/component/value_inspector";
-import {
-    collect,
-    diffArray,
-    partition
-} from "../util/helpers";
+import {collect, partition} from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
 import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
-import {OpenNotebooksHandler} from "../state/preferences";
-import {ClientBackup} from "../state/client_backup";
-import {ErrorStateHandler} from "../state/error_state";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -43,63 +43,68 @@ export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHand
 }
 
 export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, NotebookStateHandler> {
-    constructor(socket: SocketStateHandler, state: NotebookStateHandler) {
-        super(socket, state);
+    constructor(socketState: SocketStateHandler, notebookState: NotebookStateHandler) {
+        super(socketState, notebookState);
+
+        const socket = socketState.fork().disposeWith(this);
+        const state = notebookState.fork().disposeWith(this);
+
         // when the socket is opened, send a KernelStatus message to request the current status from the server.
-        socket.view("status").addObserver(next => {
+        socket.observeKey("status", next => {
             if (next === "connected") {
-                socket.send(new messages.KernelStatus(new messages.KernelBusyState(false, false)))
+                this.socket.send(new messages.KernelStatus(new messages.KernelBusyState(false, false)))
             }
-        }, this);
-        const errorView = socket.view("error")
-        errorView.addObserver(err => {
+        });
+
+        socket.observeKey("error", err => {
             if (err) {
                 ErrorStateHandler.addKernelError(state.state.path, err.error)
             }
-        }, this)
+        })
 
-        state.view("activeSignature").addObserver(sig => {
+        state.observeKey("activeSignature", sig => {
             if (sig) {
                 this.socket.send(new messages.ParametersAt(sig.cellId, sig.offset))
             }
-        }, this)
+        })
 
-        state.view("activeCompletion").addObserver(sig => {
+        state.observeKey("activeCompletion", sig => {
             if (sig) {
                 this.socket.send(new messages.CompletionsAt(sig.cellId, sig.offset, []))
             }
-        }, this)
+        })
 
-        state.updateHandler.addObserver(updates => {
-            if (updates.length > 0) {
-                console.log("got updates to send", updates)
-                updates.forEach(update => this.sendUpdate(update))
-                state.updateHandler.update(() => [])
-            }
-        }, this)
+        this.handler.updateHandler.addObserver(update => {
+            this.sendUpdate(update)
+        }).disposeWith(this);
 
         const cells: Record<number, StateView<CellState>> = {};
         const cellsState = state.view("cells");
-        state.view("cellOrder").addObserver((newOrder, prevOrder) => {
-            const [_, added] = diffArray(prevOrder, newOrder);
-
-            added.forEach(id => {
-                const handler = cellsState.view(id)
-                cells[id] = handler
-                this.watchCell(handler)
+        state.observeKey("cellOrder", (newOrder, update) => {
+            Object.values(update.changedValues(newOrder)).forEach(id => {
+                if (id !== undefined && !cells[id]) {
+                    const handler = cellsState.view(id)
+                    cells[id] = handler
+                    this.watchCell(handler)
+                }
             })
-        }, this)
+            Object.values(update.removedValues ?? {}).forEach(id => {
+                if (id !== undefined && cells[id]) {
+                    cells[id].tryDispose();
+                    delete cells[id];
+                }
+            })
+        })
     }
 
     private watchCell(cellView: StateView<CellState>) {
         const id = cellView.state.id;
-        console.log("dispatcher: watching cell", id)
 
-        cellView.view("currentSelection").addObserver(range => {
+        cellView.observeKey("currentSelection", range => {
             if (range) {
                 this.socket.send(new messages.CurrentSelection(id, range))
             }
-        }, this)
+        })
 
     }
 
@@ -153,25 +158,23 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     reconnect(onlyIfClosed: boolean): void {
         console.log("Attempting to reconnect to notebook")
         this.socket.reconnect(onlyIfClosed)
-        const errorView = this.socket.lens("error")
+        const errorView = this.socket.lens("error").disposeWith(this)
         errorView.addObserver(err => {
             // if there was an error on reconnect, push it to the notebook state so it can be displayed
             if (err) {
                 console.error("error on reconnecting notebook", err)
                 ErrorStateHandler.addKernelError(this.handler.state.path, err.error)
             }
-        }, this)
-        this.socket.view("status").addObserver(status => {
+        })
+
+        this.socket.observeKey("status", status => {
             if (status === "connected") {
-                this.handler.update(s => {
-                    return {
-                        ...s,
-                        errors: [] // any errors from before are no longer relevant, right?
-                    }
+                this.socket.update({
+                        error: setValue(undefined) // any errors from before are no longer relevant, right?
                 })
-                errorView.dispose()
+                errorView.tryDispose()
             }
-        }, errorView)
+        }).disposeWith(errorView)
     }
 
     kernelCommand(command: "start" | "kill") {
@@ -262,16 +265,15 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
     constructor(socket: SocketStateHandler) {
         super(socket, ServerStateHandler.get);
 
-        const errorView = socket.view("error")
-        errorView.addObserver(err => {
+        socket.observeKey("error", err => {
             if (err) {
                 ErrorStateHandler.addServerError(err.error)
             }
-        }, this)
+        }).disposeWith(this)
 
-        this.handler.view("openNotebooks").addObserver(nbs => {
-            OpenNotebooksHandler.update(() => nbs)
-        }, this)
+        this.handler.observeKey("openNotebooks", (nbs, update) => {
+            OpenNotebooksHandler.update(setValue([...nbs]))
+        })
     }
 
     /*******************************
@@ -281,8 +283,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
     reconnect(onlyIfClosed: boolean) {
         console.warn("Attempting to reconnect to server") // TODO: once we have a proper place for server errors, we can display this log there.
         this.socket.reconnect(onlyIfClosed)
-        const errorView = this.socket.lens("error")
-        errorView.addObserver(err => {
+        const observeError = this.socket.observeKey("error", err => {
             if (err) {
                 // We don't want to reload if the connection is offline, instead we just want to display the
                 // error to the user
@@ -294,21 +295,19 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     ErrorStateHandler.addServerError(err.error)
                 }
             }
-        }, this)
+        }).disposeWith(this)
+
         // TODO: depending on how complicated reconnecting is, maybe we should just reload the page every time?
         this.socket.view("status").addObserver(status => {
             if (status === "connected") {
                 console.warn("Reconnected successfully, now reconnecting to notebook sockets")
-                this.handler.update(s => {
-                    return {
-                        ...s,
-                        errors: [] // any errors from before are no longer relevant, right?
-                    }
+                this.socket.update({
+                    error: undefined // any errors from before are no longer relevant, right?
                 })
                 ServerStateHandler.reconnectNotebooks(onlyIfClosed)
-                errorView.dispose()
+                observeError.tryDispose()
             }
-        }, errorView)
+        }).disposeWith(this)
     }
 
     requestNotebookList() {
@@ -321,20 +320,17 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
 
     createNotebook(path?: string, content?: string) {
         const waitForNotebook = (nbPath: string) => {
-            const disposable = new Disposable()
-            const nbs = this.handler.view("notebooks")
-            nbs.addObserver((current, prev) => {
-                const [added, _] = diffArray(Object.keys(current), Object.keys(prev))
-                added.forEach(newNb => {
+            const disposable = this.handler.observeKey("notebooks", (current, update) => {
+                update.changedKeys.forEach(newNb => {
                     if (newNb.includes(nbPath)) {
                         disposable.dispose()
                         ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {
-                            nbInfo.handler.update1("config", conf => ({...conf, open: true}))
+                            nbInfo.handler.updateField("config", {open: true})
                             ServerStateHandler.selectNotebook(newNb)
                         })
                     }
                 })
-            }, disposable)
+            })
         }
         if (path) {
             this.socket.send(new messages.CreateNotebook(path, content))

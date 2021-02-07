@@ -1,7 +1,7 @@
 import * as fc from "fast-check"
+import {Arbitrary} from "fast-check"
 import {ContentEdit, Delete, Insert} from "./content_edit";
 import {arrInsert} from "../util/helpers";
-import {Arbitrary} from "fast-check";
 
 describe("ContentEdits", () => {
     const editApply = (edit: Insert | Delete, str: string): string => {

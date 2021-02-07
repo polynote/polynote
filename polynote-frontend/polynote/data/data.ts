@@ -1,6 +1,19 @@
 import {
-    arrayCodec, bool, Codec, CodecContainer, combined, discriminated, either, int16, int64, mapCodec, optional, shortStr,
-    str, tinyStr, uint16, uint8
+    arrayCodec,
+    bool,
+    Codec,
+    CodecContainer,
+    combined,
+    discriminated,
+    int16,
+    int64,
+    mapCodec,
+    optional,
+    shortStr,
+    str,
+    tinyStr,
+    uint16,
+    uint8
 } from "./codec";
 import {ExecutionInfo, PosRange, Result} from "./result";
 
@@ -10,7 +23,9 @@ export class CellMetadata {
         return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.executionInfo];
     }
 
-    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly executionInfo: ExecutionInfo | null = null) {}
+    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly executionInfo: ExecutionInfo | null = null) {
+        Object.freeze(this);
+    }
 
     copy(metadata: Partial<CellMetadata>) {
         const disableRun = metadata.disableRun ?? this.disableRun;
@@ -44,7 +59,9 @@ export class NotebookCell {
                 readonly content: string = '',
                 readonly results: Result[] = [],
                 readonly metadata: CellMetadata = new CellMetadata(false, false, false),
-                readonly comments: Record<string, CellComment> = {}) {}
+                readonly comments: Record<string, CellComment> = {}) {
+        Object.freeze(this);
+    }
 }
 
 export abstract class RepositoryConfig extends CodecContainer {
@@ -67,6 +84,7 @@ export class IvyRepository extends RepositoryConfig {
 
     constructor(readonly url: string, readonly artifactPattern?: string, readonly metadataPattern?: string, readonly changing?: boolean) {
         super();
+        Object.freeze(this);
     }
 }
 
@@ -82,6 +100,7 @@ export class MavenRepository extends RepositoryConfig {
 
     constructor(readonly url: string, readonly changing?: boolean) {
         super();
+        Object.freeze(this);
     }
 }
 
@@ -97,6 +116,7 @@ export class PipRepository extends RepositoryConfig {
 
     constructor(readonly url: string) {
         super();
+        Object.freeze(this);
     }
 }
 

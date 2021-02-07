@@ -8,14 +8,19 @@ import {ServerMessageReceiver} from "./messaging/receiver";
 import {ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
 import {SplitView} from "./ui/layout/splitview";
-import {ServerStateHandler} from "./state/server_state";
+import {
+    insert,
+    moveArrayValue,
+    OpenNotebooksHandler,
+    RecentNotebooksHandler,
+    ServerStateHandler,
+    SocketStateHandler,
+    ThemeHandler
+} from "./state";
 import {Tabs} from "./ui/component/tabs";
 import {KernelPane} from "./ui/component/notebook/kernel";
 import {NotebookList} from "./ui/component/notebooklist";
-import {SocketStateHandler} from "./state/socket_state";
 import {Home} from "./ui/component/home";
-import {OpenNotebooksHandler, RecentNotebooksHandler} from "./state/preferences";
-import {ThemeHandler} from "./state/theme";
 import {CodeCellModel} from "./ui/component/notebook/cell";
 import {nameFromPath} from "./util/helpers";
 
@@ -43,7 +48,7 @@ class Main {
             } else {
                 window.removeEventListener("focus", reconnectOnWindowFocus)
             }
-        }, this.receiver)
+        }).disposeWith(this.receiver)
 
         const nbList = new NotebookList(dispatcher)
         const leftPane = { header: nbList.header, el: nbList.el };
@@ -61,7 +66,7 @@ class Main {
 
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
             Main.handlePath(path)
-        }, this.receiver)
+        }).disposeWith(this.receiver)
 
         const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.state.map(path => {
@@ -93,15 +98,14 @@ class Main {
                 window.history.pushState({notebook: path}, title, tabUrl.href);
             }
 
-            RecentNotebooksHandler.update(recents => {
-                const maybeExists = recents.find(r => r.path === path);
-                if (maybeExists) {
-                    return [maybeExists, ...recents.filter(r => r.path !== path)];
-                } else {
-                    const name = nameFromPath(path);
-                    return [{path, name}, ...recents];
-                }
-            })
+            const recents = RecentNotebooksHandler.state;
+            const currentIndex = recents.findIndex(r => r && r.path === path)
+            if (currentIndex >= 0) {
+                RecentNotebooksHandler.update(moveArrayValue(currentIndex, 0))
+            } else {
+                const name = nameFromPath(path);
+                RecentNotebooksHandler.update(insert({path, name}, 0));
+            }
         } else {
             const title = 'Polynote';
             window.history.pushState({notebook: name}, title, document.baseURI);

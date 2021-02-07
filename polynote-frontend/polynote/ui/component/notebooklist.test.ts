@@ -1,12 +1,8 @@
 import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList, NotebookListContextMenu} from "./notebooklist";
-import {StateHandler} from "../../state/state_handler";
-import {
-    ServerMessageDispatcher
-} from "../../messaging/dispatcher";
-import {fireEvent, getByText, queryAllByText, queryByText, queryHelpers, waitFor} from "@testing-library/dom";
+import {ServerStateHandler, SocketStateHandler, StateHandler} from "../../state";
+import {ServerMessageDispatcher} from "../../messaging/dispatcher";
+import {fireEvent, queryByText, waitFor} from "@testing-library/dom";
 import * as messages from "../../data/messages";
-import {NotebookInfo, ServerStateHandler} from "../../state/server_state";
-import {SocketStateHandler} from "../../state/socket_state";
 import {SocketSession} from "../../messaging/comms";
 import {ServerMessageReceiver} from "../../messaging/receiver";
 
@@ -29,10 +25,10 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     expect(leafEl()).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
 
     const newPath = "foo/bar/baz2";
-    leafState.update(() => ({
+    leafState.update({
         fullPath: newPath,
         value: "baz2"
-    }));
+    });
 
     expect(leafEl()).toHaveAttribute('href', `notebooks/${newPath}`);
 
@@ -58,13 +54,9 @@ describe("BranchComponent", () => {
         fullPath: "bar",
         value: "bar"
     };
-    branchState.update(s => {
-        return {
-            ...s,
-            children: {
-                ...s.children,
-                [leaf.fullPath]: leaf
-            }
+    branchState.update({
+        children: {
+            [leaf.fullPath]: leaf
         }
     });
     test('is updated when its state changes', done => {
@@ -75,13 +67,9 @@ describe("BranchComponent", () => {
             fullPath: "baz",
             value: "baz"
         };
-        branchState.update(s => {
-            return {
-                ...s,
-                children: {
-                    ...s.children,
-                    [leaf.fullPath]: newLeaf
-                }
+        branchState.update({
+            children: {
+                [leaf.fullPath]: newLeaf
             }
         });
         expect(branch.childrenEl).toHaveTextContent(newLeaf.value);

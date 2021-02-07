@@ -1,15 +1,19 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
-import {Disposable, StateHandler} from "../../../state/state_handler";
+import {
+    CellState,
+    Disposable,
+    NotebookScrollLocationsHandler,
+    NotebookStateHandler,
+    ServerStateHandler,
+    StateHandler
+} from "../../../state";
 import {CellMetadata} from "../../../data/data";
 import {diffArray} from "../../../util/helpers";
 import {CellContainer} from "./cell";
 import {NotebookConfigEl} from "./notebookconfig";
 import {VimStatus} from "./vim_status";
 import {PosRange} from "../../../data/result";
-import {NotebookScrollLocationsHandler} from "../../../state/preferences";
-import {ServerStateHandler} from "../../../state/server_state";
 
 export class Notebook extends Disposable {
     readonly el: TagElement<"div">;
@@ -20,17 +24,16 @@ export class Notebook extends Disposable {
         const path = notebookState.state.path;
         const config = new NotebookConfigEl(dispatcher, notebookState.lens("config"), notebookState.view("kernel").view("status"));
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
+
         cellsEl.addEventListener('scroll', evt => {
-            NotebookScrollLocationsHandler.update(locations => {
-                return {
-                    ...locations,
-                    [path]: cellsEl.scrollTop
-                }
+            NotebookScrollLocationsHandler.update({
+                [path]: cellsEl.scrollTop
             })
-        })
+        });
+
         this.el = div(['notebook-content'], [cellsEl]);
 
-        const handleVisibility = (currentNotebook?: string, previousNotebook?: string) => {
+        const handleVisibility = (currentNotebook: string | undefined) => {
             if (currentNotebook === path) {
                 // when this notebook becomes visible, scroll to the saved location (if present)
                 const maybeScrollLocation = NotebookScrollLocationsHandler.state[path]
@@ -48,7 +51,7 @@ export class Notebook extends Disposable {
             }
         }
         handleVisibility(ServerStateHandler.state.currentNotebook)
-        ServerStateHandler.view("currentNotebook").addObserver((current, previous) => handleVisibility(current, previous), notebookState)
+        ServerStateHandler.view("currentNotebook").addObserver(handleVisibility).disposeWith(notebookState)
 
         const cellsHandler = notebookState.cellsHandler
 
@@ -98,14 +101,17 @@ export class Notebook extends Disposable {
             });
         }
         handleCells(notebookState.state.cellOrder)
-        notebookState.view("cellOrder").addObserver((newOrder, prevOrder) => handleCells(newOrder, prevOrder), this);
+        notebookState.view("cellOrder").addPreObserver(prev => {
+            const prevOrder = [...prev];
+            return newOrder => handleCells(newOrder, prevOrder)
+        }).disposeWith(this);
 
         console.debug("initial active cell ", this.notebookState.state.activeCellId)
         this.notebookState.view("activeCellId").addObserver(cell => {
             if (cell === undefined) {
                 VimStatus.get.hide()
             }
-        }, this)
+        }).disposeWith(this)
 
         // select cell + highlight based on the current hash
         const hash = document.location.hash;
@@ -120,10 +126,12 @@ export class Notebook extends Disposable {
             if (pos) {
                 const range = PosRange.fromString(pos)
                 // TODO: when should this go away? maybe when you edit the cell
-                cellsHandler.update1(cellId, s => ({
-                    ...s,
-                    currentHighlight: {range, className: "link-highlight"}
-                }))
+                cellsHandler.updateField(cellId, {
+                    currentHighlight: {
+                        range,
+                        className: "link-highlight"
+                    }
+                })
             }
         })
     }
@@ -165,12 +173,12 @@ export class Notebook extends Disposable {
         return new Promise(resolve => {
             const wait = this.notebookState.addObserver(state => {
                 if (state.cellOrder.find(id => id === cellId)) {
-                    this.notebookState.removeObserver(wait)
+                    wait.dispose();
                     requestAnimationFrame(() => {
                         resolve(cellId)
                     })
                 }
-            }, this)
+            }).disposeWith(this)
         }).then((cellId: number) => {
             // wait for the cell to appear on the page
             return new Promise(resolve => {

@@ -1,11 +1,19 @@
-import {NoUpdate, StateHandler, StateView} from "./state_handler";
 import {
-    ClientResult, CompileErrors,
-    Output,
-    PosRange,
-    ResultValue, RuntimeError,
-    ServerErrorWithCause
-} from "../data/result";
+    clearArray,
+    Disposable,
+    EditString,
+    IDisposable,
+    ImmediateDisposable,
+    NoUpdate,
+    ObjectStateHandler,
+    setValue,
+    StateHandler,
+    StateView,
+    UpdatePartial,
+} from ".";
+import {ClientResult, CompileErrors, Output, PosRange, ResultValue, RuntimeError,} from "../data/result";
+
+import * as messages from "../data/messages";
 import {
     CompletionCandidate,
     HandleData,
@@ -13,14 +21,16 @@ import {
     ModifyStream,
     NotebookUpdate,
     Signatures,
-    TaskInfo
+    TaskInfo,
 } from "../data/messages";
+
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
-import {ContentEdit} from "../data/content_edit";
+import {ContentEdit, diffEdits} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
-import {deepEquals, diffArray, equalsByKey, mapValues} from "../util/helpers";
-import * as messages from "../data/messages";
-import {IgnoreServerUpdatesWrapper} from "../messaging/receiver";
+import {deepEquals, equalsByKey} from "../util/helpers";
+import {notReceiver} from "../messaging/receiver";
+
+export type CellPresenceState = {id: number, name: string, color: string, range: PosRange, avatar?: string};
 
 export interface CellState {
     id: number,
@@ -33,9 +43,7 @@ export interface CellState {
     compileErrors: CompileErrors[],
     runtimeError: RuntimeError | undefined,
     // ephemeral states
-    incomingEdits: ContentEdit[],
-    outgoingEdits: ContentEdit[],
-    presence: {id: number, name: string, color: string, range: PosRange, avatar?: string}[];
+    presence: CellPresenceState[];
     editing: boolean,
     selected: boolean,
     error: boolean,
@@ -60,6 +68,8 @@ export interface KernelState {
     tasks: KernelTasks
 }
 
+export type PresenceState = { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}};
+
 export interface NotebookState {
     // basic states
     path: string,
@@ -71,19 +81,19 @@ export interface NotebookState {
     activeCellId: number | undefined,
     activeCompletion: { cellId: number, offset: number, resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
     activeSignature: { cellId: number, offset: number, resolve: (signature: SignatureHint) => void, reject: () => void } | undefined,
-    activePresence: Record<number, { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}}>,
+    activePresence: Record<number, PresenceState>,
     // map of handle ID to message received.
     activeStreams: Record<number, (HandleData | ModifyStream)[]>,
 }
 
-export class NotebookStateHandler extends StateHandler<NotebookState> {
+export class NotebookStateHandler extends ObjectStateHandler<NotebookState> {
     readonly cellsHandler: StateHandler<Record<number, CellState>>;
-    updateHandler: NotebookUpdateHandler;
+    readonly updateHandler: NotebookUpdateHandler;
     constructor(state: NotebookState) {
-        super(new StateView(state));
+        super(state);
 
         this.cellsHandler = this.lens("cells")
-        this.updateHandler = new NotebookUpdateHandler(this, -1, -1, new EditBuffer())
+        this.updateHandler = new NotebookUpdateHandler(this, -1, 0, new EditBuffer()).disposeWith(this)
 
         // Update activeCellId when the active cell is deselected.
         this.view("activeCellId").addObserver(cellId => {
@@ -91,14 +101,14 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
                 const activeCellWatcher = this.cellsHandler.view(cellId)
                 const obs = activeCellWatcher.addObserver(s => {
                     if (! s.selected) {
-                        activeCellWatcher.removeObserver(obs)
+                        activeCellWatcher.dispose()
                         if (this.state.activeCellId === cellId) {
-                            this.update1("activeCellId", () => undefined)
+                            this.updateField("activeCellId", setValue(undefined))
                         }
                     }
-                }, this)
+                }).disposeWith(this)
             }
-        }, this)
+        }).disposeWith(this)
     }
 
     static forPath(path: string) {
@@ -178,15 +188,20 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
             }
         }
         id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
-        this.update(s => ({
-            ...s,
+        const prev = this.state.activeCellId;
+        const update: UpdatePartial<NotebookState> = {
             activeCellId: id,
-            cells: mapValues(s.cells, cell => ({
-                ...cell,
-                selected: cell.id === id,
-                editing: cell.id === id && (options?.editing ?? false)
-            }))
-        }))
+            cells: id === undefined ? NoUpdate : {
+                [id]: {
+                    selected: true,
+                    editing: options?.editing ?? false
+                }
+            }
+        };
+        if (prev !== undefined) {
+            (update.cells as any)[prev] = { selected: false };
+        }
+        this.update(update)
         return id
     }
 
@@ -218,24 +233,22 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         const maybePrevId = state.cellOrder[prevIdx] ?? -1;
         // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
         const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
-        const cellTemplate = {cellId: maxId + 1, language: anchor.language, content: anchor.content ?? '', metadata: anchor.metadata, prev: maybePrevId}
+        const cellTemplate = {id: maxId + 1, language: anchor.language, content: anchor.content ?? '', metadata: anchor.metadata, prev: maybePrevId}
         // wait for the InsertCell message to go to the server and come back.
         const waitForCell = new Promise<number>(resolve => {
             const cellOrder = this.view("cellOrder")
-            const obs = cellOrder.addObserver((order, prev) => {
-                const added = diffArray(prev, order)[1][0]
-                if (added !== undefined) {
-                    const addedCellIdx = order.indexOf(added)
-
+            const obs = cellOrder.addObserver((order, update) => {
+                const addedCellIdx = update.changedKeys[0] as number
+                if (addedCellIdx !== undefined) {
                     // ensure the new cell is the one we're waiting for
-                    const addedCell = this.state.cells[added]
+                    const addedCell = this.state.cells[order[addedCellIdx]]
                     const matches = equalsByKey(addedCell, cellTemplate, ["language", "content", "metadata"])
                     if (addedCellIdx - 1 === prevIdx && matches && addedCell.id > maxId) {
                         resolve(addedCell.id)
-                        cellOrder.removeObserver(obs)
+                        obs.dispose()
                     }
                 }
-            }, this)
+            }).disposeWith(this)
         })
         // trigger the insert
         this.updateHandler.insertCell(maxId + 1, anchor.language, anchor.content ?? '', anchor.metadata, maybePrevId)
@@ -250,30 +263,29 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
         if (id !== undefined) {
             const waitForDelete = new Promise<number>(resolve => {
                 const cellOrder = this.view("cellOrder")
-                const obs = cellOrder.addObserver((order, prev) => {
+                const obs = cellOrder.addObserver(order => {
                     if (! order.includes(id!)) {
-                        resolve(id)
-                        cellOrder.removeObserver(obs)
+                        resolve(id);
+                        obs.dispose();
                     }
-                }, this)
+                }).disposeWith(this)
             })
-            this.updateHandler.deleteCell(id)
+            this.updateHandler.deleteCell(id);
             return waitForDelete
         } else return Promise.resolve(undefined)
     }
 
     setCellLanguage(id: number, language: string) {
-        console.log("Setting language of cell", id, "to", language)
-        this.cellsHandler.update1(id, cell => ({
-            ...cell,
+        const cell = this.cellsHandler.state[id];
+        this.cellsHandler.updateField(id, {
             language,
             // clear a bunch of stuff if we're changing to text... hm, maybe we need to do something else when it's a a text cell...
-            output: language === "text" ? [] : cell.output,
-            results: language === "text" ? [] : cell.results,
-            error: language === "text" ? false : cell.error,
-            compileErrors: language === "text" ? [] : cell.compileErrors,
-            runtimeError: language === "text" ? undefined : cell.runtimeError,
-        }))
+            output: language === "text" ? clearArray() : NoUpdate,
+            results: language === "text" ? clearArray() : NoUpdate,
+            error: language === "text" ? false : NoUpdate,
+            compileErrors: language === "text" ? clearArray() : NoUpdate,
+            runtimeError: language === "text" ? setValue(undefined) : NoUpdate,
+        })
     }
 
     // wait for cell to transition to a specific state
@@ -282,10 +294,10 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
             const obs = this.addObserver(state => {
                 const maybeChanged = state.cells[id];
                 if (maybeChanged && maybeChanged[targetState]) {
-                    this.removeObserver(obs)
-                    resolve()
+                    obs.dispose();
+                    resolve();
                 }
-            }, this)
+            }).disposeWith(this)
         })
     }
 }
@@ -297,33 +309,55 @@ export class NotebookStateHandler extends StateHandler<NotebookState> {
  *
  * Watches the state of this notebook's cells, translating their state changes into NotebookUpdates which are then
  * observed by the dispatcher and sent to the server.
+ *
+ * TODO: can this be refactored so it's not a "broadcaster"? The dependencies seem backwards; shouldn't this just
+ *       talk directly to the server message dispatcher rather than the dispatcher listening to this?
  */
-export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
+export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHandler<NotebookUpdate[]>{
     cellWatchers: Record<number, StateView<CellState>> = {};
+    private observers: ((update: NotebookUpdate) => void)[] = [];
     constructor(state: NotebookStateHandler, public globalVersion: number, public localVersion: number, public edits: EditBuffer) {
-        super(new StateView([]))
+        super()
 
-        new IgnoreServerUpdatesWrapper(state.view("config")).addObserver((current, prev) => {
-            if (! deepEquals(current.config, prev.config)) {
-                this.updateConfig(current.config)
+        state.view("config").view("config", notReceiver)
+            .addObserver((config, update, source) => this.updateConfig(config))
+            .disposeWith(this)
+
+        state.view("cellOrder").addObserver((newOrder, update) => {
+            const added = update.changedValues(newOrder);
+            const removed = update.removedValues ?? [];
+
+            for (const idx in added) {
+                if (added.hasOwnProperty(idx)) {
+                    const id = added[idx];
+                    this.watchCell(
+                        id!,
+                        state.cellsHandler.view(id!).filterSource(notReceiver).disposeWith(this)
+                    );
+                }
             }
-        }, this)
 
-        state.view("cellOrder").addObserver((newOrder, prevOrder) => {
-            const [removed, added] = diffArray(prevOrder, newOrder)
-            added.forEach(cellId => this.watchCell(cellId, new IgnoreServerUpdatesWrapper(state.cellsHandler.view(cellId))))
-            removed.forEach(cellId => {
-                delete this.cellWatchers[cellId]
-            })
-        }, this)
+            for (const idx in removed) {
+                if (removed.hasOwnProperty(idx)) {
+                    const id = removed[idx];
+                    if (id !== undefined && this.cellWatchers[id]) {
+                        this.cellWatchers[id].tryDispose();
+                        delete this.cellWatchers[id];
+                    }
+                }
+            }
+
+        }).disposeWith(this)
+
+        this.onDispose.then(() => this.observers.splice(0, this.observers.length))
     }
 
     addUpdate(update: NotebookUpdate) {
         if (update.localVersion !== this.localVersion) {
             throw new Error(`Update Version mismatch! Update had ${update.localVersion}, but I had ${this.localVersion}`)
         }
-        this.edits = this.edits.push(update.localVersion, update)
-        this.update(s => [...s, update])
+        this.edits = this.edits.push(update.localVersion, update);
+        this.observers.forEach(obs => obs(update));
     }
 
     insertCell(cellId: number, language: string, content: string, metadata: CellMetadata, prevId: number) {
@@ -350,7 +384,6 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
     }
 
     deleteComment(cellId: number, commentId: string): void {
-        console.log("deleting comment", commentId, cellId)
         this.addUpdate(new messages.DeleteComment(this.globalVersion, this.localVersion, cellId, commentId));
     }
 
@@ -359,7 +392,6 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
     }
 
     setCellOutput(cellId: number, output: Output) {
-        console.log("setting cell output!", cellId, output)
         this.addUpdate(new messages.SetCellOutput(this.globalVersion, this.localVersion, cellId, output))
     }
 
@@ -384,43 +416,58 @@ export class NotebookUpdateHandler extends StateHandler<NotebookUpdate[]>{
     }
 
     private watchCell(id: number, handler: StateView<CellState>) {
-        console.log("notebookupdatehandler: watching cell", id, handler)
         this.cellWatchers[id] = handler
-        handler.view("output").addObserver((newOutput, oldOutput, source) => {
-            const added = diffArray(oldOutput, newOutput)[1]
+        handler.view("output").addObserver((newOutput, update) => {
+            const added = (update.changedKeys as number[]).map(idx => newOutput[idx]);
             added.forEach(o => {
                 this.setCellOutput(id, o)
             })
-        }, this)
+        }).disposeWith(this)
 
         handler.view("language").addObserver(lang => {
             this.addUpdate(new messages.SetCellLanguage(this.globalVersion, this.localVersion, id, lang))
-        }, this)
+        }).disposeWith(this)
 
-        handler.view("outgoingEdits").addObserver(edits => {
-            console.log("got outgoing edits!", edits)
-            if (edits.length > 0) {
-                this.updateCell(id, {edits})
+        handler.view("content").addObserver((content, update) => {
+            if (update instanceof EditString) {
+                this.updateCell(id, {edits: update.edits})
+            } else if (update.oldValue !== undefined) {
+                this.updateCell(id, {edits: diffEdits(update.oldValue, content)})
+            } else {
+                // the only updates possible should be EditString or SetValue, so this is a defect
+                console.error("Unexpected update to cell content", update)
+                throw new Error("Unexpected update to cell content")
             }
-        }, this)
+        }).disposeWith(this)
 
         handler.view("metadata").addObserver(metadata => {
             this.updateCell(id, {metadata})
-        }, this)
+        }).disposeWith(this)
 
-        handler.view("comments").addObserver((current, previous) => {
-            const [removed, added] = diffArray(Object.keys(previous), Object.keys(current));
-
-            added.forEach(commentId => this.createComment(id, current[commentId]))
-            removed.forEach(commentId => this.deleteComment(id, commentId))
-
-            Object.keys(current).filter(k => ! added.includes(k) && ! deepEquals(current[k], previous[k])).forEach(maybeChangedId => {
-                const currentComment = current[maybeChangedId]
-                if (! deepEquals(current[maybeChangedId], previous[maybeChangedId])) {
-                    this.updateComment(id, currentComment.uuid, currentComment.range, currentComment.content)
+        const existingComments: Set<string> = new Set(Object.keys(handler.state.comments))
+        handler.view("comments").addObserver((current, update) => {
+            update.changedKeys.forEach(commentId => {
+                if (existingComments.has(commentId)) {
+                    const currentComment = current[commentId];
+                    this.updateComment(id, commentId, currentComment.range, currentComment.content)
+                } else {
+                    existingComments.add(commentId);
+                    this.createComment(id, current[commentId]);
                 }
             })
-        }, this)
+
+            update.removedKeys.forEach(commentId => this.deleteComment(id, commentId))
+        }).disposeWith(this)
+    }
+
+    addObserver(fn: (update: NotebookUpdate) => void): IDisposable {
+        this.observers.push(fn);
+        return new ImmediateDisposable(() => {
+            const idx = this.observers.indexOf(fn);
+            if (idx >= 0) {
+                this.observers.splice(idx, 1);
+            }
+        })
     }
 
     protected compare(s1: any, s2: any): boolean {

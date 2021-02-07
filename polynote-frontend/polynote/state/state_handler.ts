@@ -1,319 +1,633 @@
-import {arrayStartsWith, deepCopy, deepEquals, deepFreeze, Deferred, shallowEquals} from "../util/helpers";
-import {UpdateObserver} from "./state_handler1";
+import {collect, Deferred} from "../util/helpers";
+import {Disposable, IDisposable, ImmediateDisposable} from "./disposable";
+import {
+    Destroy, isUpdateLike,
+    NoUpdate,
+    SetValue,
+    StateUpdate,
+    UpdateKey,
+    UpdateLike,
+    UpdateOf,
+    valueToUpdate
+} from ".";
+import {__getProxyTarget, __readOnlyProxyObject} from "./readonly";
 
-export interface IDisposable {
-    onDispose: Promise<void>
-    dispose: () => Promise<void>
-    tryDispose: () => void
-    isDisposed: boolean
-    disposeWith(that: IDisposable): this
-}
-
-export function mkDisposable<T>(t: T): T & IDisposable {
-    let resolve: () => void;
-    const getResolve = () => resolve;
-    const promise = new Promise(r => resolve = r);
-    let disposed = false;
-    promise.then(() => disposed = true);
-    return Object.defineProperties(t, {
-        onDispose: { value: promise },
-        dispose: { get: getResolve },
-        tryDispose: { get: getResolve },
-        isDisposed: { get: () => disposed },
-        disposeWith: {
-            value: (that: IDisposable) => {
-                Promise.race([promise, that.onDispose]).then(() => resolve());
-                return t;
-            }
-        }
-    });
-}
-
-export class Disposable implements IDisposable {
-    private deferred: Deferred<void> = new Deferred()
-    onDispose: Promise<void> = this.deferred
-
-    // this readonly field trick is a hacky way to make it `final`...
-    readonly dispose = () => {
-        if (this.isDisposed) {
-            throw new Error("Already disposed! Can't dispose again.")
-        }
-        this.deferred.resolve()
-        console.log("Disposed object", this)
-        return this.deferred
-    };
-
-    readonly tryDispose = () => {
-        if (!this.isDisposed) {
-            this.deferred.resolve();
-        }
-    }
-
-    get isDisposed() {
-        return this.deferred.isSettled
-    }
-
-    disposeWith(that: IDisposable): this {
-        Promise.race([this.deferred, that.onDispose]).then(() => this.tryDispose());
-        return this;
-    }
-}
-
-export const NoUpdate: unique symbol = Symbol()
-
-export class StateView<S> {
-
-    protected _state: S
-
-    // the current value of S
-    get state(): S {
-        return this._state
-    }
-
-    /**
-     * Handle with which to set the state and notify observers of the new state.
-     *
-     * Note: this should be a setter but typescript won't allow a protected setter with a public getter, sigh.
-     */
-    protected setState(newState: S, updateSource?: any, updatePath: string[] = this.path) {
-        if (! this.compare(newState, this._state)) {
-            const oldState = this._state;
-            const frozenState = Object.isFrozen(newState) ? newState : deepFreeze(newState); // Note: this won't deepfreeze a shallow-frozen object. Don't pass one in.
-            this._state = frozenState;
-            // view Observers are always called (to ensure state is accurately updated)
-            this.viewObservers.forEach(([obs, desc]) => {
-                obs(frozenState, oldState, updateSource)
-            });
-            // Check if matchSource filtered this update out.
-            if (this.matchSource(updateSource, frozenState)) {
-                // update observers IFF the current path is <= the update path. Otherwise, the update should not apply.
-                if (arrayStartsWith(this.path, updatePath)) {
-                    this.observers.forEach(([obs, desc]) => {
-                        obs(frozenState, oldState, updateSource)
-                    });
-                }
-            }
-        }
-    }
-
-    private views: Record<keyof any, StateView<S[keyof S]>> = {};
-
-    // Create a child 'view' of this state. Changes to this state will propagate to the view.
-    // Optionally, caller can provide the constructor to use to instantiate the view StateHandler.
-    view<K extends keyof S>(key: K): StateView<S[K]> {
-        const maybeView = this.views[key];
-        if (maybeView) {
-            if (! this.compare(maybeView.state, this.state[key])) {
-                // This might happen when a view is created within a state change.
-                // Not quite sure what to do about this, so we throw for now.
-                console.trace("View state doesn't match parent! View state:", maybeView.state, "parent state", this.state[key], "parent", this, "key", key)
-                throw new Error("View state doesn't match parent! This shouldn't happen, if you see this please let the Polynote Developers know and provide the log above.")
-            }
-            return maybeView as StateView<S[K]>
-        } else {
-            const view: StateView<S[K]> = new StateView(this.state[key], [...this.path, key.toString()]);
-            const viewDispose = new Disposable()
-
-            const obs = this.addObserver((s, _, updateSource) => {
-                if (s === undefined) { // if state is undefined it's impossible to have a view into it!
-                    if (! viewDispose.isDisposed) viewDispose.dispose()
-                } else {
-                    if ((s as any).hasOwnProperty(key)) { // if the key was deleted we need to dispose the view.
-                        const observedVal = s[key] as S[K];
-                        if (! this.compare(observedVal, view.state)) {
-                            view.setState(observedVal, updateSource, this.path)
-                        }
-                    } else {
-                        if (! viewDispose.isDisposed) viewDispose.dispose()
-                    }
-                }
-            }, viewDispose, `handleView of key ${key}`, 'viewObserver')
-            viewDispose.onDispose.then(() => {
-                console.log("removed view:", view)
-                view.clearObservers() // any observers of this view are no longer relevant
-                delete this.views[key]
-                this.removeObserver(obs)
-            })
-
-            this.views[key] = view;
-
-            return view
-        }
-    }
-
-    // a child view and a one-way transformation.
-    mapView<K extends keyof S, T>(key: K, toT: (s: S[K]) => T | typeof NoUpdate, tEquals: (t1?: T, t2?: T) => boolean = deepEquals): MapView<S[K], T> {
-        const view = this.view(key)
-        return new MapView(view, toT, tEquals)
-    }
-
-    protected constructor(state: S, readonly path: string[] = ["root"]) {
-        this.setState(deepFreeze(state))
-    }
-
-    // Comparison function to use. Subclasses can provide a different comparison function (e.g., deepEquals) but should
-    // be aware of the performance implications.
-    protected compare(s1: any, s2: any) {
-        // return deepEquals(s1, s2)
-        return shallowEquals(s1, s2)
-    }
-
-    protected observers: [Observer<S>, string][] = [];
-    protected viewObservers: [Observer<S>, string][] = [];  // view Observers get updated first
-
-    /**
-     * Add an Observer to this State Handler.
-     * The Observer will be removed following `disposeWhen`'s disposal.
-     *
-     * @param disposeWhen
-     * @param f
-     */
-    addObserver(f: Observer<S>, disposeWhen: IDisposable, description: string = "obs", type: "observer" | "viewObserver" = "observer"): [Observer<S>, string] {
-        const obs: [Observer<S>, string] = [f, description]
-        if (type === "observer") {
-            this.observers.push(obs);
-        } else {
-            this.viewObservers.push(obs)
-        }
-        disposeWhen.onDispose.then(() => {
-            this.removeObserver(obs)
-        })
-        return obs;
-    }
-
-    removeObserver(f: [Observer<S>, string]): void {
-        const idx = this.observers.indexOf(f);
-        if (idx >= 0) {
-            this.observers.splice(idx, 1)
-        } else {
-            // maybe it's a viewobserver
-            const idx = this.viewObservers.indexOf(f);
-            if (idx >= 0) {
-                this.viewObservers.splice(idx, 1)
-            }
-        }
-    }
-
-    clearObservers(): void {
-        this.observers = [];
-    }
-
-    // Optional filter for update sources. Prevents observers from being triggered if the update source doesn't match.
-    protected matchSource(updateSource: any, x: any) {
-        return updateSource !== this;
-    }
-}
-
-export class StateWrapper<S> extends StateView<S> implements IDisposable {
-
-    constructor(view: StateView<S>, protected disposable: IDisposable = new Disposable()) {
-        super(view.state, view.path);
-
-        view.addObserver((s, _, src) => {
-            this.setState(s, src, view.path)
-        }, this.disposable, `wrapper observer of ${this.path}`, "viewObserver")
-
-    }
-
-    addObserver(f: Observer<S>, disposeWhen: IDisposable = this, description: string = "obs", type: "observer" | "viewObserver" = "observer"): [Observer<S>, string] {
-        return super.addObserver(f, disposeWhen, description, type);
-    }
-
-    // implement IDisposable
-    dispose() {
-        console.log("StateWrapper disposed", this, this.state)
-        return this.disposable.dispose()
-    }
-
-    get onDispose() {
-        return this.disposable.onDispose
-    }
-
-    get isDisposed() {
-        return this.disposable.isDisposed
-    }
-
-    tryDispose(): void {
-        this.disposable.tryDispose();
-    }
-
-    disposeWith(that: IDisposable): this {
-        this.disposable.disposeWith(that);
-        return this;
-    }
-}
+export type UpdateObserver<S> = (value: S, update: UpdateLike<S>, updateSource: any) => void
+export type PreObserver<S> = (value: S) => UpdateObserver<S>
 
 /**
- * An updatable StateView.
+ * Types for describing state updates
  */
-export class StateHandler<S> extends StateWrapper<S> {
 
-    // handle with which to modify the state, given the old state. All observers get notified of the new state.
-    update(f: (s: S) => S | typeof NoUpdate, updateSource?: any, path = this.path) {
-        const currentState = this.state
-        const newState = f(currentState);
-        if (! this.compare(newState, NoUpdate) && ! this.compare(currentState, newState)) {
-            this.setState(newState as S, updateSource, path)
+// A boolean that can only be set to true
+export interface Latch {
+    triggered: boolean
+    trigger(): void
+    down(): Latch
+}
+
+// A private implementation of Latch that can also be reset
+class LatchImpl {
+    private _triggered: boolean = false
+    private _down?: LatchImpl
+
+    constructor(private parent?: LatchImpl) {}
+
+    get triggered(): boolean { return this._triggered }
+    trigger(): void {
+        if (this.parent) {
+            this.parent.trigger();
         }
+        this._triggered = true;
     }
-
-    update1<K extends keyof S, C extends StateHandler<S[K]>>(key: K, f: (s: S[K]) => S[K] | typeof NoUpdate, updateSource?: any) {
-        this.update(s => ({...s, [key]: f(s[key])}), updateSource, [...this.path, key.toString()])
+    reset(): void {
+        this._triggered = false;
     }
-
-    // A lens is like a view except changes to the lens propagate back to its parent
-    lens<K extends keyof S, C extends StateHandler<S[K]>>(key: K): StateHandler<S[K]> {
-        const view = this.view(key)
-        const lens: StateHandler<S[K]> = new StateHandler(view);
-        lens.addObserver((viewState, _, src) => {
-            this.setState({
-                ...this.state,
-                [key]: viewState
-            }, src ?? lens, lens.path)
-        }, this, `lens of key ${key}`, "viewObserver")
-        this.onDispose.then(() => {
-            if (! lens.isDisposed) lens.dispose()
-        })
-        return lens as C
-    }
-
-    protected compare(s1: any, s2: any): boolean {
-        return deepEquals(s1, s2);
-    }
-
-    constructor(private _view: StateView<S>) {
-        super(_view)
-    }
-
-    static from<S>(s: S) {
-        return new this(new StateView(s))
+    down() {
+        if (!this._down) {
+            this._down = new LatchImpl(this);
+        } else {
+            this._down.reset();
+        }
+        return this._down;
     }
 }
 
-export type Observer<S> = (currentS: S, previousS: S, updateSource: any) => void;
+// Partial<V[]> confuses TypeScript – TS thinks it has iterators and array methods and such.
+// This is to avoid that.
+export type Partial1<S> = S extends (infer V)[] ? Record<number, V> : Partial<S>
 
+export interface ObservableState<S> extends IDisposable {
+    state: S
+    addObserver(fn: UpdateObserver<S>, path?: string): IDisposable
+    addPreObserver(fn: PreObserver<S>, path?: string): IDisposable
+}
 
-// Map view from U to S
-export class MapView<U, S> extends StateWrapper<S | undefined> {
-    equals?: (s1?: S, s2?: S) => boolean;
+export interface StateView<S> extends ObservableState<S> {
+    view<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateView<S[K]>
+    viewOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateView<Exclude<S[K], undefined>>
+    observeKey<K extends keyof S>(key: K, fn: UpdateObserver<S[K]>, subPath?: string): IDisposable
+    preObserveKey<K extends keyof S>(key: K, fn: PreObserver<S[K]>, subPath?: string): IDisposable
+    filterSource(filter: (source: any) => boolean): StateView<S>
+    fork(): StateView<S>
+}
 
-    constructor(view: StateView<U>, toS: (u: U) => S | typeof NoUpdate, equals?: (s1?: S, s2?: S) => boolean) {
+export interface OptionalStateView<S> extends ObservableState<S | undefined> {
+    view<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateView<Exclude<S[K], undefined>>
+    viewOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateView<Exclude<S[K], undefined>>
+    observeKey<K extends keyof S>(key: K, fn: UpdateObserver<S[K] | undefined>, subPath?: string): IDisposable
+    preObserveKey<K extends keyof S>(key: K, fn: PreObserver<S[K] | undefined>, subPath?: string): IDisposable
+    filterSource(filter: (source: any) => boolean): OptionalStateView<S>
+    fork(): OptionalStateView<S>
+}
 
-        const s = toS(view.state)
-        super(new StateView(s === NoUpdate ? undefined : s, view.path));
+export interface UpdatableState<S> extends ObservableState<S> {
+    submitUpdate(update: StateUpdate<S>, updateSource?: any, updatePath?: string): void
+    update(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): void
+    updateAsync(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>>
+}
 
-        view.addObserver((u, _, src) => {
-            const s = toS(u)
-            if (s !== NoUpdate && !this.compare(s, this.state)) {
-                this.setState(s, src)
+export interface StateHandler<S> extends StateView<S>, UpdatableState<S> {
+    lens<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateHandler<S[K]>
+    lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>>
+    updateField<K extends keyof S>(key: K, update: UpdateOf<S[K]>, updateSource?: any, updateSubpath?: string): void
+    filterSource(filter: (source: any) => boolean): StateHandler<S>
+    fork(): StateHandler<S>
+}
+
+export const StateHandler = {
+    from<T>(state: T): StateHandler<T> { return new ObjectStateHandler(state) }
+}
+
+export interface OptionalStateHandler<S> extends OptionalStateView<S>, UpdatableState<S | undefined> {
+    lens<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>>
+    lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>>
+    updateField<K extends keyof S>(key: K, update: UpdateOf<S[K] | undefined>, updateSource?: any, updateSubpath?: string): void
+    filterSource(filter: (source: any) => boolean): OptionalStateHandler<S>
+    fork(): OptionalStateHandler<S>
+}
+
+function filterObserver<S>(fn: UpdateObserver<S>, filter?: (src: any) => boolean): UpdateObserver<S> {
+    if (!filter)
+        return fn;
+    return (value, update, updateSource) => {
+        if (filter(updateSource)) {
+            fn(value, update, updateSource)
+        }
+    }
+}
+
+function filterPreObserver<S>(fn: PreObserver<S>, filter?: (src: any) => boolean): PreObserver<S> {
+    if (!filter)
+        return fn;
+    return pre => {
+        const obs = fn(pre);
+        return (value, update, updateSource) => {
+            if (filter(updateSource)) {
+                obs(value, update, updateSource)
             }
-        }, this)
+        }
+    }
+}
 
-        this.equals = equals;
+function keyObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn: UpdateObserver<V>, filter?: (src: any) => boolean): UpdateObserver<S> {
+    return (value, update, updateSource) => {
+        const down = update.down<K, V>(key, value as S);
+        if (down !== NoUpdate) {
+            if (!filter || filter(updateSource)) {
+                fn(value[key as keyof S] as V, down, updateSource)
+            }
+        }
+    }
+}
 
+function keyPreObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn: PreObserver<V>, filter?: (src: any) => boolean): PreObserver<S> {
+    return preS => {
+        const obs = fn(preS[key as keyof S] as V);
+        return (value, update, updateSource) => {
+            const down = update.down<K, V>(key, value as S);
+            if (down !== NoUpdate) {
+                if (!filter || filter(updateSource)) {
+                    obs(value[key] as V, down, updateSource)
+                }
+            }
+        }
+    }
+}
+
+function combineFilters(first?: (source: any) => boolean, second?: (source: any) => boolean): ((source: any) => boolean) | undefined {
+    if (first && second) {
+        return source => first(source) && second(source)
+    }
+    return first || second
+}
+
+export class ObjectStateHandler<S extends Object> extends Disposable implements StateHandler<S> {
+
+    // internal, mutable state
+    private mutableState: S;
+
+    // private read-only view of state
+    private readOnlyState: S;
+
+    // observers receive the updated state, the update, and the update source and perform side-effects
+    private observers: [UpdateObserver<S>, string][] = [];
+
+    // pre-observers receive the previous state; and return function that receive the updated state, the update, and
+    // the update source, which performs side-effects. This is useful if an observer needs to copy any values from the
+    // previous state, or decide what to based on the previous state.
+    private preObservers: [PreObserver<S>, string][] = [];
+
+    // public, read-only view of state
+    get state(): Readonly<S> { return this.readOnlyState }
+
+    constructor(state: S, readonly path: string = "", readonly sourceFilter: (source?: any) => boolean = () => true) {
+        super();
+        this.mutableState = state;
+        this.readOnlyState = __readOnlyProxyObject(state);
+        this.onDispose.then(() => {
+            this.observers = [];
+            this.preObservers = [];
+        })
     }
 
-    protected compare(s1: any, s2: any): boolean {
-        return (this.equals ?? super.compare)(s1, s2)
+    private isUpdating: boolean = false;
+    private updateQueue: [StateUpdate<S>, any, string, Deferred<Readonly<S>> | undefined][] = [];
+    private updateLatch: LatchImpl = new LatchImpl();
+
+    protected handleUpdate(update: StateUpdate<S>, updateSource: any, updatePath: string, promise?: Deferred<Readonly<S>>): void {
+        if (update === NoUpdate) {
+            if (promise) {
+                promise.resolve(this.state)
+            }
+            return;
+        }
+
+        function pathMatches(path: string): boolean {
+            return path.startsWith(updatePath) || updatePath.startsWith(path)
+        }
+
+        const preObservers = collect(this.preObservers, ([obs, path]) => pathMatches(path) ? obs(this.state) : undefined);
+
+        this.updateLatch.reset();
+
+        const updatedObj = __getProxyTarget(update.forValue(this.mutableState).applyMutate(this.mutableState, this.updateLatch));
+        if (!Object.is(this.mutableState, updatedObj)) {
+            this.mutableState = updatedObj
+            this.readOnlyState = __readOnlyProxyObject(this.mutableState);
+        }
+
+        if (this.updateLatch.triggered) {
+            if (this.sourceFilter(updateSource)) {
+                const src = updateSource ?? this;
+                preObservers.forEach(observer => observer(this.state, update, src));
+                this.observers.forEach(([observer, path]) => {
+                    if (pathMatches(path)) {
+                        observer(this.state, update, src);
+                    }
+                })
+            }
+        }
+
+        if (promise) {
+            promise.resolve(this.state);
+        }
+    }
+
+    private runUpdates() {
+        if (!this.isUpdating) {
+            this.isUpdating = true;
+            try {
+                while (this.updateQueue.length > 0) {
+                    const updateFields = this.updateQueue.shift();
+                    if (updateFields) {
+                        this.handleUpdate(...updateFields);
+                    }
+                }
+            } finally {
+                this.isUpdating = false;
+            }
+        }
+    }
+
+    submitUpdate(update: StateUpdate<S>, updateSource?: any, updatePath?: string): void {
+        if (update === NoUpdate) {
+            return;
+        }
+
+        this.updateQueue.push([update, updateSource, updatePath ?? this.path, undefined]);
+        this.runUpdates()
+    }
+
+    update(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): void {
+        return this.submitUpdate(valueToUpdate(updates), updateSource, updatePath);
+    }
+
+    updateAsync(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>> {
+        const promise = new Deferred<Readonly<S>>();
+        this.updateQueue.push([valueToUpdate(updates), updateSource, updatePath ?? this.path, promise]);
+        this.runUpdates()
+        return promise;
+    }
+
+    updateField<K extends keyof S>(key: K, update: UpdateOf<S[K]>, updateSource?: any, updateSubPath?: string): void {
+        if (isUpdateLike(update)) {
+            this.submitUpdate(new UpdateKey(key, valueToUpdate(update)), updateSource, `${key}.` + (updateSubPath ?? ''))
+        } else {
+            this.update({[key]: update} as UpdateOf<S>, updateSource, `${key}.` + (updateSubPath ?? ''))
+        }
+    }
+
+    private addObserverAt(fn: UpdateObserver<S>, path: string): IDisposable {
+        const observer: [UpdateObserver<S>, string] = [fn, path];
+        this.observers.push(observer);
+
+        return new ImmediateDisposable(() => {
+            const idx = this.observers.indexOf(observer);
+            if (idx >= 0) {
+                this.observers.splice(idx, 1);
+            }
+        })
+    }
+
+    private addPreObserverAt(fn: PreObserver<S>, path: string): IDisposable {
+        const observer: [PreObserver<S>, string] = [fn, path];
+        this.preObservers.push(observer);
+        return new ImmediateDisposable(() => {
+            const idx = this.preObservers.indexOf(observer);
+            if (idx >= 0) {
+                this.preObservers.splice(idx, 1)
+            }
+        })
+    }
+
+    addObserver(fn: UpdateObserver<S>, path?: string): IDisposable {
+        return this.addObserverAt(fn, path ?? '');
+    }
+
+    addPreObserver(fn: PreObserver<S>, path?: string): IDisposable {
+        return this.addPreObserverAt(fn, path ?? '');
+    }
+
+    observeKey<K extends keyof S>(key: K, fn: UpdateObserver<S[K]>, subPath?: string): IDisposable {
+        return this.addObserverAt(
+            keyObserver(key, fn),
+            `${key}.` + (subPath ?? '')
+        )
+    }
+
+    preObserveKey<K extends keyof S>(key: K, fn: PreObserver<S[K]>, subPath?: string): IDisposable {
+        return this.addPreObserverAt(
+            keyPreObserver(key, fn),
+            `${key}.` + (subPath ?? '')
+        )
+    }
+
+    view<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateView<S[K]> {
+        return new KeyView(this, key, combineFilters(this.sourceFilter, sourceFilter))
+    }
+
+    viewOpt<K extends keyof S>(key : K, sourceFilter?: (source: any) => boolean): OptionalStateView<Exclude<S[K], undefined>> {
+        return new OptionalKeyView<S, K>(this as any as OptionalStateHandler<S>, key, combineFilters(this.sourceFilter, sourceFilter))
+    }
+
+    lens<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateHandler<S[K]> {
+        return new KeyView(this, key, combineFilters(this.sourceFilter, sourceFilter))
+    }
+
+    lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>> {
+        return new OptionalKeyView(this as any as OptionalStateHandler<S>, key, combineFilters(this.sourceFilter, sourceFilter))
+    }
+
+    filterSource(filter: (source: any) => boolean): StateHandler<S> {
+        return new BaseView(this, combineFilters(this.sourceFilter, filter))
+    }
+
+    fork(): StateHandler<S> {
+        return new BaseView(this);
+    }
+
+    get observerCount(): number { return this.observers.length + this.preObservers.length }
+}
+
+class BaseView<S> extends Disposable implements StateHandler<S> {
+    constructor(private parent: StateHandler<S>, private readonly sourceFilter?: (source: any) => boolean) {
+        super();
+        this.disposeWith(parent);
+    }
+
+    get state(): S { return this.parent.state }
+
+    addObserver(fn: UpdateObserver<S>, path?: string): IDisposable {
+        return this.parent.addObserver(filterObserver(fn, this.sourceFilter), path).disposeWith(this);
+    }
+
+    addPreObserver(fn: PreObserver<S>, path?: string): IDisposable {
+        return this.parent.addPreObserver(filterPreObserver(fn, this.sourceFilter), path).disposeWith(this);
+    }
+
+    lens<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateHandler<S[K]> {
+        return this.parent.lens(key, combineFilters(this.sourceFilter, sourceFilter));
+    }
+
+    lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>> {
+        return this.parent.lensOpt(key, combineFilters(this.sourceFilter, sourceFilter));
+    }
+
+    observeKey<K extends keyof S>(key: K, fn: UpdateObserver<S[K]>, subPath?: string): IDisposable {
+        return this.parent.observeKey(key, filterObserver(fn, this.sourceFilter), subPath).disposeWith(this);
+    }
+
+    preObserveKey<K extends keyof S>(key: K, fn: PreObserver<S[K]>, subPath?: string): IDisposable {
+        return this.parent.preObserveKey(key, filterPreObserver(fn, this.sourceFilter), subPath).disposeWith(this);
+    }
+
+    submitUpdate(update: StateUpdate<S>, updateSource?: any, updatePath?: string): void {
+        return this.parent.submitUpdate(update, updateSource, updatePath)
+    }
+
+    update(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): void {
+        return this.parent.update(updates, updateSource, updatePath)
+    }
+
+    updateAsync(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>> {
+        return this.parent.updateAsync(updates, updateSource, updatePath);
+    }
+
+    updateField<K extends keyof S>(key: K, update: UpdateOf<S[K]>, updateSource?: any, updateSubpath?: string): void {
+        return this.parent.updateField(key, update, updateSource, updateSubpath)
+    }
+
+    view<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateView<S[K]> {
+        return this.parent.view(key, combineFilters(this.sourceFilter, sourceFilter));
+    }
+
+    viewOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateView<Exclude<S[K], undefined>> {
+        return this.parent.viewOpt(key, combineFilters(this.sourceFilter, sourceFilter));
+    }
+
+    filterSource(filter: (source: any) => boolean): StateHandler<S> {
+        return new BaseView(this.parent, combineFilters(this.sourceFilter, filter)).disposeWith(this);
+    }
+
+    fork(): StateHandler<S> {
+        return new BaseView(this.parent, this.sourceFilter).disposeWith(this);
+    }
+}
+
+class KeyView<S, K extends keyof S> extends Disposable implements StateHandler<S[K]> {
+    constructor(private parent: StateHandler<S>, private key: K, private sourceFilter?: (source: any) => boolean) {
+        super();
+        this.disposeWith(parent);
+    }
+
+    get state(): S[K] {
+        return this.parent.state[this.key];
+    }
+
+    addObserver(fn: UpdateObserver<S[K]>, path?: string): IDisposable {
+        return this.parent.observeKey(this.key, filterObserver(fn, this.sourceFilter), path).disposeWith(this);
+    }
+
+    addPreObserver(fn: PreObserver<S[K]>, path?: string): IDisposable {
+        return this.parent.preObserveKey(this.key, filterPreObserver(fn, this.sourceFilter), path).disposeWith(this);
+    }
+
+    observeKey<K1 extends keyof S[K]>(key: K1, fn: UpdateObserver<S[K][K1]>, subPath?: string): IDisposable {
+        return this.parent.observeKey(this.key, keyObserver(key, fn, this.sourceFilter), `${key}.` + (subPath ?? '')).disposeWith(this);
+    }
+
+    preObserveKey<K1 extends keyof S[K]>(key: K1, fn: PreObserver<S[K][K1]>, subPath?: string): IDisposable {
+        return this.parent.preObserveKey(this.key, keyPreObserver(key, fn, this.sourceFilter), `${key}.` + (subPath ?? '')).disposeWith(this);
+    }
+
+    view<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): StateView<S[K][K1]> {
+        return new KeyView<S[K], K1>(this, key, combineFilters(this.sourceFilter, sourceFilter))
+    }
+
+    viewOpt<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): OptionalStateView<Exclude<S[K][K1], undefined>> {
+        return new OptionalKeyView(this as any as OptionalStateHandler<S[K]>, key, combineFilters(this.sourceFilter, sourceFilter))
+    }
+
+    lens<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): StateHandler<S[K][K1]> {
+        return new KeyView(this, key, combineFilters(this.sourceFilter, sourceFilter));
+    }
+
+    lensOpt<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K][K1], undefined>> {
+        return new OptionalKeyView(this as any as OptionalStateHandler<S[K]>, key, combineFilters(this.sourceFilter, sourceFilter))
+    }
+
+    submitUpdate(update: StateUpdate<S[K]>, updateSource?: any, updatePath?: string): void {
+        return this.parent.updateField(this.key, update as any as UpdateLike<S[K]>, updateSource, updatePath);
+    }
+
+    update(updates: UpdateOf<S[K]>, updateSource?: any, updatePath?: string) {
+        return this.parent.update({[this.key]: updates} as UpdateOf<S>)
+    }
+
+    updateAsync(updates: UpdateOf<S[K]>, updateSource?: any, updatePath?: string): Promise<Readonly<S[K]>> {
+        return this.parent.updateAsync({[this.key]: updates} as UpdateOf<S>, updateSource, `${this.key}.` + (updatePath ?? '')).then(
+            s => s[this.key]
+        )
+    }
+
+    updateField<K1 extends keyof S[K]>(key: K1, update: UpdateOf<S[K][K1]>, updateSource?: any, updateSubPath?: string) {
+        return this.parent.updateField(this.key, new UpdateKey(key, valueToUpdate(update)), updateSource, `${key}.` + (updateSubPath ?? ''))
+    }
+
+    filterSource(filter: (source: any) => boolean): StateHandler<S[K]> {
+        return new KeyView(this.parent, this.key, combineFilters(this.sourceFilter, filter)).disposeWith(this);
+    }
+
+    fork(): StateHandler<S[K]> {
+        return new KeyView(this.parent, this.key, this.sourceFilter).disposeWith(this)
+    }
+}
+
+class OptionalKeyView<S, K extends keyof S, V extends Exclude<S[K], undefined> = Exclude<S[K], undefined>> extends Disposable implements OptionalStateHandler<V> {
+    constructor(private parent: OptionalStateHandler<S>, private key: K, private sourceFilter?: (source: any) => boolean) {
+        super();
+        this.disposeWith(parent);
+    }
+
+    get state(): V | undefined {
+        return this.parent.state !== undefined ? this.parent.state[this.key] as V : undefined;
+    }
+
+    addObserver(fn: UpdateObserver<V | undefined>, path?: string): IDisposable {
+        return (this.parent as UpdatableState<S>).addObserver(
+            filterObserver(
+                (parentValue, update, updateSource) => {
+                    if (parentValue !== undefined) {
+                        fn(parentValue[this.key] as V, update.down<K, V>(this.key, parentValue as S) as UpdateLike<V | undefined>, updateSource);
+                    } else {
+                        fn(undefined, Destroy.Instance as UpdateLike<V | undefined>, updateSource);
+                    }
+                },
+                this.sourceFilter
+            ), `${this.key}.` + (path ?? '')).disposeWith(this);
+    }
+
+    addPreObserver(fn: PreObserver<V | undefined>, path?: string): IDisposable {
+        return (this.parent as UpdatableState<S>).addPreObserver(
+            filterPreObserver(
+                pre => {
+                    const obs = fn((pre?.[this.key]) as V | undefined)
+                    return (parentValue, update, updateSource) => {
+                        if (parentValue !== undefined) {
+                            obs(parentValue[this.key] as V, update.down<K, V>(this.key, parentValue as S) as UpdateLike<V | undefined>, updateSource);
+                        } else {
+                            obs(undefined, Destroy.Instance as UpdateLike<V | undefined>, updateSource);
+                        }
+                    }
+                },
+                this.sourceFilter
+            ), `${this.key}.` + (path ?? '')).disposeWith(this);
+    }
+
+    observeKey<K1 extends keyof V>(childKey: K1, fn: UpdateObserver<V[K1] | undefined>, subPath?: string): IDisposable {
+        return this.parent.addObserver(
+            filterObserver(
+                (parentValue, parentUpdate, updateSource) => {
+                    if (parentValue !== undefined) {
+                        const value: V = parentValue[this.key] as V;
+                        const update: UpdateLike<V> = (parentUpdate as UpdateLike<S>).down<K, V>(this.key, parentValue as S)
+                        if (value !== undefined) {
+                            const childValue: V[K1] = value[childKey]
+                            const childUpdate = update.down(childKey, value)
+                            fn(childValue, childUpdate as UpdateLike<V[K1] | undefined>, updateSource);
+                        } else {
+                            fn(undefined, new SetValue<V[K1] | undefined>(undefined), updateSource);
+                        }
+                    } else {
+                        fn(undefined, new SetValue<V[K1] | undefined>(undefined), updateSource);
+                    }
+                },
+                this.sourceFilter
+            ), `${this.key}.` + (subPath ?? '')).disposeWith(this)
+    }
+
+    preObserveKey<K1 extends keyof V>(childKey: K1, fn: PreObserver<V[K1] | undefined>, subPath?: string): IDisposable {
+        return this.parent.addPreObserver(
+            filterPreObserver(
+                prev => {
+                    const obs = fn((prev?.[this.key] as V | undefined)?.[childKey]);
+                    return (parentValue, parentUpdate, updateSource) => {
+                        if (parentValue !== undefined) {
+                            const value: V = parentValue[this.key] as V;
+                            const update: UpdateLike<V> = (parentUpdate as UpdateLike<S>).down<K, V>(this.key, parentValue as S)
+                            if (value !== undefined) {
+                                const childValue: V[K1] = value[childKey]
+                                const childUpdate = update.down(childKey, value)
+                                obs(childValue, childUpdate as UpdateLike<V[K1] | undefined>, updateSource);
+                            } else {
+                                obs(undefined, new SetValue<V[K1] | undefined>(undefined), updateSource);
+                            }
+                        } else {
+                            obs(undefined, new SetValue<V[K1] | undefined>(undefined), updateSource);
+                        }
+                    }
+                },
+                this.sourceFilter
+            ), `${this.key}.` + (subPath ?? '')).disposeWith(this)
+    }
+
+    view<K1 extends keyof V>(key: K1): OptionalStateView<Exclude<V[K1], undefined>> {
+        return new OptionalKeyView<V, K1>(
+            this,
+            key);
+    }
+
+    viewOpt<K1 extends keyof V>(key: K1): OptionalStateView<Exclude<V[K1], undefined>> {
+        return new OptionalKeyView<V, K1>(this, key);
+    }
+
+
+    lens<K1 extends keyof V>(key: K1): OptionalStateHandler<Exclude<V[K1], undefined>> {
+        return new OptionalKeyView<V, K1>(
+            this,
+            key);
+    }
+
+    lensOpt<K1 extends keyof V>(key: K1): OptionalStateHandler<Exclude<V[K1], undefined>> {
+        return new OptionalKeyView<V, K1>(
+            this,
+            key);
+    }
+
+    submitUpdate(update: StateUpdate<V | undefined>, updateSource?: any, updatePath?: string): void {
+        return this.parent.updateField<K>(
+            this.key,
+            // @ts-ignore
+            update,
+            updateSource,
+            updatePath)
+    }
+
+    update(updates: UpdateOf<V | undefined>, updateSource?: any, updatePath?: string): void {
+        return this.parent.update({[this.key]: updates} as UpdateOf<S>, `${this.key}.` + (updatePath ?? ''));
+    }
+
+    updateAsync(updates: UpdateOf<V | undefined>, updateSource?: any, updatePath?: string): Promise<Readonly<V | undefined>> {
+        return this.parent.updateAsync({[this.key]: updates} as UpdateOf<S | undefined>, updateSource, `${this.key}.` + (updatePath ?? '')).then(
+            maybeS => maybeS !== undefined ? maybeS[this.key] as V | undefined : undefined
+        )
+    }
+
+    updateField<K1 extends keyof V>(childKey: K1, update: StateUpdate<V[K1] | undefined>, updateSource?: any, updateSubPath?: string): void {
+        return this.parent.updateField<K>(
+            this.key,
+            // @ts-ignore
+            new UpdateKey<V, K1>(childKey, update as StateUpdate<V[K1]>),
+            updateSource,
+            `${childKey}.` + (updateSubPath ?? ''))
+    }
+
+    filterSource(filter: (source: any) => boolean): OptionalStateHandler<V> {
+        return new OptionalKeyView<S, K, V>(this.parent, this.key, combineFilters(this.sourceFilter, filter)).disposeWith(this);
+    }
+
+    fork(): OptionalStateHandler<V> {
+        return new OptionalKeyView<S, K, V>(this.parent, this.key, this.sourceFilter).disposeWith(this);
     }
 }

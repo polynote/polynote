@@ -1,15 +1,24 @@
-import {NoUpdate, StateHandler, StateView} from "./state_handler";
+import {
+    append,
+    NotebookStateHandler,
+    NoUpdate,
+    ObjectStateHandler,
+    OpenNotebooksHandler,
+    RecentNotebooksHandler,
+    removeFromArray,
+    removeKey,
+    renameKey,
+    setValue,
+    SocketStateHandler,
+    StateView,
+    UpdateOf
+} from ".";
 import {Identity} from "../data/messages";
-import {NotebookStateHandler} from "./notebook_state";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
-import {
-    NotebookMessageDispatcher,
-} from "../messaging/dispatcher";
-import {SocketStateHandler} from "./socket_state";
-import {NotebookConfig, SparkPropertySet} from "../data/data";
-import {arrDeleteFirstItem, arrReplace, nameFromPath, removeKeys} from "../util/helpers";
-import {OpenNotebooksHandler, RecentNotebooksHandler} from "./preferences";
+import {NotebookMessageDispatcher,} from "../messaging/dispatcher";
+import {SparkPropertySet} from "../data/data";
+import {nameFromPath} from "../util/helpers";
 
 export type NotebookInfo = {
     handler: NotebookStateHandler,
@@ -34,12 +43,11 @@ export interface ServerState {
     openNotebooks: string[]
 }
 
-export class ServerStateHandler extends StateHandler<ServerState> {
+export class ServerStateHandler extends ObjectStateHandler<ServerState> {
     private static notebooks: Record<string, NotebookInfo> = {};
 
     private constructor(state: ServerState) {
-        const view = new StateView(state)
-        super(view);
+        super(state)
     }
 
     private static inst: ServerStateHandler;
@@ -77,8 +85,8 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         return ServerStateHandler.get.state;
     }
 
-    static updateState(f: (s: ServerState) => (typeof NoUpdate | ServerState), updateSource?: any) {
-        return ServerStateHandler.get.update(f, updateSource)
+    static updateState(update: UpdateOf<ServerState>, updateSource?: any) {
+        return ServerStateHandler.get.update(update, updateSource)
     }
 
     // only for testing
@@ -113,21 +121,21 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             ServerStateHandler.notebooks[path] = nbInfo;
         }
 
-        ServerStateHandler.updateState(s => ({
-            ...s,
-            notebooks: {...s.notebooks, [path]: nbInfo.loaded},
-            openNotebooks: open && !s.openNotebooks.includes(path) ? [...s.openNotebooks, path] : s.openNotebooks
-        }))
+        const openNotebooks = ServerStateHandler.state.openNotebooks;
+        ServerStateHandler.updateState({
+            notebooks: { [path]: nbInfo.loaded },
+            openNotebooks: open && !openNotebooks.includes(path) ? append(path) : NoUpdate
+        })
 
         return new Promise(resolve => {
             const checkIfLoaded = () => {
                 const maybeLoaded = ServerStateHandler.getOrCreateNotebook(path)
                 if (maybeLoaded.loaded && maybeLoaded.info) {
-                    nbInfo.handler.removeObserver(loading);
+                    loading.dispose();
                     resolve(maybeLoaded)
                 }
             }
-            const loading = nbInfo.handler.addObserver(checkIfLoaded, nbInfo.handler)
+            const loading = nbInfo.handler.addObserver(checkIfLoaded).disposeWith(nbInfo.handler)
             checkIfLoaded()
         })
     }
@@ -160,43 +168,27 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         const nbInfo = ServerStateHandler.notebooks[oldPath]
         if (nbInfo) {
             // update the path in the notebook's handler
-            nbInfo.handler.update(nbState => {
-                return {
-                    ...nbState,
-                    path: newPath
-                }
-            })
+            nbInfo.handler.updateField("path", newPath);
             // update our notebooks dictionary
             ServerStateHandler.notebooks[newPath] = nbInfo
             delete ServerStateHandler.notebooks[oldPath]
 
             // update the server state's notebook dictionary
-            ServerStateHandler.get.update(s => {
-                const prev = s.notebooks[oldPath]
-                return {
-                    ...s,
-                    notebooks: {
-                        ...removeKeys(s.notebooks, oldPath),
-                        [newPath]: prev
-                    }
-                }
+            ServerStateHandler.get.update({
+                notebooks: renameKey(oldPath, newPath)
             })
 
             // update recent notebooks
-            RecentNotebooksHandler.update(nbs => {
-                const prevIdx = nbs.findIndex(nb => nb.path === oldPath)
-                if (prevIdx > -1) {
-                    return arrReplace(nbs, prevIdx, {name: nameFromPath(newPath), path: newPath})
-                } else return nbs // not a recent notebook
-            })
+            let prevIdx = RecentNotebooksHandler.state.findIndex(nb => nb.path === oldPath);
+            if (prevIdx >= 0) {
+                RecentNotebooksHandler.updateField(prevIdx, {name: nameFromPath(newPath), path: newPath})
+            }
 
             // update open notebooks
-            OpenNotebooksHandler.update(nbs => {
-                const prevIdx = nbs.findIndex(nb => nb === oldPath)
-                if (prevIdx > -1) {
-                    return arrReplace(nbs, prevIdx, newPath)
-                } else return nbs
-            })
+            prevIdx = OpenNotebooksHandler.state.findIndex(nb => nb === oldPath);
+            if (prevIdx >= 0) {
+                OpenNotebooksHandler.updateField(prevIdx, setValue(newPath));
+            }
         }
     }
 
@@ -207,16 +199,11 @@ export class ServerStateHandler extends StateHandler<ServerState> {
         delete ServerStateHandler.notebooks[path]
 
         // update recent notebooks
-        RecentNotebooksHandler.update(nbs => arrDeleteFirstItem(nbs, {name: nameFromPath(path), path: path}))
+        RecentNotebooksHandler.update(removeFromArray(RecentNotebooksHandler.state, {name: nameFromPath(path), path: path}, (a, b) => a.path === b.path));
 
         // update the server state's notebook dictionary
-        ServerStateHandler.get.update(s => {
-            return {
-                ...s,
-                notebooks: {
-                    ...removeKeys(s.notebooks, path),
-                }
-            }
+        ServerStateHandler.get.update({
+            notebooks: removeKey(path)
         })
     }
 
@@ -229,14 +216,10 @@ export class ServerStateHandler extends StateHandler<ServerState> {
             delete ServerStateHandler.notebooks[path]
             ServerStateHandler.getOrCreateNotebook(path)
 
-            ServerStateHandler.updateState(s => ({
-                ...s,
-                notebooks: {
-                    ...s.notebooks,
-                    [path]: false
-                },
-                openNotebooks: arrDeleteFirstItem(s.openNotebooks, path)
-            }))
+            ServerStateHandler.updateState({
+                notebooks: removeKey(path),
+                openNotebooks: removeFromArray(ServerStateHandler.state.openNotebooks, path)
+            })
         }
     }
 
@@ -259,7 +242,11 @@ export class ServerStateHandler extends StateHandler<ServerState> {
     }
 
     static selectNotebook(path: string) {
-        ServerStateHandler.updateState(s => ({...s, currentNotebook: path}))
+        ServerStateHandler.updateState({currentNotebook: path})
+    }
+
+    update(updates: UpdateOf<ServerState>, updateSource?: any, updatePath?: string) {
+        super.update(updates, updateSource, updatePath);
     }
 }
 

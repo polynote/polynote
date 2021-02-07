@@ -1,8 +1,7 @@
 "use strict";
 
 import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
-import {NotebookStateHandler} from "../../state/notebook_state";
-import {ServerStateHandler} from "../../state/server_state";
+import {NotebookStateHandler, ServerStateHandler} from "../../state";
 import {ArrayType, DataType, StructField, StructType} from "../../data/data_type";
 import {displayData} from "../display/display_content";
 import {div, iconButton, span, table, TableElement, tag, TagElement} from "../tags";

@@ -122,6 +122,20 @@ export function mapValues<V, U>(obj:{ [K in PropertyKey]: V }, f: (x: V) => U): 
     return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, f(v)]))
 }
 
+export function collectFields<K extends PropertyKey, V, V1>(obj: Record<K, V>, fn: (key: K, value: V) => V1 | undefined): Record<K, V1> {
+    const results: Record<K, V1> = {} as Record<K, V1>;
+    for (const prop in obj) {
+        if (obj.hasOwnProperty(prop)) {
+            const k = prop as K;
+            const result = fn(k, obj[k]);
+            if (result !== undefined) {
+                results[k] = result;
+            }
+        }
+    }
+    return results;
+}
+
 //*********************
 //* Array helpers
 //*********************
@@ -173,6 +187,15 @@ export function collect<T, U>(arr: T[], fun: (t: T) => U | undefined | null): U[
             return [newT]
         } else return []
     })
+}
+
+export function arrExists<T>(arr: T[], fun: (t: T) => boolean): boolean {
+    for (let i = 0; i < arr.length; i++) {
+        if (fun(arr[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -261,6 +284,20 @@ export class Deferred<T> implements Promise<T> {
 
 export function nameFromPath(path: string): string {
     return path.split(/\//g).pop()!;
+}
+
+export function linePosAt(str: string, offset: number): [number, number] {
+    let line = 0
+    let index = 0
+    while (index < offset) {
+        const nextLineIndex = str.indexOf("\n", index);
+        if (nextLineIndex >= offset) {
+            return [line, offset - index];
+        }
+        index = nextLineIndex;
+        line++;
+    }
+    return [line, 0];
 }
 
 export function TODO(): never {

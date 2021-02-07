@@ -1,6 +1,5 @@
 import {div, TagElement} from "../tags";
-import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
-import {Disposable} from "../../state/state_handler";
+import {Disposable, ViewPreferences, ViewPrefsHandler} from "../../state";
 
 /**
  * Holds a classic three-pane display, where the left and right panes can be both resized and collapsed.
@@ -15,13 +14,9 @@ export class SplitView extends Disposable {
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
                 leftPane.header.click(evt => {
-                    ViewPrefsHandler.update(s => {
-                        return {
-                            ...s,
-                            leftPane: {
-                                ...s.leftPane,
-                                collapsed: !s.leftPane.collapsed
-                            }
+                    ViewPrefsHandler.update({
+                        leftPane: {
+                            collapsed: !ViewPrefsHandler.state.leftPane.collapsed
                         }
                     })
                 }),
@@ -30,13 +25,9 @@ export class SplitView extends Disposable {
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
                 rightPane.header.click(evt => {
-                    ViewPrefsHandler.update(s => {
-                        return {
-                            ...s,
-                            rightPane: {
-                                ...s.rightPane,
-                                collapsed: !s.rightPane.collapsed
-                            }
+                    ViewPrefsHandler.update({
+                        rightPane: {
+                            collapsed: !ViewPrefsHandler.state.rightPane.collapsed
                         }
                     })
                 }),
@@ -69,13 +60,9 @@ export class SplitView extends Disposable {
             }
         });
         leftDragger.addEventListener('dragend', () => {
-            ViewPrefsHandler.update(s => {
-                return {
-                    ...s,
-                    leftPane: {
-                        ...s.leftPane,
-                        size: left.style.width
-                    }
+            ViewPrefsHandler.update({
+                leftPane: {
+                    size: left.style.width
                 }
             });
         });
@@ -105,13 +92,9 @@ export class SplitView extends Disposable {
             }
         });
         rightDragger.addEventListener('dragend', evt => {
-            ViewPrefsHandler.update(s => {
-                return {
-                    ...s,
-                    rightPane: {
-                        ...s.rightPane,
-                        size: right.style.width
-                    }
+            ViewPrefsHandler.update({
+                rightPane: {
+                    size: right.style.width
                 }
             });
         });
@@ -131,6 +114,6 @@ export class SplitView extends Disposable {
             }
         }
         collapseStatus(initialPrefs)
-        ViewPrefsHandler.addObserver(collapseStatus, this)
+        ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this)
     }
 }

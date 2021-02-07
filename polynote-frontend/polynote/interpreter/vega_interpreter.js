@@ -1,7 +1,7 @@
 "use strict";
 
 import * as acorn from "acorn"
-import {Position, KernelReport, CompileErrors, Output, RuntimeError, ClientResult} from "../data/result";
+import {ClientResult, CompileErrors, KernelReport, Output, Position, RuntimeError} from "../data/result";
 import embed from "vega-embed";
 import {DataStream} from "../messaging/datastream";
 

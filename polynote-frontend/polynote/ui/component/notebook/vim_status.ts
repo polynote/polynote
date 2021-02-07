@@ -1,9 +1,8 @@
 import {div, TagElement} from "../../tags";
-import {UserPreferences, UserPreferencesHandler} from "../../../state/preferences";
+import {Disposable, UserPreferences, UserPreferencesHandler} from "../../../state";
 import {editor} from "monaco-editor";
-import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import {createVim} from "../../input/monaco/vim";
-import {Disposable} from "../../../state/state_handler";
+import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 
 export class VimStatus extends Disposable {
     private static inst: VimStatus;
@@ -33,7 +32,7 @@ export class VimStatus extends Disposable {
         }
         const vimState = UserPreferencesHandler.view("vim")
         stateHandler(vimState.state)
-        vimState.addObserver(state => stateHandler(state), this)
+        vimState.addObserver(state => stateHandler(state)).disposeWith(this)
     }
 
     show() {

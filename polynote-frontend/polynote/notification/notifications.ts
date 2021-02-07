@@ -1,21 +1,19 @@
-import {UserPreferences, UserPreferencesHandler} from "../state/preferences";
+import {Disposable, UserPreferences, UserPreferencesHandler} from "../state";
 import {FaviconHandler} from "./favicon_handler";
-import {Disposable} from "../state/state_handler";
 
 class NotificationStorageHandler extends Disposable {
     private enabled?: boolean;
     constructor() {
         super()
-        UserPreferencesHandler.view("notifications").addObserver(pref => this.handlePref(pref), this)
+        UserPreferencesHandler.observeKey("notifications", pref => this.handlePref(pref)).disposeWith(this)
     }
 
     handlePref(pref: typeof UserPreferences["notifications"]) {
         if (pref.value) {
             Notification.requestPermission().then((result) => {
-                console.log(`Requested notification permission and got: '${result}'`)
                 if (result === 'denied') {
                     // user changed their mind, so update the preference accordingly
-                    UserPreferencesHandler.update1("notifications", s => ({...s, value: false}))
+                    UserPreferencesHandler.updateField("notifications", {value: false})
                 }
             });
         }

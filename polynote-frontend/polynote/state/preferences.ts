@@ -1,5 +1,5 @@
 import {storage} from "./storage";
-import {StateHandler, StateView} from "./state_handler";
+import {ObjectStateHandler, setValue} from ".";
 import {deepEquals, diffArray} from "../util/helpers";
 
 export type RecentNotebooks = {name: string, path: string}[];
@@ -16,42 +16,34 @@ export interface ViewPreferences {
     },
 }
 
-export class LocalStorageHandler<T> extends StateHandler<T> {
+export class LocalStorageHandler<T> extends ObjectStateHandler<T> {
     constructor(readonly key: string, private initial: T) {
-        super(new StateView(initial));
+        super(storage.get(key) ?? initial);
+
+        const fromStorage = {};
 
         // watch storage to detect when it was cleared
         const handleStorageChange = (next: T | null | undefined) => {
-            if (next === null) { // cleared
-                this.setState(initial)
+            if (next !== undefined && next !== null) {
+                super.submitUpdate(setValue(next), fromStorage)
             } else {
-                if (next !== undefined) {
-                    super.setState(next)
-                } else {
-                    super.setState(initial)
-                }
+                super.submitUpdate(setValue(initial), fromStorage)
             }
         }
         handleStorageChange(storage.get(this.key))
         storage.addStorageListener(this.key, (prev, next) => handleStorageChange(next))
-    }
-    get state(): T {
-        const recent = storage.get(this.key);
-        if (recent !== undefined && recent !== null) {
-            return recent;
-        } else {
-            this.setState(this.initial);
-            return this.initial;
-        }
-    }
 
-    setState(s: T) {
-        super.setState(s);
-        storage.set(this.key, s)
+        this.filterSource(src => src !== fromStorage).addObserver(value => {
+            storage.set(this.key, value)
+        })
     }
 
     clear() {
-        this.setState(this.initial)
+        super.submitUpdate(setValue(this.initial));
+    }
+
+    fork(): LocalStorageHandler<T> {
+        return new LocalStorageHandler<T>(this.key, this.initial);
     }
 }
 

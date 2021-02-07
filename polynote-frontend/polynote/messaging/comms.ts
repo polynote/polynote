@@ -133,8 +133,13 @@ export class SocketSession extends EventTarget {
 
     send(msg: Message) {
         if (this.socket && this.isOpen) {
-            const buf = Message.encode(msg);
-            this.socket.send(buf);
+            try {
+                const buf = Message.encode(msg);
+                this.socket.send(buf);
+            } catch (err) {
+                console.error("Error encoding message", err, msg);
+                throw err;
+            }
         } else {
             this.queue.unshift(msg);
         }

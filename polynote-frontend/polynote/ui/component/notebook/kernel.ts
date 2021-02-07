@@ -1,4 +1,18 @@
-import {KernelInfo, KernelState, KernelSymbols, KernelTasks} from "../../../state/notebook_state";
+import {
+    DisplayError,
+    Disposable,
+    ErrorStateHandler,
+    KernelInfo,
+    KernelState,
+    KernelSymbols,
+    KernelTasks,
+    NotebookStateHandler,
+    removeKey,
+    ServerStateHandler,
+    StateHandler,
+    StateView,
+    ViewPreferences
+} from "../../../state";
 import {
     Content,
     div,
@@ -6,26 +20,18 @@ import {
     h3,
     h4,
     icon,
-    iconButton, para,
+    iconButton,
+    para,
     span,
     table,
     TableElement,
     TableRowElement,
     TagElement
 } from "../../tags";
-import {
-    NotebookMessageDispatcher,
-    ServerMessageDispatcher,
-} from "../../../messaging/dispatcher";
-import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
-import {ViewPreferences, ViewPrefsHandler} from "../../../state/preferences";
+import {NotebookMessageDispatcher, ServerMessageDispatcher,} from "../../../messaging/dispatcher";
 import {KernelStatusString, TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
-import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
-import {ServerStateHandler} from "../../../state/server_state";
-import {deepEquals, diffArray, removeKeys} from "../../../util/helpers";
 import {ErrorEl} from "../../display/error";
-import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
 export class KernelPane extends Disposable {
@@ -74,7 +80,7 @@ export class KernelPane extends Disposable {
             }
         }
         handleCurrentNotebook(ServerStateHandler.state.currentNotebook)
-        ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path), this)
+        ServerStateHandler.get.view("currentNotebook").addObserver(path => handleCurrentNotebook(path)).disposeWith(this)
     }
 
 }
@@ -93,11 +99,11 @@ export class Kernel extends Disposable {
                 private whichPane: keyof ViewPreferences) {
         super()
 
-        this.kernelState = notebookState.lens("kernel");
+        this.kernelState = notebookState.lens("kernel").disposeWith(this);
 
-        const info = new KernelInfoEl(this.kernelState);
-        const symbols = new KernelSymbolsEl(dispatcher, notebookState);
-        const tasks = new KernelTasksEl(notebookState.view("path"), serverMessageDispatcher, this.kernelState.lens("tasks"));
+        const info = new KernelInfoEl(this.kernelState).disposeWith(this);
+        const symbols = new KernelSymbolsEl(dispatcher, notebookState).disposeWith(this);
+        const tasks = new KernelTasksEl(notebookState.view("path"), this.kernelState.lens("tasks")).disposeWith(this);
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -116,9 +122,9 @@ export class Kernel extends Disposable {
         ]);
 
         this.setKernelStatus(this.kernelState.state.status)
-        this.kernelState.view("status").addObserver(status => {
+        this.kernelState.observeKey("status", status => {
             this.setKernelStatus(status)
-        }, this)
+        })
 
     }
 
@@ -166,15 +172,15 @@ class KernelInfoEl extends Disposable {
         ]);
 
         this.renderInfo(kernelStateHandler.state.info);
-        kernelStateHandler.view("info").addObserver(info => this.renderInfo(info), this);
+        kernelStateHandler.observeKey("info", info => this.renderInfo(info)).disposeWith(this);
 
-        kernelStateHandler.view("status").addObserver(status => {
+        kernelStateHandler.observeKey("status", status => {
             if (status === "dead") {
                 this.el.style.display = "none";
             } else {
                 this.el.style.display = "block";
             }
-        }, this)
+        }).disposeWith(this)
     }
 
     private toggleCollapse() {
@@ -218,38 +224,37 @@ class KernelTasksEl extends Disposable {
     private tasks: Record<string, KernelTask> = {};
     private errors: Record<string, DisplayError>;
     private errorTimeouts: Record<string, number> = {};
+    private notebookPathHandler: StateView<string>
+    private kernelTasksHandler: StateHandler<KernelTasks>
 
-    constructor(private notebookPathHandler: StateView<string>,
-                private serverMessageDispatcher: ServerMessageDispatcher,
-                private kernelTasksHandler: StateHandler<KernelTasks>) {
+    constructor(notebookPathHandler: StateView<string>,
+                kernelTasksHandler: StateHandler<KernelTasks>) {
         super()
+        this.notebookPathHandler = notebookPathHandler = notebookPathHandler.fork().disposeWith(this);
+        this.kernelTasksHandler = kernelTasksHandler = kernelTasksHandler.fork().disposeWith(this);
         this.el = div(['kernel-tasks'], [
             h3([], ['Tasks']),
             this.taskContainer = div(['task-container'], [])
         ]);
 
         this.notebookPath = notebookPathHandler.state
-        notebookPathHandler.addObserver(path => this.notebookPath = path, this)
+        notebookPathHandler.addObserver(path => this.notebookPath = path)
 
         Object.values(kernelTasksHandler.state).forEach(task => this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent));
-        kernelTasksHandler.addObserver((currentTasks, oldTasks) => {
-            const [added, removed] = diffArray(Object.keys(currentTasks), Object.keys(oldTasks))
-
-            added.forEach(taskId => {
+        kernelTasksHandler.addObserver((currentTasks, update) => {
+            update.changedKeys.forEach(taskId => {
                 const task = currentTasks[taskId];
-                this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
-            })
-
-            removed.forEach(taskId => {
-                this.removeTask(taskId)
-            })
-
-            Object.values(currentTasks).forEach(task => {
-                if (! deepEquals(task, oldTasks[task.id])) {
+                if (taskId in this.tasks) {
                     this.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
+                } else {
+                    this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
                 }
             })
-        }, this)
+
+            update.removedKeys.forEach(taskId => {
+                this.removeTask(taskId)
+            })
+        })
 
         this.errors = {}
         const handleErrors = (errs: DisplayError[]) => {
@@ -275,7 +280,9 @@ class KernelTasksEl extends Disposable {
                 this.errors = {}
             }
         }
-        ErrorStateHandler.get.addObserver(errors => handleErrors([...errors.serverErrors, ...errors[this.notebookPath] ?? []]), this)
+        ErrorStateHandler.get.addObserver(
+            errors => handleErrors([...errors.serverErrors, ...errors[this.notebookPath] ?? []])
+        ).disposeWith(this)
     }
 
     private addError(id: string, err: ServerErrorWithCause) {
@@ -385,7 +392,7 @@ class KernelTasksEl extends Disposable {
         const task = this.tasks[id];
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
-        this.kernelTasksHandler.update(s => removeKeys(s, [id]))
+        this.kernelTasksHandler.update(removeKey(id))
     }
 }
 
@@ -431,9 +438,8 @@ class KernelSymbolsEl extends Disposable {
                 })
             }
         }
-        const symbolHandler = notebookState.view("kernel").view("symbols");
-        handleSymbols(symbolHandler.state)
-        symbolHandler.addObserver(symbols => handleSymbols(symbols), this)
+        handleSymbols(notebookState.state.kernel.symbols)
+        notebookState.view("kernel").observeKey("symbols", symbols => handleSymbols(symbols)).disposeWith(this);
 
         const handleActiveCell = (cellId?: number) => {
             if (cellId === undefined) {
@@ -445,9 +451,8 @@ class KernelSymbolsEl extends Disposable {
                 this.presentFor(cellId, cellsBefore)
             }
         }
-        const activeCellHandler = notebookState.view("activeCellId");
-        handleActiveCell(activeCellHandler.state)
-        activeCellHandler.addObserver(cell => handleActiveCell(cell), this)
+        handleActiveCell(notebookState.state.activeCellId)
+        notebookState.observeKey("activeCellId", cell => handleActiveCell(cell)).disposeWith(this);
     }
 
     private updateRow(tr: ResultRow, resultValue: ResultValue) {

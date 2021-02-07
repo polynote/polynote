@@ -1,19 +1,31 @@
 import * as fc from "fast-check"
 import {
     arrayCodec,
-    bool, bufferCodec,
-    Codec, combined,
+    bool,
+    bufferCodec,
+    Codec,
+    combined,
     DataReader,
-    DataWriter, either, float32,
-    float64, int16,
+    DataWriter,
+    either,
+    float32,
+    float64,
+    int16,
     int32,
     int64,
-    int8, ior, mapCodec, nullCodec, NumberGuards, optional, Pair,
+    int8,
+    ior,
+    mapCodec,
+    nullCodec,
+    NumberGuards,
+    optional,
+    Pair,
     shortStr,
     str,
     tinyStr,
     uint16,
-    uint32, uint8
+    uint32,
+    uint8
 } from "./codec";
 import {Either, Ior} from "./codec_types";
 

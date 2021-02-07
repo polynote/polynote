@@ -28,7 +28,6 @@ afterEach(() => {
 describe("SocketSession", () => {
     test("properly connects and keeps track of the global session as well as multiple notebook sessions", async () => {
         const globalServer = new WS('ws://localhost/ws');
-        globalServer.on("message",  e => { console.log("hi", e)})
         const globalClient = SocketSession.global
         await globalServer.connected
 
