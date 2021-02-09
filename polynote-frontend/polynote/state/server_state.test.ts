@@ -1,4 +1,4 @@
-import {ServerStateHandler} from ".";
+import {ServerStateHandler} from "./server_state";
 
 jest.mock("../messaging/comms");
 

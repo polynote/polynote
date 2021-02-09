@@ -1,6 +1,8 @@
 import {div, icon, span, TagElement} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
-import {Disposable, IDisposable, NotebookStateHandler, ServerStateHandler} from "../../state";
+import {Disposable, IDisposable} from "../../state";
+import {NotebookStateHandler} from "../../state/notebook_state"
+import {ServerStateHandler} from "../../state/server_state";
 import {Notebook} from "./notebook/notebook";
 import {VimStatus} from "./notebook/vim_status";
 import {nameFromPath} from "../../util/helpers";

@@ -19,7 +19,7 @@ import {
     TimestampType
 } from "../../data/data_type";
 import {FakeSelect} from "../display/fake_select";
-import {append, NotebookStateHandler, ServerStateHandler, setValue} from "../../state";
+import {append, setValue} from "../../state";
 import {GroupAgg, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {ClientResult, Output} from "../../data/result";
@@ -29,6 +29,8 @@ import {DataStream} from "../../messaging/datastream";
 import {StreamingDataRepr} from "../../data/value_repr";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {deepEquals, mapValues} from "../../util/helpers";
+import {NotebookStateHandler} from "../../state/notebook_state";
+import {ServerStateHandler} from "../../state/server_state";
 
 function isDimension(dataType: DataType): boolean {
     if (dataType instanceof OptionalType) {

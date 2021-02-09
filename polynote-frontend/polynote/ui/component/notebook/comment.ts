@@ -1,4 +1,4 @@
-import {Disposable, removeKey, ServerStateHandler, setValue, StateHandler, StateView, UpdateLike} from "../../../state";
+import {Disposable, removeKey, setValue, StateHandler, StateView, UpdateLike} from "../../../state";
 import {CellComment} from "../../../data/data";
 import {PosRange} from "../../../data/result";
 import {arrExists, collectFields} from "../../../util/helpers";
@@ -8,6 +8,7 @@ import {editor} from "monaco-editor";
 import {Identity} from "../../../data/messages";
 import {v4 as uuidv4} from "uuid";
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
+import {ServerStateHandler} from "../../../state/server_state";
 
 export type CommentID = string
 

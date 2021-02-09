@@ -2,22 +2,21 @@ import {FullScreenModal} from "../layout/modal";
 import {button, div, dropdown, h2, h3, iconButton, loader, polynoteLogo, span, table, tag, TagElement} from "../tags";
 import * as monaco from "monaco-editor";
 import {
-    clearStorage,
-    ClientBackup,
     Disposable,
     IDisposable,
-    LocalStorageHandler,
-    NotebookScrollLocationsHandler,
-    OpenNotebooksHandler,
-    RecentNotebooksHandler,
-    ServerStateHandler,
     StateView,
-    UserPreferencesHandler,
-    ViewPrefsHandler
 } from "../../state";
 import {ServerMessageDispatcher,} from "../../messaging/dispatcher";
 import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
+import {ServerStateHandler} from "../../state/server_state";
+import {
+    clearStorage,
+    LocalStorageHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
+    RecentNotebooksHandler,
+    UserPreferencesHandler, ViewPrefsHandler
+} from "../../state/preferences";
+import {ClientBackup} from "../../state/client_backup";
 
 export class About extends FullScreenModal implements IDisposable {
     private disposable: Disposable;

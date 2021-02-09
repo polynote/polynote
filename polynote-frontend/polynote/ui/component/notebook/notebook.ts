@@ -1,11 +1,7 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {
-    CellState,
     Disposable,
-    NotebookScrollLocationsHandler,
-    NotebookStateHandler,
-    ServerStateHandler,
     StateHandler
 } from "../../../state";
 import {CellMetadata} from "../../../data/data";
@@ -14,6 +10,9 @@ import {CellContainer} from "./cell";
 import {NotebookConfigEl} from "./notebookconfig";
 import {VimStatus} from "./vim_status";
 import {PosRange} from "../../../data/result";
+import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
+import {NotebookScrollLocationsHandler} from "../../../state/preferences";
+import {ServerStateHandler} from "../../../state/server_state";
 
 export class Notebook extends Disposable {
     readonly el: TagElement<"div">;

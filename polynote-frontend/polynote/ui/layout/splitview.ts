@@ -1,5 +1,6 @@
 import {div, TagElement} from "../tags";
-import {Disposable, ViewPreferences, ViewPrefsHandler} from "../../state";
+import {Disposable} from "../../state";
+import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 
 /**
  * Holds a classic three-pane display, where the left and right panes can be both resized and collapsed.

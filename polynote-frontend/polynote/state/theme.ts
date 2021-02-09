@@ -1,5 +1,6 @@
-import {Disposable, UserPreferences, UserPreferencesHandler} from ".";
+import {Disposable} from ".";
 import * as monaco from "monaco-editor";
+import {UserPreferences, UserPreferencesHandler} from "./preferences";
 
 export class ThemeHandler extends Disposable {
     constructor() {

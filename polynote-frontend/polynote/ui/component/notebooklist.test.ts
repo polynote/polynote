@@ -1,10 +1,12 @@
 import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList, NotebookListContextMenu} from "./notebooklist";
-import {ServerStateHandler, SocketStateHandler, StateHandler} from "../../state";
+import {StateHandler} from "../../state";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {fireEvent, queryByText, waitFor} from "@testing-library/dom";
 import * as messages from "../../data/messages";
 import {SocketSession} from "../../messaging/comms";
 import {ServerMessageReceiver} from "../../messaging/receiver";
+import {SocketStateHandler} from "../../state/socket_state";
+import {ServerStateHandler} from "../../state/server_state";
 
 jest.mock("../../messaging/comms");
 

@@ -1,6 +1,8 @@
 import {NotebookMessageDispatcher, ServerMessageDispatcher,} from "../../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
-import {Disposable, IDisposable, NotebookStateHandler, ServerStateHandler, StateView} from "../../state";
+import {Disposable, IDisposable, StateView} from "../../state";
+import {NotebookStateHandler} from "../../state/notebook_state"
+import {ServerStateHandler} from "../../state/server_state";
 import {FakeSelect} from "../display/fake_select";
 import {LaTeXEditor} from "../input/latex_editor";
 

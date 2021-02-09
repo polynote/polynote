@@ -4,25 +4,15 @@
  */
 import {
     append,
-    CellState,
     clearArray,
-    ClientBackup,
     destroy,
     Disposable,
     editString,
-    ErrorStateHandler,
     insert,
-    KernelState,
-    NotebookState,
-    NotebookStateHandler,
     NoUpdate,
-    PresenceState,
     removeIndex,
     removeKey,
-    ServerState,
-    ServerStateHandler,
     setValue,
-    SocketStateHandler,
     StateHandler,
     UpdateOf,
     valueToUpdate
@@ -45,6 +35,11 @@ import {
 } from "../data/result";
 import {collectFields, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
+import {SocketStateHandler} from "../state/socket_state";
+import {CellState, KernelState, NotebookState, NotebookStateHandler, PresenceState} from "../state/notebook_state";
+import {ClientBackup} from "../state/client_backup";
+import {ErrorStateHandler} from "../state/error_state";
+import {ServerState, ServerStateHandler} from "../state/server_state";
 
 export class MessageReceiver<S> extends Disposable {
     constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {

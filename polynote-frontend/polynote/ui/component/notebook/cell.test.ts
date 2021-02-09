@@ -1,9 +1,12 @@
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {SocketSession} from "../../../messaging/comms";
-import {ClientBackup, Disposable, editString, NotebookStateHandler, SocketStateHandler} from "../../../state";
+import {Disposable, editString} from "../../../state";
 import {NotebookMessageReceiver} from "../../../messaging/receiver";
 import {Insert} from "../../../data/content_edit";
 import {UpdateCell} from "../../../data/messages";
+import {NotebookStateHandler} from "../../../state/notebook_state";
+import {SocketStateHandler} from "../../../state/socket_state";
+import {ClientBackup} from "../../../state/client_backup";
 
 jest.mock("../../../messaging/comms");
 

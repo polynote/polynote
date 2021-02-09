@@ -14,7 +14,8 @@ import {Either} from "../data/codec_types";
 import match from "../util/match";
 import {StreamingDataRepr} from "../data/value_repr";
 import {NotebookMessageDispatcher,} from "./dispatcher";
-import {Disposable, IDisposable, NotebookState, NotebookStateHandler, removeKey, StateHandler} from "../state";
+import {Disposable, IDisposable, removeKey, StateHandler} from "../state";
+import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
 
 export const QuartilesType = new StructType([
     new StructField("min", DoubleType),

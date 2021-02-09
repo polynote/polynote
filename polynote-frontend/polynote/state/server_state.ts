@@ -1,15 +1,11 @@
 import {
     append,
-    NotebookStateHandler,
     NoUpdate,
     ObjectStateHandler,
-    OpenNotebooksHandler,
-    RecentNotebooksHandler,
     removeFromArray,
     removeKey,
     renameKey,
     setValue,
-    SocketStateHandler,
     StateView,
     UpdateOf
 } from ".";
@@ -19,6 +15,9 @@ import {NotebookMessageReceiver} from "../messaging/receiver";
 import {NotebookMessageDispatcher,} from "../messaging/dispatcher";
 import {SparkPropertySet} from "../data/data";
 import {nameFromPath} from "../util/helpers";
+import {NotebookStateHandler} from "./notebook_state";
+import {SocketStateHandler} from "./socket_state";
+import {OpenNotebooksHandler, RecentNotebooksHandler} from "./preferences";
 
 export type NotebookInfo = {
     handler: NotebookStateHandler,

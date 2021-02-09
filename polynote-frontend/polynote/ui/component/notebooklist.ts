@@ -1,7 +1,8 @@
 import {a, button, div, h2, iconButton, span, tag, TagElement} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {deepCopy, diffArray} from "../../util/helpers";
-import {Disposable, ObjectStateHandler, removeKey, ServerStateHandler, StateView, UpdatePartial} from "../../state"
+import {Disposable, ObjectStateHandler, removeKey, StateView, UpdatePartial} from "../../state"
+import {ServerStateHandler} from "../../state/server_state";
 
 export class NotebookListContextMenu{
     readonly el: TagElement<"div">;

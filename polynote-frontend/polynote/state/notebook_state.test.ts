@@ -1,4 +1,4 @@
-import {Disposable, NotebookStateHandler, SocketStateHandler} from ".";
+import {Disposable} from ".";
 import {SocketSession} from "../messaging/comms";
 import {DeleteCell, InsertCell} from "../data/messages";
 import {NotebookMessageReceiver} from "../messaging/receiver";
@@ -14,6 +14,8 @@ import {
     RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
+import {NotebookStateHandler} from "./notebook_state";
+import {SocketStateHandler} from "./socket_state";
 
 jest.mock("./client_backup")
 // @ts-ignore
@@ -61,7 +63,7 @@ describe('NotebookStateHandler', () => {
         })
 
         await expect(nbState.insertCell("below")).resolves.toEqual(0)
-        await expect(waitForInsert).resolves.toEqual(new InsertCell(0, 0, new NotebookCell(0, "scala"), -1))
+        await expect(waitForInsert).resolves.toEqual(new InsertCell(0, 1, new NotebookCell(0, "scala"), -1))
 
         expect(Object.keys(nbState.state.cells)).toHaveLength(1)
         expect(nbState.state.cellOrder).toEqual([0])
@@ -74,7 +76,7 @@ describe('NotebookStateHandler', () => {
         })
 
         await expect(nbState.deleteCell(0)).resolves.toEqual(0)
-        await expect(waitForDelete).resolves.toEqual(new DeleteCell(0, 1, 0))
+        await expect(waitForDelete).resolves.toEqual(new DeleteCell(0, 2, 0))
 
         expect(Object.keys(nbState.state.cells)).toHaveLength(0)
         expect(nbState.state.cellOrder).toEqual([])

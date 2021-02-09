@@ -1,18 +1,13 @@
 import {blockquote, button, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
 import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
-    CellState,
     clearArray,
-    CompletionHint,
     Disposable,
     EditString,
     editString,
-    NotebookStateHandler,
     removeFromArray,
-    ServerStateHandler,
     SetValue,
     setValue,
-    SignatureHint,
     StateHandler,
     StateView,
     UpdateLike
@@ -71,6 +66,8 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
+import {CellState, CompletionHint, NotebookStateHandler, SignatureHint} from "../../../state/notebook_state";
+import {ServerStateHandler} from "../../../state/server_state";
 
 
 export type CodeCellModel = editor.ITextModel & {

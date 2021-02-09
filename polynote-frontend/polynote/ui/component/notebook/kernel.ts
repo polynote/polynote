@@ -1,17 +1,8 @@
 import {
-    DisplayError,
     Disposable,
-    ErrorStateHandler,
-    KernelInfo,
-    KernelState,
-    KernelSymbols,
-    KernelTasks,
-    NotebookStateHandler,
     removeKey,
-    ServerStateHandler,
     StateHandler,
     StateView,
-    ViewPreferences
 } from "../../../state";
 import {
     Content,
@@ -32,6 +23,10 @@ import {NotebookMessageDispatcher, ServerMessageDispatcher,} from "../../../mess
 import {KernelStatusString, TaskStatus} from "../../../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../../../data/result";
 import {ErrorEl} from "../../display/error";
+import {ServerStateHandler} from "../../../state/server_state";
+import {KernelInfo, KernelState, KernelSymbols, KernelTasks, NotebookStateHandler} from "../../../state/notebook_state";
+import {ViewPreferences} from "../../../state/preferences";
+import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
 export class KernelPane extends Disposable {

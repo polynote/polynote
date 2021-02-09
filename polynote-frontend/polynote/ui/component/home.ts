@@ -1,5 +1,7 @@
 import {div, h2, h3, img, para, polynoteLogo, span, tag, TagElement} from "../tags";
-import {Disposable, RecentNotebooks, RecentNotebooksHandler, ServerStateHandler} from "../../state";
+import {Disposable} from "../../state";
+import {RecentNotebooks, RecentNotebooksHandler} from "../../state/preferences";
+import {ServerStateHandler} from "../../state/server_state";
 
 export class Home extends Disposable {
     readonly el: TagElement<"div">;

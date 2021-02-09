@@ -1,5 +1,6 @@
-import {Disposable, UserPreferences, UserPreferencesHandler} from "../state";
+import {Disposable} from "../state";
 import {FaviconHandler} from "./favicon_handler";
+import {UserPreferences, UserPreferencesHandler} from "../state/preferences";
 
 class NotificationStorageHandler extends Disposable {
     private enabled?: boolean;

@@ -1,5 +1,6 @@
 import {div, TagElement} from "../../tags";
-import {Disposable, UserPreferences, UserPreferencesHandler} from "../../../state";
+import {Disposable} from "../../../state";
+import {UserPreferences, UserPreferencesHandler} from "../../../state/preferences"
 import {editor} from "monaco-editor";
 import {createVim} from "../../input/monaco/vim";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;

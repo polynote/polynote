@@ -12,7 +12,7 @@ import {TabNav} from "../layout/tab_nav";
 import {PlotEditor} from "./plot_editor";
 import {TableView} from "../layout/table_view";
 import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
-import {NotebookStateHandler} from "../../state";
+import {NotebookStateHandler} from "../../state/notebook_state";
 
 export class ValueInspector extends FullScreenModal {
     private constructor() {

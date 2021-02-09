@@ -2,18 +2,8 @@ import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../data/result";
 import {
-    CellState,
-    ClientBackup,
-    ConnectionStatus,
     Disposable,
-    ErrorStateHandler,
-    NotebookState,
-    NotebookStateHandler,
-    OpenNotebooksHandler,
-    ServerState,
-    ServerStateHandler,
     setValue,
-    SocketStateHandler,
     StateHandler,
     StateView
 } from "../state";
@@ -23,6 +13,12 @@ import {collect, partition} from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
 import {ClientInterpreter, ClientInterpreters} from "../interpreter/client_interpreter";
+import {ConnectionStatus, SocketStateHandler} from "../state/socket_state";
+import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {ErrorStateHandler} from "../state/error_state";
+import {ClientBackup} from "../state/client_backup";
+import {ServerState, ServerStateHandler} from "../state/server_state";
+import {OpenNotebooksHandler} from "../state/preferences";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.

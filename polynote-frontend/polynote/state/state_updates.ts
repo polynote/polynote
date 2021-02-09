@@ -1,6 +1,6 @@
 import {deepCopy, diffArray, partition} from "../util/helpers";
 import {ContentEdit} from "../data/content_edit";
-import {Latch, Partial1} from ".";
+import {Latch, Partial1} from "./state_handler";
 import {__getProxyTarget} from "./readonly";
 
 export interface UpdateLike<S> {

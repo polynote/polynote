@@ -2,12 +2,14 @@
 
 import {VegaInterpreter} from "./vega_interpreter";
 import {ClientResult, ExecutionInfo, ResultValue, RuntimeError} from "../data/result";
-import {append, NotebookStateHandler, ServerStateHandler, setValue} from "../state";
+import {append, setValue} from "../state";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {CellResult, CellStatusUpdate, KernelStatus, TaskInfo, TaskStatus, UpdatedTasks} from "../data/messages";
 import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
+import {NotebookStateHandler} from "../state/notebook_state";
+import {ServerStateHandler} from "../state/server_state";
 
 export interface CellContext {
     id: number,

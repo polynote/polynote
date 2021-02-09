@@ -13,7 +13,7 @@ import {
     textbox
 } from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {Disposable, NBConfig, ServerStateHandler, setValue, StateHandler, StateView} from "../../../state";
+import {Disposable, setValue, StateHandler, StateView} from "../../../state";
 import {
     IvyRepository,
     MavenRepository,
@@ -23,6 +23,8 @@ import {
     SparkPropertySet
 } from "../../../data/data";
 import {KernelStatusString} from "../../../data/messages";
+import {NBConfig} from "../../../state/notebook_state";
+import {ServerStateHandler} from "../../../state/server_state";
 
 export class NotebookConfigEl extends Disposable {
     readonly el: TagElement<"div">;

@@ -11,11 +11,6 @@ import {SplitView} from "./ui/layout/splitview";
 import {
     insert,
     moveArrayValue,
-    OpenNotebooksHandler,
-    RecentNotebooksHandler,
-    ServerStateHandler,
-    SocketStateHandler,
-    ThemeHandler
 } from "./state";
 import {Tabs} from "./ui/component/tabs";
 import {KernelPane} from "./ui/component/notebook/kernel";
@@ -23,6 +18,10 @@ import {NotebookList} from "./ui/component/notebooklist";
 import {Home} from "./ui/component/home";
 import {CodeCellModel} from "./ui/component/notebook/cell";
 import {nameFromPath} from "./util/helpers";
+import {SocketStateHandler} from "./state/socket_state";
+import {ServerStateHandler} from "./state/server_state";
+import {OpenNotebooksHandler, RecentNotebooksHandler} from "./state/preferences";
+import {ThemeHandler} from "./state/theme";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
