@@ -22,7 +22,7 @@ beforeEach(() => {
     ClientBackup.addNb("foo", [])
     nbState.updateHandler.globalVersion = 0 // initialize version
     socket = SocketSession.fromRelativeURL(nbState.state.path)
-    socketState = new SocketStateHandler(socket)
+    socketState = SocketStateHandler.create(socket)
     receiver = new NotebookMessageReceiver(socketState, nbState)
 
     // close the server loop for messages that bounce off it (e.g., InsertCell)
@@ -41,12 +41,13 @@ describe("Code cell", () => {
 
     it ("sends updates when its content changes", async () => {
         const cellId = await nbState.insertCell("below");
+        (socket.send as any).mockClear();
         await nbState.setCellLanguage(cellId, "scala");
         const dispatcher = new NotebookMessageDispatcher(socketState, nbState)
         const cellHandler = nbState.cellsHandler.lens(cellId);
 
         const waitForEdit = new Promise((resolve, reject) => {
-            cellHandler.addObserver(cellState => {
+            cellHandler.addObserver((cellState, update) => {
                 try {
                     resolve(cellState.content)
                 } catch (err) {
@@ -55,7 +56,7 @@ describe("Code cell", () => {
             })
         });
 
-        cellHandler.updateField("content", editString([new Insert(0, "a")]))
+        await cellHandler.updateAsync({"content": editString([new Insert(0, "a")])});
 
         const editedContent = await waitForEdit;
 

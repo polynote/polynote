@@ -1,4 +1,5 @@
 import {
+    BaseHandler,
     clearArray,
     Disposable,
     EditString,
@@ -86,14 +87,13 @@ export interface NotebookState {
     activeStreams: Record<number, (HandleData | ModifyStream)[]>,
 }
 
-export class NotebookStateHandler extends ObjectStateHandler<NotebookState> {
-    readonly cellsHandler: StateHandler<Record<number, CellState>>;
-    readonly updateHandler: NotebookUpdateHandler;
-    constructor(state: NotebookState) {
-        super(state);
-
-        this.cellsHandler = this.lens("cells")
-        this.updateHandler = new NotebookUpdateHandler(this, -1, 0, new EditBuffer()).disposeWith(this)
+export class NotebookStateHandler extends BaseHandler<NotebookState> {
+    constructor(
+        parent: StateHandler<NotebookState>,
+        readonly cellsHandler: StateHandler<Record<number, CellState>>,
+        readonly updateHandler: NotebookUpdateHandler
+    ) {
+        super(parent);
 
         // Update activeCellId when the active cell is deselected.
         this.view("activeCellId").addObserver(cellId => {
@@ -112,7 +112,7 @@ export class NotebookStateHandler extends ObjectStateHandler<NotebookState> {
     }
 
     static forPath(path: string) {
-        return new NotebookStateHandler({
+        const baseHandler = new ObjectStateHandler<NotebookState>({
             path,
             cells: {},
             cellOrder: [],
@@ -128,7 +128,14 @@ export class NotebookStateHandler extends ObjectStateHandler<NotebookState> {
             activeCompletion: undefined,
             activeSignature: undefined,
             activeStreams: {},
-        })
+        });
+
+        const cellsHandler = baseHandler.lens("cells");
+        const updateHandler = new NotebookUpdateHandler(baseHandler, cellsHandler, -1, 0, new EditBuffer())
+        const handler = new NotebookStateHandler(baseHandler, cellsHandler, updateHandler);
+        cellsHandler.disposeWith(handler);
+        updateHandler.disposeWith(handler);
+        return handler;
     }
 
     protected compare(s1: any, s2: any): boolean {
@@ -300,6 +307,16 @@ export class NotebookStateHandler extends ObjectStateHandler<NotebookState> {
             }).disposeWith(this)
         })
     }
+
+    fork(disposeContext?: IDisposable): NotebookStateHandler {
+        const fork = new NotebookStateHandler(
+            this.parent.fork(disposeContext).disposeWith(this),
+            this.cellsHandler.fork(disposeContext).disposeWith(this),
+            this.updateHandler
+        ).disposeWith(this);
+
+        return disposeContext ? fork.disposeWith(disposeContext) : fork;
+    }
 }
 
 /**
@@ -316,7 +333,13 @@ export class NotebookStateHandler extends ObjectStateHandler<NotebookState> {
 export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHandler<NotebookUpdate[]>{
     cellWatchers: Record<number, StateView<CellState>> = {};
     private observers: ((update: NotebookUpdate) => void)[] = [];
-    constructor(state: NotebookStateHandler, public globalVersion: number, public localVersion: number, public edits: EditBuffer) {
+    constructor(
+        state: StateView<NotebookState>,
+        cellsHandler: StateView<Record<number, CellState>>,
+        public globalVersion: number,
+        public localVersion: number,
+        public edits: EditBuffer
+    ) {
         super()
 
         state.view("config").view("config", notReceiver)
@@ -332,7 +355,7 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
                     const id = added[idx];
                     this.watchCell(
                         id!,
-                        state.cellsHandler.view(id!).filterSource(notReceiver).disposeWith(this)
+                        cellsHandler.view(id!).filterSource(notReceiver).disposeWith(this)
                     );
                 }
             }

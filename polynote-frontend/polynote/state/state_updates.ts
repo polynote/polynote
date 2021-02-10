@@ -33,7 +33,7 @@ export interface UpdateLike<S> {
     down<K extends keyof S, V extends S[K] = S[K]>(key: K, of: S): StateUpdate<V>
 
     // Set the context value of the update, before it is applied
-    forValue(value: S): UpdateLike<S>
+    forValue(oldValue: S): UpdateLike<S>
 }
 
 export type StateUpdate<S> = UpdateLike<S>;

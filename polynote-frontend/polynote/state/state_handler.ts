@@ -69,7 +69,7 @@ export interface StateView<S> extends ObservableState<S> {
     observeKey<K extends keyof S>(key: K, fn: UpdateObserver<S[K]>, subPath?: string): IDisposable
     preObserveKey<K extends keyof S>(key: K, fn: PreObserver<S[K]>, subPath?: string): IDisposable
     filterSource(filter: (source: any) => boolean): StateView<S>
-    fork(): StateView<S>
+    fork(disposeContext?: IDisposable): StateView<S>
 }
 
 export interface OptionalStateView<S> extends ObservableState<S | undefined> {
@@ -78,7 +78,7 @@ export interface OptionalStateView<S> extends ObservableState<S | undefined> {
     observeKey<K extends keyof S>(key: K, fn: UpdateObserver<S[K] | undefined>, subPath?: string): IDisposable
     preObserveKey<K extends keyof S>(key: K, fn: PreObserver<S[K] | undefined>, subPath?: string): IDisposable
     filterSource(filter: (source: any) => boolean): OptionalStateView<S>
-    fork(): OptionalStateView<S>
+    fork(disposeContext?: IDisposable): OptionalStateView<S>
 }
 
 export interface UpdatableState<S> extends ObservableState<S> {
@@ -92,7 +92,7 @@ export interface StateHandler<S> extends StateView<S>, UpdatableState<S> {
     lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>>
     updateField<K extends keyof S>(key: K, update: UpdateOf<S[K]>, updateSource?: any, updateSubpath?: string): void
     filterSource(filter: (source: any) => boolean): StateHandler<S>
-    fork(): StateHandler<S>
+    fork(disposeContext?: IDisposable): StateHandler<S>
 }
 
 export const StateHandler = {
@@ -104,7 +104,7 @@ export interface OptionalStateHandler<S> extends OptionalStateView<S>, Updatable
     lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>>
     updateField<K extends keyof S>(key: K, update: UpdateOf<S[K] | undefined>, updateSource?: any, updateSubpath?: string): void
     filterSource(filter: (source: any) => boolean): OptionalStateHandler<S>
-    fork(): OptionalStateHandler<S>
+    fork(disposeContext?: IDisposable): OptionalStateHandler<S>
 }
 
 function filterObserver<S>(fn: UpdateObserver<S>, filter?: (src: any) => boolean): UpdateObserver<S> {
@@ -324,34 +324,34 @@ export class ObjectStateHandler<S extends Object> extends Disposable implements 
     }
 
     view<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateView<S[K]> {
-        return new KeyView(this, key, combineFilters(this.sourceFilter, sourceFilter))
+        return new KeyLens(this, key, combineFilters(this.sourceFilter, sourceFilter))
     }
 
     viewOpt<K extends keyof S>(key : K, sourceFilter?: (source: any) => boolean): OptionalStateView<Exclude<S[K], undefined>> {
-        return new OptionalKeyView<S, K>(this as any as OptionalStateHandler<S>, key, combineFilters(this.sourceFilter, sourceFilter))
+        return new OptionalKeyLens<S, K>(this as any as OptionalStateHandler<S>, key, combineFilters(this.sourceFilter, sourceFilter))
     }
 
     lens<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateHandler<S[K]> {
-        return new KeyView(this, key, combineFilters(this.sourceFilter, sourceFilter))
+        return new KeyLens(this, key, combineFilters(this.sourceFilter, sourceFilter))
     }
 
     lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>> {
-        return new OptionalKeyView(this as any as OptionalStateHandler<S>, key, combineFilters(this.sourceFilter, sourceFilter))
+        return new OptionalKeyLens(this as any as OptionalStateHandler<S>, key, combineFilters(this.sourceFilter, sourceFilter))
     }
 
     filterSource(filter: (source: any) => boolean): StateHandler<S> {
-        return new BaseView(this, combineFilters(this.sourceFilter, filter))
+        return new BaseHandler(this, combineFilters(this.sourceFilter, filter))
     }
 
-    fork(): StateHandler<S> {
-        return new BaseView(this);
+    fork(disposeContext?: IDisposable): StateHandler<S> {
+        return new BaseHandler(this);
     }
 
     get observerCount(): number { return this.observers.length + this.preObservers.length }
 }
 
-class BaseView<S> extends Disposable implements StateHandler<S> {
-    constructor(private parent: StateHandler<S>, private readonly sourceFilter?: (source: any) => boolean) {
+export class BaseHandler<S> extends Disposable implements StateHandler<S> {
+    constructor(protected parent: StateHandler<S>, private readonly sourceFilter?: (source: any) => boolean) {
         super();
         this.disposeWith(parent);
     }
@@ -407,15 +407,16 @@ class BaseView<S> extends Disposable implements StateHandler<S> {
     }
 
     filterSource(filter: (source: any) => boolean): StateHandler<S> {
-        return new BaseView(this.parent, combineFilters(this.sourceFilter, filter)).disposeWith(this);
+        return new BaseHandler(this.parent, combineFilters(this.sourceFilter, filter)).disposeWith(this);
     }
 
-    fork(): StateHandler<S> {
-        return new BaseView(this.parent, this.sourceFilter).disposeWith(this);
+    fork(disposeContext?: IDisposable): StateHandler<S> {
+        const fork = new BaseHandler(this.parent, this.sourceFilter).disposeWith(this);
+        return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }
 
-class KeyView<S, K extends keyof S> extends Disposable implements StateHandler<S[K]> {
+class KeyLens<S, K extends keyof S> extends Disposable implements StateHandler<S[K]> {
     constructor(private parent: StateHandler<S>, private key: K, private sourceFilter?: (source: any) => boolean) {
         super();
         this.disposeWith(parent);
@@ -442,19 +443,19 @@ class KeyView<S, K extends keyof S> extends Disposable implements StateHandler<S
     }
 
     view<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): StateView<S[K][K1]> {
-        return new KeyView<S[K], K1>(this, key, combineFilters(this.sourceFilter, sourceFilter))
+        return new KeyLens<S[K], K1>(this, key, combineFilters(this.sourceFilter, sourceFilter))
     }
 
     viewOpt<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): OptionalStateView<Exclude<S[K][K1], undefined>> {
-        return new OptionalKeyView(this as any as OptionalStateHandler<S[K]>, key, combineFilters(this.sourceFilter, sourceFilter))
+        return new OptionalKeyLens(this as any as OptionalStateHandler<S[K]>, key, combineFilters(this.sourceFilter, sourceFilter))
     }
 
     lens<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): StateHandler<S[K][K1]> {
-        return new KeyView(this, key, combineFilters(this.sourceFilter, sourceFilter));
+        return new KeyLens(this, key, combineFilters(this.sourceFilter, sourceFilter));
     }
 
     lensOpt<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K][K1], undefined>> {
-        return new OptionalKeyView(this as any as OptionalStateHandler<S[K]>, key, combineFilters(this.sourceFilter, sourceFilter))
+        return new OptionalKeyLens(this as any as OptionalStateHandler<S[K]>, key, combineFilters(this.sourceFilter, sourceFilter))
     }
 
     submitUpdate(update: StateUpdate<S[K]>, updateSource?: any, updatePath?: string): void {
@@ -476,15 +477,16 @@ class KeyView<S, K extends keyof S> extends Disposable implements StateHandler<S
     }
 
     filterSource(filter: (source: any) => boolean): StateHandler<S[K]> {
-        return new KeyView(this.parent, this.key, combineFilters(this.sourceFilter, filter)).disposeWith(this);
+        return new KeyLens(this.parent, this.key, combineFilters(this.sourceFilter, filter)).disposeWith(this);
     }
 
-    fork(): StateHandler<S[K]> {
-        return new KeyView(this.parent, this.key, this.sourceFilter).disposeWith(this)
+    fork(disposeContext?: IDisposable): StateHandler<S[K]> {
+        const fork = new KeyLens(this.parent, this.key, this.sourceFilter).disposeWith(this);
+        return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }
 
-class OptionalKeyView<S, K extends keyof S, V extends Exclude<S[K], undefined> = Exclude<S[K], undefined>> extends Disposable implements OptionalStateHandler<V> {
+class OptionalKeyLens<S, K extends keyof S, V extends Exclude<S[K], undefined> = Exclude<S[K], undefined>> extends Disposable implements OptionalStateHandler<V> {
     constructor(private parent: OptionalStateHandler<S>, private key: K, private sourceFilter?: (source: any) => boolean) {
         super();
         this.disposeWith(parent);
@@ -573,24 +575,24 @@ class OptionalKeyView<S, K extends keyof S, V extends Exclude<S[K], undefined> =
     }
 
     view<K1 extends keyof V>(key: K1): OptionalStateView<Exclude<V[K1], undefined>> {
-        return new OptionalKeyView<V, K1>(
+        return new OptionalKeyLens<V, K1>(
             this,
             key);
     }
 
     viewOpt<K1 extends keyof V>(key: K1): OptionalStateView<Exclude<V[K1], undefined>> {
-        return new OptionalKeyView<V, K1>(this, key);
+        return new OptionalKeyLens<V, K1>(this, key);
     }
 
 
     lens<K1 extends keyof V>(key: K1): OptionalStateHandler<Exclude<V[K1], undefined>> {
-        return new OptionalKeyView<V, K1>(
+        return new OptionalKeyLens<V, K1>(
             this,
             key);
     }
 
     lensOpt<K1 extends keyof V>(key: K1): OptionalStateHandler<Exclude<V[K1], undefined>> {
-        return new OptionalKeyView<V, K1>(
+        return new OptionalKeyLens<V, K1>(
             this,
             key);
     }
@@ -624,10 +626,11 @@ class OptionalKeyView<S, K extends keyof S, V extends Exclude<S[K], undefined> =
     }
 
     filterSource(filter: (source: any) => boolean): OptionalStateHandler<V> {
-        return new OptionalKeyView<S, K, V>(this.parent, this.key, combineFilters(this.sourceFilter, filter)).disposeWith(this);
+        return new OptionalKeyLens<S, K, V>(this.parent, this.key, combineFilters(this.sourceFilter, filter)).disposeWith(this);
     }
 
-    fork(): OptionalStateHandler<V> {
-        return new OptionalKeyView<S, K, V>(this.parent, this.key, this.sourceFilter).disposeWith(this);
+    fork(disposeContext?: IDisposable): OptionalStateHandler<V> {
+        const fork = new OptionalKeyLens<S, K, V>(this.parent, this.key, this.sourceFilter).disposeWith(this);
+        return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }

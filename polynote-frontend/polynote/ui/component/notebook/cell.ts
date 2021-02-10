@@ -85,7 +85,7 @@ export class CellContainer extends Disposable {
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler, state: StateHandler<CellState>, private path: string) {
         super()
-        const cellState = this.cellState = state.fork().disposeWith(this);
+        const cellState = this.cellState = state.fork(this);
         this.cellId = `Cell${cellState.state.id}`;
         this.cell = this.cellFor(cellState.state.language);
         this.el = div(['cell-component'], [this.cell.el]);
@@ -151,7 +151,7 @@ abstract class Cell extends Disposable {
 
     protected constructor(protected dispatcher: NotebookMessageDispatcher, protected notebookState: NotebookStateHandler, cell: StateHandler<CellState>) {
         super()
-        const cellState = this.cellState = cell.fork().disposeWith(this);
+        const cellState = this.cellState = cell.fork(this);
         this.id = cellState.state.id;
         this.cellId = `Cell${this.id}`;
 

@@ -26,8 +26,13 @@ import {OpenNotebooksHandler} from "../state/preferences";
  * It connects a `socket` instance with the UI `state`. Only the Dispatcher should be sending messages on a `socket`.
  */
 export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHandler<S>> extends Disposable{
-    protected constructor(protected socket: SocketStateHandler, protected handler: H) {
+    protected readonly socket: SocketStateHandler;
+    protected readonly handler: H;
+    protected constructor(socket: SocketStateHandler, handler: H) {
         super()
+        this.socket = socket.fork(this);
+        this.handler = handler.fork(this) as H;
+
         handler.onDispose.then(() => {
             this.socket.close()
         })
@@ -42,29 +47,26 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     constructor(socketState: SocketStateHandler, notebookState: NotebookStateHandler) {
         super(socketState, notebookState);
 
-        const socket = socketState.fork().disposeWith(this);
-        const state = notebookState.fork().disposeWith(this);
-
         // when the socket is opened, send a KernelStatus message to request the current status from the server.
-        socket.observeKey("status", next => {
+        this.socket.observeKey("status", next => {
             if (next === "connected") {
                 this.socket.send(new messages.KernelStatus(new messages.KernelBusyState(false, false)))
             }
         });
 
-        socket.observeKey("error", err => {
+        this.socket.observeKey("error", err => {
             if (err) {
-                ErrorStateHandler.addKernelError(state.state.path, err.error)
+                ErrorStateHandler.addKernelError(this.handler.state.path, err.error)
             }
         })
 
-        state.observeKey("activeSignature", sig => {
+        this.handler.observeKey("activeSignature", sig => {
             if (sig) {
                 this.socket.send(new messages.ParametersAt(sig.cellId, sig.offset))
             }
         })
 
-        state.observeKey("activeCompletion", sig => {
+        this.handler.observeKey("activeCompletion", sig => {
             if (sig) {
                 this.socket.send(new messages.CompletionsAt(sig.cellId, sig.offset, []))
             }
@@ -75,8 +77,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         }).disposeWith(this);
 
         const cells: Record<number, StateView<CellState>> = {};
-        const cellsState = state.view("cells");
-        state.observeKey("cellOrder", (newOrder, update) => {
+        const cellsState = this.handler.view("cells");
+        this.handler.observeKey("cellOrder", (newOrder, update) => {
             Object.values(update.changedValues(newOrder)).forEach(id => {
                 if (id !== undefined && !cells[id]) {
                     const handler = cellsState.view(id)

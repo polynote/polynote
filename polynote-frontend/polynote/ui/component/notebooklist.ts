@@ -140,7 +140,7 @@ export class NotebookList extends Disposable {
             this.el.addEventListener(evt, this.fileHandler.bind(this), false)
         });
 
-        const serverStateHandler = ServerStateHandler.get.fork().disposeWith(this);
+        const serverStateHandler = ServerStateHandler.get.fork(this);
 
         // disable the entire notebook list when disconnected from the server
         serverStateHandler.observeKey("connectionStatus", (currentStatus, update) => {

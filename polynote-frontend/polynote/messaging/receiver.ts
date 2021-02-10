@@ -42,8 +42,12 @@ import {ErrorStateHandler} from "../state/error_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 
 export class MessageReceiver<S> extends Disposable {
-    constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {
-        super()
+    protected readonly socket: SocketStateHandler;
+    protected readonly state: StateHandler<S>
+    constructor(socket: SocketStateHandler, state: StateHandler<S>) {
+        super();
+        this.socket = socket.fork(this);
+        this.state = state.fork(this);
     }
 
     protected receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: Readonly<S>,...args: ConstructorParameters<typeof msgType>) => UpdateOf<S>) {
@@ -68,23 +72,21 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
     constructor(socketState: SocketStateHandler, notebookState: NotebookStateHandler) {
         super(socketState, notebookState);
         const updateHandler = notebookState.updateHandler;
-        const socket = socketState.fork().disposeWith(this);
-        const state = notebookState.fork().disposeWith(this);
 
-        socket.view("status").addObserver(status => {
+        this.socket.view("status").addObserver(status => {
             if (status === "disconnected") {
-                state.update({
+                this.state.update({
                     kernel: {
                         status: status
                     },
-                    cells: collectFields(state.state.cells, (id, cell) => ({
+                    cells: collectFields(this.state.state.cells, (id, cell) => ({
                         running: false,
                         queued: false,
                         currentHighlight: undefined
                     }))
                 })
-            } else if (state.state.kernel.status === 'disconnected') {
-                state.update({
+            } else if (this.state.state.kernel.status === 'disconnected') {
+                this.state.update({
                     kernel: {
                         status: 'dead'
                     }

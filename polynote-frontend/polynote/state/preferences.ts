@@ -1,5 +1,5 @@
 import {storage} from "./storage";
-import {ObjectStateHandler, setValue} from ".";
+import {IDisposable, ObjectStateHandler, setValue, StateView} from ".";
 import {deepEquals, diffArray} from "../util/helpers";
 
 export type RecentNotebooks = {name: string, path: string}[];
@@ -42,8 +42,9 @@ export class LocalStorageHandler<T> extends ObjectStateHandler<T> {
         super.submitUpdate(setValue(this.initial));
     }
 
-    fork(): LocalStorageHandler<T> {
-        return new LocalStorageHandler<T>(this.key, this.initial);
+    fork(disposeContext?: IDisposable): LocalStorageHandler<T> {
+        const fork = new LocalStorageHandler<T>(this.key, this.initial);
+        return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }
 

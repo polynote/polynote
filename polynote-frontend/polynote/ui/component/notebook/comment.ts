@@ -36,8 +36,8 @@ export class CommentHandler extends Disposable {
                 selectionState: StateView<PosRange | undefined>,
                 editor: editor.ICodeEditor) {
        super();
-       const allCommentsState = commentState.fork().disposeWith(this);
-       const currentSelection = selectionState.fork().disposeWith(this);
+       const allCommentsState = commentState.fork(this);
+       const currentSelection = selectionState.fork(this);
 
        const handleComments = (currentComments: Record<string, CellComment>, update?: UpdateLike<Record<string, CellComment>>) => {
            // console.log("comments changed:", currentComments, oldComments)
@@ -213,8 +213,8 @@ class CommentRoot extends MonacoRightGutterOverlay {
                 selectionState: StateView<PosRange | undefined>,
                 editor: editor.ICodeEditor) {
         super(editor);
-        const allCommentsState = this.allCommentsState = commentsState.fork().disposeWith(this);
-        const currentSelection = this.currentSelection = selectionState.fork().disposeWith(this);
+        const allCommentsState = this.allCommentsState = commentsState.fork(this);
+        const currentSelection = this.currentSelection = selectionState.fork(this);
 
         this.rootState = allCommentsState.lens(uuid);
         this.disposeWith(this.rootState);
@@ -485,7 +485,7 @@ class Comment extends Disposable {
         super();
 
         this.currentIdentity = ServerStateHandler.state.identity;
-        const allCommentsState = this.allCommentsState = commentsState.fork().disposeWith(this);
+        const allCommentsState = this.allCommentsState = commentsState.fork(this);
         this.commentState = allCommentsState.lens(uuid)
 
         this.commentState.onDispose.then(() => {

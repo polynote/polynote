@@ -34,7 +34,7 @@ beforeEach(() => {
     nbState = NotebookStateHandler.forPath("foo").disposeWith(stateUpdateDisp)
     nbState.updateHandler.globalVersion = 0 // initialize version
     socket = SocketSession.fromRelativeURL(nbState.state.path)
-    socketState = new SocketStateHandler(socket)
+    socketState = SocketStateHandler.create(socket)
     receiver = new NotebookMessageReceiver(socketState, nbState)
 
     // close the server loop for messages that bounce off it (e.g., InsertCell)

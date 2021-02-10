@@ -225,8 +225,8 @@ class KernelTasksEl extends Disposable {
     constructor(notebookPathHandler: StateView<string>,
                 kernelTasksHandler: StateHandler<KernelTasks>) {
         super()
-        this.notebookPathHandler = notebookPathHandler = notebookPathHandler.fork().disposeWith(this);
-        this.kernelTasksHandler = kernelTasksHandler = kernelTasksHandler.fork().disposeWith(this);
+        this.notebookPathHandler = notebookPathHandler = notebookPathHandler.fork(this);
+        this.kernelTasksHandler = kernelTasksHandler = kernelTasksHandler.fork(this);
         this.el = div(['kernel-tasks'], [
             h3([], ['Tasks']),
             this.taskContainer = div(['task-container'], [])

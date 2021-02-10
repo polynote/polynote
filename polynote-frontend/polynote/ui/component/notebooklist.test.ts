@@ -11,7 +11,7 @@ import {ServerStateHandler} from "../../state/server_state";
 jest.mock("../../messaging/comms");
 
 const mockSocket = SocketSession.fromRelativeURL("notebookpath");
-const socketHandler = new SocketStateHandler(mockSocket);
+const socketHandler = SocketStateHandler.create(mockSocket);
 
 const dispatcher = new ServerMessageDispatcher(socketHandler);
 const receiver = new ServerMessageReceiver();

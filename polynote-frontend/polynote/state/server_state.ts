@@ -1,11 +1,11 @@
 import {
-    append,
+    append, BaseHandler, IDisposable,
     NoUpdate,
     ObjectStateHandler,
     removeFromArray,
     removeKey,
     renameKey,
-    setValue,
+    setValue, StateHandler,
     StateView,
     UpdateOf
 } from ".";
@@ -42,17 +42,17 @@ export interface ServerState {
     openNotebooks: string[]
 }
 
-export class ServerStateHandler extends ObjectStateHandler<ServerState> {
+export class ServerStateHandler extends BaseHandler<ServerState> {
     private static notebooks: Record<string, NotebookInfo> = {};
 
-    private constructor(state: ServerState) {
-        super(state)
+    private constructor(parent: StateHandler<ServerState>) {
+        super(parent)
     }
 
     private static inst: ServerStateHandler;
     static get get() {
         if (!ServerStateHandler.inst) {
-            ServerStateHandler.inst = new ServerStateHandler({
+            ServerStateHandler.inst = new ServerStateHandler(new ObjectStateHandler<ServerState>({
                 notebooks: {},
                 connectionStatus: "disconnected",
                 interpreters: {},
@@ -62,7 +62,7 @@ export class ServerStateHandler extends ObjectStateHandler<ServerState> {
                 sparkTemplates: [],
                 currentNotebook: undefined,
                 openNotebooks: []
-            })
+            }))
         }
         return ServerStateHandler.inst;
     }
@@ -93,7 +93,7 @@ export class ServerStateHandler extends ObjectStateHandler<ServerState> {
         if (ServerStateHandler.inst) {
             ServerStateHandler.inst.dispose()
 
-            ServerStateHandler.inst = new ServerStateHandler({
+            ServerStateHandler.inst = new ServerStateHandler(new ObjectStateHandler<ServerState>({
                 notebooks: {},
                 connectionStatus: "disconnected",
                 interpreters: {},
@@ -103,7 +103,7 @@ export class ServerStateHandler extends ObjectStateHandler<ServerState> {
                 sparkTemplates: [],
                 currentNotebook: undefined,
                 openNotebooks: []
-            })
+            }))
         }
     }
 
@@ -112,7 +112,7 @@ export class ServerStateHandler extends ObjectStateHandler<ServerState> {
         const loaded =  nbInfo?.info;
         if (! loaded) {
             // Note: the server will start sending notebook data on this socket automatically after it connects
-            const nbSocket = new SocketStateHandler(SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`));
+            const nbSocket = SocketStateHandler.create(SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`));
             const receiver = new NotebookMessageReceiver(nbSocket, nbInfo.handler);
             const dispatcher = new NotebookMessageDispatcher(nbSocket, nbInfo.handler)
             nbInfo.info = {receiver, dispatcher};
@@ -244,8 +244,9 @@ export class ServerStateHandler extends ObjectStateHandler<ServerState> {
         ServerStateHandler.updateState({currentNotebook: path})
     }
 
-    update(updates: UpdateOf<ServerState>, updateSource?: any, updatePath?: string) {
-        super.update(updates, updateSource, updatePath);
+    fork(disposeContext?: IDisposable): ServerStateHandler {
+        const fork = new ServerStateHandler(this.parent.fork(disposeContext).disposeWith(this)).disposeWith(this);
+        return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }
 
