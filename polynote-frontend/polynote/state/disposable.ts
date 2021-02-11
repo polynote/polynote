@@ -8,21 +8,26 @@ export interface IDisposable {
     disposeWith(that: IDisposable): this
 }
 
-export function mkDisposable<T>(t: T): T & IDisposable {
-    const disposable = new Disposable();
-
-    return Object.defineProperties(t, {
-        onDispose: { value: disposable.onDispose },
-        dispose: { value: () => disposable.dispose() },
-        tryDispose: { value: () => disposable.tryDispose() },
-        isDisposed: { get: () => disposable.isDisposed },
-        disposeWith: {
-            value: (that: IDisposable) => {
-                disposable.disposeWith(that);
-                return t;
-            }
+export function mkDisposable<T>(t: T, onDispose: () => void = () => {}): T & IDisposable {
+    const deferred: Deferred<void> = new Deferred()
+    const doDispose: () => Promise<void> = () => {
+        if (!deferred.isSettled) {
+            deferred.resolve();
+            onDispose();
         }
+        return deferred;
+    }
+    Object.defineProperties(t, {
+        dispose: { value: doDispose },
+        tryDispose: { value: doDispose },
+        isDisposed: { value: () => !deferred.isSettled },
+        onDispose: { value: deferred },
+        disposeWith: { value: (that: IDisposable) => {
+                Promise.race([deferred, that.onDispose]).then(doDispose);
+                return t;
+            }}
     });
+    return t as T & IDisposable;
 }
 
 export class Disposable implements IDisposable {

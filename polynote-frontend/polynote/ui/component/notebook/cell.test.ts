@@ -19,22 +19,23 @@ let stateUpdateDisp = new Disposable()
 
 beforeEach(() => {
     nbState = NotebookStateHandler.forPath("foo").disposeWith(stateUpdateDisp)
-    ClientBackup.addNb("foo", [])
-    nbState.updateHandler.globalVersion = 0 // initialize version
-    socket = SocketSession.fromRelativeURL(nbState.state.path)
-    socketState = SocketStateHandler.create(socket)
-    receiver = new NotebookMessageReceiver(socketState, nbState)
+    return ClientBackup.addNb("foo", []).then(() => {
+        nbState.updateHandler.globalVersion = 0 // initialize version
+        socket = SocketSession.fromRelativeURL(nbState.state.path)
+        socketState = SocketStateHandler.create(socket)
+        receiver = new NotebookMessageReceiver(socketState, nbState)
 
-    // close the server loop for messages that bounce off it (e.g., InsertCell)
-    nbState.updateHandler.addObserver(update => {
-        setTimeout(() => { receiver.inject(update) }, 0)
+        // close the server loop for messages that bounce off it (e.g., InsertCell)
+        nbState.updateHandler.addObserver(update => {
+            setTimeout(() => { receiver.inject(update) }, 0)
+        })
     })
 })
 
 afterEach(() => {
     stateUpdateDisp.dispose()
     stateUpdateDisp = new Disposable()
-    ClientBackup.clearBackups();
+    return ClientBackup.clearBackups();
 })
 
 describe("Code cell", () => {

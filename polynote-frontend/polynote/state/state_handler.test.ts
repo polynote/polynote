@@ -47,7 +47,7 @@ describe("ObjectStateHandler", () => {
         it("is triggered by state update", () => {
             const listener = jest.fn()
             const obs = handler.addObserver(listener)
-            handler.submitUpdate(setProperty("num", 2))
+            handler.update(setProperty("num", 2))
             expect(listener).toHaveBeenCalledTimes(1)
             expect(listener).toHaveBeenCalledWith({...initialState, num: 2}, expect.anything(), expect.anything())
             obs.dispose()
@@ -56,7 +56,7 @@ describe("ObjectStateHandler", () => {
         it("is not triggered by noop", () => {
             const listener = jest.fn()
             const obs = handler.addObserver(listener)
-            handler.submitUpdate(noUpdate())
+            handler.update(noUpdate())
             expect(listener).toHaveBeenCalledTimes(0)
             obs.dispose()
         })
@@ -88,7 +88,7 @@ describe("ObjectStateHandler", () => {
         it("is triggered by update to that key", () => {
             const listener = jest.fn()
             const obs = handler.observeKey("str", listener)
-            handler.submitUpdate(setProperty("str", "goodbye"))
+            handler.update(setProperty("str", "goodbye"))
             expect(listener).toHaveBeenCalledTimes(1)
             expect(listener).toHaveBeenCalledWith("goodbye", expect.anything(), expect.anything())
             obs.dispose()
@@ -97,7 +97,7 @@ describe("ObjectStateHandler", () => {
         it("is not triggered by updates to siblings", () => {
             const listener = jest.fn()
             const obs = handler.observeKey("num", listener)
-            handler.submitUpdate(setProperty("str", "goodbye"))
+            handler.update(setProperty("str", "goodbye"))
             expect(listener).toHaveBeenCalledTimes(0)
             obs.dispose()
         })

@@ -125,11 +125,8 @@ export class SocketStateHandler extends BaseHandler<SocketState> {
 
     // delegates
     public addMessageListener(...args: Parameters<SocketSession["addMessageListener"]>): IDisposable {
-        const listener = mkDisposable(this.socket.addMessageListener(...args));
-        listener.disposeWith(this).onDispose.then(() => {
-            this.socket.removeMessageListener(listener);
-        })
-        return listener;
+        const listener = this.socket.addMessageListener(...args);
+        return mkDisposable(listener, () => this.socket.removeMessageListener(listener));
     }
 
     public send(...args: Parameters<SocketSession["send"]>): ReturnType<SocketSession["send"]> {
