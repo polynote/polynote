@@ -1,4 +1,4 @@
-import {Disposable} from "../state";
+import {Disposable, setProperty} from "../state";
 import {FaviconHandler} from "./favicon_handler";
 import {UserPreferences, UserPreferencesHandler} from "../state/preferences";
 
@@ -14,7 +14,7 @@ class NotificationStorageHandler extends Disposable {
             Notification.requestPermission().then((result) => {
                 if (result === 'denied') {
                     // user changed their mind, so update the preference accordingly
-                    UserPreferencesHandler.updateField("notifications", {value: false})
+                    UserPreferencesHandler.updateField("notifications", () => setProperty("value", false))
                 }
             });
         }

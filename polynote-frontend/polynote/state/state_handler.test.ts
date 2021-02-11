@@ -47,7 +47,7 @@ describe("ObjectStateHandler", () => {
         it("is triggered by state update", () => {
             const listener = jest.fn()
             const obs = handler.addObserver(listener)
-            handler.update(setProperty("num", 2))
+            handler.updateField("num", () => 2)
             expect(listener).toHaveBeenCalledTimes(1)
             expect(listener).toHaveBeenCalledWith({...initialState, num: 2}, expect.anything(), expect.anything())
             obs.dispose()
@@ -56,7 +56,7 @@ describe("ObjectStateHandler", () => {
         it("is not triggered by noop", () => {
             const listener = jest.fn()
             const obs = handler.addObserver(listener)
-            handler.update(noUpdate())
+            handler.update(() => noUpdate())
             expect(listener).toHaveBeenCalledTimes(0)
             obs.dispose()
         })
@@ -64,11 +64,11 @@ describe("ObjectStateHandler", () => {
 
         it("doesn't break when state is updated inside an observer", () => {
             const numListener = jest.fn()
-            const updater = handler.observeKey("str", (newValue) => handler.update({num: newValue.length}))
+            const updater = handler.observeKey("str", (newValue) => handler.updateField("num", () => newValue.length))
             const numObs = handler.observeKey("num", numListener)
 
 
-            handler.update({str: "goober", num: 44})
+            handler.update(() => ({str: "goober", num: 44}))
             expect(handler.state.num).toEqual("goober".length)
             expect(numListener).toHaveBeenCalledTimes(2)
             expect(numListener).toHaveBeenNthCalledWith(1, 44, expect.anything(), expect.anything())
@@ -88,7 +88,7 @@ describe("ObjectStateHandler", () => {
         it("is triggered by update to that key", () => {
             const listener = jest.fn()
             const obs = handler.observeKey("str", listener)
-            handler.update(setProperty("str", "goodbye"))
+            handler.updateField("str", () => "goodbye")
             expect(listener).toHaveBeenCalledTimes(1)
             expect(listener).toHaveBeenCalledWith("goodbye", expect.anything(), expect.anything())
             obs.dispose()
@@ -97,7 +97,7 @@ describe("ObjectStateHandler", () => {
         it("is not triggered by updates to siblings", () => {
             const listener = jest.fn()
             const obs = handler.observeKey("num", listener)
-            handler.update(setProperty("str", "goodbye"))
+            handler.updateField("str", () => "goodbye")
             expect(listener).toHaveBeenCalledTimes(0)
             obs.dispose()
         })
@@ -105,7 +105,7 @@ describe("ObjectStateHandler", () => {
         it("is not triggered when the value is equal", () => {
             const listener = jest.fn()
             const obs = handler.observeKey("num", listener)
-            handler.update({num: handler.state.num})
+            handler.updateField("num", num => num)
             expect(listener).toHaveBeenCalledTimes(0)
             obs.dispose()
         })
@@ -125,7 +125,7 @@ describe("ObjectStateHandler", () => {
             })
 
             const oldNum = handler.state.num
-            handler.updateField("num", setValue(42))
+            handler.updateField("num", () => setValue(42))
             expect(listener).toHaveBeenCalledTimes(1)
             expect(listener).toHaveBeenCalledWith(42, setValue(42, oldNum), expect.anything())
             view.dispose()
@@ -135,11 +135,11 @@ describe("ObjectStateHandler", () => {
             const view = handler.view("obj")
             const listener = jest.fn()
             const obs = view.observeKey("objStr", listener)
-            handler.update({
+            handler.update(() => ({
                 obj: {
                     objStr: setValue("nope")
                 }
-            });
+            }));
             expect(listener).toHaveBeenCalledTimes(1)
             expect(listener).toHaveBeenCalledWith("nope", setValue("nope", "yup"), expect.anything())
             view.dispose()
@@ -149,9 +149,9 @@ describe("ObjectStateHandler", () => {
             const view = handler.view("num")
             const listener = jest.fn()
             const obs = view.addObserver(listener)
-            handler.update({
+            handler.update(() => ({
                 str: "shabba"
-            })
+            }))
             expect(listener).toHaveBeenCalledTimes(0)
             view.dispose()
         })
@@ -173,7 +173,7 @@ describe("ObjectStateHandler", () => {
             const listenNum = jest.fn()
             const obsNum = handler.observeKey("num", listenNum);
 
-            handler.update({
+            handler.update(() => ({
                 str: "hellogoodbye",
                 obj: {
                     objStr: "yupper",
@@ -181,7 +181,7 @@ describe("ObjectStateHandler", () => {
                         innerNum: 123
                     }
                 }
-            })
+            }))
 
             expect(handler.state.str).toEqual("hellogoodbye")
             expect(handler.state.obj.objStr).toEqual("yupper")
@@ -205,7 +205,7 @@ describe("ObjectStateHandler", () => {
                     const lensListener = jest.fn()
                     const obsLens = lens.addObserver(lensListener)
 
-                    lens.update(67)
+                    lens.update(() => 67)
 
                     expect(numListener).toHaveBeenCalledWith(67, expect.anything(), expect.anything())
                     expect(lensListener).toHaveBeenCalledWith(67, expect.anything(), expect.anything())

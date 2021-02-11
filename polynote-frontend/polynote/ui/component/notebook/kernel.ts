@@ -387,7 +387,7 @@ class KernelTasksEl extends Disposable {
         const task = this.tasks[id];
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
-        this.kernelTasksHandler.update(removeKey(id))
+        this.kernelTasksHandler.update(() => removeKey(id))
     }
 }
 

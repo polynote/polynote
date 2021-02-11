@@ -605,6 +605,10 @@ export function setProperty<S, K extends keyof S, V extends S[K] = S[K]>(key: K,
     return new UpdateKey<S, K>(key, new SetValue<S[K]>(value))
 }
 
+export function updateProperty<S, K extends keyof S>(key: K, update: UpdateOf<S[K]>): StateUpdate<S> {
+    return new UpdateKey<S, K>(key, valueToUpdate(update));
+}
+
 export function destroy<V>(): StateUpdate<V> {
     return Destroy.Instance as any as StateUpdate<V>
 }

@@ -1,5 +1,5 @@
 import {Branch, BranchEl, BranchHandler, LeafEl, NotebookList, NotebookListContextMenu} from "./notebooklist";
-import {StateHandler} from "../../state";
+import {setProperty, StateHandler} from "../../state";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {fireEvent, queryByText, waitFor} from "@testing-library/dom";
 import * as messages from "../../data/messages";
@@ -27,10 +27,10 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     expect(leafEl()).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
 
     const newPath = "foo/bar/baz2";
-    leafState.update({
+    leafState.update(() => ({
         fullPath: newPath,
         value: "baz2"
-    });
+    }));
 
     expect(leafEl()).toHaveAttribute('href', `notebooks/${newPath}`);
 
@@ -56,11 +56,7 @@ describe("BranchComponent", () => {
         fullPath: "bar",
         value: "bar"
     };
-    branchState.update({
-        children: {
-            [leaf.fullPath]: leaf
-        }
-    });
+    branchState.updateField("children", () => setProperty(leaf.fullPath, leaf))
     test('is updated when its state changes', done => {
         expect(branch.childrenEl).not.toBeEmptyDOMElement();
         expect(branch.childrenEl).toHaveTextContent(leaf.value);
@@ -69,11 +65,7 @@ describe("BranchComponent", () => {
             fullPath: "baz",
             value: "baz"
         };
-        branchState.update({
-            children: {
-                [leaf.fullPath]: newLeaf
-            }
-        });
+        branchState.updateField("children", () => setProperty(leaf.fullPath, newLeaf))
         expect(branch.childrenEl).toHaveTextContent(newLeaf.value);
 
         expect(branch.el).not.toHaveClass("expanded");

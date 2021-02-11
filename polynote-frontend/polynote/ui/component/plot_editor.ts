@@ -517,10 +517,10 @@ export class PlotEditor {
                 content: `(${content})`
             }).then(newCellId => {
                 const clientResult = new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output);
-                this.nbState.cellsHandler.updateField(newCellId, {
+                this.nbState.cellsHandler.updateField(newCellId, () => ({
                     output: setValue([output]),
                     results: append(clientResult)
-                })
+                }))
                 return new Promise(resolve => {
                     const obs = this.nbState.addObserver(state => {
                         const maybeHasOutput = state.cells[newCellId]

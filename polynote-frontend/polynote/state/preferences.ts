@@ -25,9 +25,9 @@ export class LocalStorageHandler<T> extends ObjectStateHandler<T> {
         // watch storage to detect when it was cleared
         const handleStorageChange = (next: T | null | undefined) => {
             if (next !== undefined && next !== null) {
-                super.update(setValue(next), fromStorage)
+                super.update(() => setValue(next), fromStorage)
             } else {
-                super.update(setValue(initial), fromStorage)
+                super.update(() => setValue(initial), fromStorage)
             }
         }
         handleStorageChange(storage.get(this.key))
@@ -39,7 +39,7 @@ export class LocalStorageHandler<T> extends ObjectStateHandler<T> {
     }
 
     clear() {
-        super.update(setValue(this.initial));
+        super.update(() => setValue(this.initial));
     }
 
     fork(disposeContext?: IDisposable): LocalStorageHandler<T> {

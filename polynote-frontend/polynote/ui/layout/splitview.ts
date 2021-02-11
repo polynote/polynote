@@ -1,5 +1,5 @@
 import {div, TagElement} from "../tags";
-import {Disposable} from "../../state";
+import {Disposable, setProperty} from "../../state";
 import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 
 /**
@@ -14,24 +14,12 @@ export class SplitView extends Disposable {
 
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
-                leftPane.header.click(evt => {
-                    ViewPrefsHandler.update({
-                        leftPane: {
-                            collapsed: !ViewPrefsHandler.state.leftPane.collapsed
-                        }
-                    })
-                }),
+                leftPane.header.click(evt => ViewPrefsHandler.updateField("leftPane", state => setProperty("collapsed", !state.collapsed))),
                 div(['ui-panel-content'], [leftPane.el])])]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
-                rightPane.header.click(evt => {
-                    ViewPrefsHandler.update({
-                        rightPane: {
-                            collapsed: !ViewPrefsHandler.state.rightPane.collapsed
-                        }
-                    })
-                }),
+                rightPane.header.click(evt => ViewPrefsHandler.updateField("rightPane", state => setProperty("collapsed", !state.collapsed))),
                 div(['ui-panel-content'], [rightPane.el])])]);
 
         const initialPrefs = ViewPrefsHandler.state;
@@ -60,13 +48,7 @@ export class SplitView extends Disposable {
                 left.style.width = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX)) + "px";
             }
         });
-        leftDragger.addEventListener('dragend', () => {
-            ViewPrefsHandler.update({
-                leftPane: {
-                    size: left.style.width
-                }
-            });
-        });
+        leftDragger.addEventListener('dragend', () => ViewPrefsHandler.updateField("leftPane", () => setProperty("size", left.style.width)));
 
         // right pane
         right.classList.add('right');
@@ -92,13 +74,7 @@ export class SplitView extends Disposable {
                 right.style.width = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
             }
         });
-        rightDragger.addEventListener('dragend', evt => {
-            ViewPrefsHandler.update({
-                rightPane: {
-                    size: right.style.width
-                }
-            });
-        });
+        rightDragger.addEventListener('dragend', evt => ViewPrefsHandler.updateField("rightPane", () => setProperty("size", right.style.width)));
 
         this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
 

@@ -36,10 +36,10 @@ export class SocketStateHandler extends BaseHandler<SocketState> {
         const baseHandler = new ObjectStateHandler<SocketState>(initial);
         const handler = new SocketStateHandler(baseHandler, socketKey);
 
-        const setConnected = () => handler.updateField("status", setValue("connected"));
+        const setConnected = () => handler.updateField("status", () => setValue("connected"));
         socket.addEventListener('open', setConnected);
 
-        const setDisconnected = () => handler.updateField("status", setValue("disconnected"));
+        const setDisconnected = () => handler.updateField("status", () => setValue("disconnected"));
         socket.addEventListener('close', setDisconnected);
 
 
@@ -50,10 +50,10 @@ export class SocketStateHandler extends BaseHandler<SocketState> {
             const req = new XMLHttpRequest();
             req.responseType = "arraybuffer";
             const updateError = (error: ConnectionError) => {
-                handler.update({
+                handler.update(() => ({
                     error: error,
                     status: "disconnected"
-                });
+                }));
             }
             req.addEventListener("readystatechange", evt => {
                 if (req.readyState === XMLHttpRequest.DONE) {

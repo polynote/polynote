@@ -12,7 +12,7 @@ test('Changes to the ServerStateHandler are observable', done => {
         expect(state.currentNotebook).toEqual("nb")
         done()
     })
-    ServerStateHandler.get.update({currentNotebook: "nb"})
+    ServerStateHandler.get.updateField("currentNotebook", () => "nb")
 })
 
 test('ServerStateHandler supports views', done => {
@@ -23,7 +23,7 @@ test('ServerStateHandler supports views', done => {
             expect(next).toEqual("nb")
             resolve()
         })
-        ServerStateHandler.get.update({currentNotebook: "nb"})
+        ServerStateHandler.get.updateField("currentNotebook", () => "nb")
         obs.dispose()
     }).then(_ => {
         return new Promise(resolve => {
@@ -33,7 +33,7 @@ test('ServerStateHandler supports views', done => {
                 expect(next).toEqual("newNb")
                 resolve()
             })
-            ServerStateHandler.get.update({currentNotebook: "newNb"})
+            ServerStateHandler.get.updateField("currentNotebook", () => "newNb")
             obs.dispose()
         })
     }).then(_ => {
@@ -47,11 +47,11 @@ test('ServerStateHandler supports views', done => {
                     resolve()
                 }
             })
-            ServerStateHandler.get.update({
+            ServerStateHandler.get.update(() => ({
                 notebooks: {
                     ["path"]: true
                 }
-            })
+            }))
         })
     }).then(done)
 })

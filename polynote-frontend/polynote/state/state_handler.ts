@@ -14,6 +14,7 @@ import {__getProxyTarget, __readOnlyProxyObject} from "./readonly";
 
 export type Observer<S> = (value: S, update: UpdateLike<S>, updateSource: any) => void
 export type PreObserver<S> = (value: S) => Observer<S>
+export type Updater<S> = (currentState: Readonly<S>) => UpdateOf<S>
 
 /**
  * Types for describing state updates
@@ -85,19 +86,19 @@ export interface UpdatableState<S> extends ObservableState<S> {
     /**
      * Update the state. The update is not guaranteed to have been applied by the time this method returns! (see updateAsync)
      */
-    update(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): void
+    update(updates: Updater<S>, updateSource?: any, updatePath?: string): void
 
     /**
      * Update the state, returning a Promise which will be completed when the update has been applied and all its observers
      * have been notified.
      */
-    updateAsync(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>>
+    updateAsync(updates: Updater<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>>
 }
 
 export interface StateHandler<S> extends StateView<S>, UpdatableState<S> {
     lens<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateHandler<S[K]>
     lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>>
-    updateField<K extends keyof S>(key: K, update: UpdateOf<S[K]>, updateSource?: any, updateSubpath?: string): void
+    updateField<K extends keyof S>(key: K, update: Updater<S[K]>, updateSource?: any, updateSubpath?: string): void
     filterSource(filter: (source: any) => boolean): StateHandler<S>
     fork(disposeContext?: IDisposable): StateHandler<S>
 }
@@ -109,7 +110,7 @@ export const StateHandler = {
 export interface OptionalStateHandler<S> extends OptionalStateView<S>, UpdatableState<S | undefined> {
     lens<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>>
     lensOpt<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): OptionalStateHandler<Exclude<S[K], undefined>>
-    updateField<K extends keyof S>(key: K, update: UpdateOf<S[K] | undefined>, updateSource?: any, updateSubpath?: string): void
+    updateField<K extends keyof S>(key: K, update: Updater<S[K] | undefined>, updateSource?: any, updateSubpath?: string): void
     filterSource(filter: (source: any) => boolean): OptionalStateHandler<S>
     fork(disposeContext?: IDisposable): OptionalStateHandler<S>
 }
@@ -160,6 +161,10 @@ function keyPreObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn:
             }
         }
     }
+}
+
+function keyUpdater<S, K extends keyof S>(key: K, updater: Updater<S[K]>): Updater<S> {
+    return (s: Readonly<S>) => new UpdateKey<S, K>(key, valueToUpdate(updater(s[key])))
 }
 
 function combineFilters(first?: (source: any) => boolean, second?: (source: any) => boolean): ((source: any) => boolean) | undefined {
@@ -274,13 +279,11 @@ export class ObjectStateHandler<S extends Object> extends Disposable implements 
     }
 
     private isUpdating: boolean = false;
-    private updateQueue: [StateUpdate<S>, any, string, Deferred<Readonly<S>> | undefined][] = [];
+    private updateQueue: [(state: Readonly<S>) => UpdateOf<S>, any, string, Deferred<Readonly<S>> | undefined][] = [];
     private updateLatch: LatchImpl = new LatchImpl();
 
-    protected handleUpdate(update: StateUpdate<S>, updateSource: any, updatePath: string, promise?: Deferred<Readonly<S>>): void {
-        if (!this.sourceFilter(updateSource)) {
-            return;
-        }
+    protected handleUpdate(updateFn: (state: Readonly<S>) => UpdateOf<S>, updateSource: any, updatePath: string, promise?: Deferred<Readonly<S>>): void {
+        const update = valueToUpdate(updateFn(this.state));
 
         if (update === NoUpdate) {
             if (promise) {
@@ -328,24 +331,20 @@ export class ObjectStateHandler<S extends Object> extends Disposable implements 
         }
     }
 
-    update(update: UpdateOf<S>, updateSource?: any, updatePath?: string): void {
-        if (update === NoUpdate) {
-            return;
-        }
-
-        this.updateQueue.push([valueToUpdate(update), updateSource, updatePath ?? this.path, undefined]);
+    update(updateFn: (state: S) => UpdateOf<S>, updateSource?: any, updatePath?: string): void {
+        this.updateQueue.push([updateFn, updateSource, updatePath ?? this.path, undefined]);
         this.runUpdates();
     }
 
-    updateAsync(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>> {
+    updateAsync(updateFn: (state: S) => UpdateOf<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>> {
         const promise = new Deferred<Readonly<S>>();
-        this.updateQueue.push([valueToUpdate(updates), updateSource, updatePath ?? this.path, promise]);
+        this.updateQueue.push([updateFn, updateSource, updatePath ?? this.path, promise]);
         this.runUpdates();
         return promise;
     }
 
-    updateField<K extends keyof S>(key: K, update: UpdateOf<S[K]>, updateSource?: any, updateSubPath?: string): void {
-        this.update(new UpdateKey(key, valueToUpdate(update)), updateSource, `${key}.` + (updateSubPath ?? ''))
+    updateField<K extends keyof S>(key: K, updateFn: Updater<S[K]>, updateSource?: any, updateSubPath?: string): void {
+        this.update(keyUpdater(key, updateFn), updateSource, `${key}.` + (updateSubPath ?? ''))
     }
 
     private addObserverAt(fn: Observer<S>, path: string): IDisposable {
@@ -437,16 +436,16 @@ export class BaseHandler<S> extends Disposable implements StateHandler<S> {
         return this.parent.preObserveKey(key, filterPreObserver(fn, this.sourceFilter), subPath).disposeWith(this);
     }
 
-    update(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): void {
-        return this.parent.update(updates, updateSource, updatePath)
+    update(updateFn: Updater<S>, updateSource?: any, updatePath?: string): void {
+        return this.parent.update(updateFn, updateSource, updatePath)
     }
 
-    updateAsync(updates: UpdateOf<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>> {
-        return this.parent.updateAsync(updates, updateSource, updatePath);
+    updateAsync(updateFn: Updater<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>> {
+        return this.parent.updateAsync(updateFn, updateSource, updatePath);
     }
 
-    updateField<K extends keyof S>(key: K, update: UpdateOf<S[K]>, updateSource?: any, updateSubpath?: string): void {
-        return this.parent.updateField(key, update, updateSource, updateSubpath)
+    updateField<K extends keyof S>(key: K, updateFn: Updater<S[K]>, updateSource?: any, updateSubpath?: string): void {
+        return this.parent.updateField(key, updateFn, updateSource, updateSubpath)
     }
 
     view<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateView<S[K]> {
@@ -509,18 +508,18 @@ class KeyLens<S, K extends keyof S> extends Disposable implements StateHandler<S
         return new OptionalKeyLens(this as any as OptionalStateHandler<S[K]>, key, combineFilters(this.sourceFilter, sourceFilter)).disposeWith(this)
     }
 
-    update(updates: UpdateOf<S[K]>, updateSource?: any, updatePath?: string) {
-        return this.parent.updateField(this.key, updates, updateSource, updatePath);
+    update(updateFn: Updater<S[K]>, updateSource?: any, updatePath?: string) {
+        return this.parent.updateField(this.key, updateFn, updateSource, updatePath);
     }
 
-    updateAsync(updates: UpdateOf<S[K]>, updateSource?: any, updatePath?: string): Promise<Readonly<S[K]>> {
-        return this.parent.updateAsync({[this.key]: updates} as UpdateOf<S>, updateSource, `${this.key}.` + (updatePath ?? '')).then(
+    updateAsync(updateFn: Updater<S[K]>, updateSource?: any, updatePath?: string): Promise<Readonly<S[K]>> {
+        return this.parent.updateAsync(keyUpdater(this.key, updateFn), updateSource, `${this.key}.` + (updatePath ?? '')).then(
             s => s[this.key]
         )
     }
 
-    updateField<K1 extends keyof S[K]>(key: K1, update: UpdateOf<S[K][K1]>, updateSource?: any, updateSubPath?: string) {
-        return this.parent.updateField(this.key, new UpdateKey(key, valueToUpdate(update)), updateSource, `${key}.` + (updateSubPath ?? ''))
+    updateField<K1 extends keyof S[K]>(key: K1, updateFn: Updater<S[K][K1]>, updateSource?: any, updateSubPath?: string) {
+        return this.parent.updateField(this.key, keyUpdater(key, updateFn), updateSource, `${key}.` + (updateSubPath ?? ''))
     }
 
     filterSource(filter: (source: any) => boolean): StateHandler<S[K]> {
@@ -638,18 +637,18 @@ class OptionalKeyLens<S, K extends keyof S, V extends Exclude<S[K], undefined> =
         return new OptionalKeyLens<V, K1>(this, key).disposeWith(this);
     }
 
-    update(updates: UpdateOf<V | undefined>, updateSource?: any, updatePath?: string): void {
-        return this.parent.updateField(this.key, updates, updateSource, updatePath);
+    update(updateFn: Updater<V | undefined>, updateSource?: any, updatePath?: string): void {
+        return this.parent.updateField(this.key, updateFn, updateSource, updatePath);
     }
 
-    updateAsync(updates: UpdateOf<V | undefined>, updateSource?: any, updatePath?: string): Promise<Readonly<V | undefined>> {
-        return this.parent.updateAsync({[this.key]: updates} as UpdateOf<S | undefined>, updateSource, `${this.key}.` + (updatePath ?? '')).then(
+    updateAsync(updateFn: Updater<V | undefined>, updateSource?: any, updatePath?: string): Promise<Readonly<V | undefined>> {
+        return this.parent.updateAsync(keyUpdater(this.key, updateFn as Updater<S[K]>), updateSource, `${this.key}.` + (updatePath ?? '')).then(
             maybeS => maybeS !== undefined ? maybeS[this.key] as V | undefined : undefined
         )
     }
 
-    updateField<K1 extends keyof V>(childKey: K1, update: UpdateOf<V[K1] | undefined>, updateSource?: any, updateSubPath?: string): void {
-        return this.parent.updateField(this.key, new UpdateKey(childKey, valueToUpdate(update) as StateUpdate<V[K1]>), updateSource, `${childKey}.` + (updateSubPath ?? ''))
+    updateField<K1 extends keyof V>(childKey: K1, updateFn: Updater<V[K1] | undefined>, updateSource?: any, updateSubPath?: string): void {
+        return this.parent.updateField(this.key, keyUpdater<V, K1>(childKey, updateFn as Updater<V[K1]>), updateSource, `${childKey}.` + (updateSubPath ?? ''))
     }
 
     filterSource(filter: (source: any) => boolean): OptionalStateHandler<V> {

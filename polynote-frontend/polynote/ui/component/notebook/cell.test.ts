@@ -1,6 +1,6 @@
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {SocketSession} from "../../../messaging/comms";
-import {Disposable, editString} from "../../../state";
+import {Disposable, editString, updateProperty} from "../../../state";
 import {NotebookMessageReceiver} from "../../../messaging/receiver";
 import {Insert} from "../../../data/content_edit";
 import {UpdateCell} from "../../../data/messages";
@@ -57,7 +57,7 @@ describe("Code cell", () => {
             })
         });
 
-        await cellHandler.updateAsync({"content": editString([new Insert(0, "a")])});
+        await cellHandler.updateAsync(() => updateProperty("content", editString([new Insert(0, "a")])));
 
         const editedContent = await waitForEdit;
 

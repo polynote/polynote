@@ -43,11 +43,11 @@ export class NotebookConfigEl extends Disposable {
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
             const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, env.conf);
             this.el.classList.remove("open");
-            stateHandler.updateField("config", setValue(conf))
+            stateHandler.updateField("config", () => setValue(conf))
         })
 
         this.el = div(['notebook-config'], [
-            h2(['config'], ['Configuration & dependencies']).click(() => stateHandler.updateField("open", setValue(!stateHandler.state.open))),
+            h2(['config'], ['Configuration & dependencies']).click(() => stateHandler.updateField("open", open => setValue(!open))),
             div(['content'], [
                 dependencies.el,
                 resolvers.el,
@@ -57,7 +57,7 @@ export class NotebookConfigEl extends Disposable {
                 div(['controls'], [
                     saveButton,
                     button(['cancel'], {}, ['Cancel']).click(evt => {
-                        stateHandler.updateField("open", setValue(false))
+                        stateHandler.updateField("open", () => setValue(false))
                     })
                 ])
             ])

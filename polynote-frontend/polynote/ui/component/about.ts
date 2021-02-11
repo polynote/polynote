@@ -3,7 +3,7 @@ import {button, div, dropdown, h2, h3, iconButton, loader, polynoteLogo, span, t
 import * as monaco from "monaco-editor";
 import {
     Disposable,
-    IDisposable,
+    IDisposable, setProperty,
     StateView,
 } from "../../state";
 import {ServerMessageDispatcher,} from "../../messaging/dispatcher";
@@ -131,11 +131,7 @@ export class About extends FullScreenModal implements IDisposable {
                     throw new Error(`Unexpected Event target for event ${JSON.stringify(evt)}! Expected \`currentTarget\` to be an HTMLSelectElement but instead got ${JSON.stringify(self)}`)
                 }
                 const updatedValue = pref.possibleValues[self.options[self.selectedIndex].value];
-                UserPreferencesHandler.update({
-                    [key]: {
-                        value: updatedValue
-                    }
-                })
+                UserPreferencesHandler.updateField(key, () => setProperty("value", updatedValue))
             });
             valueEl.value = value.toString();
             prefsTable.addRow({

@@ -91,7 +91,7 @@ export class DataStream extends Disposable {
                 })
 
                 // clear messages now that they have been processed.
-                this.activeStreams.update(removeKey(this.repr.handle))
+                this.activeStreams.update(() => removeKey(this.repr.handle))
             }
         })
     }

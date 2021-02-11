@@ -25,9 +25,7 @@ export class Notebook extends Disposable {
         const cellsEl = div(['notebook-cells'], [config.el, this.newCellDivider()]);
 
         cellsEl.addEventListener('scroll', evt => {
-            NotebookScrollLocationsHandler.update({
-                [path]: cellsEl.scrollTop
-            })
+            NotebookScrollLocationsHandler.updateField(path, () => cellsEl.scrollTop);
         });
 
         this.el = div(['notebook-content'], [cellsEl]);
@@ -125,12 +123,12 @@ export class Notebook extends Disposable {
             if (pos) {
                 const range = PosRange.fromString(pos)
                 // TODO: when should this go away? maybe when you edit the cell
-                cellsHandler.updateField(cellId, {
+                cellsHandler.updateField(cellId, () => ({
                     currentHighlight: {
                         range,
                         className: "link-highlight"
                     }
-                })
+                }))
             }
         })
     }

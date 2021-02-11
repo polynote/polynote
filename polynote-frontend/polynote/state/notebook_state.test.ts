@@ -177,9 +177,9 @@ describe('NotebookStateHandler', () => {
             compileErrors: [new CompileErrors([new KernelReport(new Position("", 1, 2, 3), "hi", 1)])],
             runtimeError: new RuntimeError(new ServerErrorWithCause("yo", "sup", []))
         }
-        nbState.updateField("cells", {
+        nbState.updateField("cells", () => ({
             [1]: cellWithStuff
-        })
+        }))
         expect(nbState.state.cells[1]).toEqual({
             ...nbState.state.cells[1],
             ...cellWithStuff
@@ -211,27 +211,27 @@ describe('NotebookStateHandler', () => {
         await expect(init).resolves.toEqual(3)
 
         const waitQueued = nbState.waitForCellChange(1, "queued")
-        nbState.updateField("cells", {
+        nbState.updateField("cells", () => ({
             [1]: {
                 queued: true
             }
-        })
+        }))
         await expect(waitQueued).resolves
 
         const waitRunning = nbState.waitForCellChange(2, "running")
-        nbState.updateField("cells", {
+        nbState.updateField("cells", () => ({
             [2]: {
                 running: true
             }
-        })
+        }))
         await expect(waitRunning).resolves
 
         const waitError = nbState.waitForCellChange(3, "error")
-        nbState.updateField("cells", {
+        nbState.updateField("cells", () => ({
             [3]: {
                 error: true
             }
-        })
+        }))
         await expect(waitError).resolves
     })
 });

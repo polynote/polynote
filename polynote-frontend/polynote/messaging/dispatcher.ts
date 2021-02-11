@@ -2,7 +2,7 @@ import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../data/result";
 import {
-    Disposable,
+    Disposable, setProperty,
     setValue,
     StateHandler,
     StateView
@@ -167,9 +167,9 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 
         this.socket.observeKey("status", status => {
             if (status === "connected") {
-                this.socket.update({
+                this.socket.update(() => ({
                         error: setValue(undefined) // any errors from before are no longer relevant, right?
-                })
+                }))
                 errorView.tryDispose()
             }
         }).disposeWith(errorView)
@@ -270,7 +270,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         }).disposeWith(this)
 
         this.handler.observeKey("openNotebooks", (nbs, update) => {
-            OpenNotebooksHandler.update(setValue([...nbs]))
+            OpenNotebooksHandler.update(() => setValue([...nbs]))
         })
     }
 
@@ -299,9 +299,9 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         this.socket.view("status").addObserver(status => {
             if (status === "connected") {
                 console.warn("Reconnected successfully, now reconnecting to notebook sockets")
-                this.socket.update({
+                this.socket.update(() => ({
                     error: undefined // any errors from before are no longer relevant, right?
-                })
+                }))
                 ServerStateHandler.reconnectNotebooks(onlyIfClosed)
                 observeError.tryDispose()
             }
@@ -323,7 +323,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                     if (newNb.includes(nbPath)) {
                         disposable.dispose()
                         ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {
-                            nbInfo.handler.updateField("config", {open: true})
+                            nbInfo.handler.updateField("config", () => setProperty("open", true))
                             ServerStateHandler.selectNotebook(newNb)
                         })
                     }

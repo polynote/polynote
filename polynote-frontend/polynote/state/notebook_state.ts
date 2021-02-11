@@ -103,7 +103,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                     if (! s.selected) {
                         activeCellWatcher.dispose()
                         if (this.state.activeCellId === cellId) {
-                            this.updateField("activeCellId", setValue(undefined))
+                            this.updateField("activeCellId", () => setValue(undefined))
                         }
                     }
                 }).disposeWith(this)
@@ -172,43 +172,46 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
      */
     selectCell(selected: number | undefined, options?: { relative?: "above" | "below", skipHiddenCode?: boolean, editing?: boolean}): number | undefined {
         let id = selected;
-        if (id !== undefined) {
-            const anchorIdx = this.state.cellOrder.indexOf(id)
-            if (options?.relative === "above")  {
-                let prevIdx = anchorIdx - 1;
-                id = this.state.cellOrder[prevIdx];
-                if (options?.skipHiddenCode) {
-                    while (prevIdx > -1 && this.state.cells[id]?.metadata.hideSource) {
-                        --prevIdx;
-                        id = this.state.cellOrder[prevIdx];
+        this.update(state => {
+            if (id !== undefined) {
+                const anchorIdx = state.cellOrder.indexOf(id)
+                if (options?.relative === "above")  {
+                    let prevIdx = anchorIdx - 1;
+                    id = state.cellOrder[prevIdx];
+                    if (options?.skipHiddenCode) {
+                        while (prevIdx > -1 && state.cells[id]?.metadata.hideSource) {
+                            --prevIdx;
+                            id = state.cellOrder[prevIdx];
+                        }
                     }
-                }
-            } else if (options?.relative === "below") {
-                let nextIdx = anchorIdx + 1
-                id = this.state.cellOrder[nextIdx];
-                if (options?.skipHiddenCode) {
-                    while (nextIdx < this.state.cellOrder.length && this.state.cells[id]?.metadata.hideSource) {
-                        ++nextIdx;
-                        id = this.state.cellOrder[nextIdx];
+                } else if (options?.relative === "below") {
+                    let nextIdx = anchorIdx + 1
+                    id = state.cellOrder[nextIdx];
+                    if (options?.skipHiddenCode) {
+                        while (nextIdx < state.cellOrder.length && state.cells[id]?.metadata.hideSource) {
+                            ++nextIdx;
+                            id = state.cellOrder[nextIdx];
+                        }
                     }
                 }
             }
-        }
-        id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
-        const prev = this.state.activeCellId;
-        const update: UpdatePartial<NotebookState> = {
-            activeCellId: id,
-            cells: id === undefined ? NoUpdate : {
-                [id]: {
-                    selected: true,
-                    editing: options?.editing ?? false
+            id = id ?? (selected === -1 ? 0 : selected); // if "above" or "below" don't exist, just select `selected`.
+            const prev = state.activeCellId;
+            const update: UpdatePartial<NotebookState> = {
+                activeCellId: id,
+                cells: id === undefined ? NoUpdate : {
+                    [id]: {
+                        selected: true,
+                        editing: options?.editing ?? false
+                    }
                 }
+            };
+            if (prev !== undefined) {
+                (update.cells as any)[prev] = { selected: false };
             }
-        };
-        if (prev !== undefined) {
-            (update.cells as any)[prev] = { selected: false };
-        }
-        this.update(update)
+            return update;
+        })
+
         return id
     }
 
@@ -284,7 +287,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
 
     setCellLanguage(id: number, language: string) {
         const cell = this.cellsHandler.state[id];
-        this.cellsHandler.updateField(id, {
+        this.cellsHandler.updateField(id, () => ({
             language,
             // clear a bunch of stuff if we're changing to text... hm, maybe we need to do something else when it's a a text cell...
             output: language === "text" ? clearArray() : NoUpdate,
@@ -292,7 +295,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             error: language === "text" ? false : NoUpdate,
             compileErrors: language === "text" ? clearArray() : NoUpdate,
             runtimeError: language === "text" ? setValue(undefined) : NoUpdate,
-        })
+        }))
     }
 
     // wait for cell to transition to a specific state

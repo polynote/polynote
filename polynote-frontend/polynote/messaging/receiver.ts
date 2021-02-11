@@ -52,8 +52,7 @@ export class MessageReceiver<S> extends Disposable {
 
     protected receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: Readonly<S>,...args: ConstructorParameters<typeof msgType>) => UpdateOf<S>) {
         this.socket.addMessageListener(msgType, (...args: ConstructorParameters<typeof msgType>) => {
-            const update = fn(this.state.state, ...args);
-            this.state.update(update, this)
+            this.state.update(state => fn(state, ...args), this)
         })
     }
 
@@ -75,22 +74,22 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
 
         this.socket.view("status").addObserver(status => {
             if (status === "disconnected") {
-                this.state.update({
+                this.state.update(state => ({
                     kernel: {
                         status: status
                     },
-                    cells: collectFields(this.state.state.cells, (id, cell) => ({
+                    cells: collectFields(state.cells, (id, cell) => ({
                         running: false,
                         queued: false,
                         currentHighlight: undefined
                     }))
-                })
+                }))
             } else if (this.state.state.kernel.status === 'disconnected') {
-                this.state.update({
+                this.state.update(() => ({
                     kernel: {
                         status: 'dead'
                     }
-                })
+                }))
             }
         })
 
@@ -515,9 +514,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         super(SocketStateHandler.global, ServerStateHandler.get);
 
         this.socket.view("status").addObserver(status => {
-            this.state.update({
-                connectionStatus: status
-            })
+            this.state.updateField("connectionStatus", () => status);
         }).disposeWith(this.state);
 
         this.receive(messages.Error, (s, code, err) => {
@@ -574,11 +571,9 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 const path = kv.first;
                 const status = kv.second;
                 const nbInfo = ServerStateHandler.getOrCreateNotebook(path)
-                nbInfo.handler.update({
-                    kernel: {
-                        status: status.asStatus
-                    }
-                })
+                nbInfo.handler.updateField("kernel", () => ({
+                    status: status.asStatus
+                }))
                 notebooks[path] = setValue(nbInfo.loaded)
             })
             return { notebooks: notebooks }

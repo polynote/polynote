@@ -97,14 +97,15 @@ class Main {
                 window.history.pushState({notebook: path}, title, tabUrl.href);
             }
 
-            const recents = RecentNotebooksHandler.state;
-            const currentIndex = recents.findIndex(r => r && r.path === path)
-            if (currentIndex >= 0) {
-                RecentNotebooksHandler.update(moveArrayValue(currentIndex, 0))
-            } else {
-                const name = nameFromPath(path);
-                RecentNotebooksHandler.update(insert({path, name}, 0));
-            }
+            RecentNotebooksHandler.update(recents => {
+                const currentIndex = recents.findIndex(r => r && r.path === path);
+                if (currentIndex >= 0) {
+                    return moveArrayValue(currentIndex, 0);
+                } else {
+                    const name = nameFromPath(path);
+                    return insert({path, name}, 0);
+                }
+            })
         } else {
             const title = 'Polynote';
             window.history.pushState({notebook: name}, title, document.baseURI);

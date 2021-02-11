@@ -35,47 +35,47 @@ export class ErrorStateHandler extends ObjectStateHandler<ErrorState> {
     static addServerError(err: ServerErrorWithCause) {
         const state = ErrorStateHandler.state
         if (!state.serverErrors.find(e => deepEquals(e.err, err))) {
-            ErrorStateHandler.get.updateField("serverErrors", append({id: `ServerError: ${err.className}`, err}))
+            ErrorStateHandler.get.updateField("serverErrors", () => append({id: `ServerError: ${err.className}`, err}))
         }
     }
 
     static addKernelError(path: string, err: ServerErrorWithCause) {
         const state = ErrorStateHandler.state[path];
         if (!state || !state.find(e => deepEquals(e.err, err))) {
-            ErrorStateHandler.get.update({
-                [path]: append({id: `KernelError: ${err.className}`, err})
-            })
+            ErrorStateHandler.get.updateField(path, () => append({id: `KernelError: ${err.className}`, err}))
         }
     }
 
     static removeError(err: DisplayError) {
-        const errorState = ErrorStateHandler.state;
-        const updates: UpdateOf<ErrorState> = {};
-        Object.keys(errorState).forEach(key => {
-            const idx = errorState[key].findIndex(cellErr => deepEquals(err, cellErr))
-            if (idx >= 0) {
-                if (errorState[key].length <= 1 && key !== 'serverErrors') {
-                    updates[key] = destroy();
-                } else {
-                    updates[key] = removeIndex(errorState[key], idx);
+        ErrorStateHandler.get.update(errorState => {
+            const updates: UpdateOf<ErrorState> = {};
+            Object.keys(errorState).forEach(key => {
+                const idx = errorState[key].findIndex(cellErr => deepEquals(err, cellErr))
+                if (idx >= 0) {
+                    if (errorState[key].length <= 1 && key !== 'serverErrors') {
+                        updates[key] = destroy();
+                    } else {
+                        updates[key] = removeIndex(errorState[key], idx);
+                    }
                 }
-            }
-        })
-        ErrorStateHandler.get.update(updates);
+            });
+            return updates;
+        });
     }
 
     static clear() {
-        const errorState = ErrorStateHandler.state;
-        const updates: UpdateOf<ErrorState> = {serverErrors: clearArray()}
-        Object.keys(errorState).forEach(key => {
-            if (key !== 'serverErrors') {
-                updates[key] = destroy();
-            }
-        })
-        ErrorStateHandler.get.update(updates);
+        ErrorStateHandler.get.update(errorState => {
+            const updates: UpdateOf<ErrorState> = {serverErrors: clearArray()}
+            Object.keys(errorState).forEach(key => {
+                if (key !== 'serverErrors') {
+                    updates[key] = destroy();
+                }
+            });
+            return updates;
+        });
     }
 
     static notebookRenamed(oldPath: string, newPath: string) {
-        ErrorStateHandler.get.update(renameKey(oldPath, newPath));
+        ErrorStateHandler.get.update(() => renameKey(oldPath, newPath));
     }
 }

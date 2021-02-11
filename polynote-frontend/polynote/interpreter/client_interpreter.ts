@@ -131,7 +131,7 @@ export class ClientInterpreter {
                 } else {
                     res.toOutput().then(o => {
                         const results = this.notebookState.cellsHandler.state[id].results;
-                        this.notebookState.cellsHandler.updateField(id, { results: append(res), output: setValue([o])})
+                        this.notebookState.cellsHandler.updateField(id, () => ({ results: append(res), output: setValue([o])}))
                     })
                 }
             })

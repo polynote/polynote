@@ -224,39 +224,40 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
     }
 
     addPath(path: string) {
-        const pieces = path.split("/");
-        const update: UpdatePartial<Branch> = {
-            children: {
-                [pieces[0]]: {}
-            }
-        };
-        let currentUpdate = update as any, currentState = this.state as Node | undefined;
-        const topState = this.state;
-        let currentPath = "";
-        for (let i = 0; i < pieces.length - 1; i++) {
-            const piece = pieces[i] //as keyof UpdatePartial<Branch>;
-            currentPath += piece;
-            currentUpdate.children = {
-                [currentPath]: {
-                    children: {}
+        this.update(topState => {
+            const pieces = path.split("/");
+            const update: UpdatePartial<Branch> = {
+                children: {
+                    [pieces[0]]: {}
                 }
+            };
+            let currentUpdate = update as any, currentState = topState as Node | undefined;
+            let currentPath = "";
+            for (let i = 0; i < pieces.length - 1; i++) {
+                const piece = pieces[i] //as keyof UpdatePartial<Branch>;
+                currentPath += piece;
+                currentUpdate.children = {
+                    [currentPath]: {
+                        children: {}
+                    }
+                }
+                currentUpdate = currentUpdate.children[currentPath];
+                if (!currentState || !isBranch(currentState) || !currentState.children[piece]) {
+                    currentUpdate.fullPath = currentPath;
+                    currentUpdate.value = piece;
+                    currentState = undefined;
+                } else {
+                    currentState = currentState.children[piece];
+                }
+                currentPath += "/"
             }
-            currentUpdate = currentUpdate.children[currentPath];
-            if (!currentState || !isBranch(currentState) || !currentState.children[piece]) {
-                currentUpdate.fullPath = currentPath;
-                currentUpdate.value = piece;
-                currentState = undefined;
-            } else {
-                currentState = currentState.children[piece];
+            const leaf = pieces[pieces.length - 1];
+            currentUpdate.children[path] = {
+                fullPath: path,
+                value: leaf
             }
-            currentPath += "/"
-        }
-        const leaf = pieces[pieces.length - 1];
-        currentUpdate.children[path] = {
-            fullPath: path,
-            value: leaf
-        }
-        this.update(update);
+            return update;
+        });
     }
 
     removePath(path: string) {
@@ -280,7 +281,7 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
                 }
             }
         }
-        this.update(go(path, this.state))
+        this.update(state => go(path, state))
     }
 
 }

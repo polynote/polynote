@@ -87,7 +87,7 @@ export class CommentHandler extends Disposable {
                    if (maybeRoot && maybeRoot.uuid === commentId) {
                        // If this is a root comment, we delete it and it's children
                        // First, the children
-                       Object.keys(maybeRoot.rootChildren(currentComments)).forEach(commentId => allCommentsState.update(removeKey(commentId)))
+                       Object.keys(maybeRoot.rootChildren(currentComments)).forEach(commentId => allCommentsState.update(() => removeKey(commentId)))
 
                        // then the root itself.
                        maybeRoot.dispose();
@@ -315,8 +315,8 @@ class CommentRoot extends MonacoRightGutterOverlay {
                     // we have a highlight with the same ID, but a different range. This means there is some drift.
                     const newRange = new PosRange(model.getOffsetAt(maybeDecoration.range.getStartPosition()), model.getOffsetAt(maybeDecoration.range.getEndPosition()));
                     // update all comments that share a range with this root
-                    this.allCommentsState.update(collectFields(
-                        this.allCommentsState.state,
+                    this.allCommentsState.update(state => collectFields(
+                        state,
                         (id, comment) => comment.range.equals(this.range) ? { range: setValue(newRange) } : undefined
                     ))
                 }
@@ -413,7 +413,7 @@ class NewComment extends Disposable {
                 createdAt: Date.now(),
                 content: this.text.value
             })
-            this.commentsState.update({[comment.uuid]: comment});
+            this.commentsState.updateField(comment.uuid, () => setValue(comment));
             this.text.value = ""
             if (this.onCreate) this.onCreate()
         };
@@ -538,7 +538,7 @@ class Comment extends Disposable {
         if (b) {
             this.editing = true;
             const doEdit = (content: string) => {
-                this.commentState.updateField("content", setValue(content))
+                this.commentState.updateField("content", () => setValue(content))
                 this.setEditable(false)
             };
 
@@ -577,6 +577,6 @@ class Comment extends Disposable {
     }
 
     delete() {
-        this.allCommentsState.update(removeKey(this.commentState.state.uuid))
+        this.allCommentsState.update(() => removeKey(this.commentState.state.uuid))
     }
 }

@@ -179,7 +179,7 @@ abstract class Cell extends Disposable {
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
             if (this.cellState.state.selected // prevent blurring a different cell
                 && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
-                this.cellState.updateField("selected", false)
+                this.cellState.updateField("selected", () => false)
             }
         }
     }
@@ -376,9 +376,9 @@ export class CodeCell extends Cell {
             if (model) {
                 const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
                 if (evt.selection.getDirection() === SelectionDirection.RTL) {
-                    this.cellState.updateField("currentSelection", range.reversed)
+                    this.cellState.updateField("currentSelection", () => range.reversed)
                 } else {
-                    this.cellState.updateField("currentSelection", range)
+                    this.cellState.updateField("currentSelection", () => range)
                 }
             }
         });
@@ -527,7 +527,7 @@ export class CodeCell extends Cell {
             if (running) {
                 this.el.classList.add("running");
                 // clear results when a cell starts running:
-                this.cellState.updateField("results", clearArray())
+                this.cellState.updateField("results", () => clearArray())
 
                 // update Execution Status (in case this is an initial load)
                 if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
@@ -677,7 +677,7 @@ export class CodeCell extends Cell {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        this.cellState.updateField("content", editString(edits), this);
+        this.cellState.updateField("content", () => editString(edits), this);
 
         // update comments
         this.commentHandler.triggerCommentUpdate()
@@ -686,7 +686,7 @@ export class CodeCell extends Cell {
     requestCompletion(offset: number): Promise<CompletionList> {
         return new Promise<CompletionHint>((resolve, reject) => {
             this.notebookState.state.activeCompletion?.reject() // remove previously active completion if present
-            return this.notebookState.updateField("activeCompletion", setValue({cellId: this.id, offset, resolve, reject}))
+            return this.notebookState.updateField("activeCompletion", () => setValue({cellId: this.id, offset, resolve, reject}))
         }).then(({cell, offset, completions}) => {
             const len = completions.length;
             const indexStrLen = ("" + len).length;
@@ -727,7 +727,7 @@ export class CodeCell extends Cell {
     requestSignatureHelp(offset: number): Promise<SignatureHelpResult> {
         return new Promise<SignatureHint>((resolve, reject) => {
             this.notebookState.state.activeSignature?.reject() // remove previous active signature if present.
-            return this.notebookState.updateField("activeSignature", setValue({cellId: this.id, offset, resolve, reject}))
+            return this.notebookState.updateField("activeSignature", () => setValue({cellId: this.id, offset, resolve, reject}))
         }).then(({cell, offset, signatures}) => {
             let sigHelp: SignatureHelp;
             if (signatures) {
@@ -771,9 +771,9 @@ export class CodeCell extends Cell {
         this.errorMarkers = this.errorMarkers.filter(m => m !== marker)
         this.setModelMarkers(this.errorMarkers.flatMap(m => m.markers))
         if (marker.error instanceof RuntimeError) {
-            this.cellState.updateField("runtimeError", setValue(undefined))
+            this.cellState.updateField("runtimeError", () => setValue(undefined))
         } else {
-            this.cellState.updateField("compileErrors", removeFromArray(this.cellState.state.compileErrors, marker.error, deepEquals))
+            this.cellState.updateField("compileErrors", errs => removeFromArray(errs, marker.error as CompileErrors, deepEquals))
         }
     }
 
@@ -783,13 +783,11 @@ export class CodeCell extends Cell {
     }
 
     private toggleCode() {
-        const prevMetadata = this.cellState.state.metadata;
-        this.cellState.updateField("metadata", prevMetadata.copy({hideSource: !prevMetadata.hideSource}))
+        this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({hideSource: !prevMetadata.hideSource})))
     }
 
     private toggleOutput() {
-        const prevMetadata = this.cellState.state.metadata;
-        this.cellState.updateField("metadata", prevMetadata.copy({hideOutput: !prevMetadata.hideOutput}))
+        this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})))
     }
 
     layout() {
@@ -1446,7 +1444,7 @@ export class TextCell extends Cell {
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.cellState.updateField("content", editString(edits))
+            this.cellState.updateField("content", () => editString(edits))
         }
     }
 
