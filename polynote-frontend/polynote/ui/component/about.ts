@@ -150,6 +150,7 @@ export class About extends FullScreenModal implements IDisposable {
         });
 
         const addStorageEl = <T>(storageHandler: LocalStorageHandler<T>) => {
+            const key = storageHandler.key;
             const handler = storageHandler.fork(this);
             const valueEl = div(['json'], []);
 
@@ -164,11 +165,11 @@ export class About extends FullScreenModal implements IDisposable {
                 setValueEl(next)
             })
 
-            const clearEl = iconButton(["clear"], `Clear ${handler.key}`, "trash-alt", "Clear")
-                .click(() => handler.clear())
+            const clearEl = iconButton(["clear"], `Clear ${key}`, "trash-alt", "Clear")
+                .click(() => storageHandler.clear())
 
             storageTable.addRow({
-                key: handler.key,
+                key: key,
                 val: valueEl,
                 clear: clearEl
             })

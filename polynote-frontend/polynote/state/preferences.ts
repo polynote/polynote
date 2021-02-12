@@ -1,5 +1,5 @@
 import {storage} from "./storage";
-import {IDisposable, ObjectStateHandler, setValue, StateView} from ".";
+import {BaseHandler, Disposable, IDisposable, ObjectStateHandler, setValue, StateHandler, StateView, UpdateOf} from ".";
 import {deepEquals, diffArray} from "../util/helpers";
 
 export type RecentNotebooks = {name: string, path: string}[];
@@ -16,21 +16,25 @@ export interface ViewPreferences {
     },
 }
 
-export class LocalStorageHandler<T> extends ObjectStateHandler<T> {
-    constructor(readonly key: string, private initial: T) {
-        super(storage.get(key) ?? initial);
+export class LocalStorageHandler<T> extends BaseHandler<T> {
+    private static defaultHandler<T>(key: string, defaultState: T): StateHandler<T> {
+        return new ObjectStateHandler<T>(storage.get(key) ?? defaultState);
+    }
+
+    constructor(readonly key: string, private defaultState: T, handler?: StateHandler<T>) {
+        super(handler || LocalStorageHandler.defaultHandler(key, defaultState));
 
         const fromStorage = {};
-
         // watch storage to detect when it was cleared
         const handleStorageChange = (next: T | null | undefined) => {
             if (next !== undefined && next !== null) {
-                super.update(() => setValue(next), fromStorage)
+                this.update(() => setValue(next), fromStorage)
             } else {
-                super.update(() => setValue(initial), fromStorage)
+                this.update(() => setValue(defaultState), fromStorage)
             }
         }
-        handleStorageChange(storage.get(this.key))
+        handleStorageChange(storage.get(key));
+
         storage.addStorageListener(this.key, (prev, next) => handleStorageChange(next))
 
         this.filterSource(src => src !== fromStorage).addObserver(value => {
@@ -39,11 +43,11 @@ export class LocalStorageHandler<T> extends ObjectStateHandler<T> {
     }
 
     clear() {
-        super.update(() => setValue(this.initial));
+        this.update(() => setValue(this.defaultState));
     }
 
     fork(disposeContext?: IDisposable): LocalStorageHandler<T> {
-        const fork = new LocalStorageHandler<T>(this.key, this.initial);
+        const fork = new LocalStorageHandler<T>(this.key, this.defaultState, this.parent).disposeWith(this);
         return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }

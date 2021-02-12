@@ -150,7 +150,9 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 cellOrder: setValue(cellOrder),
                 config: { config: config ?? NotebookConfig.default },
                 kernel: {
-                    symbols: setValue([...s.kernel.symbols, ...results.flat()]) // TODO: does this message ever even happen? Will need to add an op for this if so
+                    // TODO: should there be an op to append multiple values?
+                    //       Or could the append op allow for this?
+                    symbols: setValue([...s.kernel.symbols, ...results.flat()])
                 }
             }
         });
@@ -180,10 +182,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     return {
                         kernel: {
                             info: setValue(info)
-                        },
-                        // Getting KernelInfo means we successfully launched a new kernel, so we can clear any old errors lying around.
-                        // This seems a bit hacky, maybe there's a better way to clear these errors?
-                        errors: clearArray()
+                        }
                     }
                 })
                 .when(messages.ExecutionStatus, (id, pos) => {
@@ -521,6 +520,15 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             ErrorStateHandler.addServerError(err)
             return NoUpdate
         });
+
+        this.receive(messages.KernelStatus, (state, update) => {
+            if (update instanceof messages.KernelInfo) {
+                // Getting KernelInfo means we successfully launched a new kernel, so we can clear any old errors lying around.
+                // This seems a bit hacky, maybe there's a better way to clear these errors?
+                ErrorStateHandler.clear()
+            }
+            return NoUpdate;
+        })
 
         this.receive(messages.CreateNotebook, (s, path) => {
             return {

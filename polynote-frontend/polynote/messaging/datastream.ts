@@ -44,7 +44,6 @@ export class DataStream extends Disposable {
     private setupPromise?: Promise<Message | void>;
     private repr: StreamingDataRepr;
     private activeStreams: StateHandler<NotebookState["activeStreams"]>;
-    private observer: IDisposable;
 
     constructor(private readonly dispatcher: NotebookMessageDispatcher, private readonly nbState: NotebookStateHandler, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
         super()
@@ -54,7 +53,7 @@ export class DataStream extends Disposable {
         this.dataType = this.finalDataType();
 
         this.activeStreams = nbState.lens("activeStreams").disposeWith(this);
-        this.observer = this.activeStreams.addObserver(handles => {
+        this.activeStreams.addObserver(handles => {
             const data = handles[this.repr.handle];
             if (data && data.length > 0) {
                 data.forEach(message => {
@@ -120,8 +119,6 @@ export class DataStream extends Disposable {
             this.dispatcher.stopDataStream(StreamingDataRepr.handleTypeId, this.repr.handle)
         }
 
-        this.observer.tryDispose();
-
         if (this.onComplete) {
             this.onComplete();
         }
@@ -129,7 +126,7 @@ export class DataStream extends Disposable {
             this.nextPromise.reject("Stream was terminated")
         }
 
-        this.dispose()
+        this.tryDispose();
     }
 
     aggregate(groupCols: string[], aggregations: Record<string, string> | Record<string, string>[]) {

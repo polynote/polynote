@@ -448,7 +448,7 @@ export class CodeCell extends Cell {
             }
         })
 
-        let cellOutput = new CodeCellOutput(dispatcher, cellState, this.cellId, cellState.view("compileErrors"), runtimeErrorState);
+        let cellOutput = new CodeCellOutput(dispatcher, cellState, this.cellId, compileErrorsState, runtimeErrorState);
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
