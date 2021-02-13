@@ -2,7 +2,7 @@ import {
     Disposable,
     removeKey,
     StateHandler,
-    StateView,
+    StateView, UpdateResult,
 } from "../../../state";
 import {
     Content,
@@ -236,8 +236,8 @@ class KernelTasksEl extends Disposable {
         notebookPathHandler.addObserver(path => this.notebookPath = path)
 
         Object.values(kernelTasksHandler.state).forEach(task => this.addTask(task.id, task.label, task.detail, task.status, task.progress, task.parent));
-        kernelTasksHandler.addObserver((currentTasks, update) => {
-            update.changedKeys.forEach(taskId => {
+        kernelTasksHandler.addObserver((currentTasks, updateResult) => {
+            UpdateResult.addedOrChangedKeys(updateResult).forEach(taskId => {
                 const task = currentTasks[taskId];
                 if (taskId in this.tasks) {
                     this.updateTask(task.id, task.label, task.detail, task.status, task.progress, task.parent)
@@ -246,7 +246,7 @@ class KernelTasksEl extends Disposable {
                 }
             })
 
-            update.removedKeys.forEach(taskId => {
+            Object.keys(updateResult.removedValues ?? {}).forEach(taskId => {
                 this.removeTask(taskId)
             })
         })

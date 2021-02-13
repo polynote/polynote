@@ -13,6 +13,7 @@ jest.mock("../../../messaging/comms");
 let nbState: NotebookStateHandler,
     socket: SocketSession,
     socketState: SocketStateHandler,
+    dispatcher: NotebookMessageDispatcher,
     receiver: NotebookMessageReceiver;
 
 let stateUpdateDisp = new Disposable()
@@ -22,8 +23,9 @@ beforeEach(() => {
     return ClientBackup.addNb("foo", []).then(() => {
         nbState.updateHandler.globalVersion = 0 // initialize version
         socket = SocketSession.fromRelativeURL(nbState.state.path)
-        socketState = SocketStateHandler.create(socket)
-        receiver = new NotebookMessageReceiver(socketState, nbState)
+        socketState = SocketStateHandler.create(socket).disposeWith(stateUpdateDisp)
+        receiver = new NotebookMessageReceiver(socketState, nbState).disposeWith(stateUpdateDisp)
+        dispatcher = new NotebookMessageDispatcher(socketState, nbState).disposeWith(stateUpdateDisp)
 
         // close the server loop for messages that bounce off it (e.g., InsertCell)
         nbState.updateHandler.addObserver(update => {
@@ -48,7 +50,7 @@ describe("Code cell", () => {
         const cellHandler = nbState.cellsHandler.lens(cellId);
 
         const waitForEdit = new Promise((resolve, reject) => {
-            cellHandler.addObserver((cellState, update) => {
+            cellHandler.addObserver(cellState => {
                 try {
                     resolve(cellState.content)
                 } catch (err) {

@@ -127,7 +127,7 @@ describe("ObjectStateHandler", () => {
             const oldNum = handler.state.num
             handler.updateField("num", () => setValue(42))
             expect(listener).toHaveBeenCalledTimes(1)
-            expect(listener).toHaveBeenCalledWith(42, setValue(42, oldNum), expect.anything())
+            expect(listener).toHaveBeenCalledWith(42, {newValue: 42, oldValue: 6, update: setValue(42, oldNum)}, expect.anything())
             view.dispose()
         })
 
@@ -141,7 +141,7 @@ describe("ObjectStateHandler", () => {
                 }
             }));
             expect(listener).toHaveBeenCalledTimes(1)
-            expect(listener).toHaveBeenCalledWith("nope", setValue("nope", "yup"), expect.anything())
+            expect(listener).toHaveBeenCalledWith("nope", {newValue: "nope", oldValue: "yup", update: setValue("nope")}, expect.anything())
             view.dispose()
         })
 

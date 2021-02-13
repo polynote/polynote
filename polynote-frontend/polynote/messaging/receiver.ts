@@ -53,7 +53,7 @@ export class MessageReceiver<S> extends Disposable {
     protected receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: Readonly<S>,...args: ConstructorParameters<typeof msgType>) => UpdateOf<S>) {
         this.socket.addMessageListener(msgType, (...args: ConstructorParameters<typeof msgType>) => {
             this.state.update(state => fn(state, ...args), this)
-        })
+        }).disposeWith(this)
     }
 
     // Handle a message as if it were received on the wire. Useful for short-circuiting or simulating server messages.

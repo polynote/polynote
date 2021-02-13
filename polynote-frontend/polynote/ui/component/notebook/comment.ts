@@ -1,4 +1,4 @@
-import {Disposable, removeKey, setValue, StateHandler, StateView, UpdateLike} from "../../../state";
+import {Disposable, removeKey, setValue, StateHandler, StateView, UpdateLike, UpdateResult} from "../../../state";
 import {CellComment} from "../../../data/data";
 import {PosRange} from "../../../data/result";
 import {arrExists, collectFields} from "../../../util/helpers";
@@ -39,10 +39,10 @@ export class CommentHandler extends Disposable {
        const allCommentsState = commentState.fork(this);
        const currentSelection = selectionState.fork(this);
 
-       const handleComments = (currentComments: Record<string, CellComment>, update?: UpdateLike<Record<string, CellComment>>) => {
+       const handleComments = (currentComments: Record<string, CellComment>, updateResult?: UpdateResult<Record<string, CellComment>>) => {
            // console.log("comments changed:", currentComments, oldComments)
-           const removed = update?.removedKeys ?? [];
-           const added = update?.changedKeys || Object.keys(currentComments);
+           const removed = Object.keys(updateResult?.removedValues ?? {});
+           const added = updateResult ? Object.keys(updateResult?.addedValues ?? {}) : Object.keys(currentComments);
 
            // first pass to update range of existing roots:
            Object.keys(this.commentRoots).forEach(rootId => {
@@ -81,7 +81,7 @@ export class CommentHandler extends Disposable {
            });
 
            removed.forEach(commentId => {
-               const removedComment = update?.removedValues?.[commentId];
+               const removedComment = updateResult?.removedValues?.[commentId];
                if (removedComment) {
                    const maybeRoot = this.commentRoots[removedComment.uuid];
                    if (maybeRoot && maybeRoot.uuid === commentId) {
@@ -96,7 +96,7 @@ export class CommentHandler extends Disposable {
                    }
                } else {
                    // this means something is implemented wrong in the update that was used
-                   console.warn("A comment was removed, but it couldn't be retrieved from update.removedValues.", update);
+                   console.warn("A comment was removed, but it couldn't be retrieved from update.removedValues.", updateResult);
                }
            });
 
@@ -110,7 +110,7 @@ export class CommentHandler extends Disposable {
            })
        }
        handleComments(allCommentsState.state)
-       allCommentsState.addObserver((current, update) => handleComments(current, update));
+       allCommentsState.addObserver((current, updateResult) => handleComments(current, updateResult));
 
        const handleSelection = (currentSelection?: PosRange) => {
            const model = editor.getModel();
@@ -242,12 +242,12 @@ class CommentRoot extends MonacoRightGutterOverlay {
 
         const newComment = new NewComment(allCommentsState, () => this.range);
 
-        const handledChangedComments = (maybeChildren: Record<string, CellComment>, update?: UpdateLike<Record<string, CellComment>>) => {
+        const handledChangedComments = (maybeChildren: Record<string, CellComment>, updateResult?: UpdateResult<Record<string, CellComment>>) => {
             const children = this.rootChildren(maybeChildren)
-            const removedIds = update?.removedKeys ?? [];
-            const changedIds = update?.changedKeys ?? Object.keys(maybeChildren);
+            const removedIds = Object.keys(updateResult?.removedValues ?? {});
+            const changedIds = updateResult ? UpdateResult.addedOrChangedKeys(updateResult) : Object.keys(maybeChildren);
             // check if any child has changed
-            if (update === undefined || removedIds.length > 0 || changedIds.length > 0) {
+            if (updateResult === undefined || removedIds.length > 0 || changedIds.length > 0) {
                 // replace all the children. if this causes perf issues, we will need to do something more granular.
                 commentList.innerHTML = "";
                 commentList.appendChild(this.rootComment.el);
@@ -277,7 +277,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         }
 
         handledChangedComments(this.allCommentsState.state)
-        allCommentsState.addObserver((curr, update) => handledChangedComments(curr, update))
+        allCommentsState.addObserver((curr, updateResult) => handledChangedComments(curr, updateResult))
 
         if (this.visible) {
             newComment.text.focus()
@@ -493,8 +493,8 @@ class Comment extends Disposable {
         })
 
         this.el = this.commentElement(this.commentState.state);
-        this.commentState.addObserver((curr, update) => {
-            if (this.editing && arrExists(update.changedKeys, key => key !== 'range')) {
+        this.commentState.addObserver((curr, updateResult) => {
+            if (this.editing && arrExists(UpdateResult.addedOrChangedKeys(updateResult), key => key !== 'range')) {
                 this.setComment(curr)
             }
         })

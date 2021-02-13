@@ -90,9 +90,9 @@ export class CellContainer extends Disposable {
         this.cell = this.cellFor(cellState.state.language);
         this.el = div(['cell-component'], [this.cell.el]);
         this.el.click(evt => this.cell.doSelect());
-        cellState.view("language").addObserver((newLang, update) => {
+        cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
-            if (update.oldValue && (update.oldValue === "text" || newLang === "text")) {
+            if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
                 const newCell = this.cellFor(newLang)
                 newCell.replace(this.cell).then(cell => {
                     this.cell = cell
@@ -101,7 +101,7 @@ export class CellContainer extends Disposable {
             }
         });
 
-        ServerStateHandler.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
+        ServerStateHandler.view("connectionStatus").addObserver(currentStatus => {
             if (currentStatus === "disconnected") {
                 this.cell.setDisabled(true)
             } else {
@@ -498,13 +498,13 @@ export class CodeCell extends Cell {
         updateMetadata(this.state.metadata);
         cellState.observeKey("metadata", metadata => updateMetadata(metadata));
 
-        cellState.observeKey("content", (content, update, src) => {
+        cellState.observeKey("content", (content, updateResult, src) => {
             if (src === this)   // ignore edits that originated from monaco
                 return;
 
-            const edits = purematch<UpdateLike<string>, ContentEdit[]>(update)
+            const edits = purematch<UpdateLike<string>, ContentEdit[]>(updateResult.update)
                 .when(EditString, edits => edits)
-                .whenInstance(SetValue, update => update.oldValue ? diffEdits(update.oldValue as string, update.value as string) : [])
+                .whenInstance(SetValue, update => updateResult.oldValue ? diffEdits(updateResult.oldValue as string, update.value as string) : [])
                 .otherwiseThrow
 
             if (edits && edits.length > 0) {
@@ -617,8 +617,8 @@ export class CodeCell extends Cell {
             }
         }
         cellState.state.presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
-        cellState.observeKey("presence", (newPresence, update) => {
-            const removed = Object.values(update.removedValues ?? {})
+        cellState.observeKey("presence", (newPresence, updateResult) => {
+            const removed = Object.values(updateResult.removedValues ?? {})
 
             removed.forEach(p => {
                 if (p) {
@@ -630,10 +630,10 @@ export class CodeCell extends Cell {
                 }
             })
 
-            const changed = update.changedValues(newPresence);
+            const changed = updateResult.fieldUpdates || {}
             for (const key in changed) {
                 if (changed.hasOwnProperty(key) && changed[key]) {
-                    const p = changed[key];
+                    const p = changed[key].newValue;
                     updatePresence(p.id, p.name, p.color, p.range);
                 }
             }

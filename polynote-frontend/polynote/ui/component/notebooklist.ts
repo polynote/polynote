@@ -143,7 +143,7 @@ export class NotebookList extends Disposable {
         const serverStateHandler = ServerStateHandler.get.fork(this);
 
         // disable the entire notebook list when disconnected from the server
-        serverStateHandler.observeKey("connectionStatus", (currentStatus, update) => {
+        serverStateHandler.observeKey("connectionStatus", currentStatus => {
             if (currentStatus === "disconnected") {
                 this.el.classList.add("disabled")
                 this.header.classList.add("disabled")

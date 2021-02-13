@@ -1,7 +1,7 @@
 import WS from "jest-websocket-mock";
 import {__testExports, SocketSession} from "./comms";
 import {superSecretKey} from "../../jest.setup";
-import {KeepAlive, LoadNotebook, Message} from "../data/messages";
+import {KeepAlive, LoadNotebook, Message, CancelTasks} from "../data/messages";
 
 const wsUrl = __testExports["wsUrl"];
 const closeAll = __testExports["closeAll"];
@@ -158,6 +158,45 @@ describe("SocketSession", () => {
         server.error()
 
         await onError.then((err: CustomEvent) => expect(err.detail.cause).toBeDefined())
+
+    })
+
+    describe("notifies listeners", () => {
+        test("messageListener", async () => {
+            const server = new WS('ws://localhost/socket');
+            const client = createClient("socket")
+            await server.connected
+
+            const onMessage = new Promise<string>(resolve => client.addMessageListener(CancelTasks, (payload) => {
+                resolve(payload);
+            }));
+
+            server.send(Message.encode(new CancelTasks("it's the path")));
+
+            const resolved = await onMessage;
+
+            expect(resolved).toEqual("it's the path");
+        })
+
+        test("instanceListener", async () => {
+            const server = new WS('ws://localhost/socket');
+            const client = createClient("socket")
+            await server.connected
+
+            const onOtherTask = jest.fn();
+            client.addInstanceListener(LoadNotebook, onOtherTask);
+            const onCancelTasks = new Promise<Message>(resolve => client.addInstanceListener(CancelTasks, (msg) => {
+                resolve(msg);
+            }));
+
+            const msg = new CancelTasks("it's the path");
+            server.send(Message.encode(msg));
+
+            const resolved = await onCancelTasks;
+
+            expect(resolved).toEqual(msg);
+            expect(onOtherTask).toHaveBeenCalledTimes(0);
+        })
 
     })
 })

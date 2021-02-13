@@ -32,21 +32,40 @@ export class SocketSession {
             const removeWhenFalse = handler[2];
 
             if (msg instanceof msgType) { // check not redundant even though IntelliJ complains.
-                listenerCB.apply(null, msgType.unapply(msg));
+                const result = listenerCB(msg) as void | boolean;
+                if (removeWhenFalse && (result === false || result === undefined)) {
+                    this.removeMessageListener(handler);
+                }
             }
         }
     })
 
     public messageListeners: MessageListener[] = [];
     public addMessageListener = jest.fn(<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (...args: ConstructorParameters<typeof msgType>) => void, removeWhenFalse: boolean = false) => {
+        const handler: MessageListener = [msgType,
+            (inst: M) => fn(...msgType.unapply(inst) as ConstructorParameters<typeof msgType>),
+            removeWhenFalse];
+        this.messageListeners.push(handler);
+        return handler;
+    });
+
+    public addInstanceListener = jest.fn(<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (inst: M) => void, removeWhenFalse: boolean = false) => {
         const handler: MessageListener = [msgType, fn, removeWhenFalse];
         this.messageListeners.push(handler);
         return handler;
     });
 
+    public removeMessageListener = jest.fn((handler: MessageListener) => {
+        const index = this.messageListeners.indexOf(handler);
+        if (index >= 0) {
+            this.messageListeners.splice(index, 1);
+        }
+    });
+
     public handleMessage = this.send
 
     public addEventListener = jest.fn();
+    public removeEventListener = jest.fn();
     public reconnect = jest.fn();
     public close = jest.fn();
 }

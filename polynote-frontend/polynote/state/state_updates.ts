@@ -1,80 +1,172 @@
 import {deepCopy, diffArray, partition} from "../util/helpers";
 import {ContentEdit} from "../data/content_edit";
-import {Latch, Partial1} from "./state_handler";
+import {Latch} from "./state_handler";
 import {__getProxyTarget} from "./readonly";
 
 export interface UpdateLike<S> {
     // Sentinel field so we can distinguish an update from a value
     isStateUpdate: true
 
-    // Return a new (deep) copy of the given value with the update applied
-    apply(prev: S): S
-
     // Apply the update to the given value, mutating in-place if possible. Return the updated value, and indicate using
     // the given latch whether a change was made.
-    applyMutate(value: S, latch?: Latch): S
+    applyMutate(value: S): UpdateResult<S>
+}
 
-    // A list of keys that this update removed from an object (if applicable)
-    removedKeys: (keyof S)[]
+
+// Partial<V[]> confuses TypeScript – TS thinks it has iterators and array methods and such.
+// This is to avoid that.
+export type Partial1<S> = S extends (infer V)[] ? Record<number, V> : Partial<S>;
+
+// Types for expressing a mapping of keys to update results for those keys' values
+export type ObjectFieldUpdates<S> = {
+    [K in keyof S]?: UpdateResult<S[K]>;
+}
+
+export type FieldUpdates<S> = S extends (infer V)[] ? Record<number, UpdateResult<V>> : ObjectFieldUpdates<S>;
+
+export interface UpdateResult<S> {
+    update: UpdateLike<S>
+    newValue: S
+
+    // if S is a primitive, the previous value.
+    oldValue?: S
 
     // A dict of values that this update removed from an object (if applicable)
     removedValues?: Partial1<S>
 
-    // A list of keys that this update added or changed in an object (if applicable)
-    changedKeys: (keyof S)[]
+    // A dict of values that this update added to the object (if applicable)
+    addedValues?: Partial1<S>
 
-    // A dict of values that this update added or changed in an object (if applicable)
-    changedValues(value: S): Partial1<S>
-
-    // The previous value, if S is a primitive and the old value is available
-    oldValue?: S
-
-    // Given a key of S, return an update that corresponds to the change this update would make to that key (or NoUpdate that key is unaffected)
-    down<K extends keyof S, V extends S[K] = S[K]>(key: K, of: S): StateUpdate<V>
-
-    // Set the context value of the update, before it is applied
-    forValue(oldValue: S): UpdateLike<S>
+    // A dict of child updates to fields of this object
+    fieldUpdates?: FieldUpdates<S>
 }
+
+export const UpdateResult = Object.freeze({
+    addedOrChangedKeys<S>(result: UpdateResult<S>): (keyof S)[] {
+        const updated: (keyof S)[] = [];
+        if (!result.fieldUpdates)
+            return updated;
+        if (!result.removedValues)
+            return Object.keys(result.fieldUpdates) as (keyof S)[];
+
+        for (const prop in result.fieldUpdates) {
+            if (result.fieldUpdates.hasOwnProperty(prop) && !(prop in result.removedValues))
+                updated.push(prop as any as keyof S)
+        }
+        return updated;
+    },
+
+    addedOrChangedValues<V, S extends Record<any, V> | V[]>(result: UpdateResult<S>): Partial1<S> {
+        const updated: Partial1<S> = {} as Partial1<S>;
+        if (!result.fieldUpdates)
+            return updated;
+
+        for (const prop in result.fieldUpdates) {
+            if (result.fieldUpdates.hasOwnProperty(prop) && !((result.fieldUpdates as any)[prop].update instanceof Destroy)) {
+                (updated as any)[prop] = ((result.fieldUpdates as any)[prop] as V)
+            }
+        }
+        return updated;
+    }
+})
 
 export type StateUpdate<S> = UpdateLike<S>;
 
 export abstract class Update<S> implements UpdateLike<S> {
     readonly isStateUpdate: true = true
 
-    apply(prev: S): S {
-        const newState = deepCopy(prev);
-        this.applyMutate(newState);
-        return newState;
-    }
-
-    abstract applyMutate(value: S, latch?: Latch): S
-    abstract get removedKeys(): (keyof S)[]
-    abstract get changedKeys(): (keyof S)[]
-    abstract down<K extends keyof S, V extends S[K] = S[K]>(key: K, of: S): StateUpdate<V>
-    abstract forValue(value: S): UpdateLike<S>
-
-    changedValues(value: S): Partial1<S> {
-
-        const changed = (value instanceof Array ? [] : {}) as Partial<S>;
-        Object.setPrototypeOf(changed, Object.getPrototypeOf(value));
-        for (const key of this.changedKeys) {
-            changed[key] = value[key];
-        }
-        return changed as Partial1<S>;
-    }
+    abstract applyMutate(value: S): UpdateResult<S>
 }
 
 export const NoUpdate = Object.freeze({
     isStateUpdate: true,
-    apply(prev: any): any { return prev; },
-    applyMutate(prev: any): any { return prev },
-    removedKeys: [],
-    changedKeys: [],
-    down<K extends keyof any>(key: K, of: any) { return NoUpdate },
-    pathMatches(listenerPath: string, basePath: string) { return false },
-    forValue(value: any): typeof NoUpdate { return NoUpdate },
-    changedValues(value: any): Partial<any> { return {} }
+    applyMutate(prev: any): UpdateResult<any> { return { update: NoUpdate, newValue: prev } }
 }) as UpdateLike<any>;
+
+function noChange<S>(value: S): UpdateResult<S> {
+    return { update: NoUpdate, newValue: value }
+}
+
+function destroyed<S>(value: S): UpdateResult<S> {
+    return { update: Destroy.Instance, newValue: undefined as any as S, oldValue: value, fieldUpdates: AllDestroyedUpdates as FieldUpdates<S> }
+}
+
+function setTo<S>(value: S, oldValue?: S): UpdateResult<S> {
+    if (oldValue === value)
+        return { update: NoUpdate, newValue: value };
+    return { update: setValue(value), newValue: value, oldValue };
+}
+
+export function childResult<S, K extends keyof S, V extends S[K] = S[K]>(result: UpdateResult<S>, key: K): UpdateResult<V> {
+    const fieldUpdate: UpdateResult<S[K]> | undefined = (result.fieldUpdates as ObjectFieldUpdates<S>)?.[key];
+    if (fieldUpdate) {
+        return fieldUpdate as UpdateResult<V>;
+    }
+
+    if (result.update instanceof SetValue) {
+        return setTo(result.newValue[key], result.oldValue?.[key]) as UpdateResult<V>;
+    }
+
+    if (result.update instanceof Destroy) {
+        return destroyed<S[K] | undefined>(result.oldValue?.[key]) as UpdateResult<V>;
+    }
+
+    return noChange(result.newValue[key]) as UpdateResult<V>;
+}
+
+const AllDestroyedUpdates: FieldUpdates<any> = new Proxy({}, {
+    get(target: {}, p: PropertyKey, receiver: any): UpdateResult<any> {
+        return {
+            update: Destroy.Instance,
+            newValue: undefined,
+            fieldUpdates: AllDestroyedUpdates
+        }
+    }
+})
+
+/**
+ * A proxy which lazily answers questions about field updates in an array.
+ * This is to avoid eagerly filling up a structure with updates, when they might not even be accessed.
+ * @param arr        The (mutated) array
+ * @param minIdx     The first index affected by the change
+ * @param maxIdx     The last index affected by the change
+ * @param indexShift By how much the values in the array between those two indices shifted.
+ */
+function arrayFieldUpdates<V>(arr: V[], minIdx: number, maxIdx: number, indexShift: number): FieldUpdates<V[]> {
+    const dict: Record<number, UpdateResult<V>> = {};
+    let enumerated: PropertyKey[] | undefined = undefined;
+    const enumerate = (target: Record<number, UpdateResult<V>>): PropertyKey[] => {
+        if (enumerated === undefined) {
+            enumerated = [];
+            for (let i = minIdx; i <= maxIdx; i++) {
+                enumerated.push(i.toString(10));
+            }
+        }
+        return enumerated;
+    }
+    return new Proxy(dict, {
+        get(target: Record<number, UpdateResult<V>>, idx: number, receiver: any): UpdateResult<V> {
+            if (idx >= minIdx && idx <= maxIdx) {
+                if (!target[idx]) {
+                    const oldValue = arr[idx - indexShift];
+                    const newValue = arr[idx];
+                    target[idx] = {
+                        update: setValue(newValue),
+                        newValue,
+                        oldValue
+                    }
+                }
+                return target[idx];
+            }
+            return noChange(arr[idx]);
+        },
+        has(target: Record<number, UpdateResult<V>>, idx: number): boolean {
+            return idx >= minIdx && idx <= maxIdx;
+        },
+        enumerate: enumerate,
+        ownKeys: enumerate
+    })
+}
 
 export class RemoveKey<S, K extends keyof S> extends Update<S> {
     constructor(readonly key: K, private _value?: S[K]) { super() }
@@ -85,33 +177,21 @@ export class RemoveKey<S, K extends keyof S> extends Update<S> {
 
     get value(): S[K] | undefined { return this._value }
 
-    applyMutate(value: S, latch?: Latch): S {
-        if (this.key in value)
-            latch?.trigger();
+    applyMutate(value: S): UpdateResult<S> {
+        if (value === null || value === undefined || !(this.key in value))
+            return noChange(value);
+        const oldValue: S[K] = value[this.key];
         delete value[this.key];
-        return value;
-    }
-
-    get removedKeys(): (keyof S)[] {
-        return [this.key]
-    }
-
-    get removedValues(): Partial1<S> {
-        return {[this.key]: this._value} as Partial1<S>;
-    }
-
-    get changedKeys(): (keyof S)[] { return [] };
-
-    down<K1 extends keyof S, V extends S[K1] = S[K1]>(key: K1, of: S): StateUpdate<V> {
-        if (key as any === this.key) {
-            return destroy()
-        }
-        return NoUpdate
-    }
-
-    forValue(value: S): this {
-        this._value = value[this.key];
-        return this;
+        return {
+            update: this,
+            newValue: value,
+            removedValues: {
+                [this.key]: oldValue
+            } as Partial1<S>,
+            fieldUpdates: {
+                [this.key]: destroyed(oldValue)
+            } as FieldUpdates<S>
+        };
     }
 }
 
@@ -120,27 +200,19 @@ export class UpdateKey<S, K extends keyof S> extends Update<S> {
 
     get update(): UpdateLike<S[K]> { return this._update; }
 
-    applyMutate(value: S, latch?: Latch): S {
-        value[this.key] = this._update.applyMutate(value[this.key], latch?.down());
-        return value;
-    }
+    applyMutate(value: S): UpdateResult<S> {
+        const childResult: UpdateResult<S[K]> = this._update.applyMutate(value[this.key]);
+        if (childResult.update === NoUpdate)
+            return noChange(value);
 
-    readonly removedKeys: (keyof S)[] = [];
-    get changedKeys(): (keyof S)[] { return [this.key] }
-
-    down<K1 extends keyof S, V extends S[K1] = S[K1]>(key: K1, of: S): StateUpdate<V> {
-        if (key as any === this.key) {
-            return this._update as any as StateUpdate<V>;
-        }
-        return NoUpdate;
-    }
-
-    forValue(value: S): UpdateLike<S> {
-        this._update = this._update.forValue(value[this.key]);
-        if (this._update === NoUpdate) {
-            return NoUpdate;
-        }
-        return this;
+        value[this.key] = childResult.newValue;
+        return {
+            update: this,
+            newValue: value,
+            fieldUpdates: {
+                [this.key]: childResult
+            } as FieldUpdates<S>
+        };
     }
 
 }
@@ -154,33 +226,25 @@ export class RemoveValue<V> extends Update<V[]> {
 
     get index(): number { return this._index; }
 
-    applyMutate(value: V[], latch?: Latch): V[] {
-        if (value[this.index] !== this.value) {
+    applyMutate(arr: V[]): UpdateResult<V[]> {
+        const idx = this._index;
+        const len = arr.length;
+        if (arr[idx] !== this.value) {
             throw new Error("RemoveValue is no longer valid as array has changed");
         }
-        latch?.trigger();
-        value.splice(this.index, 1);
-        return value;
-    }
 
-    get removedKeys(): (keyof V[])[] { return [this.index] }
-    get removedValues(): Partial1<V[]> {
-        return {[this._index]: this.value} as Partial1<V[]>;
-    }
-    get changedKeys(): (keyof V[])[] { return [] }
-    down<K extends keyof V[], V1 extends V[][K] = V[][K]>(key: K, of: V[]): StateUpdate<V1> {
-        if (key === this.index) {
-            return destroy()
-        }
-        return NoUpdate
-    }
+        arr.splice(idx, 1);
 
-    forValue(value: V[]): this {
-        const idx = value.indexOf(this.value);
-        if (idx >= -1) {
-            this._index = idx;
-        }
-        return this;
+        return {
+            update: this,
+            newValue: arr,
+            removedValues: {
+                [this.index]: this.value
+            },
+            get fieldUpdates() {
+                return arrayFieldUpdates(arr, idx, len, -1)
+            }
+        };
     }
 }
 
@@ -193,85 +257,53 @@ export class InsertValue<V> extends Update<V[]> {
 
     get targetIndex(): number { return this._targetIndex! }
 
-    applyMutate(value: V[], latch?: Latch): V[] {
-        latch?.trigger();
-        if (value === undefined) {
-            value = [];
+    applyMutate(arr: V[]): UpdateResult<V[]> {
+        if (arr === undefined) {
+            arr = [];
         }
 
-        if (this.targetIndex) {
-            value.splice(this.targetIndex, 0, this.value);
+        const targetIndex = this.targetIndex ?? arr.length;
+        if (this._targetIndex) {
+            arr.splice(this.targetIndex, 0, this.value);
         } else {
-            this._targetIndex = value.length;
-            value.push(this.value);
+            this._targetIndex = arr.length;
+            arr.push(this.value);
         }
-        return value;
-    }
 
-    get removedKeys(): (keyof V[])[] { return [] };
-    get changedKeys(): (keyof V[])[] { return [this.targetIndex] };
-
-    down<K extends keyof V[], V1 extends V[][K] = V[][K]>(key: K, of: V[]): StateUpdate<V1> {
-        if (key === this.targetIndex) {
-            return setValue<V1>(of[this.targetIndex] as V1)
-        }
-        return NoUpdate;
-    }
-
-    forValue(value: V[]): this {
-        return this;
+        return {
+            update: this,
+            newValue: arr,
+            addedValues: {
+                [targetIndex]: this.value
+            },
+            get fieldUpdates() {
+                return arrayFieldUpdates(arr, targetIndex, arr.length, 1)
+            }
+        };
     }
 }
 
 export class MoveArrayValue<V> extends Update<V[]> {
-    private arraySize?: number;
-    private _oldValue?: V[];
+    constructor(readonly fromIndex: number, readonly toIndex: number) { super(); }
 
-    get oldValue(): V[] | undefined {
-        return this._oldValue;
+    static unapply<V>(inst: MoveArrayValue<V>): ConstructorParameters<typeof MoveArrayValue> {
+        return [inst.fromIndex, inst.toIndex]
     }
 
-    constructor(readonly fromIndex: number, readonly toIndex: number) {
-        super();
+    applyMutate(arr: V[]): UpdateResult<V[]> {
+        const minIdx = Math.min(this.fromIndex, this.toIndex);
+        const maxIdx = Math.max(this.fromIndex, this.toIndex);
+        const elem = arr.splice(this.fromIndex, 1)[0];
+        arr.splice(this.toIndex, 0, elem);
+        return {
+            update: this,
+            newValue: arr,
+            get fieldUpdates() {
+                return arrayFieldUpdates(arr, minIdx, maxIdx, 1)
+            }
+        };
     }
 
-    applyMutate(value: V[], latch: Latch | undefined): V[] {
-        latch?.trigger();
-        const elem = value.splice(this.fromIndex, 1)[0];
-        value.splice(this.toIndex, 0, elem);
-        return value;
-    }
-
-    get changedKeys(): (keyof V[])[] {
-        const minChangedIndex = Math.min(this.fromIndex, this.toIndex);
-        const maxChangedIndex = this.arraySize !== undefined ? this.arraySize - 1 : minChangedIndex;
-        const result: number[] = [];
-        for (let i = minChangedIndex; i <= maxChangedIndex; i++) {
-            result.push(i);
-        }
-        return result;
-    }
-
-    down<K extends keyof V[], V1 extends V[][K]>(key: K, of: V[]): StateUpdate<V1> {
-        const idx = parseInt((key as any).toString(), 10);
-        if (idx >= Math.min(this.fromIndex, this.toIndex)) {
-            const update = setValue<V1, V1>(of[key] as V1);
-            if (this._oldValue)
-                return update.forValue(this._oldValue?.[key] as V1);
-            return update;
-        }
-        return NoUpdate;
-    }
-
-    forValue(oldValue: V[]): this {
-        this.arraySize = oldValue.length;
-        this._oldValue = [...oldValue];
-        return this;
-    }
-
-    get removedKeys(): (keyof V[])[] {
-        return [];
-    }
 }
 
 export class RenameKey<S, K0 extends keyof S, K1 extends keyof S, V extends S[K0] & S[K1]> extends Update<S> {
@@ -281,153 +313,157 @@ export class RenameKey<S, K0 extends keyof S, K1 extends keyof S, V extends S[K0
         return [inst.oldKey, inst.newKey];
     }
 
-    applyMutate(value: S, latch?: Latch): S {
-        value[this.newKey] = value[this.oldKey] as V;
-        delete value[this.oldKey];
-        latch?.trigger();
-        return value;
-    }
-
-    // TODO: this could just rename the view instead of disposing it
-    get removedKeys(): (keyof S)[] {
-        return [this.oldKey];
-    }
-
-    get changedKeys(): (keyof S)[] {
-        return [this.newKey];
-    }
-
-    down<K1 extends keyof S, V extends S[K1] = S[K1]>(key: K1, of: S): StateUpdate<V> {
-        if ((key as any) === this.oldKey) {
-            return destroy();
-        } else if ((key as any) === this.newKey) {
-            return new SetValue(of[key] as V);
-        }
-        return NoUpdate;
-    }
-
-    forValue(value: S): StateUpdate<S> {
-        if (value instanceof Array && typeof this.oldKey === 'number' && typeof this.newKey === 'number') {
-            const move = new MoveArrayValue(this.oldKey, this.newKey) as any as StateUpdate<S>;
-            return move.forValue(value);
-        }
-        return this;
+    applyMutate(obj: S): UpdateResult<S> {
+        const value: V = obj[this.oldKey] as V;
+        obj[this.newKey] = value;
+        delete obj[this.oldKey];
+        return {
+            update: this,
+            newValue: obj,
+            removedValues: {
+                [this.oldKey]: value
+            } as Partial1<S>,
+            addedValues: {
+                [this.newKey]: value
+            } as Partial1<S>,
+            fieldUpdates: {
+                [this.oldKey]: destroyed(value),
+                [this.newKey]: setTo(value)
+            } as FieldUpdates<S>
+        };
     }
 }
 
 export class Destroy<S> extends Update<S | undefined> {
-    constructor(readonly oldValue?: S) { super() }
+    constructor() { super() }
     static Instance: Destroy<any> = new Destroy();
 
     static unapply<S>(inst: Destroy<S>): ConstructorParameters<typeof Destroy> {
-        return [inst.oldValue]
+        return []
     }
 
-    applyMutate(value: S | undefined, latch?: Latch): S | undefined {
-        if (value !== undefined) {
-            latch?.trigger();
+    applyMutate(value: S | undefined): UpdateResult<S | undefined> {
+        return {
+            update: Destroy.Instance,
+            newValue: undefined,
+            oldValue: value,
+            fieldUpdates: AllDestroyedUpdates as FieldUpdates<S>
         }
-        return undefined
-    }
-
-    get removedKeys(): never[] { return [] }
-    get changedKeys(): never[] { return [] }
-
-    // @ts-ignore
-    down<K1 extends keyof (S | undefined), V extends S[K1] = S[K1]>(key: K1, of: S | undefined): StateUpdate<V> {
-        // @ts-ignore
-        return this.oldValue === undefined ? Destroy.Instance : new Destroy(this.oldValue[key])
-    }
-
-    forValue(value: S | undefined): UpdateLike<S | undefined> {
-        // @ts-ignore
-        return new Destroy(value)
     }
 }
 
-export class SetValue<S> extends Update<S> {
-    private _removedKeys: (keyof S)[] = [];
-    private _changedKeys: (keyof S)[] = [];
-    private _removedValues?: Partial<S>;
+type PartialKeySet<S> = {
+    [K in keyof S]?: true
+}
 
-    constructor(readonly value: S, private _oldValue?: S) {
+function objectDiffUpdates<S extends object>(update: UpdateLike<S>, oldObj: S, newObj: S): UpdateResult<S> {
+    // if we set the value of an object state, find the keys that changed
+    // this is done lazily, because the diff might not be used.
+
+    let removedValues: Partial<S> | undefined = undefined;
+    let addedValues: Partial<S> | undefined = undefined;
+    let fieldUpdates: ObjectFieldUpdates<S> | undefined = undefined;
+
+    function compute() {
+        removedValues = {};
+        addedValues = {};
+
+        if (!oldObj)
+            oldObj = {} as any as S;
+
+        if (!newObj)
+            newObj = {} as any as S;
+
+        const updatedKeys: PartialKeySet<S> = {};
+
+        for (const oldKey in oldObj) {
+            if (oldObj.hasOwnProperty(oldKey)) {
+                if (!newObj.hasOwnProperty(oldKey)) {
+                    removedValues[oldKey] = oldObj[oldKey];
+                    updatedKeys[oldKey] = true;
+                } else if (oldObj[oldKey] !== newObj[oldKey]) {
+                    updatedKeys[oldKey] = true;
+                }
+            }
+        }
+
+        for (const newKey in newObj) {
+            if (newObj.hasOwnProperty(newKey)) {
+                if (!oldObj.hasOwnProperty(newKey)) {
+                    addedValues[newKey] = newObj[newKey];
+                    updatedKeys[newKey] = true;
+                } else if (oldObj[newKey] !== newObj[newKey]) {
+                    updatedKeys[newKey] = true;
+                }
+            }
+        }
+
+        fieldUpdates = new Proxy({} as ObjectFieldUpdates<S>, {
+            enumerate(target: ObjectFieldUpdates<S>): PropertyKey[] {
+                return Object.keys(updatedKeys);
+            },
+            ownKeys(target: ObjectFieldUpdates<S>): PropertyKey[] {
+                return Object.keys(updatedKeys);
+            },
+            has(target: ObjectFieldUpdates<S>, p: PropertyKey): boolean {
+                return p in updatedKeys
+            },
+            get<P extends keyof S>(target: ObjectFieldUpdates<S>, p: P, receiver: any): UpdateResult<S[P]> {
+                if (p in updatedKeys && !target[p]) {
+                    if (p in removedValues!) {
+                        target[p] = destroyed(oldObj[p]) as UpdateResult<S[P]>
+                    } else if (typeof newObj[p] === 'object' || typeof oldObj[p] === 'object') {
+                        // @ts-ignore – it can't handle the "extends object" of objectDiffUpdates
+                        target[p] = objectDiffUpdates(setValue(newObj[p]), oldObj[p], newObj[p])
+                    } else {
+                        target[p] = {
+                            update: setValue(newObj[p]),
+                            newValue: newObj[p],
+                            oldValue: oldObj[p]
+                        }
+                    }
+                }
+                return target[p]!;
+            }
+        })
+    }
+
+    return {
+        update,
+        newValue: newObj,
+        get removedValues() {
+            if (!removedValues)
+                compute();
+            return removedValues as Partial1<S>
+        },
+        get addedValues() {
+            if (!addedValues)
+                compute();
+            return addedValues as Partial1<S>
+        }
+    }
+
+}
+
+export class SetValue<S> extends Update<S> {
+    constructor(readonly value: S) {
         super()
     }
 
     // TODO: Extractable seems to be problematic on parametric data classes when primitive types are involved.
-    static unapply<T>(inst: SetValue<T>): ConstructorParameters<typeof SetValue> { return [inst.value, inst.oldValue ] }
+    static unapply<T>(inst: SetValue<T>): ConstructorParameters<typeof SetValue> { return [inst.value] }
 
-    applyMutate(value: S, latch?: Latch): S {
-        if (value !== this.value) {
-            latch?.trigger();
-        }
-        return this.value
-    }
-
-    get oldValue() { return this._oldValue }
-
-    get removedKeys(): (keyof S)[] { return this._removedKeys };
-    get removedValues(): Partial1<S> | undefined { return this._removedValues as Partial1<S> }
-    get changedKeys(): (keyof S)[] { return this._changedKeys };
-
-    down<K1 extends keyof S, V extends S[K1] = S[K1]>(key: K1, of: S): StateUpdate<V> {
-        const oldMember: S[K1] | undefined = this._oldValue?.[key];
-        const setMember = new SetValue(this.value[key] as V, oldMember as (V | undefined));
-        if (oldMember !== undefined) {
-            return setMember.forValue(oldMember as V)
-        }
-        return setMember
-    }
-
-    forValue(oldValue: S): UpdateLike<S> {
+    applyMutate(oldValue: S): UpdateResult<S> {
         if (oldValue === this.value) {
-            return NoUpdate
+            return noChange(oldValue);
+        } else if (typeof oldValue === 'object' || typeof this.value === 'object') {
+            // @ts-ignore – it can't realize that S must extend object
+            return objectDiffUpdates<S>(this, oldValue, this.value);
+        } else return {
+            update: this,
+            newValue: this.value,
+            oldValue: oldValue
         }
-
-        this._oldValue = oldValue;
-
-
-        // if we set the value of an object state, find the keys that changed
-        const oldType = typeof oldValue;
-        const newType = typeof this.value;
-        if (newType === 'object') {
-            if (oldValue === null) {
-                this._changedKeys = Object.keys(this.value) as (keyof S)[];
-                return this;
-            }
-
-            const changed: Record<keyof S, boolean> = {} as Record<keyof S, boolean>;
-            const newKeys = Object.keys(this.value) as (keyof S)[];
-            if (oldType === 'object') {
-                const oldKeys = Object.keys(oldValue) as (keyof S)[];
-                const [_, removed] = diffArray(newKeys, oldKeys);
-
-                for (const prop of newKeys) {
-                    const key = prop as keyof S;
-                    if (this.value[key] !== oldValue[key]) {
-                        changed[key] = true;
-                    }
-                }
-
-                this._changedKeys = Object.keys(changed) as (keyof S)[];
-                this._removedKeys = removed;
-
-                this._removedValues = {};
-                for (const prop of this._removedKeys) {
-                    this._removedValues[prop] = oldValue[prop]
-                }
-            } else {
-                this._changedKeys = newKeys;
-                this._removedKeys = [];
-                this._removedValues = {};
-            }
-        } else if (oldType === 'object' && oldValue !== null) {
-            this._changedKeys = Object.keys(oldValue) as (keyof S)[];
-            this._removedKeys = [];
-            this._removedValues = {};
-        }
-
-        return this;
     }
 }
 
@@ -438,31 +474,20 @@ export class EditString extends Update<string> {
 
     static unapply(inst: EditString): ConstructorParameters<typeof EditString> { return [inst.edits] }
 
-    applyMutate(value: string, latch: Latch | undefined): string {
-        let result = value;
-        if (this.edits.length && latch) {
-            latch.trigger();
+    applyMutate(value: string): UpdateResult<string> {
+        if (this.edits.length === 0) {
+            return noChange(value);
         }
+
+        let result = value;
         for (let i = 0; i < this.edits.length; i++) {
             result = this.edits[i].apply(result);
         }
-        return result;
-    }
-
-    get changedKeys(): (keyof string)[] {
-        return [];
-    }
-
-    get removedKeys(): (keyof string)[] {
-        return [];
-    }
-
-    down<K, V>(key: K, of: string): StateUpdate<V> {
-        return NoUpdate;
-    }
-
-    forValue(value: string): UpdateLike<string> {
-        return this;
+        return {
+            update: this,
+            newValue: result,
+            oldValue: value
+        };
     }
 }
 
@@ -484,78 +509,62 @@ function isUpdatePartial<S>(value: UpdateOf<S>): value is UpdatePartial<S> {
 class UpdateWith<S> extends Update<S> {
     constructor(readonly fieldUpdates: UpdateOf<S>, private _removedValues: Partial<S> = {}) {
         super()
-        if (typeof fieldUpdates === 'object') {
-            const [removed, added] = partition(Object.keys(fieldUpdates), (k) => (fieldUpdates as any)[k] instanceof Destroy)
-            this.removedKeys = removed as (keyof S)[];
-            this.changedKeys = added as (keyof S)[];
-        }
     }
 
-    readonly changedKeys: (keyof S)[];
-    readonly removedKeys: (keyof S)[];
-    get removedValues(): Partial1<S> {
-        return this._removedValues as Partial1<S>;
-    }
+    applyMutate(oldValue: S): UpdateResult<S> {
+        let fieldUpdateResults: ObjectFieldUpdates<S> | undefined = undefined;
+        let addedValues: Partial<S> | undefined = undefined;
+        let removedValues: Partial<S> | undefined = undefined;
+        let anyChanged: boolean = false;
+        const value: any = oldValue || {};
 
-    applyMutate(value: S, latch?: Latch): S {
-        function go(item: any, updates: UpdateOf<any>): any {
-            if (typeof updates === 'object') {
-                item = item || {};
-                for (const prop in updates) {
-                    if (updates.hasOwnProperty(prop)) {
-                        const update = (updates as any)[prop];
-                        if (isUpdateLike(update)) {
-                            item[prop] = update.applyMutate(item[prop], latch?.down());
-                        } else {
-                            console.warn("UpdateWith should only have updates as members! Should be using valueToUpdate.");
-                            item[prop] = go(item[prop], update);
-                        }
+        const updates = this.fieldUpdates as any;
+        if (typeof updates === 'object') {
+            for (const prop in updates) {
+                if (updates.hasOwnProperty(prop)) {
+                    const key = prop as keyof S;
+                    const update = (updates as any)[key];
+                    const updateResult = update.applyMutate(value[key]);
+
+                    fieldUpdateResults = fieldUpdateResults || {};
+                    fieldUpdateResults[key] = updateResult;
+
+                    if (updateResult.update !== NoUpdate) {
+                        anyChanged = true;
                     }
+
+                    if (updateResult.update instanceof Destroy) {
+                        removedValues = removedValues || {};
+                        removedValues[key] = updateResult.oldValue;
+                    }
+
+                    if (!value.hasOwnProperty(key)) {
+                        addedValues = addedValues || {};
+                        addedValues[key] = updateResult.newValue;
+                    }
+                    value[key] = updateResult.newValue;
                 }
-                return item;
+            }
+            if (anyChanged) {
+                return {
+                    update: this,
+                    newValue: value,
+                    addedValues: addedValues as Partial1<S>,
+                    removedValues: removedValues as Partial1<S>,
+                    fieldUpdates: fieldUpdateResults as FieldUpdates<S>
+                };
             } else {
-                if (item !== updates) {
-                    latch?.trigger();
-                }
-                return updates;
+                return noChange(value);
+            }
+        } else if (oldValue === updates) {
+            return noChange(oldValue)
+        } else {
+            return {
+                update: setValue(updates as S),
+                newValue: updates as S,
+                oldValue
             }
         }
-        return go(value, this.fieldUpdates);
-    }
-
-    down<K extends keyof S, V extends S[K] = S[K]>(key: K, of: S): StateUpdate<V> {
-        if (key in this.fieldUpdates) {
-            if (isUpdateLike((this.fieldUpdates as any)[key])) {
-                return (this.fieldUpdates as any)[key] as StateUpdate<V>;
-            } else {
-                console.warn("UpdateWith should only have updates as members! Should be using valueToUpdate.");
-                const update = (this.fieldUpdates as any)[key];
-                if (typeof update === "object") {
-                    return new UpdateWith(update as UpdateOf<V>, this._removedValues[key] ?? {})
-                } else {
-                    return new SetValue(update as V);
-                }
-            }
-        }
-        return NoUpdate;
-    }
-
-    forValue(value: S): this {
-        if (value) {
-            const removed: Partial<S> = {}
-            for (const key of this.removedKeys) {
-                removed[key] = value[key];
-            }
-            this._removedValues = removed;
-
-            const updates = this.fieldUpdates as any;
-            for (const key in updates) {
-                if (updates.hasOwnProperty(key) && isUpdateLike(updates[key])) {
-                    updates[key] = updates[key].forValue(value[key as keyof S])
-                }
-            }
-        }
-        return this;
     }
 
 }
@@ -598,8 +607,15 @@ export function renameKey<S, K0 extends keyof S, K1 extends keyof S, V extends S
 }
 
 export function setValue<V, V1 extends V = V>(value: V1, oldValue?: V1): StateUpdate<V> {
-    return new SetValue(__getProxyTarget(value as V), __getProxyTarget(oldValue))
+    return new SetValue(__getProxyTarget(value as V))
 }
+
+export const setUndefined: StateUpdate<any> = new SetValue(undefined);
+
+export const setToUndefined: UpdateResult<any> = Object.freeze({
+    update: setUndefined,
+    newValue: undefined
+});
 
 export function setProperty<S, K extends keyof S, V extends S[K] = S[K]>(key: K, value: V): StateUpdate<S> {
     return new UpdateKey<S, K>(key, new SetValue<S[K]>(value))

@@ -2,10 +2,11 @@ import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
 import {ResultValue, ServerErrorWithCause} from "../data/result";
 import {
+    Destroy,
     Disposable, setProperty,
     setValue,
     StateHandler,
-    StateView
+    StateView, UpdateResult
 } from "../state";
 import {About} from "../ui/component/about";
 import {ValueInspector} from "../ui/component/value_inspector";
@@ -72,21 +73,30 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             }
         })
 
-        this.handler.updateHandler.addObserver(update => {
+        this.handler.updateHandler.addObserver((update, rep) => {
+            if (rep) {
+                // notify when a response message arrives
+                const listener = this.socket.addInstanceListener(update.constructor as any, inst => {
+                    if (inst.isResponse(update)) {
+                        listener.dispose();
+                        rep.resolve(inst as NotebookUpdate);
+                    }
+                })
+            }
             this.sendUpdate(update)
         }).disposeWith(this);
 
         const cells: Record<number, StateView<CellState>> = {};
         const cellsState = this.handler.view("cells");
-        this.handler.observeKey("cellOrder", (newOrder, update) => {
-            Object.values(update.changedValues(newOrder)).forEach(id => {
+        this.handler.observeKey("cellOrder", (newOrder, updateResult) => {
+            Object.values(UpdateResult.addedOrChangedValues(updateResult)).forEach(id => {
                 if (id !== undefined && !cells[id]) {
                     const handler = cellsState.view(id)
                     cells[id] = handler
                     this.watchCell(handler)
                 }
             })
-            Object.values(update.removedValues ?? {}).forEach(id => {
+            Object.values(updateResult.removedValues ?? {}).forEach(id => {
                 if (id !== undefined && cells[id]) {
                     cells[id].tryDispose();
                     delete cells[id];
@@ -269,9 +279,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             }
         }).disposeWith(this)
 
-        this.handler.observeKey("openNotebooks", (nbs, update) => {
-            OpenNotebooksHandler.update(() => setValue([...nbs]))
-        })
+        this.handler.observeKey("openNotebooks", nbs => OpenNotebooksHandler.update(() => setValue([...nbs])))
     }
 
     /*******************************
@@ -318,8 +326,8 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
 
     createNotebook(path?: string, content?: string) {
         const waitForNotebook = (nbPath: string) => {
-            const disposable = this.handler.observeKey("notebooks", (current, update) => {
-                update.changedKeys.forEach(newNb => {
+            const disposable = this.handler.observeKey("notebooks", (current, updateResult) => {
+                UpdateResult.addedOrChangedKeys(updateResult).forEach(newNb => {
                     if (newNb.includes(nbPath)) {
                         disposable.dispose()
                         ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {

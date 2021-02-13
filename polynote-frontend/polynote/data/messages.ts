@@ -130,7 +130,9 @@ export class NotebookUpdate extends Message {
     readonly localVersion: number;
 
     // any way to give this a better type? :(
-    static unapply(inst: NotebookUpdate): any[] { return [inst]; }
+    static unapply(inst: NotebookUpdate): any[] {
+        return [inst];
+    }
 
     /**
      * Transform a so that it has the same effect when applied after b. Returns transformed a.
@@ -184,6 +186,13 @@ export class InsertCell extends NotebookUpdate {
                 readonly cell: NotebookCell, readonly after: number) {
         super();
         Object.freeze(this);
+    }
+
+    isResponse(other: Message): boolean {
+        return other instanceof InsertCell &&
+            other.after == this.after &&
+            other.cell.language == this.cell.language &&
+            other.cell.content == this.cell.content
     }
 }
 
@@ -641,6 +650,11 @@ export class DeleteCell extends NotebookUpdate {
     constructor(readonly globalVersion: number, readonly localVersion: number, readonly id: number) {
         super();
         Object.freeze(this);
+    }
+
+    isResponse(other: Message): boolean {
+        return other instanceof DeleteCell &&
+            other.id === this.id
     }
 }
 

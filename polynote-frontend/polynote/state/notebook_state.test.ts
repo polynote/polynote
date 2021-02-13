@@ -16,6 +16,7 @@ import {
 } from "../data/result";
 import {NotebookStateHandler} from "./notebook_state";
 import {SocketStateHandler} from "./socket_state";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 
 jest.mock("./client_backup")
 // @ts-ignore
@@ -26,6 +27,7 @@ jest.mock("../messaging/comms");  // use the comms manual mock
 let nbState: NotebookStateHandler,
     socket: SocketSession,
     socketState: SocketStateHandler,
+    dispatcher: NotebookMessageDispatcher,
     receiver: NotebookMessageReceiver;
 
 let stateUpdateDisp = new Disposable()
@@ -33,9 +35,11 @@ let stateUpdateDisp = new Disposable()
 beforeEach(() => {
     nbState = NotebookStateHandler.forPath("foo").disposeWith(stateUpdateDisp)
     nbState.updateHandler.globalVersion = 0 // initialize version
+
     socket = SocketSession.fromRelativeURL(nbState.state.path)
-    socketState = SocketStateHandler.create(socket)
-    receiver = new NotebookMessageReceiver(socketState, nbState)
+    socketState = SocketStateHandler.create(socket).disposeWith(stateUpdateDisp)
+    dispatcher = new NotebookMessageDispatcher(socketState, nbState)
+    receiver = new NotebookMessageReceiver(socketState, nbState).disposeWith(stateUpdateDisp)
 
     // close the server loop for messages that bounce off it (e.g., InsertCell)
     nbState.updateHandler.addObserver(update => {
@@ -46,6 +50,7 @@ beforeEach(() => {
 afterEach(() => {
     stateUpdateDisp.dispose()
     stateUpdateDisp = new Disposable()
+    socket.close();
 })
 
 

@@ -1,18 +1,18 @@
 import {collect, Deferred} from "../util/helpers";
 import {Disposable, IDisposable, ImmediateDisposable, mkDisposable} from "./disposable";
 import {
-    Destroy, isUpdateLike,
-    NoUpdate,
+    childResult,
+    Destroy,
+    NoUpdate, setToUndefined,
     SetValue,
-    StateUpdate,
     UpdateKey,
     UpdateLike,
-    UpdateOf,
+    UpdateOf, UpdateResult,
     valueToUpdate
 } from ".";
 import {__getProxyTarget, __readOnlyProxyObject} from "./readonly";
 
-export type Observer<S> = (value: S, update: UpdateLike<S>, updateSource: any) => void
+export type Observer<S> = (value: S, update: UpdateResult<S>, updateSource: any) => void
 export type PreObserver<S> = (value: S) => Observer<S>
 export type Updater<S> = (currentState: Readonly<S>) => UpdateOf<S>
 
@@ -26,37 +26,6 @@ export interface Latch {
     trigger(): void
     down(): Latch
 }
-
-// A private implementation of Latch that can also be reset
-class LatchImpl {
-    private _triggered: boolean = false
-    private _down?: LatchImpl
-
-    constructor(private parent?: LatchImpl) {}
-
-    get triggered(): boolean { return this._triggered }
-    trigger(): void {
-        if (this.parent) {
-            this.parent.trigger();
-        }
-        this._triggered = true;
-    }
-    reset(): void {
-        this._triggered = false;
-    }
-    down() {
-        if (!this._down) {
-            this._down = new LatchImpl(this);
-        } else {
-            this._down.reset();
-        }
-        return this._down;
-    }
-}
-
-// Partial<V[]> confuses TypeScript – TS thinks it has iterators and array methods and such.
-// This is to avoid that.
-export type Partial1<S> = S extends (infer V)[] ? Record<number, V> : Partial<S>
 
 export interface ObservableState<S> extends IDisposable {
     state: S
@@ -139,11 +108,11 @@ function filterPreObserver<S>(fn: PreObserver<S>, filter?: (src: any) => boolean
 }
 
 function keyObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn: Observer<V>, filter?: (src: any) => boolean): Observer<S> {
-    return (value, update, updateSource) => {
-        const down = update.down<K, V>(key, value as S);
-        if (down !== NoUpdate) {
+    return (value, result, updateSource) => {
+        const down = childResult(result, key);
+        if (down.update !== NoUpdate) {
             if (!filter || filter(updateSource)) {
-                fn(value[key as keyof S] as V, down, updateSource)
+                fn(value[key as keyof S] as V, down as UpdateResult<V>, updateSource)
             }
         }
     }
@@ -152,11 +121,11 @@ function keyObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn: Ob
 function keyPreObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn: PreObserver<V>, filter?: (src: any) => boolean): PreObserver<S> {
     return preS => {
         const obs = fn(preS[key as keyof S] as V);
-        return (value, update, updateSource) => {
-            const down = update.down<K, V>(key, value as S);
-            if (down !== NoUpdate) {
+        return (value, result, updateSource) => {
+            const down = childResult(result, key);
+            if (down && down.update !== NoUpdate) {
                 if (!filter || filter(updateSource)) {
-                    obs(value[key] as V, down, updateSource)
+                    obs(value[key] as V, down as UpdateResult<V>, updateSource)
                 }
             }
         }
@@ -280,7 +249,6 @@ export class ObjectStateHandler<S extends Object> extends Disposable implements 
 
     private isUpdating: boolean = false;
     private updateQueue: [(state: Readonly<S>) => UpdateOf<S>, any, string, Deferred<Readonly<S>> | undefined][] = [];
-    private updateLatch: LatchImpl = new LatchImpl();
 
     protected handleUpdate(updateFn: (state: Readonly<S>) => UpdateOf<S>, updateSource: any, updatePath: string, promise?: Deferred<Readonly<S>>): void {
         const update = valueToUpdate(updateFn(this.state));
@@ -294,19 +262,18 @@ export class ObjectStateHandler<S extends Object> extends Disposable implements 
 
         const preObservers = this.preObservers.collect(updatePath, obs => obs(this.state));
 
-        this.updateLatch.reset();
-
-        const updatedObj = __getProxyTarget(update.forValue(this.mutableState).applyMutate(this.mutableState, this.updateLatch));
+        const updateResult = update.applyMutate(this.mutableState);
+        const updatedObj = __getProxyTarget(updateResult.newValue);
         if (!Object.is(this.mutableState, updatedObj)) {
             this.mutableState = updatedObj
             this.readOnlyState = __readOnlyProxyObject(this.mutableState);
         }
 
-        if (this.updateLatch.triggered) {
+        if (updateResult.update !== NoUpdate) {
             if (this.sourceFilter(updateSource)) {
                 const src = updateSource ?? this;
-                preObservers.forEach(observer => observer(this.state, update, src));
-                this.observers.forEach(updatePath, observer => observer(this.state, update, src));
+                preObservers.forEach(observer => observer(this.state, updateResult, src));
+                this.observers.forEach(updatePath, observer => observer(this.state, updateResult, src));
             }
         }
 
@@ -545,11 +512,14 @@ class OptionalKeyLens<S, K extends keyof S, V extends Exclude<S[K], undefined> =
     addObserver(fn: Observer<V | undefined>, path?: string): IDisposable {
         return (this.parent as UpdatableState<S>).addObserver(
             filterObserver(
-                (parentValue, update, updateSource) => {
+                (parentValue, updateResult, updateSource) => {
                     if (parentValue !== undefined) {
-                        fn(parentValue[this.key] as V, update.down<K, V>(this.key, parentValue as S) as UpdateLike<V | undefined>, updateSource);
+                        fn(
+                            parentValue[this.key] as V,
+                            childResult<S, K, V>(updateResult, this.key),
+                            updateSource);
                     } else {
-                        fn(undefined, Destroy.Instance as UpdateLike<V | undefined>, updateSource);
+                        fn(undefined, {update: Destroy.Instance, newValue: undefined}, updateSource);
                     }
                 },
                 this.sourceFilter
@@ -561,11 +531,14 @@ class OptionalKeyLens<S, K extends keyof S, V extends Exclude<S[K], undefined> =
             filterPreObserver(
                 pre => {
                     const obs = fn((pre?.[this.key]) as V | undefined)
-                    return (parentValue, update, updateSource) => {
+                    return (parentValue, updateResult, updateSource) => {
                         if (parentValue !== undefined) {
-                            obs(parentValue[this.key] as V, update.down<K, V>(this.key, parentValue as S) as UpdateLike<V | undefined>, updateSource);
+                            obs(
+                                parentValue[this.key] as V,
+                                childResult<S, K, V>(updateResult, this.key),
+                                updateSource);
                         } else {
-                            obs(undefined, Destroy.Instance as UpdateLike<V | undefined>, updateSource);
+                            obs(undefined, setToUndefined, updateSource);
                         }
                     }
                 },
@@ -576,19 +549,19 @@ class OptionalKeyLens<S, K extends keyof S, V extends Exclude<S[K], undefined> =
     observeKey<K1 extends keyof V>(childKey: K1, fn: Observer<V[K1] | undefined>, subPath?: string): IDisposable {
         return this.parent.addObserver(
             filterObserver(
-                (parentValue, parentUpdate, updateSource) => {
+                (parentValue, parentResult, updateSource) => {
                     if (parentValue !== undefined) {
                         const value: V = parentValue[this.key] as V;
-                        const update: UpdateLike<V> = (parentUpdate as UpdateLike<S>).down<K, V>(this.key, parentValue as S)
+                        const result: UpdateResult<V> = childResult<S, K, V>(parentResult as UpdateResult<S>, this.key)
                         if (value !== undefined) {
-                            const childValue: V[K1] = value[childKey]
-                            const childUpdate = update.down(childKey, value)
-                            fn(childValue, childUpdate as UpdateLike<V[K1] | undefined>, updateSource);
+                            const childValue: V[K1] = value[childKey];
+                            const childUpdateResult = childResult(result, childKey);
+                            fn(childValue, childUpdateResult, updateSource);
                         } else {
-                            fn(undefined, new SetValue<V[K1] | undefined>(undefined), updateSource);
+                            fn(undefined, setToUndefined, updateSource);
                         }
                     } else {
-                        fn(undefined, new SetValue<V[K1] | undefined>(undefined), updateSource);
+                        fn(undefined, setToUndefined, updateSource);
                     }
                 },
                 this.sourceFilter
@@ -600,19 +573,19 @@ class OptionalKeyLens<S, K extends keyof S, V extends Exclude<S[K], undefined> =
             filterPreObserver(
                 prev => {
                     const obs = fn((prev?.[this.key] as V | undefined)?.[childKey]);
-                    return (parentValue, parentUpdate, updateSource) => {
+                    return (parentValue, parentResult, updateSource) => {
                         if (parentValue !== undefined) {
                             const value: V = parentValue[this.key] as V;
-                            const update: UpdateLike<V> = (parentUpdate as UpdateLike<S>).down<K, V>(this.key, parentValue as S)
+                            const result: UpdateResult<V> = childResult<S, K, V>(parentResult as UpdateResult<S>, this.key)
                             if (value !== undefined) {
                                 const childValue: V[K1] = value[childKey]
-                                const childUpdate = update.down(childKey, value)
-                                obs(childValue, childUpdate as UpdateLike<V[K1] | undefined>, updateSource);
+                                const childUpdateResult = childResult<V, K1>(result, childKey);
+                                obs(childValue, childUpdateResult, updateSource);
                             } else {
-                                obs(undefined, new SetValue<V[K1] | undefined>(undefined), updateSource);
+                                obs(undefined, setToUndefined, updateSource);
                             }
                         } else {
-                            obs(undefined, new SetValue<V[K1] | undefined>(undefined), updateSource);
+                            obs(undefined, setToUndefined, updateSource);
                         }
                     }
                 },
