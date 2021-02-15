@@ -28,7 +28,8 @@ export interface UpdateResult<S> {
     update: UpdateLike<S>
     newValue: Readonly<S>
 
-    // if S is a primitive, the previous value.
+    // if S is a primitive, or the entire object was replaced, the previous value.
+    // Otherwise, *this will be the same* as the new value (which was mutated!).
     oldValue?: Readonly<S>
 
     // A dict of values that this update removed from an object (if applicable)
@@ -81,6 +82,8 @@ function destroyed<S>(value: S): UpdateResult<S> {
 function setTo<S>(value: S, oldValue?: S): UpdateResult<S> {
     if (oldValue === value)
         return { update: NoUpdate, newValue: value };
+    else if (value !== undefined && oldValue !== undefined && typeof value === 'object' && typeof oldValue === 'object')
+        return objectDiffUpdates<S & object>(setValue(value as S & object), oldValue as S & object, value as S & object);
     return { update: setValue(value), newValue: value, oldValue };
 }
 
@@ -301,6 +304,7 @@ export class RenameKey<S, K0 extends keyof S, K1 extends keyof S, V extends S[K0
 
     applyMutate(obj: S): UpdateResult<S> {
         const value: V = obj[this.oldKey] as V;
+        const replaced: V = (obj[this.oldKey] ?? value) as V;
         obj[this.newKey] = value;
         delete obj[this.oldKey];
         return {
@@ -314,7 +318,7 @@ export class RenameKey<S, K0 extends keyof S, K1 extends keyof S, V extends S[K0
             } as Partial1<S>,
             fieldUpdates: {
                 [this.oldKey]: destroyed(value),
-                [this.newKey]: setTo(value)
+                [this.newKey]: setTo(value, replaced)
             } as FieldUpdates<S>
         };
     }
