@@ -35,7 +35,7 @@ class NotificationStorageHandler extends Disposable {
             this.handlePref(UserPreferencesHandler.state.notifications)
         }
         if (this.enabled && !document.hasFocus()) {
-            return new Promise((resolve, reject) => {
+            return new Promise<void>((resolve, reject) => {
                 const n = new Notification(title, {body: body, icon: FaviconHandler.get.faviconUrl});
                 n.addEventListener("click", (ev) => {
                     resolve()

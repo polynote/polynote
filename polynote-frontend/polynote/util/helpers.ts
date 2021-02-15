@@ -94,7 +94,7 @@ export function deepCopy<T>(obj: T, keepFrozen: boolean = false): T {
     return obj;
 }
 
-export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B)>): boolean {
+export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B & PropertyKey)>): boolean {
     return keys.every(k => {
         if (k in a && k in b) {
             return deepEquals(a[k], b[k] as any) // TODO: is there a way to fiddle with the types so this works without any?

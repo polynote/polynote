@@ -16,8 +16,8 @@ export interface ViewPreferences {
     },
 }
 
-export class LocalStorageHandler<T> extends BaseHandler<T> {
-    private static defaultHandler<T>(key: string, defaultState: T): StateHandler<T> {
+export class LocalStorageHandler<T extends object> extends BaseHandler<T> {
+    private static defaultHandler<T extends object>(key: string, defaultState: T): StateHandler<T> {
         return new ObjectStateHandler<T>(storage.get(key) ?? defaultState);
     }
 

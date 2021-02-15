@@ -127,7 +127,7 @@ describe("ObjectStateHandler", () => {
             const oldNum = handler.state.num
             handler.updateField("num", () => setValue(42))
             expect(listener).toHaveBeenCalledTimes(1)
-            expect(listener).toHaveBeenCalledWith(42, {newValue: 42, oldValue: 6, update: setValue(42, oldNum)}, expect.anything())
+            expect(listener).toHaveBeenCalledWith(42, {newValue: 42, oldValue: 6, update: setValue(42)}, expect.anything())
             view.dispose()
         })
 

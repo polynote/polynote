@@ -145,7 +145,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 .catch(err => console.error("Error adding backup", err));
 
             return {
-                path: setValue(path, s.path),
+                path: setValue(path),
                 cells,
                 cellOrder: setValue(cellOrder),
                 config: { config: config ?? NotebookConfig.default },

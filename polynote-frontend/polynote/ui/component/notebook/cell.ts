@@ -302,7 +302,7 @@ export class CodeCell extends Cell {
     private readonly editorEl: TagElement<"div">;
     private cellInputTools: TagElement<"div">;
     private applyingServerEdits: boolean;
-    private execDurationUpdater: number;
+    private execDurationUpdater?: number;
     private highlightDecorations: string[] = [];
     private vim?: any;
     private commentHandler: CommentHandler;

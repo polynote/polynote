@@ -276,7 +276,7 @@ export class PlotEditor {
             selector.hideOption('quartiles');
         }
 
-        this.measureSelectors.forEach(el => delete el.style.display);
+        this.measureSelectors.forEach(el => delete (el.style as any).display);
         this.controls.classList.remove('numeric-fields');
         this.rawFields = false;
 
@@ -290,7 +290,7 @@ export class PlotEditor {
                 this.rawFields = true;
             } else if (specType.allowedAggregates) {
                 this.measureSelectors.forEach(el => {
-                    delete el.style.display;
+                    delete (el.style as any).display;
                     const sel = el.selector;
                     sel.options.forEach((opt, idx) => {
                         if (specType.allowedAggregates!.indexOf(opt.value) < 0) {
@@ -521,7 +521,7 @@ export class PlotEditor {
                     output: setValue([output]),
                     results: append(clientResult)
                 }))
-                return new Promise(resolve => {
+                return new Promise<void>(resolve => {
                     const obs = this.nbState.addObserver(state => {
                         const maybeHasOutput = state.cells[newCellId]
                         if (maybeHasOutput && maybeHasOutput.output.includes(output)) {

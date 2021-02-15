@@ -89,7 +89,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         const cells: Record<number, StateView<CellState>> = {};
         const cellsState = this.handler.view("cells");
         this.handler.observeKey("cellOrder", (newOrder, updateResult) => {
-            Object.values(UpdateResult.addedOrChangedValues(updateResult)).forEach(id => {
+            Object.values(updateResult.addedValues ?? {}).forEach(id => {
                 if (id !== undefined && !cells[id]) {
                     const handler = cellsState.view(id)
                     cells[id] = handler

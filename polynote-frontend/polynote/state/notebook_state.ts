@@ -28,7 +28,7 @@ import {
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {ContentEdit, diffEdits} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
-import {deepEquals, Deferred, equalsByKey} from "../util/helpers";
+import {deepEquals, Deferred} from "../util/helpers";
 import {notReceiver} from "../messaging/receiver";
 
 export type CellPresenceState = {id: number, name: string, color: string, range: PosRange, avatar?: string};
@@ -260,7 +260,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 const cellOrder = this.view("cellOrder")
                 const obs = cellOrder.addObserver(order => {
                     if (! order.includes(id!)) {
-                        resolve(id);
+                        resolve(id!);
                         obs.dispose();
                     }
                 }).disposeWith(this)
@@ -284,8 +284,8 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
     }
 
     // wait for cell to transition to a specific state
-    waitForCellChange(id: number, targetState: "queued" | "running" | "error"): Promise<undefined> {
-        return new Promise(resolve => {
+    waitForCellChange(id: number, targetState: "queued" | "running" | "error"): Promise<void> {
+        return new Promise<void>(resolve => {
             const obs = this.addObserver(state => {
                 const maybeChanged = state.cells[id];
                 if (maybeChanged && maybeChanged[targetState]) {
@@ -335,26 +335,17 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
             .disposeWith(this)
 
         state.view("cellOrder").addObserver((newOrder, update) => {
-            const added = update.addedValues ?? [];
-            const removed = update.removedValues ?? [];
-
-            for (const idx in added) {
-                if (added.hasOwnProperty(idx)) {
-                    const id = added[idx];
-                    this.watchCell(
-                        id!,
-                        cellsHandler.view(id!).filterSource(notReceiver).disposeWith(this)
-                    );
-                }
+            for (const id of Object.values(update.addedValues ?? {})) {
+                this.watchCell(
+                    id!,
+                    cellsHandler.view(id!).filterSource(notReceiver).disposeWith(this)
+                );
             }
 
-            for (const idx in removed) {
-                if (removed.hasOwnProperty(idx)) {
-                    const id = removed[idx];
-                    if (id !== undefined && this.cellWatchers[id]) {
-                        this.cellWatchers[id].tryDispose();
-                        delete this.cellWatchers[id];
-                    }
+            for (const id of Object.values(update.removedValues ?? {})) {
+                if (id !== undefined && this.cellWatchers[id]) {
+                    this.cellWatchers[id].tryDispose();
+                    delete this.cellWatchers[id];
                 }
             }
 
@@ -435,8 +426,7 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
     private watchCell(id: number, handler: StateView<CellState>) {
         this.cellWatchers[id] = handler
         handler.view("output").addObserver((newOutput, updateResult) => {
-            const added = Object.values(UpdateResult.addedOrChangedValues(updateResult));
-            added.forEach(o => {
+            Object.values(updateResult.addedValues ?? {}).forEach(o => {
                 this.setCellOutput(id, o)
             })
         }).disposeWith(this)

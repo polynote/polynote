@@ -149,7 +149,7 @@ export class About extends FullScreenModal implements IDisposable {
             addToTop: false
         });
 
-        const addStorageEl = <T>(storageHandler: LocalStorageHandler<T>) => {
+        const addStorageEl = <T extends object>(storageHandler: LocalStorageHandler<T>) => {
             const key = storageHandler.key;
             const handler = storageHandler.fork(this);
             const valueEl = div(['json'], []);

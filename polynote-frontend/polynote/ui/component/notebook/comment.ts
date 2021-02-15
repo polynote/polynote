@@ -466,7 +466,7 @@ class NewComment extends Disposable {
         overlay.el.appendChild(this.el);
         overlay.el.classList.add("comment-container");
         this.text.focus()
-        return new Promise(resolve => {
+        return new Promise<void>(resolve => {
             this.onCreate = resolve
         })
     }

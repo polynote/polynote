@@ -73,7 +73,7 @@ export interface StateHandler<S> extends StateView<S>, UpdatableState<S> {
 }
 
 export const StateHandler = {
-    from<T>(state: T): StateHandler<T> { return new ObjectStateHandler(state) }
+    from<T extends object>(state: T): StateHandler<T> { return new ObjectStateHandler(state) }
 }
 
 export interface OptionalStateHandler<S> extends OptionalStateView<S>, UpdatableState<S | undefined> {
@@ -110,7 +110,7 @@ function filterPreObserver<S>(fn: PreObserver<S>, filter?: (src: any) => boolean
 function keyObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn: Observer<V>, filter?: (src: any) => boolean): Observer<S> {
     return (value, result, updateSource) => {
         const down = childResult(result, key);
-        if (down.update !== NoUpdate) {
+        if (!(down.update instanceof Destroy) && down.update !== NoUpdate) {
             if (!filter || filter(updateSource)) {
                 fn(value[key as keyof S] as V, down as UpdateResult<V>, updateSource)
             }
@@ -184,6 +184,10 @@ class ObserverDict<T> {
     }
 
     private forEachAt(path: string[], fn: (observer: T) => void): void {
+        let x;
+        if (path.length === 0) {
+            x = 10;
+        }
         this.observers.forEach(fn);
         if (path.length === 0) {
             for (const child of Object.values(this.children)) {
@@ -218,7 +222,7 @@ class ObserverDict<T> {
 
 }
 
-export class ObjectStateHandler<S extends Object> extends Disposable implements StateHandler<S> {
+export class ObjectStateHandler<S extends object> extends Disposable implements StateHandler<S> {
 
     // internal, mutable state
     private mutableState: S;

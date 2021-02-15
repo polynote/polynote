@@ -26,10 +26,10 @@ export type FieldUpdates<S> = S extends (infer V)[] ? Record<number, UpdateResul
 
 export interface UpdateResult<S> {
     update: UpdateLike<S>
-    newValue: S
+    newValue: Readonly<S>
 
     // if S is a primitive, the previous value.
-    oldValue?: S
+    oldValue?: Readonly<S>
 
     // A dict of values that this update removed from an object (if applicable)
     removedValues?: Partial1<S>
@@ -52,19 +52,6 @@ export const UpdateResult = Object.freeze({
         for (const prop in result.fieldUpdates) {
             if (result.fieldUpdates.hasOwnProperty(prop) && !(prop in result.removedValues))
                 updated.push(prop as any as keyof S)
-        }
-        return updated;
-    },
-
-    addedOrChangedValues<V, S extends Record<any, V> | V[]>(result: UpdateResult<S>): Partial1<S> {
-        const updated: Partial1<S> = {} as Partial1<S>;
-        if (!result.fieldUpdates)
-            return updated;
-
-        for (const prop in result.fieldUpdates) {
-            if (result.fieldUpdates.hasOwnProperty(prop) && !((result.fieldUpdates as any)[prop].update instanceof Destroy)) {
-                (updated as any)[prop] = ((result.fieldUpdates as any)[prop] as V)
-            }
         }
         return updated;
     }
@@ -118,7 +105,7 @@ const AllDestroyedUpdates: FieldUpdates<any> = new Proxy({}, {
     get(target: {}, p: PropertyKey, receiver: any): UpdateResult<any> {
         return {
             update: Destroy.Instance,
-            newValue: undefined,
+            newValue: undefined as unknown as Readonly<any>,
             fieldUpdates: AllDestroyedUpdates
         }
     }
@@ -163,7 +150,6 @@ function arrayFieldUpdates<V>(arr: V[], minIdx: number, maxIdx: number, indexShi
         has(target: Record<number, UpdateResult<V>>, idx: number): boolean {
             return idx >= minIdx && idx <= maxIdx;
         },
-        enumerate: enumerate,
         ownKeys: enumerate
     })
 }
@@ -205,7 +191,7 @@ export class UpdateKey<S, K extends keyof S> extends Update<S> {
         if (childResult.update === NoUpdate)
             return noChange(value);
 
-        value[this.key] = childResult.newValue;
+        value[this.key] = childResult.newValue as S[K];
         return {
             update: this,
             newValue: value,
@@ -352,10 +338,6 @@ export class Destroy<S> extends Update<S | undefined> {
     }
 }
 
-type PartialKeySet<S> = {
-    [K in keyof S]?: true
-}
-
 function objectDiffUpdates<S extends object>(update: UpdateLike<S>, oldObj: S, newObj: S): UpdateResult<S> {
     // if we set the value of an object state, find the keys that changed
     // this is done lazily, because the diff might not be used.
@@ -367,6 +349,7 @@ function objectDiffUpdates<S extends object>(update: UpdateLike<S>, oldObj: S, n
     function compute() {
         removedValues = {};
         addedValues = {};
+        fieldUpdates = {};
 
         if (!oldObj)
             oldObj = {} as any as S;
@@ -374,63 +357,41 @@ function objectDiffUpdates<S extends object>(update: UpdateLike<S>, oldObj: S, n
         if (!newObj)
             newObj = {} as any as S;
 
-        const updatedKeys: PartialKeySet<S> = {};
-
-        for (const oldKey in oldObj) {
-            if (oldObj.hasOwnProperty(oldKey)) {
-                if (!newObj.hasOwnProperty(oldKey)) {
-                    removedValues[oldKey] = oldObj[oldKey];
-                    updatedKeys[oldKey] = true;
-                } else if (oldObj[oldKey] !== newObj[oldKey]) {
-                    updatedKeys[oldKey] = true;
+        function computeUpdate<K extends keyof S>(key: K) {
+            const oldHas = oldObj.hasOwnProperty(key);
+            const newHas = newObj.hasOwnProperty(key);
+            if (oldHas && !newHas) {
+                removedValues![key] = oldObj[key];
+                fieldUpdates![key as keyof S] = destroyed(oldObj[key])
+            } else if (oldObj[key] !== newObj[key]) {
+                if (!oldHas) {
+                    addedValues![key] = newObj[key];
+                }
+                if (typeof oldObj[key] === 'object' && typeof newObj[key] === 'object') {
+                    fieldUpdates![key] = objectDiffUpdates<S[K] & object>(
+                        setValue(newObj[key] as S[K] & object) as UpdateLike<S[K] & object>,
+                        oldObj[key] as S[K] & object,
+                        newObj[key] as S[K] & object
+                    ) as UpdateResult<S[K]>
+                } else {
+                    fieldUpdates![key] = setTo(newObj[key], oldObj[key]);
                 }
             }
         }
 
-        for (const newKey in newObj) {
-            if (newObj.hasOwnProperty(newKey)) {
-                if (!oldObj.hasOwnProperty(newKey)) {
-                    addedValues[newKey] = newObj[newKey];
-                    updatedKeys[newKey] = true;
-                } else if (oldObj[newKey] !== newObj[newKey]) {
-                    updatedKeys[newKey] = true;
-                }
+        const merged: S = {...oldObj, ...newObj};
+
+        for (const key in merged) {
+            if (merged.hasOwnProperty(key)) {
+                computeUpdate(key)
             }
         }
-
-        fieldUpdates = new Proxy({} as ObjectFieldUpdates<S>, {
-            enumerate(target: ObjectFieldUpdates<S>): PropertyKey[] {
-                return Object.keys(updatedKeys);
-            },
-            ownKeys(target: ObjectFieldUpdates<S>): PropertyKey[] {
-                return Object.keys(updatedKeys);
-            },
-            has(target: ObjectFieldUpdates<S>, p: PropertyKey): boolean {
-                return p in updatedKeys
-            },
-            get<P extends keyof S>(target: ObjectFieldUpdates<S>, p: P, receiver: any): UpdateResult<S[P]> {
-                if (p in updatedKeys && !target[p]) {
-                    if (p in removedValues!) {
-                        target[p] = destroyed(oldObj[p]) as UpdateResult<S[P]>
-                    } else if (typeof newObj[p] === 'object' || typeof oldObj[p] === 'object') {
-                        // @ts-ignore – it can't handle the "extends object" of objectDiffUpdates
-                        target[p] = objectDiffUpdates(setValue(newObj[p]), oldObj[p], newObj[p])
-                    } else {
-                        target[p] = {
-                            update: setValue(newObj[p]),
-                            newValue: newObj[p],
-                            oldValue: oldObj[p]
-                        }
-                    }
-                }
-                return target[p]!;
-            }
-        })
     }
 
     return {
         update,
         newValue: newObj,
+        oldValue: oldObj,
         get removedValues() {
             if (!removedValues)
                 compute();
@@ -440,6 +401,11 @@ function objectDiffUpdates<S extends object>(update: UpdateLike<S>, oldObj: S, n
             if (!addedValues)
                 compute();
             return addedValues as Partial1<S>
+        },
+        get fieldUpdates() {
+            if (!fieldUpdates)
+                compute();
+            return fieldUpdates as FieldUpdates<S>;
         }
     }
 
@@ -606,7 +572,7 @@ export function renameKey<S, K0 extends keyof S, K1 extends keyof S, V extends S
     return new RenameKey<S, K0, K1, V>(oldKey, newKey);
 }
 
-export function setValue<V, V1 extends V = V>(value: V1, oldValue?: V1): StateUpdate<V> {
+export function setValue<V, V1 extends V = V>(value: V1): StateUpdate<V> {
     return new SetValue(__getProxyTarget(value as V))
 }
 
@@ -614,7 +580,7 @@ export const setUndefined: StateUpdate<any> = new SetValue(undefined);
 
 export const setToUndefined: UpdateResult<any> = Object.freeze({
     update: setUndefined,
-    newValue: undefined
+    newValue: undefined as unknown as Readonly<any>
 });
 
 export function setProperty<S, K extends keyof S, V extends S[K] = S[K]>(key: K, value: V): StateUpdate<S> {

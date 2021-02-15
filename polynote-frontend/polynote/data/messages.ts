@@ -594,6 +594,10 @@ export class CreateNotebook extends Message {
         super();
         Object.freeze(this);
     }
+
+    isResponse(other: Message): boolean {
+        return other instanceof CreateNotebook && other.path === this.path;
+    }
 }
 
 export class RenameNotebook extends Message {

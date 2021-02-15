@@ -1,12 +1,14 @@
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
 import {SocketSession} from "../../../messaging/comms";
-import {Disposable, editString, updateProperty} from "../../../state";
+import {Disposable, editString, setValue, updateProperty} from "../../../state";
 import {NotebookMessageReceiver} from "../../../messaging/receiver";
 import {Insert} from "../../../data/content_edit";
-import {UpdateCell} from "../../../data/messages";
+import {CurrentSelection, UpdateCell} from "../../../data/messages";
 import {NotebookStateHandler} from "../../../state/notebook_state";
 import {SocketStateHandler} from "../../../state/socket_state";
 import {ClientBackup} from "../../../state/client_backup";
+import {CellMetadata} from "../../../data/data";
+import {PosRange} from "../../../data/result";
 
 jest.mock("../../../messaging/comms");
 
@@ -42,12 +44,14 @@ afterEach(() => {
 
 describe("Code cell", () => {
 
-    it ("sends updates when its content changes", async () => {
-        const cellId = await nbState.insertCell("below");
+    const setupNotebook = async () => {
+        const cellId = await nbState.insertCell("below", {id: 0, language: "scala", metadata: new CellMetadata()});
         (socket.send as any).mockClear();
-        await nbState.setCellLanguage(cellId, "scala");
-        const dispatcher = new NotebookMessageDispatcher(socketState, nbState)
-        const cellHandler = nbState.cellsHandler.lens(cellId);
+        return nbState.cellsHandler.lens(cellId);
+    }
+
+    it ("sends updates when its content changes", async () => {
+        const cellHandler = await setupNotebook();
 
         const waitForEdit = new Promise((resolve, reject) => {
             cellHandler.addObserver(cellState => {
@@ -66,11 +70,20 @@ describe("Code cell", () => {
         expect(socket.send).toHaveBeenCalledWith(new UpdateCell(
             expect.anything(),
             expect.anything(),
-            cellId,
+            cellHandler.state.id,
             [new Insert(0, "a")],
             undefined
         ))
 
+    })
+
+    it ("sends presence when the selection changes", async () => {
+        const cellHandler = await setupNotebook();
+        await cellHandler.updateAsync(() => updateProperty("content", editString([new Insert(0, "// some content")])));
+        (socket.send as any).mockClear();
+        await cellHandler.updateAsync(() => updateProperty("currentSelection", setValue(new PosRange(2, 6))));
+
+        expect(socket.send).toHaveBeenCalledWith(new CurrentSelection(cellHandler.state.id, new PosRange(2, 6)));
     })
 
 })

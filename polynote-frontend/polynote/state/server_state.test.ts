@@ -16,7 +16,7 @@ test('Changes to the ServerStateHandler are observable', done => {
 })
 
 test('ServerStateHandler supports views', done => {
-    new Promise(resolve => {
+    new Promise<void>(resolve => {
         const view = ServerStateHandler.get.view("currentNotebook");
         const obs = view.addPreObserver(prev => next => {
             expect(prev).toBeUndefined()
@@ -26,7 +26,7 @@ test('ServerStateHandler supports views', done => {
         ServerStateHandler.get.updateField("currentNotebook", () => "nb")
         obs.dispose()
     }).then(_ => {
-        return new Promise(resolve => {
+        return new Promise<void>(resolve => {
             const view = ServerStateHandler.get.view("currentNotebook");
             const obs = view.addPreObserver(prev => next => {
                 expect(prev).toEqual("nb")
@@ -37,7 +37,7 @@ test('ServerStateHandler supports views', done => {
             obs.dispose()
         })
     }).then(_ => {
-        return new Promise(resolve => {
+        return new Promise<void>(resolve => {
             ServerStateHandler.get.view("notebooks").addPreObserver(prev => {
                 expect(prev).toEqual({})
                 return next => {
