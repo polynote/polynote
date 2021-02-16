@@ -44,7 +44,7 @@ export interface CellState {
     compileErrors: CompileErrors[],
     runtimeError: RuntimeError | undefined,
     // ephemeral states
-    presence: CellPresenceState[];
+    presence: Record<number, CellPresenceState>;
     editing: boolean,
     selected: boolean,
     error: boolean,

@@ -212,16 +212,15 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                             if (s.cells.hasOwnProperty(prop)) {
                                 const cellId = prop as unknown as number;  // Record<number, ?> is a lie! This is a string!
                                 const cell = s.cells[cellId];
-                                for (const cellPresence of cell.presence) {
-                                    if (cellPresence.id === removedId) {
-                                        const cellUpdate = cellsUpdate[cellId] as any || {};  // Again, can't reconcile the types because arrays
-                                        if (!cellUpdate.presence) {
-                                            cellUpdate.presence = {}
-                                        }
-                                        cellUpdate.presence[removedId] = destroy();
-                                        cellsUpdate[cellId] = cellUpdate;
+                                if (removedId in cell.presence) {
+                                    const cellUpdate = cellsUpdate[cellId] as any || {};  // Again, can't reconcile the types because arrays
+                                    if (!cellUpdate.presence) {
+                                        cellUpdate.presence = {}
                                     }
+                                    cellUpdate.presence[removedId] = destroy();
+                                    cellsUpdate[cellId] = cellUpdate;
                                 }
+
                             }
                         }
                     });
@@ -244,12 +243,9 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                             },
                             cells: {
                                 [cellId]: {
-                                    presence: append({
-                                        id: maybePresence.id,
-                                        name: maybePresence.name,
-                                        color: maybePresence.color,
-                                        range: range
-                                    })
+                                    presence: {
+                                        [id]: setValue({...maybePresence, range})
+                                    }
                                 }
                             }
                         }
@@ -311,7 +307,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         const insertIdx = s.cellOrder.findIndex(id => id === after) + 1;
                         return {
                             cells: {
-                                [cell.id]: newCell
+                                [cell.id]: setValue(newCell)
                             },
                             cellOrder: insert(newCell.id, insertIdx)
                         }
@@ -465,7 +461,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             results: [],
             compileErrors: [],
             runtimeError: undefined,
-            presence: [],
+            presence: {},
             editing: false,
             selected: false,
             error: false,

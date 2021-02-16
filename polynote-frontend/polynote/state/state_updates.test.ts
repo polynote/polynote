@@ -1,19 +1,21 @@
-import {setValue} from "./state_updates";
+import {append, destroy, setValue, UpdatePartial, valueToUpdate} from "./state_updates";
+import {deepCopy} from "../util/helpers";
+
+interface Example {
+    hi: string,
+    hello: string,
+    removedField?: string,
+    addedField?: string,
+    deep: {
+        first: string,
+        second: string,
+        array: number[]
+    }
+}
 
 describe("SetValue", () => {
 
-    it ("provides an object diff when it's an object", () => {
-
-        const updated = {
-            hi: "one",
-            hello: "two",
-            addedField: "yup",
-            deep: {
-                first: "hi",
-                second: "hello",
-                array: [1, 2]
-            }
-        }
+    it("provides an object diff when it's an object", () => {
 
         const original = {
             hi: "one",
@@ -26,6 +28,17 @@ describe("SetValue", () => {
             }
         }
 
+        const updated = {
+            hi: "one",
+            hello: "two",
+            addedField: "yup",
+            deep: {
+                first: "hi",
+                second: "hello",
+                array: [1, 2]
+            }
+        }
+
         const update = setValue(updated)
 
         const result = update.applyMutate(original)
@@ -35,6 +48,7 @@ describe("SetValue", () => {
 
         expect(result.removedValues).toEqual({removedField: original.removedField})
         expect(result.addedValues).toEqual({addedField: updated.addedField})
+        expect(result.changedValues).toEqual({hello: updated.hello, deep: updated.deep})
 
         const fieldUpdates = result.fieldUpdates as any
 
@@ -57,6 +71,57 @@ describe("SetValue", () => {
             oldValue: original.deep.second
         })
 
+    })
+
+})
+
+describe("UpdateWith", () => {
+
+    it("provides an object diff when it's an object", () => {
+
+        const original: Example = {
+            hi: "one",
+            hello: "three",
+            removedField: "nope",
+            deep: {
+                first: "hi",
+                second: "howdy",
+                array: [1, 2]
+            }
+        }
+
+        const updates: UpdatePartial<Example> = {
+            hello: "two",
+            addedField: "yup",
+            removedField: destroy(),
+            deep: {
+                second: setValue("hello"),
+                array: append(5)
+            }
+        }
+
+        const expected = {
+            hi: "one",
+            hello: "two",
+            addedField: "yup",
+            deep: {
+                first: "hi",
+                second: "hello",
+                array: [1, 2, 5]
+            }
+        }
+
+        const update = valueToUpdate(updates);
+        const mutatedOriginal = deepCopy(original);
+        const result = update.applyMutate(mutatedOriginal);
+
+        expect(result.newValue).toEqual(expected);
+        expect(result.removedValues).toEqual({removedField: original.removedField})
+        expect(result.addedValues).toEqual({addedField: expected.addedField})
+        expect(result.changedValues).toEqual({hello: expected.hello, deep: expected.deep});
+
+        const deepUpdate = result.fieldUpdates!.deep!;
+        expect(deepUpdate.changedValues).toEqual({second: expected.deep.second, array: expected.deep.array});
 
     })
 

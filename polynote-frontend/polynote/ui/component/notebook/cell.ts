@@ -66,7 +66,13 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
-import {CellState, CompletionHint, NotebookStateHandler, SignatureHint} from "../../../state/notebook_state";
+import {
+    CellPresenceState,
+    CellState,
+    CompletionHint,
+    NotebookStateHandler,
+    SignatureHint
+} from "../../../state/notebook_state";
 import {ServerStateHandler} from "../../../state/server_state";
 
 
@@ -616,27 +622,22 @@ export class CodeCell extends Cell {
                 presenceMarkers[id] = this.editor.deltaDecorations(old, newDecorations);
             }
         }
-        cellState.state.presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
+        Object.values(cellState.state.presence).forEach(p => updatePresence(p.id, p.name, p.color, p.range))
         cellState.observeKey("presence", (newPresence, updateResult) => {
-            const removed = Object.values(updateResult.removedValues ?? {})
-
+            const removed = Object.values(updateResult.removedValues ?? {}) as CellPresenceState[];
             removed.forEach(p => {
-                if (p) {
-                    const marker = presenceMarkers[p.id]
-                    if (marker) {
-                        this.editor.deltaDecorations(marker, [])
-                    }
-                    delete presenceMarkers[p.id]
+                const marker = presenceMarkers[p.id]
+                if (marker) {
+                    this.editor.deltaDecorations(marker, [])
                 }
-            })
+                delete presenceMarkers[p.id]
+            });
 
-            const changed = updateResult.fieldUpdates || {}
-            for (const key in changed) {
-                if (changed.hasOwnProperty(key) && changed[key]) {
-                    const p = changed[key].newValue;
-                    updatePresence(p.id, p.name, p.color, p.range);
-                }
-            }
+            const added = Object.values(updateResult.addedValues ?? {}) as CellPresenceState[];
+            added.forEach(p => updatePresence(p.id, p.name, p.color, p.range));
+
+            const changed = Object.values(updateResult.changedValues ?? {}) as CellPresenceState[];
+            changed.forEach(p => updatePresence(p.id, p.name, p.color, p.range));
         })
 
         // make sure to create the comment handler.
