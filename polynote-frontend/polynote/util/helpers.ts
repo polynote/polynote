@@ -94,6 +94,33 @@ export function deepCopy<T>(obj: T, keepFrozen: boolean = false): T {
     return obj;
 }
 
+/**
+ * A generic copy-and-update, like a case class's `copy` method.
+ *
+ * @param srcObj  The object to be copied
+ * @param changes Optionally, a partial object of new values to be replaced in the copy
+ * @return A (shallow) copy of the source object, with any given changes applied. If the source object
+ *         was frozen, the copy will also be frozen.
+ */
+export function copyObject<T>(srcObj: T, changes?: Partial<T>): T {
+    if (srcObj === null || srcObj === undefined || typeof srcObj !== 'object')
+        return srcObj;
+    const result: T = {...srcObj};
+    if (changes !== undefined) {
+        for (const prop in changes) {
+            if (changes.hasOwnProperty(prop)) {
+                const key = prop as keyof T;
+                result[key] = changes[key]!;
+            }
+        }
+    }
+    Object.setPrototypeOf(result, Object.getPrototypeOf(srcObj));
+    if (Object.isFrozen(srcObj)) {
+        Object.freeze(result);
+    }
+    return result as T;
+}
+
 export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B & PropertyKey)>): boolean {
     return keys.every(k => {
         if (k in a && k in b) {

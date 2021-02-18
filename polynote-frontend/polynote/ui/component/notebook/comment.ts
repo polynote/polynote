@@ -1,7 +1,7 @@
 import {Disposable, removeKey, setValue, StateHandler, StateView, UpdateLike, UpdateResult} from "../../../state";
 import {CellComment} from "../../../data/data";
 import {PosRange} from "../../../data/result";
-import {arrExists, collectFields} from "../../../util/helpers";
+import {arrExists, collectFields, copyObject} from "../../../util/helpers";
 import {button, div, img, span, tag, TagElement, textarea} from "../../tags";
 import * as monaco from "monaco-editor";
 import {editor} from "monaco-editor";
@@ -317,7 +317,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
                     // update all comments that share a range with this root
                     this.allCommentsState.update(state => collectFields(
                         state,
-                        (id, comment) => comment.range.equals(this.range) ? { range: setValue(newRange) } : undefined
+                        (id, comment) => comment.range.equals(this.range) ? setValue(copyObject(comment, {range: newRange})) : undefined
                     ))
                 }
             } else {
@@ -538,7 +538,7 @@ class Comment extends Disposable {
         if (b) {
             this.editing = true;
             const doEdit = (content: string) => {
-                this.commentState.updateField("content", () => setValue(content))
+                this.commentState.update(comment => setValue(copyObject(comment, {content})))
                 this.setEditable(false)
             };
 

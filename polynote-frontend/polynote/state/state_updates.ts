@@ -1,4 +1,4 @@
-import {deepCopy, diffArray, partition} from "../util/helpers";
+import {copyObject, deepCopy, diffArray, partition} from "../util/helpers";
 import {ContentEdit} from "../data/content_edit";
 import {Latch} from "./state_handler";
 import {__getProxyTarget} from "./readonly";
@@ -49,15 +49,10 @@ export interface UpdateResult<S> {
 export const UpdateResult = Object.freeze({
     addedOrChangedKeys<S>(result: UpdateResult<S>): (keyof S)[] {
         const updated: (keyof S)[] = [];
-        if (!result.fieldUpdates)
-            return updated;
-        if (!result.removedValues)
-            return Object.keys(result.fieldUpdates) as (keyof S)[];
-
-        for (const prop in result.fieldUpdates) {
-            if (result.fieldUpdates.hasOwnProperty(prop) && !(prop in result.removedValues))
-                updated.push(prop as any as keyof S)
-        }
+        if (result.addedValues)
+            updated.push(...Object.keys(result.addedValues) as (keyof S)[]);
+        if (result.changedValues)
+            updated.push(...Object.keys(result.changedValues) as (keyof S)[]);
         return updated;
     }
 })
@@ -189,20 +184,20 @@ export class UpdateKey<S, K extends keyof S> extends Update<S> {
 
     get update(): UpdateLike<S[K]> { return this._update; }
 
-    applyMutate(value: S): UpdateResult<S> {
-        const childResult: UpdateResult<S[K]> = this._update.applyMutate(value[this.key]);
+    applyMutate(oldValue: S): UpdateResult<S> {
+        const childResult: UpdateResult<S[K]> = this._update.applyMutate(oldValue[this.key]);
         if (childResult.update === NoUpdate)
-            return noChange(value);
+            return noChange(oldValue);
 
         const result: UpdateResult<S> = {
             update: this,
-            newValue:  value,
+            newValue:  oldValue,
             fieldUpdates: {
                 [this.key]: childResult
             } as FieldUpdates<S>
         }
 
-        if (!(this.key in value)) {
+        if (!(this.key in oldValue)) {
             result.addedValues = {
                 [this.key]: childResult.newValue
             } as Partial1<S>;
@@ -216,7 +211,11 @@ export class UpdateKey<S, K extends keyof S> extends Update<S> {
             } as Partial1<S>
         }
 
-        value[this.key] = childResult.newValue as S[K];
+        if (Object.isFrozen(oldValue)) {
+            result.newValue = copyObject(oldValue, {[this.key]: childResult.newValue} as unknown as Partial<S>);
+        } else {
+            oldValue[this.key] = childResult.newValue as S[K];
+        }
         return result;
     }
 
@@ -542,7 +541,8 @@ class UpdateWith<S> extends Update<S> {
         let removedValues: Partial<S> | undefined = undefined;
         let changedValues: Partial<S> | undefined = undefined;
         let anyChanged: boolean = false;
-        const value: any = oldValue || {};
+        const mustCopy = typeof oldValue === 'object' && Object.isFrozen(oldValue);
+        const value: any = mustCopy ? {...oldValue} : oldValue || {};
 
         const updates = this.fieldUpdates as any;
         if (typeof updates === 'object') {
@@ -569,12 +569,14 @@ class UpdateWith<S> extends Update<S> {
                         changedValues = changedValues || {};
                         changedValues[key] = updateResult.newValue;
                     }
-
-
                     value[key] = updateResult.newValue;
                 }
             }
             if (anyChanged) {
+                if (mustCopy) {
+                    Object.setPrototypeOf(value, Object.getPrototypeOf(oldValue));
+                    Object.freeze(value);
+                }
                 const update = {
                     update: this,
                     newValue: value,
@@ -589,7 +591,7 @@ class UpdateWith<S> extends Update<S> {
                     update.fieldUpdates = fieldUpdateResults as FieldUpdates<S>;
                 return update;
             } else {
-                return noChange(value);
+                return noChange(oldValue);
             }
         } else if (oldValue === updates) {
             return noChange(oldValue)
