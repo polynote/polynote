@@ -117,7 +117,7 @@ export function img(classes: string[], src: string, alt?: string) {
 
 export function icon(classes: string[], iconName: string, alt?: string) {
     const icon = loadIcon(iconName).then(svgEl => {
-        const el = svgEl.cloneNode(true) as SVGElement;
+        const el = svgEl.cloneNode(true) as SVGElement | HTMLImageElement;
         el.setAttribute('class', 'icon');
         if (alt) {
             el.setAttribute('alt', alt);

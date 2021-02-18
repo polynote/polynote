@@ -2,7 +2,8 @@ import {
     Error as ErrorMsg,
     GroupAgg,
     HandleData,
-    Message, ModifyStream,
+    Message,
+    ModifyStream,
     QuantileBin,
     Select,
     TableOp
@@ -12,12 +13,9 @@ import {DataReader, Pair} from "../data/codec";
 import {Either} from "../data/codec_types";
 import match from "../util/match";
 import {StreamingDataRepr} from "../data/value_repr";
-import {
-    NotebookMessageDispatcher,
-} from "./dispatcher";
+import {NotebookMessageDispatcher,} from "./dispatcher";
+import {Disposable, IDisposable, removeKey, StateHandler} from "../state";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {Disposable, Observer, StateHandler, StateView} from "../state/state_handler";
-import {removeKeys} from "../util/helpers";
 
 export const QuartilesType = new StructType([
     new StructField("min", DoubleType),
@@ -46,7 +44,6 @@ export class DataStream extends Disposable {
     private setupPromise?: Promise<Message | void>;
     private repr: StreamingDataRepr;
     private activeStreams: StateHandler<NotebookState["activeStreams"]>;
-    private observer?: [Observer<NotebookState["activeStreams"]>, string];
 
     constructor(private readonly dispatcher: NotebookMessageDispatcher, private readonly nbState: NotebookStateHandler, private readonly originalRepr: StreamingDataRepr, mods?: TableOp[]) {
         super()
@@ -55,8 +52,8 @@ export class DataStream extends Disposable {
         this.dataType = originalRepr.dataType;
         this.dataType = this.finalDataType();
 
-        this.activeStreams = nbState.lens("activeStreams")
-        this.observer = this.activeStreams.addObserver(handles => {
+        this.activeStreams = nbState.lens("activeStreams").disposeWith(this);
+        this.activeStreams.addObserver(handles => {
             const data = handles[this.repr.handle];
             if (data && data.length > 0) {
                 data.forEach(message => {
@@ -93,9 +90,9 @@ export class DataStream extends Disposable {
                 })
 
                 // clear messages now that they have been processed.
-                this.activeStreams.update(streams => removeKeys(streams, this.repr.handle))
+                this.activeStreams.update(() => removeKey(this.repr.handle))
             }
-        }, this)
+        })
     }
 
     batch(batchSize: number) {
@@ -122,10 +119,6 @@ export class DataStream extends Disposable {
             this.dispatcher.stopDataStream(StreamingDataRepr.handleTypeId, this.repr.handle)
         }
 
-        if (this.observer)  {
-            this.activeStreams.removeObserver(this.observer)
-            this.observer = undefined
-        }
         if (this.onComplete) {
             this.onComplete();
         }
@@ -133,7 +126,7 @@ export class DataStream extends Disposable {
             this.nextPromise.reject("Stream was terminated")
         }
 
-        this.dispose()
+        this.tryDispose();
     }
 
     aggregate(groupCols: string[], aggregations: Record<string, string> | Record<string, string>[]) {
@@ -249,12 +242,12 @@ export class DataStream extends Disposable {
                     if (messages.length > 0) {
                         messages.forEach(msg => {
                             if (msg instanceof ModifyStream && msg.fromHandle === handleId) {
+                                obs.dispose();
                                 resolve(msg)
-                                this.activeStreams.removeObserver(obs)
                             }
                         })
                     }
-                }, this)
+                })
             })
         }
 

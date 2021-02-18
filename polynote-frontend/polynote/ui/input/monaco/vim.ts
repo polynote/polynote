@@ -6,7 +6,7 @@
 
 // no reason to bother with types for this minor lib
 // @ts-ignore
-import { default as CodeMirror } from "monaco-vim/lib/cm/keymap_vim";
+import {default as CodeMirror} from "monaco-vim/lib/cm/keymap_vim";
 // @ts-ignore
 import {initVimMode} from "monaco-vim";
 import {editor} from "monaco-editor";

@@ -1,15 +1,15 @@
 import {div, icon, span, TagElement} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
+import {Disposable, IDisposable} from "../../state";
+import {NotebookStateHandler} from "../../state/notebook_state"
 import {ServerStateHandler} from "../../state/server_state";
-import {Disposable, Observer} from "../../state/state_handler";
-import {NotebookStateHandler} from "../../state/notebook_state";
 import {Notebook} from "./notebook/notebook";
 import {VimStatus} from "./notebook/vim_status";
 import {nameFromPath} from "../../util/helpers";
 
 export class Tabs extends Disposable {
     readonly el: TagElement<"div">;
-    private readonly tabs: Record<string, { tab: TagElement<"div">, content: TagElement<"div">, handler: NotebookStateHandler, obs: [Observer<any>, string]}> = {};
+    private readonly tabs: Record<string, { tab: TagElement<"div">, content: TagElement<"div">, handler: NotebookStateHandler, obs: IDisposable}> = {};
     private tabContainer: TagElement<"div">;
     private currentTab?: { path: string, tab: TagElement<"div">, content: TagElement<"div">};
 
@@ -22,7 +22,7 @@ export class Tabs extends Disposable {
 
         this.addHome()
 
-        ServerStateHandler.get.view("openNotebooks").addObserver(nbs => {
+        ServerStateHandler.get.observeKey("openNotebooks", nbs => {
             if (nbs.length > 0) {
                 nbs.forEach(path => {
                     if (this.getTab(path) === undefined && path !== "home") {
@@ -35,7 +35,7 @@ export class Tabs extends Disposable {
             } else {
                 Object.keys(this.tabs).forEach(tab => this.remove(tab))
             }
-        }, this)
+        }).disposeWith(this)
 
         const handleCurrentNotebook = (path?: string) => {
             if (path) {
@@ -52,7 +52,7 @@ export class Tabs extends Disposable {
                 this.activate("home")
             }
         }
-        ServerStateHandler.get.view("currentNotebook").addObserver(n => handleCurrentNotebook(n), this)
+        ServerStateHandler.get.observeKey("currentNotebook", n => handleCurrentNotebook(n)).disposeWith(this)
         handleCurrentNotebook(ServerStateHandler.get.state.currentNotebook)
     }
 
@@ -87,16 +87,17 @@ export class Tabs extends Disposable {
 
             // watch for renames of this notebook.
             const handler = ServerStateHandler.getOrCreateNotebook(path).handler;
-            const obs = handler.view("path").addObserver((newPath, oldPath) => {
-                const tab = this.tabs[oldPath];
-                delete this.tabs[oldPath];
-                const newTab = mkTab(newPath, this.mkTitle(newPath))
-                this.tabContainer.replaceChild(newTab, tab.tab)
-                this.tabs[newPath] = {...tab, tab: newTab};
-                if (this.currentTab?.path === oldPath) {
-                    this.activate(newPath)
+            const obs = handler.preObserveKey("path", oldPath => newPath => {
+                    const tab = this.tabs[oldPath];
+                    delete this.tabs[oldPath];
+                    const newTab = mkTab(newPath, this.mkTitle(newPath))
+                    this.tabContainer.replaceChild(newTab, tab.tab)
+                    this.tabs[newPath] = {...tab, tab: newTab};
+                    if (this.currentTab?.path === oldPath) {
+                        this.activate(newPath)
+                    }
                 }
-            }, this);
+            ).disposeWith(this);
 
             this.tabs[path] = {tab, content, handler, obs};
         }
@@ -121,7 +122,7 @@ export class Tabs extends Disposable {
     private remove(path: string) {
         const tab = this.tabs[path];
         if (tab) {
-            tab.handler.removeObserver(tab.obs);
+            tab.obs.tryDispose();
 
             const nextTabEl = tab.tab.previousElementSibling || tab.tab.nextElementSibling;
             const nextTabPath = Object.entries(this.tabs).find(([p, t]) => t.tab === nextTabEl)?.[0];

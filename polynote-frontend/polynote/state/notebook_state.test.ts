@@ -1,24 +1,23 @@
-import {CellState, NotebookStateHandler} from "./notebook_state";
-import {NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {Disposable} from ".";
 import {SocketSession} from "../messaging/comms";
-import {SocketStateHandler} from "./socket_state";
-import {DeleteCell, InsertCell, Message, NotebookVersion} from "../data/messages";
+import {DeleteCell, InsertCell} from "../data/messages";
 import {NotebookMessageReceiver} from "../messaging/receiver";
-import {Disposable, StateView} from "./state_handler";
 import {CellMetadata, NotebookCell} from "../data/data";
 
 import {ClientBackup} from "./client_backup";
-import {wait} from "@testing-library/dom";
 import {
     CompileErrors,
     KernelReport,
     Output,
     Position,
-    Result,
     ResultValue,
     RuntimeError,
     ServerErrorWithCause
 } from "../data/result";
+import {NotebookStateHandler} from "./notebook_state";
+import {SocketStateHandler} from "./socket_state";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
+
 jest.mock("./client_backup")
 // @ts-ignore
 ClientBackup.updateNb = jest.fn(() => Promise.resolve())  // silence this
@@ -28,29 +27,30 @@ jest.mock("../messaging/comms");  // use the comms manual mock
 let nbState: NotebookStateHandler,
     socket: SocketSession,
     socketState: SocketStateHandler,
+    dispatcher: NotebookMessageDispatcher,
     receiver: NotebookMessageReceiver;
 
 let stateUpdateDisp = new Disposable()
 
 beforeEach(() => {
-    nbState = NotebookStateHandler.forPath("foo")
+    nbState = NotebookStateHandler.forPath("foo").disposeWith(stateUpdateDisp)
     nbState.updateHandler.globalVersion = 0 // initialize version
+
     socket = SocketSession.fromRelativeURL(nbState.state.path)
-    socketState = new SocketStateHandler(socket)
-    receiver = new NotebookMessageReceiver(socketState, nbState)
+    socketState = SocketStateHandler.create(socket).disposeWith(stateUpdateDisp)
+    dispatcher = new NotebookMessageDispatcher(socketState, nbState)
+    receiver = new NotebookMessageReceiver(socketState, nbState).disposeWith(stateUpdateDisp)
 
     // close the server loop for messages that bounce off it (e.g., InsertCell)
-    nbState.updateHandler.addObserver(updates => {
-        if (updates) {
-            receiver.inject(updates[0])
-            nbState.updateHandler.update(() => [])
-        }
-    }, stateUpdateDisp)
+    nbState.updateHandler.addObserver(update => {
+        setTimeout(() => { receiver.inject(update) }, 0)
+    })
 })
 
 afterEach(() => {
     stateUpdateDisp.dispose()
     stateUpdateDisp = new Disposable()
+    socket.close();
 })
 
 
@@ -61,30 +61,27 @@ describe('NotebookStateHandler', () => {
         expect(Object.keys(nbState.state.cellOrder)).toEqual([])
 
         const waitForInsert = new Promise(resolve => {
-            const obs = nbState.updateHandler.addObserver(updates => {
-                if (updates.length) {
-                    nbState.updateHandler.removeObserver(obs)
-                    resolve(updates)
-                }
-            }, new Disposable())
+            const obs = nbState.updateHandler.addObserver(update => {
+                    obs.tryDispose()
+                    resolve(update)
+            })
         })
+
         await expect(nbState.insertCell("below")).resolves.toEqual(0)
-        await expect(waitForInsert).resolves.toEqual([new InsertCell(0, 0, new NotebookCell(0, "scala"), -1)])
+        await expect(waitForInsert).resolves.toEqual(new InsertCell(0, 1, new NotebookCell(0, "scala"), -1))
 
         expect(Object.keys(nbState.state.cells)).toHaveLength(1)
         expect(nbState.state.cellOrder).toEqual([0])
 
         const waitForDelete = new Promise(resolve => {
-            const obs = nbState.updateHandler.addObserver(updates => {
-                if (updates.length) {
-                    nbState.updateHandler.removeObserver(obs)
-                    resolve(updates)
-                }
-            }, new Disposable())
+            const obs = nbState.updateHandler.addObserver(update => {
+                obs.tryDispose()
+                resolve(update)
+            })
         })
 
         await expect(nbState.deleteCell(0)).resolves.toEqual(0)
-        await expect(waitForDelete).resolves.toEqual([new DeleteCell(0, 1, 0)])
+        await expect(waitForDelete).resolves.toEqual(new DeleteCell(0, 2, 0))
 
         expect(Object.keys(nbState.state.cells)).toHaveLength(0)
         expect(nbState.state.cellOrder).toEqual([])
@@ -124,9 +121,9 @@ describe('NotebookStateHandler', () => {
         const waitForSelect = (cellId: number) => new Promise(resolve => {
             const view = nbState.view("cells").view(cellId)
             const obs = view.addObserver(state => {
-                view.removeObserver(obs)
+                obs.dispose()
                 resolve([cellId, state.selected])
-            }, new Disposable())
+            })
         })
 
         let promise = waitForSelect(1)
@@ -168,9 +165,9 @@ describe('NotebookStateHandler', () => {
         const waitForLanguageChange = (cellId: number) => new Promise(resolve => {
             const view = nbState.view("cells").view(cellId)
             const obs = view.addObserver(state => {
-                view.removeObserver(obs)
+                obs.dispose()
                 resolve([cellId, state.language])
-            }, new Disposable())
+            })
         })
 
         const waitForPython = waitForLanguageChange(1)
@@ -179,18 +176,19 @@ describe('NotebookStateHandler', () => {
 
         // add some data to the cell
         const cellWithStuff = {
-            ...nbState.state.cells[1],
             output: [new Output("test", ["stuff"])],
             results: [new ResultValue("hi", "there", [], 0)],
             error: true,
             compileErrors: [new CompileErrors([new KernelReport(new Position("", 1, 2, 3), "hi", 1)])],
             runtimeError: new RuntimeError(new ServerErrorWithCause("yo", "sup", []))
         }
-        nbState.update1("cells", cells => ({
-            ...cells,
+        nbState.updateField("cells", () => ({
             [1]: cellWithStuff
         }))
-        expect(nbState.state.cells[1]).toEqual(cellWithStuff)
+        expect(nbState.state.cells[1]).toEqual({
+            ...nbState.state.cells[1],
+            ...cellWithStuff
+        })
 
         const waitForText = waitForLanguageChange(1)
         nbState.setCellLanguage(1, "text")
@@ -218,30 +216,24 @@ describe('NotebookStateHandler', () => {
         await expect(init).resolves.toEqual(3)
 
         const waitQueued = nbState.waitForCellChange(1, "queued")
-        nbState.update1("cells", cells => ({
-            ...cells,
+        nbState.updateField("cells", () => ({
             [1]: {
-                ...cells[1],
                 queued: true
             }
         }))
         await expect(waitQueued).resolves
 
         const waitRunning = nbState.waitForCellChange(2, "running")
-        nbState.update1("cells", cells => ({
-            ...cells,
+        nbState.updateField("cells", () => ({
             [2]: {
-                ...cells[2],
                 running: true
             }
         }))
         await expect(waitRunning).resolves
 
         const waitError = nbState.waitForCellChange(3, "error")
-        nbState.update1("cells", cells => ({
-            ...cells,
+        nbState.updateField("cells", () => ({
             [3]: {
-                ...cells[3],
                 error: true
             }
         }))

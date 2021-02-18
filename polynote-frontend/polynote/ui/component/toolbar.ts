@@ -1,11 +1,8 @@
-import {
-    NotebookMessageDispatcher,
-    ServerMessageDispatcher,
-} from "../../messaging/dispatcher";
+import {NotebookMessageDispatcher, ServerMessageDispatcher,} from "../../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
+import {Disposable, IDisposable, StateView} from "../../state";
+import {NotebookStateHandler} from "../../state/notebook_state"
 import {ServerStateHandler} from "../../state/server_state";
-import {Disposable, Observer, StateView} from "../../state/state_handler";
-import {CellState, NotebookState, NotebookStateHandler} from "../../state/notebook_state";
 import {FakeSelect} from "../display/fake_select";
 import {LaTeXEditor} from "../input/latex_editor";
 
@@ -29,7 +26,7 @@ export class Toolbar extends Disposable {
         this.el = div(['toolbar-container'], [nb.el, cell.el, code.el, text.el, settings.el])
             .listener('mousedown', (evt: Event) => evt.preventDefault());
 
-        let cellSelectionListener: [Observer<NotebookState>, string] | undefined;
+        let cellSelectionListener: IDisposable | undefined;
         let currentNotebookHandler: NotebookStateHandler | undefined;
 
         // Change the toolbar to reflect the currently selected notebook and cell
@@ -49,9 +46,10 @@ export class Toolbar extends Disposable {
                                 this.el.classList.add('editing-code');
                             }
                         }
-                    }, this);
+                    }).disposeWith(this);
                     if (currentNotebookHandler) {
-                        if (cellSelectionListener !== undefined) currentNotebookHandler.removeObserver(cellSelectionListener);
+                        if (cellSelectionListener !== undefined)
+                            cellSelectionListener.tryDispose();
                         cellSelectionListener = newListener;
                         currentNotebookHandler = nbInfo.handler;
                         nb.enable(nbInfo.info.dispatcher);
@@ -72,7 +70,7 @@ export class Toolbar extends Disposable {
             }
         }
         updateToolbar(ServerStateHandler.state.currentNotebook)
-        ServerStateHandler.get.view("currentNotebook").addObserver(path => updateToolbar(path), this)
+        ServerStateHandler.get.observeKey("currentNotebook", path => updateToolbar(path)).disposeWith(this)
     }
 }
 
@@ -88,13 +86,13 @@ abstract class ToolbarElement extends Disposable {
         super()
 
         if (disableOnDisconnect ) {
-            connectionStatus.addObserver((currentStatus, previousStatus) => {
-                if (currentStatus === "disconnected" && previousStatus === "connected") {
+            connectionStatus.addObserver(currentStatus => {
+                if (currentStatus === "disconnected") {
                     this.el.classList.add("disabled")
-                } else if (currentStatus === "connected" && previousStatus === "disconnected") {
+                } else if (currentStatus === "connected") {
                     this.el.classList.remove("disabled")
                 }
-            }, this)
+            }).disposeWith(this)
         }
     }
 
@@ -212,7 +210,7 @@ class CellToolbar extends ToolbarElement {
             }
         }
         updateSelectorLanguages(ServerStateHandler.state.interpreters)
-        ServerStateHandler.get.view("interpreters").addObserver(langs => updateSelectorLanguages(langs), this)
+        ServerStateHandler.get.observeKey("interpreters", langs => updateSelectorLanguages(langs)).disposeWith(this)
 
         this.langSelector.addListener(change => {
             const id = this.activeCellHandler?.state;
@@ -231,7 +229,7 @@ class CellToolbar extends ToolbarElement {
                 const lang = currentNotebookHandler.state.cells[cellId]?.language
                 this.langSelector.setState(lang)
             }
-        }, this.enabled)
+        }).disposeWith(this.enabled)
         this.setDisabled(false);
     }
 

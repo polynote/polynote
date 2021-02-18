@@ -1,5 +1,5 @@
 import {EditBuffer} from "./edit_buffer";
-import {DeleteCell, NotebookUpdate} from "./messages";
+import {DeleteCell} from "./messages";
 
 describe("EditBuffer", () => {
     const firstUpdate = new DeleteCell(0, 0, 0)

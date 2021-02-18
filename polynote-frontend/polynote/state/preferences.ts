@@ -1,5 +1,5 @@
 import {storage} from "./storage";
-import {StateHandler, StateView} from "./state_handler";
+import {BaseHandler, Disposable, IDisposable, ObjectStateHandler, setValue, StateHandler, StateView, UpdateOf} from ".";
 import {deepEquals, diffArray} from "../util/helpers";
 
 export type RecentNotebooks = {name: string, path: string}[];
@@ -16,42 +16,39 @@ export interface ViewPreferences {
     },
 }
 
-export class LocalStorageHandler<T> extends StateHandler<T> {
-    constructor(readonly key: string, private initial: T) {
-        super(new StateView(initial));
+export class LocalStorageHandler<T extends object> extends BaseHandler<T> {
+    private static defaultHandler<T extends object>(key: string, defaultState: T): StateHandler<T> {
+        return new ObjectStateHandler<T>(storage.get(key) ?? defaultState);
+    }
 
+    constructor(readonly key: string, private defaultState: T, handler?: StateHandler<T>) {
+        super(handler || LocalStorageHandler.defaultHandler(key, defaultState));
+
+        const fromStorage = {};
         // watch storage to detect when it was cleared
         const handleStorageChange = (next: T | null | undefined) => {
-            if (next === null) { // cleared
-                this.setState(initial)
+            if (next !== undefined && next !== null) {
+                this.update(() => setValue(next), fromStorage)
             } else {
-                if (next !== undefined) {
-                    super.setState(next)
-                } else {
-                    super.setState(initial)
-                }
+                this.update(() => setValue(defaultState), fromStorage)
             }
         }
-        handleStorageChange(storage.get(this.key))
-        storage.addStorageListener(this.key, (prev, next) => handleStorageChange(next))
-    }
-    get state(): T {
-        const recent = storage.get(this.key);
-        if (recent !== undefined && recent !== null) {
-            return recent;
-        } else {
-            this.setState(this.initial);
-            return this.initial;
-        }
-    }
+        handleStorageChange(storage.get(key));
 
-    setState(s: T) {
-        super.setState(s);
-        storage.set(this.key, s)
+        storage.addStorageListener(this.key, (prev, next) => handleStorageChange(next))
+
+        this.filterSource(src => src !== fromStorage).addObserver(value => {
+            storage.set(this.key, value)
+        })
     }
 
     clear() {
-        this.setState(this.initial)
+        this.update(() => setValue(this.defaultState));
+    }
+
+    fork(disposeContext?: IDisposable): LocalStorageHandler<T> {
+        const fork = new LocalStorageHandler<T>(this.key, this.defaultState, this.parent).disposeWith(this);
+        return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }
 

@@ -1,4 +1,4 @@
-import {StateHandler, StateView} from "./state_handler";
+import {BaseHandler, IDisposable, mkDisposable, ObjectStateHandler, setValue, StateHandler} from ".";
 import {SocketSession} from "../messaging/comms";
 import * as messages from "../data/messages";
 import {Message} from "../data/messages";
@@ -26,49 +26,34 @@ export class ConnectionError {
 /**
  * SocketStateHandler manages a Socket. It does not hold a reference to the socket, instead pushing it to the Sockets global map.
  */
-export class SocketStateHandler extends StateHandler<SocketState> {
+export class SocketStateHandler extends BaseHandler<SocketState> {
 
-    private readonly socketKey: string;
     private static inst: SocketStateHandler;
 
-    static get global() {
-        if (!SocketStateHandler.inst) {
-            SocketStateHandler.inst = new SocketStateHandler(SocketSession.global)
-        }
-        return SocketStateHandler.inst;
-    }
+    static create(socket: SocketSession, initial: SocketState = {status: "disconnected", error: undefined}): SocketStateHandler {
+        const socketKey = socket.url.href;
+        Sockets.set(socketKey, socket);
+        const baseHandler = new ObjectStateHandler<SocketState>(initial);
+        const handler = new SocketStateHandler(baseHandler, socketKey);
 
-    constructor(socket: SocketSession, initial: SocketState = {status: "disconnected", error: undefined}) {
-        const view = new StateView(initial)
-        super(view);
+        const setConnected = () => handler.updateField("status", () => setValue("connected"));
+        socket.addEventListener('open', setConnected);
 
-        this.socketKey = socket.url.href;
-        Sockets.set(this.socketKey, socket);
+        const setDisconnected = () => handler.updateField("status", () => setValue("disconnected"));
+        socket.addEventListener('close', setDisconnected);
 
-        socket.addEventListener('open', evt => {
-            this.update(s => {
-                return { ...s, status: "connected" }
-            })
-        });
 
-        socket.addEventListener('close', evt => {
-            this.update(s => {
-                return { ...s, status: "disconnected" }
-            })
-        });
-        socket.addEventListener('error', evt => {
+        const handleError =  (evt: Event) => {
             console.error("got error event from socket: ", evt)
             const url = new URL(socket.url.toString());
             url.protocol = document.location.protocol;
             const req = new XMLHttpRequest();
             req.responseType = "arraybuffer";
             const updateError = (error: ConnectionError) => {
-                this.update(s => {
-                    return {
-                        error: error,
-                        status: "disconnected"
-                    }
-                })
+                handler.update(() => ({
+                    error: error,
+                    status: "disconnected"
+                }));
             }
             req.addEventListener("readystatechange", evt => {
                 if (req.readyState === XMLHttpRequest.DONE) {
@@ -107,10 +92,31 @@ export class SocketStateHandler extends StateHandler<SocketState> {
             });
             req.open("GET", url.toString());
             req.send(null);
+        };
+
+        socket.addEventListener('error', handleError);
+
+        handler.onDispose.then(() => {
+            socket.removeEventListener('open', setConnected);
+            socket.removeEventListener('close', setDisconnected);
+            socket.removeEventListener('error', handleError);
         });
+
+        return handler;
     }
 
-    get socket() {
+    static get global() {
+        if (!SocketStateHandler.inst) {
+            SocketStateHandler.inst = SocketStateHandler.create(SocketSession.global)
+        }
+        return SocketStateHandler.inst;
+    }
+
+    private constructor(parent: StateHandler<SocketState>, readonly socketKey: string) {
+        super(parent);
+    }
+
+    private get socket() {
         const socket = Sockets.get(this.socketKey);
         if (socket) return socket;
         else throw new Error(`Unable to find socket with key ${this.socketKey}`);
@@ -118,12 +124,16 @@ export class SocketStateHandler extends StateHandler<SocketState> {
 
 
     // delegates
-    public addMessageListener(...args: Parameters<SocketSession["addMessageListener"]>): ReturnType<SocketSession["addMessageListener"]> {
-        return this.socket.addMessageListener(...args)
+    public addMessageListener(...args: Parameters<SocketSession["addMessageListener"]>): IDisposable {
+        const listener = this.socket.addMessageListener(...args);
+        return mkDisposable(listener, () => this.socket.removeMessageListener(listener));
     }
-    public removeMessageListener(...args: Parameters<SocketSession["removeMessageListener"]>): ReturnType<SocketSession["removeMessageListener"]> {
-        return this.socket.removeMessageListener(...args)
+
+    public addInstanceListener(...args: Parameters<SocketSession["addInstanceListener"]>): IDisposable {
+        const listener = this.socket.addInstanceListener(...args);
+        return mkDisposable(listener, () => this.socket.removeMessageListener(listener));
     }
+
     public send(...args: Parameters<SocketSession["send"]>): ReturnType<SocketSession["send"]> {
         return this.socket.send(...args)
     }
@@ -134,8 +144,13 @@ export class SocketStateHandler extends StateHandler<SocketState> {
         return this.socket.handleMessage(...args)
     }
     public close(...args: Parameters<SocketSession["close"]>): ReturnType<SocketSession["close"]> {
-        this.dispose()
+        this.tryDispose();
         return this.socket.close(...args)
+    }
+
+    fork(disposeContext?: IDisposable): SocketStateHandler {
+        const fork = new SocketStateHandler(this.parent.fork(disposeContext).disposeWith(this), this.socketKey).disposeWith(this);
+        return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }
 

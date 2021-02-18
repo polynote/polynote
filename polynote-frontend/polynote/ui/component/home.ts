@@ -1,7 +1,7 @@
 import {div, h2, h3, img, para, polynoteLogo, span, tag, TagElement} from "../tags";
+import {Disposable} from "../../state";
 import {RecentNotebooks, RecentNotebooksHandler} from "../../state/preferences";
 import {ServerStateHandler} from "../../state/server_state";
-import {Disposable} from "../../state/state_handler";
 
 export class Home extends Disposable {
     readonly el: TagElement<"div">;
@@ -21,17 +21,22 @@ export class Home extends Disposable {
             recentNotebooks
         ]);
 
-        const handleRecents = (recents: RecentNotebooks) => {
+        const handleRecents = (recents: Readonly<RecentNotebooks>) => {
             recentNotebooks.innerHTML = "";
-            recents.forEach(({name, path}) => {
-                recentNotebooks.appendChild(tag('li', ['notebook-link'], {}, [
-                    span([], [path]).click(() => ServerStateHandler.loadNotebook(path, true).then(() => {
-                        ServerStateHandler.selectNotebook(path)
-                    }))
-                ]))
+            recents.forEach(recent => {
+                if (recent) {
+                    const {name, path} = recent;
+                    recentNotebooks.appendChild(tag('li', ['notebook-link'], {}, [
+                        span([], [path]).click(() => ServerStateHandler.loadNotebook(path, true).then(() => {
+                            ServerStateHandler.selectNotebook(path)
+                        }))
+                    ]))
+                } else {
+                    console.warn("There is a null or undefined in recent notebooks")
+                }
             })
         }
         handleRecents(RecentNotebooksHandler.state)
-        RecentNotebooksHandler.addObserver(nbs => handleRecents(nbs), this)
+        RecentNotebooksHandler.addObserver(nbs => handleRecents(nbs)).disposeWith(this)
     }
 }

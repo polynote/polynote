@@ -3,6 +3,12 @@
 import * as fastEquals from 'fast-deep-equal/es6';
 
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
+    if ((a === undefined && b !== undefined) || (b === undefined && a !== undefined)) {
+        return false;
+    }
+    if ((a === null && b !== null) || (b === null && a !== null)) {
+        return false;
+    }
     if (ignoreKeys && a && b) {
         a = ignoreKeys.reduce((acc: T, key: keyof T) => {
             return removeKeys(acc, key)
@@ -71,7 +77,51 @@ export function deepFreeze<T>(obj: T) {
     return go(obj)
 }
 
-export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B)>): boolean {
+export function deepCopy<T>(obj: T, keepFrozen: boolean = false): T {
+    if (obj instanceof Array) {
+        return [...obj].map(item => deepCopy(item)) as any as T;
+    } else if (obj === null || typeof obj === 'undefined') {
+        return obj;
+    } else if (typeof obj === 'object' && (!keepFrozen || !Object.isFrozen(obj))) {
+        const result: any = {};
+        const objAny = obj as any;
+        for (let key of Object.getOwnPropertyNames(objAny)) {
+            result[key] = deepCopy(objAny[key]);
+        }
+        Object.setPrototypeOf(result, Object.getPrototypeOf(obj));
+        return result as T;
+    }
+    return obj;
+}
+
+/**
+ * A generic copy-and-update, like a case class's `copy` method.
+ *
+ * @param srcObj  The object to be copied
+ * @param changes Optionally, a partial object of new values to be replaced in the copy
+ * @return A (shallow) copy of the source object, with any given changes applied. If the source object
+ *         was frozen, the copy will also be frozen.
+ */
+export function copyObject<T>(srcObj: T, changes?: Partial<T>): T {
+    if (srcObj === null || srcObj === undefined || typeof srcObj !== 'object')
+        return srcObj;
+    const result: T = {...srcObj};
+    if (changes !== undefined) {
+        for (const prop in changes) {
+            if (changes.hasOwnProperty(prop)) {
+                const key = prop as keyof T;
+                result[key] = changes[key]!;
+            }
+        }
+    }
+    Object.setPrototypeOf(result, Object.getPrototypeOf(srcObj));
+    if (Object.isFrozen(srcObj)) {
+        Object.freeze(result);
+    }
+    return result as T;
+}
+
+export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B & PropertyKey)>): boolean {
     return keys.every(k => {
         if (k in a && k in b) {
             return deepEquals(a[k], b[k] as any) // TODO: is there a way to fiddle with the types so this works without any?
@@ -97,6 +147,20 @@ export function removeKeys<T>(obj: T, k: (keyof T)[] | keyof T): T {
 
 export function mapValues<V, U>(obj:{ [K in PropertyKey]: V }, f: (x: V) => U): { [K in PropertyKey]: U } {
     return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, f(v)]))
+}
+
+export function collectFields<K extends PropertyKey, V, V1>(obj: Record<K, V>, fn: (key: K, value: V) => V1 | undefined): Record<K, V1> {
+    const results: Record<K, V1> = {} as Record<K, V1>;
+    for (const prop in obj) {
+        if (obj.hasOwnProperty(prop)) {
+            const k = prop as K;
+            const result = fn(k, obj[k]);
+            if (result !== undefined) {
+                results[k] = result;
+            }
+        }
+    }
+    return results;
 }
 
 //*********************
@@ -150,6 +214,15 @@ export function collect<T, U>(arr: T[], fun: (t: T) => U | undefined | null): U[
             return [newT]
         } else return []
     })
+}
+
+export function arrExists<T>(arr: T[], fun: (t: T) => boolean): boolean {
+    for (let i = 0; i < arr.length; i++) {
+        if (fun(arr[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -238,4 +311,23 @@ export class Deferred<T> implements Promise<T> {
 
 export function nameFromPath(path: string): string {
     return path.split(/\//g).pop()!;
+}
+
+export function linePosAt(str: string, offset: number): [number, number] {
+    let line = 0
+    let index = 0
+    while (index < offset) {
+        const nextLineIndex = str.indexOf("\n", index);
+        if (nextLineIndex >= offset) {
+            return [line, offset - index];
+        }
+        index = nextLineIndex;
+        line++;
+    }
+    return [line, 0];
+}
+
+export function TODO(): never {
+    console.error("An implementation is missing!")
+    throw new Error("An implementation is missing!")
 }

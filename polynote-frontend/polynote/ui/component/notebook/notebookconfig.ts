@@ -13,7 +13,7 @@ import {
     textbox
 } from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
+import {Disposable, setValue, StateHandler, StateView} from "../../../state";
 import {
     IvyRepository,
     MavenRepository,
@@ -22,9 +22,9 @@ import {
     RepositoryConfig,
     SparkPropertySet
 } from "../../../data/data";
-import {ServerStateHandler} from "../../../state/server_state";
 import {KernelStatusString} from "../../../data/messages";
 import {NBConfig} from "../../../state/notebook_state";
+import {ServerStateHandler} from "../../../state/server_state";
 
 export class NotebookConfigEl extends Disposable {
     readonly el: TagElement<"div">;
@@ -43,12 +43,11 @@ export class NotebookConfigEl extends Disposable {
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
             const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, env.conf);
             this.el.classList.remove("open");
-            console.log("saved notebook config!", conf)
-            stateHandler.update1("config", () => conf)
+            stateHandler.updateField("config", () => setValue(conf))
         })
 
         this.el = div(['notebook-config'], [
-            h2(['config'], ['Configuration & dependencies']).click(() => stateHandler.update1("open", open => !open)),
+            h2(['config'], ['Configuration & dependencies']).click(() => stateHandler.updateField("open", open => setValue(!open))),
             div(['content'], [
                 dependencies.el,
                 resolvers.el,
@@ -58,7 +57,7 @@ export class NotebookConfigEl extends Disposable {
                 div(['controls'], [
                     saveButton,
                     button(['cancel'], {}, ['Cancel']).click(evt => {
-                        stateHandler.update1("open", () => false)
+                        stateHandler.updateField("open", () => setValue(false))
                     })
                 ])
             ])
@@ -75,7 +74,7 @@ export class NotebookConfigEl extends Disposable {
                     saveButton.textContent = "Save & Restart"
                 }
             }
-        }, this)
+        }).disposeWith(this)
 
         stateHandler.view("open").addObserver(open => {
             if (open) {
@@ -83,7 +82,7 @@ export class NotebookConfigEl extends Disposable {
             } else {
                 this.el.classList.remove("open")
             }
-        }, this)
+        }).disposeWith(this)
     }
 }
 
@@ -115,7 +114,7 @@ class Dependencies extends Disposable {
             }
         }
         setDeps(dependenciesHandler.state)
-        dependenciesHandler.addObserver(deps => setDeps(deps), this)
+        dependenciesHandler.addObserver(deps => setDeps(deps)).disposeWith(this)
     }
 
     private defaultLang = "scala"; // TODO: make this configurable
@@ -198,7 +197,7 @@ class Resolvers extends Disposable {
         }
 
         setResolvers(resolversHandler.state)
-        resolversHandler.addObserver(resolvers => setResolvers(resolvers), this)
+        resolversHandler.addObserver(resolvers => setResolvers(resolvers)).disposeWith(this)
     }
 
     private defaultRes = "ivy"; // TODO: make this configurable
@@ -289,7 +288,7 @@ class Exclusions extends Disposable {
             }
         }
         setExclusions(exclusionsHandler.state)
-        exclusionsHandler.addObserver(excl => setExclusions(excl), this)
+        exclusionsHandler.addObserver(excl => setExclusions(excl)).disposeWith(this)
     }
 
     private addExcl(item?: string) {
@@ -350,7 +349,7 @@ class SparkConf extends Disposable {
             }
         }
         setConf(confHandler.state)
-        confHandler.addObserver(conf => setConf(conf), this)
+        confHandler.addObserver(conf => setConf(conf)).disposeWith(this)
 
         // populate the templates element.
         const updatedTemplates = (templates: SparkPropertySet[]) => {
@@ -359,14 +358,14 @@ class SparkConf extends Disposable {
             })
         }
         updatedTemplates(allTemplatesHandler.state)
-        allTemplatesHandler.addObserver(templates => updatedTemplates(templates), this)
+        allTemplatesHandler.addObserver(templates => updatedTemplates(templates)).disposeWith(this)
 
         // watch for changes in the config's template
         const setTemplate = (template: SparkPropertySet | undefined) => {
             this.templateEl.setSelectedValue(template?.name ?? "")
         }
         setTemplate(templateHandler.state)
-        templateHandler.addObserver(template => setTemplate(template), this)
+        templateHandler.addObserver(template => setTemplate(template)).disposeWith(this)
     }
 
     private addConf(item?: {key: string, val: string}) {
@@ -433,7 +432,7 @@ class EnvConf extends Disposable {
             }
         }
         setEnv(envHandler.state)
-        envHandler.addObserver(env => setEnv(env), this)
+        envHandler.addObserver(env => setEnv(env)).disposeWith(this)
     }
 
     private addEnv(item?: {key: string, val: string}) {

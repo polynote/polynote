@@ -1,4 +1,5 @@
 import {Codec, CodecContainer, combined, discriminated, int32, str, uint8} from "./codec";
+import {Diff} from "../util/diff";
 
 export abstract class ContentEdit extends CodecContainer {
     static codec: Codec<ContentEdit>;
@@ -95,6 +96,8 @@ export abstract class ContentEdit extends CodecContainer {
         return false;
     }
 
+    abstract apply(content: string): string
+
 }
 
 export class Insert extends ContentEdit {
@@ -113,6 +116,10 @@ export class Insert extends ContentEdit {
 
     isEmpty() {
         return this.content.length === 0;
+    }
+
+    apply(content: string): string {
+        return content.substring(0, this.pos) + this.content + content.substring(this.pos);
     }
 }
 
@@ -133,6 +140,10 @@ export class Delete extends ContentEdit {
     isEmpty() {
         return this.length === 0;
     }
+
+    apply(content: string): string {
+        return content.substring(0, this.pos) + content.substring(this.pos + this.length);
+    }
 }
 
 ContentEdit.codecs = [Insert, Delete];
@@ -142,3 +153,30 @@ ContentEdit.codec = discriminated(
     msgTypeId => ContentEdit.codecs[msgTypeId].codec,
     msg => (msg.constructor as typeof ContentEdit).msgTypeId
 );
+
+export function diffEdits(oldContent: string, newContent: string): ContentEdit[] {
+    const diff = Diff.diff(oldContent, newContent);
+    const edits: ContentEdit[] = [];
+    let i = 0;
+    let pos = 0;
+    while (i < diff.length) {
+        // skip through any untouched pieces
+        while (i < diff.length && !diff[i].added && !diff[i].removed) {
+            pos += diff[i].value.length;
+            i++;
+        }
+
+        if (i < diff.length) {
+            const d = diff[i];
+            const text = d.value;
+            if (d.added) {
+                edits.push(new Insert(pos, text));
+                pos += text.length;
+            } else if (d.removed) {
+                edits.push(new Delete(pos, text.length));
+            }
+            i++;
+        }
+    }
+    return edits;
+}

@@ -2,8 +2,21 @@
  * The MessageReceiver is used to translate external events into state changes.
  * So far, the only external events are socket messages.
  */
-import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {ServerState, ServerStateHandler} from "../state/server_state";
+import {
+    append,
+    clearArray,
+    destroy,
+    Disposable,
+    editString,
+    insert,
+    NoUpdate,
+    removeIndex,
+    removeKey,
+    setValue,
+    StateHandler,
+    UpdateOf,
+    valueToUpdate
+} from "../state";
 import * as messages from "../data/messages";
 import {Identity, Message, TaskInfo, TaskStatus} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
@@ -20,24 +33,27 @@ import {
     ResultValue,
     RuntimeError
 } from "../data/result";
-import {Disposable, NoUpdate, StateHandler, StateView, StateWrapper} from "../state/state_handler";
-import {SocketStateHandler} from "../state/socket_state";
-import {arrDelete, arrInsert, deepEquals, mapValues, removeKeys, unzip} from "../util/helpers";
+import {collectFields, unzip} from "../util/helpers";
 import {ClientInterpreters} from "../interpreter/client_interpreter";
+import {SocketStateHandler} from "../state/socket_state";
+import {CellState, KernelState, NotebookState, NotebookStateHandler, PresenceState} from "../state/notebook_state";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
+import {ServerState, ServerStateHandler} from "../state/server_state";
 
-class MessageReceiver<S> extends Disposable {
-    constructor(protected socket: SocketStateHandler, protected state: StateHandler<S>) {
-        super()
+export class MessageReceiver<S> extends Disposable {
+    protected readonly socket: SocketStateHandler;
+    protected readonly state: StateHandler<S>
+    constructor(socket: SocketStateHandler, state: StateHandler<S>) {
+        super();
+        this.socket = socket.fork(this);
+        this.state = state.fork(this);
     }
 
-    receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: S, ...args: ConstructorParameters<typeof msgType>) => S | typeof NoUpdate) {
+    protected receive<M extends messages.Message, C extends (new (...args: any[]) => M) & typeof messages.Message>(msgType: C, fn: (state: Readonly<S>,...args: ConstructorParameters<typeof msgType>) => UpdateOf<S>) {
         this.socket.addMessageListener(msgType, (...args: ConstructorParameters<typeof msgType>) => {
-            this.state.update(s => {
-                return fn(s, ...args) ?? NoUpdate
-            }, this)
-        })
+            this.state.update(state => fn(state, ...args), this)
+        }).disposeWith(this)
     }
 
     // Handle a message as if it were received on the wire. Useful for short-circuiting or simulating server messages.
@@ -46,63 +62,41 @@ class MessageReceiver<S> extends Disposable {
     }
 }
 
-/**
- *  Filter out state updates that originate from the server. Useful if you need to do something IFF the update was
- *  triggered by a user action in this UI.
- */
-export class IgnoreServerUpdatesWrapper<S> extends StateWrapper<S> {
-    protected matchSource(updateSource: any, x: any): boolean {
-        return ! (updateSource instanceof MessageReceiver)
-    }
-
-    protected compare(s1: any, s2: any): boolean {
-        return deepEquals(s1, s2)
-    }
-
-    view<K extends keyof S>(key: K): StateView<S[K]> {
-        return new IgnoreServerUpdatesWrapper(super.view(key));
-    }
+// A predicate for filtering out updates originating from the server
+export function notReceiver(source: any): boolean {
+    return !(source instanceof MessageReceiver)
 }
 
 export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
-    constructor(socket: SocketStateHandler, state: NotebookStateHandler) {
-        super(socket, state);
+    constructor(socketState: SocketStateHandler, notebookState: NotebookStateHandler) {
+        super(socketState, notebookState);
+        const updateHandler = notebookState.updateHandler;
 
-        socket.view("status").addObserver(status => {
+        this.socket.view("status").addObserver(status => {
             if (status === "disconnected") {
-                state.update(s => {
-                    return {
-                        ...s,
-                        kernel: {
-                            ...s.kernel,
-                            status: status
-                        },
-                        cells: mapValues(s.cells, cell => ({
-                            ...cell,
-                            running: false,
-                            queued: false,
-                            currentHighlight: undefined
-                        }))
+                this.state.update(state => ({
+                    kernel: {
+                        status: status
+                    },
+                    cells: collectFields(state.cells, (id, cell) => ({
+                        running: false,
+                        queued: false,
+                        currentHighlight: undefined
+                    }))
+                }))
+            } else if (this.state.state.kernel.status === 'disconnected') {
+                this.state.update(() => ({
+                    kernel: {
+                        status: 'dead'
                     }
-                })
-            } else {
-                state.update(s => {
-                    return {
-                        ...s,
-                        kernel: {
-                            ...s.kernel,
-                            status: s.kernel.status === 'disconnected' ? 'dead' : s.kernel.status // we know it can't be disconnected
-                        }
-                    }
-                })
+                }))
             }
-        }, state)
+        })
 
         this.receive(messages.CompletionsAt, (s, cell, offset, completions) => {
             if (s.activeCompletion) {
                 s.activeCompletion.resolve({cell, offset, completions});
                 return {
-                    ...s,
                     activeCompletion: undefined
                 }
             } else {
@@ -114,7 +108,6 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             if (s.activeSignature) {
                 s.activeSignature.resolve({cell, offset, signatures})
                 return {
-                    ...s,
                     activeSignature: undefined
                 }
             } else {
@@ -123,10 +116,10 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             }
         });
         this.receive(messages.NotebookVersion, (s, path, serverGlobalVersion) => {
-            if (state.updateHandler.globalVersion === -1) {
+            if (updateHandler.globalVersion === -1) {
                 // first version, just set it
-                state.updateHandler.globalVersion = serverGlobalVersion
-            } else if (state.updateHandler.globalVersion !== serverGlobalVersion){
+                updateHandler.globalVersion = serverGlobalVersion
+            } else if (updateHandler.globalVersion !== serverGlobalVersion){
                 // this means we must have been disconnected for a bit and the server state has changed.
                 document.location.reload() // is it ok to trigger the reload here?
             }
@@ -142,7 +135,8 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 const resultsValues = cellState.results.filter(isRV)
                 return [cellState, resultsValues]
             }));
-            const cells = cellStates.reduce((acc, next) => ({...acc, [next.id]: next}), {});
+            const cells = {} as Record<number, UpdateOf<CellState>>;
+            cellStates.forEach(state => cells[state.id] = setValue(state));
             const cellOrder = notebookCells.map(cell => cell.id)
 
             // add this notebook to the backups
@@ -151,105 +145,107 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 .catch(err => console.error("Error adding backup", err));
 
             return {
-                ...s,
-                path,
+                path: setValue(path),
                 cells,
-                cellOrder,
-                config: {...s.config, config: config ?? NotebookConfig.default},
+                cellOrder: setValue(cellOrder),
+                config: { config: config ?? NotebookConfig.default },
                 kernel: {
-                    ...s.kernel,
-                    symbols: [...s.kernel.symbols, ...results.flat()]
+                    // TODO: should there be an op to append multiple values?
+                    //       Or could the append op allow for this?
+                    symbols: setValue([...s.kernel.symbols, ...results.flat()])
                 }
             }
         });
         this.receive(messages.KernelStatus, (s, update) => {
-            return purematch<messages.KernelStatusUpdate, NotebookState | typeof NoUpdate>(update)
+            return purematch<messages.KernelStatusUpdate, UpdateOf<NotebookState> | typeof NoUpdate>(update)
                 .when(messages.UpdatedTasks, tasks => {
                     const taskMap = tasks.reduce<Record<string, TaskInfo>>((acc, next) => {
                         acc[next.id] = next
                         return acc
                     }, {})
                     return {
-                        ...s,
                         kernel: {
-                            ...s.kernel,
-                            tasks: {...s.kernel.tasks, ...taskMap}
+                            tasks: taskMap
                         }
                     }
                 })
                 .whenInstance(messages.KernelBusyState, kernelState => {
                     const status = kernelState.asStatus;
                     return {
-                        ...s,
                         kernel: {
-                            ...s.kernel,
                             status,
-                            symbols: status === 'dead' ? [] : s.kernel.symbols
+                            symbols: status === 'dead' ? clearArray() : NoUpdate
                         }
                     }
                 })
                 .when(messages.KernelInfo, info => {
                     return {
-                        ...s,
                         kernel: {
-                            ...s.kernel,
-                            info: info
-                        },
-                        // Getting KernelInfo means we successfully launched a new kernel, so we can clear any old errors lying around.
-                        // This seems a bit hacky, maybe there's a better way to clear these errors?
-                        errors: []
+                            info: setValue(info)
+                        }
                     }
                 })
                 .when(messages.ExecutionStatus, (id, pos) => {
                     return {
-                        ...s,
                         cells:  {
-                            ...s.cells,
                             [id]: {
-                                ...s.cells[id],
-                                currentHighlight: pos ? { range: pos, className: "currently-executing" } : undefined
+                                currentHighlight: pos ? setValue({ range: pos, className: "currently-executing" }) : undefined
                             }
                         }
                     }
                 })
                 .when(messages.PresenceUpdate, (added, removed) => {
-                    const activePresence = {...s.activePresence}
+                    const activePresence = s.activePresence;
+                    const activePresenceUpdate: UpdateOf<Record<number, PresenceState>> = {};
+                    const cellsUpdate: UpdateOf<Record<number, CellState>> = {};
+
                     added.forEach(p => {
                         if (activePresence[p.id] === undefined) {
                             const color = Object.keys(activePresence).length % 8;
-                            activePresence[p.id] = {id: p.id, name: p.name, color: `presence${color}`, avatar: p.avatar}
+                            activePresenceUpdate[p.id] = setValue({id: p.id, name: p.name, color: `presence${color}`, avatar: p.avatar})
                         }
                     });
-                    removed.forEach(id => delete activePresence[id]);
+
+                    removed.forEach(removedId => {
+                        activePresenceUpdate[removedId] = destroy()
+                        for (const prop of Object.keys(s.cells)) {
+                            if (s.cells.hasOwnProperty(prop)) {
+                                const cellId = prop as unknown as number;  // Record<number, ?> is a lie! This is a string!
+                                const cell = s.cells[cellId];
+                                if (removedId in cell.presence) {
+                                    const cellUpdate = cellsUpdate[cellId] as any || {};  // Again, can't reconcile the types because arrays
+                                    if (!cellUpdate.presence) {
+                                        cellUpdate.presence = {}
+                                    }
+                                    cellUpdate.presence[removedId] = destroy();
+                                    cellsUpdate[cellId] = cellUpdate;
+                                }
+
+                            }
+                        }
+                    });
+
+
 
                     return {
-                        ...s,
-                        activePresence: activePresence,
-                        cells: mapValues(s.cells, cell => ({ ...cell, presence: cell.presence.filter(p => ! removed.includes(p.id))}))
+                        activePresence: activePresenceUpdate,
+                        cells: cellsUpdate
                     }
                 })
                 .when(messages.PresenceSelection, (id, cellId, range) => {
                     const maybePresence = s.activePresence[id]
                     if (maybePresence) {
                         return {
-                            ...s,
                             activePresence: {
-                                ...s.activePresence,
                                 [id]: {
-                                    ...maybePresence,
                                     selection: {cellId, range}
                                 }
                             },
                             cells: {
-                                ...s.cells,
                                 [cellId]: {
-                                    ...s.cells[cellId],
-                                    presence: [...s.cells[cellId].presence, {
-                                        id: maybePresence.id,
-                                        name: maybePresence.name,
-                                        color: maybePresence.color,
-                                        range: range
-                                    }]
+                                    presence: {
+                                        [id]: setValue({...maybePresence, range})
+                                    }
                                 }
                             }
                         }
@@ -266,24 +262,20 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     // and the cell is ready to be run. Unfortunately, this means that the backend sends the  Queue Task
                     // AFTER the Queue CellStatusUpdate, and this race condition can mess up the order of tasks on the sidebar.
                     // TODO: rethink how TaskManager.queue works, or figure out some other way to order this deterministically.
-                    let kernel = s.kernel;
+
+                    let kernel = NoUpdate as UpdateOf<KernelState>;
                     if (status === TaskStatus.Queued) {
                         const taskId = `Cell ${cellId}`;
                         kernel = {
-                            ...s.kernel,
                             tasks: {
-                                ...s.kernel.tasks,
                                 [taskId]: new TaskInfo(taskId, taskId, '', TaskStatus.Queued, 0)
                             }
                         }
                     }
 
                     return {
-                        ...s,
                         cells: {
-                            ...s.cells,
                             [cellId]: {
-                                ...s.cells[cellId],
                                 queued: status === TaskStatus.Queued,
                                 running: status === TaskStatus.Running,
                                 error: status === TaskStatus.Error,
@@ -295,20 +287,17 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 .otherwiseThrow || NoUpdate
         });
         this.receive(messages.NotebookUpdate, (s: NotebookState, update: messages.NotebookUpdate) => {
-            if (update.globalVersion >= state.updateHandler.globalVersion) {
+            if (update.globalVersion >= updateHandler.globalVersion) {
 
-                update = state.updateHandler.rebaseUpdate(update)
+                update = updateHandler.rebaseUpdate(update)
 
-                const res = purematch<messages.NotebookUpdate, NotebookState>(update)
+                const res = purematch<messages.NotebookUpdate, UpdateOf<NotebookState>>(update)
                     .when(messages.UpdateCell, (g, l, id: number, edits: ContentEdit[], metadata?: CellMetadata) => {
                         return {
-                            ...s,
                             cells: {
-                                ...s.cells,
                                 [id]: {
-                                    ...s.cells[id],
-                                    incomingEdits: edits,
-                                    metadata: metadata || s.cells[id].metadata,
+                                    content: editString(edits),
+                                    metadata: metadata ? setValue(metadata) : NoUpdate
                                 }
                             }
                         }
@@ -317,40 +306,31 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         const newCell = this.cellToState(cell);
                         const insertIdx = s.cellOrder.findIndex(id => id === after) + 1;
                         return {
-                            ...s,
                             cells: {
-                                ...s.cells,
-                                [cell.id]: newCell
+                                [cell.id]: setValue(newCell)
                             },
-                            cellOrder: arrInsert(s.cellOrder, insertIdx, newCell.id)
+                            cellOrder: insert(newCell.id, insertIdx)
                         }
                     })
                     .when(messages.DeleteCell, (g, l, id: number) => {
                         const idx = s.cellOrder.indexOf(id)
                         if (idx > -1) {
                             return {
-                                ...s,
-                                cells: {
-                                    ...removeKeys(s.cells, id),
-                                },
-                                cellOrder: arrDelete(s.cellOrder, idx),
+                                cells: removeKey(id),
+                                cellOrder: removeIndex(s.cellOrder, idx),
                                 activeCellId: s.activeCellId === id ? undefined : s.activeCellId // clear activeCellId if it was deleted.
                             }
                         } else return s
                     })
                     .when(messages.UpdateConfig, (g, l, config: NotebookConfig) => {
                         return {
-                            ...s,
-                            config: {...s.config, config}
+                            config: {config}
                         }
                     })
                     .when(messages.SetCellLanguage, (g, l, id: number, language: string) => {
                         return {
-                            ...s,
                             cells: {
-                                ...s.cells,
                                 [id]: {
-                                    ...s.cells[id],
                                     language
                                 }
                             }
@@ -360,11 +340,8 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         // is `output` ever undefined??
                         if (output) {
                             return {
-                                ...s,
                                 cells: {
-                                    ...s.cells,
                                     [id]: {
-                                        ...s.cells[id],
                                         output: [output]
                                     }
                                 }
@@ -373,13 +350,9 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     })
                     .when(messages.CreateComment, (g, l, id: number, comment: CellComment) => {
                         return {
-                            ...s,
                             cells: {
-                                ...s.cells,
                                 [id]: {
-                                    ...s.cells[id],
                                     comments: {
-                                        ...s.cells[id].comments,
                                         [comment.uuid]: comment // we're trusting the server to be correct here.
                                     }
                                 }
@@ -390,29 +363,23 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         const prevComment = s.cells[id].comments[commentId];
                         const updatedComment = new CellComment(commentId, range, prevComment.author, prevComment.authorAvatarUrl, prevComment.createdAt, content)
                         return {
-                            ...s,
                             cells: {
-                                ...s.cells,
                                 [id]: {
-                                    ...s.cells[id],
                                     comments: {
-                                        ...s.cells[id].comments,
-                                        [commentId]: updatedComment
+                                        [commentId]: {
+                                            range,
+                                            content
+                                        }
                                     }
                                 }
                             }
                         }
                     })
                     .when(messages.DeleteComment, (g, l, id: number, commentId: string) => {
-                        const comments = {...s.cells[id].comments}
-                        delete comments[commentId]
                         return {
-                            ...s,
                             cells: {
-                                ...s.cells,
                                 [id]: {
-                                    ...s.cells[id],
-                                    comments: {...comments}
+                                    comments: removeKey(commentId)
                                 }
                             }
                         }
@@ -426,7 +393,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             } else {
                 console.warn(
                     "Ignoring NotebookUpdate with globalVersion", update.globalVersion,
-                    "that is less than our globalVersion", state.updateHandler.globalVersion,
+                    "that is less than our globalVersion", updateHandler.globalVersion,
                     ". This might mean something is wrong.", update)
                 return NoUpdate
             }
@@ -445,44 +412,46 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     })
                     .otherwiseThrow ?? NoUpdate
             } else {
-                let symbols = s.kernel.symbols
+                let symbols = NoUpdate;
                 if (['busy', 'idle'].includes(s.kernel.status) && result instanceof ResultValue) {
-                    symbols = [...s.kernel.symbols, result];
+                    symbols = append(result);
                 }
 
-                const cells = cellId < 0 ? s.cells : {...s.cells, [cellId]: this.parseResults(s.cells[cellId], [result])}
+                const cells = cellId < 0 ? NoUpdate : { [cellId]: this.parseResult(s.cells[cellId], result) }
                 return {
-                    ...s,
                     cells,
-                    kernel: {...s.kernel, symbols }
+                    kernel: { symbols }
                 }
             }
         });
 
         //************* Streaming Messages ****************
         this.receive(messages.HandleData, (s, handlerType, handleId, count, data) => {
+            const msg = new messages.HandleData(handlerType, handleId, count, data)
             return {
-                ...s,
                 activeStreams: {
-                    ...s.activeStreams,
-                    [handleId]: [...(s.activeStreams[handleId] || []), new messages.HandleData(handlerType, handleId, count, data)]
+                    [handleId]:
+                        s.activeStreams[handleId] ?
+                            append(msg) :
+                            setValue([msg])
                 }
             }
         })
 
         this.receive(messages.ModifyStream, (s, fromHandle, ops, newRepr) => {
+            const msg = new messages.ModifyStream(fromHandle, ops, newRepr);
             return {
-                ...s,
                 activeStreams: {
-                    ...s.activeStreams,
-                    [fromHandle]: [...(s.activeStreams[fromHandle] || []), new messages.ModifyStream(fromHandle, ops, newRepr)]
+                    [fromHandle]: s.activeStreams[fromHandle] ?
+                        append(msg) :
+                        setValue([msg])
                 }
             }
         })
     }
 
     private cellToState(cell: NotebookCell): CellState {
-        return this.parseResults({
+        const state: CellState = {
             id: cell.id,
             language: cell.language,
             content: cell.content,
@@ -492,9 +461,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             results: [],
             compileErrors: [],
             runtimeError: undefined,
-            incomingEdits: [],
-            outgoingEdits: [],
-            presence: [],
+            presence: {},
             editing: false,
             selected: false,
             error: false,
@@ -502,38 +469,36 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             queued: false,
             currentSelection: undefined,
             currentHighlight: undefined,
-        }, cell.results);
+        }
+        cell.results.forEach(result => valueToUpdate(this.parseResult(state, result)).applyMutate(state));
+        return state;
     }
 
-    private parseResults(cell: CellState, results: Result[]): CellState {
-        return results.reduce<CellState>((cell, result) => {
-            return purematch<Result, CellState>(result)
-                .when(ClearResults, () => {
-                    return {...cell, output: [], results: [], compileErrors: [], runtimeError: undefined, error: false}
-                })
-                .whenInstance(ResultValue, result => {
-                    return {...cell, results: [...cell.results, result]}
-
-                })
-                .whenInstance(CompileErrors, result => {
-                    return {...cell, compileErrors: [...cell.compileErrors, result], error: true}
-                })
-                .whenInstance(RuntimeError, result => {
-                    return {...cell, runtimeError: result, error: true}
-                })
-                .whenInstance(Output, result => {
-                    return {...cell, output: [result]}
-                })
-                .whenInstance(ExecutionInfo, result => {
-                    return {
-                        ...cell,
-                        metadata: cell.metadata.copy({executionInfo: result})
-                    }
-                })
-                .whenInstance(ClientResult, result => {
-                    return {...cell, results: [...cell.results, result]}
-                }).otherwiseThrow || cell
-        }, cell)
+    private parseResult(cell: CellState, result: Result): UpdateOf<CellState> {
+        return purematch<Result, UpdateOf<CellState>>(result)
+            .when(ClearResults, () => {
+                return {output: clearArray(), results: clearArray(), compileErrors: clearArray(), runtimeError: undefined, error: false}
+            })
+            .whenInstance(ResultValue, result => {
+                return { results: append(result)}
+            })
+            .whenInstance(CompileErrors, result => {
+                return { compileErrors: append(result), error: true}
+            })
+            .whenInstance(RuntimeError, result => {
+                return { runtimeError: setValue(result) }
+            })
+            .whenInstance(Output, result => {
+                return {output: setValue([result])}
+            })
+            .whenInstance(ExecutionInfo, result => {
+                return {
+                    metadata: cell.metadata.copy({executionInfo: result})
+                }
+            })
+            .whenInstance(ClientResult, result => {
+                return {results: append(result)}
+            }).otherwiseThrow || cell
     }
 }
 
@@ -544,23 +509,26 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         super(SocketStateHandler.global, ServerStateHandler.get);
 
         this.socket.view("status").addObserver(status => {
-            this.state.update(s => {
-                return {
-                    ...s, connectionStatus: status
-                }
-            })
-        }, this.state);
+            this.state.updateField("connectionStatus", () => status);
+        }).disposeWith(this.state);
 
         this.receive(messages.Error, (s, code, err) => {
             ErrorStateHandler.addServerError(err)
             return NoUpdate
         });
 
+        this.receive(messages.KernelStatus, (state, update) => {
+            if (update instanceof messages.KernelInfo) {
+                // Getting KernelInfo means we successfully launched a new kernel, so we can clear any old errors lying around.
+                // This seems a bit hacky, maybe there's a better way to clear these errors?
+                ErrorStateHandler.clear()
+            }
+            return NoUpdate;
+        })
+
         this.receive(messages.CreateNotebook, (s, path) => {
             return {
-                ...s,
                 notebooks: {
-                    ...s.notebooks,
                     [path]: ServerStateHandler.getOrCreateNotebook(path).loaded
                 }
             }
@@ -579,7 +547,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             paths.forEach(path => {
                 notebooks[path] = ServerStateHandler.getOrCreateNotebook(path).loaded
             })
-            return { ...s, notebooks }
+            return { notebooks: setValue(notebooks) }
         });
         this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
             // First, we need to check to see if versions match. If they don't, we need to reload to clear out any
@@ -594,32 +562,25 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             });
 
             return {
-                ...s,
-                interpreters: interpreters,
-                serverVersion: serverVersion,
-                serverCommit: serverCommit,
-                identity: identity ?? new Identity("Unknown User", null),
-                sparkTemplates: sparkTemplates,
+                interpreters: setValue(interpreters),
+                serverVersion: setValue(serverVersion),
+                serverCommit: setValue(serverCommit),
+                identity: setValue(identity ?? new Identity("Unknown User", null)),
+                sparkTemplates: setValue(sparkTemplates),
             }
         });
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {
-            const notebooks = {...s.notebooks}
+            const notebooks: UpdateOf<Record<string, boolean>> = {}
             kernelStatuses.forEach(kv => {
                 const path = kv.first;
                 const status = kv.second;
                 const nbInfo = ServerStateHandler.getOrCreateNotebook(path)
-                nbInfo.handler.update(nbState => {
-                    return {
-                        ...nbState,
-                        kernel: {
-                            ...nbState.kernel,
-                            status: status.asStatus
-                        }
-                    }
-                })
-                notebooks[path] = nbInfo.loaded
+                nbInfo.handler.updateField("kernel", () => ({
+                    status: status.asStatus
+                }))
+                notebooks[path] = setValue(nbInfo.loaded)
             })
-            return { ...s, notebooks}
+            return { notebooks: notebooks }
         })
     }
 }

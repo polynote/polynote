@@ -3,7 +3,7 @@
 import {EventTarget} from 'event-target-shim'
 import {KeepAlive, Message} from "../data/messages";
 
-type ListenerCallback = (...args: any[]) => void
+type ListenerCallback = (...args: any[]) => (void | boolean)
 export type MessageListener = [typeof Message, ListenerCallback, boolean?];
 
 const mainEl = document.getElementById('Main');
@@ -133,8 +133,13 @@ export class SocketSession extends EventTarget {
 
     send(msg: Message) {
         if (this.socket && this.isOpen) {
-            const buf = Message.encode(msg);
-            this.socket.send(buf);
+            try {
+                const buf = Message.encode(msg);
+                this.socket.send(buf);
+            } catch (err) {
+                console.error("Error encoding message", err, msg);
+                throw err;
+            }
         } else {
             this.queue.unshift(msg);
         }
@@ -147,7 +152,7 @@ export class SocketSession extends EventTarget {
             const removeWhenFalse = handler[2];
 
             if (msg instanceof msgType) { // check not redundant even though IntelliJ complains.
-                const result = listenerCB.apply(null, msgType.unapply(msg));
+                const result = listenerCB(msg) as void | boolean;
                 if (removeWhenFalse && (result === false || result === undefined)) {
                     this.removeMessageListener(handler);
                 }
@@ -167,6 +172,15 @@ export class SocketSession extends EventTarget {
     }
 
     addMessageListener<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (...args: ConstructorParameters<typeof msgType>) => void, removeWhenFalse: boolean = false) {
+        const handler: MessageListener = [
+            msgType,
+            (inst: M) => fn.apply(null, msgType.unapply(inst)),
+            removeWhenFalse];
+        this.messageListeners.push(handler);
+        return handler;
+    }
+
+    addInstanceListener<M extends Message, C extends (new (...args: any[]) => M) & typeof Message>(msgType: C, fn: (inst: M) => void, removeWhenFalse: boolean = false) {
         const handler: MessageListener = [msgType, fn, removeWhenFalse];
         this.messageListeners.push(handler);
         return handler;

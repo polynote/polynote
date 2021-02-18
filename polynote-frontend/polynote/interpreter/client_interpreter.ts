@@ -1,22 +1,15 @@
 "use strict";
 
-import { VegaInterpreter } from "./vega_interpreter";
+import {VegaInterpreter} from "./vega_interpreter";
 import {ClientResult, ExecutionInfo, ResultValue, RuntimeError} from "../data/result";
-import {NotebookStateHandler} from "../state/notebook_state";
+import {append, setValue} from "../state";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
-import {
-    CellResult,
-    CellStatusUpdate,
-    KernelStatus,
-    TaskInfo,
-    TaskStatus,
-    UpdatedTasks
-} from "../data/messages";
+import {CellResult, CellStatusUpdate, KernelStatus, TaskInfo, TaskStatus, UpdatedTasks} from "../data/messages";
 import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
+import {NotebookStateHandler} from "../state/notebook_state";
 import {ServerStateHandler} from "../state/server_state";
-import {Disposable} from "../state/state_handler";
 
 export interface CellContext {
     id: number,
@@ -85,15 +78,14 @@ export class ClientInterpreter {
             }
 
             if (waitCellId) {
-                return new Promise(resolve => {
-                    const disposable = new Disposable()
-                    this.notebookState.addObserver(state => {
+                return new Promise<void>(resolve => {
+                    const disposable = this.notebookState.addObserver(state => {
                         const maybeCellReady = state.cells[waitCellId!];
                         if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
-                            disposable.dispose()
-                            resolve()
+                            disposable.dispose();
+                            resolve();
                         }
-                    }, disposable)
+                    })
                 })
             } else return Promise.resolve()
         }).then(() => { // finally, interpret the cell
@@ -138,7 +130,8 @@ export class ClientInterpreter {
                     this.receiver.inject(new CellResult(id, res))
                 } else {
                     res.toOutput().then(o => {
-                        this.notebookState.cellsHandler.update1(id, s => ({ ...s, results: [...s.results, res], output: [o]}))
+                        const results = this.notebookState.cellsHandler.state[id].results;
+                        this.notebookState.cellsHandler.updateField(id, () => ({ results: append(res), output: setValue([o])}))
                     })
                 }
             })

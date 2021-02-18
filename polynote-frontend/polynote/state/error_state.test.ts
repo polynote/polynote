@@ -1,6 +1,5 @@
 import {ErrorStateHandler} from "./error_state";
 import {ServerErrorWithCause} from "../data/result";
-import {Disposable} from "./state_handler";
 
 afterEach(() => {
     ErrorStateHandler.clear()
@@ -29,7 +28,7 @@ describe("ErrorStateHandler", () => {
         const gotError = new Promise(resolve => {
             ErrorStateHandler.get.addObserver(errs => {
                 resolve(errs)
-            }, new Disposable())
+            })
         })
 
         const serverError = new ServerErrorWithCause("ServerErrorClass", "server error message", [])
