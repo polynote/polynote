@@ -313,15 +313,17 @@ export function nameFromPath(path: string): string {
     return path.split(/\//g).pop()!;
 }
 
+//                                                       line,   pos
 export function linePosAt(str: string, offset: number): [number, number] {
-    let line = 0
-    let index = 0
+    let line = 0;
+    let index = 0;
+    offset = Math.min(str.length - 1, offset);
     while (index < offset) {
         const nextLineIndex = str.indexOf("\n", index);
-        if (nextLineIndex >= offset) {
+        if (nextLineIndex === -1 || nextLineIndex >= offset) {
             return [line, offset - index];
         }
-        index = nextLineIndex;
+        index = nextLineIndex + 1;
         line++;
     }
     return [line, 0];
