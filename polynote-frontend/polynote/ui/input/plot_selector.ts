@@ -32,7 +32,7 @@ import match from "../../util/match";
 import {GroupAgg, Histogram, Select, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {deepCopy, deepEquals, diffArray, isDescendant} from "../../util/helpers";
-import {Disposable, Observer, StateHandler} from "../../state/state_handler";
+import {Disposable, Observer, StateHandler} from "../../state";
 
 export interface DimensionAxis {
     title?: string
@@ -398,7 +398,7 @@ function linePlot(plotDef: PlotDefinition, plot: LinePlot, schema: StructType): 
     if (confidenceSeries.length > 0) {
         const yAxis = { title: plot.y.title || "value" }
         const resultCopy = {...result};
-        delete resultCopy.mark;
+        delete (resultCopy as any).mark;
         if (resultCopy.encoding)
             delete resultCopy.encoding.y;
 
@@ -905,16 +905,15 @@ class MeasuresUI extends Disposable {
                     this.removeMeasure(s.field, s.aggregation);
             }
             this.listeners = listeners;
-        }, this);
+        }).disposeWith(this);
         return this;
     }
 }
 
-export class PlotSelector {
+export class PlotSelector extends Disposable {
     readonly el: TagElement<'div'>;
     private readonly stateHandler: StateHandler<PlotSelectorState>;
     private listeners: ((newPlot: PlotDefinition, oldPlot?: PlotDefinition) => any)[] = [];
-    private publishObserver: [Observer<PlotSelectorState>, string];
 
     private dimensionFields: StructField[];
     private measuresUI: MeasuresUI;
@@ -923,10 +922,10 @@ export class PlotSelector {
     private yField: TagElement<'select'>;
     private colorChannel: TagElement<'select'>;
     private facetCheckbox: TagElement<'label'>;
-    private _disposer: Disposable = new Disposable();
     private _disabled: boolean = false;
 
     constructor(private name: string, schema: StructType, initialState?: PlotDefinition) {
+        super();
         const dimensionFields = this.dimensionFields = deepDimensionFields(schema.fields);
 
         if (dimensionFields.length === 0) {
@@ -938,7 +937,7 @@ export class PlotSelector {
         const measureOptions   = Object.fromEntries(measureFields.map(field => [field.name, field.name]));
 
         const state = initialState ? PlotSelectorState.fromPlotDef(initialState, dimensionFields[0].name) : PlotSelectorState.empty(name, dimensionFields[0].name, name);
-        const stateHandler = this.stateHandler = StateHandler.from(state, this._disposer);
+        const stateHandler = this.stateHandler = StateHandler.from(state).disposeWith(this);
 
         const typeHandler         = stateHandler.lens("type");
         const facetHandler        = stateHandler.lensOpt("facet");
@@ -947,13 +946,13 @@ export class PlotSelector {
         const singleSeriesHandler = stateHandler.lens("singleY");
         const multiSeriesHandler  = stateHandler.lens("multiY");
 
-        typeHandler.addObserver(this.onSetType, this._disposer);
-        singleSeriesHandler.addObserver(field => this.measuresUI.setMode(field ? 'single' : 'multiple'), this._disposer);
+        typeHandler.addObserver(this.onSetType);
+        singleSeriesHandler.addObserver(field => this.measuresUI.setMode(field ? 'single' : 'multiple'));
 
-        this.publishObserver = stateHandler.addObserver(
-            (newState, oldState) => this.listeners.forEach(l => l(newState.toPlotDef(), oldState.toPlotDef())),
-            this._disposer
-        );
+        stateHandler.addObserver((newState, result, src) => {
+            if (src !== this)
+                this.listeners.forEach(l => l(newState.toPlotDef(), result.oldValue?.toPlotDef()))
+        });
         stateHandler.addObserver(newState => {
             if (newState.facet) {
                 this.el.classList.add('facet');
@@ -962,7 +961,7 @@ export class PlotSelector {
                 this.el.classList.remove('facet');
                 this.facetCheckbox.querySelector('input')!.checked = false;
             }
-        }, this._disposer);
+        });
 
         this.el = div(['plot-selector', state.type, ...(state.facet ? ['facet'] : [])], [
             div(['top-tools'], [
@@ -1022,6 +1021,7 @@ export class PlotSelector {
                         .bindWithDefault(colorSeriesHandler, "")),
                 div(['measure-configs'], [
                     this.measuresUI = new MeasuresUI(measureFields, state.multiY || undefined, state.seriesColorChannel ? 'single' : 'multiple')
+                        .disposeWith(this)
                         .bind(multiSeriesHandler)
                 ]),
                 label(['y-field'], "Field",
@@ -1055,14 +1055,17 @@ export class PlotSelector {
                 ])
             ])
         ]);
+
+        this.onDispose.then(() => {
+            this.listeners = [];
+            this.el.innerHTML = "";
+        })
     }
 
     setPlot(plotDef: PlotDefinition): void {
         const state = PlotSelectorState.fromPlotDef(plotDef, plotDef.plot?.x?.field || this.dimensionFields[0].name)
         if (!deepEquals(state, this.stateHandler.state)) {
-            this.stateHandler.removeObserver(this.publishObserver);
-            this.stateHandler.update(_ => state);
-            this.stateHandler.addObserver(this.publishObserver[0], this._disposer, this.publishObserver[1]);
+            this.stateHandler.update(_ => state, this);
         }
     }
 
@@ -1117,13 +1120,6 @@ export class PlotSelector {
     onChange(fn: (newPlot: PlotDefinition, oldPlot?: PlotDefinition) => any): PlotSelector {
         this.listeners.push(fn);
         return this;
-    }
-
-    dispose() {
-        this.measuresUI.dispose();
-        this._disposer.tryDispose();
-        this.listeners = [];
-        this.el.innerHTML = "";
     }
 }
 

@@ -1,6 +1,7 @@
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 const path = require('path');
 
 module.exports = {
@@ -28,6 +29,13 @@ module.exports = {
     extensions: [".ts", ".js"]
   },
   plugins: [
+    // when building for release, don't do any readonly proxy things – the assumption is that if readonly proxies
+    // are happening during development & testing, there's no need to pay the performance hit to guard against it
+    // in production.
+    new webpack.NormalModuleReplacementPlugin(
+        /polynote\/state\/readonly\.ts/,
+        './readonly.production.ts'
+    ),
     new MonacoWebpackPlugin({
 	    languages: ['clojure', 'java', 'markdown', 'python', 'r', 'ruby', 'json', 'sql', 'swift']
     }),

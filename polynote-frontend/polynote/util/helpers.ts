@@ -1,7 +1,6 @@
 'use strict';
 
 import * as fastEquals from 'fast-deep-equal/es6';
-import {StateHandler} from "../state/state_handler";
 import match, {Extractable, Matcher} from "./match";
 
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
@@ -68,9 +67,6 @@ export function changedKeys<T extends Record<string, any>>(oldT: T, newT: T): (k
 
 export function deepFreeze<T>(obj: T) {
     function go(obj: T) {
-        if (obj instanceof StateHandler) {
-            throw new Error("Attempting to freeze a StateHandler – is there a StateHandler embedded in the state?")
-        }
         if (obj && typeof obj === "object") {
             Object.values(obj).forEach(v => go(v))
             return Object.isFrozen(obj) ? obj : Object.freeze(obj)
@@ -99,7 +95,34 @@ export function deepCopy<T>(obj: T, keepFrozen: boolean = false): T {
     return obj;
 }
 
-export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B)>): boolean {
+/**
+ * A generic copy-and-update, like a case class's `copy` method.
+ *
+ * @param srcObj  The object to be copied
+ * @param changes Optionally, a partial object of new values to be replaced in the copy
+ * @return A (shallow) copy of the source object, with any given changes applied. If the source object
+ *         was frozen, the copy will also be frozen.
+ */
+export function copyObject<T>(srcObj: T, changes?: Partial<T>): T {
+    if (srcObj === null || srcObj === undefined || typeof srcObj !== 'object')
+        return srcObj;
+    const result: T = {...srcObj};
+    if (changes !== undefined) {
+        for (const prop in changes) {
+            if (changes.hasOwnProperty(prop)) {
+                const key = prop as keyof T;
+                result[key] = changes[key]!;
+            }
+        }
+    }
+    Object.setPrototypeOf(result, Object.getPrototypeOf(srcObj));
+    if (Object.isFrozen(srcObj)) {
+        Object.freeze(result);
+    }
+    return result as T;
+}
+
+export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B & PropertyKey)>): boolean {
     return keys.every(k => {
         if (k in a && k in b) {
             return deepEquals(a[k], b[k] as any) // TODO: is there a way to fiddle with the types so this works without any?
@@ -125,6 +148,20 @@ export function removeKeys<T>(obj: T, k: (keyof T)[] | keyof T): T {
 
 export function mapValues<V, U>(obj:{ [K in PropertyKey]: V }, f: (x: V) => U): { [K in PropertyKey]: U } {
     return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, f(v)]))
+}
+
+export function collectFields<K extends PropertyKey, V, V1>(obj: Record<K, V>, fn: (key: K, value: V) => V1 | undefined): Record<K, V1> {
+    const results: Record<K, V1> = {} as Record<K, V1>;
+    for (const prop in obj) {
+        if (obj.hasOwnProperty(prop)) {
+            const k = prop as K;
+            const result = fn(k, obj[k]);
+            if (result !== undefined) {
+                results[k] = result;
+            }
+        }
+    }
+    return results;
 }
 
 //*********************
@@ -213,6 +250,15 @@ export function collectFirstMatch<T, R>(arr: T[], fn: (matcher: Matcher<T>) => M
 export function findInstance<T, U>(arr: T[], u: new (...args: any[]) => U): U | undefined {
     const result = arr.find(t => t instanceof u);
     return result ? result as any as U : undefined;
+}
+
+export function arrExists<T>(arr: T[], fun: (t: T) => boolean): boolean {
+    for (let i = 0; i < arr.length; i++) {
+        if (fun(arr[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -357,4 +403,23 @@ export class Deferred<T> implements Promise<T> {
 
 export function nameFromPath(path: string): string {
     return path.split(/\//g).pop()!;
+}
+
+export function linePosAt(str: string, offset: number): [number, number] {
+    let line = 0
+    let index = 0
+    while (index < offset) {
+        const nextLineIndex = str.indexOf("\n", index);
+        if (nextLineIndex >= offset) {
+            return [line, offset - index];
+        }
+        index = nextLineIndex;
+        line++;
+    }
+    return [line, 0];
+}
+
+export function TODO(): never {
+    console.error("An implementation is missing!")
+    throw new Error("An implementation is missing!")
 }

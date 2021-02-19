@@ -12,11 +12,9 @@ import {DataReader, Pair} from "../data/codec";
 import {Either} from "../data/codec_types";
 import match from "../util/match";
 import {StreamingDataRepr} from "../data/value_repr";
-import {
-    NotebookMessageDispatcher,
-} from "./dispatcher";
+import {NotebookMessageDispatcher,} from "./dispatcher";
+import {Disposable, IDisposable, removeKey, StateHandler} from "../state";
 import {NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {Disposable, Observer, StateHandler, StateView} from "../state/state_handler";
 import {deepCopy, removeKeys} from "../util/helpers";
 
 export const QuartilesType = new StructType([
@@ -46,7 +44,7 @@ export class DataStream extends Disposable {
     private setupPromise?: Promise<Message | void>;
     private repr: StreamingDataRepr;
     private activeStreams: StateHandler<NotebookState["activeStreams"]>;
-    private observer?: [Observer<NotebookState["activeStreams"]>, string];
+    private observer?: IDisposable;
 
     constructor(
         private readonly dispatcher: NotebookMessageDispatcher,
@@ -61,12 +59,12 @@ export class DataStream extends Disposable {
         this.dataType = currentDataType ?? originalRepr.dataType;
         this.mods = mods ?? [];
 
-        this.activeStreams = nbState.lens("activeStreams");
+        this.activeStreams = nbState.lens("activeStreams").disposeWith(this);
     }
 
     private attachListener() {
         if (this.observer) {
-            this.activeStreams.removeObserver(this.observer);
+            this.observer.tryDispose();
         }
 
         this.observer = this.activeStreams.addObserver(handles => {
@@ -106,9 +104,9 @@ export class DataStream extends Disposable {
                 })
 
                 // clear messages now that they have been processed.
-                this.activeStreams.update(streams => removeKeys(streams, this.repr.handle))
+                this.activeStreams.update(() => removeKey(this.repr.handle))
             }
-        }, this)
+        })
     }
 
     batch(batchSize: number) {
@@ -136,8 +134,7 @@ export class DataStream extends Disposable {
         }
 
         if (this.observer)  {
-            this.activeStreams.removeObserver(this.observer)
-            this.observer = undefined
+            this.observer.dispose();
         }
         if (this.onComplete) {
             this.onComplete();
@@ -146,7 +143,7 @@ export class DataStream extends Disposable {
             this.nextPromise.reject("Stream was terminated")
         }
 
-        this.dispose()
+        this.tryDispose();
     }
 
     private withOps(ops: TableOp[], forceUnsafeLongs?: boolean): DataStream {
@@ -304,11 +301,11 @@ export class DataStream extends Disposable {
                                     }
                                 }
                                 resolve(message)
-                                this.activeStreams.removeObserver(obs)
+                                obs.dispose();
                             }
                         })
                     }
-                }, this)
+                })
             }).then(message => {
                 this.attachListener();
                 return message;
@@ -353,7 +350,8 @@ export class DataStream extends Disposable {
                 .when(Select, (columns: string[]) => {
                     const fields = columns.map(name => DataStream.requireField(dataType, name));
                     dataType = new StructType(fields);
-                }).when(Histogram, () => Histogram.dataType);
+                })
+                .when(Histogram, () => Histogram.dataType);
         }
         return dataType;
     }

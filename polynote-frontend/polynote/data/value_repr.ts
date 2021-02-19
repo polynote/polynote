@@ -1,7 +1,17 @@
 'use strict';
 
 import {
-    DataReader, discriminated, combined, bufferCodec, optional, str, uint8, int32, uint32, Codec, CodecContainer
+    bufferCodec,
+    Codec,
+    CodecContainer,
+    combined,
+    DataReader,
+    discriminated,
+    int32,
+    optional,
+    str,
+    uint32,
+    uint8
 } from './codec'
 import {DataType, StructType} from "./data_type";
 

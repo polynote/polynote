@@ -3,11 +3,10 @@ import {KeyCode} from "monaco-editor";
 // The following Monaco imports don't have proper types as they're directly using implementation code in a bit of a
 // hacky way. So these @ts-ignore comments serve to further underscore the hackiness of the hotkey solution :(
 // @ts-ignore
-import {OS, isMacintosh} from 'monaco-editor/esm/vs/base/common/platform.js'
+import {isMacintosh, OS} from 'monaco-editor/esm/vs/base/common/platform.js'
 // @ts-ignore
-import {createSimpleKeybinding} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
 // @ts-ignore
-import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
+import {createSimpleKeybinding, KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
 import {cellHotkeys} from "../component/notebook/cell";
 
 interface Keybinding {

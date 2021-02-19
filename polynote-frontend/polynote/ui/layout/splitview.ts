@@ -1,6 +1,6 @@
 import {div, TagElement} from "../tags";
+import {Disposable, setProperty, updateProperty} from "../../state";
 import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
-import {Disposable} from "../../state/state_handler";
 
 /**
  * Holds a classic three-pane display, where the left and right panes can be both resized and collapsed.
@@ -12,36 +12,18 @@ export class SplitView extends Disposable {
     constructor(leftPane: Pane, center: TagElement<"div">, rightPane: Pane) {
         super()
 
+        const leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
+        const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
+        const triggerResize = () => window.dispatchEvent(new CustomEvent('resize'));
+
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
-                leftPane.header.click(evt => {
-                    ViewPrefsHandler.update(s => {
-                        return {
-                            ...s,
-                            leftPane: {
-                                ...s.leftPane,
-                                collapsed: !s.leftPane.collapsed
-                            }
-                        }
-                    });
-                    window.dispatchEvent(new CustomEvent('resize'));
-                }),
+                leftPane.header.click(evt => leftView.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(triggerResize)),
                 div(['ui-panel-content'], [leftPane.el])])]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
-                rightPane.header.click(evt => {
-                    ViewPrefsHandler.update(s => {
-                        return {
-                            ...s,
-                            rightPane: {
-                                ...s.rightPane,
-                                collapsed: !s.rightPane.collapsed
-                            }
-                        }
-                    })
-                    window.dispatchEvent(new CustomEvent('resize'))
-                }),
+                rightPane.header.click(evt => rightView.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(triggerResize)),
                 div(['ui-panel-content'], [rightPane.el])])]);
 
         const initialPrefs = ViewPrefsHandler.state;
@@ -70,17 +52,7 @@ export class SplitView extends Disposable {
                 left.style.width = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX)) + "px";
             }
         });
-        leftDragger.addEventListener('dragend', () => {
-            ViewPrefsHandler.update(s => {
-                return {
-                    ...s,
-                    leftPane: {
-                        ...s.leftPane,
-                        size: left.style.width
-                    }
-                }
-            });
-        });
+        leftDragger.addEventListener('dragend', () => ViewPrefsHandler.updateField("leftPane", () => setProperty("size", left.style.width)));
 
         // right pane
         right.classList.add('right');
@@ -106,17 +78,7 @@ export class SplitView extends Disposable {
                 right.style.width = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
             }
         });
-        rightDragger.addEventListener('dragend', evt => {
-            ViewPrefsHandler.update(s => {
-                return {
-                    ...s,
-                    rightPane: {
-                        ...s.rightPane,
-                        size: right.style.width
-                    }
-                }
-            });
-        });
+        rightDragger.addEventListener('dragend', evt => ViewPrefsHandler.updateField("rightPane", () => setProperty("size", right.style.width)));
 
         this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
 
@@ -133,6 +95,6 @@ export class SplitView extends Disposable {
             }
         }
         collapseStatus(initialPrefs)
-        ViewPrefsHandler.addObserver(collapseStatus, this)
+        ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this)
     }
 }

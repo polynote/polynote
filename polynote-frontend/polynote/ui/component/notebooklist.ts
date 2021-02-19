@@ -1,10 +1,8 @@
 import {a, button, div, h2, iconButton, span, tag, TagElement} from "../tags";
-import {
-    ServerMessageDispatcher
-} from "../../messaging/dispatcher";
+import {ServerMessageDispatcher} from "../../messaging/dispatcher";
+import {deepCopy, diffArray} from "../../util/helpers";
+import {Disposable, ObjectStateHandler, removeKey, StateView, UpdatePartial} from "../../state"
 import {ServerStateHandler} from "../../state/server_state";
-import {diffArray, removeKeys} from "../../util/helpers";
-import {Disposable, StateHandler, StateView} from "../../state/state_handler";
 
 export class NotebookListContextMenu{
     readonly el: TagElement<"div">;
@@ -142,23 +140,29 @@ export class NotebookList extends Disposable {
             this.el.addEventListener(evt, this.fileHandler.bind(this), false)
         });
 
+        const serverStateHandler = ServerStateHandler.get.fork(this);
+
         // disable the entire notebook list when disconnected from the server
-        ServerStateHandler.get.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
-            if (currentStatus === "disconnected" && previousStatus === "connected") {
+        serverStateHandler.observeKey("connectionStatus", currentStatus => {
+            if (currentStatus === "disconnected") {
                 this.el.classList.add("disabled")
                 this.header.classList.add("disabled")
-            } else if (currentStatus === "connected" && previousStatus === "disconnected") {
+            } else if (currentStatus === "connected") {
                 this.el.classList.remove("disabled")
                 this.header.classList.remove("disabled")
             }
-        }, this)
+        })
 
-        ServerStateHandler.get.view("notebooks").addObserver((newNotebooks, oldNotebooks) => {
-            const [removed, added] = diffArray(Object.keys(oldNotebooks), Object.keys(newNotebooks));
+        serverStateHandler.view("notebooks").addPreObserver(oldNotebooks => {
+            const oldPaths = Object.keys(oldNotebooks);
+            return newNotebooks => {
+                const [removed, added] = diffArray(oldPaths, Object.keys(newNotebooks));
 
-            added.forEach(path => treeState.addPath(path));
-            removed.forEach(path => treeState.removePath(path))
-        }, this);
+
+                added.forEach(path => treeState.addPath(path));
+                removed.forEach(path => treeState.removePath(path))
+            }
+        });
 
         // we're ready to request the notebooks list now!
         dispatcher.requestNotebookList()
@@ -199,69 +203,72 @@ export class NotebookList extends Disposable {
     }
 }
 
-export type Leaf = {
+export interface Leaf {
     fullPath: string,
     value: string
 }
-export type Branch = Leaf & {
-    children: Record<string, (Branch | Leaf)>
-};
 
-export class BranchHandler extends StateHandler<Branch> {
+export interface Branch extends Leaf {
+    children: Record<string, Node>
+}
+
+export type Node = Leaf | Branch;
+
+function isBranch(node: Node): node is Branch {
+    return node && ("children" in node)
+}
+
+export class BranchHandler extends ObjectStateHandler<Branch> {
     constructor(state: Branch) {
-        super(new StateView(state));
+        super(state);
     }
 
     addPath(path: string) {
-        function go(remainingPath: string, components: string[], parent: Branch): Branch {
-            if (remainingPath.split("/").length === 1) {
-                const fullPath = components.concat(remainingPath).join("/")
-                return {
-                    ...parent,
-                    children: {
-                        ...parent.children,
-                        [fullPath]: {
-                            value: remainingPath,
-                            fullPath,
-                        }
+        this.update(topState => {
+            const pieces = path.split("/");
+            const update: UpdatePartial<Branch> = {
+                children: {
+                    [pieces[0]]: {}
+                }
+            };
+            let currentUpdate = update as any, currentState = topState as Node | undefined;
+            let currentPath = "";
+            for (let i = 0; i < pieces.length - 1; i++) {
+                const piece = pieces[i] //as keyof UpdatePartial<Branch>;
+                currentPath += piece;
+                currentUpdate.children = {
+                    [currentPath]: {
+                        children: {}
                     }
                 }
-            } else {
-                const comps = remainingPath.split("/")
-                const childPath = comps.slice(1).join("/");
-                const currentVal = comps.slice(0, 1)[0];
-                const childComponents = [...components, currentVal];
-                const intermediatePath = childComponents.join("/")
-                const maybeChild = parent.children[intermediatePath]
-                return {
-                    ...parent,
-                    children: {
-                        ...parent.children,
-                        [intermediatePath]: go(childPath, childComponents, maybeChild && "children" in maybeChild ? maybeChild : {
-                            fullPath: intermediatePath,
-                            value: currentVal,
-                            children: {}
-                        })
-                    }
+                currentUpdate = currentUpdate.children[currentPath];
+                if (!currentState || !isBranch(currentState) || !currentState.children[piece]) {
+                    currentUpdate.fullPath = currentPath;
+                    currentUpdate.value = piece;
+                    currentState = undefined;
+                } else {
+                    currentState = currentState.children[piece];
                 }
+                currentPath += "/"
             }
-        }
-        this.update(s => {
-            return go(path, [], s)
-        })
+            const leaf = pieces[pieces.length - 1];
+            currentUpdate.children[path] = {
+                fullPath: path,
+                value: leaf
+            }
+            return update;
+        });
     }
 
     removePath(path: string) {
-        function go(path: string, parent: Branch) {
+        function go(path: string, parent: Branch): UpdatePartial<Branch> {
             const maybeChild = parent.children[path]
             if (maybeChild) {
                 return {
-                    ...parent,
-                    children: removeKeys(parent.children, path)
+                    children: removeKey(path)
                 }
             } else {
                 return {
-                    ...parent,
                     children: Object.keys(parent.children).reduce((acc, key)  => {
                         const branchOrLeaf = parent.children[key];
                         if ("children" in branchOrLeaf) {
@@ -270,13 +277,11 @@ export class BranchHandler extends StateHandler<Branch> {
                             acc[key] = branchOrLeaf // 'tis a leaf!
                         }
                         return acc
-                    }, {} as Record<string, Branch | Leaf>)
+                    }, {} as UpdatePartial<Record<string, Node>>)
                 }
             }
         }
-        this.update(s => {
-            return go(path, s)
-        })
+        this.update(state => go(path, state))
     }
 
 }
@@ -316,18 +321,21 @@ export class BranchEl extends Disposable {
             this.expanded = !this.expanded;
         });
 
-        branch.addObserver((newNode, oldNode) => {
-            const [removed, added] = diffArray(Object.keys(oldNode.children), Object.keys(newNode.children));
-            removed.forEach(child => {
-                const idx = this.children.findIndex(c => c.path === oldNode.children[child].fullPath);
-                const childEl = this.children[idx].el;
-                childEl.parentElement?.removeChild(childEl);
-                this.children.splice(idx, 1);
-            });
-            added.forEach(child => {
-                this.addChild(newNode.children[child]);
-            })
-        }, this)
+        branch.addPreObserver(prev => {
+            const oldNode = deepCopy(prev)
+            return (newNode, update) => {
+                const [removed, added] = diffArray(Object.keys(oldNode.children), Object.keys(newNode.children));
+                removed.forEach(child => {
+                    const idx = this.children.findIndex(c => c.path === oldNode.children[child].fullPath);
+                    const childEl = this.children[idx].el;
+                    childEl.parentElement?.removeChild(childEl);
+                    this.children.splice(idx, 1);
+                });
+                added.forEach(child => {
+                    this.addChild(newNode.children[child]);
+                })
+            }
+        }).disposeWith(this)
     }
 
     get expanded() {
@@ -349,13 +357,10 @@ export class BranchEl extends Disposable {
     private addChild(node: Branch | Leaf) {
         let child: BranchEl | LeafEl;
 
-        const childStateHandler = this.branch.view("children").view(node.fullPath);
-        // childStateHandler.addObserver((next, prev) => console.log("child state changed for", node.fullPath, ":", prev, next))
+        const childStateHandler = this.branch.view("children").view(node.fullPath).disposeWith(this);
         if ("children" in node) {
-            // const childStateHandler = StateHandler.from(node)
             child = new BranchEl(this.dispatcher, childStateHandler as StateView<Branch>, this);
         } else {
-            // const childStateHandler = StateHandler.from(node)
             child = new LeafEl(this.dispatcher, childStateHandler);
         }
 
@@ -461,7 +466,7 @@ export class LeafEl extends Disposable {
                 // this leaf was removed
                 this.dispose()
             }
-        }, this)
+        }).disposeWith(this)
     }
 
     focus() {

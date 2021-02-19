@@ -60,3 +60,18 @@ export class ErrorEl {
         return new ErrorEl(summary, trace, errorLine)
     }
 }
+
+export function getErrorLine(err: ServerErrorWithCause, filename: string): number | undefined {
+    let errorLine: number | undefined = undefined;
+
+    if (err.stackTrace?.length > 0) {
+        err.stackTrace.forEach((traceEl, i) => {
+            if (traceEl.file === filename && traceEl.line >= 0) {
+                if (errorLine === undefined)
+                    errorLine = traceEl.line ?? undefined;
+            }
+        });
+    }
+
+    return errorLine;
+}

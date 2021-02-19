@@ -3,20 +3,13 @@
 import {VizInterpreter, VegaInterpreter} from "./vega_interpreter";
 import {ClientResult, CompileErrors, ExecutionInfo, Result, ResultValue, RuntimeError} from "../data/result";
 import {CellState, KernelSymbols, NotebookState, NotebookStateHandler} from "../state/notebook_state";
+import {append, setValue} from "../state";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
-import {
-    CellResult,
-    CellStatusUpdate,
-    KernelStatus,
-    TaskInfo,
-    TaskStatus,
-    UpdatedTasks
-} from "../data/messages";
+import {CellResult, CellStatusUpdate, KernelStatus, TaskInfo, TaskStatus, UpdatedTasks} from "../data/messages";
 import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
 import {ServerStateHandler} from "../state/server_state";
-import {Disposable} from "../state/state_handler";
 
 export interface CellContext {
     id: number,
@@ -65,7 +58,7 @@ export class ClientInterpreter {
         // and wait for them to complete
         const nbState = this.notebookState.state
         const cellIdx = this.notebookState.getCellIndex(id)!
-        const cell = nbState.cells[cellIdx]!;
+        const cell = nbState.cells[id]!;
 
         // first, queue up the cell, waiting for another cell to queue if necessary
         Promise.resolve().then(() => {
@@ -73,7 +66,7 @@ export class ClientInterpreter {
                 return this.notebookState.waitForCellChange(queueAfter, "queued")
             } else return Promise.resolve()
         }).then(() => {
-            const promise = this.notebookState.waitForCellChange(cellIdx, "queued");
+            const promise = this.notebookState.waitForCellChange(id, "queued");
             this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Queued)))
             return promise
         }).then(() => { // next, wait for any cells queued up earlier.
@@ -81,22 +74,21 @@ export class ClientInterpreter {
             let waitCellId: number | undefined = undefined;
             while (waitIdx >= 0 && waitCellId === undefined) {
                 waitIdx -= 1;
-                const maybeWaitCell = this.notebookState.state.cells[waitIdx]
+                const maybeWaitCell = nbState.cells[nbState.cellOrder[waitIdx]];
                 if (maybeWaitCell && (maybeWaitCell.queued || maybeWaitCell.running)) {
                     waitCellId = maybeWaitCell.id;
                 }
             }
 
             if (waitCellId) {
-                return new Promise(resolve => {
-                    const disposable = new Disposable()
-                    this.notebookState.addObserver(state => {
+                return new Promise<void>(resolve => {
+                    const disposable = this.notebookState.addObserver(state => {
                         const maybeCellReady = state.cells[waitCellId!];
                         if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
-                            disposable.dispose()
-                            resolve()
+                            disposable.dispose();
+                            resolve();
                         }
-                    }, disposable)
+                    })
                 })
             } else return Promise.resolve()
         }).then(() => { // finally, interpret the cell
@@ -130,20 +122,18 @@ export class ClientInterpreter {
 }
 
 export function cellContext(notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, cellId: number): CellContext {
-    const resultValues = availableResultValues(notebookState.state.kernel.symbols, notebookState, dispatcher, cellId);
+    const resultValues = availableResultValues(notebookState.state.kernel.symbols, notebookState.state.cellOrder, cellId);
     const availableValues = availableClientValues(resultValues, notebookState, dispatcher);
     return {id: cellId, availableValues, resultValues};
 }
 
-export function availableResultValues(symbols: KernelSymbols, notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, id?: number): Record<string, ResultValue> {
-    const currentState = notebookState.state;
-    //const cells = notebookState.state.cell;
+export function availableResultValues(symbols: KernelSymbols, cellOrder: number[], id?: number): Record<string, ResultValue> {
     const availableCells = Object.keys(symbols);
     const whichCells = availableCells.filter(id => id.startsWith('-'));
-    const cellIdx = id !== undefined ? currentState.cellOrder.indexOf(id) : currentState.cellOrder.length - 1;
+    const cellIdx = id !== undefined ? cellOrder.indexOf(id) : cellOrder.length - 1;
 
     if (cellIdx >= 0) {
-        whichCells.push(...currentState.cellOrder.slice(0, cellIdx).map(id => id.toString()))
+        whichCells.push(...cellOrder.slice(0, cellIdx).map(id => id.toString()))
     }
 
     return whichCells.reduce<Record<string, ResultValue>>((acc, next) => {

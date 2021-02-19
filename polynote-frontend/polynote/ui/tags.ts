@@ -1,7 +1,7 @@
 'use strict';
 
 import {loadIcon} from "./icons";
-import {IDisposable, StateHandler, UpdatableState} from "../state/state_handler";
+import {IDisposable, StateHandler, UpdatableState} from "../state";
 
 type ContentElement = (Node | {el: Node} | string | undefined)
 export type Content = ContentElement | ContentElement[];
@@ -129,20 +129,20 @@ export interface BindableTag<ValueType, K extends keyof HTMLElementTagNameMap, T
      * updated with the new value. If value of the form field is changed by the user agent, the state handler will be
      * updated with the new value.
      */
-    bind(state: UpdatableState<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+    bind(state: UpdatableState<ValueType>): BindableTagElement<ValueType, K, T>
 
     /**
      * Like `bind`, but handles optional state values. If the state value is `undefined`, it does not propagate to the
      * form field; the state change is instead ignored.
      */
-    bindPartial(state: UpdatableState<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+    bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T>
 
     /**
      * Like `bind`, but handles optional state values. If the value is `undefined`, the form field is updated with a
      * default value instead. If the form field is updated by the user agent to the default value, a default state value
      * can be specified.
      */
-    bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T>
+    bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T>
 }
 
 export type BindableTagElement<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> =
@@ -155,35 +155,50 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
         eventType: string = 'change'
     ): E & BindableTagElement<ValueType, K, T> {
     const result: E & BindableTagElement<ValueType, K, T> = Object.assign(self, {
-        bind(state: UpdatableState<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bind(state: UpdatableState<ValueType>): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
-            const observer = state.addObserver((newValue: ValueType, oldValue: ValueType) => update(self, newValue), disposeWhen ?? state);
             const listener = (evt: Event) => state.update(currentState => getValue(self));
+            const observer = state.addObserver((newValue: ValueType) => {
+                if (!self.isConnected) {
+                    observer.dispose();
+                    self.removeEventListener(eventType, listener);
+                } else {
+                    update(self, newValue);
+                }
+            });
             self.addEventListener(eventType, listener);
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));
             return result;
         },
-        bindPartial(state: UpdatableState<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
+            const listener = (evt: Event) => state.update(currentState => getValue(self));
             const observer = state.addObserver(
-                (newValue, oldValue) => {
-                    if (newValue !== undefined)
+                (newValue) => {
+                    if (!self.isConnected) {
+                        observer.dispose();
+                        self.removeEventListener(eventType, listener);
+                    } else if (newValue !== undefined)
                         update(self, newValue)
-                },
-                disposeWhen ?? state
+                }
             );
-            const listener = (evt: Event) => state.update(currentState => getValue(self));
             self.addEventListener(eventType, listener);
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));
             return result;
         },
-        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
+        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T> {
             update(self, getValue(self));
-            const observer = state.addObserver(
-                (newValue, oldValue) => update(self, newValue ?? defaultValue),
-                disposeWhen ?? state
-            );
             const listener = (evt: Event) => state.update(currentState => { const v = getValue(self); return v === defaultValue ? defaultState : v });
+            const observer = state.addObserver(
+                (newValue) => {
+                    if (!self.isConnected) {
+                        observer.dispose();
+                        self.removeEventListener(eventType, listener);
+                    } else {
+                        update(self, newValue ?? defaultValue)
+                    }
+                }
+            );
             self.addEventListener(eventType, listener);
             state.onDispose.then(_ => self.removeEventListener(eventType, listener));
             return result;
@@ -201,16 +216,16 @@ function delegateBinding<ValueType, K extends keyof HTMLElementTagNameMap, T ext
     to: TagElement<K, T>
 ): BindableTagElement<ValueType, K, T> {
     const result: BindableTagElement<ValueType, K, T> = Object.assign(to, {
-        bind(state: UpdatableState<ValueType>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
-            from.bind(state, disposeWhen);
+        bind(state: UpdatableState<ValueType>): BindableTagElement<ValueType, K, T> {
+            from.bind(state);
             return result;
         },
-        bindPartial(state: UpdatableState<ValueType | undefined>, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
-            from.bindPartial(state, disposeWhen);
+        bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T> {
+            from.bindPartial(state);
             return result;
         },
-        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType, disposeWhen?: IDisposable): BindableTagElement<ValueType, K, T> {
-            from.bindWithDefault(state, defaultValue, defaultState, disposeWhen);
+        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T> {
+            from.bindWithDefault(state, defaultValue, defaultState);
             return result;
         }
     }) //as unknown as E1 & BindableTagElement<ValueType, K1, T1>;
@@ -235,7 +250,7 @@ export function img(classes: string[], src: string, alt?: string) {
 
 export function icon(classes: string[], iconName: string, alt?: string) {
     const icon = loadIcon(iconName).then(svgEl => {
-        const el = svgEl.cloneNode(true) as SVGElement;
+        const el = svgEl.cloneNode(true) as SVGElement | HTMLImageElement;
         el.setAttribute('class', 'icon');
         if (alt) {
             el.setAttribute('alt', alt);

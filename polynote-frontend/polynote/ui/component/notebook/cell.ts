@@ -1,17 +1,18 @@
-import {blockquote, button, Content, details, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
+import {blockquote, button, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
+import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
-    NotebookMessageDispatcher,
-} from "../../../messaging/dispatcher";
-import {Disposable, StateHandler, StateView} from "../../../state/state_handler";
-import {
-    CellState,
-    CompletionHint,
-    NotebookStateHandler, Outputs,
-    SignatureHint
-} from "../../../state/notebook_state";
+    clearArray,
+    Disposable,
+    EditString,
+    editString,
+    removeFromArray,
+    SetValue,
+    setValue,
+    StateHandler,
+    StateView,
+    UpdateLike, UpdateResult
+} from "../../../state";
 import * as monaco from "monaco-editor";
-// @ts-ignore (ignore use of non-public monaco api)
-import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
 import {
     editor,
     IKeyboardEvent,
@@ -22,6 +23,8 @@ import {
     Range,
     SelectionDirection
 } from "monaco-editor";
+// @ts-ignore (ignore use of non-public monaco api)
+import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
 import {
     ClientResult,
     CompileErrors,
@@ -31,27 +34,20 @@ import {
     ResultValue,
     RuntimeError
 } from "../../../data/result";
-import {ServerStateHandler} from "../../../state/server_state";
 import {CellMetadata} from "../../../data/data";
 import {FoldingController, SuggestController} from "../../input/monaco/extensions";
-import {ContentEdit, Delete, Insert} from "../../../data/content_edit";
+import {ContentEdit, Delete, diffEdits, Insert} from "../../../data/content_edit";
 import {
     displayContent,
     displayData,
-    displaySchema, mimeEl,
+    displaySchema,
+    mimeEl,
     MIMEElement,
     parseContentType,
     prettyDuration
 } from "../../display/display_content";
-import match, {matchS} from "../../../util/match";
-import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
-import CompletionList = languages.CompletionList;
-import SignatureHelp = languages.SignatureHelp;
-import SignatureHelpResult = languages.SignatureHelpResult;
-import EditorOption = editor.EditorOption;
-import IModelContentChangedEvent = editor.IModelContentChangedEvent;
-import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
-import { CommentHandler } from "./comment";
+import match, {matchS, purematch} from "../../../util/match";
+import {CommentHandler} from "./comment";
 import {RichTextEditor} from "../../input/text_editor";
 import {Diff} from "../../../util/diff";
 import {DataRepr, MIMERepr, StreamingDataRepr, ValueRepr} from "../../../data/value_repr";
@@ -60,20 +56,30 @@ import {BoolType, DoubleType, IntType, StringType, StructField, StructType} from
 import {FaviconHandler} from "../../../notification/favicon_handler";
 import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
-import TrackedRangeStickiness = editor.TrackedRangeStickiness;
-import {cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
-import {ErrorEl} from "../../display/error";
+import {availableResultValues, cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
+import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error} from "../../../data/messages";
+import {collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
+import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
+import CompletionList = languages.CompletionList;
+import SignatureHelp = languages.SignatureHelp;
+import SignatureHelpResult = languages.SignatureHelpResult;
+import EditorOption = editor.EditorOption;
+import IModelContentChangedEvent = editor.IModelContentChangedEvent;
+import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
+import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
 import {
-    collectInstances,
-    deepCopy,
-    deepEquals,
-    diffArray,
-    findInstance,
-} from "../../../util/helpers";
+    CellPresenceState,
+    CellState,
+    CompletionHint,
+    NotebookStateHandler,
+    SignatureHint
+} from "../../../state/notebook_state";
+import {ServerStateHandler} from "../../../state/server_state";
 import {isViz, parseMaybeViz, saveViz, Viz, VizSelector} from "../../input/viz_selector";
 import {VegaClientResult, VizInterpreter} from "../../../interpreter/vega_interpreter";
+
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -86,36 +92,36 @@ export class CellContainer extends Disposable {
     private readonly cellId: string;
     private cell: Cell;
     private path: string;
+    private cellState: StateHandler<CellState>;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler, private cellState: StateHandler<CellState>) {
+    constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler, state: StateHandler<CellState>) {
         super()
+        const cellState = this.cellState = state.fork(this);
         this.cellId = `Cell${cellState.state.id}`;
         this.cell = this.cellFor(cellState.state.language);
         this.path = notebookState.state.path;
         this.el = div(['cell-component'], [this.cell.el]);
         this.el.click(evt => this.cell.doSelect());
-        cellState.view("language").addObserver((newLang, oldLang) => {
+        cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
-            if (oldLang !== undefined && (oldLang === "text" || newLang === "text")) {
+            if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
                 const newCell = this.cellFor(newLang)
                 newCell.replace(this.cell).then(cell => {
                     this.cell = cell
                     this.layout()
                 })
             }
-        }, this);
+        });
 
-        ServerStateHandler.view("connectionStatus").addObserver((currentStatus, previousStatus) => {
+        ServerStateHandler.view("connectionStatus").addObserver(currentStatus => {
             if (currentStatus === "disconnected") {
                 this.cell.setDisabled(true)
-            } else if (previousStatus === "disconnected") {
+            } else {
                 this.cell.setDisabled(false)
             }
-        }, this)
+        }).disposeWith(this)
 
-        cellState.onDispose.then(() => {
-            this.dispose()
-        })
+        this.disposeWith(cellState)
     }
 
     private cellFor(lang: string) {
@@ -160,24 +166,25 @@ abstract class Cell extends Disposable {
     protected id: number;
     protected cellId: string;
     public el: TagElement<"div">;
+    protected readonly cellState: StateHandler<CellState>;
+    protected readonly notebookState: NotebookStateHandler;
 
-    protected constructor(protected dispatcher: NotebookMessageDispatcher, protected notebookState: NotebookStateHandler, protected cellState: StateHandler<CellState>) {
+    protected constructor(protected dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>) {
         super()
+        const cellState = this.cellState = _cellState.fork(this);
+        const notebookState = this.notebookState = _notebookState.fork(this);
+
         this.id = cellState.state.id;
         this.cellId = `Cell${this.id}`;
 
-        const updateSelected = (selected: boolean | undefined, prevSelected?: boolean) => {
-            console.log("Updating selected status for cell", this.id)
-            if (selected && ! prevSelected) {
-                console.log("Selected cell", this.id)
+        const updateSelected = (selected: boolean | undefined) => {
+            if (selected) {
                 this.onSelected()
-            } else if (! selected && prevSelected){
-                console.log("Deselected cell", this.id)
+            } else {
                 this.onDeselected()
             }
         }
-        const cellSelected = cellState.view("selected")
-        cellSelected.addObserver((selected, prevSelected) => updateSelected(selected, prevSelected), this);
+        cellState.observeKey("selected", updateSelected);
 
         cellState.onDispose.then(() => {
             this.dispose()
@@ -194,7 +201,7 @@ abstract class Cell extends Disposable {
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
             if (this.cellState.state.selected // prevent blurring a different cell
                 && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
-                this.cellState.update1("selected", () => false)
+                this.cellState.updateField("selected", () => false)
             }
         }
     }
@@ -312,22 +319,21 @@ abstract class Cell extends Disposable {
 
 type ErrorMarker = {error: CompileErrors | RuntimeError, markers: IMarkerData[]};
 
-
-class CodeCell extends Cell {
+export class CodeCell extends Cell {
     private readonly editor: IStandaloneCodeEditor;
     private readonly editorEl: TagElement<"div">;
     private cellInputTools: TagElement<"div">;
     private applyingServerEdits: boolean;
-    private execDurationUpdater: number;
+    private execDurationUpdater?: number;
     private highlightDecorations: string[] = [];
     private vim?: any;
     private commentHandler: CommentHandler;
 
     private errorMarkers: ErrorMarker[] = [];
 
-    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cellState: StateHandler<CellState>, private path: string) {
-        super(dispatcher, notebookState, cellState);
-
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>, private path: string) {
+        super(dispatcher, notebookState, cell);
+        const cellState = this.cellState;
         const langSelector = dropdown(['lang-selector'], ServerStateHandler.state.interpreters);
         langSelector.setSelectedValue(this.state.language);
         langSelector.addEventListener("input", evt => {
@@ -392,9 +398,9 @@ class CodeCell extends Cell {
             if (model) {
                 const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
                 if (evt.selection.getDirection() === SelectionDirection.RTL) {
-                    this.cellState.update1("currentSelection", () => range.reversed)
+                    this.cellState.updateField("currentSelection", () => range.reversed)
                 } else {
-                    this.cellState.update1("currentSelection", () => range)
+                    this.cellState.updateField("currentSelection", () => range)
                 }
             }
         });
@@ -411,15 +417,16 @@ class CodeCell extends Cell {
         //       we'll need to rethink this stuff.
         this.editor.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
 
-        this.cellState.view("editing").addObserver(editing => {
+        cellState.observeKey("editing", editing => {
             if (editing) {
                 this.editor.focus()
             }
-        }, this)
+        })
 
-        const compileErrorsState = cellState.mapView<"compileErrors", CellErrorMarkers[][]>("compileErrors", (errors: CompileErrors[]) => {
+        const compileErrorsState = cellState.view("compileErrors");
+        compileErrorsState.addObserver(errors => {
             if (errors.length > 0) {
-                return errors.map(error => {
+                errors.forEach(error => {
                     const model = this.editor.getModel()!;
                     const reportInfos = error.reports.map((report) => {
                         const startPos = model.getPositionAt(report.position.start);
@@ -437,22 +444,20 @@ class CodeCell extends Cell {
                     });
 
                     this.setErrorMarkers(error, reportInfos)
-
-                    return reportInfos
                 })
             } else {
                 this.clearErrorMarkers("compiler")
-                return []
             }
         })
-        const runtimeErrorState = cellState.mapView<"runtimeError", ErrorEl | undefined>("runtimeError", (runtimeError?: RuntimeError) => {
+
+        const runtimeErrorState = cellState.view("runtimeError")
+        runtimeErrorState.addObserver(runtimeError => {
             if (runtimeError) {
-                const err = ErrorEl.fromServerError(runtimeError.error, this.cellId);
-                const cellLine = err.errorLine;
+                const cellLine = getErrorLine(runtimeError.error, this.cellId);
                 if (cellLine !== undefined && cellLine >= 0) {
                     const model = this.editor.getModel()!;
                     this.setErrorMarkers(runtimeError, [{
-                        message: err.summary.message,
+                        message: runtimeError.error.message, //err.summary.message,
                         startLineNumber: cellLine,
                         endLineNumber: cellLine,
                         startColumn: model.getLineMinColumn(cellLine),
@@ -460,18 +465,12 @@ class CodeCell extends Cell {
                         severity: 8
                     }])
                 }
-                return err
             } else {
                 this.clearErrorMarkers("runtime")
-                return undefined
             }
-        }, (errEl1: ErrorEl, errEl2: ErrorEl) => deepEquals(errEl1, errEl2, ["el"])) // remove `el` from equality check because dom elements are never equal.
-        let cellOutput = new CodeCellOutput(dispatcher, cellState, compileErrorsState, runtimeErrorState);
-        this.onDispose.then(() => {
-            compileErrorsState.dispose()
-            runtimeErrorState.dispose()
-            cellOutput.dispose()
         })
+
+        let cellOutput = new CodeCellOutput(dispatcher, cellState, this.cellId, compileErrorsState, runtimeErrorState);
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
@@ -492,14 +491,13 @@ class CodeCell extends Cell {
             cellOutput.el
         ]);
 
-        cellState.view("language").addObserver((newLang, oldLang) => {
+        cellState.preObserveKey("language", oldLang => newLang => {
             const newHighlightLang = ClientInterpreters[newLang]?.highlightLanguage ?? newLang;
             const oldHighlightLang = ClientInterpreters[oldLang]?.highlightLanguage ?? oldLang;
             this.el.classList.replace(oldHighlightLang, newHighlightLang);
             langSelector.setSelectedValue(newHighlightLang);
-            console.log("Setting monaco language to ", newHighlightLang)
             monaco.editor.setModelLanguage(this.editor.getModel()!, newHighlightLang)
-        }, this);
+        });
 
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
@@ -520,16 +518,22 @@ class CodeCell extends Cell {
             }
         }
         updateMetadata(this.state.metadata);
-        cellState.view("metadata").addObserver(metadata => updateMetadata(metadata), this);
+        cellState.observeKey("metadata", metadata => updateMetadata(metadata));
 
-        cellState.view("incomingEdits").addObserver(edits => {
-            if (edits.length > 0) {
+        cellState.observeKey("content", (content, updateResult, src) => {
+            if (src === this)   // ignore edits that originated from monaco
+                return;
+
+            const edits = purematch<UpdateLike<string>, ContentEdit[]>(updateResult.update)
+                .when(EditString, edits => edits)
+                .whenInstance(SetValue, update => updateResult.oldValue ? diffEdits(updateResult.oldValue as string, update.value as string) : [])
+                .otherwiseThrow
+
+            if (edits && edits.length > 0) {
                 // console.log("applying edits", edits)
                 this.applyEdits(edits);
-                // we might not really need to clear these edits...
-                cellState.update1("incomingEdits", () => [])
             }
-        }, this, `incomingEdits of cell ${this.id}`);
+        })
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
@@ -539,13 +543,13 @@ class CodeCell extends Cell {
             }
         }
         updateError(this.state.error)
-        cellState.view("error").addObserver(error => updateError(error), this);
+        cellState.observeKey("error", error => updateError(error));
 
         const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
                 this.el.classList.add("running");
                 // clear results when a cell starts running:
-                this.cellState.update1("results", () => [])
+                this.cellState.updateField("results", () => clearArray())
 
                 // update Execution Status (in case this is an initial load)
                 if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
@@ -565,8 +569,8 @@ class CodeCell extends Cell {
                 }
             }
         }
-        updateRunning(this.state.running)
-        cellState.view("running").addObserver((curr, prev) => updateRunning(curr, prev), this);
+        updateRunning(this.state.running);
+        cellState.view("running").addPreObserver(prev => curr => updateRunning(curr, prev));
 
         const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
             if (queued) {
@@ -582,7 +586,7 @@ class CodeCell extends Cell {
             }
         }
         updateQueued(this.state.queued)
-        cellState.view("queued").addObserver((curr, prev) => updateQueued(curr, prev), this);
+        cellState.view("queued").addPreObserver(prev => curr => updateQueued(curr, prev));
 
         const updateHighlight = (h: { range: PosRange , className: string} | undefined) => {
             if (h) {
@@ -602,7 +606,7 @@ class CodeCell extends Cell {
             }
         }
         updateHighlight(this.state.currentHighlight)
-        cellState.view("currentHighlight").addObserver(h => updateHighlight(h), this)
+        cellState.observeKey("currentHighlight", h => updateHighlight(h));
 
         const presenceMarkers: Record<number, string[]> = {};
         const updatePresence = (id: number, name: string, color: string, range: PosRange) => {
@@ -634,22 +638,23 @@ class CodeCell extends Cell {
                 presenceMarkers[id] = this.editor.deltaDecorations(old, newDecorations);
             }
         }
-        cellState.state.presence.forEach(p => updatePresence(p.id, p.name, p.color, p.range))
-        cellState.view("presence").addObserver((newPresence, oldPresence) => {
-            const removed = diffArray(newPresence, oldPresence)[1]
-
+        Object.values(cellState.state.presence).forEach(p => updatePresence(p.id, p.name, p.color, p.range))
+        cellState.observeKey("presence", (newPresence, updateResult) => {
+            const removed = Object.values(updateResult.removedValues ?? {}) as CellPresenceState[];
             removed.forEach(p => {
                 const marker = presenceMarkers[p.id]
                 if (marker) {
                     this.editor.deltaDecorations(marker, [])
                 }
                 delete presenceMarkers[p.id]
-            })
+            });
 
-            newPresence.forEach(p => {
-                updatePresence(p.id, p.name, p.color, p.range)
-            })
-        }, this)
+            const added = Object.values(updateResult.addedValues ?? {}) as CellPresenceState[];
+            added.forEach(p => updatePresence(p.id, p.name, p.color, p.range));
+
+            const changed = Object.values(updateResult.changedValues ?? {}) as CellPresenceState[];
+            changed.forEach(p => updatePresence(p.id, p.name, p.color, p.range));
+        })
 
         // make sure to create the comment handler.
        this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), this.editor);
@@ -689,14 +694,7 @@ class CodeCell extends Cell {
                 return [new Insert(contentChange.rangeOffset, contentChange.text)];
             } else return [];
         });
-        console.log("model content changed! sending these edits:", edits)
-        this.cellState.update(s => ({...s, outgoingEdits: edits, content: this.editor.getValue()}))
-        const obs = this.cellState.addObserver(s => {
-            if (s.outgoingEdits === edits) {
-                this.cellState.removeObserver(obs)
-                // this.cellState.update(s => ({...s, outgoingEdits: []}))
-            }
-        }, this)
+        this.cellState.updateField("content", () => editString(edits), this);
 
         // update comments
         this.commentHandler.triggerCommentUpdate()
@@ -705,7 +703,7 @@ class CodeCell extends Cell {
     requestCompletion(offset: number): Promise<CompletionList> {
         return new Promise<CompletionHint>((resolve, reject) => {
             this.notebookState.state.activeCompletion?.reject() // remove previously active completion if present
-            return this.notebookState.update1("activeCompletion", () => ({cellId: this.id, offset, resolve, reject}))
+            return this.notebookState.updateField("activeCompletion", () => setValue({cellId: this.id, offset, resolve, reject}))
         }).then(({cell, offset, completions}) => {
             const len = completions.length;
             const indexStrLen = ("" + len).length;
@@ -746,7 +744,7 @@ class CodeCell extends Cell {
     requestSignatureHelp(offset: number): Promise<SignatureHelpResult> {
         return new Promise<SignatureHint>((resolve, reject) => {
             this.notebookState.state.activeSignature?.reject() // remove previous active signature if present.
-            return this.notebookState.update1("activeSignature", () => ({cellId: this.id, offset, resolve, reject}))
+            return this.notebookState.updateField("activeSignature", () => setValue({cellId: this.id, offset, resolve, reject}))
         }).then(({cell, offset, signatures}) => {
             let sigHelp: SignatureHelp;
             if (signatures) {
@@ -790,9 +788,9 @@ class CodeCell extends Cell {
         this.errorMarkers = this.errorMarkers.filter(m => m !== marker)
         this.setModelMarkers(this.errorMarkers.flatMap(m => m.markers))
         if (marker.error instanceof RuntimeError) {
-            this.cellState.update1("runtimeError", () => undefined)
+            this.cellState.updateField("runtimeError", () => setValue(undefined))
         } else {
-            this.cellState.update1("compileErrors", errors => errors.filter(e => ! deepEquals(e, marker.error)))
+            this.cellState.updateField("compileErrors", errs => removeFromArray(errs, marker.error as CompileErrors, deepEquals))
         }
     }
 
@@ -802,11 +800,11 @@ class CodeCell extends Cell {
     }
 
     private toggleCode() {
-        this.cellState.update1("metadata", prevMetadata => prevMetadata.copy({hideSource: !prevMetadata.hideSource}))
+        this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({hideSource: !prevMetadata.hideSource})))
     }
 
     private toggleOutput() {
-        this.cellState.update1("metadata", prevMetadata => prevMetadata.copy({hideOutput: !prevMetadata.hideOutput}))
+        this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})))
     }
 
     layout() {
@@ -1050,12 +1048,13 @@ class CodeCellOutput extends Disposable {
     constructor(
         private dispatcher: NotebookMessageDispatcher,
         private cellState: StateView<CellState>,
-        compileErrorsHandler: StateView<CellErrorMarkers[][] | undefined>,
-        runtimeErrorHandler: StateView<ErrorEl | undefined>) {
+        private cellId: string,
+        compileErrorsHandler: StateView<CompileErrors[]>,
+        runtimeErrorHandler: StateView<RuntimeError | undefined>) {
         super()
 
-        const outputHandler = cellState.view("output");
-        const resultsHandler = cellState.view("results");
+        const outputHandler = cellState.view("output").disposeWith(this);
+        const resultsHandler = cellState.view("results").disposeWith(this);
 
         this.el = div(['cell-output'], [
             div(['cell-output-margin'], []),
@@ -1079,28 +1078,33 @@ class CodeCellOutput extends Disposable {
             }
         }
         handleResults(resultsHandler.state)
-        resultsHandler.addObserver((results: (ClientResult | ResultValue)[]) => handleResults(results), this);
+        resultsHandler.addObserver((results: (ClientResult | ResultValue)[]) => handleResults(results));
 
-        compileErrorsHandler.addObserver(errors => this.setErrors(errors), this);
+        compileErrorsHandler.addObserver(errors => this.setErrors(errors));
 
         this.setRuntimeError(runtimeErrorHandler.state)
         runtimeErrorHandler.addObserver(error => {
             this.setRuntimeError(error)
-        }, this);
+        });
 
-        const handleOutput = (output: Outputs) => {
-            if (output.clear || !output.length) {
-                this.clearOutput();
-            }
+        const handleOutput = (outputs: Output[], result?: UpdateResult<Output[]>) => {
+            if (result) {
+                if (result.update instanceof SetValue) {
+                    this.clearOutput();
+                } else if (result.addedValues) {
+                    for (const output of Object.values(result.addedValues)) {
+                        this.addOutput(output.contentType, output.content.join(''))
+                    }
+                }
 
-            if (output.length) {
-                output.forEach(o => {
+            } else {
+                outputs.forEach(o => {
                     this.addOutput(o.contentType, o.content.join(''))
                 })
             }
         }
-        handleOutput(outputHandler.state)
-        outputHandler.addObserver(output => handleOutput(output), this)
+        handleOutput(outputHandler.state);
+        outputHandler.addObserver(handleOutput);
     }
 
     private displayResult(result: ResultValue | ClientResult) {
@@ -1216,21 +1220,23 @@ class CodeCellOutput extends Disposable {
         return Promise.resolve(["text/plain", result.valueText]);
     }
 
-    private setErrors(errors?: CellErrorMarkers[][]) {
+    private setErrors(errors?: CompileErrors[]) {
         this.clearErrors()
-        if (errors && errors.length > 0 && errors[0].length > 0 ) {
-            errors.forEach(reportInfos => {
+        if (errors && errors.length > 0 && errors[0].reports.length > 0 ) {
+            errors.forEach(error => {
+                const reportInfos = error.reports;
                 if (reportInfos.length > 0) {
                     this.cellOutputDisplay.classList.add('errors');
                     const compileError = div(
                         ['errors'],
                         reportInfos.map((report) => {
-                            const severity = (['Info', 'Warning', 'Error'])[report.originalSeverity];
+                            const lineNumber = linePosAt(this.cellState.state.content, report.position.start)
+                            const severity = (['Info', 'Warning', 'Error'])[report.severity];
                             return blockquote(['error-report', severity], [
                                 span(['severity'], [severity]),
                                 span(['message'], [report.message]),
                                 ' ',
-                                span(['error-link'], [`(Line ${report.startLineNumber})`])
+                                span(['error-link'], [`(Line ${lineNumber})`])
                             ]);
                         }));
                     if (this.cellErrorDisplay === undefined) {
@@ -1245,9 +1251,10 @@ class CodeCellOutput extends Disposable {
         }
     }
 
-    setRuntimeError(error?: ErrorEl) {
+    setRuntimeError(error?: RuntimeError) {
         if (error) {
-            const runtimeError = div(['errors'], [blockquote(['error-report', 'Error'], [error.el])]).click(e => e.stopPropagation());
+            const errorEl = ErrorEl.fromServerError(error.error, this.cellId)
+            const runtimeError = div(['errors'], [blockquote(['error-report', 'Error'], [errorEl.el])]).click(e => e.stopPropagation());
             if (this.cellErrorDisplay === undefined) {
                 this.cellErrorDisplay = runtimeError;
                 this.cellOutputDisplay.appendChild(this.cellErrorDisplay)
@@ -1395,33 +1402,6 @@ class CodeCellOutput extends Disposable {
     }
 }
 
-export function diffEdits(oldContent: string, newContent: string): ContentEdit[] {
-    const diff = Diff.diff(oldContent, newContent);
-    const edits: ContentEdit[] = [];
-    let i = 0;
-    let pos = 0;
-    while (i < diff.length) {
-        // skip through any untouched pieces
-        while (i < diff.length && !diff[i].added && !diff[i].removed) {
-            pos += diff[i].value.length;
-            i++;
-        }
-
-        if (i < diff.length) {
-            const d = diff[i];
-            const text = d.value;
-            if (d.added) {
-                edits.push(new Insert(pos, text));
-                pos += text.length;
-            } else if (d.removed) {
-                edits.push(new Delete(pos, text.length));
-            }
-            i++;
-        }
-    }
-    return edits;
-}
-
 
 export class TextCell extends Cell {
     private editor: RichTextEditor;
@@ -1465,12 +1445,12 @@ export class TextCell extends Cell {
     // not private because it is also used by latex-editor
     onInput() {
         const newContent = this.editor.markdownContent;
-        const edits = diffEdits(this.lastContent, newContent);
+        const edits: ContentEdit[] = diffEdits(this.lastContent, newContent)
         this.lastContent = newContent;
 
         if (edits.length > 0) {
             //console.log(edits);
-            this.cellState.update(s => ({...s, outgoingEdits: edits, content: this.editor.markdownContent}))
+            this.cellState.updateField("content", () => editString(edits))
         }
     }
 
@@ -1577,7 +1557,7 @@ export class VizCell extends Cell {
     private editor: VizSelector;
     private editorEl: TagElement<'div'>;
     private cellInputTools: TagElement<'div'>;
-    private execDurationUpdater: number;
+    private execDurationUpdater?: number;
     private viz: Viz;
     private cellOutput: CodeCellOutput;
 
@@ -1585,8 +1565,10 @@ export class VizCell extends Cell {
     private resultValue?: ResultValue;
     private previousViews: Record<string, [Viz, Output | ClientResult]> = {};
 
-    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cellState: StateHandler<CellState>, private path: string) {
-        super(dispatcher, notebookState, cellState);
+    constructor(dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>, private path: string) {
+        super(dispatcher, _notebookState, _cellState);
+        const cellState = this.cellState;
+        const notebookState = this.notebookState;
 
         const initialViz = parseMaybeViz(this.cellState.state.content);
         if (isViz(initialViz)) {
@@ -1609,7 +1591,7 @@ export class VizCell extends Cell {
 
         const execInfoEl = div(["exec-info"], []);
 
-        this.cellOutput = new CodeCellOutput(dispatcher, cellState, StateHandler.from(undefined, this), StateHandler.from(undefined, this));
+        this.cellOutput = new CodeCellOutput(dispatcher, cellState, this.cellId, cellState.view("compileErrors"), cellState.view("runtimeError"));
 
         // after the cell is run, cache the viz and result and hide input
         cellState.view('results').addObserver(results => {
@@ -1621,7 +1603,7 @@ export class VizCell extends Cell {
                     result.toOutput().then(output => this.previousViews[viz.type] = [viz, output]);
                 }
             }
-        }, this);
+        }).disposeWith(this);
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
@@ -1654,15 +1636,17 @@ export class VizCell extends Cell {
         }
 
         const watchValues = () => {
-            const valuesView = this.notebookState.viewAvailableValuesAt(cellState.state.id, dispatcher);
-            valuesView.addObserver(updateValues, this);
+            this.notebookState.view("kernel").view("symbols").observeMapped(
+                symbols => availableResultValues(symbols, this.notebookState.state.cellOrder, cellState.state.id),
+                updateValues
+            )
         }
 
         if (notebookState.isLoading) {
             // wait until the notebook is done loading before populating the result, to make sure we have the result
             // and that it's the correct one.
             notebookState.loaded.then(() => {
-                if (!updateValues(notebookState.availableValuesAt(cellState.state.id, dispatcher))) {
+                if (!updateValues(notebookState.availableValuesAt(cellState.state.id))) {
                     // notebook isn't live. We should wait for the value to become available.
                     // TODO: once we have metadata about which names a cell declares, we can be smarter about
                     //       exactly which cell to wait for. Right now, if the value was declared and then re-declared,
@@ -1676,7 +1660,7 @@ export class VizCell extends Cell {
             })
         } else {
             // If notebook is live & kernel is active, we should have the value right now.
-            updateValues(notebookState.availableValuesAt(cellState.state.id, dispatcher));
+            updateValues(notebookState.availableValuesAt(cellState.state.id));
             watchValues();
         }
 
@@ -1699,7 +1683,7 @@ export class VizCell extends Cell {
             }
         }
         updateMetadata(this.state.metadata);
-        cellState.view("metadata").addObserver(metadata => updateMetadata(metadata), this);
+        cellState.view("metadata").addObserver(metadata => updateMetadata(metadata));
     }
 
     private setValue(value: ResultValue): void {
@@ -1717,16 +1701,14 @@ export class VizCell extends Cell {
         const editor = this.editor = new VizSelector(this.valueName, this.resultValue, this.dispatcher, this.notebookState, deepCopy(this.viz));
 
         // handle external edits
-        // TODO: fix this pendingEdits thing
-        this.cellState.view("incomingEdits").addObserver(edits => {
-            if (edits.length > 0) {
-                this.cellState.update1("incomingEdits", () => []);
-                const newViz = parseMaybeViz(this.cellState.state.content);
+        this.cellState.view("content").addObserver((content, result, src) => {
+            if (src !== this) {
+                const newViz = parseMaybeViz(content);
                 if (isViz(newViz)) {
                     editor.currentViz = newViz;
                 }
             }
-        }, this);
+        });
 
         this.editor.onChange(viz => this.updateViz(viz));
 
@@ -1762,7 +1744,7 @@ export class VizCell extends Cell {
         if (edits.length > 0) {
             this.viz = deepCopy(viz);
             const cellId = this.cellState.state.id;
-            this.cellState.update(cellState => ({...cellState, outgoingEdits: edits, content: newCode}))
+            this.cellState.updateField("content", () => editString(edits), this);
             if (this.previousViews[viz.type] && deepEquals(this.previousViews[viz.type][0], viz)) {
                 const result = this.previousViews[viz.type][1];
                 this.cellOutput.clearOutput();
@@ -1829,7 +1811,7 @@ export class VizCell extends Cell {
     }
 
     private toggleCode(hide?: boolean) {
-        this.cellState.update1("metadata", meta => meta.copy({hideSource: hide ?? !meta.hideSource}));
+        this.cellState.updateField("metadata", meta => setValue(meta.copy({hideSource: hide ?? !meta.hideSource})));
     }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {

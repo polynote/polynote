@@ -1,12 +1,11 @@
-import {UserPreferences, UserPreferencesHandler} from "./preferences";
+import {Disposable} from ".";
 import * as monaco from "monaco-editor";
-import {Disposable} from "./state_handler";
+import {UserPreferences, UserPreferencesHandler} from "./preferences";
 
 export class ThemeHandler extends Disposable {
     constructor() {
         super()
         const handlePref = (pref: typeof UserPreferences["theme"]) => {
-            console.log("Setting theme to ", pref.value)
             if (pref.value !== undefined && pref.value !== null) {
                 const el = document.getElementById("polynote-color-theme");
                 if (el) {
@@ -16,6 +15,6 @@ export class ThemeHandler extends Disposable {
             }
         }
         handlePref(UserPreferencesHandler.state.theme)
-        UserPreferencesHandler.view("theme").addObserver(pref => handlePref(pref), this)
+        UserPreferencesHandler.observeKey("theme", pref => handlePref(pref)).disposeWith(this)
     }
 }

@@ -1,7 +1,8 @@
 import {
     Backup,
     Backups,
-    BACKUPS_PER_DAY, BACKUPS_PER_NOTEBOOK,
+    BACKUPS_PER_DAY,
+    BACKUPS_PER_NOTEBOOK,
     clean,
     cleanCells,
     cleanConfig,

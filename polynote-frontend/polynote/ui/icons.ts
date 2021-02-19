@@ -1,6 +1,6 @@
 'use strict';
 
-const icons: Record<string, Promise<SVGElement>> = {};
+const icons: Record<string, Promise<SVGElement | HTMLImageElement>> = {};
 
 function loadXML(uri: string): Promise<Document> {
     return new Promise((resolve, reject) => {
@@ -23,14 +23,20 @@ function loadXML(uri: string): Promise<Document> {
     });
 }
 
-export function loadIcon(name: string): Promise<SVGElement> {
+export function loadIcon(name: string): Promise<SVGElement | HTMLImageElement> {
 
     if (icons[name])
         return icons[name];
 
-    const promise = loadXML(`static/style/icons/fa/${name}.svg`).then(
+    const srcUrl = `static/style/icons/fa/${name}.svg`;
+    const promise = loadXML(srcUrl).then(
         doc => document.importNode(doc.documentElement, true) as any as SVGElement
-    );
+    ).catch(reason => {
+        console.warn(`Unable to load icon ${name} as SVG; icon colors may be off for dark mode`);
+        const img = document.createElement("img");
+        img.src = srcUrl;
+        return img;
+    });
 
     icons[name] = promise;
     return promise;

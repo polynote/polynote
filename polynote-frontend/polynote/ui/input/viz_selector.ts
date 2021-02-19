@@ -10,7 +10,7 @@ import {parseContentType} from "../display/display_content";
 import {TableView} from "../layout/table_view";
 import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
 import {NotebookStateHandler} from "../../state/notebook_state";
-import {Disposable} from "../../state/state_handler";
+import {Disposable} from "../../state";
 
 export interface PlotViz {
     type: "plot",

@@ -2,21 +2,24 @@
 
 import embed, {Result as VegaResult} from "vega-embed";
 
-import {div, button, iconButton, h4, TagElement, icon, radio, fakeSelectElem, span, textbox} from '../tags'
+import {button, div, fakeSelectElem, h4, icon, iconButton, radio, span, TagElement, textbox} from '../tags'
 import {
     BoolType,
-    ByteType, DataType,
-    DateType, DoubleType,
+    ByteType,
+    DataType,
+    DateType,
+    DoubleType,
     FloatType,
     IntType,
     LongType,
     OptionalType,
     ShortType,
-    StringType, StructField,
+    StringType,
+    StructField,
     TimestampType
 } from "../../data/data_type";
 import {FakeSelect} from "../display/fake_select";
-import {ServerStateHandler} from "../../state/server_state";
+import {append, setValue} from "../../state";
 import {GroupAgg, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {ClientResult, Output} from "../../data/result";
@@ -24,10 +27,10 @@ import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
 import {CellMetadata} from "../../data/data";
 import {DataStream} from "../../messaging/datastream";
 import {StreamingDataRepr} from "../../data/value_repr";
-import {NotebookStateHandler} from "../../state/notebook_state";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
-import {mapValues, deepEquals} from "../../util/helpers";
-import {Disposable} from "../../state/state_handler";
+import {deepEquals, mapValues} from "../../util/helpers";
+import {NotebookStateHandler} from "../../state/notebook_state";
+import {ServerStateHandler} from "../../state/server_state";
 
 function isDimension(dataType: DataType): boolean {
     if (dataType instanceof OptionalType) {
@@ -273,7 +276,7 @@ export class PlotEditor {
             selector.hideOption('quartiles');
         }
 
-        this.measureSelectors.forEach(el => delete el.style.display);
+        this.measureSelectors.forEach(el => delete (el.style as any).display);
         this.controls.classList.remove('numeric-fields');
         this.rawFields = false;
 
@@ -287,7 +290,7 @@ export class PlotEditor {
                 this.rawFields = true;
             } else if (specType.allowedAggregates) {
                 this.measureSelectors.forEach(el => {
-                    delete el.style.display;
+                    delete (el.style as any).display;
                     const sel = el.selector;
                     sel.options.forEach((opt, idx) => {
                         if (specType.allowedAggregates!.indexOf(opt.value) < 0) {
@@ -514,21 +517,19 @@ export class PlotEditor {
                 content: `(${content})`
             }).then(newCellId => {
                 const clientResult = new PlotEditorResult(this.plotOutput.querySelector('.plot-embed') as TagElement<"div">, output);
-                this.nbState.cellsHandler.update1(newCellId, cell => ({
-                    ...cell,
-                    output: [output],
-                    results: [...cell.results, clientResult]
+                this.nbState.cellsHandler.updateField(newCellId, () => ({
+                    output: setValue([output]),
+                    results: append(clientResult)
                 }))
-                return new Promise(resolve => {
-                    const disposable = new Disposable()
-                    this.nbState.addObserver(state => {
+                return new Promise<void>(resolve => {
+                    const obs = this.nbState.addObserver(state => {
                         const maybeHasOutput = state.cells[newCellId]
                         if (maybeHasOutput && maybeHasOutput.output.includes(output)) {
-                            disposable.dispose()
+                            obs.dispose()
                             this.dispatcher.hideValueInspector()
                             resolve()
                         }
-                    }, disposable)
+                    })
                 })
             })
         })

@@ -1,21 +1,22 @@
 import {FullScreenModal} from "../layout/modal";
-import {button, div, dropdown, h2, h3, iconButton, span, loader, table, tag, polynoteLogo, TagElement} from "../tags";
+import {button, div, dropdown, h2, h3, iconButton, loader, polynoteLogo, span, table, tag, TagElement} from "../tags";
 import * as monaco from "monaco-editor";
-import {ClientBackup} from "../../state/client_backup";
+import {
+    Disposable,
+    IDisposable, setProperty,
+    StateView,
+} from "../../state";
+import {ServerMessageDispatcher,} from "../../messaging/dispatcher";
+import {TabNav} from "../layout/tab_nav";
+import {getHotkeys} from "../input/hotkeys";
 import {ServerStateHandler} from "../../state/server_state";
 import {
     clearStorage,
-    LocalStorageHandler,
-    NotebookScrollLocationsHandler, OpenNotebooksHandler,
+    LocalStorageHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
     RecentNotebooksHandler,
     UserPreferencesHandler, ViewPrefsHandler
 } from "../../state/preferences";
-import {Disposable, IDisposable, Observer, StateView} from "../../state/state_handler";
-import {
-    ServerMessageDispatcher,
-} from "../../messaging/dispatcher";
-import {TabNav} from "../layout/tab_nav";
-import {getHotkeys} from "../input/hotkeys";
+import {ClientBackup} from "../../state/client_backup";
 
 export class About extends FullScreenModal implements IDisposable {
     private disposable: Disposable;
@@ -130,15 +131,7 @@ export class About extends FullScreenModal implements IDisposable {
                     throw new Error(`Unexpected Event target for event ${JSON.stringify(evt)}! Expected \`currentTarget\` to be an HTMLSelectElement but instead got ${JSON.stringify(self)}`)
                 }
                 const updatedValue = pref.possibleValues[self.options[self.selectedIndex].value];
-                UserPreferencesHandler.update(state => {
-                    return {
-                        ...state,
-                        [key]: {
-                            ...pref,
-                            value: updatedValue
-                        }
-                    }
-                })
+                UserPreferencesHandler.updateField(key, () => setProperty("value", updatedValue))
             });
             valueEl.value = value.toString();
             prefsTable.addRow({
@@ -156,7 +149,9 @@ export class About extends FullScreenModal implements IDisposable {
             addToTop: false
         });
 
-        const addStorageEl = <T>(handler: LocalStorageHandler<T>) => {
+        const addStorageEl = <T extends object>(storageHandler: LocalStorageHandler<T>) => {
+            const key = storageHandler.key;
+            const handler = storageHandler.fork(this);
             const valueEl = div(['json'], []);
 
             const setValueEl = (value: any) => {
@@ -168,13 +163,13 @@ export class About extends FullScreenModal implements IDisposable {
 
             handler.addObserver(next => {
                 setValueEl(next)
-            }, this)
+            })
 
-            const clearEl = iconButton(["clear"], `Clear ${handler.key}`, "trash-alt", "Clear")
-                .click(() => handler.clear())
+            const clearEl = iconButton(["clear"], `Clear ${key}`, "trash-alt", "Clear")
+                .click(() => storageHandler.clear())
 
             storageTable.addRow({
-                key: handler.key,
+                key: key,
                 val: valueEl,
                 clear: clearEl
             })
@@ -224,7 +219,7 @@ export class About extends FullScreenModal implements IDisposable {
 
             handler.addObserver(next => {
                 setValueEl(next)
-            }, this)
+            }).disposeWith(this)
 
             stateTable.addRow({
                 key,
@@ -284,11 +279,14 @@ export class About extends FullScreenModal implements IDisposable {
 
                 const rowEl = tableEl.addRow({ path, status: statusEl, actions });
                 rowEl.classList.add('kernel-status', status)
-                info.handler.addObserver((state, prev) => {
-                    const status = state.kernel.status;
-                    rowEl.classList.replace(prev.kernel.status, status)
-                    statusEl.innerText = status;
-                }, this)
+                info.handler.addPreObserver(prev => {
+                    const prevStatus = prev.kernel.status
+                    return state => {
+                        const status = state.kernel.status;
+                        rowEl.classList.replace(prevStatus, status)
+                        statusEl.innerText = status;
+                    }
+                })
 
                 // load the notebook if it hasn't been already
                 if (!info.loaded) {
@@ -312,7 +310,7 @@ export class About extends FullScreenModal implements IDisposable {
         }
         this.serverMessageDispatcher.requestRunningKernels()
         onNotebookUpdate()
-        ServerStateHandler.view("notebooks").addObserver(() => onNotebookUpdate(), this)
+        ServerStateHandler.view("notebooks").addObserver(() => onNotebookUpdate()).disposeWith(this)
 
         return el;
     }
@@ -420,5 +418,14 @@ export class About extends FullScreenModal implements IDisposable {
 
     get isDisposed() {
         return this.disposable.isDisposed
+    }
+
+    tryDispose() {
+        return this.disposable.tryDispose()
+    }
+
+    disposeWith(that: IDisposable): this {
+        this.disposable.disposeWith(that);
+        return this;
     }
 }

@@ -1,6 +1,6 @@
 "use strict";
 
-import {div, button, iconButton, TagElement, textbox} from "../tags"
+import {button, div, iconButton, TagElement, textbox} from "../tags"
 
 interface ModalOptions {
     title?: string | string[],
