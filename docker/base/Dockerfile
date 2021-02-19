@@ -1,14 +1,22 @@
-FROM openjdk:8-slim-buster
+# Required docker version greater than 17
+ARG PYTHON_VERSION=3.8.7
+ARG PYTHON_IMAGE=python:${PYTHON_VERSION}-slim 
+ARG JDK_IMAGE_TAG=11-slim
+FROM ${PYTHON_IMAGE} as python-base
 
-ARG POLYNOTE_VERSION
-ARG SCALA_VERSION="2.11"
+FROM openjdk:${JDK_IMAGE_TAG} as build
+
+COPY --from=python-base / /
+
+ARG POLYNOTE_VERSION=0.3.12
+ARG SCALA_VERSION="2.12"
 ARG DIST_TAR="polynote-dist.tar.gz"
 
 WORKDIR /opt
 
 RUN apt update -y && \
-    apt install -y wget python3 python3-dev python3-pip build-essential
-
+    apt install --yes --no-install-recommends wget build-essential
+    
 RUN if test "${SCALA_VERSION}" = "2.12"; then export DIST_TAR="polynote-dist-2.12.tar.gz"; fi && \
     wget -q https://github.com/polynote/polynote/releases/download/$POLYNOTE_VERSION/$DIST_TAR && \
     tar xfzp $DIST_TAR && \
