@@ -323,9 +323,7 @@ select {
         background-position: 90% 90%;
         font-size: inherit;
         padding: .5em 1ch;
-        &.toggle-output img {
-          vertical-align: middle;
-        }
+        vertical-align: top;
       }
 
       .run-cell {
@@ -488,6 +486,10 @@ select {
     .cell-input .toggle-output {
       border-width: 1px;
       border-style: solid;
+    }
+
+    .cell-input .copy-output {
+      display: none;
     }
   }
 

@@ -10,7 +10,9 @@ import {
     setValue,
     StateHandler,
     StateView,
-    UpdateLike, UpdateResult
+    UpdateLike,
+    UpdateResult,
+    updateProperty,
 } from "../../../state";
 import * as monaco from "monaco-editor";
 import {
@@ -58,7 +60,7 @@ import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
 import {availableResultValues, cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
-import {Error} from "../../../data/messages";
+import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
 import {collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import CompletionList = languages.CompletionList;
@@ -470,7 +472,9 @@ export class CodeCell extends Cell {
             }
         })
 
-        let cellOutput = new CodeCellOutput(dispatcher, cellState, this.cellId, compileErrorsState, runtimeErrorState);
+        let copyCellOutputBtn = iconButton(['copy-output'], 'Copy Output to Clipboard', 'copy', 'Copy Output to Clipboard').click(() => this.copyOutput())
+        copyCellOutputBtn.style.display = "none";
+        let cellOutput = new CodeCellOutput(dispatcher, cellState, this.cellId, compileErrorsState, runtimeErrorState, copyCellOutputBtn);
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
@@ -483,7 +487,8 @@ export class CodeCell extends Cell {
                     execInfoEl,
                     div(["options"], [
                         button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
-                        iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput())
+                        iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput()),
+                        copyCellOutputBtn
                     ])
                 ]),
                 this.editorEl
@@ -807,6 +812,25 @@ export class CodeCell extends Cell {
         this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})))
     }
 
+    private copyOutput() {
+        const maybeOutput = this.cellState.state.output.find(o => o.contentType.startsWith('text'));
+        if (maybeOutput) {
+            console.log("copying to clipboard! ", maybeOutput.content.join(''))
+            //TODO: use https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/write once
+            //      browser support has solidified.
+            const task = new TaskInfo("Copy Task", "Copy Task", `Copying Cell ${this.id} Output`, TaskStatus.Queued, 0)
+            this.notebookState.updateField("kernel", () => ({tasks: updateProperty("Copy Task", task)}))
+            navigator.clipboard.writeText(maybeOutput.content.join(''))
+                .then(() => {
+                    this.notebookState.updateField("kernel", () => ({tasks: updateProperty("Copy Task", setValue({...task, progress: 25, status: TaskStatus.Running}))}))
+                    setTimeout(() => {
+                        this.notebookState.updateField("kernel", () => ({tasks: updateProperty("Copy Task", setValue({...task, progress: 255, status: TaskStatus.Complete}))}))
+                    }, 333)
+                })
+                .catch(err => console.error("Error while writing to clipboard", err))
+        }
+    }
+
     layout() {
         const lineCount = this.editor.getModel()!.getLineCount();
         const lastPos = this.editor.getTopForLineNumber(lineCount);
@@ -1050,7 +1074,8 @@ class CodeCellOutput extends Disposable {
         private cellState: StateView<CellState>,
         private cellId: string,
         compileErrorsHandler: StateView<CompileErrors[]>,
-        runtimeErrorHandler: StateView<RuntimeError | undefined>) {
+        runtimeErrorHandler: StateView<RuntimeError | undefined>,
+        private copyOutputButton?: TagElement<"button">) {
         super()
 
         const outputHandler = cellState.view("output").disposeWith(this);
@@ -1096,7 +1121,6 @@ class CodeCellOutput extends Disposable {
                         this.addOutput(output.contentType, output.content.join(''))
                     }
                 }
-
             } else {
                 outputs.forEach(o => {
                     this.addOutput(o.contentType, o.content.join(''))
@@ -1273,6 +1297,8 @@ class CodeCellOutput extends Disposable {
         this.cellOutputDisplay.innerHTML = "";
         this.stdOutEl = null;
         this.stdOutDetails = null;
+        if (this.copyOutputButton)
+            this.copyOutputButton.style.display = 'none';
     }
 
     private clearErrors() {
@@ -1293,6 +1319,9 @@ class CodeCellOutput extends Disposable {
     private addOutput(contentType: string, content: string) {
         const [mimeType, args] = parseContentType(contentType);
         this.cellOutputDisplay.classList.add('output');
+
+        if (this.copyOutputButton)
+            this.copyOutputButton.style.display = "unset";
 
         if (mimeType === 'text/plain' && args.rel === 'stdout') {
             // first, strip ANSI control codes

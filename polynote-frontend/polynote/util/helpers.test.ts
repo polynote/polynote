@@ -13,7 +13,7 @@ import {
     diffArray,
     equalsByKey,
     isEmpty,
-    isObject,
+    isObject, linePosAt,
     mapSome,
     mapValues,
     partition,
@@ -493,5 +493,25 @@ describe("Deferred", () => {
             })
             .finally(done)
         d.resolve("hi")
+    })
+})
+
+describe("linePosAt", () => {
+    it("determines line position given a string and an offset", () => {
+        expect(linePosAt("", 0)).toEqual([0, 0])
+        expect(linePosAt("", 100)).toEqual([0, 0])
+        expect(linePosAt("", -1)).toEqual([0, 0])
+        expect(linePosAt("\n\n\n\n\n", 3)).toEqual([3, 0])
+        expect(linePosAt("\n\n\n\n\n", 0)).toEqual([0, 0])
+        expect(linePosAt("\n\n\n\n\n", -1)).toEqual([0, 0])
+        expect(linePosAt("\n\n\n\n\n", 100)).toEqual([4, 0])
+        expect(linePosAt("abcde", 3)).toEqual([0, 3])
+        expect(linePosAt("abcde", 0)).toEqual([0, 0])
+        expect(linePosAt("abcde", -1)).toEqual([0, 0])
+        expect(linePosAt("abcde", 100)).toEqual([0, 4])
+        expect(linePosAt("abc\ndef\nghi", 5)).toEqual([1, 1])
+        expect(linePosAt("abc\ndef\nghi", 11)).toEqual([2, 2])
+        expect(linePosAt("abc\ndef\nghi", -1)).toEqual([0, 0])
+        expect(linePosAt("abc\ndef\nghi", 100)).toEqual([2, 2])
     })
 })
