@@ -1713,9 +1713,31 @@ button.inspect.icon-button {
   }
 
   .dependency-row {
-    input {
+    .dependency {
       width: 40em;
     }
+
+    .advanced {
+      display: none;
+      border: 1px dotted;
+      padding: 5px;
+      margin-left: 5px;
+
+      h3 {
+        margin: 4px 0 4px 0;
+      }
+    }
+
+    &.show-advanced {
+      .advanced {
+        display: block;
+      }
+
+      .expand svg {
+        transform: rotate(90deg);
+      }
+    }
+
   }
 
   .spark-config-row {

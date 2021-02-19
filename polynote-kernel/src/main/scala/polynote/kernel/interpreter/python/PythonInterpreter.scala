@@ -18,6 +18,7 @@ import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig, JepException, NamingConventionClassEnquirer, SharedInterpreter}
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
+import polynote.kernel.dependency.noCacheSentinel
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
@@ -994,30 +995,40 @@ object VirtualEnvFetcher {
 
     effectBlocking(path.toFile.exists()).flatMap {
       case true  =>
-        // venv already exists. We need to parse the config (if it exists) and compare it to the current one.
-        val configFile = path.resolve(depFileName).toFile
-        effectBlocking(configFile.exists()).flatMap {
-          case true =>
-            val parseConfig = effectBlocking(new FileReader(configFile)).bracketAuto {
-              reader =>
-                ZIO.fromEither {
-                  yaml.parser.parse(reader).flatMap(_.as[PythonDepConfig])
-                }
-            }
-            val initOutdated =
-              CurrentTask.update(_.progress(0.1, Some("Clearing outdated virtual environment"))) *>
-                deleteDir(path) *>
-                init
+        // venv already exists. We need to check whether to bust the cache, either because the user said so explicitly or by
+        // parsing the config (if it exists) and comparing it to the current one.
+        val bustCache = depConf.dependencies.exists(_.endsWith(noCacheSentinel))
 
-            for {
-              config      <- parseConfig
-              initialized <- if (!config.equals(depConf)) initOutdated else ZIO.succeed(false)
-            } yield initialized
-          case false =>
-            for {
-              _ <- CurrentTask.update(_.progress(0.1, Some("Initializing virtual environment")))
-              _ <- writeConfig
-            } yield false
+        val clearThenInit =
+          CurrentTask.update(_.progress(0.1, Some("Clearing outdated virtual environment"))) *>
+            deleteDir(path) *>
+            init
+
+        if (bustCache) {
+          clearThenInit
+        } else {
+          val configFile = path.resolve(depFileName).toFile
+
+          effectBlocking(configFile.exists()).flatMap {
+            case true =>
+              val parseConfig = effectBlocking(new FileReader(configFile)).bracketAuto {
+                reader =>
+                  ZIO.fromEither {
+                    yaml.parser.parse(reader).flatMap(_.as[PythonDepConfig])
+                  }
+              }
+
+              for {
+                config      <- parseConfig
+                initialized <- if (!config.equals(depConf)) clearThenInit else ZIO.succeed(false)
+              } yield initialized
+            case false =>
+              for {
+                _ <- CurrentTask.update(_.progress(0.1, Some("Initializing virtual environment")))
+                _ <- writeConfig
+              } yield false
+        }
+
         }
       case false => init
     }
@@ -1038,7 +1049,7 @@ object VirtualEnvFetcher {
       runCommand(cmd)
     }
 
-    val dependencies = depConf.dependencies
+    val dependencies = depConf.dependencies.map(_.stripSuffix(noCacheSentinel))
     val depProgress = 0.5 / dependencies.size
     // Breakdown of progress updates per dependency. Multipliers should add up to 1
     val depInitProgress = depProgress * 0.2

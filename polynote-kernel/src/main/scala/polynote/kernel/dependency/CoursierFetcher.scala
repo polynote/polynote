@@ -103,7 +103,7 @@ object CoursierFetcher {
 
     lazy val coursierDeps = dependencies.map {
       moduleStr =>
-        val (org, name, typ, config, classifier, ver) = moduleStr.split(':') match {
+        val (org, name, typ, config, classifier, ver) = moduleStr.stripSuffix(noCacheSentinel).split(':') match {
           case Array(org, name, ver) => (Organization(org), ModuleName(name), Type.empty, Configuration.empty, Classifier.empty, ver)
           case Array(org, name, typ, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.empty, Classifier.empty, ver)
           case Array(org, name, typ, classifier, ver) => (Organization(org), ModuleName(name), Type(typ), Configuration.empty, Classifier(classifier), ver)
@@ -221,14 +221,16 @@ object CoursierFetcher {
       }
     } yield ()
 
+    val bustCache = uri.toString.endsWith(noCacheSentinel)
+
     for {
       file        <- DownloadableFileProvider.getFile(uri)
-      inputAsFile  = file match { // TODO: will need a way to bust the cache. Maybe a config parameter?
+      inputAsFile  = file match {
         case LocalFile(u) => Paths.get(u.getPath).toFile
         case _ => localFile
       }
       exists      <- effectBlocking(inputAsFile.exists())
-      download    <- if (exists) ZIO.succeed(inputAsFile) else downloadToFile(file, localFile).as(localFile)
+      download    <- if (exists && !bustCache) ZIO.succeed(inputAsFile) else downloadToFile(file, localFile).as(localFile)
     } yield download
 
   }
