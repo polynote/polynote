@@ -583,8 +583,7 @@ class PythonInterpreter private[python] (
       |            buf = io.BytesIO()
       |            self.canvas.figure.savefig(buf, format='png')
       |            buf.seek(0)
-      |            encoded = base64.b64encode(buf.getvalue()).decode('utf-8')
-      |            return f"<img class='matplotlib' src='data:image/png;base64,{encoded}'/>"
+      |            return base64.b64encode(buf.getvalue()).decode('utf-8')
       |
       |        def svg(self):
       |            # Save figure as SVG for display
@@ -592,22 +591,18 @@ class PythonInterpreter private[python] (
       |            buf = io.StringIO()
       |            self.canvas.figure.savefig(buf, format='svg')
       |            buf.seek(0)
-      |            return "<div class='matplotlib'>" + buf.getvalue() + "</div>"
+      |            return buf.getvalue()
       |
       |        def show(self):
-      |            html = None
       |            fmt = PolynoteBackend.output_format
       |            if fmt == 'svg':
-      |                html = self.svg()
+      |                kernel.display.content("image/svg", self.svg())
       |            elif fmt == 'png':
-      |                html = self.png()
+      |                kernel.display.content("image/png", self.png())
       |            else:
       |                print(f"PolynoteBackend: Unknown output format. Accepted values for PolynoteBackend.output_format are 'png' or 'svg' but got '{fmt}'. Defaulting to 'png'.",file=sys.stderr)
       |                sys.stderr.flush()
-      |                html = self.png()
-      |
-      |            # Display image as html
-      |            kernel.display.html(html)
+      |                kernel.display.content("image/png", self.png())
       |
       |
       |    @_Backend.export
