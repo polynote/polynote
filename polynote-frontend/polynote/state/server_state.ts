@@ -204,7 +204,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         });
 
         // update the server state's notebook dictionary
-        ServerStateHandler.get.updateField("notebooks", notebooks => notebooks[path] ? removeKey(path) : NoUpdate);
+        ServerStateHandler.get.updateField("notebooks", notebooks => notebooks[path] !== undefined ? removeKey(path) : NoUpdate);
     }
 
     static closeNotebook(path: string) {
@@ -217,7 +217,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
             ServerStateHandler.getOrCreateNotebook(path)
 
             ServerStateHandler.updateState(state => ({
-                notebooks: removeKey(path),
+                notebooks: updateProperty(path, false),
                 openNotebooks: removeFromArray(state.openNotebooks, path)
             }))
         }
