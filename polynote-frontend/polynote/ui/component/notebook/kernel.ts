@@ -99,7 +99,7 @@ export class Kernel extends Disposable {
 
         const info = new KernelInfoEl(this.kernelState).disposeWith(this);
         const symbols = new KernelSymbolsEl(dispatcher, notebookState).disposeWith(this);
-        const tasks = new KernelTasksEl(notebookState.view("path"), this.kernelState.lens("tasks")).disposeWith(this);
+        const tasks = new KernelTasksEl(dispatcher, notebookState.view("path"), this.kernelState.lens("tasks")).disposeWith(this);
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -224,7 +224,8 @@ class KernelTasksEl extends Disposable {
     private notebookPathHandler: StateView<string>
     private kernelTasksHandler: StateHandler<KernelTasks>
 
-    constructor(notebookPathHandler: StateView<string>,
+    constructor(dispatcher: NotebookMessageDispatcher,
+                notebookPathHandler: StateView<string>,
                 kernelTasksHandler: StateHandler<KernelTasks>) {
         super()
         this.notebookPathHandler = notebookPathHandler = notebookPathHandler.fork(this);
@@ -233,7 +234,7 @@ class KernelTasksEl extends Disposable {
             h3([], [
                 'Tasks',
                 this.cancelButton = iconButton(["stop-cell"], "Cancel all tasks", "stop", "Cancel All")
-                    .click(_ => dispatcher.dispatch(new RequestCancelTasks()))
+                    .click(_ => dispatcher.cancelTasks())
             ]),
             this.taskContainer = div(['task-container'], [])
         ]);
