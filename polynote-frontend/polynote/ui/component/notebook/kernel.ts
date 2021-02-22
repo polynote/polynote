@@ -99,7 +99,7 @@ export class Kernel extends Disposable {
 
         const info = new KernelInfoEl(this.kernelState).disposeWith(this);
         const symbols = new KernelSymbolsEl(dispatcher, notebookState).disposeWith(this);
-        const tasks = new KernelTasksEl(notebookState.view("path"), this.kernelState.lens("tasks")).disposeWith(this);
+        const tasks = new KernelTasksEl(dispatcher, notebookState.view("path"), this.kernelState.lens("tasks")).disposeWith(this);
 
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
@@ -217,19 +217,25 @@ class KernelTasksEl extends Disposable {
     readonly el: TagElement<"div">;
     private notebookPath: string;
     private taskContainer: TagElement<"div">;
+    private cancelButton: TagElement<"button">;
     private tasks: Record<string, KernelTask> = {};
     private errors: Record<string, DisplayError>;
     private errorTimeouts: Record<string, number> = {};
     private notebookPathHandler: StateView<string>
     private kernelTasksHandler: StateHandler<KernelTasks>
 
-    constructor(notebookPathHandler: StateView<string>,
+    constructor(dispatcher: NotebookMessageDispatcher,
+                notebookPathHandler: StateView<string>,
                 kernelTasksHandler: StateHandler<KernelTasks>) {
         super()
         this.notebookPathHandler = notebookPathHandler = notebookPathHandler.fork(this);
         this.kernelTasksHandler = kernelTasksHandler = kernelTasksHandler.fork(this);
         this.el = div(['kernel-tasks'], [
-            h3([], ['Tasks']),
+            h3([], [
+                'Tasks',
+                this.cancelButton = iconButton(["stop-cell"], "Cancel all tasks", "stop", "Cancel All")
+                    .click(_ => dispatcher.cancelTasks())
+            ]),
             this.taskContainer = div(['task-container'], [])
         ]);
 
@@ -337,6 +343,8 @@ class KernelTasksEl extends Disposable {
                 container.insertBefore(taskEl, before);
 
                 this.tasks[id] = taskEl;
+                this.el.classList.add("nonempty");
+                this.cancelButton.disabled = false;
             }
         }
     }
@@ -389,6 +397,10 @@ class KernelTasksEl extends Disposable {
         if (task?.parentNode) task.parentNode.removeChild(task);
         delete this.tasks[id];
         this.kernelTasksHandler.update(() => removeKey(id))
+        if (Object.keys(this.tasks).length === 0) {
+            this.el.classList.remove('nonempty');
+            this.cancelButton.disabled = true;
+        }
     }
 }
 

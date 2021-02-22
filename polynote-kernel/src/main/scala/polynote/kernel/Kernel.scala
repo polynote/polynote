@@ -5,7 +5,7 @@ import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates}
 import polynote.kernel.task.TaskManager
 import polynote.messages.{ByteVector32, CellID, HandleType}
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Has, RIO, Task, ZIO}
+import zio.{Has, RIO, Task, URIO, ZIO}
 
 
 trait Kernel {
@@ -105,7 +105,7 @@ object Kernel {
       override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(inst)
     }
 
-    def access: RIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.get)
+    def access: URIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.get)
     def newKernel: RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = access.flatMap(_.apply())
   }
 

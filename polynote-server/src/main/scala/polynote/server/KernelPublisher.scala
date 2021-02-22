@@ -14,13 +14,13 @@ import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMes
 import polynote.messages.{CellID, CellResult, Error, Message, Notebook, NotebookUpdate, ShortList}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
-import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ZIO, ZLayer}
+import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ULayer, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.server.auth.UserIdentity
-
-import scala.concurrent.duration.FiniteDuration
+import zio.clock.Clock
+import zio.duration._
 
 class KernelPublisher private (
   val versionedNotebook: NotebookRef,
@@ -41,8 +41,10 @@ class KernelPublisher private (
 ) {
   val publishStatus: Publish[Task, KernelStatusUpdate] = status
 
+  private val taskManagerLayer: ULayer[TaskManager] = ZLayer.succeed(taskManager)
+
   private val baseLayer: ZLayer[Any, Nothing, CurrentNotebook with TaskManager with PublishStatus] =
-    ZLayer.succeedMany(Has(versionedNotebook) ++ Has(taskManager) ++ Has(publishStatus))
+    ZLayer.succeedMany(Has(versionedNotebook) ++ Has(publishStatus)) ++ taskManagerLayer
 
   private def cellLayer(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, PublishResult] = {
     val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(cellID, result)))
@@ -73,11 +75,14 @@ class KernelPublisher private (
   def update(subscriberId: SubscriberId, update: NotebookUpdate): Task[Unit] =
     publishUpdate.publish1((subscriberId, update))
 
-
   private def handleKernelClosed(kernel: Kernel): TaskB[Unit] =
     kernel.awaitClosed.catchAllCause {
       err => publishStatus.publish1(KernelError(err.squash)) *> Logging.error(s"Kernel closed with error", err)
-    } *> Logging.info("Kernel closed") *> kernelRef.set(None) *> publishStatus.publish1(KernelBusyState(busy = false, alive = false))
+    } *>
+      Logging.info("Kernel closed") *>
+      kernelRef.set(None) *>
+      closeIfNoSubscribers *>
+      publishStatus.publish1(KernelBusyState(busy = false, alive = false))
 
   val kernel: RIO[BaseEnv with GlobalEnv, Kernel] = kernelRef.get.flatMap {
     case Some(kernel) =>
@@ -88,23 +93,20 @@ class KernelPublisher private (
           case Some(kernel) =>
             ZIO.succeed(kernel)
           case None =>
-            val initKernel = for {
+            taskManager.run[BaseEnv with GlobalEnv, Kernel]("StartKernel", "Starting kernel") {
+              for {
                 kernel <- createKernel()
                 _      <- kernelRef.set(Some(kernel))
                 _      <- handleKernelClosed(kernel).forkDaemon
                 _      <- kernel.init().provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
                 _      <- kernel.info() >>= publishStatus.publish1
               } yield kernel
-
-            val killOnError = for {
-              kernel <- kernelRef.get
-              _      <- kernel.fold[TaskB[Unit]](ZIO.unit)(_.shutdown()).ensuring(kernelRef.set(None))
-            } yield ()
-
-            initKernel.tapError {
-              err => killOnError *> status.publish1(KernelError(err))
-            }
+            }.forkDaemon.flatMap(_.join)
+            // Note: this forkDaemon is so that interruptions coming from client disconnect won't interrupt the
+            //       starting kernel.
         }
+      }.tapError {
+        err => Logging.error("Error starting kernel; shutting it down", err) *> shutdownKernel() *> status.publish1(KernelError(err))
       }
   }
 
@@ -145,15 +147,21 @@ class KernelPublisher private (
   } yield busyState
 
   def cancelAll(): TaskB[Unit] = {
-    for {
+    val cancelKernelTasks = for {
       kernel <- kernelRef.get.get
       _      <- kernel.cancelAll().provideSomeLayer[BaseEnv](baseLayer)
     } yield ()
+
+    taskManager.cancelAll() *> cancelKernelTasks
   }.ignore
 
-  def tasks(): TaskB[List[TaskInfo]] = kernelRef.get.get.flatMap {
-    kernel => kernel.tasks().provideSomeLayer[BaseEnv](baseLayer)
-  } orElse taskManager.list
+  def tasks(): TaskB[List[TaskInfo]] =
+    ZIO.ifM(kernelStarting.available.map(_ == 0))(
+      taskManager.list,
+      kernelRef.get.get.flatMap {
+        kernel => kernel.tasks().provideSomeLayer[BaseEnv](baseLayer)
+      } orElse taskManager.list
+    )
 
   // TODO: A bit ugly. There's probably a better way to keep track of cell status.
   private val extract = """Cell (\d*)""".r
@@ -168,41 +176,53 @@ class KernelPublisher private (
 
   def subscribe(): RIO[BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = subscribing.withPermit {
     for {
-      isClosed           <- closed.isDone
-      _                  <- if (isClosed) ZIO.fail(PublisherClosed) else ZIO.unit
-      subscriberId       <- ZIO.effectTotal(nextSubscriberId.getAndIncrement())
-      subscriber         <- KernelSubscriber(subscriberId, this)
-      _                  <- subscribers.put(subscriberId, subscriber)
-      _                  <- subscriber.closed.await.flatMap(_ => removeSubscriber(subscriberId)).forkDaemon
-      _                  <- status.publish1(PresenceUpdate(List(subscriber.presence), Nil))
-      _                  <- subscriber.selections.through(status.publish).compile.drain.forkDaemon
+      _            <- ZIO.whenM(closed.isDone)(ZIO.fail(PublisherClosed))
+      subscriberId <- ZIO.effectTotal(nextSubscriberId.getAndIncrement())
+      subscriber   <- KernelSubscriber(subscriberId, this)
+      _            <- subscribers.put(subscriberId, subscriber)
+      _            <- subscriber.closed.await.zipRight(removeSubscriber(subscriberId)).forkDaemon
+      _            <- status.publish1(PresenceUpdate(List(subscriber.presence), Nil))
+      _            <- subscriber.selections.through(status.publish).compile.drain.forkDaemon
     } yield subscriber
   }
 
-  private def removeSubscriber(id: Int) = subscribing.withPermit {
+  private def closeIfNoSubscribers: TaskB[Unit] =
+    ZIO.whenM(kernelStarting.withPermit(kernelRef.get.map(_.nonEmpty)) && subscribers.isEmpty) {
+      for {
+        path <- latestVersion.map(_._2.path)
+        _    <- Logging.info(s"Closing $path (idle with no more subscribers)")
+        _    <- close()
+      } yield ()
+    }
+
+  private def removeSubscriber(id: Int): RIO[BaseEnv with Clock, Unit] = subscribing.withPermit {
     for {
-      subscriber <- subscribers.get(id).get.mapError(_ => new NoSuchElementException(s"Subscriber $id does not exist"))
-      isDone     <- subscriber.closed.isDone
-      _          <- if (isDone) ZIO.unit else ZIO.fail(new IllegalStateException(s"Attempting to remove subscriber $id, which is not closed."))
+      subscriber <- subscribers.get(id).get.orElseFail(new NoSuchElementException(s"Subscriber $id does not exist"))
+      _          <- ZIO.whenM(!subscriber.closed.isDone)(ZIO.fail(new IllegalStateException(s"Attempting to remove subscriber $id, which is not closed.")))
       _          <- subscribers.remove(id)
-      allClosed  <- subscribers.isEmpty
-      kernel     <- kernelRef.get
       _          <- status.publish1(PresenceUpdate(Nil, List(id)))
-      _          <- if (allClosed && kernel.isEmpty) {
-        latestVersion.map(_._2.path).flatMap(path => Logging.info(s"Closing $path (idle with no more subscribers)")) *> close()
-      } else ZIO.unit
     } yield ()
-  }
+  } *> closeIfNoSubscribers.delay(5.seconds).forkDaemon.unit
 
   def close(): TaskB[Unit] =
-    closed.succeed(()).unit *>
       subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit *>
-      kernelStarting.withPermit(kernelRef.get.flatMap(_.fold[TaskB[Unit]](ZIO.unit)(_.shutdown()))) *>
+      shutdownKernel() *>
       taskManager.shutdown() *>
-      versionedNotebook.close()
+      versionedNotebook.close() *>
+      closed.succeed(()).unit
 
-  private def createKernel(): RIO[BaseEnv with GlobalEnv, Kernel] = kernelFactory()
+  private def createKernel(): TaskG[Kernel] = kernelFactory()
     .provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
+
+  private def shutdownKernel() = kernelStarting.withPermit {
+    for {
+      kernelOpt <- kernelRef.get
+      _         <- kernelOpt match {
+        case Some(kernel) => kernel.shutdown().ensuring(kernelRef.set(None))
+        case None         => ZIO.unit
+      }
+    } yield ()
+  }
 }
 
 object KernelPublisher {
