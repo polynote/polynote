@@ -19,6 +19,7 @@ export class FakeSelect {
     private opener: TagElement<"button"> | null;
     private selectedElementCopy: TagElement<"button"> | null;
     private selectionListeners: ((change: SelectionChange) => void)[] = [];
+    private _disabled: boolean = false;
 
     constructor(readonly element: TagElement<"div">) {
 
@@ -36,12 +37,14 @@ export class FakeSelect {
         const marker = this.element.querySelector('.marker');
         if (marker) {
             marker.addEventListener('mousedown', evt => {
-                if (!this.isOpen) {
-                    this.opener = this.selectedElement;
-                    this.moved = false;
-                    this.expand();
-                } else {
-                    this.collapse();
+                if (!this._disabled) {
+                    if (!this.isOpen) {
+                        this.opener = this.selectedElement;
+                        this.moved = false;
+                        this.expand();
+                    } else {
+                        this.collapse();
+                    }
                 }
             });
         }
@@ -195,6 +198,19 @@ export class FakeSelect {
 
     set selectedIndex(idx) {
         this.setSelectedElement(this.options[idx]);
+    }
+
+    get disabled(): boolean {
+        return this._disabled;
+    }
+
+    set disabled(disabled: boolean) {
+        this._disabled = disabled;
+        if (disabled)
+            this.element.classList.add('disabled');
+        else
+            this.element.classList.remove('disabled');
+        this.selectedElement.disabled = disabled;
     }
 
     setSelectedElement(el: TagElement<"button">, noEvent: boolean = false): void {

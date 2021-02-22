@@ -6,6 +6,7 @@ import {
     arrReplace,
     changedKeys,
     collect,
+    deepCopy,
     deepEquals,
     deepFreeze,
     Deferred,
@@ -125,6 +126,20 @@ describe("deepFreeze", () => {
                 checkFrozen(deepFreeze(anything))
             })
         )
+    })
+})
+
+describe("deepCopy", () => {
+    const innerObj = { "four": 4 };
+    const arr = [1, 2, 3, innerObj];
+    const outerObj = { "a": 1, "b": true, "c": "hi", "d": innerObj, "e": arr, "f": null, "g": undefined }
+    it ("returns a deep copy of an object", () => {
+        const cp = deepCopy(outerObj);
+        expect(deepEquals(outerObj, cp)).toBeTruthy();
+        expect(outerObj === cp).toBeFalsy();
+        expect(outerObj.d === cp.d).toBeFalsy();
+        expect(outerObj.e === cp.e).toBeFalsy();
+        expect(outerObj.e[3] === cp.e[3]).toBeFalsy();
     })
 })
 

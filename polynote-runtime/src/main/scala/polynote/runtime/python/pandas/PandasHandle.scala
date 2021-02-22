@@ -178,6 +178,19 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
           tryEither {
             df.__getitem__(df.runner.listOf(cols: _*))
           }
+        case Sample(sampleRate) =>
+          tryEither {
+            df.sample(frac = sampleRate)
+          }
+        case SampleN(n) =>
+          tryEither {
+            val count = df.shape.asTuple2._1.as[java.lang.Long].intValue()
+            if (n >= count)
+              df
+            else
+              df.sample(n = n)
+          }
+          // TODO: Histogram
         case op => Left(new UnsupportedOperationException(s"$op not yet supported for pandas"))
       }
     }

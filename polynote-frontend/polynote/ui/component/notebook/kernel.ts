@@ -27,6 +27,7 @@ import {ServerStateHandler} from "../../../state/server_state";
 import {KernelInfo, KernelState, KernelSymbols, KernelTasks, NotebookStateHandler} from "../../../state/notebook_state";
 import {ViewPreferences} from "../../../state/preferences";
 import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
+import {changedKeys} from "../../../util/helpers";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
 export class KernelPane extends Disposable {
@@ -424,9 +425,13 @@ class KernelSymbolsEl extends Disposable {
         this.resultSymbols = (this.tableEl.tBodies[0] as TagElement<"tbody">).addClass('results');
         this.scopeSymbols = this.tableEl.addBody().addClass('scope-symbols');
 
-        const handleSymbols = (symbols: KernelSymbols) => {
-            if (symbols.length > 0) {
-                symbols.forEach(s => this.addSymbol(s))
+        const handleSymbols = (symbols: KernelSymbols, updateResult?: UpdateResult<KernelSymbols>) => {
+            const cells = Object.keys(symbols)
+            if (cells.length > 0) {
+                const changedCells = updateResult ? UpdateResult.addedOrChangedKeys(updateResult) : Object.keys(symbols);
+                changedCells.forEach(cell => {
+                    Object.values(symbols[cell]).forEach(s => this.addSymbol(s));
+                })
             } else if (Object.values(this.symbols).length > 0) {
                 Object.entries(this.symbols).forEach(([cellId, syms]) => {
                     Object.keys(syms).forEach(s => this.removeSymbol(parseInt(cellId), s))
@@ -434,7 +439,7 @@ class KernelSymbolsEl extends Disposable {
             }
         }
         handleSymbols(notebookState.state.kernel.symbols)
-        notebookState.view("kernel").observeKey("symbols", symbols => handleSymbols(symbols)).disposeWith(this);
+        notebookState.view("kernel").observeKey("symbols", (symbols, updateResult) => handleSymbols(symbols, updateResult)).disposeWith(this);
 
         const handleActiveCell = (cellId?: number) => {
             if (cellId === undefined) {

@@ -33,10 +33,17 @@ import {
     ResultValue,
     RuntimeError
 } from "../data/result";
-import {collectFields, unzip} from "../util/helpers";
-import {ClientInterpreters} from "../interpreter/client_interpreter";
 import {SocketStateHandler} from "../state/socket_state";
-import {CellState, KernelState, NotebookState, NotebookStateHandler, PresenceState} from "../state/notebook_state";
+import {arrDelete, deepCopy, arrInsert, collect, collectFields, deepEquals, mapValues, removeKeys, unzip} from "../util/helpers";
+import {ClientInterpreters} from "../interpreter/client_interpreter";
+import {
+    CellState,
+    KernelState,
+    KernelSymbols,
+    NotebookState,
+    NotebookStateHandler,
+    PresenceState
+} from "../state/notebook_state";
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
@@ -126,15 +133,26 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             return NoUpdate
         });
         this.receive(messages.NotebookCells, (s: NotebookState, path: string, notebookCells: NotebookCell[], config?: NotebookConfig) => {
-            const [cellStates, results] = unzip(notebookCells.map(cell => {
-                const cellState = this.cellToState(cell)
+            const symbols = {...s.kernel.symbols};
+            const cellStates = notebookCells.map(cell => {
+                const cellState = this.cellToState(cell);
+                if (!symbols[cell.id]) {
+                    symbols[cell.id] = {};
+                }
                 // unfortunately, this can't be an anonymous function if we want TS to correctly narrow the type.
                 function isRV(maybe: ResultValue | ClientResult): maybe is ResultValue {
                     return maybe instanceof ResultValue
                 }
-                const resultsValues = cellState.results.filter(isRV)
-                return [cellState, resultsValues]
-            }));
+                const newResults = cellState.results.filter(isRV);
+                if (newResults.length > 0) {
+                    const cellResults = {...symbols[cell.id]};
+                    newResults.forEach(rv => {
+                        cellResults[rv.name] = rv;
+                    });
+                    symbols[cell.id] = cellResults;
+                }
+                return cellState;
+            });
             const cells = {} as Record<number, UpdateOf<CellState>>;
             cellStates.forEach(state => cells[state.id] = setValue(state));
             const cellOrder = notebookCells.map(cell => cell.id)
@@ -150,9 +168,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 cellOrder: setValue(cellOrder),
                 config: { config: config ?? NotebookConfig.default },
                 kernel: {
-                    // TODO: should there be an op to append multiple values?
-                    //       Or could the append op allow for this?
-                    symbols: setValue([...s.kernel.symbols, ...results.flat()])
+                    symbols
                 }
             }
         });
@@ -174,7 +190,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     return {
                         kernel: {
                             status,
-                            symbols: status === 'dead' ? clearArray() : NoUpdate
+                            symbols: status === 'dead' ? setValue({}) : NoUpdate
                         }
                     }
                 })
@@ -342,7 +358,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                             return {
                                 cells: {
                                     [id]: {
-                                        output: [output]
+                                        output: setValue([output])
                                     }
                                 }
                             }
@@ -410,11 +426,13 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                         ErrorStateHandler.addKernelError(s.path, result.error)
                         return NoUpdate
                     })
-                    .otherwiseThrow ?? NoUpdate
+                    .otherwise(NoUpdate)
             } else {
-                let symbols = NoUpdate;
+                let symbols: UpdateOf<KernelSymbols> = NoUpdate;
                 if (['busy', 'idle'].includes(s.kernel.status) && result instanceof ResultValue) {
-                    symbols = append(result);
+                    if (symbols === NoUpdate)
+                        symbols = {[cellId]: {}} as UpdateOf<KernelSymbols>;
+                    (symbols as any)[cellId][result.name] = result;
                 }
 
                 const cells = cellId < 0 ? NoUpdate : { [cellId]: this.parseResult(s.cells[cellId], result) }
@@ -489,7 +507,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 return { runtimeError: setValue(result) }
             })
             .whenInstance(Output, result => {
-                return {output: setValue([result])}
+                return {output: append(result)}
             })
             .whenInstance(ExecutionInfo, result => {
                 return {
@@ -558,7 +576,8 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
 
             // inject the client interpreters here as well.
             Object.keys(ClientInterpreters).forEach(key => {
-                interpreters[key] = ClientInterpreters[key].languageTitle
+                if (!ClientInterpreters[key].hidden)
+                    interpreters[key] = ClientInterpreters[key].languageTitle;
             });
 
             return {

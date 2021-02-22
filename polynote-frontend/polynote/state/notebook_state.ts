@@ -22,14 +22,17 @@ import {
     ModifyStream,
     NotebookUpdate,
     Signatures,
-    TaskInfo,
+    TaskInfo, TaskStatus
 } from "../data/messages";
 
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {ContentEdit, diffEdits} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
-import {deepEquals, Deferred} from "../util/helpers";
+import {deepEquals, diffArray, Deferred} from "../util/helpers";
+import {NotebookMessageDispatcher} from "../messaging/dispatcher";
+import {availableResultValues} from "../interpreter/client_interpreter";
 import {notReceiver} from "../messaging/receiver";
+
 
 export type CellPresenceState = {id: number, name: string, color: string, range: PosRange, avatar?: string};
 
@@ -58,7 +61,7 @@ export type CompletionHint = { cell: number, offset: number; completions: Comple
 export type SignatureHint = { cell: number, offset: number, signatures?: Signatures };
 export type NBConfig = {open: boolean, config: NotebookConfig}
 
-export type KernelSymbols = (ResultValue)[];
+export type KernelSymbols = Record<string, Record<string, ResultValue>>;
 export type KernelInfo = Record<string, string>;
 export type KernelTasks = Record<string, TaskInfo>; // taskId -> TaskInfo
 
@@ -88,6 +91,8 @@ export interface NotebookState {
 }
 
 export class NotebookStateHandler extends BaseHandler<NotebookState> {
+    readonly loaded: Promise<void>;
+
     constructor(
         parent: StateHandler<NotebookState>,
         readonly cellsHandler: StateHandler<Record<number, CellState>>,
@@ -109,6 +114,22 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 }).disposeWith(this)
             }
         }).disposeWith(this)
+
+        if (this.isLoading) {
+            const tasksView = this.view('kernel').view('tasks');
+            this.loaded = new Promise<void>(resolve => {
+                const obs = tasksView.addObserver((current, prev) => {
+                    if (!current[this.state.path] || current[this.state.path].status === TaskStatus.Complete) {
+                        obs.dispose();
+                        setTimeout(resolve, 0);
+                    }
+                })
+            })
+        } else {
+            this.loaded = Promise.resolve()
+        }
+
+        this.loaded.then(_ => this.updateHandler.localVersion = 0)
     }
 
     static forPath(path: string) {
@@ -118,7 +139,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             cellOrder: [],
             config: {open: false, config: NotebookConfig.default},
             kernel: {
-                symbols: [],
+                symbols: {},
                 status: 'disconnected',
                 info: {},
                 tasks: {},
@@ -140,6 +161,10 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
 
     protected compare(s1: any, s2: any): boolean {
         return deepEquals(s1, s2)
+    }
+
+    availableValuesAt(id: number): Record<string, ResultValue> {
+        return availableResultValues(this.state.kernel.symbols, this.state.cellOrder, id);
     }
 
     getCellIndex(cellId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
@@ -296,6 +321,10 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         })
     }
 
+    get isLoading(): boolean {
+        return !!(this.state.kernel.tasks[this.state.path] ?? false)
+    }
+
     fork(disposeContext?: IDisposable): NotebookStateHandler {
         const fork = new NotebookStateHandler(
             this.parent.fork(disposeContext).disposeWith(this),
@@ -429,6 +458,14 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
             Object.values(updateResult.addedValues ?? {}).forEach(o => {
                 this.setCellOutput(id, o)
             })
+        }).disposeWith(this)
+
+        handler.view("results", notReceiver).addObserver((newResults) => {
+            if (newResults[0] && newResults[0] instanceof ClientResult) {
+                newResults[0].toOutput().then(
+                    o => this.addUpdate(new messages.SetCellOutput(this.globalVersion, this.localVersion, id, o))
+                )
+            }
         }).disposeWith(this)
 
         handler.view("language").addObserver(lang => {

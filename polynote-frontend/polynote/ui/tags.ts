@@ -1,8 +1,9 @@
 'use strict';
 
 import {loadIcon} from "./icons";
+import {IDisposable, StateHandler, UpdatableState} from "../state";
 
-type ContentElement = (Node | string | undefined)
+type ContentElement = (Node | {el: Node} | string | undefined)
 export type Content = ContentElement | ContentElement[];
 export type AsyncContent = Content | Promise<ContentElement>
 
@@ -19,8 +20,10 @@ function appendContent(el: Node, content: AsyncContent) {
     for (let item of content) {
         if (typeof item === "string") {
             el.appendChild(document.createTextNode(item));
-        } else if (item !== undefined) {
+        } else if (item instanceof Node) {
             el.appendChild(item);
+        } else if (item && item.el) {
+            el.appendChild(item.el);
         }
     }
 }
@@ -34,6 +37,7 @@ export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElem
     click(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     mousedown(handler: EventListenerOrEventListenerObject): TagElement<K, T>
     change(handler: EventListenerOrEventListenerObject): TagElement<K, T>
+    onValueChange<V = string>(fn: (newValue: V) => void): TagElement<K, T>
     listener(name: string, handler: EventListenerOrEventListenerObject): TagElement<K, T>
     withKey(key: string, value: any): TagElement<K, T>
     disable(): TagElement<K, T>
@@ -44,7 +48,13 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
     name: T,
     classes: string[] = [],
     attributes?: AllowedElAttrs<HTMLElementTagNameMap[T]>,
-    content: AsyncContent = []): TagElement<T> {
+    content: AsyncContent = [],
+    eventDelegate?: TagElement<any>): TagElement<T> {
+
+    let eventEl: TagElement<any>;
+    if (eventDelegate) {
+        eventEl = eventDelegate;
+    }
 
     const el: TagElement<T> = Object.assign(document.createElement(name), {
         attr(a: keyof HTMLElementTagNameMap[T], v: string | boolean) {
@@ -68,17 +78,28 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
             return el;
         },
         click(handler: EventListenerOrEventListenerObject) {
-            return el.listener('click', handler);
+            eventEl.listener('click', handler);
+            return el;
         },
         mousedown(handler: EventListenerOrEventListenerObject) {
-            return el.listener('mousedown', handler);
+            eventEl.listener('mousedown', handler);
+            return el;
         },
         change(handler: EventListenerOrEventListenerObject) {
-            return el.listener('change', handler);
+            eventEl.listener('change', handler);
+            return el;
+        },
+        onValueChange<V = string>(fn: (newValue: V) => void) {
+            if (eventEl instanceof HTMLInputElement && eventEl.type === 'checkbox') {
+                (eventEl as any).change((evt: Event) => fn(eventEl.checked))
+            } else if (eventEl instanceof HTMLInputElement || eventEl instanceof HTMLTextAreaElement) {
+                (eventEl as any).change((evt: Event) => fn(eventEl.value))
+            } else throw new Error("Element is not an input");
+            return el;
         },
         listener(name: string, handler: EventListenerOrEventListenerObject) {
-            el.addEventListener(name, handler);
-            return el
+            eventEl.addEventListener(name, handler);
+            return el;
         },
         withKey(key: string, value: any) {
             return Object.assign(el, {[key]: value})
@@ -91,12 +112,124 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
             return el;
         }
     });
-
+    if (!eventEl) {
+        eventEl = el;
+    }
     el.classList.add(...classes);
     if (attributes) el.attrs(attributes);
     appendContent(el, content);
 
     return el;
+}
+
+export interface BindableTag<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> {
+
+    /**
+     * Bind the value of this form field to a state handler. When the state handler is updated, the form field will be
+     * updated with the new value. If value of the form field is changed by the user agent, the state handler will be
+     * updated with the new value.
+     */
+    bind(state: UpdatableState<ValueType>): BindableTagElement<ValueType, K, T>
+
+    /**
+     * Like `bind`, but handles optional state values. If the state value is `undefined`, it does not propagate to the
+     * form field; the state change is instead ignored.
+     */
+    bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T>
+
+    /**
+     * Like `bind`, but handles optional state values. If the value is `undefined`, the form field is updated with a
+     * default value instead. If the form field is updated by the user agent to the default value, a default state value
+     * can be specified.
+     */
+    bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T>
+}
+
+export type BindableTagElement<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> =
+    TagElement<K, T> & BindableTag<ValueType, K, T>
+
+function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]>(
+        self: E,
+        getValue: (el: E) => ValueType,
+        update: (el: E, value: ValueType | null | undefined) => void,
+        eventType: string = 'change'
+    ): E & BindableTagElement<ValueType, K, T> {
+    const result: E & BindableTagElement<ValueType, K, T> = Object.assign(self, {
+        bind(state: UpdatableState<ValueType>): BindableTagElement<ValueType, K, T> {
+            update(self, getValue(self));
+            const listener = (evt: Event) => state.update(currentState => getValue(self));
+            const observer = state.addObserver((newValue: ValueType) => {
+                if (!self.isConnected) {
+                    observer.dispose();
+                    self.removeEventListener(eventType, listener);
+                } else {
+                    update(self, newValue);
+                }
+            });
+            self.addEventListener(eventType, listener);
+            state.onDispose.then(_ => self.removeEventListener(eventType, listener));
+            return result;
+        },
+        bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T> {
+            update(self, getValue(self));
+            const listener = (evt: Event) => state.update(currentState => getValue(self));
+            const observer = state.addObserver(
+                (newValue) => {
+                    if (!self.isConnected) {
+                        observer.dispose();
+                        self.removeEventListener(eventType, listener);
+                    } else if (newValue !== undefined)
+                        update(self, newValue)
+                }
+            );
+            self.addEventListener(eventType, listener);
+            state.onDispose.then(_ => self.removeEventListener(eventType, listener));
+            return result;
+        },
+        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T> {
+            update(self, getValue(self));
+            const listener = (evt: Event) => state.update(currentState => { const v = getValue(self); return v === defaultValue ? defaultState : v });
+            const observer = state.addObserver(
+                (newValue) => {
+                    if (!self.isConnected) {
+                        observer.dispose();
+                        self.removeEventListener(eventType, listener);
+                    } else {
+                        update(self, newValue ?? defaultValue)
+                    }
+                }
+            );
+            self.addEventListener(eventType, listener);
+            state.onDispose.then(_ => self.removeEventListener(eventType, listener));
+            return result;
+        }
+    }) as unknown as E & BindableTagElement<ValueType, K, T>;
+    return result;
+}
+
+function bindableTextInput<K extends 'input' | 'textarea', T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]>(self: TagElement<K, T>): BindableTagElement<string, K, T> {
+    return mkBindable(self, el => el.value, (el, value) => el.value = value || "", 'input') as unknown as BindableTagElement<string, K, T>;
+}
+
+function delegateBinding<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]>(
+    from: BindableTagElement<ValueType, any, any>,
+    to: TagElement<K, T>
+): BindableTagElement<ValueType, K, T> {
+    const result: BindableTagElement<ValueType, K, T> = Object.assign(to, {
+        bind(state: UpdatableState<ValueType>): BindableTagElement<ValueType, K, T> {
+            from.bind(state);
+            return result;
+        },
+        bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T> {
+            from.bindPartial(state);
+            return result;
+        },
+        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T> {
+            from.bindWithDefault(state, defaultValue, defaultState);
+            return result;
+        }
+    }) //as unknown as E1 & BindableTagElement<ValueType, K1, T1>;
+    return result;
 }
 
 export function blockquote(classes: string[], content: Content) {
@@ -171,8 +304,13 @@ export function iconButton(classes: string[], title: string, iconName: string, a
     return button(classes, {title: title}, icon([], iconName, alt));
 }
 
-export function textbox(classes: string[], placeholder: string, value: string = "") {
-    const input = tag('input', classes, {type: 'text', placeholder: placeholder}, []);
+export interface InputType {
+    text: string
+    number: number
+}
+
+export function textbox(classes: string[], placeholder?: string, value: string = ""): BindableTagElement<string, 'input'> {
+    const input = tag('input', classes, {type: "text", placeholder: placeholder}, []);
     if (value) {
         input.value = value;
     }
@@ -183,10 +321,33 @@ export function textbox(classes: string[], placeholder: string, value: string = 
             input.dispatchEvent(new CustomEvent('Accept', { detail: { key: evt.key, event: evt}}));
         }
     });
-    return input;
+
+    return bindableTextInput(input)
 }
 
-export function textarea(classes: string[], placeholder: string, value: string =""): TagElement<"textarea"> {
+export function numberbox(classes: string[], placeholder?: string, value?: number): BindableTagElement<number, 'input'> {
+    const input = tag('input', classes, {type: "text", placeholder: placeholder}, []);
+    if (value !== undefined) {
+        input.value = value.toString();
+    }
+    input.addEventListener('keydown', (evt: KeyboardEvent) => {
+        if (evt.key === 'Escape' || evt.key == 'Cancel') {
+            input.dispatchEvent(new CustomEvent('Cancel', { detail: { key: evt.key, event: evt }}));
+        } else if (evt.key === 'Enter' || evt.key === 'Accept') {
+            input.dispatchEvent(new CustomEvent('Accept', { detail: { key: evt.key, event: evt}}));
+        }
+    });
+
+    return mkBindable(
+        input,
+        el => parseFloat(el.value),
+        (el, value) => el.value = (value?.toString() ?? ""),
+        'input'
+    );
+}
+
+
+export function textarea(classes: string[], placeholder: string, value: string =""): BindableTagElement<string, "textarea"> {
     const text = tag('textarea', classes, {placeholder: placeholder}, []);
     if (value) {
         text.value = value;
@@ -204,16 +365,17 @@ export function textarea(classes: string[], placeholder: string, value: string =
     text.addEventListener('input', () => adjustHeight());
     text.style.height = "3em"; // default height;
 
-    return text;
+    return bindableTextInput(text);
 }
 
 export interface DropdownElement extends TagElement<"select"> {
     setSelectedValue(value: string): void
     getSelectedValue(): string
     addValue(key: string, val: string): void
+    onSelect(fn: (newValue: string) => void): TagElement<"select">
 }
 
-export function dropdown(classes: string[], options: Record<string, string>, value?: string): DropdownElement {
+export function dropdown(classes: string[], options: Record<string, string>, value?: string): DropdownElement & BindableTagElement<string, 'select'> {
     let opts: TagElement<"option">[] = [];
 
     for (const value in options) {
@@ -223,7 +385,7 @@ export function dropdown(classes: string[], options: Record<string, string>, val
     }
 
     const select = tag('select', classes, {}, opts);
-    const dropdown =  Object.assign(select, {
+    const dropdown: DropdownElement =  Object.assign(select, {
         setSelectedValue(value: string) {
             const index = opts.findIndex(opt => opt.value === value);
             if (index !== -1) {
@@ -238,10 +400,14 @@ export function dropdown(classes: string[], options: Record<string, string>, val
             dropdown.add(opt);
             opts.push(opt)
         },
+        onSelect(fn: (newValue: string) => void): TagElement<"select"> {
+            return select.change(_ => fn(this.getSelectedValue()));
+        }
     });
 
     if (value) dropdown.setSelectedValue(value);
-    return dropdown;
+
+    return mkBindable(dropdown, dropdown => dropdown.getSelectedValue(), (dropdown, value) => dropdown.setSelectedValue(value  || ""), 'change');
 
 }
 
@@ -253,12 +419,15 @@ export function fakeSelectElem(classes: string[], buttons: TagElement<"button">[
     ].concat(buttons));
 }
 
-export function checkbox(classes: string[], label: string, value: boolean = false) {
+export function checkbox(classes: string[], label: string, value: boolean = false): BindableTagElement<boolean, 'label'> {
     const attrs = {type:'checkbox', checked: value};
-    return tag('label', classes, {}, [
-        tag('input', [], attrs, []),
+    const cb = mkBindable(tag('input', [], attrs, []), cb => cb.checked, (cb, checked) => cb.checked = checked ?? false, 'input');
+    const t = tag('label', classes, {}, [
+        cb,
         span([], [label])
-    ]);
+    ], cb);
+
+    return delegateBinding(cb, t) as unknown as BindableTagElement<boolean, 'label'>;
 }
 
 export function radio(classes: string[], label: string, name: string, value: boolean = false) {
@@ -279,6 +448,13 @@ export function h3(classes: string[], content: Content) {
 
 export function h4(classes: string[], content: Content) {
     return tag('h4', classes, {}, content);
+}
+
+export function label(classes: string[], label: string, input: TagElement<"input" | "select" | "textarea">): TagElement<"label"> {
+    return tag('label', classes, {}, [
+       span(['label-title'], label),
+       input
+    ]);
 }
 
 /**

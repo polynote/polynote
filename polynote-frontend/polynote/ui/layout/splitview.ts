@@ -1,5 +1,5 @@
 import {div, TagElement} from "../tags";
-import {Disposable, setProperty} from "../../state";
+import {Disposable, setProperty, updateProperty} from "../../state";
 import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 
 /**
@@ -12,14 +12,18 @@ export class SplitView extends Disposable {
     constructor(leftPane: Pane, center: TagElement<"div">, rightPane: Pane) {
         super()
 
+        const leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
+        const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
+        const triggerResize = () => window.dispatchEvent(new CustomEvent('resize'));
+
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
-                leftPane.header.click(evt => ViewPrefsHandler.updateField("leftPane", state => setProperty("collapsed", !state.collapsed))),
+                leftPane.header.click(evt => leftView.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(triggerResize)),
                 div(['ui-panel-content'], [leftPane.el])])]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
-                rightPane.header.click(evt => ViewPrefsHandler.updateField("rightPane", state => setProperty("collapsed", !state.collapsed))),
+                rightPane.header.click(evt => rightView.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(triggerResize)),
                 div(['ui-panel-content'], [rightPane.el])])]);
 
         const initialPrefs = ViewPrefsHandler.state;

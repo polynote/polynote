@@ -1,8 +1,6 @@
 import {copyObject, deepCopy, diffArray, partition} from "../util/helpers";
 import {ContentEdit} from "../data/content_edit";
-import {Latch} from "./state_handler";
 import {__getProxyTarget} from "./readonly";
-import {remove} from "vega-lite/build/src/compositemark";
 
 export interface UpdateLike<S> {
     // Sentinel field so we can distinguish an update from a value

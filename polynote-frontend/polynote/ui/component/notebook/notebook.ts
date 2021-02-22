@@ -14,9 +14,11 @@ import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {NotebookScrollLocationsHandler} from "../../../state/preferences";
 import {ServerStateHandler} from "../../../state/server_state";
 
+type CellInfo = {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">};
+
 export class Notebook extends Disposable {
     readonly el: TagElement<"div">;
-    readonly cells: Record<number, {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">}> = {};
+    readonly cells: Record<number, CellInfo> = {};
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         super()
@@ -57,7 +59,7 @@ export class Notebook extends Disposable {
 
             addedIds.forEach(id => {
                 const handler = cellsHandler.lens(id)
-                const cell = new CellContainer(dispatcher, notebookState, handler, notebookState.state.path);
+                const cell = new CellContainer(dispatcher, notebookState, handler);
                 const el = div(['cell-and-divider'], [cell.el, this.newCellDivider()])
                 this.cells[id] = {cell, handler, el}
                 const cellIdx = newOrder.indexOf(id)

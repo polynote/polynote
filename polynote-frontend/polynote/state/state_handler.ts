@@ -20,17 +20,11 @@ export type Updater<S> = (currentState: Readonly<S>) => UpdateOf<S>
  * Types for describing state updates
  */
 
-// A boolean that can only be set to true
-export interface Latch {
-    triggered: boolean
-    trigger(): void
-    down(): Latch
-}
-
 export interface ObservableState<S> extends IDisposable {
     state: S
     addObserver(fn: Observer<S>, path?: string): IDisposable
     addPreObserver(fn: PreObserver<S>, path?: string): IDisposable
+    observeMapped<T>(mapper: (value: S) => T, fn: (mapped: T) => void, path?: string): IDisposable
 }
 
 export interface StateView<S> extends ObservableState<S> {
@@ -348,6 +342,10 @@ export class ObjectStateHandler<S extends object> extends Disposable implements 
         )
     }
 
+    observeMapped<T>(mapper: (value: S) => T, fn: (mapped: T) => void, path?: string): IDisposable {
+        return this.addObserver(value => fn(mapper(value)), path)
+    }
+
     view<K extends keyof S>(key: K, sourceFilter?: (source: any) => boolean): StateView<S[K]> {
         return new KeyLens(this, key, combineFilters(this.sourceFilter, sourceFilter))
     }
@@ -407,6 +405,10 @@ export class BaseHandler<S> extends Disposable implements StateHandler<S> {
         return this.parent.preObserveKey(key, filterPreObserver(fn, this.sourceFilter), subPath).disposeWith(this);
     }
 
+    observeMapped<T>(mapper: (value: S) => T, fn: (mapped: T) => void, path?: string): IDisposable {
+        return this.addObserver(v => fn(mapper(v)), path)
+    }
+
     update(updateFn: Updater<S>, updateSource?: any, updatePath?: string): void {
         return this.parent.update(updateFn, updateSource, updatePath)
     }
@@ -461,6 +463,10 @@ class KeyLens<S, K extends keyof S> extends Disposable implements StateHandler<S
 
     preObserveKey<K1 extends keyof S[K]>(key: K1, fn: PreObserver<S[K][K1]>, subPath?: string): IDisposable {
         return this.parent.preObserveKey(this.key, keyPreObserver(key, fn, this.sourceFilter), `.${key}.` + (subPath ?? '')).disposeWith(this);
+    }
+
+    observeMapped<T>(mapper: (value: S[K]) => T, fn: (mapped: T) => void, path?: string): IDisposable {
+        return this.addObserver(value => fn(mapper(value)), path)
     }
 
     view<K1 extends keyof S[K]>(key: K1, sourceFilter?: (source: any) => boolean): StateView<S[K][K1]> {
@@ -595,6 +601,10 @@ class OptionalKeyLens<S, K extends keyof S, V extends Exclude<S[K], undefined> =
                 },
                 this.sourceFilter
             ), `${this.key}.${childKey}` + (subPath ?? '')).disposeWith(this)
+    }
+
+    observeMapped<T>(mapper: (value: (V | undefined)) => T, fn: (mapped: T) => void, path?: string): IDisposable {
+        return this.addObserver(value => fn(mapper(value)))
     }
 
     view<K1 extends keyof V>(key: K1): OptionalStateView<Exclude<V[K1], undefined>> {

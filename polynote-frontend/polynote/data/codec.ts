@@ -67,6 +67,12 @@ export class DataReader {
         return result;
     }
 
+    // For e.g. plotting, it's probably OK if giant numbers lose a bit of precision.
+    readUnsafeInt64() {
+        const result = this.readInt64();
+        return Number(result);
+    }
+
     readFloat32() {
         const result = this.buffer.getFloat32(this.offset);
         this.offset += 4;

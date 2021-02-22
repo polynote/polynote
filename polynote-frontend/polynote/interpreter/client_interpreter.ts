@@ -1,29 +1,32 @@
 "use strict";
 
-import {VegaInterpreter} from "./vega_interpreter";
-import {ClientResult, ExecutionInfo, ResultValue, RuntimeError} from "../data/result";
+import {VizInterpreter, VegaInterpreter} from "./vega_interpreter";
+import {ClientResult, CompileErrors, ExecutionInfo, Result, ResultValue, RuntimeError} from "../data/result";
+import {CellState, KernelSymbols, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {append, setValue} from "../state";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {CellResult, CellStatusUpdate, KernelStatus, TaskInfo, TaskStatus, UpdatedTasks} from "../data/messages";
 import {DataRepr, StreamingDataRepr} from "../data/value_repr";
 import {DataStream} from "../messaging/datastream";
-import {NotebookStateHandler} from "../state/notebook_state";
 import {ServerStateHandler} from "../state/server_state";
 
 export interface CellContext {
     id: number,
     availableValues: Record<string, any>
+    resultValues: Record<string, ResultValue>
 }
 
 export interface IClientInterpreter {
     languageTitle: string;
     highlightLanguage: string;
-    interpret(code: string, cellContext: CellContext): (ClientResult | RuntimeError)[]
+    interpret(code: string, cellContext: CellContext): (ClientResult | CompileErrors | RuntimeError)[];
+    hidden?: boolean
 }
 
 export const ClientInterpreters: Record<string, IClientInterpreter> = {
-    "vega": VegaInterpreter
+    "vega": VegaInterpreter,
+    "viz": VizInterpreter
 };
 
 /**
@@ -55,7 +58,7 @@ export class ClientInterpreter {
         // and wait for them to complete
         const nbState = this.notebookState.state
         const cellIdx = this.notebookState.getCellIndex(id)!
-        const cell = nbState.cells[cellIdx]!;
+        const cell = nbState.cells[id]!;
 
         // first, queue up the cell, waiting for another cell to queue if necessary
         Promise.resolve().then(() => {
@@ -63,7 +66,7 @@ export class ClientInterpreter {
                 return this.notebookState.waitForCellChange(queueAfter, "queued")
             } else return Promise.resolve()
         }).then(() => {
-            const promise = this.notebookState.waitForCellChange(cellIdx, "queued");
+            const promise = this.notebookState.waitForCellChange(id, "queued");
             this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Queued)))
             return promise
         }).then(() => { // next, wait for any cells queued up earlier.
@@ -71,7 +74,7 @@ export class ClientInterpreter {
             let waitCellId: number | undefined = undefined;
             while (waitIdx >= 0 && waitCellId === undefined) {
                 waitIdx -= 1;
-                const maybeWaitCell = this.notebookState.state.cells[waitIdx]
+                const maybeWaitCell = nbState.cells[nbState.cellOrder[waitIdx]];
                 if (maybeWaitCell && (maybeWaitCell.queued || maybeWaitCell.running)) {
                     waitCellId = maybeWaitCell.id;
                 }
@@ -104,38 +107,59 @@ export class ClientInterpreter {
             }
             updateStatus(1)
 
-            const currentState = this.notebookState.state;
-            const availableValues = currentState.cellOrder.slice(0, cellIdx).reduce<Record<string, any>>((acc, next) => {
-                currentState.cells[next].results
-                    .filter(res => res instanceof ResultValue) // for now, ClientResults can't be used in other cells
-                    .forEach((result: ResultValue) => {
-                        let bestValue: any = result.valueText;
-                        const dataRepr = result.reprs.find(repr => repr instanceof DataRepr);
-                        if (dataRepr) {
-                            bestValue = (dataRepr as DataRepr).decode();
-                        } else {
-                            const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
-                            if (streamingRepr instanceof StreamingDataRepr) {
-                                bestValue = new DataStream(dispatcher, this.notebookState, streamingRepr);
-                            }
-                        }
-                        acc[result.name] = bestValue;
-                    })
-                return acc
-            }, {})
-            const results = ClientInterpreters[cell.language].interpret(cell.content, {id, availableValues})
+            const results = ClientInterpreters[cell.language].interpret(cell.content, cellContext(this.notebookState, dispatcher, id));
             updateStatus(256)
             results.forEach(res => {
-                if (res instanceof RuntimeError) {
-                    this.receiver.inject(new CellResult(id, res))
+                if (res instanceof ClientResult) {
+                    dispatcher.setCellOutput(id, res);
                 } else {
-                    res.toOutput().then(o => {
-                        const results = this.notebookState.cellsHandler.state[id].results;
-                        this.notebookState.cellsHandler.updateField(id, () => ({ results: append(res), output: setValue([o])}))
-                    })
+                    this.receiver.inject(new CellResult(id, res))
                 }
             })
         })
     }
 
+}
+
+export function cellContext(notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher, cellId: number): CellContext {
+    const resultValues = availableResultValues(notebookState.state.kernel.symbols, notebookState.state.cellOrder, cellId);
+    const availableValues = availableClientValues(resultValues, notebookState, dispatcher);
+    return {id: cellId, availableValues, resultValues};
+}
+
+export function availableResultValues(symbols: KernelSymbols, cellOrder: number[], id?: number): Record<string, ResultValue> {
+    const availableCells = Object.keys(symbols);
+    const whichCells = availableCells.filter(id => id.startsWith('-'));
+    const cellIdx = id !== undefined ? cellOrder.indexOf(id) : cellOrder.length - 1;
+
+    if (cellIdx >= 0) {
+        whichCells.push(...cellOrder.slice(0, cellIdx).map(id => id.toString()))
+    }
+
+    return whichCells.reduce<Record<string, ResultValue>>((acc, next) => {
+        Object.values(symbols[next] || {})
+            .forEach((result: ResultValue) => acc[result.name] = result);
+        return acc;
+    }, {});
+}
+
+function availableClientValues(resultValues: Record<string, ResultValue>, notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher): Record<string, any> {
+    return Object.fromEntries(
+        Object.entries(resultValues).map(
+            entry => {
+                const [name, result] = entry;
+                let bestValue: any = result.valueText;
+                const dataRepr = result.reprs.find(repr => repr instanceof DataRepr);
+                if (dataRepr) {
+                    bestValue = (dataRepr as DataRepr).decode();
+                } else {
+                    const streamingRepr = result.reprs.find(repr => repr instanceof StreamingDataRepr);
+                    if (streamingRepr instanceof StreamingDataRepr) {
+                        bestValue = new DataStream(dispatcher, notebookState, streamingRepr);
+                    }
+                }
+                return [name, bestValue];
+            }
+        )
+    )
 }

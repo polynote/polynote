@@ -1,6 +1,11 @@
 import * as messages from "../data/messages";
 import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
-import {ResultValue, ServerErrorWithCause} from "../data/result";
+import {
+    ClientResult,
+    Output,
+    ResultValue,
+    ServerErrorWithCause
+} from "../data/result";
 import {
     Destroy,
     Disposable, setProperty,
@@ -20,6 +25,8 @@ import {ErrorStateHandler} from "../state/error_state";
 import {ClientBackup} from "../state/client_backup";
 import {ServerState, ServerStateHandler} from "../state/server_state";
 import {OpenNotebooksHandler} from "../state/preferences";
+import {ViewType} from "../ui/input/viz_selector";
+import {CellMetadata} from "../data/data";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -134,11 +141,17 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
      ** UI methods (which don't   **
      ** really belong here)       **
      *******************************/
-
-    showValueInspector(result: ResultValue, tab?: string) {
-        ValueInspector.get.inspect(this, this.handler, result, tab)
+    // TODO: move this out of dispatcher
+    showValueInspector(result: ResultValue, viewType?: string) {
+        this.handler.insertCell("below", {
+            id: result.sourceCell,
+            language: 'viz',
+            metadata: new CellMetadata(false, false, false),
+            content: JSON.stringify({type: viewType, value: result.name})
+        }).then(id => this.handler.selectCell(id))
     }
 
+    // TODO: this is pointless now, remove once ValueInspector goes away
     hideValueInspector() {
         ValueInspector.get.hide()
     }
@@ -230,6 +243,15 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             }
         })
         this.socket.send(new messages.RunCell(serverCells));
+    }
+
+    // TODO: move this out of dispatcher. Maybe think about a better way to deal with this whole thing.
+    setCellOutput(cellId: number, output: Output | ClientResult) {
+        if (output instanceof Output) {
+            this.handler.cellsHandler.updateField(cellId, cellState => ({output: setValue([output])}));
+        } else {
+            this.handler.cellsHandler.updateField(cellId, cellState => ({results: setValue([output])}));
+        }
     }
 
     runActiveCell() {

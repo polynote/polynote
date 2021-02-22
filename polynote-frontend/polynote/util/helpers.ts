@@ -1,6 +1,7 @@
 'use strict';
 
 import * as fastEquals from 'fast-deep-equal/es6';
+import match, {Extractable, Matcher} from "./match";
 
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
     if ((a === undefined && b !== undefined) || (b === undefined && a !== undefined)) {
@@ -216,6 +217,41 @@ export function collect<T, U>(arr: T[], fun: (t: T) => U | undefined | null): U[
     })
 }
 
+export function collectMatch<T, R>(arr: T[], fn: (matcher: Matcher<T>) => Matcher<T, R>): R[] {
+    const result: R[] = [];
+    arr.forEach(value => {
+        const matched = fn(new Matcher(value)).orUndefined;
+        if (matched) {
+            result.push(matched);
+        }
+    })
+    return result;
+}
+
+export function collectInstances<T, R extends T>(arr: T[], constructor: new (...args: any[]) => R): R[] {
+    const result: R[] = [];
+    arr.forEach(t => {
+        if (t instanceof constructor) {
+            result.push(t);
+        }
+    });
+    return result;
+}
+
+export function collectFirstMatch<T, R>(arr: T[], fn: (matcher: Matcher<T>) => Matcher<T, R>): R | undefined {
+    for (let i = 0; i < arr.length; i++) {
+        const result = fn(match(arr[i])).orUndefined;
+        if (result)
+            return result;
+    }
+    return undefined;
+}
+
+export function findInstance<T, U>(arr: T[], u: new (...args: any[]) => U): U | undefined {
+    const result = arr.find(t => t instanceof u);
+    return result ? result as any as U : undefined;
+}
+
 export function arrExists<T>(arr: T[], fun: (t: T) => boolean): boolean {
     for (let i = 0; i < arr.length; i++) {
         if (fun(arr[i])) {
@@ -265,8 +301,64 @@ export function arrayStartsWith<T>(base: T[], start: T[]) {
 }
 
 //****************
+//* String Helpers
+//****************
+
+/**
+ * Split a string by line breaks, keeping the line breaks in the results
+ */
+export function splitWithBreaks(outputStr: string): string[] {
+    const result: string[] = [];
+    const matches = outputStr.match(/[^\n]+\n?/g);
+    if (matches)
+        matches.forEach(line => result.push(line));
+    return result;
+}
+
+export function positionIn(str: string, line: number, column: number): number {
+    const lines = splitWithBreaks(str);
+    const targetLine = Math.min(line - 1, lines.length);
+    let pos = 0;
+    let currentLine = 0;
+    for (currentLine = 0; currentLine < targetLine; currentLine++) {
+        pos += lines[currentLine].length;
+    }
+
+    if (currentLine < lines.length) {
+        pos += column;
+    }
+    return pos;
+}
+
+//****************
 //* Other Helpers
 //****************
+
+export function isDescendant(el: HTMLElement, maybeAncestor: HTMLElement, bound?: HTMLElement): boolean {
+    let current: HTMLElement | null = el;
+    while (current && current !== bound) {
+        if (current === maybeAncestor) {
+            return true;
+        }
+        current = current.parentElement;
+    }
+    return false;
+}
+
+export function mapOpt<T, U>(value: T | undefined, fn: (arg: T) => U): U | undefined {
+    if (value !== undefined) {
+        return fn(value);
+    }
+    return undefined;
+}
+
+export type InterfaceOf<T> =
+    T extends string ? T :
+    T extends Array<infer U> ? Array<InterfaceOf<U>> :
+    T extends Object ? {
+        [P in keyof T]: InterfaceOf<T[P]>
+    } :
+    T
 
 export class Deferred<T> implements Promise<T> {
     private _promise: Promise<T>;
