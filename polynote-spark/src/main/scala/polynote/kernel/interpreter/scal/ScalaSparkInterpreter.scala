@@ -1,8 +1,9 @@
 package polynote.kernel.interpreter.scal
 
-import polynote.kernel.environment.CurrentNotebook
+import polynote.kernel.environment.{CurrentNotebook, CurrentTask}
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, InterpreterEnv, ScalaCompiler}
 import polynote.kernel.interpreter.{Interpreter, State}
+import polynote.kernel.task.TaskManager
 import zio.blocking.Blocking
 import zio.{RIO, ZIO}
 
@@ -39,7 +40,7 @@ object ScalaSparkInterpreter {
   } yield new ScalaSparkInterpreter(compiler, index)
 
   object Factory extends ScalaInterpreter.Factory {
-    override def apply(): RIO[ScalaCompiler.Provider with Blocking, ScalaSparkInterpreter] = ScalaSparkInterpreter()
+    override def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, ScalaSparkInterpreter] = ScalaSparkInterpreter()
     override val requireSpark: Boolean = true
     override val priority: Int = 1
   }

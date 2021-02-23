@@ -10,7 +10,8 @@ import polynote.messages.CellID
 import zio.blocking.{Blocking, effectBlockingInterrupt}
 import zio.{RIO, Task, ZIO}
 import ScalaInterpreter.{addPositionUpdates, captureLastExpression}
-import polynote.kernel.environment.CurrentRuntime
+import polynote.kernel.environment.{CurrentNotebook, CurrentRuntime, CurrentTask}
+import polynote.kernel.task.TaskManager
 
 class ScalaInterpreter private[scal] (
   val scalaCompiler: ScalaCompiler,
@@ -260,7 +261,7 @@ object ScalaInterpreter {
 
   trait Factory extends Interpreter.Factory {
     val languageName = "Scala"
-    def apply(): RIO[Blocking with ScalaCompiler.Provider, ScalaInterpreter]
+    def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, ScalaInterpreter]
   }
 
   /**
@@ -268,6 +269,6 @@ object ScalaInterpreter {
     * because the JVM dependencies must already be fetched when the kernel is booted.
     */
   object Factory extends Factory {
-    override def apply(): RIO[Blocking with ScalaCompiler.Provider, ScalaInterpreter] = ScalaInterpreter()
+    override def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, ScalaInterpreter] = ScalaInterpreter()
   }
 }
