@@ -81,6 +81,7 @@ export class LoadNotebook extends Message {
 }
 
 
+// NOTE: maps to backend's `Notebook` message
 export class NotebookCells extends Message {
     static codec =
         combined(shortStr, arrayCodec(uint16, NotebookCell.codec), optional(NotebookConfig.codec)).to(NotebookCells);

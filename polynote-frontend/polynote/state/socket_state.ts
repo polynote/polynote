@@ -97,6 +97,7 @@ export class SocketStateHandler extends BaseHandler<SocketState> {
         socket.addEventListener('error', handleError);
 
         handler.onDispose.then(() => {
+            handler.close()
             socket.removeEventListener('open', setConnected);
             socket.removeEventListener('close', setDisconnected);
             socket.removeEventListener('error', handleError);

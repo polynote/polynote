@@ -44,6 +44,9 @@ export abstract class MessageDispatcher<S, H extends StateHandler<S> = StateHand
         handler.onDispose.then(() => {
             this.socket.close()
         })
+        this.socket.onDispose.then(() => {
+            if (!this.isDisposed) this.dispose()
+        })
     }
 
     get state() {

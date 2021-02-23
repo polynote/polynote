@@ -33,7 +33,7 @@ export class Tabs extends Disposable {
                     }
                 })
             } else {
-                Object.keys(this.tabs).forEach(tab => this.remove(tab))
+                Object.keys(this.tabs).filter(t => t !== "home").forEach(tab => this.remove(tab))
             }
         }).disposeWith(this)
 

@@ -42,7 +42,7 @@ export class SocketSession extends EventTarget {
 
     static fromRelativeURL(relativeURL: string): SocketSession {
         const url = wsUrl(new URL(relativeURL, document.baseURI));
-        if (openSessions[url.href]) {
+        if (openSessions[url.href]?.socket) {
             return openSessions[url.href];
         }
         const session = new SocketSession(url)
