@@ -157,7 +157,7 @@ monaco.languages.registerCompletionItemProvider('scala', {
 
 monaco.languages.registerCompletionItemProvider('python', {
     triggerCharacters: ['.', "["],
-    provideCompletionItems: (doc, pos, cancelToken, context) => {
+    provideCompletionItems: (doc, pos, context, cancelToken) => {
         return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
     }
 });
