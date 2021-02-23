@@ -1,18 +1,21 @@
 package polynote.kernel.remote
 
-import java.io.File
-import java.net.InetSocketAddress
-
+import java.io.{BufferedReader, File}
+import java.net.{InetSocketAddress, URL}
 import polynote.buildinfo.BuildInfo
 import polynote.config.{PolynoteConfig, SparkConfig}
-import polynote.kernel.{Kernel, LocalSparkKernelFactory, ScalaCompiler, remote}
+import polynote.kernel.{BaseEnv, Kernel, ScalaCompiler, remote}
 import polynote.kernel.environment.{Config, CurrentNotebook}
+import polynote.kernel.logging.Logging
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployCommand
-import polynote.kernel.util.pathOf
+import polynote.kernel.util.{listFiles, pathOf}
 import polynote.messages.NotebookConfig
 import polynote.runtime.KernelRuntime
-import polynote.runtime.spark.reprs.SparkReprsOf
-import zio.RIO
+import zio.{RIO, URIO, ZIO, ZManaged}
+import zio.blocking.effectBlocking
+
+import java.nio.file.{Files, Path, Paths}
+import java.util.concurrent.atomic.AtomicReference
 
 object DeploySparkSubmit extends DeployCommand {
   def parseQuotedArgs(str: String): List[String] = str.split('"').toList.sliding(2, 2).toList.flatMap {
@@ -25,6 +28,7 @@ object DeploySparkSubmit extends DeployCommand {
     config: PolynoteConfig,
     nbConfig: NotebookConfig,
     notebookPath: String,
+    classPath: Seq[URL],
     mainClass: String = classOf[RemoteKernelClient].getName,
     jarLocation: String = getClass.getProtectionDomain.getCodeSource.getLocation.getPath,
     serverArgs: List[String] = Nil
@@ -58,7 +62,7 @@ object DeploySparkSubmit extends DeployCommand {
         case (name, value) => s"-D$name=$value"
       } mkString " "
 
-    val additionalJars = pathOf(classOf[SparkReprsOf[_]]) :: pathOf(classOf[KernelRuntime]) :: Nil
+    val additionalJars = classPath.toList.filter(_.getFile.endsWith(".jar"))
 
     val appName = sparkConfig.getOrElse("spark.app.name", s"Polynote ${BuildInfo.version}: $notebookPath")
 
@@ -70,7 +74,7 @@ object DeploySparkSubmit extends DeployCommand {
       sparkArgs ++ Seq(jarLocation) ++ serverArgs
   }
 
-  override def apply(serverAddress: InetSocketAddress): RIO[Config with CurrentNotebook, Seq[String]] = for {
+  override def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[Config with CurrentNotebook, Seq[String]] = for {
     config   <- Config.access
     nbConfig <- CurrentNotebook.config
     path     <- CurrentNotebook.path
@@ -78,11 +82,67 @@ object DeploySparkSubmit extends DeployCommand {
     config,
     nbConfig,
     path,
+    classPath.map(_.toUri.toURL),
     serverArgs =
       "--address" :: serverAddress.getAddress.getHostAddress ::
       "--port" :: serverAddress.getPort.toString ::
-      "--kernelFactory" :: classOf[LocalSparkKernelFactory].getName ::
+      "--kernelFactory" :: "polynote.kernel.LocalSparkKernelFactory" ::
       Nil
   )
+
+  // we assume spark-submit is going to use the same scala version every time and memoize its output
+  private val detectedVersion = new AtomicReference[Option[Option[String]]](None)
+
+  private[remote] val detectFromSparkSubmit: ZIO[BaseEnv, Nothing, Option[String]] = {
+    def process = effectBlocking(new ProcessBuilder("spark-submit", "--version").start())
+      .toManaged {
+        process => effectBlocking(process.waitFor()).ignore.ensuring {
+          effectBlocking(process.destroyForcibly()).ignore.repeatUntil(_ => !process.isAlive)
+        }
+      }
+
+    def processOutput = for {
+      process       <- process
+        processOutput <- ZManaged.fromAutoCloseable(ZIO(process.getErrorStream))
+        outputSource  <- ZIO.effectTotal(scala.io.Source.fromInputStream(processOutput)).toManaged(src => ZIO.effectTotal(src.close()))
+    } yield outputSource
+
+    val findScalaVersion = raw"Using Scala(?: version)? (\d\.\d+)".r
+
+    processOutput.use {
+      src => effectBlocking(src.getLines().toSeq).map {
+        lines => lines.map(findScalaVersion.findFirstMatchIn).collectFirst {
+          case Some(m) => m.group(1)
+        }
+      }
+    }.catchAll {
+      err => Logging.warn(s"Failed to detect Scala version from spark-submit", err).as(None)
+    }
+  }
+
+  private case object NoSparkHome extends Throwable("No SPARK_HOME is available")
+
+  private[remote] val detectFromSparkHome: URIO[BaseEnv, Option[String]] = {
+    val sparkJar = raw"scala-library-(\d\.\d+).*\.jar".r
+    for {
+      sparkHome <- zio.system.env("SPARK_HOME").someOrFail(NoSparkHome)
+      jarsDir   <- ZIO(Paths.get(sparkHome, "jars"))
+      jars      <- listFiles(jarsDir)
+    } yield jars.view.map(_.getFileName.toString).collectFirst {
+      case sparkJar(ver) => ver
+    }
+  }.tapError {
+    err =>
+      Logging.warn("Unable to find SPARK_HOME", err)
+  }.orElse(ZIO.none)
+
+  override val detectScalaVersion: URIO[BaseEnv, Option[String]] =
+    ZIO.effectTotal(detectedVersion.get).flatMap {
+      case Some(v) => ZIO.succeed(v)
+      case None    =>
+        (detectFromSparkHome.some orElse detectFromSparkSubmit.some)
+          .option
+          .tap(v => ZIO.effectTotal(detectedVersion.set(Some(v))))
+    }
 }
 

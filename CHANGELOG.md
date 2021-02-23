@@ -1,3 +1,7 @@
+# Unreleased
+* Distribution now ships with kernels for all supported Scala versions. Which Scala version to use can be configured with `kernel.scalaVersion` or per-notebook, and is automatically detected if not configured.
+* Configuration option `behavior.kernel_isolation: never` is no longer supported – spark kernels can no longer be launched in-process. `never` is now deprecated; it behaves the same way as `spark` (remote kernel iff notebook uses Spark) and will be removed in a future version.
+
 # 0.3.12 (Sep 16, 2020)
 * Fix an issue with Python Data Classes
 * Fix issues importing Zeppelin notebooks
