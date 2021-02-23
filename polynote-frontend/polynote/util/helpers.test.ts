@@ -13,9 +13,11 @@ import {
     diffArray,
     equalsByKey,
     isEmpty,
-    isObject, linePosAt,
+    isObject,
+    linePosAt,
     mapSome,
     mapValues,
+    parseQuotedArgs,
     partition,
     removeKeys,
     unzip,
@@ -469,6 +471,20 @@ describe("arrayStartsWith", () => {
                 expect(arrayStartsWith(arr, arrStart)).toBeTruthy()
             })
         )
+    })
+})
+
+describe("parseQuotedArgs", () => {
+    it ("parses simple space-separated arguments", () => {
+        expect(parseQuotedArgs(`first second third`)).toEqual(['first', 'second', 'third'])
+    })
+
+    it ("allows quoting things", () => {
+        expect(parseQuotedArgs(`first "two words" third`)).toEqual(['first', 'two words', 'third'])
+    })
+
+    it ("allows escaping things inside quotes", () => {
+        expect(parseQuotedArgs(`first "there is an \\" escaped quote" third`)).toEqual(['first', `there is an " escaped quote`, 'third'])
     })
 })
 
