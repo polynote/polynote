@@ -37,7 +37,7 @@ export class NotebookConfigEl extends Disposable {
         const dependencies = new Dependencies(configState.view("dependencies"));
         const exclusions = new Exclusions(configState.view("exclusions"));
         const resolvers = new Resolvers(configState.view("repositories"));
-        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates", configState);
+        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates").disposeWith(configState);
         const spark = new SparkConf(configState.view("sparkConfig"), configState.view("sparkTemplate"), serverTemplatesHandler);
         const kernel = new KernelConf(configState);
 
