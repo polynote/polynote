@@ -38,7 +38,7 @@ export class RichTextEditor {
                     document.execCommand('formatBlock', false, `h${nextHeader}`);
                 } else if (evt.key === 'e') {
                     evt.preventDefault();
-                    LaTeXEditor.forSelection()!.show();
+                    LaTeXEditor.forSelection()?.show();
                 }
             }
         });
