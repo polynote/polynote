@@ -576,40 +576,59 @@ class PythonInterpreter private[python] (
       |    from matplotlib._pylab_helpers import Gcf
       |    from matplotlib.backend_bases import (_Backend, FigureManagerBase)
       |    from matplotlib.backends.backend_agg import _BackendAgg
+      |    import io, base64
       |
-      |    class FigureManagerTemplate(FigureManagerBase):
-      |        def show(self):
+      |    class PolynoteFigureManager(FigureManagerBase):
+      |        def png(self):
+      |            # Save figure as PNG for display
+      |            buf = io.BytesIO()
+      |            self.canvas.figure.savefig(buf, format='png')
+      |            buf.seek(0)
+      |            return base64.b64encode(buf.getvalue()).decode('utf-8')
+      |
+      |        def svg(self):
       |            # Save figure as SVG for display
       |            import io
       |            buf = io.StringIO()
       |            self.canvas.figure.savefig(buf, format='svg')
       |            buf.seek(0)
-      |            html = "<div style='width:600px'>" + buf.getvalue() + "</div>"
+      |            return buf.getvalue()
       |
-      |            # Display image as html
-      |            kernel.display.html(html)
-      |
-      |            # destroy the figure now that we've shown it
-      |            Gcf.destroy_all()
+      |        def show(self):
+      |            fmt = PolynoteBackend.output_format
+      |            if fmt == 'svg':
+      |                kernel.display.content("image/svg", self.svg())
+      |            elif fmt == 'png':
+      |                kernel.display.content("image/png", self.png())
+      |            else:
+      |                print(f"PolynoteBackend: Unknown output format. Accepted values for PolynoteBackend.output_format are 'png' or 'svg' but got '{fmt}'. Defaulting to 'png'.",file=sys.stderr)
+      |                sys.stderr.flush()
+      |                kernel.display.content("image/png", self.png())
       |
       |
       |    @_Backend.export
       |    class PolynoteBackend(_BackendAgg):
       |        __module__ = "polynote"
       |
-      |        FigureManager = FigureManagerTemplate
+      |        FigureManager = PolynoteFigureManager
+      |
+      |        output_format = 'png' # options are ['png', 'svg']
       |
       |        @classmethod
       |        def show(cls):
-      |            managers = Gcf.get_all_fig_managers()
-      |            if not managers:
-      |                return  # this means there's nothing to plot, apparently.
-      |            for manager in managers:
-      |                manager.show()
-      |
+      |            try:
+      |                managers = Gcf.get_all_fig_managers()
+      |                if not managers:
+      |                    return  # this means there's nothing to plot, apparently.
+      |                managers[0].show() # ignore other managers (not sure where they come from...?)
+      |            finally:
+      |                Gcf.destroy_all()
+      |                matplotlib.pyplot.close('all')
       |
       |    import matplotlib
       |    matplotlib.use("module://" + PolynoteBackend.__module__)
+      |    print("matplotlib backend set to:", matplotlib.get_backend(), file=sys.stderr)
+      |    sys.stderr.flush()
       |
       |except ImportError as e:
       |    import sys
@@ -626,6 +645,13 @@ class PythonInterpreter private[python] (
           //       correct kernel. We may want to have a better way to do this though, like a first class getKernel()
           //       function for libraries (this only solves the problem for python)
           jep.set("kernel", runtime)
+
+          // expose `PolynoteBackend` so users can set `PolynoteBackend.output_format`
+          // `PolynoteBackend` is not defined if `matplotlib` is not present.
+          Try(jep.getValue("PolynoteBackend", classOf[PyObject])).foreach {
+            backend =>
+              setItem.call("PolynoteBackend", backend)
+          }
       }
   }
 
