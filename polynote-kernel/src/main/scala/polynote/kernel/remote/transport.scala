@@ -433,7 +433,7 @@ object SocketTransport {
             .filterNot(_.isEmpty)
             .mkString(File.pathSeparator)
 
-          val javaArgs = notebookConfig.jvmArgs.toList.flatten
+          val javaArgs = notebookConfig.jvmArgs.toList.flatten ++ asPropString(javaOptions)
 
           java :: "-cp" :: fullClassPath :: javaArgs :::
             classOf[RemoteKernelClient].getName ::
