@@ -113,9 +113,9 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         const loaded =  nbInfo?.info;
         if (! loaded) {
             // Note: the server will start sending notebook data on this socket automatically after it connects
-            const nbSocket = SocketStateHandler.create(SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`));
-            const receiver = new NotebookMessageReceiver(nbSocket, nbInfo.handler);
-            const dispatcher = new NotebookMessageDispatcher(nbSocket, nbInfo.handler)
+            const nbSocket = SocketStateHandler.create(SocketSession.fromRelativeURL(`ws/${encodeURIComponent(path)}`)).disposeWith(nbInfo.handler);
+            const receiver = new NotebookMessageReceiver(nbSocket, nbInfo.handler).disposeWith(nbInfo.handler);
+            const dispatcher = new NotebookMessageDispatcher(nbSocket, nbInfo.handler).disposeWith(nbInfo.handler);
             nbInfo.info = {receiver, dispatcher};
             nbInfo.loaded = true;
             ServerStateHandler.notebooks[path] = nbInfo;
@@ -210,16 +210,16 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
     static closeNotebook(path: string) {
         const maybeNb = ServerStateHandler.notebooks[path];
         if (maybeNb) {
-            maybeNb.handler.dispose()
 
             // reset the entry for this notebook.
-            delete ServerStateHandler.notebooks[path]
-            ServerStateHandler.getOrCreateNotebook(path)
+            delete ServerStateHandler.notebooks[path];
 
-            ServerStateHandler.updateState(state => ({
-                notebooks: updateProperty(path, false),
-                openNotebooks: removeFromArray(state.openNotebooks, path)
-            }))
+            maybeNb.handler.dispose().then(() => {
+                ServerStateHandler.updateState(state => ({
+                    notebooks: updateProperty(path, false),
+                    openNotebooks: removeFromArray(state.openNotebooks, path)
+                }))
+            })
         }
     }
 
