@@ -50,11 +50,13 @@ export class KernelPane extends Disposable {
                 // the notebook should already be loaded
                 if (nbInfo?.info) {
                     if (this.kernels[path] === undefined) {
-                        this.kernels[path] = new Kernel(
+                        const kernel = new Kernel(
                             serverMessageDispatcher,
                             nbInfo.info.dispatcher,
                             nbInfo.handler,
                             'rightPane');
+                        kernel.onDispose.then(() => delete this.kernels[path])
+                        this.kernels[path] = kernel;
                     }
                     const kernel = this.kernels[path];
                     this.el.replaceWith(kernel.el);
@@ -94,6 +96,7 @@ export class Kernel extends Disposable {
                 private notebookState: NotebookStateHandler,
                 private whichPane: keyof ViewPreferences) {
         super()
+        this.disposeWith(notebookState);
 
         this.kernelState = notebookState.lens("kernel").disposeWith(this);
 
