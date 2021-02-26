@@ -106,11 +106,13 @@ export class StreamingDataRepr extends ValueRepr {
         return [inst.handle, inst.dataType, inst.knownSize];
     }
 
-    constructor(readonly handle: number, readonly dataType: StructType, readonly knownSize?: number) {
+    constructor(readonly handle: number, readonly dataType: DataType, readonly knownSize?: number) {
         super();
         Object.freeze(this);
     }
 }
+
+export type StructStreamingDataRepr = StreamingDataRepr & { dataType: StructType }
 
 ValueRepr.codecs = [
     StringRepr,        // 0

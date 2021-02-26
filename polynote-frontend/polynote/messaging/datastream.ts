@@ -7,7 +7,7 @@ import {
     Select,
     TableOp
 } from "../data/messages";
-import {DoubleType, LongType, NumericTypes, StructField, StructType, UnsafeLongType} from "../data/data_type";
+import {DataType, DoubleType, LongType, NumericTypes, StructField, StructType, UnsafeLongType} from "../data/data_type";
 import {DataReader, Pair} from "../data/codec";
 import {Either} from "../data/codec_types";
 import match from "../util/match";
@@ -31,7 +31,7 @@ export const QuartilesType = new StructType([
  */
 export class DataStream extends Disposable {
     private readonly mods: TableOp[];
-    readonly dataType: StructType;
+    readonly dataType: DataType;
     private batchSize = 50;
     private receivedCount = 0;
     terminated = false;
@@ -51,7 +51,7 @@ export class DataStream extends Disposable {
         private readonly nbState: NotebookStateHandler,
         private readonly originalRepr: StreamingDataRepr,
         mods?: TableOp[],
-        currentDataType?: StructType,
+        currentDataType?: DataType,
         private unsafeLongs: boolean = false
     ) {
         super();
@@ -151,7 +151,10 @@ export class DataStream extends Disposable {
         return new DataStream(this.dispatcher, this.nbState, this.originalRepr, [...this.mods, ...ops], newType, forceUnsafeLongs ?? this.unsafeLongs);
     }
 
-    aggregate(groupCols: string[], aggregations: Record<string, string> | Record<string, string>[]) {
+    aggregate(groupCols: string[], aggregations: Record<string, string> | Record<string, string>[]): DataStream {
+        if (!(this.dataType instanceof StructType))
+            return this;
+
         if (!(aggregations instanceof Array)) {
             aggregations = [aggregations];
         }
@@ -292,9 +295,15 @@ export class DataStream extends Disposable {
                             if (message instanceof ModifyStream && message.fromHandle === handleId) {
                                 if (message.newRepr) {
                                     if (this.unsafeLongs) {
+                                        let newDataType = message.newRepr.dataType;
+                                        if (newDataType instanceof StructType)
+                                            newDataType = newDataType.replaceType(typ => typ === LongType ? UnsafeLongType : undefined);
+                                        else if (newDataType === LongType)
+                                            newDataType = UnsafeLongType;
+
                                         this.repr = new StreamingDataRepr(
                                             message.newRepr.handle,
-                                            message.newRepr.dataType.replaceType(typ => typ === LongType ? UnsafeLongType : undefined),
+                                            newDataType,
                                             message.newRepr.knownSize)
                                     } else {
                                         this.repr = message.newRepr;
@@ -315,8 +324,12 @@ export class DataStream extends Disposable {
         return this.setupPromise;
     }
 
-    private static finalDataType(structType: StructType, mods: TableOp[]): StructType {
-        let dataType = structType;
+    private static finalDataType(type: DataType, mods: TableOp[]): DataType {
+        if (!(type instanceof StructType)) {
+            return type;
+        }
+
+        let dataType: StructType = type;
 
         if (!mods || !mods.length)
             return dataType;
@@ -360,7 +373,10 @@ export class DataStream extends Disposable {
         return DataStream.requireField(this.dataType, name);
     }
 
-    private static requireField(dataType: StructType, name: string): StructField {
+    private static requireField(dataType: DataType, name: string): StructField {
+        if (!(dataType instanceof StructType)) {
+            throw new Error(`Field ${name} not present in scalar type ${dataType.typeName()}`);
+        }
         const path = name.indexOf('(') >= 0 ? [name] : name.split('.');
         const fieldName = path.shift();
         const field = dataType.fields.find((field: StructField) => field.name === fieldName);

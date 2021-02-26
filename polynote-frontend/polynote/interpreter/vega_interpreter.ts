@@ -21,6 +21,7 @@ import {parseViz, Viz} from "../ui/input/viz_selector";
 import {DataRepr, MIMERepr, StreamingDataRepr, StringRepr} from "../data/value_repr";
 import {displayData, displaySchema} from "../ui/display/display_content";
 import {TableView} from "../ui/layout/table_view";
+import {StructType} from "../data/data_type";
 
 export const VegaInterpreter: IClientInterpreter = {
 
@@ -78,7 +79,7 @@ export function vizResult(id: number, viz: Viz, result: ResultValue, cellContext
 
     switch (viz.type) {
         case "plot":
-            if (!streamRepr) {
+            if (!streamRepr || !(streamRepr.dataType instanceof StructType)) {
                 return err(`Value ${viz.value} is not table-like`);
             }
 
@@ -106,7 +107,7 @@ export function vizResult(id: number, viz: Viz, result: ResultValue, cellContext
             return [new MIMEClientResult(mimeResult)];
 
         case "schema":
-            if (!streamRepr) {
+            if (!streamRepr || !(streamRepr.dataType instanceof StructType)) {
                 return err(`Value ${viz.value} is not table-like`);
             }
             const schemaEl = displaySchema(streamRepr.dataType);

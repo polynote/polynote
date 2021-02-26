@@ -47,7 +47,7 @@ export class TableView {
 
     constructor(private stream: DataStream, private hideTable: boolean = false) {
         const dataType = stream.dataType;
-        this.fields = dataType.fields || [new StructField("entries", dataType)]; // if dataType is not a StructType, create a dummy entry for it.
+        this.fields = dataType instanceof StructType ? dataType.fields : [new StructField("entries", dataType)]; // if dataType is not a StructType, create a dummy entry for it.
         const fieldClasses = this.fields.map(field => field.name);
         const fieldNames = this.fields.map(field => `${field.name}: ${field.dataType.typeName()}`);
 

@@ -4,7 +4,14 @@ import {FullScreenModal} from "../layout/modal";
 import {div, TagElement} from "../tags";
 import {ResultValue} from "../../data/result";
 import match from "../../util/match";
-import {DataRepr, LazyDataRepr, MIMERepr, StreamingDataRepr, StringRepr} from "../../data/value_repr";
+import {
+    DataRepr,
+    LazyDataRepr,
+    MIMERepr,
+    StreamingDataRepr,
+    StringRepr,
+    StructStreamingDataRepr
+} from "../../data/value_repr";
 import {contentTypeName, displayContent, displayData, displaySchema} from "../display/display_content";
 import {DataReader} from "../../data/codec";
 import {StructType} from "../../data/data_type";
@@ -55,7 +62,7 @@ export class ValueInspector extends FullScreenModal {
                         try {
                             if (dataType instanceof StructType) {
                                 tabs['Schema'] = displaySchema(dataType);
-                                tabs['Plot data'] = new PlotEditor(dispatcher, nbState, repr, resultValue.name, resultValue.sourceCell).container;
+                                tabs['Plot data'] = new PlotEditor(dispatcher, nbState, repr as StructStreamingDataRepr, resultValue.name, resultValue.sourceCell).container;
                             }
                             tabs['View data'] = TableView.create(dispatcher, nbState, repr).el;
                         } catch(err) {
