@@ -363,7 +363,6 @@ export class CodeCell extends Cell {
             fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
             fontSize: 15,
             fontLigatures: true,
-            contextmenu: false,
             fixedOverflowWidgets: false,
             lineNumbers: 'on',
             lineNumbersMinChars: 1,
@@ -375,7 +374,6 @@ export class CodeCell extends Cell {
         });
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
-        this.editorEl.contentEditable = 'true'; // so right-click copy/paste can work.
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
         this.editor.layout();
 
