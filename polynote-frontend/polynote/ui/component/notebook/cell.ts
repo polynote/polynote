@@ -11,8 +11,8 @@ import {
     StateHandler,
     StateView,
     UpdateLike,
-    UpdateResult,
     updateProperty,
+    UpdateResult,
 } from "../../../state";
 import * as monaco from "monaco-editor";
 import {
@@ -26,18 +26,19 @@ import {
     SelectionDirection
 } from "monaco-editor";
 // @ts-ignore (ignore use of non-public monaco api)
-import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js'
+import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js';
 import {
     ClientResult,
     CompileErrors,
-    ExecutionInfo, MIMEClientResult,
+    ExecutionInfo,
+    MIMEClientResult,
     Output,
     PosRange,
     ResultValue,
     RuntimeError
 } from "../../../data/result";
 import {CellMetadata} from "../../../data/data";
-import {FoldingController, SuggestController} from "../../input/monaco/extensions";
+import {FoldingController} from "../../input/monaco/extensions";
 import {ContentEdit, Delete, diffEdits, Insert} from "../../../data/content_edit";
 import {
     displayContent,
@@ -51,10 +52,9 @@ import {
 import match, {matchS, purematch} from "../../../util/match";
 import {CommentHandler} from "./comment";
 import {RichTextEditor} from "../../input/text_editor";
-import {Diff} from "../../../util/diff";
-import {DataRepr, MIMERepr, StreamingDataRepr, ValueRepr} from "../../../data/value_repr";
+import {DataRepr, MIMERepr, StreamingDataRepr} from "../../../data/value_repr";
 import {DataReader} from "../../../data/codec";
-import {BoolType, DoubleType, IntType, StringType, StructField, StructType} from "../../../data/data_type";
+import {StructType} from "../../../data/data_type";
 import {FaviconHandler} from "../../../notification/favicon_handler";
 import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
@@ -62,15 +62,6 @@ import {availableResultValues, cellContext, ClientInterpreters} from "../../../i
 import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
 import {collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
-import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
-import CompletionList = languages.CompletionList;
-import SignatureHelp = languages.SignatureHelp;
-import SignatureHelpResult = languages.SignatureHelpResult;
-import EditorOption = editor.EditorOption;
-import IModelContentChangedEvent = editor.IModelContentChangedEvent;
-import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
-import TrackedRangeStickiness = editor.TrackedRangeStickiness;
-import IMarkerData = editor.IMarkerData;
 import {
     CellPresenceState,
     CellState,
@@ -81,7 +72,15 @@ import {
 import {ServerStateHandler} from "../../../state/server_state";
 import {isViz, parseMaybeViz, saveViz, Viz, VizSelector} from "../../input/viz_selector";
 import {VegaClientResult, VizInterpreter} from "../../../interpreter/vega_interpreter";
-
+import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
+import CompletionList = languages.CompletionList;
+import SignatureHelp = languages.SignatureHelp;
+import SignatureHelpResult = languages.SignatureHelpResult;
+import EditorOption = editor.EditorOption;
+import IModelContentChangedEvent = editor.IModelContentChangedEvent;
+import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
+import TrackedRangeStickiness = editor.TrackedRangeStickiness;
+import IMarkerData = editor.IMarkerData;
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -914,7 +913,7 @@ export class CodeCell extends Cell {
     protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
         const ifNoSuggestion = (fun: () => void) => () => {
             // this is really ugly, is there a better way to tell whether the widget is visible??
-            const suggestionsVisible = (this.editor.getContribution('editor.contrib.suggestController') as SuggestController)?.widget?._value.suggestWidgetVisible?.get();
+            const suggestionsVisible = this.editor._contextKeyService.getContextKeyValue("suggestWidgetVisible")
             if (!suggestionsVisible) { // don't do stuff when suggestions are visible
                 fun()
             }
@@ -927,7 +926,7 @@ export class CodeCell extends Cell {
             }))
             .when("MoveDown", ifNoSuggestion(() => {
                 let lastColumn = range.endColumn;
-                if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
+                if (this.vim && !this.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
                     lastColumn -= 1
                 }
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
