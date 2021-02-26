@@ -232,7 +232,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 }
             };
             if (prev !== undefined) {
-                (update.cells as any)[prev] = { selected: false };
+                (update.cells as any)[prev] = { selected: false, editing: false };
             }
             return update;
         })

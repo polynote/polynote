@@ -12,3 +12,16 @@ export const __dummy = null; // Apparently, we need at least one import or expor
 declare module "tinycon" {
     export function reset(): void
 }
+
+import { editor } from "monaco-editor"; // note: this import is _required_ even though IntelliJ thinks it isn't
+declare module "monaco-editor" {
+    namespace editor {
+        // @ts-ignore ignore use of private Monaco API
+        import {IContextKeyService} from 'monaco-editor/esm/vs/platform/contextkey/common/contextkey.js'
+
+        interface IStandaloneCodeEditor {
+            _contextKeyService: IContextKeyService
+        }
+    }
+
+}

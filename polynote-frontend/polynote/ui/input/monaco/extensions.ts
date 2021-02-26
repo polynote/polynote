@@ -6,13 +6,15 @@ import {editor, IDisposable} from "monaco-editor";
 import IEditorContribution = editor.IEditorContribution;
 import IContextKey = editor.IContextKey;
 
+
+
 /**
  * For some reason the editor contrib types aren't published...
  */
 
 // see: https://github.com/microsoft/vscode/blob/master/src/vs/editor/contrib/suggest/suggestController.ts
 export interface SuggestController extends IEditorContribution {
-    readonly widget: { _value: { suggestWidgetVisible: IContextKey<boolean>}}
+    readonly widget: { _value: { ctxSuggestWidgetVisible: IContextKey<boolean>}}
 }
 
 // see: https://github.com/microsoft/vscode/blob/master/src/vs/editor/contrib/folding/foldingModel.ts

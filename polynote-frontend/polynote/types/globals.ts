@@ -17,3 +17,16 @@ interface Array<T> {
 
 // lifted from https://stackoverflow.com/a/56006703
 type NonEmptyArray<T> = [T, ...T[]]
+
+/**
+ * Private editor API
+ */
+
+namespace editor {
+    // @ts-ignore ignore use of private Monaco API
+    import {IContextKeyService} from 'monaco-editor/esm/vs/platform/contextkey/common/contextkey.js'
+
+    interface IStandaloneCodeEditor {
+        _contextKeyService: IContextKeyService
+    }
+}
