@@ -1,4 +1,4 @@
-import {append, destroy, setValue, UpdatePartial, valueToUpdate} from "./state_updates";
+import {append, destroy, setValue, UpdateKey, UpdatePartial, valueToUpdate} from "./state_updates";
 import {deepCopy} from "../util/helpers";
 
 interface Example {
@@ -116,6 +116,7 @@ describe("UpdateWith", () => {
         const result = update.applyMutate(mutatedOriginal);
 
         expect(result.newValue).toEqual(expected);
+        expect("removedField" in result.newValue).toEqual(false);
         expect(result.removedValues).toEqual({removedField: original.removedField})
         expect(result.addedValues).toEqual({addedField: expected.addedField})
         expect(result.changedValues).toEqual({hello: expected.hello, deep: expected.deep});
@@ -125,4 +126,25 @@ describe("UpdateWith", () => {
 
     })
 
+})
+
+describe("UpdateKey", () => {
+    it("removes the field when it's destroyed", () => {
+        const original: Example = {
+            hi: "one",
+            hello: "three",
+            removedField: "nope",
+            deep: {
+                first: "hi",
+                second: "howdy",
+                array: [1, 2]
+            }
+        }
+
+        const update = new UpdateKey<Example, "removedField">("removedField", destroy());
+
+        const result = update.applyMutate(original);
+
+        expect("removedField" in result.newValue).toEqual(false);
+    })
 })
