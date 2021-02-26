@@ -487,6 +487,26 @@ button {
 .notebook-config {
   background-color: @ui-background;
   color: fade(@ui-text, 30%);
+
+  .dependency-row {
+    .advanced {
+      //background-color: @ui-background-bright;
+      border-color: @ui-border-dark;
+    }
+    .expand {
+      &:hover {
+        border-color: @ui-border;
+        background-color: @ui-background-bright;
+      }
+    }
+
+    &.show-advanced {
+      .expand {
+        background-color: @ui-background-bright;
+        border-color: @ui-border;
+      }
+    }
+  }
 }
 
 .notebook-config.open {

@@ -1,28 +1,37 @@
 package polynote.kernel.interpreter
 package python
-import java.nio.file.{Files, Path, Paths}
+import java.io.{File, FileReader, PrintWriter, StringWriter}
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path, Paths, StandardOpenOption}
 import java.util
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
-import java.util.concurrent.{Executors, LinkedBlockingQueue, ThreadFactory}
-
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.{Executors, ThreadFactory}
+import cats.effect.concurrent.Ref
 import cats.syntax.traverse._
+import cats.syntax.either._
 import cats.instances.list._
+import io.circe.generic.semiauto._
+import io.circe.syntax._
+import io.circe._
+import io.circe.yaml.syntax._
 import jep.python.{PyCallable, PyObject}
-import jep.{Jep, JepConfig, JepException, MainInterpreter, NamingConventionClassEnquirer, SharedInterpreter, SubInterpreter}
+import jep.{Jep, JepConfig, JepException, NamingConventionClassEnquirer, SharedInterpreter}
 import polynote.config
 import polynote.config.{PolynoteConfig, pip}
+import polynote.kernel.dependency.noCacheSentinel
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
+import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
-import polynote.kernel.{CompileErrors, Completion, CompletionType, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, Pos, ResultValue, ScalaCompiler, Signatures}
+import polynote.kernel.{BaseEnv, CompileErrors, Completion, CompletionType, GlobalEnv, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, ResultValue, ScalaCompiler, Signatures, TaskInfo}
 import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
-import zio.internal.{ExecutionMetrics, Executor}
+import zio.internal.Executor
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Has, RIO, Runtime, Task, UIO, ZIO}
+import zio.duration._
+import zio.{Has, RIO, Runtime, Semaphore, Task, UIO, ZIO}
 import zio.interop.catz._
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext
 import scala.reflect.{ClassTag, classTag}
 import scala.util.Try
@@ -567,40 +576,59 @@ class PythonInterpreter private[python] (
       |    from matplotlib._pylab_helpers import Gcf
       |    from matplotlib.backend_bases import (_Backend, FigureManagerBase)
       |    from matplotlib.backends.backend_agg import _BackendAgg
+      |    import io, base64
       |
-      |    class FigureManagerTemplate(FigureManagerBase):
-      |        def show(self):
+      |    class PolynoteFigureManager(FigureManagerBase):
+      |        def png(self):
+      |            # Save figure as PNG for display
+      |            buf = io.BytesIO()
+      |            self.canvas.figure.savefig(buf, format='png')
+      |            buf.seek(0)
+      |            return base64.b64encode(buf.getvalue()).decode('utf-8')
+      |
+      |        def svg(self):
       |            # Save figure as SVG for display
       |            import io
       |            buf = io.StringIO()
       |            self.canvas.figure.savefig(buf, format='svg')
       |            buf.seek(0)
-      |            html = "<div style='width:600px'>" + buf.getvalue() + "</div>"
+      |            return buf.getvalue()
       |
-      |            # Display image as html
-      |            kernel.display.html(html)
-      |
-      |            # destroy the figure now that we've shown it
-      |            Gcf.destroy_all()
+      |        def show(self):
+      |            fmt = PolynoteBackend.output_format
+      |            if fmt == 'svg':
+      |                kernel.display.content("image/svg", self.svg())
+      |            elif fmt == 'png':
+      |                kernel.display.content("image/png", self.png())
+      |            else:
+      |                print(f"PolynoteBackend: Unknown output format. Accepted values for PolynoteBackend.output_format are 'png' or 'svg' but got '{fmt}'. Defaulting to 'png'.",file=sys.stderr)
+      |                sys.stderr.flush()
+      |                kernel.display.content("image/png", self.png())
       |
       |
       |    @_Backend.export
       |    class PolynoteBackend(_BackendAgg):
       |        __module__ = "polynote"
       |
-      |        FigureManager = FigureManagerTemplate
+      |        FigureManager = PolynoteFigureManager
+      |
+      |        output_format = 'png' # options are ['png', 'svg']
       |
       |        @classmethod
       |        def show(cls):
-      |            managers = Gcf.get_all_fig_managers()
-      |            if not managers:
-      |                return  # this means there's nothing to plot, apparently.
-      |            for manager in managers:
-      |                manager.show()
-      |
+      |            try:
+      |                managers = Gcf.get_all_fig_managers()
+      |                if not managers:
+      |                    return  # this means there's nothing to plot, apparently.
+      |                managers[0].show() # ignore other managers (not sure where they come from...?)
+      |            finally:
+      |                Gcf.destroy_all()
+      |                matplotlib.pyplot.close('all')
       |
       |    import matplotlib
       |    matplotlib.use("module://" + PolynoteBackend.__module__)
+      |    print("matplotlib backend set to:", matplotlib.get_backend(), file=sys.stderr)
+      |    sys.stderr.flush()
       |
       |except ImportError as e:
       |    import sys
@@ -617,6 +645,13 @@ class PythonInterpreter private[python] (
           //       correct kernel. We may want to have a better way to do this though, like a first class getKernel()
           //       function for libraries (this only solves the problem for python)
           jep.set("kernel", runtime)
+
+          // expose `PolynoteBackend` so users can set `PolynoteBackend.output_format`
+          // `PolynoteBackend` is not defined if `matplotlib` is not present.
+          Try(jep.getValue("PolynoteBackend", classOf[PyObject])).foreach {
+            backend =>
+              setItem.call("PolynoteBackend", backend)
+          }
       }
   }
 
@@ -864,7 +899,7 @@ object PythonInterpreter {
     } yield (compiler, jep, executor, jepThread, blocking, runtime, api)
   }
 
-  def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, PythonInterpreter] = {
+  def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, PythonInterpreter] = {
     for {
       venv    <- VirtualEnvFetcher.fetch()
       interp  <- PythonInterpreter(venv)
@@ -879,9 +914,19 @@ object PythonInterpreter {
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
-    def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = PythonInterpreter()
+    def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = PythonInterpreter()
   }
 
+}
+
+final case class PythonDepConfig(
+  dependencies: List[String],
+  repositories: List[config.RepositoryConfig],
+  exclusions: List[String]
+)
+object PythonDepConfig {
+  implicit val encoder: Encoder[PythonDepConfig] = deriveEncoder[PythonDepConfig]
+  implicit val decoder: Decoder[PythonDepConfig] = deriveDecoder[PythonDepConfig]
 }
 
 object VirtualEnvFetcher {
@@ -890,62 +935,179 @@ object VirtualEnvFetcher {
 
   private def sanitize(path: String) = path.replace(' ', '_')
 
-  def fetch(): ZIO[TaskManager with Blocking with CurrentNotebook with CurrentTask with Config, Throwable, Option[Path]] = for {
+  def fetch(): ZIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Throwable, Option[Path]] = for {
     config   <- Config.access
     notebook <- CurrentNotebook.get
     dirOpt   <- buildVirtualEnv(config, notebook)
   } yield dirOpt
 
-  private def buildVirtualEnv(config: PolynoteConfig, notebook: Notebook) = {
+  private def buildVirtualEnv(config: PolynoteConfig, notebook: Notebook): ZIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Throwable, Option[Path]] = {
     val notebookConfig = notebook.config.getOrElse(NotebookConfig.empty)
-    val dependencies = notebookConfig.dependencies.toList.flatMap(_.getOrElse("python", Nil))
+    val dependencies = notebookConfig.dependencies.toList.flatMap(_.getOrElse("python", Nil)).distinct
+    val pipRepos = notebookConfig.repositories.toList.flatten.collect { case x: pip => x }
+    val pyConfig = PythonDepConfig(dependencies, pipRepos, notebookConfig.exclusions.toList.flatten)
     if (dependencies.nonEmpty) {
       for {
-        dir <- effectBlocking(Paths.get(sanitize(config.storage.cache), sanitize(notebook.path), "venv").toAbsolutePath)
-        _   <- CurrentTask.update(_.progress(0.0, Some("Creating virtual environment")))
-        _   <- initVenv(dir)
-        _   <- CurrentTask.update(_.progress(0.2, Some("Installing dependencies")))
-        _   <- installDependencies(dir, notebookConfig.repositories.toList.flatten, dependencies, notebookConfig.exclusions.toList.flatten)
+        dir         <- effectBlocking(Paths.get(sanitize(config.storage.cache), sanitize(notebook.path), "venv").toAbsolutePath)
+        _           <- CurrentTask.update(_.progress(0.0, Some("Initializing virtual environment")))
+        initialized <- initVenv(dir, pyConfig)
+        _           <- ZIO.when(initialized)(CurrentTask.update(_.progress(0.2, Some("Installing dependencies"))))
+        _           <- ZIO.when(initialized)(installDependencies(dir, pyConfig))
       } yield Some(dir)
-    } else ZIO.succeed(None)
+    } else ZIO.none
   }
 
-  private def initVenv(path: Path) = effectBlocking(path.toFile.exists()).flatMap {
-    case true  => ZIO.unit
-    case false => effectBlocking {
-      Seq("virtualenv", "--system-site-packages", "--python=python3", path.toString).!
-    }.unit
+  private val depFileName = ".polynote-python-deps.yml"
+
+  // we could break this out into utils or something...
+  class StringLogger extends ProcessLogger {
+
+    private val writer = new StringWriter()
+    private val printer = new PrintWriter(writer)
+
+    override def out(s: => String): Unit = {
+      stdout.println(s)
+      printer.println(s)
+    }
+    override def err(s: => String): Unit = {
+      stderr.println(s)
+      printer.println(s)
+    }
+    override def buffer[T](f: => T): T = f
+
+    override def toString: String = writer.toString
+  }
+
+  private def runCommand(cmd: Seq[String]) = for {
+    _          <- Logging.info(s"Running command: ${cmd.mkString(" ")}")
+    (ret, log) <- effectBlocking {
+      val logger = new StringLogger
+      val ret = cmd.!(logger)
+      (ret, logger.toString)
+    }
+    _          <- ZIO.when(ret != 0)(ZIO.fail(new Exception(log)))
+  } yield ()
+
+  private def deleteDir(path: Path): ZIO[Blocking, Throwable, Unit] = {
+    effectBlocking(Files.isDirectory(path)).flatMap {
+      case true =>
+        for {
+          files <- effectBlocking(Files.list(path).iterator().asScala.toList)
+          _     <- ZIO.foreach_(files)(deleteDir)
+          _     <- effectBlocking(Files.delete(path))
+        } yield ()
+      case false =>
+        effectBlocking(Files.delete(path))
+    }
+  }
+
+  /**
+    * Initialize virtual environment if it doesn't exist. If it already exists, check to see whether the configuration
+    * has changed (e.g., user added/removed a dependency); if so, clear out the venv.
+    * @param path     directory to create the venv
+    * @param depConf  current dependency config
+    * @return         whether the venv was created
+    */
+  private def initVenv(path: Path, depConf: PythonDepConfig) = {
+    val writeConfig = effectBlocking {
+      val configStr = depConf.asJson.asYaml.spaces2
+      Files.write(path.resolve(depFileName), configStr.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE_NEW) // write file, failing if file already exists
+    }
+    val init = for {
+      _ <- CurrentTask.update(_.progress(0.1, Some("Creating new virtual environment")))
+      _ <- runCommand(Seq("virtualenv", "--system-site-packages", "--python=python3", path.toString))
+      _ <- writeConfig
+    } yield true
+
+    effectBlocking(path.toFile.exists()).flatMap {
+      case true  =>
+        // venv already exists. We need to check whether to bust the cache, either because the user said so explicitly or by
+        // parsing the config (if it exists) and comparing it to the current one.
+        val bustCache = depConf.dependencies.exists(_.endsWith(noCacheSentinel))
+
+        val clearThenInit =
+          CurrentTask.update(_.progress(0.1, Some("Clearing outdated virtual environment"))) *>
+            deleteDir(path) *>
+            init
+
+        if (bustCache) {
+          clearThenInit
+        } else {
+          val configFile = path.resolve(depFileName).toFile
+
+          effectBlocking(configFile.exists()).flatMap {
+            case true =>
+              val parseConfig = effectBlocking(new FileReader(configFile)).bracketAuto {
+                reader =>
+                  ZIO.fromEither {
+                    yaml.parser.parse(reader).flatMap(_.as[PythonDepConfig])
+                  }
+              }
+
+              for {
+                config      <- parseConfig
+                initialized <- if (!config.equals(depConf)) clearThenInit else ZIO.succeed(false)
+              } yield initialized
+            case false =>
+              for {
+                _ <- CurrentTask.update(_.progress(0.1, Some("Initializing virtual environment")))
+                _ <- writeConfig
+              } yield false
+        }
+
+        }
+      case false => init
+    }
   }
 
   private def installDependencies(
     venv: Path,
-    repositories: List[config.RepositoryConfig],
-    dependencies: List[String],
-    exclusions: List[String]
-  ): RIO[TaskManager with Blocking with CurrentTask, Unit] = {
+    depConf: PythonDepConfig
+  ) = {
 
-    val options: List[String] = repositories.collect {
+    val options: List[String] = depConf.repositories.collect {
       case pip(url) => Seq("--extra-index-url", url)
     }.flatten
 
-    def pip(action: String, dep: String, extraOptions: List[String] = Nil): RIO[Blocking, Unit] = {
+    def pip(action: String, dep: String, extraOptions: List[String] = Nil) = {
       val baseCmd = List(s"$venv/bin/pip", action)
       val cmd = baseCmd ::: options ::: extraOptions ::: dep :: Nil
-      effectBlocking(cmd.!)
+      runCommand(cmd)
     }
 
+    val dependencies = depConf.dependencies.map(_.stripSuffix(noCacheSentinel))
+    val depProgress = 0.5 / dependencies.size
+    // Breakdown of progress updates per dependency. Multipliers should add up to 1
+    val depInitProgress = depProgress * 0.2
+    val depInstalledProgress = depProgress * 0.7
+    val depDownloadedProgress = depProgress * 0.1
 
-    CurrentTask.access.flatMap {
-      task =>
-        val total = dependencies.size
-        val depProgress = 0.5 / dependencies.size
-        dependencies.map {
-          dep =>
-            task.update(task => task.copy(label = dep).progress(task.progressFraction + depProgress)) *>
-            pip("install", dep) *>
-            pip("download", dep, List("--dest", s"$venv/deps/"))
-        }.sequence.unit
-    }
+    for {
+      taskManager       <- TaskManager.access
+      installSemaphore  <- Semaphore.make(1)
+      parentTask        <- CurrentTask.access
+      _                 <- ZIO.foreachPar_(dependencies) {
+        dep =>
+          taskManager.runSubtask(s"Installing $dep") {
+            // use semaphore to ensure only one `pip install` is happening at a time.
+            val doInstall = installSemaphore.withPermit(for {
+              _ <- CurrentTask.access.flatMap(_.update(_.progress(0.1)))
+              _ <- parentTask.update(task => task.progress(task.progressFraction + depInitProgress, Some(s"Installing $dep")))
+              _ <- pip("install", dep)
+            } yield ())
+
+            for {
+              _ <- doInstall
+              _ <- CurrentTask.access.flatMap(_.update(_.progress(0.8).copy(label = s"Downloading $dep")))
+              _ <- parentTask.update(task => task.progress(task.progressFraction + depInstalledProgress))
+              _ <- pip("download", dep, List("--dest", s"$venv/deps/"))
+              _ <- CurrentTask.access.flatMap(_.update(_.progress(0.9)))
+              _ <- parentTask.update(task => task.progress(task.progressFraction + depDownloadedProgress))
+            } yield ()
+          }
+      }
+      _ <- parentTask.update(task => task.progress(0.9, Some("finishing...")))
+    } yield ()
   }
 
 }

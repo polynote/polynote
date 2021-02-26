@@ -211,6 +211,7 @@ export class SocketSession extends EventTarget {
             this.socket = undefined;
             clearInterval(this.pingIntervalId)
             this.dispatchEvent(new CustomEvent('close'));
+            delete openSessions[this.url.href];
         }
     }
 

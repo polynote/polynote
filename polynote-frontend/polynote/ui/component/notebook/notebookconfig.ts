@@ -87,6 +87,8 @@ export class NotebookConfigEl extends Disposable {
     }
 }
 
+type DepRow = HTMLDivElement & {data: { lang: string, dep: string, cache: boolean}}
+const noCacheSentinel = "?nocache"
 class Dependencies extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
@@ -107,7 +109,11 @@ class Dependencies extends Disposable {
             if (deps && Object.keys(deps).length > 0) {
                 Object.entries(deps).forEach(([lang, deps]) => {
                     deps.forEach(dep => {
-                        this.addDep({lang, dep})
+                        if (dep.endsWith(noCacheSentinel)) {
+                            this.addDep({lang, dep: dep.substr(0, dep.length - noCacheSentinel.length), cache: false})
+                        } else {
+                            this.addDep({lang, dep, cache: true})
+                        }
                     })
                 })
             } else {
@@ -120,8 +126,8 @@ class Dependencies extends Disposable {
 
     private defaultLang = "scala"; // TODO: make this configurable
 
-    private addDep(item?: {lang: string, dep: string}) {
-        const data = item ?? {lang: this.defaultLang, dep: ""}
+    private addDep(item?: DepRow["data"]) {
+        const data = item ?? {lang: this.defaultLang, dep: "", cache: true}
 
         const type = dropdown(['dependency-type'], {scala: 'scala/jvm', python: 'pip'}, data.lang).change(evt => {
             row.classList.remove(data.lang);
@@ -139,19 +145,46 @@ class Dependencies extends Disposable {
             if (this.container.children.length === 0) this.addDep()
         });
 
+        const cache = dropdown(['cache'], {cache: 'Cache', nocache: "Don't cache"}, data.cache ? 'cache' : 'nocache')
+            .change(() => {
+                data.cache = cache.options[cache.selectedIndex].value === "cache"
+            })
+
+        const detail = iconButton(['expand'], "Advanced Settings", 'triple-dots', "Advanced Settings").click(() => {
+            row.classList.toggle("show-advanced")
+        })
+
+        const advanced = div(['advanced'], [
+            div([], h3([], "Advanced Options")),
+            div([], [
+                para([], [
+                    "Should Polynote use a cached version of this dependency, if available?",
+                    " Applicable to URL or pip dependencies only."]),
+                para([], ["Note that if any pip dependency bypasses the cache, the entire virtual environment will be recreated."]),
+                cache
+            ])
+        ])
+
         const add = iconButton(['add'], 'Add', 'plus-circle', 'Add').click(evt => {
             this.addDep({...data})
         });
 
         const row = Object.assign(
-            div(['dependency-row', 'notebook-config-row'], [type, input, remove, add]),
+            div(['dependency-row', 'notebook-config-row'], [type, input, detail, remove, add, advanced]),
             { data })
         this.container.appendChild(row)
     }
 
     get conf(): Record<string, string[]> {
-        return Array.from(this.container.children).reduce<Record<string, string[]>>((acc, row: HTMLDivElement & {data: { lang: string, dep: string }}) => {
-            if (row.data.dep) acc[row.data.lang] = [...(acc[row.data.lang] || []), row.data.dep]
+        return Array.from(this.container.children).reduce<Record<string, string[]>>((acc, row: DepRow) => {
+            if (row.data.dep) {
+                if (row.data.cache) {
+                    row.data.dep = row.data.dep.endsWith("?nocache") ? row.data.dep.substr(0, row.data.dep.length - "?nocache".length) : row.data.dep;
+                } else {
+                    row.data.dep = row.data.dep.endsWith("?nocache") ? row.data.dep : row.data.dep + "?nocache";
+                }
+                acc[row.data.lang] = [...(acc[row.data.lang] || []), row.data.dep]
+            }
             return acc
         }, {})
     }

@@ -101,7 +101,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             } else if (this.state.state.kernel.status === 'disconnected') {
                 this.state.update(() => ({
                     kernel: {
-                        status: 'dead'
+                        status: setValue('dead')
                     }
                 }))
             }

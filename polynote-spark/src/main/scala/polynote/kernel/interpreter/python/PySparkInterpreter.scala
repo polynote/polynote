@@ -293,7 +293,7 @@ class PySparkInterpreter(
 
 object PySparkInterpreter {
 
-  def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, PySparkInterpreter] = {
+  def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, PySparkInterpreter] = {
     for {
       venv    <- VirtualEnvFetcher.fetch()
       interp  <- PySparkInterpreter(venv)
@@ -315,7 +315,7 @@ object PySparkInterpreter {
 
   object Factory extends Interpreter.Factory {
     def languageName: String = "Python"
-    def apply(): RIO[Blocking with Config with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = PySparkInterpreter()
+    def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, Interpreter] = PySparkInterpreter()
 
     override val requireSpark: Boolean = true
     override val priority: Int = 1

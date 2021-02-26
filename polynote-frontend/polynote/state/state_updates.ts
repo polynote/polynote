@@ -211,6 +211,8 @@ export class UpdateKey<S, K extends keyof S> extends Update<S> {
 
         if (Object.isFrozen(oldValue)) {
             result.newValue = copyObject(oldValue, {[this.key]: childResult.newValue} as unknown as Partial<S>);
+        } else if (childResult.update instanceof Destroy) {
+            delete oldValue[this.key];
         } else {
             oldValue[this.key] = childResult.newValue as S[K];
         }
@@ -557,17 +559,20 @@ class UpdateWith<S> extends Update<S> {
                     fieldUpdateResults = fieldUpdateResults || {};
                     fieldUpdateResults[key] = updateResult;
 
-                    if (!value.hasOwnProperty(key)) {
-                        addedValues = addedValues || {};
-                        addedValues[key] = updateResult.newValue;
-                    } else if (updateResult.update instanceof Destroy) {
+                    if (updateResult.update instanceof Destroy) {
                         removedValues = removedValues || {};
                         removedValues[key] = updateResult.oldValue;
+                        delete value[key];
                     } else {
-                        changedValues = changedValues || {};
-                        changedValues[key] = updateResult.newValue;
+                        if (!value.hasOwnProperty(key)) {
+                            addedValues = addedValues || {};
+                            addedValues[key] = updateResult.newValue;
+                        } else {
+                            changedValues = changedValues || {};
+                            changedValues[key] = updateResult.newValue;
+                        }
+                        value[key] = updateResult.newValue;
                     }
-                    value[key] = updateResult.newValue;
                 }
             }
             if (anyChanged) {

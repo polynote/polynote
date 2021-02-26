@@ -363,7 +363,7 @@ export class CodeCell extends Cell {
             fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
             fontSize: 15,
             fontLigatures: true,
-            fixedOverflowWidgets: true,
+            fixedOverflowWidgets: false,
             lineNumbers: 'on',
             lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
@@ -833,8 +833,9 @@ export class CodeCell extends Cell {
         const lineCount = this.editor.getModel()!.getLineCount();
         const lastPos = this.editor.getTopForLineNumber(lineCount);
         const lineHeight = this.editor.getOption(EditorOption.lineHeight);
-        this.editorEl.style.height = (lastPos + lineHeight) + "px";
-        this.editor.layout();
+        const height = lastPos + lineHeight;
+        this.editorEl.style.height = height + "px";
+        this.editor.layout({width: this.editorEl.clientWidth, height});
     }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
@@ -957,7 +958,7 @@ export class CodeCell extends Cell {
                 const nextId = this.notebookState.getNextCellId(this.id) ?? this.notebookState.getPreviousCellId(this.id)
                 this.notebookState.deleteCell().then(id => {
                     // select the next cell when this one is deleted
-                    if (id) {
+                    if (id !== undefined) {
                         if (nextId !== undefined) {
                             this.notebookState.selectCell(nextId)
                         }

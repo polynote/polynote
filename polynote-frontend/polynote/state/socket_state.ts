@@ -31,10 +31,8 @@ export class SocketStateHandler extends BaseHandler<SocketState> {
     private static inst: SocketStateHandler;
 
     static create(socket: SocketSession, initial: SocketState = {status: "disconnected", error: undefined}): SocketStateHandler {
-        const socketKey = socket.url.href;
-        Sockets.set(socketKey, socket);
         const baseHandler = new ObjectStateHandler<SocketState>(initial);
-        const handler = new SocketStateHandler(baseHandler, socketKey);
+        const handler = new SocketStateHandler(baseHandler, socket);
 
         const setConnected = () => handler.updateField("status", () => setValue("connected"));
         socket.addEventListener('open', setConnected);
@@ -97,7 +95,7 @@ export class SocketStateHandler extends BaseHandler<SocketState> {
         socket.addEventListener('error', handleError);
 
         handler.onDispose.then(() => {
-            handler.close()
+            handler.close();
             socket.removeEventListener('open', setConnected);
             socket.removeEventListener('close', setDisconnected);
             socket.removeEventListener('error', handleError);
@@ -113,26 +111,19 @@ export class SocketStateHandler extends BaseHandler<SocketState> {
         return SocketStateHandler.inst;
     }
 
-    private constructor(parent: StateHandler<SocketState>, readonly socketKey: string) {
+    private constructor(parent: StateHandler<SocketState>, private socket: SocketSession) {
         super(parent);
     }
-
-    private get socket() {
-        const socket = Sockets.get(this.socketKey);
-        if (socket) return socket;
-        else throw new Error(`Unable to find socket with key ${this.socketKey}`);
-    }
-
 
     // delegates
     public addMessageListener(...args: Parameters<SocketSession["addMessageListener"]>): IDisposable {
         const listener = this.socket.addMessageListener(...args);
-        return mkDisposable(listener, () => this.socket.removeMessageListener(listener));
+        return mkDisposable(listener, () => this.socket.removeMessageListener(listener)).disposeWith(this);
     }
 
     public addInstanceListener(...args: Parameters<SocketSession["addInstanceListener"]>): IDisposable {
         const listener = this.socket.addInstanceListener(...args);
-        return mkDisposable(listener, () => this.socket.removeMessageListener(listener));
+        return mkDisposable(listener, () => this.socket.removeMessageListener(listener)).disposeWith(this);
     }
 
     public send(...args: Parameters<SocketSession["send"]>): ReturnType<SocketSession["send"]> {
@@ -144,19 +135,14 @@ export class SocketStateHandler extends BaseHandler<SocketState> {
     public handleMessage(...args: Parameters<SocketSession["handleMessage"]>): ReturnType<SocketSession["handleMessage"]> {
         return this.socket.handleMessage(...args)
     }
+
     public close(...args: Parameters<SocketSession["close"]>): ReturnType<SocketSession["close"]> {
         this.tryDispose();
         return this.socket.close(...args)
     }
 
     fork(disposeContext?: IDisposable): SocketStateHandler {
-        const fork = new SocketStateHandler(this.parent.fork(disposeContext).disposeWith(this), this.socketKey).disposeWith(this);
+        const fork = new SocketStateHandler(this.parent.fork(disposeContext).disposeWith(this), this.socket).disposeWith(this);
         return disposeContext ? fork.disposeWith(disposeContext) : fork;
     }
 }
-
-/**
- * References to all sockets live here. We store sockets here in order to prevent the State from including Sockets
- * which are uncloneable.
- */
-export const Sockets = new Map<string, SocketSession>();

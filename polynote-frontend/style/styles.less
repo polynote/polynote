@@ -410,7 +410,7 @@ select {
 
     .cell-input-editor {
       padding: 3pt;
-      overflow: hidden;
+      overflow: visible;
     }
 
     .cell-footer {
@@ -1221,7 +1221,6 @@ select {
         padding-left: 1em;
         padding-right: 1em;
       }
-
     }
   }
   &.viz {
@@ -1713,9 +1712,31 @@ button.inspect.icon-button {
   }
 
   .dependency-row {
-    input {
+    .dependency {
       width: 40em;
     }
+
+    .advanced {
+      display: none;
+      border: 1px dotted;
+      padding: 5px;
+      margin-left: 5px;
+
+      h3 {
+        margin: 4px 0 4px 0;
+      }
+    }
+
+    &.show-advanced {
+      .advanced {
+        display: block;
+      }
+
+      .expand svg {
+        transform: rotate(90deg);
+      }
+    }
+
   }
 
   .spark-config-row {
@@ -2157,6 +2178,7 @@ button.dialog-button {
   .pointer {
     position: absolute;
     border: 10px solid transparent;
+    top: -10px;
   }
 
   .bubble {
