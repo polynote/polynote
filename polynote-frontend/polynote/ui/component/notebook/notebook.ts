@@ -1,11 +1,7 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {
-    Disposable,
-    StateHandler
-} from "../../../state";
+import {Disposable, StateHandler, UpdateResult} from "../../../state";
 import {CellMetadata} from "../../../data/data";
-import {diffArray} from "../../../util/helpers";
 import {CellContainer} from "./cell";
 import {NotebookConfigEl} from "./notebookconfig";
 import {VimStatus} from "./vim_status";
@@ -54,17 +50,15 @@ export class Notebook extends Disposable {
 
         const cellsHandler = notebookState.cellsHandler
 
-        const handleCells = (newOrder: number[], prevOrder: number[] = []) => {
-            const [removedIds, addedIds] = diffArray(prevOrder, newOrder)
-
-            addedIds.forEach(id => {
+        const handleAddedCells = (added: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
+            Object.entries(cellOrderUpdate.addedValues!).forEach(([idx, id]) => {
                 const handler = cellsHandler.lens(id)
                 const cell = new CellContainer(dispatcher, notebookState, handler);
-                const el = div(['cell-and-divider'], [cell.el, this.newCellDivider()])
-                this.cells[id] = {cell, handler, el}
-                const cellIdx = newOrder.indexOf(id)
-                const nextCellIdAtIdx = prevOrder[cellIdx]
-                if (nextCellIdAtIdx !== undefined) {
+                const el = div(['cell-and-divider'], [cell.el, this.newCellDivider()]);
+                this.cells[id] = {cell, handler, el};
+                const cellIdx = parseInt(idx);
+                const nextCellIdAtIdx = cellOrderUpdate.newValue[cellIdx + 1];
+                if (nextCellIdAtIdx !== undefined && this.cells[nextCellIdAtIdx] !== undefined) {
                     // there's a different cell at this index. we need to insert this cell above the existing cell
                     const nextCellEl = this.cells[nextCellIdAtIdx].el;
                     // note that inserting a node that is already in the DOM will move it from its current location to here.
@@ -73,13 +67,16 @@ export class Notebook extends Disposable {
                     // index not found, must be at the end
                     cellsEl.appendChild(el);
                 }
-            });
+            })
+        }
 
-            removedIds.forEach(id => {
-                const deletedCell = this.cells[id].handler.state
+        const handleDeletedCells = (deletedPartial: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
+            Object.entries(cellOrderUpdate.removedValues!).forEach(([idx, id]) => {
+                const deletedCell = deletedPartial[id]!;
+                const deletedIdx = parseInt(idx);
                 const cellEl = this.cells[id].el!;
 
-                const prevCellId = notebookState.getPreviousCellId(id, prevOrder) ?? -1
+                const prevCellId = cellOrderUpdate.newValue[deletedIdx - 1] ?? -1;
                 const undoEl = div(['undo-delete'], [
                     icon(['close-button'], 'times', 'close icon').click(evt => {
                         undoEl.parentNode!.removeChild(undoEl)
@@ -97,15 +94,30 @@ export class Notebook extends Disposable {
                 this.cells[id].handler.dispose()
                 this.cells[id].cell.delete();
                 delete this.cells[id];
-            });
+            })
         }
-        handleCells(notebookState.state.cellOrder)
-        notebookState.view("cellOrder").addPreObserver(prev => {
-            const prevOrder = [...prev];
-            return newOrder => handleCells(newOrder, prevOrder)
-        }).disposeWith(this);
 
-        console.debug("initial active cell ", this.notebookState.state.activeCellId)
+        notebookState.addObserver((state, update) => {
+            const cellOrderUpdate = update.fieldUpdates?.cellOrder
+            const maybeDeletedCells = update.fieldUpdates?.cells?.removedValues
+            const maybeAddedCells = update.fieldUpdates?.cells?.addedValues
+
+            if (maybeDeletedCells) {
+                if (cellOrderUpdate === undefined) {
+                    console.error("Got deleted cells", maybeDeletedCells, "but cellOrder didn't change! This is weird. Update:", update)
+                } else {
+                    handleDeletedCells(maybeDeletedCells, cellOrderUpdate)
+                }
+            }
+            if (maybeAddedCells) {
+                if (cellOrderUpdate === undefined) {
+                    console.error("Got deleted cells", maybeDeletedCells, "but cellOrder didn't change! This is weird. Update:", update)
+                } else {
+                    handleAddedCells(maybeAddedCells, cellOrderUpdate)
+                }
+            }
+        }, "cellOrder") // in theory, this should make it so this observer only gets called when `cellOrder` changes.
+
         this.notebookState.view("activeCellId").addObserver(cell => {
             if (cell === undefined) {
                 VimStatus.get.hide()
