@@ -1,7 +1,14 @@
 "use strict";
 
 import {VizInterpreter, VegaInterpreter} from "./vega_interpreter";
-import {ClientResult, CompileErrors, ExecutionInfo, Result, ResultValue, RuntimeError} from "../data/result";
+import {
+    ClientResult,
+    CompileErrors,
+    ExecutionInfo,
+    Result,
+    ResultValue,
+    RuntimeError
+} from "../data/result";
 import {CellState, KernelSymbols, NotebookState, NotebookStateHandler} from "../state/notebook_state";
 import {append, setValue} from "../state";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";

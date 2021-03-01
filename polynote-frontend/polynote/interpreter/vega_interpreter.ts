@@ -13,7 +13,7 @@ import {
 } from "../data/result";
 import embed, {Result} from "vega-embed";
 import {DataStream} from "../messaging/datastream";
-import {parsePlotDefinition, plotToVega, plotToVegaCode} from "../ui/input/plot_selector";
+import {parsePlotDefinition, plotToVega, plotToVegaCode, PlotValidationErrors} from "../ui/input/plot_selector";
 import {CellContext, IClientInterpreter} from "./client_interpreter";
 import {collectFirstMatch, deepCopy, Deferred, findInstance, positionIn} from "../util/helpers";
 import {div} from "../ui/tags";
@@ -66,13 +66,12 @@ export const VegaInterpreter: IClientInterpreter = {
 
 };
 
-export function vizResult(id: number, viz: Viz, result: ResultValue, cellContext?: CellContext) {
+export function vizResult(id: number, viz: Viz, result: ResultValue, cellContext: CellContext): (ClientResult | CompileErrors | RuntimeError)[] {
     function err(msg: string): CompileErrors[] {
         return [new CompileErrors([
-            new KernelReport(new Position(`Cell ${id}`, 0, 0, 0), msg, 2)
+            {message: msg, severity: 2}
         ])]
     }
-
 
     const streamRepr = findInstance(result.reprs, StreamingDataRepr);
 
@@ -91,11 +90,13 @@ export function vizResult(id: number, viz: Viz, result: ResultValue, cellContext
             if (!streamRepr.dataType) {
                 return err(`Value ${plotDef.value} is not table-like`);
             }
-            if (cellContext) {
+
+            try {
                 return VegaInterpreter.interpret(plotToVegaCode(plotDef, streamRepr.dataType), cellContext);
-            } else {
-                const plotCode = JSON.stringify(plotToVega(plotDef, streamRepr.dataType));
-                return [new MIMEClientResult(new MIMERepr("application/vnd.vegalite.v4", plotCode))];
+            } catch (e) {
+                if (e instanceof PlotValidationErrors) {
+                    return [e];
+                } else throw e;
             }
 
         case "mime":

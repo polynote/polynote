@@ -17,7 +17,7 @@ import {
 import * as monaco from "monaco-editor";
 import {displayContent, mimeEl, parseContentType} from "../ui/display/display_content";
 import {collectInstances, findInstance, splitWithBreaks} from "../util/helpers";
-import match from "../util/match";
+import match, {Extractable} from "../util/match";
 
 export class Result extends CodecContainer {
     static codec: Codec<Result>;
@@ -47,7 +47,14 @@ export class Output extends Result {
     }
 }
 
-export class Position {
+export interface IPosition {
+    source?: string
+    start?: number
+    end?: number
+    point: number
+}
+
+export class Position implements IPosition {
     static codec = combined(str, int32, int32, int32).to(Position);
     static unapply(inst: Position): ConstructorParameters<typeof Position> {
         return [inst.source, inst.start, inst.end, inst.point];
@@ -58,7 +65,13 @@ export class Position {
     }
 }
 
-export class KernelReport {
+export interface IKernelReport {
+    position?: IPosition
+    message: string
+    severity: number
+}
+
+export class KernelReport implements IKernelReport {
     static codec = combined(Position.codec, str, int32).to(KernelReport);
     static unapply(inst: KernelReport): ConstructorParameters<typeof KernelReport> {
         return [inst.position, inst.message, inst.severity];
@@ -73,7 +86,7 @@ export class KernelReport {
     }
 }
 
-export class CompileErrors extends Result {
+export class CompileErrors extends Result implements CompileErrors {
     static codec = combined(arrayCodec(int32, KernelReport.codec)).to(CompileErrors);
     static get msgTypeId() { return 1; }
 
@@ -81,7 +94,7 @@ export class CompileErrors extends Result {
         return [inst.reports];
     }
 
-    constructor(readonly reports: KernelReport[]) {
+    constructor(readonly reports: IKernelReport[]) {
         super();
         Object.freeze(this);
     }

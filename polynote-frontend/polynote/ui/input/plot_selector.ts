@@ -27,12 +27,13 @@ import {
     TopLevelSpec
 } from "vega-lite/build/src/spec";
 import {Encoding} from "vega-lite/build/src/encoding";
-import {Mark, AnyMark} from "vega-lite/build/src/mark";
+import {Mark, AnyMark, isMark} from "vega-lite/build/src/mark";
 import match from "../../util/match";
 import {GroupAgg, Histogram, Select, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
-import {deepCopy, deepEquals, diffArray, isDescendant} from "../../util/helpers";
+import {collect, collectDefined, deepCopy, deepEquals, diffArray, isDescendant} from "../../util/helpers";
 import {Disposable, Observer, StateHandler} from "../../state";
+import {CompileErrors} from "../../data/result";
 
 export interface DimensionAxis {
     title?: string
@@ -113,9 +114,108 @@ export interface PlotDefinition {
     facet?: Facet
 }
 
+interface ValidPlotDefinition extends PlotDefinition {
+    plot: Plot
+}
+
 export const PlotDefinition = {
     empty(value: string): PlotDefinition {
         return { value }
+    },
+
+    /**
+     * Validate the given plot definition, returning an array of errors. If the plot is valid, array is empty.
+     */
+    validationErrors(plotDefinition?: PlotDefinition): PlotValidationError[] {
+        if (!plotDefinition || !plotDefinition.plot)
+            return [NoPlotDefined];
+
+        const plot = plotDefinition.plot;
+
+        switch (plot.type) {
+            case "bar":
+            case "line":
+            case "area":
+                return collectDefined<PlotValidationError>(validateDimensionAxis("x", plot.x), validateMeasureAxis(plot.y, true));
+            case "xy":
+            case "boxplot":
+            case "pie":
+                return collectDefined(validateDimensionAxis("x", plot.x), validateDimensionAxis("y", plot.y));
+            case "histogram":
+                return collectDefined(validateDimensionAxis("x", plot.x), validateBinCount(plot.binCount));
+        }
+        return [];
+    },
+}
+
+
+/**
+ * Validate the given plot definition, throwing a PlotValidationErrors error if it is not valid.
+ */
+function validatePlot(plotDefinition: PlotDefinition): asserts plotDefinition is ValidPlotDefinition {
+    const errs = PlotDefinition.validationErrors(plotDefinition);
+    if (errs.length) {
+        throw new PlotValidationErrors(errs);
+    }
+}
+
+export interface DimensionValidationError {
+    type: "dimension"
+    message: string
+    severity: number
+    axis: "x" | "y" | "binCount"
+}
+
+function validateDimensionAxis(axis: "x" | "y", obj: DimensionAxis): DimensionValidationError | undefined {
+    return obj && obj.field ? undefined : {message: `No field selected for ${axis.toUpperCase()} dimension axis`, severity: 2, type: "dimension", axis};
+}
+
+function validateBinCount(binCount: number): DimensionValidationError | undefined {
+    if (binCount > 0)
+        return undefined;
+    return {message: `Bin count must be > 0`, severity: 2, type: "dimension", axis: "binCount"}
+}
+
+export interface MeasureValidationError {
+    type: "measure"
+    message: string
+    severity: number
+    seriesErrors?: SeriesValidationError[]
+}
+
+function validateMeasureAxis(axis: MeasureAxis, requireAggregation: boolean = false): MeasureValidationError | undefined {
+    if (!axis || !axis.series || !axis.series.length)
+        return {message: `No measures selected for Y axis`, severity: 2, type: "measure"};
+    const seriesErrors = axis.series.flatMap((series, index) => validatePlotSeries(series, index, requireAggregation))
+    return seriesErrors.length ? {message: "Errors in Y axis series", severity: 2, type: "measure", seriesErrors} : undefined;
+}
+
+export interface SeriesValidationError {
+    message: string
+    index: number
+    severity: number
+}
+
+function validatePlotSeries(series: PlotSeries, index: number, requireAggregation: boolean): SeriesValidationError[] {
+    const errs: SeriesValidationError[] = [];
+    if (!series.field)
+        errs.push({message: `No field defined for series ${index}`, severity: 2, index});
+    if (requireAggregation && !series.aggregation)
+        errs.push({message: `Aggregation is required for series ${index}`, severity: 2, index});
+    return errs;
+}
+
+export const NoPlotDefined: { type: "plot", message: string, severity: 2 } = {
+    type: "plot",
+    message: "A plot must be defined by setting plot type and appropriate dimensions/measures.",
+    severity: 2
+}
+
+export type PlotValidationError = DimensionValidationError | MeasureValidationError| { type: "plot", message: string, severity: 2 };
+
+export class PlotValidationErrors extends CompileErrors {
+    constructor(reports: PlotValidationError[]) {
+        super(reports)
     }
 }
 
@@ -128,8 +228,7 @@ export function savePlotDefinition(plotDef: PlotDefinition) {
 }
 
 function plotToSpec(plotDef: PlotDefinition, schema: StructType): TopLevelSpec {
-    if (!plotDef.plot)
-        throw new Error("Plot definition is incomplete!");
+    validatePlot(plotDef);
 
     const spec = (() => {
         const plot: Plot = plotDef.plot;
