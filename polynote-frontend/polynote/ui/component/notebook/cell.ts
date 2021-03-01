@@ -374,7 +374,10 @@ export class CodeCell extends Cell {
 
         this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
+
+        // layout now, and again after notebook loading (in case a scrollbar was introduced)
         this.editor.layout();
+        notebookState.loaded.then(() => this.editor.layout());
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
@@ -659,7 +662,7 @@ export class CodeCell extends Cell {
         })
 
         // make sure to create the comment handler.
-       this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), this.editor);
+        this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), this.editor);
 
         this.onDispose.then(() => {
             this.commentHandler.dispose()
