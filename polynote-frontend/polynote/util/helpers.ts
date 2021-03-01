@@ -208,13 +208,17 @@ export function unzip3<A, B, C>(arr: [A, B, C][]): [A[], B[], C[]] {
     }, [[], [], []])
 }
 
-export function collect<T, U>(arr: T[], fun: (t: T) => U | undefined | null): U[] {
-    return arr.flatMap(t => {
-        const newT = fun(t)
+export function collect<T, U>(arr: T[], fun: (t: T, index: number) => U | undefined | null): U[] {
+    return arr.flatMap((t, index) => {
+        const newT = fun(t, index)
         if (newT !== undefined && newT !== null) {
             return [newT]
         } else return []
     })
+}
+
+export function collectDefined<T>(...arr: (T | undefined)[]): T[] {
+    return arr.filter(value => value !== undefined) as T[];
 }
 
 export function collectMatch<T, R>(arr: T[], fn: (matcher: Matcher<T>) => Matcher<T, R>): R[] {

@@ -61,7 +61,7 @@ import {VimStatus} from "./vim_status";
 import {availableResultValues, cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
-import {collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
+import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
 import {
     CellPresenceState,
     CellState,
@@ -430,19 +430,21 @@ export class CodeCell extends Cell {
             if (errors.length > 0) {
                 errors.forEach(error => {
                     const model = this.editor.getModel()!;
-                    const reportInfos = error.reports.map((report) => {
-                        const startPos = model.getPositionAt(report.position.start);
-                        const endPos = model.getPositionAt(report.position.end);
-                        const severity = report.severity * 4;
-                        return {
-                            message: report.message,
-                            startLineNumber: startPos.lineNumber,
-                            startColumn: startPos.column,
-                            endLineNumber: endPos.lineNumber,
-                            endColumn: endPos.column,
-                            severity: severity,
-                            originalSeverity: report.severity
-                        };
+                    const reportInfos = collect(error.reports, (report) => {
+                        if (report.position) {
+                            const startPos = model.getPositionAt(report.position.start ?? report.position.point);
+                            const endPos = model.getPositionAt(report.position.end ?? report.position.point);
+                            const severity = report.severity * 4;
+                            return {
+                                message: report.message,
+                                startLineNumber: startPos.lineNumber,
+                                startColumn: startPos.column,
+                                endLineNumber: endPos.lineNumber,
+                                endColumn: endPos.column,
+                                severity: severity,
+                                originalSeverity: report.severity
+                            };
+                        } else return undefined;
                     });
 
                     this.setErrorMarkers(error, reportInfos)
@@ -800,7 +802,7 @@ export class CodeCell extends Cell {
     }
 
     private clearErrorMarkers(type?: "runtime" | "compiler") {
-        const remove = this.errorMarkers.filter(marker => (type === "runtime" && marker.error instanceof RuntimeError) || (type === "compiler" && marker.error instanceof CompileErrors) || type === undefined )
+        const remove = this.errorMarkers.filter(marker => (type === "runtime" && marker.error instanceof RuntimeError) || (type === "compiler" && (marker.error as any).reports) || type === undefined )
         remove.forEach(marker => this.removeErrorMarker(marker))
     }
 
@@ -1254,14 +1256,19 @@ class CodeCellOutput extends Disposable {
                     const compileError = div(
                         ['errors'],
                         reportInfos.map((report) => {
-                            const lineNumber = linePosAt(this.cellState.state.content, report.position.start)
                             const severity = (['Info', 'Warning', 'Error'])[report.severity];
-                            return blockquote(['error-report', severity], [
+                            const el = blockquote(['error-report', severity], [
                                 span(['severity'], [severity]),
                                 span(['message'], [report.message]),
-                                ' ',
-                                span(['error-link'], [`(Line ${lineNumber})`])
+                                ' '
                             ]);
+
+                            if (report.position) {
+                                const lineNumber = linePosAt(this.cellState.state.content, report.position.point)
+                                el.appendChild(span(['error-link'], [`(Line ${lineNumber})`]))
+                            }
+
+                            return el;
                         }));
                     if (this.cellErrorDisplay === undefined) {
                         this.cellErrorDisplay = compileError;
@@ -1638,8 +1645,8 @@ export class VizCell extends Cell {
             div(['cell-input'], [
                 this.cellInputTools = div(['cell-input-tools'], [
                     iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
+                        this.hideCodeAfterSuccess();
                         dispatcher.runCells([this.state.id]);
-                        this.toggleCode(true);
                     }),
                     div(['cell-label'], [this.state.id.toString()]),
                     div(['value-name'], ['Inspecting ', span(['name'], [this.valueName])]),
@@ -1693,6 +1700,8 @@ export class VizCell extends Cell {
             watchValues();
         }
 
+        // watch metadata to show/hide code/output
+        // TODO: this is duplicated from CodeCell; should extract a common base for code-like cells
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
                 this.el.classList.add("hide-code")
@@ -1713,6 +1722,17 @@ export class VizCell extends Cell {
         }
         updateMetadata(this.state.metadata);
         cellState.view("metadata").addObserver(metadata => updateMetadata(metadata));
+
+        // Watch errors in order to
+    }
+
+    private hideCodeAfterSuccess(): void {
+        const obs = this.cellState.observeKey("error", error => {
+            obs.dispose()
+            if (!error && this.cellState.state.results.length) {
+                this.toggleCode(true);
+            }
+        });
     }
 
     private setValue(value: ResultValue): void {
