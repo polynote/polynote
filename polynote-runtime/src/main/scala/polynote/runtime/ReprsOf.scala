@@ -3,7 +3,6 @@ package polynote.runtime
 import java.io.DataOutput
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
-
 import polynote.runtime
 
 import scala.collection.GenSeq
@@ -111,8 +110,16 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
   implicit def structSeq[F[X] <: Seq[X], A](implicit structEncoder: DataEncoder.StructDataEncoder[A]): ReprsOf[F[A]] =
     instance(seq => Array(StreamingDataRepr.fromHandle(new StructSeqStreamHandle[A, A](_, seq, identity, structEncoder))))
 
+  implicit def numericSeq[F[X] <: Seq[X], A : Numeric](implicit dataEncoder: DataEncoder[A]): ReprsOf[F[A]] = instance {
+    seq => Array(StreamingDataRepr.fromHandle(new StructSeqStreamHandle[A, (Int, A)](_, seq, _.zipWithIndex.map(_.swap), DataEncoder.StructDataEncoder.forScalar(dataEncoder))))
+  }
+
   implicit def seq[F[X] <: GenSeq[X], A](implicit dataReprsOfA: DataReprsOf[A]): ReprsOf[F[A]] = instance {
     seq => Array(StreamingDataRepr(dataReprsOfA.dataType, seq.size, seq.iterator.map(dataReprsOfA.encode)))
+  }
+
+  implicit def numericArray[A : Numeric](implicit dataEncoder: DataEncoder[A]): ReprsOf[Array[A]] = instance {
+    seq => Array(StreamingDataRepr.fromHandle(new StructSeqStreamHandle[A, (Int, A)](_, seq, _.zipWithIndex.map(_.swap), DataEncoder.StructDataEncoder.forScalar(dataEncoder))))
   }
 
   implicit def array[A](implicit dataReprsOfA: DataReprsOf[A]): ReprsOf[Array[A]] = instance {

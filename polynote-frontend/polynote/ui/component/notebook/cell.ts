@@ -1205,7 +1205,6 @@ class CodeCellOutput extends Disposable {
             const repr = result.reprs[index] as StreamingDataRepr;
             // surprisingly using monaco.editor.colorizeElement breaks the theme of the whole app! WAT?
             return monaco.editor.colorize(result.typeName, this.cellState.state.language, {}).then(typeHTML => {
-                const streamingRepr = result.reprs[index] as StreamingDataRepr;
                 const frag = document.createDocumentFragment();
                 const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
                 resultType.innerHTML = typeHTML;
@@ -1226,7 +1225,7 @@ class CodeCellOutput extends Disposable {
                                 })
                             : undefined
                     ]),
-                    repr.dataType instanceof StructType ? displaySchema(streamingRepr.dataType) : undefined
+                    repr.dataType instanceof StructType ? displaySchema(repr.dataType) : undefined
                 ]);
                 frag.appendChild(el);
                 return ["text/html", frag];

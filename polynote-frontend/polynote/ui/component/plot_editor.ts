@@ -15,7 +15,7 @@ import {
     OptionalType,
     ShortType,
     StringType,
-    StructField,
+    StructField, StructType,
     TimestampType
 } from "../../data/data_type";
 import {FakeSelect} from "../display/fake_select";
@@ -26,7 +26,7 @@ import {ClientResult, Output} from "../../data/result";
 import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
 import {CellMetadata} from "../../data/data";
 import {DataStream} from "../../messaging/datastream";
-import {StreamingDataRepr} from "../../data/value_repr";
+import {StreamingDataRepr, StructStreamingDataRepr} from "../../data/value_repr";
 import {VegaClientResult} from "../../interpreter/vega_interpreter";
 import {deepEquals, mapValues} from "../../util/helpers";
 import {NotebookStateHandler} from "../../state/notebook_state";
@@ -131,9 +131,7 @@ export class PlotEditor {
     private spec: any;
     private plot: VegaResult;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private nbState: NotebookStateHandler, readonly repr: StreamingDataRepr, readonly name: string, readonly sourceCellId: number) {
-        this.fields = repr.dataType.fields;
-
+    constructor(private dispatcher: NotebookMessageDispatcher, private nbState: NotebookStateHandler, readonly repr: StructStreamingDataRepr, readonly name: string, readonly sourceCellId: number) {
         const connectionStatus = ServerStateHandler.state.connectionStatus;
         if (connectionStatus === "disconnected") {
             this.container = div(['plot-editor-container', 'disconnected'], [

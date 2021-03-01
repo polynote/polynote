@@ -259,6 +259,24 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
 
   object StructDataEncoder {
     implicit def caseClassMacro[A <: Product]: StructDataEncoder[A] = macro StructDataEncoderMacros.materialize[A]
+
+    // Make a struct encoder that wraps a value with its index
+    def forScalar[A](implicit encoder: DataEncoder[A]): StructDataEncoder[(Int, A)] = new StructDataEncoder[(Int, A)](StructType(List(
+      StructField("index", IntType), StructField("value", encoder.dataType)
+    ))) {
+      override def field(name: String): Option[(((Int, A)) => Any, DataEncoder[_])] = name match {
+        case "index" => Some((_._1, int))
+        case "value" => Some((_._2, encoder))
+        case _ => None
+      }
+
+      override def encode(dataOutput: DataOutput, value: (Int, A)): Unit = {
+        dataOutput.writeInt(value._1)
+        encoder.encode(dataOutput, value._2)
+      }
+
+      override def sizeOf(t: (Int, A)): Int = encoder.sizeOf(t._2) + 4
+    }
   }
 
 

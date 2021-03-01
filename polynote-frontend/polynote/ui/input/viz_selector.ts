@@ -132,16 +132,17 @@ export class VizSelector extends Disposable {
 
         reprs.forEach(repr => match(repr)
             .whenInstance(StreamingDataRepr, streamRepr => {
-                this.plotSelector = new PlotSelector(value, streamRepr.dataType, this.viz.type === 'plot' ?  this.viz.plotDefinition : undefined);
+                if (streamRepr.dataType instanceof StructType) {
+                    this.plotSelector = new PlotSelector(value, streamRepr.dataType, this.viz.type === 'plot' ? this.viz.plotDefinition : undefined);
+                    opts[PlotTitle] = this.plotSelector.el.listener(
+                        'TabDisplayed',
+                        () => this.update({ type: 'plot', value: value, plotDefinition: this.plotSelector!.currentPlot })
+                    );
+                }
                 this.tableView = TableView.create(dispatcher, state, streamRepr, true);
 
                 opts[SchemaTitle] = div([], []).listener('TabDisplayed',
                     () => this.update({ type: 'schema', value: value })
-                );
-
-                opts[PlotTitle] = this.plotSelector.el.listener(
-                    'TabDisplayed',
-                    () => this.update({ type: 'plot', value: value, plotDefinition: this.plotSelector!.currentPlot })
                 );
 
                 opts[TableTitle] = this.tableView!.el.listener(

@@ -32,6 +32,7 @@ export abstract class DataType extends CodecContainer {
 
     abstract decodeBuffer(reader: DataReader): any // any way to type this better?
 
+
 }
 
 // Factory that creates DataTypes as Singleton classes that are instances of their own class constructor
