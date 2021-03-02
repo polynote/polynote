@@ -224,16 +224,14 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             const prev = state.activeCellId;
             const update: UpdatePartial<NotebookState> = {
                 activeCellId: id,
-                cells: id === undefined ? NoUpdate : {
+                cells: id === undefined ? {} : {
                     [id]: {
                         selected: true,
                         editing: options?.editing ?? false
-                    }
+                    },
+                    ...(prev === undefined ? {} : {[prev]: {selected: false, editing: false}})
                 }
             };
-            if (prev !== undefined) {
-                (update.cells as any)[prev] = { selected: false, editing: false };
-            }
             return update;
         })
 
