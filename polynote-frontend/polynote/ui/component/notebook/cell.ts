@@ -591,7 +591,7 @@ export class CodeCell extends Cell {
             }
         }
         updateQueued(this.state.queued)
-        cellState.view("queued").addPreObserver(prev => curr => updateQueued(curr, prev));
+        cellState.view("queued").addObserver((curr, update) => updateQueued(curr, update.oldValue));
 
         const updateHighlight = (h: { range: PosRange , className: string} | undefined) => {
             if (h) {
