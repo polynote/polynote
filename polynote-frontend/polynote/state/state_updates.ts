@@ -267,7 +267,7 @@ export class InsertValue<V> extends Update<V[]> {
         }
 
         const targetIndex = this.targetIndex ?? arr.length;
-        if (this._targetIndex) {
+        if (this._targetIndex !== undefined) {
             arr.splice(this.targetIndex, 0, this.value);
         } else {
             this._targetIndex = arr.length;

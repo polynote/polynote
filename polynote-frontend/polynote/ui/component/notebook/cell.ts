@@ -498,13 +498,18 @@ export class CodeCell extends Cell {
             cellOutput.el
         ]);
 
-        cellState.preObserveKey("language", oldLang => newLang => {
+        cellState.observeKey("language", (newLang, update) => {
+            const oldLang = update.oldValue;
             const newHighlightLang = ClientInterpreters[newLang]?.highlightLanguage ?? newLang;
-            const oldHighlightLang = ClientInterpreters[oldLang]?.highlightLanguage ?? oldLang;
-            this.el.classList.replace(oldHighlightLang, newHighlightLang);
+            if (oldLang) {
+                const oldHighlightLang = ClientInterpreters[oldLang]?.highlightLanguage ?? oldLang;
+                this.el.classList.replace(oldHighlightLang, newHighlightLang);
+            } else {
+                this.el.classList.add(newHighlightLang)
+            }
             langSelector.setSelectedValue(newHighlightLang);
             monaco.editor.setModelLanguage(this.editor.getModel()!, newHighlightLang)
-        });
+        })
 
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
@@ -577,7 +582,7 @@ export class CodeCell extends Cell {
             }
         }
         updateRunning(this.state.running);
-        cellState.view("running").addPreObserver(prev => curr => updateRunning(curr, prev));
+        cellState.view("running").addObserver((curr, update) => updateRunning(curr, update.oldValue));
 
         const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
             if (queued) {
@@ -593,7 +598,7 @@ export class CodeCell extends Cell {
             }
         }
         updateQueued(this.state.queued)
-        cellState.view("queued").addPreObserver(prev => curr => updateQueued(curr, prev));
+        cellState.view("queued").addObserver((curr, update) => updateQueued(curr, update.oldValue));
 
         const updateHighlight = (h: { range: PosRange , className: string} | undefined) => {
             if (h) {

@@ -40,11 +40,6 @@ beforeEach(() => {
     socketState = SocketStateHandler.create(socket).disposeWith(stateUpdateDisp)
     dispatcher = new NotebookMessageDispatcher(socketState, nbState)
     receiver = new NotebookMessageReceiver(socketState, nbState).disposeWith(stateUpdateDisp)
-
-    // close the server loop for messages that bounce off it (e.g., InsertCell)
-    nbState.updateHandler.addObserver(update => {
-        setTimeout(() => { receiver.inject(update) }, 0)
-    })
 })
 
 afterEach(() => {
@@ -56,35 +51,45 @@ afterEach(() => {
 
 describe('NotebookStateHandler', () => {
     test("can insert and delete cells", async () => {
+        function waitForNextUpdate() {
+            return new Promise(resolve => {
+                const obs = nbState.updateHandler.addObserver(update => {
+                    obs.tryDispose()
+                    resolve(update)
+                })
+            })
+        }
 
         expect(Object.keys(nbState.state.cells)).toHaveLength(0)
         expect(Object.keys(nbState.state.cellOrder)).toEqual([])
 
-        const waitForInsert = new Promise(resolve => {
-            const obs = nbState.updateHandler.addObserver(update => {
-                    obs.tryDispose()
-                    resolve(update)
-            })
-        })
-
+        const waitForInsert1 = waitForNextUpdate()
         await expect(nbState.insertCell("below")).resolves.toEqual(0)
-        await expect(waitForInsert).resolves.toEqual(new InsertCell(0, 1, new NotebookCell(0, "scala"), -1))
+        await expect(waitForInsert1).resolves.toEqual(new InsertCell(0, 1, new NotebookCell(0, "scala"), -1))
 
-        expect(Object.keys(nbState.state.cells)).toHaveLength(1)
-        expect(nbState.state.cellOrder).toEqual([0])
+        const waitForInsert2 = waitForNextUpdate()
+        await expect(nbState.insertCell("below")).resolves.toEqual(1)
+        await expect(waitForInsert2).resolves.toEqual(new InsertCell(0, 2, new NotebookCell(1, "scala"), 0))
 
-        const waitForDelete = new Promise(resolve => {
-            const obs = nbState.updateHandler.addObserver(update => {
-                obs.tryDispose()
-                resolve(update)
-            })
-        })
+        const waitForInsert3 = waitForNextUpdate()
+        await expect(nbState.insertCell("below")).resolves.toEqual(2)
+        await expect(waitForInsert3).resolves.toEqual(new InsertCell(0, 3, new NotebookCell(2, "scala"), 1))
 
-        await expect(nbState.deleteCell(0)).resolves.toEqual(0)
-        await expect(waitForDelete).resolves.toEqual(new DeleteCell(0, 2, 0))
+        expect(Object.keys(nbState.state.cells)).toHaveLength(3)
+        expect(nbState.state.cellOrder).toEqual([0, 1, 2])
 
-        expect(Object.keys(nbState.state.cells)).toHaveLength(0)
-        expect(nbState.state.cellOrder).toEqual([])
+        const waitForDelete = waitForNextUpdate()
+        await expect(nbState.deleteCell(1)).resolves.toEqual(1)
+        await expect(waitForDelete).resolves.toEqual(new DeleteCell(0, 4, 1))
+
+        expect(Object.keys(nbState.state.cells)).toHaveLength(2)
+        expect(nbState.state.cellOrder).toEqual([0, 2])
+
+        const waitForInsert4 = waitForNextUpdate()
+        await expect(nbState.insertCell("below")).resolves.toEqual(3)
+        await expect(waitForInsert4).resolves.toEqual(new InsertCell(0, 5, new NotebookCell(3, "scala"), 2))
+        expect(Object.keys(nbState.state.cells)).toHaveLength(3)
+        expect(nbState.state.cellOrder).toEqual([0, 2, 3])
     })
     test("contains cell index and id helpers", async () => {
         // initialize
