@@ -162,7 +162,8 @@ class ObserverDict<T> {
                     this.observers.splice(idx, 1);
                 }
             });
-            this.observers.push(disposable);
+            // NOTE: `unshift` because we iterate through observers backwards
+            this.observers.unshift(disposable);
             return disposable;
         } else {
             const first = path[0];
@@ -178,11 +179,16 @@ class ObserverDict<T> {
     }
 
     private forEachAt(path: string[], fn: (observer: T) => void): void {
-        let x;
-        if (path.length === 0) {
-            x = 10;
+        // NOTE: iterating through observers backwards because observers sometimes remove themselves from this list
+        //       during iteration.
+        for (let idx = this.observers.length - 1; idx >= 0; idx--) {
+            const t = this.observers[idx];
+            try {
+                fn(t)
+            } catch (e) {
+                console.error(e)
+            }
         }
-        this.observers.forEach(fn);
         if (path.length === 0) {
             for (const child of Object.values(this.children)) {
                 child.forEachAt(path, fn);
