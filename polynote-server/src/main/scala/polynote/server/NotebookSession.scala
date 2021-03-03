@@ -167,7 +167,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
   def sendNotebook: RIO[SessionEnv with PublishMessage, Unit] =
     subscriber.checkPermission(Permission.ReadNotebook).flatMap { _ =>
       // make sure to send status first, so client knows whether this notebook is up or not.
-      sendStatus *> sendNotebookContents *> sendVersion *> sendTasks *> sendPresence *> sendCellStatuses
+      sendStatus *> sendVersion *> sendNotebookContents *> sendTasks *> sendPresence *> sendCellStatuses
     }.catchAll(err => PublishMessage(Error(0, err)))
 }
 
