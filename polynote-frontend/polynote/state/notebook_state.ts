@@ -276,7 +276,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         )
     }
 
-    deleteCell(id?: number): Promise<number | undefined> {
+    deleteCell(id?: number, selectPrevCell: boolean = true): Promise<number | undefined> {
         if (id === undefined) {
             id = this.state.activeCellId;
         }
@@ -290,6 +290,14 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                     }
                 }).disposeWith(this)
             })
+            if (selectPrevCell) {
+                const nextId = this.getNextCellId(id) ?? this.getPreviousCellId(id)
+                waitForDelete.then(deletedId => {
+                    if (deletedId !== undefined && nextId !== undefined) {
+                        this.selectCell(nextId)
+                    }
+                })
+            }
             this.updateHandler.deleteCell(id);
             return waitForDelete
         } else return Promise.resolve(undefined)
