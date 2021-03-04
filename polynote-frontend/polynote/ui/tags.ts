@@ -32,6 +32,7 @@ export type AllowedElAttrs<T extends HTMLElement> = Partial<Record<keyof T, stri
 
 export type TagElement<K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> = HTMLElementTagNameMap[K] & {
     attr(a: keyof T, b: string | boolean): TagElement<K, T>
+    dataAttr(name: string, value: string): TagElement<K, T>
     attrs(obj: AllowedElAttrs<HTMLElementTagNameMap[K]>): TagElement<K, T>
     withId(id: string): TagElement<K, T>
     click(handler: EventListenerOrEventListenerObject): TagElement<K, T>
@@ -64,6 +65,10 @@ export function tag<T extends keyof HTMLElementTagNameMap>(
                 el.setAttribute(a.toString(), v);
                 return el;
             }
+        },
+        dataAttr(name: string, value: string) {
+          el.setAttribute(name, value);
+          return el;
         },
         attrs(obj: AllowedElAttrs<HTMLElementTagNameMap[T]>) {
             for (const a in obj) {

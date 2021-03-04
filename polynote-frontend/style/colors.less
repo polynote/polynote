@@ -82,10 +82,13 @@ select {
 }
 
 .cell-container {
+  & > * {
+    background: @notebook-background;
+  }
+
   &.selected, &.active {
     border-color: @ui-selected;
   }
-
 
   &.running {
     border-color: @icon-green;

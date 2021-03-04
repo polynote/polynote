@@ -1239,6 +1239,29 @@ select {
   }
 }
 
+.cell-component {
+  position: relative;
+}
+
+.cell-and-divider.dragging {
+  position: absolute;
+  z-index: 3;
+}
+
+.cell-dragger {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ns-resize;
+  z-index: 2;
+}
+
+.cell-drag-placeholder {
+  background: #EEFFEE;
+}
+
 button {
 
   padding: 8px;

@@ -153,6 +153,18 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
     case cell if cell.id != id => cell
   }))
 
+  def moveCell(id: CellID, after: CellID): Notebook = {
+    val srcIndex = cells.indexWhere(_.id == id)
+    if (srcIndex >= 0) {
+      val cell = cells(srcIndex)
+      val removed = cells.patch(srcIndex, Nil, 1)
+      val targetIndex = if (after < 0) 0 else cells.indexWhere(_.id == after) + 1
+      if (targetIndex >= 0) {
+        copy(cells = removed.patch(targetIndex, List(cell), 0))
+      } else this
+    } else this
+  }
+
   def createComment(id: CellID, comment: Comment): Notebook = updateCell(id) {
     cell =>
       require(!cell.comments.contains(comment.uuid), s"Comment with id ${comment.uuid} already exists!")
@@ -238,6 +250,7 @@ sealed trait NotebookUpdate extends Message {
     case cc @ CreateComment(_, _, _, _)        => cc.copy(globalVersion = global, localVersion = local)
     case dc @ DeleteComment(_, _, _, _)        => dc.copy(globalVersion = global, localVersion = local)
     case uc @ UpdateComment(_, _, _, _, _, _)  => uc.copy(globalVersion = global, localVersion = local)
+    case mc @ MoveCell(_, _, _, _)             => mc.copy(globalVersion = global, localVersion = local)
   }
 
   // transform this update so that it has the same effect when applied after the given update
@@ -269,6 +282,7 @@ sealed trait NotebookUpdate extends Message {
     case CreateComment(_, _, cellId, comment) => notebook.createComment(cellId, comment)
     case UpdateComment(_, _, cellId, commentId, range, content) => notebook.updateComment(cellId, commentId, range, content)
     case DeleteComment(_, _, cellId, commentId) => notebook.deleteComment(cellId, commentId)
+    case MoveCell(_, _, cellId, after) => notebook.moveCell(cellId, after)
   }
 
   /**
@@ -343,6 +357,9 @@ final case class SetCellLanguage(globalVersion: Int, localVersion: Int, id: Cell
   override def echoOriginatingSubscriber: Boolean = true
 }
 object SetCellLanguage extends NotebookUpdateCompanion[SetCellLanguage](11)
+
+final case class MoveCell(globalVersion: Int, localVersion: Int, id: CellID, after: CellID) extends Message with NotebookUpdate
+object MoveCell extends NotebookUpdateCompanion[MoveCell](33)
 
 final case class StartKernel(level: Byte) extends Message
 object StartKernel extends MessageCompanion[StartKernel](12) {

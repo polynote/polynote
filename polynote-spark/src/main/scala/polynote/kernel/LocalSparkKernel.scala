@@ -4,7 +4,6 @@ import java.nio.file.{FileSystems, Files}
 import java.util.concurrent.{Executors, ThreadFactory}
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
-
 import cats.effect.concurrent.Ref
 import cats.instances.list._
 import cats.syntax.traverse._
@@ -16,7 +15,7 @@ import polynote.config.{PolynoteConfig, SparkConfig}
 import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
-import polynote.kernel.interpreter.{Interpreter, State}
+import polynote.kernel.interpreter.{Interpreter, InterpreterState, State}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.{RefMap, pathOf}
@@ -40,7 +39,7 @@ import scala.tools.nsc.io.Directory
 class LocalSparkKernel private[kernel] (
   compilerProvider: ScalaCompiler,
   sparkSession: SparkSession,
-  interpreterState: Ref[Task, State],
+  interpreterState: InterpreterState.Service,
   interpreters: RefMap[String, Interpreter],
   busyState: SignallingRef[Task, KernelBusyState],
   closed: Promise[Throwable, Unit]
@@ -132,7 +131,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     busyState        <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
     scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
-    interpState      <- Ref[Task].of[State](State.predef(State.Root, State.Root))
+    interpState      <- InterpreterState.access
     closed           <- Promise.make[Throwable, Unit]
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)
 

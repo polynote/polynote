@@ -189,4 +189,71 @@ class StateSpec extends FreeSpec with Matchers with ResultValueHelpers {
 
   }
 
+  "remove" - {
+    "removes from the end" in {
+      five.remove(five.id) shouldEqual four
+    }
+
+    "removes from the middle" in {
+      five.remove(three.id).toList.map(_.id) shouldEqual five.toList.map(_.id).filterNot(_ == three.id)
+    }
+
+    "removes from the beginning" in {
+      five.remove(one.id).toList.map(_.id) shouldEqual five.toList.map(_.id).filterNot(_ == one.id)
+    }
+  }
+
+  "moveAfter" - {
+    def expect(state: State)(states: State*): Unit = {
+      state.toList.map(_.id) shouldEqual states.map(_.id).toList
+    }
+
+    "moves a cell up" - {
+      "from the end" - {
+        "to the beginning" in {
+          expect(five.moveAfter(five.id, (-1).toShort))(four, three, two, one, five)
+        }
+
+        "to the middle" in {
+          expect(five.moveAfter(five.id, two.id))(four, three, five, two, one)
+        }
+      }
+
+      "from the middle" - {
+        "to the beginning" in {
+          expect(five.moveAfter(three.id, (-1).toShort))(five, four, two, one, three)
+        }
+
+        "to the middle" in {
+          expect(five.moveAfter(four.id, one.id))(five, three, two, four, one)
+        }
+      }
+    }
+
+    "moves a cell down" - {
+      "from the beginning" - {
+        "to the end" in {
+          expect(five.moveAfter(one.id, five.id))(one, five, four, three, two)
+        }
+
+        "to the middle" in {
+          expect(five.moveAfter(one.id, two.id))(five, four, three, one, two)
+          expect(five.moveAfter(one.id, three.id))(five, four, one, three, two)
+        }
+      }
+
+      "from the middle" - {
+        "to the end" in {
+          expect(five.moveAfter(three.id, five.id))(three, five, four, two, one)
+          expect(five.moveAfter(two.id, five.id))(two, five, four, three, one)
+        }
+
+        "to the middle" in {
+          expect(five.moveAfter(two.id, four.id))(five, two, four, three, one)
+          expect(five.moveAfter(two.id, three.id))(five, four, two, three, one)
+        }
+      }
+    }
+  }
+
 }

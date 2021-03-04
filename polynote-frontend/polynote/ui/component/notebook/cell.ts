@@ -4,7 +4,7 @@ import {
     clearArray,
     Disposable,
     EditString,
-    editString,
+    editString, ImmediateDisposable, moveArrayValue,
     removeFromArray,
     SetValue,
     setValue,
@@ -88,6 +88,116 @@ export type CodeCellModel = editor.ITextModel & {
     requestSignatureHelp(pos: number): Promise<SignatureHelpResult>
 };
 
+class CellDragHandle extends ImmediateDisposable {
+    private onRelease?: () => void;
+    readonly el: TagElement<'div'>;
+    private placeholderEl?: TagElement<'div'>;
+    private draggingEl?: HTMLElement;
+    constructor(parent: CellContainer, notifyMoved: (after: string | null) => Promise<void>) {
+        super(() => {
+            if (this.onRelease) {
+                this.onRelease();
+            }
+            if (this.el.parentNode) {
+                this.el.parentNode.removeChild(this.el);
+            }
+            this.el.removeEventListener('mousedown', onDragStart);
+        });
+        this.disposeWith(parent);
+
+        let initialDragY = 0;
+        let initialDragX = 0;
+        let initialY = 0;
+        let animFrame = 0;
+        let initialPrev: Element | null | undefined = undefined;
+
+        const getCellAtPoint: (x: number, y: number) => (HTMLElement | undefined) = (x, y) => {
+            const el = document.elementsFromPoint(x, y)
+                .filter(el => el !== this.draggingEl && el.classList.contains('cell-and-divider'))[0];
+            if (el)
+                return el as HTMLElement;
+            return undefined;
+        }
+
+        const onMove = (evt: MouseEvent) => {
+            evt.preventDefault();
+            const dY = evt.clientY - initialDragY;
+            const draggingEl = this.draggingEl!;
+            const placeholder = this.placeholderEl!;
+
+            if (animFrame) {
+                window.cancelAnimationFrame(animFrame);
+            }
+            animFrame = window.requestAnimationFrame(() => {
+                animFrame = 0;
+                const newY = initialY + dY;
+                const goingUp = newY < draggingEl.offsetTop;
+
+                draggingEl.style.top = newY + 'px';
+
+                const draggingOver = getCellAtPoint(initialDragX, evt.clientY);
+                if (draggingOver) {
+                    const dims = draggingOver.getBoundingClientRect();
+                    const mid = dims.y + (dims.height / 2);
+                    const next = evt.clientY < mid ? draggingOver : draggingOver.nextElementSibling;
+                    placeholder.parentElement!.insertBefore(placeholder, next);
+                }
+            });
+            // TODO: handle scrolling the viewport
+        }
+
+        const removeListeners = () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onRelease);
+            window.removeEventListener("blur", onRelease);
+        }
+
+        const onRelease = () => {
+            removeListeners();
+            const placeholder = this.placeholderEl!;
+            const draggingEl = this.draggingEl!;
+            const newPrev = placeholder.previousElementSibling;
+            placeholder.parentNode!.removeChild(placeholder);
+
+            const notified = newPrev !== initialPrev ? notifyMoved(newPrev?.getAttribute('data-cellid') ?? null) : Promise.resolve();
+            notified.then(() => {
+                draggingEl.classList.remove('dragging');
+                draggingEl.style.top = '';
+                draggingEl.style.left = '';
+                draggingEl.style.width = '';
+            });
+
+            this.draggingEl = undefined;
+            this.placeholderEl = undefined;
+            this.onRelease = undefined;
+        }
+
+        const onDragStart = (evt: MouseEvent) => {
+            evt.preventDefault();
+            initialDragX = evt.clientX + 40;
+            initialDragY = evt.clientY;
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onRelease);
+            window.addEventListener("blur", onRelease);
+            this.onRelease = onRelease;
+            const draggingEl = this.draggingEl = parent.el;
+            initialPrev = draggingEl.previousElementSibling;
+            initialY = draggingEl.offsetTop;
+            this.placeholderEl = div(['cell-drag-placeholder'], []);
+            this.placeholderEl.style.height = draggingEl.offsetHeight + 'px';
+            draggingEl.style.top = draggingEl.offsetTop + 'px';
+            draggingEl.style.left = draggingEl.offsetLeft + 'px';
+            draggingEl.style.width = draggingEl.offsetWidth + 'px';
+            draggingEl.classList.add('dragging');
+            draggingEl.parentElement!.insertBefore(this.placeholderEl, draggingEl);
+        }
+
+        this.el = div(['cell-dragger'], [div(['inner'], [])]);
+        this.el.addEventListener('mousedown', onDragStart);
+
+    }
+}
+
 export class CellContainer extends Disposable {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
@@ -95,13 +205,35 @@ export class CellContainer extends Disposable {
     private path: string;
     private cellState: StateHandler<CellState>;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler, state: StateHandler<CellState>) {
+    constructor(
+        newCellDivider: TagElement<'div'>,
+        private dispatcher: NotebookMessageDispatcher,
+        private notebookState: NotebookStateHandler,
+        state: StateHandler<CellState>
+    ) {
         super()
         const cellState = this.cellState = state.fork(this);
-        this.cellId = `Cell${cellState.state.id}`;
+        const id = cellState.state.id;
+        this.cellId = `Cell${id}`;
         this.cell = this.cellFor(cellState.state.language);
         this.path = notebookState.state.path;
-        this.el = div(['cell-component'], [this.cell.el]);
+
+        const dragHandle = new CellDragHandle(
+            this,
+            newPrev => notebookState.updateAsync(state => {
+                const myIndex = state.cellOrder.indexOf(id);
+                const newIndex = newPrev ? state.cellOrder.indexOf(parseInt(newPrev, 10)) + 1 : 0;
+                return {
+                    cellOrder: moveArrayValue(myIndex, newIndex)
+                }
+            }, this, 'cellOrder').then(() => {})
+        );
+
+        this.el = div(['cell-and-divider'], [
+            div(['cell-component'], [dragHandle, this.cell.el]),
+            newCellDivider
+        ]).dataAttr('data-cellid', id.toString());
+
         this.el.click(evt => this.cell.doSelect());
         cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text

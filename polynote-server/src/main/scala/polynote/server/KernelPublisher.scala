@@ -3,7 +3,6 @@ package server
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-
 import cats.effect.concurrent.{Ref => CatsRef}
 import cats.instances.list._
 import cats.syntax.traverse._
@@ -11,11 +10,12 @@ import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.kernel.util.{Publish, RefMap}
 import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
-import polynote.messages.{CellID, CellResult, Error, Message, Notebook, NotebookUpdate, ShortList}
+import polynote.messages.{CellID, CellResult, DeleteCell, Error, Message, Notebook, NotebookUpdate, ShortList}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
 import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ULayer, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
+import polynote.kernel.interpreter.InterpreterState
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.server.auth.UserIdentity
@@ -32,6 +32,7 @@ class KernelPublisher private (
   val broadcastAll: Topic[Task, Option[Message]],
   val taskManager: TaskManager.Service,
   kernelRef: Ref[Option[Kernel]],
+  interpreterState: InterpreterState.Service,
   kernelStarting: Semaphore,
   queueingCell: Semaphore,
   subscribing: Semaphore,
@@ -53,7 +54,7 @@ class KernelPublisher private (
   }
 
   private def cellEnv(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, CellEnv] =
-    baseLayer ++ cellLayer(cellID, tapResults)
+    baseLayer ++ ZLayer.succeed(interpreterState) ++ cellLayer(cellID, tapResults)
 
   private val kernelFactoryEnv: ZLayer[Any, Nothing, CellEnv with NotebookUpdates] = {
     val updates = broadcastUpdates.subscribe(128).unNone.map(_._2)
@@ -237,17 +238,19 @@ object KernelPublisher {
     */
   def applyUpdate(
     versionRef: NotebookRef,
+    interpState: InterpreterState.Service,
     versions: VersionBuffer[NotebookUpdate],
     publishUpdates: Publish[Task, (SubscriberId, NotebookUpdate)],
     subscriberVersions: ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)])(
     subscriberId: SubscriberId,
     update: NotebookUpdate
-  ): TaskG[Unit] =
-    versionRef.updateAndGet(update).flatMap {
+  ): TaskG[Unit] = {
+    interpState.updateStateWith(update) &> versionRef.updateAndGet(update).flatMap {
       case (nextVer, notebook) =>
         val newUpdate = update.withVersions(nextVer, update.localVersion)
         publishUpdates.publish1((subscriberId, newUpdate)) *> ZIO(versions.add(nextVer, newUpdate))
     }
+  }
 
   def apply(versionedRef: NotebookRef, broadcastMessage: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, KernelPublisher] = for {
     kernelFactory    <- Kernel.Factory.access
@@ -265,6 +268,7 @@ object KernelPublisher {
     subscribing      <- Semaphore.make(1)
     subscribers      <- RefMap.empty[Int, KernelSubscriber]
     kernel           <- Ref.make[Option[Kernel]](None)
+    interpState      <- InterpreterState.empty
     subscriberVersions = new ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)]()
     publisher = new KernelPublisher(
       versionedRef,
@@ -276,6 +280,7 @@ object KernelPublisher {
       broadcastMessage,
       taskManager,
       kernel,
+      interpState,
       kernelStarting,
       queueingCell,
       subscribing,
@@ -285,7 +290,7 @@ object KernelPublisher {
     )
     env <- ZIO.environment[BaseEnv]
     _   <- updates.dequeue.unNoneTerminate
-      .evalMap((applyUpdate(versionedRef, versionBuffer, Publish(broadcastUpdates).some, subscriberVersions) _).tupled)
+      .evalMap((applyUpdate(versionedRef, interpState, versionBuffer, Publish(broadcastUpdates).some, subscriberVersions) _).tupled)
       .compile.drain
       .catchAll {
         err =>

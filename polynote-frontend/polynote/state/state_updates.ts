@@ -288,16 +288,25 @@ export class InsertValue<V> extends Update<V[]> {
 }
 
 export class MoveArrayValue<V> extends Update<V[]> {
+    private movedElem?: V;
     constructor(readonly fromIndex: number, readonly toIndex: number) { super(); }
 
     static unapply<V>(inst: MoveArrayValue<V>): ConstructorParameters<typeof MoveArrayValue> {
         return [inst.fromIndex, inst.toIndex]
     }
 
+    get movedValue(): V | undefined {
+        return this.movedElem;
+    }
+
     applyMutate(arr: V[]): UpdateResult<V[]> {
+        if (this.fromIndex === this.toIndex) {
+            return noChange(arr);
+        }
         const minIdx = Math.min(this.fromIndex, this.toIndex);
         const maxIdx = Math.max(this.fromIndex, this.toIndex);
-        const elem = arr.splice(this.fromIndex, 1)[0];
+        const elem = this.movedElem = arr.splice(this.fromIndex, 1)[0];
+        const targetIdx = this.toIndex > this.fromIndex ? this.toIndex - 1 : this.toIndex
         arr.splice(this.toIndex, 0, elem);
         return {
             update: this,
