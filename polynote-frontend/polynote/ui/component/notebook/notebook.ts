@@ -1,6 +1,6 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {Disposable, MoveArrayValue, StateHandler, UpdateResult} from "../../../state";
+import {Disposable, MoveArrayValue, NoUpdate, setValue, StateHandler, UpdateResult} from "../../../state";
 import {CellMetadata} from "../../../data/data";
 import {CellContainer} from "./cell";
 import {NotebookConfigEl} from "./notebookconfig";
@@ -117,6 +117,24 @@ export class Notebook extends Disposable {
                             cellsEl.insertBefore(targetCell, newNextCell);
                         } else {
                             cellsEl.appendChild(targetCell);
+                        }
+
+                        if (state.activeCellId !== undefined) {
+                            const activeCellId = state.activeCellId;
+                            // re-select the cell, so that its available values get recomputed
+                            notebookState.updateAsync(
+                                s => {
+                                    if (s.activeCellId !== activeCellId)
+                                        return NoUpdate;
+                                    return {activeCellId: setValue(undefined)}
+                                 },
+                                this,
+                                'activeCellId'
+                            ).then(() => notebookState.update(s => {
+                                if (s.activeCellId !== undefined)
+                                    return NoUpdate;
+                                return {activeCellId: setValue(activeCellId)}
+                            }, this, 'activeCellId'))
                         }
                     }
                 }

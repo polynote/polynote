@@ -185,11 +185,12 @@ class CellDragHandle extends ImmediateDisposable {
             initialY = draggingEl.offsetTop;
             this.placeholderEl = div(['cell-drag-placeholder'], []);
             this.placeholderEl.style.height = draggingEl.offsetHeight + 'px';
+            console.log(draggingEl.offsetTop, draggingEl.offsetParent);
             draggingEl.style.top = draggingEl.offsetTop + 'px';
             draggingEl.style.left = draggingEl.offsetLeft + 'px';
             draggingEl.style.width = draggingEl.offsetWidth + 'px';
             draggingEl.classList.add('dragging');
-            draggingEl.parentElement!.insertBefore(this.placeholderEl, draggingEl);
+            draggingEl.parentElement!.insertBefore(this.placeholderEl, draggingEl.nextSibling);
         }
 
         this.el = div(['cell-dragger'], [div(['inner'], [])]);
@@ -1801,7 +1802,7 @@ export class VizCell extends Cell {
          * Keep watching the available values, so the plot UI can be updated when the value changes.
          */
         const updateValues = (newValues: Record<string, ResultValue>) => {
-            if (newValues && newValues[this.valueName] && newValues[this.valueName].live) {
+            if (newValues && newValues[this.valueName] && newValues[this.valueName].live && newValues[this.valueName] !== this.resultValue) {
                 this.setValue(newValues[this.valueName]);
                 return true;
             }
@@ -1812,7 +1813,11 @@ export class VizCell extends Cell {
             this.notebookState.view("kernel").view("symbols").observeMapped(
                 symbols => availableResultValues(symbols, this.notebookState.state.cellOrder, cellState.state.id),
                 updateValues
-            )
+            );
+
+            this.notebookState.observeKey("cellOrder", (order, update) => updateValues(
+                availableResultValues(this.notebookState.state.kernel.symbols, order, cellState.state.id)
+            ));
         }
 
         if (notebookState.isLoading) {

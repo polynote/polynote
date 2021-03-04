@@ -1347,13 +1347,13 @@ button.inspect.icon-button {
   //                     "vim";
   //grid-template-columns: 100%;
   //grid-template-rows: 1fr min-content;
-  overflow: hidden;
+  overflow-y: auto;
 
   .notebook-cells {
     //grid-area: notebook;
     padding: 12pt;
     padding-bottom: 50vh; // allow last cell to scroll up to midpoint
-    overflow-y: auto;
+    position: relative;
   }
 
 }
