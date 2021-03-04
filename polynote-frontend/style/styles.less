@@ -28,6 +28,10 @@
 
 @import "common";
 
+html {
+  overflow: hidden;
+}
+
 body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
   font-size: 10pt;
@@ -1347,12 +1351,13 @@ button.inspect.icon-button {
   //                     "vim";
   //grid-template-columns: 100%;
   //grid-template-rows: 1fr min-content;
-  overflow-y: auto;
+  overflow: hidden;
 
   .notebook-cells {
     //grid-area: notebook;
     padding: 12pt;
     padding-bottom: 50vh; // allow last cell to scroll up to midpoint
+    overflow-y: auto;
     position: relative;
   }
 
