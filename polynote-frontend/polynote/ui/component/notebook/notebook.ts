@@ -174,7 +174,7 @@ export class Notebook extends Disposable {
         return div(['new-cell-divider'], []).click((evt) => {
             const self = evt.target as TagElement<"div">;
             const prevCell = Object.values(this.cells).reduce((acc: CellState, next) => {
-                if (self.previousElementSibling === next.cell.el) {
+                if (self.parentElement === next.cell.el) {
                     acc = next.handler.state
                 }
                 return acc;
