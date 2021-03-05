@@ -96,37 +96,27 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
     constructor(
         parent: StateHandler<NotebookState>,
         readonly cellsHandler: StateHandler<Record<number, CellState>>,
-        readonly updateHandler: NotebookUpdateHandler
+        readonly updateHandler: NotebookUpdateHandler,
+        readonly _loaded?: Promise<void>
     ) {
         super(parent);
 
-        // Update activeCellId when the active cell is deselected.
-        this.view("activeCellId").addObserver(cellId => {
-            if (cellId !== undefined) {
-                const activeCellWatcher = this.cellsHandler.view(cellId)
-                const obs = activeCellWatcher.addObserver(s => {
-                    if (! s.selected) {
-                        activeCellWatcher.dispose()
-                        if (this.state.activeCellId === cellId) {
-                            this.updateField("activeCellId", () => setValue(undefined))
+        if (_loaded === undefined) {
+            if (this.isLoading) {
+                const tasksView = this.view('kernel').view('tasks');
+                this.loaded = new Promise<void>(resolve => {
+                    const obs = tasksView.addObserver((current, prev) => {
+                        if (!current[this.state.path] || current[this.state.path].status === TaskStatus.Complete) {
+                            obs.dispose();
+                            resolve()
                         }
-                    }
-                }).disposeWith(this)
-            }
-        }).disposeWith(this)
-
-        if (this.isLoading) {
-            const tasksView = this.view('kernel').view('tasks');
-            this.loaded = new Promise<void>(resolve => {
-                const obs = tasksView.addObserver((current, prev) => {
-                    if (!current[this.state.path] || current[this.state.path].status === TaskStatus.Complete) {
-                        obs.dispose();
-                        setTimeout(resolve, 0);
-                    }
+                    });
                 })
-            })
+            } else {
+                this.loaded = Promise.resolve()
+            }
         } else {
-            this.loaded = Promise.resolve()
+            this.loaded = _loaded;
         }
 
         this.loaded.then(_ => this.updateHandler.localVersion = 0)
@@ -224,16 +214,14 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             const prev = state.activeCellId;
             const update: UpdatePartial<NotebookState> = {
                 activeCellId: id,
-                cells: id === undefined ? NoUpdate : {
+                cells: id === undefined ? {} : {
                     [id]: {
                         selected: true,
                         editing: options?.editing ?? false
-                    }
+                    },
+                    ...(prev === undefined ? {} : {[prev]: {selected: false, editing: false}})
                 }
             };
-            if (prev !== undefined) {
-                (update.cells as any)[prev] = { selected: false, editing: false };
-            }
             return update;
         })
 
@@ -276,7 +264,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         )
     }
 
-    deleteCell(id?: number): Promise<number | undefined> {
+    deleteCell(id?: number, selectPrevCell: boolean = true): Promise<number | undefined> {
         if (id === undefined) {
             id = this.state.activeCellId;
         }
@@ -290,6 +278,14 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                     }
                 }).disposeWith(this)
             })
+            if (selectPrevCell) {
+                const nextId = this.getNextCellId(id) ?? this.getPreviousCellId(id)
+                waitForDelete.then(deletedId => {
+                    if (deletedId !== undefined && nextId !== undefined) {
+                        this.selectCell(nextId)
+                    }
+                })
+            }
             this.updateHandler.deleteCell(id);
             return waitForDelete
         } else return Promise.resolve(undefined)
@@ -329,7 +325,8 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         const fork = new NotebookStateHandler(
             this.parent.fork(disposeContext).disposeWith(this),
             this.cellsHandler.fork(disposeContext).disposeWith(this),
-            this.updateHandler
+            this.updateHandler,
+            this.loaded
         ).disposeWith(this);
 
         return disposeContext ? fork.disposeWith(disposeContext) : fork;

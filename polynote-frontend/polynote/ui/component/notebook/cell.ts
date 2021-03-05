@@ -329,7 +329,15 @@ abstract class Cell extends Disposable {
     protected constructor(protected dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>) {
         super()
         const cellState = this.cellState = _cellState.fork(this);
-        const notebookState = this.notebookState = _notebookState.fork(this);
+        const notebookState = this.notebookState = _notebookState.fork(this)
+
+        // Attach listeners when the notebook is fully loaded (by then, `el` should be populated)
+        notebookState.loaded.then(() => {
+            // Handle hotkeys when cell is focused but editor is not. The editor hotkey handlers should have priority
+            // if the editors are active.
+            this.el.addEventListener('keydown', (evt: KeyboardEvent) => this.onKeyDown(evt))
+            this.el.tabIndex = 0; // set the tabIndex so this element can be focused.
+        })
 
         this.id = cellState.state.id;
         this.cellId = `Cell${this.id}`;
@@ -385,10 +393,15 @@ abstract class Cell extends Disposable {
 
     protected onSelected() {
         this.addCellClass("active");
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
         this.el?.focus()
         this.scroll()
         if (!document.location.hash.includes(this.cellId)) {
             this.setUrl();
+        }
+
+        if (this.notebookState.state.activeCellId !== this.id) {
+            this.notebookState.updateField("activeCellId", () => setValue(this.id))
         }
     }
 
@@ -452,22 +465,68 @@ abstract class Cell extends Disposable {
             const selection = this.getCurrentSelection();
 
             const preventDefault = this.keyAction(key, pos, range, selection)
+            evt.stopPropagation();
             if (preventDefault) {
-                evt.stopPropagation();
                 evt.preventDefault();
             }
         }
     }
 
-    protected selectOrInsertCell(direction: "above" | "below", skipHiddenCode = true, doInsert = true) {
-        const selected = this.notebookState.selectCell(this.id, {relative: direction, skipHiddenCode, editing: true})
+    protected selectOrInsertCell(direction: "above" | "below", doInsert = true) {
+        const selected = this.notebookState.selectCell(this.id, {relative: direction, editing: true})
         // if a new cell wasn't selected, we probably need to insert a cell
         if (doInsert && (selected === undefined || selected === this.id)) {
             this.notebookState.insertCell(direction).then(id => this.notebookState.selectCell(id))
         }
     }
 
-    protected abstract keyAction(key: string, pos: IPosition, range: IRange, selection: string): boolean | undefined
+    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string): boolean | undefined {
+        return matchS<boolean>(key)
+            .when("MoveUp", () => {
+                this.notebookState.selectCell(this.id, {relative: "above", editing: true})
+            })
+            .when("MoveUpK", () => {
+                this.notebookState.selectCell(this.id, {relative: "above", editing: true})
+            })
+            .when("MoveDown", () => {
+                this.notebookState.selectCell(this.id, {relative: "below", editing: true})
+            })
+            .when("MoveDownJ", () => {
+                this.notebookState.selectCell(this.id, {relative: "below", editing: true})
+            })
+            .when("RunAndSelectNext", () => {
+                this.dispatcher.runActiveCell()
+                this.selectOrInsertCell("below", false)
+                return true // preventDefault
+            })
+            .when("RunAndInsertBelow", () => {
+                this.dispatcher.runActiveCell()
+                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
+                return true // preventDefault
+            })
+            .when("SelectPrevious", () => {
+                this.notebookState.selectCell(this.id, {relative: "above", editing: true})
+            })
+            .when("SelectNext", () => {
+                this.notebookState.selectCell(this.id, {relative: "below", editing: true})
+            })
+            .when("InsertAbove", () => {
+                this.notebookState.insertCell("above").then(id => this.notebookState.selectCell(id))
+            })
+            .when("InsertBelow", () => {
+                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
+            })
+            .when("Delete", () => {
+                this.notebookState.deleteCell()
+            })
+            .when("RunAll", () => {
+                this.dispatcher.runCells([])
+            })
+            .when("RunToCursor", () => {
+                this.dispatcher.runToActiveCell()
+            })
+            .otherwise(null) ?? undefined
+    }
 
     protected abstract getPosition(): IPosition
 
@@ -1085,83 +1144,69 @@ export class CodeCell extends Cell {
     }
 
     protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
-        const ifNoSuggestion = (fun: () => void) => () => {
-            // this is really ugly, is there a better way to tell whether the widget is visible??
-            const suggestionsVisible = this.editor._contextKeyService.getContextKeyValue("suggestWidgetVisible")
-            if (!suggestionsVisible) { // don't do stuff when suggestions are visible
-                fun()
+        if (this.state.metadata.hideSource) { // if the source is hidden, this acts just like any other cell.
+            return super.keyAction(key, pos, range, selection)
+        } else {
+            const ifNoSuggestion = (fun: () => void) => () => {
+                // this is really ugly, is there a better way to tell whether the widget is visible??
+                const suggestionsVisible = this.editor._contextKeyService.getContextKeyValue("suggestWidgetVisible")
+                if (!suggestionsVisible) { // don't do stuff when suggestions are visible
+                    fun()
+                }
             }
-        }
-        return matchS<boolean>(key)
-            .when("MoveUp", ifNoSuggestion(() => {
-                if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.selectOrInsertCell("above")
-                }
-            }))
-            .when("MoveDown", ifNoSuggestion(() => {
-                let lastColumn = range.endColumn;
-                if (this.vim && !this.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
-                    lastColumn -= 1
-                }
-                if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                    this.selectOrInsertCell("below")
-                }
-            }))
-            .when("RunAndSelectNext", () => {
-                this.dispatcher.runActiveCell()
-                this.selectOrInsertCell("below", false)
-                return true // preventDefault
-            })
-            .when("RunAndInsertBelow", () => {
-                this.dispatcher.runActiveCell()
-                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
-                return true // preventDefault
-            })
-            .when("SelectPrevious", ifNoSuggestion(() => {
-                this.notebookState.selectCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
-            }))
-            .when("SelectNext", ifNoSuggestion(() => {
-                this.notebookState.selectCell(this.id, {relative: "below", skipHiddenCode: true, editing: true})
-            }))
-            .when("InsertAbove", ifNoSuggestion(() => {
-                this.notebookState.insertCell("above").then(id => this.notebookState.selectCell(id))
-            }))
-            .when("InsertBelow", ifNoSuggestion(() => {
-                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
-            }))
-            .when("Delete", ifNoSuggestion(() => {
-                const nextId = this.notebookState.getNextCellId(this.id) ?? this.notebookState.getPreviousCellId(this.id)
-                this.notebookState.deleteCell().then(id => {
-                    // select the next cell when this one is deleted
-                    if (id !== undefined) {
-                        if (nextId !== undefined) {
-                            this.notebookState.selectCell(nextId)
+            return matchS<boolean>(key)
+                .when("MoveUp", ifNoSuggestion(() => {
+                    if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
+                        this.selectOrInsertCell("above")
+                    }
+                }))
+                .when("MoveUpK", ifNoSuggestion(() => {
+                    if (!this.vim?.state.vim.insertMode) {
+                        if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
+                            this.notebookState.selectCell(this.id, {relative: "above", editing: true})
                         }
                     }
-                })
-            }))
-            .when("RunAll", ifNoSuggestion(() => {
-                this.dispatcher.runCells([])
-            }))
-            .when("RunToCursor", ifNoSuggestion(() => {
-                this.dispatcher.runToActiveCell()
-            }))
-            .when("MoveUpK", ifNoSuggestion(() => {
-                if (!this.vim?.state.vim.insertMode) {
-                    if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                        this.notebookState.selectCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
+                }))
+                .when("MoveDown", ifNoSuggestion(() => {
+                    let lastColumn = range.endColumn;
+                    if (this.vim && !this.vim.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
+                        lastColumn -= 1
                     }
-                }
-            }))
-            .when("MoveDownJ", ifNoSuggestion(() => {
-                if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
-                    let lastColumn = range.endColumn - 1;
                     if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
-                        this.notebookState.selectCell(this.id, {relative:"below", skipHiddenCode: true, editing: true})
+                        this.selectOrInsertCell("below")
                     }
-                }
-            }))
-            .otherwiseThrow ?? undefined
+                }))
+                .when("MoveDownJ", ifNoSuggestion(() => {
+                    if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
+                        let lastColumn = range.endColumn - 1;
+                        if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
+                            this.notebookState.selectCell(this.id, {relative:"below", editing: true})
+                        }
+                    }
+                }))
+                .when("SelectPrevious", ifNoSuggestion(() => {
+                    this.notebookState.selectCell(this.id, {relative: "above", editing: true})
+                }))
+                .when("SelectNext", ifNoSuggestion(() => {
+                    this.notebookState.selectCell(this.id, {relative: "below", editing: true})
+                }))
+                .when("InsertAbove", ifNoSuggestion(() => {
+                    this.notebookState.insertCell("above").then(id => this.notebookState.selectCell(id))
+                }))
+                .when("InsertBelow", ifNoSuggestion(() => {
+                    this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
+                }))
+                .when("Delete", ifNoSuggestion(() => {
+                    this.notebookState.deleteCell()
+                }))
+                .when("RunAll", ifNoSuggestion(() => {
+                    this.dispatcher.runCells([])
+                }))
+                .when("RunToCursor", ifNoSuggestion(() => {
+                    this.dispatcher.runToActiveCell()
+                }))
+                .otherwise(() => super.keyAction(key, pos, range, selection)) ?? undefined
+        }
     }
 
     getPosition() {
@@ -1708,44 +1753,21 @@ export class TextCell extends Cell {
         return matchS<boolean>(key)
             .when("MoveUp", () => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
-                    this.notebookState.selectCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
+                    this.notebookState.selectCell(this.id, {relative: "above", editing: true})
                 }
+            })
+            .when("MoveUpK", () => {
+                // do nothing
             })
             .when("MoveDown", () => {
                 if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
-                    this.notebookState.selectCell(this.id, {relative: "below", skipHiddenCode: true, editing: true})
+                    this.notebookState.selectCell(this.id, {relative: "below", editing: true})
                 }
             })
-            .when("RunAndSelectNext", () => {
-                this.selectOrInsertCell("below")
-                return true // preventDefault
+            .when("MoveDownJ", () => {
+                // do nothing
             })
-            .when("RunAndInsertBelow", () => {
-                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
-                return true // preventDefault
-            })
-            .when("SelectPrevious", () => {
-                this.notebookState.selectCell(this.id, {relative: "above", skipHiddenCode: true, editing: true})
-            })
-            .when("SelectNext", () => {
-                this.notebookState.selectCell(this.id, {relative: "below", skipHiddenCode: true, editing: true})
-            })
-            .when("InsertAbove", () => {
-                this.notebookState.insertCell("above").then(id => this.notebookState.selectCell(id))
-            })
-            .when("InsertBelow", () => {
-                this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
-            })
-            .when("Delete", () => {
-                this.notebookState.deleteCell()
-            })
-            .when("RunAll", () => {
-                this.dispatcher.runCells([])
-            })
-            .when("RunToCursor", () => {
-                this.dispatcher.runToActiveCell()
-            })
-            .otherwise(null) ?? undefined
+            .otherwise(() => super.keyAction(key, pos, range, selection)) ?? undefined
     }
 
     protected onSelected() {
@@ -1998,7 +2020,7 @@ export class VizCell extends Cell {
                         ClientResult)[0];
             }
         } catch (err) {
-
+            console.log("error in vizResult", err)
         }
         return undefined;
     }
@@ -2023,10 +2045,6 @@ export class VizCell extends Cell {
             endLineNumber: 0,
             endColumn: 0
         };
-    }
-
-    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string): boolean | undefined {
-        return undefined;
     }
 
     setDisabled(disabled: boolean): void {

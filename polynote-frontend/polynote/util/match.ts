@@ -193,10 +193,13 @@ export class StringMatcher<R> {
         }
     }
 
-    otherwise<U>(value: U) {
+    otherwise<U>(value: U | (() => U)) {
         if (this.result !== undefined) {
             return this.result;
         } else {
+            if (value instanceof Function) {  // see https://github.com/microsoft/TypeScript/issues/37663
+                return value();
+            }
             return value;
         }
     }

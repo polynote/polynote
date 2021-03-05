@@ -34,51 +34,54 @@ class LocalKernel private[kernel] (
 
   def currentTime: ZIO[Clock, Nothing, Long] = ZIO.accessM[Clock](_.get.currentTime(TimeUnit.MILLISECONDS))
 
-  override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = {
-    PublishStatus(CellStatusUpdate(id, Queued)) *>
-    TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
-      currentTime.flatMap {
-        startTime =>
-          def publishEndTime: RIO[PublishResult with Clock, Unit] =
-            currentTime.flatMap(endTime => PublishResult(ExecutionInfo(startTime, Some(endTime))))
+  override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = PublishStatus.access.flatMap {
+    publishStatus =>
+      val queueTask: RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
+        currentTime.flatMap {
+          startTime =>
+            def publishEndTime: RIO[PublishResult with Clock, Unit] =
+              currentTime.flatMap(endTime => PublishResult(ExecutionInfo(startTime, Some(endTime))))
 
-          val run = for {
-            _             <- busyState.update(_.setBusy)
-            _             <- PublishStatus(CellStatusUpdate(id, Running))
-            notebook      <- CurrentNotebook.get
-            cell          <- ZIO(notebook.cell(id))
-            interpreter   <- getOrLaunch(cell.language, CellID(0))
-            state         <- interpreterState.getState
-            prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                  // find the latest executed state that correlates to a notebook cell
-            prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(latestPredef(state))
-            _             <- PublishResult(ClearResults())
-            _             <- PublishResult(ExecutionInfo(startTime, None))
-            _             <- CurrentNotebook.get
-            initialState   = State.id(id, prevState)                                                                    // run the cell while capturing outputs
-            resultState   <- (interpreter.run(cell.content.toString, initialState).provideSomeLayer(CellExecutor.layer(scalaCompiler.classLoader)) >>= updateValues)
-              .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
-            _             <- updateState(resultState)
-            _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
-            _             <- publishEndTime
-            _             <- PublishStatus(CellStatusUpdate(id, Complete))
-            notebook      <- CurrentNotebook.get
-            _             <- busyState.update(_.setIdle)
-          } yield ()
+            val run = for {
+              _             <- busyState.update(_.setBusy)
+              _             <- PublishStatus(CellStatusUpdate(id, Running))
+              notebook      <- CurrentNotebook.get
+              cell          <- ZIO(notebook.cell(id))
+              interpreter   <- getOrLaunch(cell.language, CellID(0))
+              state         <- interpreterState.getState
+              prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                  // find the latest executed state that correlates to a notebook cell
+              prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(latestPredef(state))
+              _             <- PublishResult(ClearResults())
+              _             <- PublishResult(ExecutionInfo(startTime, None))
+              _             <- CurrentNotebook.get
+              initialState   = State.id(id, prevState)                                                                    // run the cell while capturing outputs
+              resultState   <- (interpreter.run(cell.content.toString, initialState).provideSomeLayer(CellExecutor.layer(scalaCompiler.classLoader)) >>= updateValues)
+                .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
+              _             <- updateState(resultState)
+              _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
+              _             <- publishEndTime
+              _             <- PublishStatus(CellStatusUpdate(id, Complete))
+              notebook      <- CurrentNotebook.get
+              _             <- busyState.update(_.setIdle)
+            } yield ()
 
-          run.provideSomeLayer(CurrentRuntime.layer(id)).onInterrupt { _ =>
-            PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
-            PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
-            busyState.update(_.setIdle).orDie *>
-            publishEndTime.orDie
-          }.catchAll {
-            err =>
+            run.provideSomeLayer(CurrentRuntime.layer(id)).onInterrupt { _ =>
+              PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
               PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
-                PublishResult(ErrorResult(err)) *>
-                busyState.update(_.setIdle) *>
-                publishEndTime.orDie
-          }
+              busyState.update(_.setIdle).orDie *>
+              publishEndTime.orDie
+            }.catchAll {
+              err =>
+                PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
+                  PublishResult(ErrorResult(err)) *>
+                  busyState.update(_.setIdle) *>
+                  publishEndTime.orDie
+            }
+        }
       }
-    }
+
+      PublishStatus(CellStatusUpdate(id, Queued)) *>
+      queueTask.map(_.onInterrupt(_ => publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie))
   }
 
   private def latestPredef(state: State) = state.rewindWhile(_.id >= 0) match {
