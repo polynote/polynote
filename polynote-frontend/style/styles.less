@@ -1260,7 +1260,20 @@ select {
   width: 8px;
   cursor: ns-resize;
   z-index: 2;
+
+  .inner {
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    top: 6px;
+    bottom: 6px;
+  }
+
+  &:hover .inner {
+    background: url(icons/grab_texture_opaque.png) repeat-y left top;
+  }
 }
+
 
 .cell-drag-placeholder {
   background: #EEFFEE;
@@ -1669,6 +1682,7 @@ button.inspect.icon-button {
     top: 0;
     bottom: 0;
     cursor: col-resize;
+    z-index: 5;
   }
 }
 

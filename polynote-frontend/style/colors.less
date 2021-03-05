@@ -81,7 +81,32 @@ select {
   }
 }
 
-.cell-container {
+.cell-component:hover .cell-container {
+  border-color: @ui-background-accent;
+}
+
+.cell-dragger:hover .inner {
+  background: @ui-background-accent url(icons/grab_texture_opaque.png) repeat-y left top;
+  background-blend-mode: soft-light;
+}
+
+.active .cell-dragger:hover .inner {
+  background-color: @ui-selected;
+}
+
+.running .cell-dragger:hover .inner {
+  background-color: @icon-green;
+}
+
+.queued .cell-dragger:hover .inner {
+  background-color: gray;
+}
+
+.error .cell-dragger:hover .inner {
+  background-color: #ba0000;
+}
+
+.cell-component .cell-container {
   & > * {
     background: @notebook-background;
   }

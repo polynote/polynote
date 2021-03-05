@@ -93,6 +93,7 @@ class CellDragHandle extends ImmediateDisposable {
     readonly el: TagElement<'div'>;
     private placeholderEl?: TagElement<'div'>;
     private draggingEl?: HTMLElement;
+    private _disabled: boolean = false;
     constructor(parent: CellContainer, notifyMoved: (after: string | null) => Promise<void>) {
         super(() => {
             if (this.onRelease) {
@@ -174,6 +175,9 @@ class CellDragHandle extends ImmediateDisposable {
 
         const onDragStart = (evt: MouseEvent) => {
             evt.preventDefault();
+            if (this.disabled || evt.button !== 0) {
+                return;
+            }
             initialDragX = evt.clientX + 40;
             initialDragY = evt.clientY;
             window.addEventListener("mousemove", onMove);
@@ -196,6 +200,21 @@ class CellDragHandle extends ImmediateDisposable {
         this.el = div(['cell-dragger'], [div(['inner'], [])]);
         this.el.addEventListener('mousedown', onDragStart);
 
+    }
+
+    get disabled(): boolean {
+        return this._disabled;
+    }
+
+    set disabled(disabled: boolean) {
+        if (disabled === this.disabled)
+            return;
+        this._disabled = disabled;
+        if (disabled) {
+            this.el.classList.add("disabled");
+        } else {
+            this.el.classList.remove("disabled");
+        }
     }
 }
 
@@ -229,6 +248,10 @@ export class CellContainer extends Disposable {
                 }
             }, this, 'cellOrder').then(() => {})
         );
+
+        cellState.addObserver(state => {
+            dragHandle.disabled = state.running || state.queued;
+        })
 
         this.el = div(['cell-and-divider'], [
             div(['cell-component'], [dragHandle, this.cell.el]),
@@ -325,6 +348,16 @@ abstract class Cell extends Disposable {
         })
     }
 
+    protected addCellClass(name: string) {
+        this.el?.classList.add(name);
+        this.el?.parentElement?.classList.add(name);
+    }
+
+    protected removeCellClass(name: string) {
+        this.el?.classList.remove(name);
+        this.el?.parentElement?.classList.remove(name);
+    }
+
     doSelect(){
         if (! this.cellState.state.selected) {
             this.notebookState.selectCell(this.id)
@@ -351,7 +384,7 @@ abstract class Cell extends Disposable {
     }
 
     protected onSelected() {
-        this.el?.classList.add("active");
+        this.addCellClass("active");
         this.el?.focus()
         this.scroll()
         if (!document.location.hash.includes(this.cellId)) {
@@ -360,7 +393,7 @@ abstract class Cell extends Disposable {
     }
 
     protected onDeselected() {
-        this.el?.classList.remove("active");
+        this.removeCellClass("active");
     }
 
     protected scroll() {
@@ -682,9 +715,9 @@ export class CodeCell extends Cell {
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
-                this.el.classList.add("error");
+                this.addCellClass("error");
             } else {
-                this.el.classList.remove("error");
+                this.removeCellClass("error");
             }
         }
         updateError(this.state.error)
@@ -692,7 +725,7 @@ export class CodeCell extends Cell {
 
         const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
-                this.el.classList.add("running");
+                this.addCellClass("running");
                 // clear results when a cell starts running:
                 this.cellState.updateField("results", () => clearArray())
 
@@ -700,7 +733,7 @@ export class CodeCell extends Cell {
                 if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
 
             } else {
-                this.el.classList.remove("running");
+                this.removeCellClass("running");
                 if (previously) {
                     const status = this.state.error ? "Error" : "Complete"
                     NotificationHandler.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
@@ -719,12 +752,12 @@ export class CodeCell extends Cell {
 
         const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
             if (queued) {
-                this.el.classList.add("queued");
+                this.addCellClass("queued");
                 if (!previously) {
                     FaviconHandler.inc()
                 }
             } else {
-                this.el.classList.remove("queued");
+                this.removeCellClass("queued");
                 if (previously) {
                     FaviconHandler.dec()
                 }
