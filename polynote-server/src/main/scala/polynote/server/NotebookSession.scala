@@ -82,10 +82,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
 
     case CancelTasks(path) => subscriber.publisher.cancelAll()
 
-    case ClearOutput() => for {
-      cells <- subscriber.publisher.versionedNotebook.clearAllResults()
-      _     <- ZIO.foreach_(cells)(id => PublishMessage(CellResult(id, ClearResults())))
-    } yield ()
+    case ClearOutput() => subscriber.publisher.clearResults()
 
     case nv @ NotebookVersion(path, _) => for {
       versioned  <- subscriber.publisher.latestVersion
