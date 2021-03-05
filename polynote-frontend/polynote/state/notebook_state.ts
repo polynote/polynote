@@ -219,7 +219,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                         selected: true,
                         editing: options?.editing ?? false
                     },
-                    ...(prev === undefined ? {} : {[prev]: {selected: false, editing: false}})
+                    ...((prev === undefined && prev !== id) ? {} : {[prev]: {selected: false, editing: false}})
                 }
             };
             return update;
