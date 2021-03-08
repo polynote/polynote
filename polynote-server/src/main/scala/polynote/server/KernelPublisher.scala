@@ -156,6 +156,11 @@ class KernelPublisher private (
     taskManager.cancelAll() *> cancelKernelTasks
   }.ignore
 
+  def clearResults() = versionedNotebook.clearAllResults().flatMap {
+    clearedCells =>
+      ZIO.foreach_(clearedCells)(id => cellResults.publish1(Option(CellResult(id, ClearResults()))))
+  }
+
   def tasks(): TaskB[List[TaskInfo]] =
     ZIO.ifM(kernelStarting.available.map(_ == 0))(
       taskManager.list,

@@ -198,7 +198,7 @@ export class Notebook extends Disposable {
                 return acc;
             }, undefined);
 
-            const lang = prevCell?.language && prevCell.language !== "text" ? prevCell.language : "scala"; // TODO: make this configurable
+            const lang = prevCell?.language && prevCell.language !== "text" && prevCell.language !== "viz" ? prevCell.language : "scala"; // TODO: make this configurable
 
             this.insertCell(prevCell?.id ?? -1, lang, '');
         });

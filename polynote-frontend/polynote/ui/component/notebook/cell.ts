@@ -393,8 +393,10 @@ abstract class Cell extends Disposable {
 
     protected onSelected() {
         this.addCellClass("active");
-        if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-        this.el?.focus()
+        if (document.activeElement instanceof HTMLElement && !this.el.contains(document.activeElement)){
+            document.activeElement.blur()
+            this.el?.focus()
+        }
         this.scroll()
         if (!document.location.hash.includes(this.cellId)) {
             this.setUrl();
@@ -411,11 +413,12 @@ abstract class Cell extends Disposable {
 
     protected scroll() {
         const viewport = this.el.closest('.notebook-cells');
-        if (viewport instanceof HTMLElement) {
+        const container = this.el.closest('.cell-component')
+        if (viewport instanceof HTMLElement && container instanceof HTMLElement) {
             const viewportScrollTop = viewport.scrollTop;
             const viewportScrollBottom = viewportScrollTop + viewport.clientHeight;
 
-            const elTop = this.el.offsetTop - viewport.offsetTop;
+            const elTop = container.offsetTop - viewport.offsetTop;
             const elBottom = elTop + this.el.offsetHeight;
 
             const buffer = 30 // 30 px buffer for visibility calculation
