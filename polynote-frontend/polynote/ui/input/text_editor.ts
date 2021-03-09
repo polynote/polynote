@@ -46,6 +46,8 @@ export class RichTextEditor {
         this.element.addEventListener('click', (evt) => {
             if (evt.target instanceof HTMLAnchorElement) {
                 Link.showFor(evt.target)
+            } else {
+                Link.hide()
             }
         })
     }
@@ -72,24 +74,24 @@ export class RichTextEditor {
 // TODO: add linky buttons here too, not just on the toolbar.
 class Link {
     readonly el: TagElement<"div">;
-    private listener = () => this.hide()
 
     private constructor(private target: HTMLAnchorElement) {
         this.el = div(['link-component'], [
             a([], target.href, target.href, { target: "_blank" })
-        ]).listener("mousedown", evt => evt.stopPropagation())
+        ]).attr("contentEditable", false) // setting contenteditable to false gives us a proper pointer when hovering.
 
-        document.body.appendChild(this.el);
-        document.body.addEventListener("mousedown", this.listener)
+        target.parentElement?.insertBefore(this.el, target);
 
-        const rect = target.getBoundingClientRect();
-        this.el.style.left = `${rect.left}px`
-        this.el.style.top = `${rect.bottom}px`
+        this.el.style.left = `${target.offsetLeft}px`
+        this.el.style.top = `${target.offsetTop + target.offsetHeight}px`
     }
 
     hide() {
-        if (document.body.contains(this.el)) document.body.removeChild(this.el)
-        document.body.removeEventListener("mousedown", this.listener)
+        this.el.parentElement?.removeChild(this.el)
+    }
+
+    static hide() {
+        Link.inst?.hide()
     }
 
     private static inst: Link;
