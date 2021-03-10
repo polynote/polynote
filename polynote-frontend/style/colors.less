@@ -85,25 +85,29 @@ select {
   border-color: @ui-background-accent;
 }
 
-.cell-dragger:hover .inner {
+.cell-dragger:hover .inner, .dragging .cell-dragger .inner {
   background: @ui-background-accent url(icons/grab_texture_opaque.png) repeat-y left top;
   background-blend-mode: soft-light;
 }
 
-.active .cell-dragger:hover .inner {
+.active .cell-dragger:hover .inner, .dragging .active .cell-dragger .inner {
   background-color: @ui-selected;
 }
 
-.running .cell-dragger:hover .inner {
+.running .cell-dragger:hover .inner, .dragging .running .cell-dragger .inner {
   background-color: @icon-green;
 }
 
-.queued .cell-dragger:hover .inner {
+.queued .cell-dragger:hover .inner, .dragging .queued .cell-dragger .inner {
   background-color: gray;
 }
 
-.error .cell-dragger:hover .inner {
+.error .cell-dragger:hover .inner, .dragging .error .cell-dragger .inner {
   background-color: #ba0000;
+}
+
+.dragging .cell-container {
+    border-color: @ui-background-accent;
 }
 
 .cell-component .cell-container {

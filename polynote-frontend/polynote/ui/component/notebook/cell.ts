@@ -94,6 +94,8 @@ class CellDragHandle extends ImmediateDisposable {
     private placeholderEl?: TagElement<'div'>;
     private draggingEl?: HTMLElement;
     private _disabled: boolean = false;
+    private scrollInterval: number = 0;
+
     constructor(parent: CellContainer, notifyMoved: (after: string | null) => Promise<void>) {
         super(() => {
             if (this.onRelease) {
@@ -109,8 +111,11 @@ class CellDragHandle extends ImmediateDisposable {
         let initialDragY = 0;
         let initialDragX = 0;
         let initialY = 0;
+        let currentMouseY = 0;
+        let initialScroll = 0;
         let animFrame = 0;
         let initialPrev: Element | null | undefined = undefined;
+        let bounds: DOMRect = new DOMRect(0, 0, 0, 0);
 
         const getCellAtPoint: (x: number, y: number) => (HTMLElement | undefined) = (x, y) => {
             const el = document.elementsFromPoint(x, y)
@@ -120,34 +125,67 @@ class CellDragHandle extends ImmediateDisposable {
             return undefined;
         }
 
-        const onMove = (evt: MouseEvent) => {
-            evt.preventDefault();
-            const dY = evt.clientY - initialDragY;
+        const reposition = () => {
+            const dY = currentMouseY - initialDragY;
             const draggingEl = this.draggingEl!;
-            const placeholder = this.placeholderEl!;
 
             if (animFrame) {
                 window.cancelAnimationFrame(animFrame);
             }
             animFrame = window.requestAnimationFrame(() => {
                 animFrame = 0;
-                const newY = initialY + dY;
-                const goingUp = newY < draggingEl.offsetTop;
-
-                draggingEl.style.top = newY + 'px';
-
-                const draggingOver = getCellAtPoint(initialDragX, evt.clientY);
-                if (draggingOver) {
-                    const dims = draggingOver.getBoundingClientRect();
-                    const mid = dims.y + (dims.height / 2);
-                    const next = evt.clientY < mid ? draggingOver : draggingOver.nextElementSibling;
-                    placeholder.parentElement!.insertBefore(placeholder, next);
-                }
+                draggingEl.style.top = (initialY + dY) + (draggingEl.parentElement!.scrollTop - initialScroll) + 'px';
             });
-            // TODO: handle scrolling the viewport
+        }
+
+        const movePlaceholder = () => {
+            const placeholder = this.placeholderEl!;
+            const draggingOver = getCellAtPoint(initialDragX, currentMouseY);
+            if (draggingOver) {
+                const scrollTop = placeholder.parentElement!.scrollTop;
+                const dims = draggingOver.getBoundingClientRect();
+                const mid = dims.y + (dims.height / 2);
+                const next = currentMouseY < mid ? draggingOver : draggingOver.nextElementSibling;
+                if (placeholder.nextSibling !== next) {
+                    placeholder.parentElement!.insertBefore(placeholder, next);
+                    if (placeholder.offsetTop < scrollTop || placeholder.offsetTop + placeholder.offsetHeight > scrollTop + bounds.height) {
+                        placeholder.scrollIntoView();
+                    }
+                }
+            }
+        }
+
+        const onMove = (evt: MouseEvent) => {
+            evt.preventDefault();
+            currentMouseY = evt.clientY;
+            reposition();
+            movePlaceholder();
+        }
+
+        const startScrolling = () => {
+            if (!this.scrollInterval) {
+                this.scrollInterval = window.setInterval(() => {
+                    const scrollTop = parent.el.parentElement!.scrollTop;
+                    const scrollUpAmount = bounds.y + 40 - currentMouseY;
+                    const scrollDownAmount = currentMouseY - bounds.bottom + 40;
+                    if (scrollUpAmount > 0 && parent.el.offsetTop < scrollTop) {
+                        parent.el.parentElement!.scrollBy(0, -scrollUpAmount);
+                    } else if (scrollDownAmount > 0 && parent.el.offsetTop + parent.el.offsetHeight > scrollTop + bounds.height) {
+                        parent.el.parentElement!.scrollBy(0, scrollDownAmount);
+                    }
+                }, 40)
+            }
+        }
+
+        const stopScrolling = () => {
+            if (this.scrollInterval) {
+                window.clearInterval(this.scrollInterval);
+                this.scrollInterval = 0;
+            }
         }
 
         const removeListeners = () => {
+            stopScrolling();
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onRelease);
             window.removeEventListener("blur", onRelease);
@@ -157,7 +195,8 @@ class CellDragHandle extends ImmediateDisposable {
             removeListeners();
             const placeholder = this.placeholderEl!;
             const draggingEl = this.draggingEl!;
-            const newPrev = placeholder.previousElementSibling;
+            draggingEl.parentElement!.removeEventListener('scroll', reposition);
+            const newPrev = placeholder.previousElementSibling === draggingEl ? draggingEl.previousElementSibling : placeholder.previousElementSibling;
             placeholder.parentNode!.removeChild(placeholder);
 
             const notified = newPrev !== initialPrev ? notifyMoved(newPrev?.getAttribute('data-cellid') ?? null) : Promise.resolve();
@@ -174,7 +213,10 @@ class CellDragHandle extends ImmediateDisposable {
         }
 
         const onDragStart = (evt: MouseEvent) => {
+            if (evt.button !== 0)   // only the main mouse button
+                return;
             evt.preventDefault();
+            startScrolling();
             if (this.disabled || evt.button !== 0) {
                 return;
             }
@@ -185,16 +227,18 @@ class CellDragHandle extends ImmediateDisposable {
             window.addEventListener("blur", onRelease);
             this.onRelease = onRelease;
             const draggingEl = this.draggingEl = parent.el;
+            draggingEl.parentElement!.addEventListener('scroll', reposition);
+            bounds = draggingEl.parentElement!.getBoundingClientRect();
+            initialScroll = draggingEl.parentElement!.scrollTop;
             initialPrev = draggingEl.previousElementSibling;
             initialY = draggingEl.offsetTop;
             this.placeholderEl = div(['cell-drag-placeholder'], []);
             this.placeholderEl.style.height = draggingEl.offsetHeight + 'px';
-            console.log(draggingEl.offsetTop, draggingEl.offsetParent);
             draggingEl.style.top = draggingEl.offsetTop + 'px';
             draggingEl.style.left = draggingEl.offsetLeft + 'px';
             draggingEl.style.width = draggingEl.offsetWidth + 'px';
             draggingEl.classList.add('dragging');
-            draggingEl.parentElement!.insertBefore(this.placeholderEl, draggingEl.nextSibling);
+            draggingEl.parentElement!.insertBefore(this.placeholderEl, draggingEl);
         }
 
         this.el = div(['cell-dragger'], [div(['inner'], [])]);
@@ -242,10 +286,17 @@ export class CellContainer extends Disposable {
             this,
             newPrev => notebookState.updateAsync(state => {
                 const myIndex = state.cellOrder.indexOf(id);
-                const newIndex = newPrev ? state.cellOrder.indexOf(parseInt(newPrev, 10)) + 1 : 0;
-                return {
-                    cellOrder: moveArrayValue(myIndex, newIndex)
+                if (newPrev) {
+                    const newIndex = state.cellOrder.indexOf(parseInt(newPrev, 10));
+                    return {
+                        cellOrder: moveArrayValue(myIndex, Math.max(newIndex < myIndex ? newIndex + 1 : newIndex, 0))
+                    }
+                } else {
+                    return {
+                        cellOrder: moveArrayValue(myIndex, 0)
+                    }
                 }
+
             }, this, 'cellOrder').then(() => {})
         );
 
