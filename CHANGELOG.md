@@ -1,6 +1,60 @@
 # Unreleased
-* Distribution now ships with kernels for all supported Scala versions. Which Scala version to use can be configured with `kernel.scalaVersion` or per-notebook, and is automatically detected if not configured.
-* Configuration option `behavior.kernel_isolation: never` is no longer supported – spark kernels can no longer be launched in-process. `never` is now deprecated; it behaves the same way as `spark` (remote kernel iff notebook uses Spark) and will be removed in a future version.
+* **Frontend Rewrite** The frontend has been rewritten from the ground up. This change should be mostly transparent to 
+  users, but puts us on a much better footing for future improvements. The rewrite did resolve a few longstanding issues 
+  and add a few minor features:
+    * Notebook tabs are now restored upon reload (stored in the browser). #451
+    * Fix a bug with large notebook scrolling #923
+    * Fixed the Kill kernel button in the Running Kernels UI #756
+    * Symbol table now clears when the kernel is restarted #208
+    * Whitespace in configuration is now trimmed #497
+    * Cell status badges are shown after reload #449
+    * When the editor is disconnected an obvious error is shown to the user #721 #701
+    * Improvements to UI reconnection logic after server restarts #736
+* New **Plot Editor**! 
+  * Brand new plot editor which supports re-editing plots, pie plots, bubble plots, native histogram, coloring by a dimension in many plots, faceted/trellis plots!
+  * Data tables (from the data browser) and data views (expando-thingy) can also be embedded persistently in the notebook!
+  * No more inspection modal! It’s a cell in the notebook!
+* New **Copy to Clipboard** button added to cells with output.
+* Support for **Multiple Scala Versions** at the same time! So far only 2.11 and 2.12, sorry. Blame Spark)
+  * The Scala version can now be set per-notebook. It is no longer related to the server Scala version.
+  * Distribution now ships with kernels for all supported Scala versions. 
+  * Which Scala version to use can also be configured with `kernel.scalaVersion`. It is automatically detected if not configured.
+  * `shapeless` was also removed from our dependencies.
+* Configuration for **setting JVM options** on Kernels. #695  
+* Improvements to **dependency caching** #1042
+  * New UI treatment for choosing caching preferences for dependencies. There is a new `...` button next to each dependency. 
+  * Behavior depend on the type of dependency: 
+    * Cache status of JVM dependencies specified via URL (e.g., `s3` or `http`) can be individually toggled in the UI
+    * Cache status of pip dependencies can be toggled in the UI, but doing so will just reset the virtualenv (i.e., it will affect all pip dependencies). 
+    * Cache status of coordinate dependencies are always cached. 
+* Matplotlib output now defaults to PNG format. It can be configured to SVG format as well using `PolynoteBackend.output_format = 'svg' # or 'png'`. #1037
+* Polynote now creates the notebook directory if it doesn't already exist. #964 (thanks @akiyamaneko !)
+* Stack traces are now saved into the notebook file #981
+* Properly set PYTHONPATH on executors, fix regression causing pip dependencies not to be added to Spark automatically #1000
+* Hyperlinks now clickable in text cells #106 
+* New `SparkRepr` for `Array[Row]` #999 (thanks @tmnd1991 !) 
+* Scalar seqs are now streamed as structs. #1058  
+* Added `DEVELOPING.md` (thanks @easel !)
+
+**Deprecations** 
+* Configuration option `behavior.kernel_isolation: never` is no longer supported – spark kernels can no longer be 
+  launched in-process. `never` is now deprecated; it behaves the same way as `spark` (remote kernel iff notebook uses Spark) 
+  and will be removed in a future version.
+
+**Bugfixes**
+* Fix for some kernel launching issues (one causing duplicate kernels, another causing kernels to be interrupted erroneously) #996
+* Python dependency virtualenv is now reset when a change is detected. #921
+* Polynote now shows an error when Python dependencies are not found #450  
+* Fix bug preventing http and s3 dependencies from being cached #1027
+* Fix bug running Polynote on Python versions below 3.7 #972 (thanks @akiyamaneko !)
+* Added Java8 compile flag (thanks @Lanking !)
+* Update Coursier to 2.0.0-RC5-6 which fixes an issue Coursier has resolving platform-native libraries #998, # 1004 (thanks @kamilkloch !)
+* Py4j gateway is now created on the jep thread, allowing py4j to see dependency jars. 
+* Polynote now extracts notebook name from Zeppelin json when importing (thanks @Ewan-Keith !)
+* Fix issues preventing deletion of a notebook #974
+* Properly handle duplicated dependencies #1039
+* Fix some bugs with the LaTeX editor #969
+
 
 # 0.3.12 (Sep 16, 2020)
 * Fix an issue with Python Data Classes
