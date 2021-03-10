@@ -1125,6 +1125,8 @@ class CodeCellOutput extends Disposable {
     private readonly resultTabs: TagElement<"div">;
     private cellErrorDisplay?: TagElement<"div">;
 
+    private displaying: Promise<void> = Promise.resolve();
+
     constructor(
         private notebookState: NotebookStateHandler,
         private cellState: StateView<CellState>,
@@ -1151,15 +1153,15 @@ class CodeCellOutput extends Disposable {
             ]),
         ]);
 
-        const handleResults = (results: (ClientResult | ResultValue)[]) => {
-            if (results.length > 0) {
-                results.forEach(res => this.displayResult(res))
-            } else {
-                this.clearResults()
+        const handleResults = (results: (ClientResult | ResultValue)[], updateResult?: UpdateResult<(ClientResult | ResultValue)[]>) => {
+            if (!updateResult || updateResult.update instanceof SetValue) {
+                this.clearResults().then(() => this.displayResults(results));
+            } else if (updateResult.addedValues) {
+                this.displayResults(Object.values(updateResult.addedValues));
             }
         }
         handleResults(resultsHandler.state)
-        resultsHandler.addObserver((results: (ClientResult | ResultValue)[]) => handleResults(results));
+        resultsHandler.addObserver(handleResults);
 
         compileErrorsHandler.addObserver(errors => this.setErrors(errors));
 
@@ -1169,69 +1171,76 @@ class CodeCellOutput extends Disposable {
         });
 
         const handleOutput = (outputs: Output[], result?: UpdateResult<Output[]>) => {
-            if (result) {
-                if (result.update instanceof SetValue) {
-                    this.clearOutput();
-                } else if (result.addedValues) {
-                    for (const output of Object.values(result.addedValues)) {
-                        this.addOutput(output.contentType, output.content.join(''))
-                    }
+            if (!result || result.update instanceof SetValue) {
+                this.clearOutput();
+                outputs.forEach(o => this.addOutput(o.contentType, o.content.join('')));
+            } else if (result.addedValues) {
+                for (const output of Object.values(result.addedValues)) {
+                    this.addOutput(output.contentType, output.content.join(''))
                 }
-            } else {
-                outputs.forEach(o => {
-                    this.addOutput(o.contentType, o.content.join(''))
-                })
             }
         }
         handleOutput(outputHandler.state);
         outputHandler.addObserver(handleOutput);
     }
 
-    private displayResult(result: ResultValue | ClientResult) {
-        if (result instanceof ResultValue) {
-            // clear results
-            this.resultTabs.innerHTML = '';
+    private displayResults(results: (ResultValue | ClientResult)[]): Promise<void> {
+        const displayResult: (result: ResultValue | ClientResult) => Promise<void> = (result) => {
+            if (result instanceof ResultValue) {
+                // clear results
+                this.resultTabs.innerHTML = '';
 
-            if (result.name !== "Out" && result.reprs.length > 1) {
-                // TODO: hover for result text?
-                //       Note: tried a "content widget" to bring up the value inspector. It just kinda got in the way.
-            } else if (result.reprs.length > 0) {
-                let inspectIcon: TagElement<"button">[] = [];
-                if (result.reprs.length > 1) {
-                    inspectIcon = [
-                        iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
-                            evt => {
-                                this.notebookState.insertInspectionCell(result)
-                            }
-                        )
-                    ]
+                if (result.name !== "Out" && result.reprs.length > 1) {
+                    // TODO: hover for result text?
+                    //       Note: tried a "content widget" to bring up the value inspector. It just kinda got in the way.
+                    return Promise.resolve();
+                } else if (result.reprs.length > 0) {
+                    let inspectIcon: TagElement<"button">[] = [];
+                    if (result.reprs.length > 1) {
+                        inspectIcon = [
+                            iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
+                                evt => {
+                                    this.notebookState.insertInspectionCell(result)
+                                }
+                            )
+                        ]
+                    }
+
+                    const outLabel = div(['out-ident', 'with-reprs'], [...inspectIcon, 'Out:']);
+                    this.cellResultMargin.innerHTML = '';
+                    this.cellResultMargin.appendChild(outLabel);
+
+                    return this.displayRepr(result).then(display => {
+                        const [mime, content] = display;
+                        const [mimeType, args] = parseContentType(mime);
+                        this.buildOutput(mime, args, content).then((el: MIMEElement) => {
+                            this.resultTabs.appendChild(el);
+                            el.dispatchEvent(new CustomEvent('becameVisible'));
+                            this.cellOutputTools.classList.add('output');
+                        })
+                    }).then(() => {})
+                } else {
+                    return Promise.resolve();
                 }
-
-                const outLabel = div(['out-ident', 'with-reprs'], [...inspectIcon, 'Out:']);
-                this.cellResultMargin.innerHTML = '';
-                this.cellResultMargin.appendChild(outLabel);
-
-                this.displayRepr(result).then(display => {
-                    const [mime, content] = display;
-                    const [mimeType, args] = parseContentType(mime);
-                    this.buildOutput(mime, args, content).then((el: MIMEElement) => {
-                        this.resultTabs.appendChild(el);
-                        el.dispatchEvent(new CustomEvent('becameVisible'));
-                        this.cellOutputTools.classList.add('output');
-                    })
-                })
+            } else {
+                this.cellOutputTools.classList.add('output');
+                this.resultTabs.innerHTML = '';
+                this.clearOutput();
+                result.display(this.cellOutputDisplay);
+                return Promise.resolve();
             }
-        } else {
-            this.cellOutputTools.classList.add('output');
-            this.resultTabs.innerHTML = '';
-            this.clearOutput();
-            result.display(this.cellOutputDisplay);
         }
+
+        this.displaying = results.reduce((accum, next) => accum.then(() => displayResult(next)), this.displaying);
+        return this.displaying;
     }
 
-    private clearResults() {
-        this.resultTabs.innerHTML = '';
-        this.cellResultMargin.innerHTML = '';
+    private clearResults(): Promise<void> {
+        this.displaying = this.displaying.then(() => {
+            this.resultTabs.innerHTML = '';
+            this.cellResultMargin.innerHTML = '';
+        });
+        return this.displaying;
     }
 
     private displayRepr(result: ResultValue): Promise<[string, string | DocumentFragment]> {
