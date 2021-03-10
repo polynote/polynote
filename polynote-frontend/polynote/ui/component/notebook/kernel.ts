@@ -438,20 +438,31 @@ class KernelSymbolViewWidget {
     private currentValue?: ResultValue;
     private currentHandler?: NotebookStateHandler;
 
+    private currentLayout?: DOMRect;
+
     private hideTimeout: number = 0;
     private readonly cancelHide: () => void = () => {
         if (this.hideTimeout) {
             window.clearTimeout(this.hideTimeout);
             this.hideTimeout = 0;
+            this.el.style.opacity = '1.0';
         }
     }
 
     private handleHide: () => void = () => {
         this.cancelHide();
-        this.hideTimeout = window.setTimeout(() => this.hide(), 180);
+        this.hideTimeout = window.setTimeout(() => {
+            this.el.style.opacity = '0';
+            this.hideTimeout = window.setTimeout(() => this.hide(), 250);
+        }, 180);
     }
 
-    private relayout: () => void = () => this.layout(false);
+    private relayout: () => void = () => {
+        const newLayout = this.el.getBoundingClientRect();
+        if (!this.currentLayout || this.currentLayout.height !== newLayout.height) {
+            this.layout(false);
+        }
+    }
 
     constructor() {
         this.el = div(['kernel-symbol-widget'], [
@@ -466,8 +477,8 @@ class KernelSymbolViewWidget {
                 ])
             ])
         ]);
-        this.el.addEventListener('mouseout', this.handleHide);
-        this.el.addEventListener('mouseover', this.cancelHide);
+        this.el.addEventListener('mouseleave', this.handleHide);
+        this.el.addEventListener('mouseenter', this.cancelHide);
         this.content.addEventListener('toggle', this.relayout);
         window.addEventListener('resize', this.relayout);
         this.el.style.opacity = '0';
@@ -519,9 +530,18 @@ class KernelSymbolViewWidget {
 
     }
 
+    /**
+     * Layout the widget.
+     * @param canMove If true, the widget can be re-positioned to be centered when possible. If false, the widget won't
+     *                be repositioned (for example, if it is already visible but we are redoing its layout in response
+     *                to a toggle event in the content, then we don't want it to jump around)
+     * @private
+     */
     private layout(canMove: boolean = true) {
         if (this.currentElement) {
-            const rowDims = this.currentElement.getBoundingClientRect();
+            const targetEl = this.currentElement;
+            this.buttons.style.marginTop = '0';
+            const rowDims = targetEl.getBoundingClientRect();
             const right = (document.body.clientWidth - rowDims.left);
             this.el.style.right = right + 'px';
             this.el.style.maxWidth = (document.body.clientWidth - right - 200) + 'px';
@@ -529,12 +549,10 @@ class KernelSymbolViewWidget {
             document.body.appendChild(this.el);
 
             const widgetDims = this.el.getBoundingClientRect();
-
             // center the widget vertically as much as possible
             let top = (rowDims.y + (rowDims.height / 2) - (widgetDims.height / 2));
             if (top >= 20 && (top + widgetDims.height + 20 < document.body.clientHeight) && canMove) {
                 this.el.classList.remove('floating');
-                this.buttons.style.marginTop = '0';
                 this.el.style.top = top + 'px';
                 this.pointer.style.top = '';
             } else {
@@ -555,6 +573,7 @@ class KernelSymbolViewWidget {
                 this.pointer.style.top = arrowY + 'px';
                 this.buttons.style.marginTop = (arrowY - (this.buttons.clientHeight / 2)) + 'px';
             }
+            this.currentLayout = this.el.getBoundingClientRect();
         }
     }
 
@@ -588,13 +607,13 @@ class KernelSymbolViewWidget {
 
     private setFocus(focus?: [HTMLElement, ResultValue, NotebookStateHandler]) {
         if (this.currentElement) {
-            this.currentElement?.removeEventListener('mouseout', this.handleHide);
-            this.currentElement?.removeEventListener('mouseover', this.cancelHide);
+            this.currentElement?.removeEventListener('mouseleave', this.handleHide);
+            this.currentElement?.removeEventListener('mouseenter', this.cancelHide);
         }
         if (focus) {
             const [targetEl, targetValue, targetHandler] = focus;
-            targetEl.addEventListener('mouseout', this.handleHide);
-            targetEl.addEventListener('mouseover', this.cancelHide);
+            targetEl.addEventListener('mouseleave', this.handleHide);
+            targetEl.addEventListener('mouseenter', this.cancelHide);
             this.currentElement = targetEl;
             this.currentValue = targetValue;
             this.currentHandler = targetHandler;
@@ -602,6 +621,10 @@ class KernelSymbolViewWidget {
     }
 
     hide() {
+        if (this.hideTimeout) {
+            clearTimeout(this.hideTimeout);
+            this.hideTimeout = 0;
+        }
         this.setFocus(undefined);
         this.el.style.maxHeight = '90vh';
         this.el.style.maxWidth = 'none';
