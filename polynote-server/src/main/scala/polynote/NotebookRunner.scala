@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 import java.time.{Instant, LocalDate, OffsetDateTime, ZoneId, ZoneOffset}
 import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
-
 import polynote.app.MainArgs
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelStatusUpdate}
 import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishResult, PublishStatus}
@@ -18,7 +17,9 @@ import polynote.server.repository.fs.FileSystems
 import zio.blocking.{Blocking, effectBlocking}
 import zio.{Has, IO, Queue, RIO, Ref, Task, UIO, URIO, URLayer, ZIO, ZLayer}
 import ZIO.{effect, effectTotal}
-import zio.clock, clock.Clock
+import zio.clock
+import clock.Clock
+import polynote.kernel.interpreter.InterpreterState
 import zio.interop.catz._
 import zio.stream.Take
 
@@ -26,7 +27,7 @@ import scala.annotation.tailrec
 
 object NotebookRunner {
 
-  type CellBaseEnv = BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with PublishStatus
+  type CellBaseEnv = BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with PublishStatus with InterpreterState
   type KernelFactoryEnv = CellBaseEnv with NotebookUpdates
 
   def main: ZIO[AppEnv, String, Int] = for {
@@ -64,10 +65,10 @@ object NotebookRunner {
 
   def runNotebook(notebook: Notebook): RIO[AppEnv with PublishStatus, Notebook] =
     runWithEnv.provideSomeLayer[AppEnv with PublishStatus] {
-      CurrentNotebook.const(notebook) ++ TaskManager.layer ++ NotebookUpdates.empty
+      CurrentNotebook.const(notebook) ++ TaskManager.layer ++ NotebookUpdates.empty ++ InterpreterState.emptyLayer
     }
 
-  def runWithEnv: ZIO[AppEnv with CellBaseEnv with NotebookUpdates, Throwable, Notebook] =
+  def runWithEnv: ZIO[AppEnv with KernelFactoryEnv, Throwable, Notebook] =
     startKernel.provideSomeLayer[KernelFactoryEnv](PublishResult.ignore).toManaged(_.shutdown().orDie).use {
       kernel =>
         for {

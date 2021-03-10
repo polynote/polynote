@@ -2,13 +2,12 @@ package polynote
 
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
-
 import cats.effect.Concurrent
 import cats.effect.concurrent.Ref
 import fs2.Stream
 import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask, PublishResult, PublishStatus}
-import polynote.kernel.interpreter.Interpreter
+import polynote.kernel.interpreter.{Interpreter, InterpreterState}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.messages.{ByteVector32, Notebook}
@@ -31,7 +30,7 @@ package object kernel {
   type GlobalEnv = Config with Interpreter.Factories with Kernel.Factory
 
   // CellEnv is provided to the kernel by its host when a cell is being run
-  type CellEnv = CurrentNotebook with TaskManager with PublishStatus with PublishResult
+  type CellEnv = CurrentNotebook with InterpreterState with TaskManager with PublishStatus with PublishResult
 
   // InterpreterEnv is provided to the interpreter by the Kernel when running cells
   type InterpreterEnv = Blocking with PublishResult with PublishStatus with CurrentTask with CurrentRuntime

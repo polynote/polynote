@@ -6,7 +6,7 @@ import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.environment.{CurrentNotebook, CurrentRuntime, NotebookUpdates}
-import polynote.kernel.interpreter.{CellExecutor, Interpreter}
+import polynote.kernel.interpreter.{CellExecutor, Interpreter, InterpreterState}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
@@ -76,7 +76,7 @@ case class MockKernelEnv(
     ZLayer.succeedMany {
       baseEnv ++ Has.allOf(kernelFactory, interpreterFactories, taskManager, notebookUpdates, polynoteConfig) ++
         Has(streamingHandles) ++ Has(publishResult: Publish[Task, Result]) ++ Has(publishStatus: Publish[Task, KernelStatusUpdate])
-    } ++ CurrentNotebook.layer(currentNotebook)
+    } ++ CurrentNotebook.layer(currentNotebook) ++ InterpreterState.emptyLayer
 
 }
 

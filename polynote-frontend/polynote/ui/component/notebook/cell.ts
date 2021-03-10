@@ -4,7 +4,7 @@ import {
     clearArray,
     Disposable,
     EditString,
-    editString,
+    editString, ImmediateDisposable, moveArrayValue,
     removeFromArray,
     SetValue,
     setValue,
@@ -88,6 +88,180 @@ export type CodeCellModel = editor.ITextModel & {
     requestSignatureHelp(pos: number): Promise<SignatureHelpResult>
 };
 
+class CellDragHandle extends ImmediateDisposable {
+    private onRelease?: () => void;
+    readonly el: TagElement<'div'>;
+    private placeholderEl?: TagElement<'div'>;
+    private draggingEl?: HTMLElement;
+    private _disabled: boolean = false;
+    private scrollInterval: number = 0;
+
+    constructor(parent: CellContainer, notifyMoved: (after: string | null) => Promise<void>) {
+        super(() => {
+            if (this.onRelease) {
+                this.onRelease();
+            }
+            if (this.el.parentNode) {
+                this.el.parentNode.removeChild(this.el);
+            }
+            this.el.removeEventListener('mousedown', onDragStart);
+        });
+        this.disposeWith(parent);
+
+        let initialDragY = 0;
+        let initialDragX = 0;
+        let initialY = 0;
+        let currentMouseY = 0;
+        let initialScroll = 0;
+        let animFrame = 0;
+        let initialPrev: Element | null | undefined = undefined;
+        let bounds: DOMRect = new DOMRect(0, 0, 0, 0);
+
+        const getCellAtPoint: (x: number, y: number) => (HTMLElement | undefined) = (x, y) => {
+            const el = document.elementsFromPoint(x, y)
+                .filter(el => el !== this.draggingEl && el.classList.contains('cell-and-divider'))[0];
+            if (el)
+                return el as HTMLElement;
+            return undefined;
+        }
+
+        const reposition = () => {
+            const dY = currentMouseY - initialDragY;
+            const draggingEl = this.draggingEl!;
+
+            if (animFrame) {
+                window.cancelAnimationFrame(animFrame);
+            }
+            animFrame = window.requestAnimationFrame(() => {
+                animFrame = 0;
+                draggingEl.style.top = (initialY + dY) + (draggingEl.parentElement!.scrollTop - initialScroll) + 'px';
+            });
+        }
+
+        const movePlaceholder = () => {
+            const placeholder = this.placeholderEl!;
+            const draggingOver = getCellAtPoint(initialDragX, currentMouseY);
+            if (draggingOver) {
+                const scrollTop = placeholder.parentElement!.scrollTop;
+                const dims = draggingOver.getBoundingClientRect();
+                const mid = dims.y + (dims.height / 2);
+                const next = currentMouseY < mid ? draggingOver : draggingOver.nextElementSibling;
+                if (placeholder.nextSibling !== next) {
+                    placeholder.parentElement!.insertBefore(placeholder, next);
+                    if (placeholder.offsetTop < scrollTop || placeholder.offsetTop + placeholder.offsetHeight > scrollTop + bounds.height) {
+                        placeholder.scrollIntoView();
+                    }
+                }
+            }
+        }
+
+        const onMove = (evt: MouseEvent) => {
+            evt.preventDefault();
+            currentMouseY = evt.clientY;
+            reposition();
+            movePlaceholder();
+        }
+
+        const startScrolling = () => {
+            if (!this.scrollInterval) {
+                this.scrollInterval = window.setInterval(() => {
+                    const scrollTop = parent.el.parentElement!.scrollTop;
+                    const scrollUpAmount = bounds.y + 40 - currentMouseY;
+                    const scrollDownAmount = currentMouseY - bounds.bottom + 40;
+                    if (scrollUpAmount > 0 && parent.el.offsetTop < scrollTop) {
+                        parent.el.parentElement!.scrollBy(0, -scrollUpAmount);
+                    } else if (scrollDownAmount > 0 && parent.el.offsetTop + parent.el.offsetHeight > scrollTop + bounds.height) {
+                        parent.el.parentElement!.scrollBy(0, scrollDownAmount);
+                    }
+                }, 40)
+            }
+        }
+
+        const stopScrolling = () => {
+            if (this.scrollInterval) {
+                window.clearInterval(this.scrollInterval);
+                this.scrollInterval = 0;
+            }
+        }
+
+        const removeListeners = () => {
+            stopScrolling();
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onRelease);
+            window.removeEventListener("blur", onRelease);
+        }
+
+        const onRelease = () => {
+            removeListeners();
+            const placeholder = this.placeholderEl!;
+            const draggingEl = this.draggingEl!;
+            draggingEl.parentElement!.removeEventListener('scroll', reposition);
+            const newPrev = placeholder.previousElementSibling === draggingEl ? draggingEl.previousElementSibling : placeholder.previousElementSibling;
+            placeholder.parentNode!.removeChild(placeholder);
+
+            const notified = newPrev !== initialPrev ? notifyMoved(newPrev?.getAttribute('data-cellid') ?? null) : Promise.resolve();
+            notified.then(() => {
+                draggingEl.classList.remove('dragging');
+                draggingEl.style.top = '';
+                draggingEl.style.left = '';
+                draggingEl.style.width = '';
+            });
+
+            this.draggingEl = undefined;
+            this.placeholderEl = undefined;
+            this.onRelease = undefined;
+        }
+
+        const onDragStart = (evt: MouseEvent) => {
+            if (evt.button !== 0)   // only the main mouse button
+                return;
+            evt.preventDefault();
+            startScrolling();
+            if (this.disabled || evt.button !== 0) {
+                return;
+            }
+            initialDragX = evt.clientX + 40;
+            initialDragY = evt.clientY;
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onRelease);
+            window.addEventListener("blur", onRelease);
+            this.onRelease = onRelease;
+            const draggingEl = this.draggingEl = parent.el;
+            draggingEl.parentElement!.addEventListener('scroll', reposition);
+            bounds = draggingEl.parentElement!.getBoundingClientRect();
+            initialScroll = draggingEl.parentElement!.scrollTop;
+            initialPrev = draggingEl.previousElementSibling;
+            initialY = draggingEl.offsetTop;
+            this.placeholderEl = div(['cell-drag-placeholder'], []);
+            this.placeholderEl.style.height = draggingEl.offsetHeight + 'px';
+            draggingEl.style.top = draggingEl.offsetTop + 'px';
+            draggingEl.style.left = draggingEl.offsetLeft + 'px';
+            draggingEl.style.width = draggingEl.offsetWidth + 'px';
+            draggingEl.classList.add('dragging');
+            draggingEl.parentElement!.insertBefore(this.placeholderEl, draggingEl);
+        }
+
+        this.el = div(['cell-dragger'], [div(['inner'], [])]);
+        this.el.addEventListener('mousedown', onDragStart);
+
+    }
+
+    get disabled(): boolean {
+        return this._disabled;
+    }
+
+    set disabled(disabled: boolean) {
+        if (disabled === this.disabled)
+            return;
+        this._disabled = disabled;
+        if (disabled) {
+            this.el.classList.add("disabled");
+        } else {
+            this.el.classList.remove("disabled");
+        }
+    }
+}
+
 export class CellContainer extends Disposable {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
@@ -95,13 +269,46 @@ export class CellContainer extends Disposable {
     private path: string;
     private cellState: StateHandler<CellState>;
 
-    constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler, state: StateHandler<CellState>) {
+    constructor(
+        newCellDivider: TagElement<'div'>,
+        private dispatcher: NotebookMessageDispatcher,
+        private notebookState: NotebookStateHandler,
+        state: StateHandler<CellState>
+    ) {
         super()
         const cellState = this.cellState = state.fork(this);
-        this.cellId = `Cell${cellState.state.id}`;
+        const id = cellState.state.id;
+        this.cellId = `Cell${id}`;
         this.cell = this.cellFor(cellState.state.language);
         this.path = notebookState.state.path;
-        this.el = div(['cell-component'], [this.cell.el]);
+
+        const dragHandle = new CellDragHandle(
+            this,
+            newPrev => notebookState.updateAsync(state => {
+                const myIndex = state.cellOrder.indexOf(id);
+                if (newPrev) {
+                    const newIndex = state.cellOrder.indexOf(parseInt(newPrev, 10));
+                    return {
+                        cellOrder: moveArrayValue(myIndex, Math.max(newIndex < myIndex ? newIndex + 1 : newIndex, 0))
+                    }
+                } else {
+                    return {
+                        cellOrder: moveArrayValue(myIndex, 0)
+                    }
+                }
+
+            }, this, 'cellOrder').then(() => {})
+        );
+
+        cellState.addObserver(state => {
+            dragHandle.disabled = state.running || state.queued;
+        })
+
+        this.el = div(['cell-and-divider'], [
+            div(['cell-component'], [dragHandle, this.cell.el]),
+            newCellDivider
+        ]).dataAttr('data-cellid', id.toString());
+
         this.el.click(evt => this.cell.doSelect());
         cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
@@ -200,6 +407,16 @@ abstract class Cell extends Disposable {
         })
     }
 
+    protected addCellClass(name: string) {
+        this.el?.classList.add(name);
+        this.el?.parentElement?.classList.add(name);
+    }
+
+    protected removeCellClass(name: string) {
+        this.el?.classList.remove(name);
+        this.el?.parentElement?.classList.remove(name);
+    }
+
     doSelect(){
         if (! this.cellState.state.selected) {
             this.notebookState.selectCell(this.id)
@@ -226,7 +443,7 @@ abstract class Cell extends Disposable {
     }
 
     protected onSelected() {
-        this.el?.classList.add("active");
+        this.addCellClass("active");
         if (document.activeElement instanceof HTMLElement && !this.el.contains(document.activeElement)){
             document.activeElement.blur()
             this.el?.focus()
@@ -242,7 +459,7 @@ abstract class Cell extends Disposable {
     }
 
     protected onDeselected() {
-        this.el?.classList.remove("active");
+        this.removeCellClass("active");
     }
 
     protected scroll() {
@@ -611,9 +828,9 @@ export class CodeCell extends Cell {
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
-                this.el.classList.add("error");
+                this.addCellClass("error");
             } else {
-                this.el.classList.remove("error");
+                this.removeCellClass("error");
             }
         }
         updateError(this.state.error)
@@ -621,7 +838,7 @@ export class CodeCell extends Cell {
 
         const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
-                this.el.classList.add("running");
+                this.addCellClass("running");
                 // clear results when a cell starts running:
                 this.cellState.updateField("results", () => clearArray())
 
@@ -629,7 +846,7 @@ export class CodeCell extends Cell {
                 if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
 
             } else {
-                this.el.classList.remove("running");
+                this.removeCellClass("running");
                 if (previously) {
                     const status = this.state.error ? "Error" : "Complete"
                     NotificationHandler.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
@@ -648,12 +865,12 @@ export class CodeCell extends Cell {
 
         const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
             if (queued) {
-                this.el.classList.add("queued");
+                this.addCellClass("queued");
                 if (!previously) {
                     FaviconHandler.inc()
                 }
             } else {
-                this.el.classList.remove("queued");
+                this.removeCellClass("queued");
                 if (previously) {
                     FaviconHandler.dec()
                 }
@@ -1694,7 +1911,7 @@ export class VizCell extends Cell {
          * Keep watching the available values, so the plot UI can be updated when the value changes.
          */
         const updateValues = (newValues: Record<string, ResultValue>) => {
-            if (newValues && newValues[this.valueName] && newValues[this.valueName].live) {
+            if (newValues && newValues[this.valueName] && newValues[this.valueName].live && newValues[this.valueName] !== this.resultValue) {
                 this.setValue(newValues[this.valueName]);
                 return true;
             }
@@ -1705,7 +1922,11 @@ export class VizCell extends Cell {
             this.notebookState.view("kernel").view("symbols").observeMapped(
                 symbols => availableResultValues(symbols, this.notebookState.state.cellOrder, cellState.state.id),
                 updateValues
-            )
+            );
+
+            this.notebookState.observeKey("cellOrder", (order, update) => updateValues(
+                availableResultValues(this.notebookState.state.kernel.symbols, order, cellState.state.id)
+            ));
         }
 
         if (notebookState.isLoading) {

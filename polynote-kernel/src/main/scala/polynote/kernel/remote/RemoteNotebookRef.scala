@@ -1,5 +1,6 @@
 package polynote.kernel.remote
 
+import polynote.kernel.interpreter.InterpreterState
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.kernel.logging.Logging
 import polynote.messages.{CellID, Notebook, NotebookUpdate}
@@ -15,6 +16,7 @@ import zio.interop.catz._
   */
 class RemoteNotebookRef private (
   current: Ref[(Int, Notebook)],
+  state: InterpreterState.Service,
   transportClient: TransportClient,
   log: Logging.Service
 ) extends NotebookRef {
@@ -23,7 +25,7 @@ class RemoteNotebookRef private (
 
   override def update(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, Unit] = updateAndGet(update).unit
 
-  override def updateAndGet(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, (Int, Notebook)] = current.updateAndGet {
+  override def updateAndGet(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, (Int, Notebook)] = state.updateStateWith(update) &> current.updateAndGet {
     case (ver, notebook) =>
       try {
         update.globalVersion -> update.applyTo(notebook)
@@ -59,10 +61,11 @@ class RemoteNotebookRef private (
 
 object RemoteNotebookRef {
 
-  def apply(initial: (Int, Notebook), transportClient: TransportClient): URIO[BaseEnv, RemoteNotebookRef] = for {
+  def apply(initial: (Int, Notebook), transportClient: TransportClient): URIO[BaseEnv with InterpreterState, RemoteNotebookRef] = for {
     current <- Ref.make[(Int, Notebook)](initial)
+    state   <- InterpreterState.access
     log     <- Logging.access
-    result   = new RemoteNotebookRef(current, transportClient, log)
+    result   = new RemoteNotebookRef(current, state, transportClient, log)
     _       <- result.init()
   } yield result
 

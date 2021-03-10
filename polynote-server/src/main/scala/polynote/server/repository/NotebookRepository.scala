@@ -172,9 +172,9 @@ class TreeRepository (
                 newRef   <- newRepo.createAndOpen(relativePath, nb._2.copy(path = relativePath), nb._1)
                 validate <- loadNotebook(newPath)
                   .filterOrFail(_.cells.map(_.copy(id = 0)) == nb._2.cells.map(_.copy(id = 0)))(new IOException("Validation error moving notebook across repositories; will not remove from previous location"))
-                  .flatMap(_ => state.repo.deleteNotebook(state.relativePath))
-                newState <- State(newRepo, newRef, newBasePath, relativePath, closed)
-                _        <- currentRef.set(newState)
+                  .zipRight(state.repo.deleteNotebook(state.relativePath))
+                newState    <- State(newRepo, newRef, newBasePath, relativePath, closed)
+                _           <- currentRef.set(newState)
               } yield pathOf(relativePath, newBasePath)
           }
         }

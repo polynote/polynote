@@ -5,7 +5,6 @@ import java.net.{InetAddress, InetSocketAddress}
 import java.nio.channels.ClosedChannelException
 import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 import java.util.concurrent.atomic.AtomicInteger
-
 import scala.compat.java8.FunctionConverters.enrichAsJavaFunction
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.instances.list._
@@ -16,7 +15,7 @@ import polynote.app.Environment
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishResult, PublishStatus}
-import polynote.kernel.interpreter.Interpreter
+import polynote.kernel.interpreter.{Interpreter, InterpreterState}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
@@ -315,6 +314,7 @@ object RemoteKernelClient extends polynote.app.App {
       case req@StartupRequest(_, _, _, _) => ZIO.succeed(req)
       case other                          => ZIO.fail(new RuntimeException(s"Handshake error; expected StartupRequest but found ${other.getClass.getName}"))
     }
+    _               <- Env.addLayer[BaseEnv, Throwable, InterpreterState](InterpreterState.emptyLayer)
     notebookRef     <- RemoteNotebookRef(initial.globalVersion -> initial.notebook, transport)
     closed          <- Promise.make[Throwable, Unit]
     interpFactories <- interpreter.Loader.load
@@ -334,12 +334,13 @@ object RemoteKernelClient extends polynote.app.App {
     interpreterFactories: Map[String, List[Interpreter.Factory]],
     kernelFactory: Factory.Service,
     polynoteConfig: PolynoteConfig
-  ): ZLayer[BaseEnv, Throwable, GlobalEnv with CellEnv with PublishRemoteResponse] = {
+  ): ZLayer[BaseEnv with InterpreterState, Throwable, GlobalEnv with CellEnv with PublishRemoteResponse] = {
     val publishStatus = PublishStatus.layer(publishResponse.contramap(KernelStatusResponse.apply))
     val publishRemote: Layer[Nothing, PublishRemoteResponse] = ZLayer.succeed(publishResponse)
 
     Config.layerOf(polynoteConfig) ++
       CurrentNotebook.layer(currentNotebook) ++
+      ZLayer.identity[InterpreterState] ++
       Interpreter.Factories.layer(interpreterFactories) ++
       ZLayer.succeed(kernelFactory) ++
       publishStatus ++

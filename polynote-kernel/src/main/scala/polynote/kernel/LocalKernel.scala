@@ -2,8 +2,6 @@ package polynote.kernel
 
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
-
-import cats.effect.concurrent.Ref
 import cats.instances.list._
 import cats.syntax.traverse._
 import fs2.concurrent.SignallingRef
@@ -12,7 +10,7 @@ import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment._
 import polynote.kernel.interpreter.State.Root
 import polynote.kernel.interpreter.scal.ScalaInterpreter
-import polynote.kernel.interpreter.{CellExecutor, Interpreter, State}
+import polynote.kernel.interpreter.{CellExecutor, Interpreter, InterpreterState, State}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.RefMap
@@ -28,7 +26,7 @@ import zio.{Promise, RIO, Task, ZIO, ZLayer}
 
 class LocalKernel private[kernel] (
   scalaCompiler: ScalaCompiler,
-  interpreterState: Ref[Task, State],
+  interpreterState: InterpreterState.Service,
   interpreters: RefMap[String, Interpreter],
   busyState: SignallingRef[Task, KernelBusyState],
   closed: Promise[Throwable, Unit]
@@ -50,7 +48,7 @@ class LocalKernel private[kernel] (
               notebook      <- CurrentNotebook.get
               cell          <- ZIO(notebook.cell(id))
               interpreter   <- getOrLaunch(cell.language, CellID(0))
-              state         <- interpreterState.get
+              state         <- interpreterState.getState
               prevCells      = notebook.cells.takeWhile(_.id != cell.id)                                                  // find the latest executed state that correlates to a notebook cell
               prevState      = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(latestPredef(state))
               _             <- PublishResult(ClearResults())
@@ -92,7 +90,7 @@ class LocalKernel private[kernel] (
   }
 
   private def updateState(resultState: State) = {
-    interpreterState.update {
+    interpreterState.updateState {
       state =>
         val rs = resultState
         val updated = state.insertOrReplace(resultState)
@@ -152,10 +150,10 @@ class LocalKernel private[kernel] (
 
   private def initScala(): RIO[BaseEnv with GlobalEnv with CellEnv with CurrentTask, State] = for {
     scalaInterp   <- interpreters.get("scala").get.mapError(_ => new IllegalStateException("No scala interpreter"))
-    initialState  <- interpreterState.get
+    initialState  <- interpreterState.getState
     predefState   <- scalaInterp.init(initialState).provideSomeLayer[BaseEnv with GlobalEnv with CellEnv with CurrentTask](CurrentRuntime.noRuntime)
     predefState   <- updateValues(predefState)
-    _             <- interpreterState.set(predefState)
+    _             <- interpreterState.updateState(_ => predefState)
   } yield predefState
 
   override def shutdown(): Task[Unit] = for {
@@ -168,7 +166,7 @@ class LocalKernel private[kernel] (
 
   override def status(): Task[KernelBusyState] = busyState.get
 
-  override def values(): Task[List[ResultValue]] = interpreterState.get.map(_.scope)
+  override def values(): Task[List[ResultValue]] = interpreterState.getState.map(_.scope)
 
   /**
     * Get the cell with the given ID along with its interpreter and state. If its interpreter hasn't been started,
@@ -178,7 +176,7 @@ class LocalKernel private[kernel] (
     for {
       notebook    <- CurrentNotebook.get
       cell        <- CurrentNotebook.getCell(id)
-      state       <- interpreterState.get.orDie
+      state       <- interpreterState.getState
       prevCells    = notebook.cells.takeWhile(_.id != cell.id)
       prevState    = prevCells.reverse.map(_.id).flatMap(state.at).headOption.getOrElse(latestPredef(state))
       interpreter <-
@@ -199,11 +197,11 @@ class LocalKernel private[kernel] (
           factory => TaskManager.run(s"Launch$$$language", factory.languageName,s"Starting ${factory.languageName} interpreter") {
             for {
               interpreter  <- factory().provideSomeLayer[BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with CurrentTask](ZLayer.succeed(scalaCompiler))
-              currentState <- interpreterState.get
+              currentState <- interpreterState.getState
               insertStateAt = currentState.rewindWhile(s => s.id != at && !(s eq Root))
               lastPredef    = currentState.lastPredef
               newState     <- interpreter.init(State.predef(insertStateAt, lastPredef))
-              _            <- interpreterState.update(_.insert(insertStateAt.id, newState))
+              _            <- interpreterState.updateState(_.insert(insertStateAt.id, newState))
             } yield interpreter
           }
       }
@@ -272,7 +270,7 @@ class LocalKernelFactory extends Kernel.Factory.LocalService {
     busyState    <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
     interpreters <- RefMap.empty[String, Interpreter]
     _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
-    interpState  <- Ref[Task].of[State](State.predef(State.Root, State.Root))
+    interpState  <- InterpreterState.access
     closed       <- Promise.make[Throwable, Unit]
   } yield new LocalKernel(compiler, interpState, interpreters, busyState, closed)
 

@@ -2,8 +2,9 @@ package polynote.kernel.interpreter
 
 import polynote.kernel.ResultValue
 import polynote.messages.CellID
-import zio.{Task, RIO, ZIO}
+import zio.{RIO, Task, ZIO}
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
@@ -161,6 +162,35 @@ trait State {
     state
   } else withPrev(prev.insertOrReplace(state))
 
+  def remove(id: CellID): State = if (this.id == id) {
+    prev
+  } else {
+    withPrev(prev.remove(id))
+  }
+
+  /**
+    * Move a previous state to be after another given previous state. The state with the given `id` will get `after` as
+    * its parent.
+    */
+  def moveAfter(id: CellID, after: CellID): State =
+    if (id == after) {
+      this
+    } else if (this.id == after) {
+      at(id) match {
+        case Some(state) => state.withPrev(remove(id))
+        case None        => this
+      }
+    } else if (this.id == id) {
+      if (prev.id == after || (prev eq Root)) {
+        this
+      } else {
+        val swapped = prev.withPrev(this.withPrev(prev.prev))
+        swapped.moveAfter(id, after)
+      }
+    } else {
+      withPrev(prev.moveAfter(id, after))
+    }
+
   def at(id: CellID): Option[State] = {
     var result: Option[State] = None
     var s = this
@@ -183,6 +213,8 @@ object State {
     override def withPrev(prev: State): Root.type = this
     override def updateValues(fn: ResultValue => ResultValue): State = this
     override def updateValuesM[R](fn: ResultValue => RIO[R, ResultValue]): RIO[R, State] = ZIO.succeed(this)
+    override def remove(id: CellID): State = this
+    override def moveAfter(id: CellID, after: CellID): State = this
   }
 
   final case class Id(id: CellID, prev: State, values: List[ResultValue]) extends State {
@@ -196,5 +228,6 @@ object State {
   def id(id: Int, prev: State = Root, values: List[ResultValue] = Nil): State = Id(id.toShort, prev, values)
 
   def predef(prev: State, prevPredef: State): State = id(prevPredef.id + 1, prev)
+  def empty: State = predef(Root, Root)
 
 }

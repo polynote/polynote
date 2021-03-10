@@ -1,6 +1,6 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {Disposable, StateHandler, UpdateResult} from "../../../state";
+import {Disposable, MoveArrayValue, NoUpdate, setValue, StateHandler, UpdateResult} from "../../../state";
 import {CellMetadata} from "../../../data/data";
 import {CellContainer} from "./cell";
 import {NotebookConfigEl} from "./notebookconfig";
@@ -53,8 +53,8 @@ export class Notebook extends Disposable {
         const handleAddedCells = (added: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
             Object.entries(cellOrderUpdate.addedValues!).forEach(([idx, id]) => {
                 const handler = cellsHandler.lens(id)
-                const cell = new CellContainer(dispatcher, notebookState, handler);
-                const el = div(['cell-and-divider'], [cell.el, this.newCellDivider()]);
+                const cell = new CellContainer(this.newCellDivider(), dispatcher, notebookState, handler);
+                const el = cell.el;
                 this.cells[id] = {cell, handler, el};
                 const cellIdx = parseInt(idx);
                 const nextCellIdAtIdx = cellOrderUpdate.newValue[cellIdx + 1];
@@ -102,18 +102,56 @@ export class Notebook extends Disposable {
             const maybeDeletedCells = update.fieldUpdates?.cells?.removedValues
             const maybeAddedCells = update.fieldUpdates?.cells?.addedValues
 
-            if (maybeDeletedCells) {
-                if (cellOrderUpdate === undefined) {
-                    console.error("Got deleted cells", maybeDeletedCells, "but cellOrder didn't change! This is weird. Update:", update)
-                } else {
-                    handleDeletedCells(maybeDeletedCells, cellOrderUpdate)
+            if (cellOrderUpdate && cellOrderUpdate.update instanceof MoveArrayValue) {
+                const newIndex = cellOrderUpdate.update.toIndex;
+                // Move the cell's element such that it's in the correct order
+                // Which cell should it be before now?
+                const newNextCellId = cellOrderUpdate.newValue[newIndex + 1];
+                const targetCellId = cellOrderUpdate.update.movedValue;
+
+                if (targetCellId !== undefined) {
+                    const targetCell = this.cells[targetCellId]?.el;
+                    if (targetCell) {
+                        const newNextCell = this.cells[newNextCellId]?.el;
+                        if (newNextCell) {
+                            cellsEl.insertBefore(targetCell, newNextCell);
+                        } else {
+                            cellsEl.appendChild(targetCell);
+                        }
+
+                        if (state.activeCellId !== undefined) {
+                            const activeCellId = state.activeCellId;
+                            // re-select the cell, so that its available values get recomputed
+                            notebookState.updateAsync(
+                                s => {
+                                    if (s.activeCellId !== activeCellId)
+                                        return NoUpdate;
+                                    return {activeCellId: setValue(undefined)}
+                                 },
+                                this,
+                                'activeCellId'
+                            ).then(() => notebookState.update(s => {
+                                if (s.activeCellId !== undefined)
+                                    return NoUpdate;
+                                return {activeCellId: setValue(activeCellId)}
+                            }, this, 'activeCellId'))
+                        }
+                    }
                 }
-            }
-            if (maybeAddedCells) {
-                if (cellOrderUpdate === undefined) {
-                    console.error("Got deleted cells", maybeDeletedCells, "but cellOrder didn't change! This is weird. Update:", update)
-                } else {
-                    handleAddedCells(maybeAddedCells, cellOrderUpdate)
+            } else {
+                if (maybeDeletedCells) {
+                    if (cellOrderUpdate === undefined) {
+                        console.error("Got deleted cells", maybeDeletedCells, "but cellOrder didn't change! This is weird. Update:", update)
+                    } else {
+                        handleDeletedCells(maybeDeletedCells, cellOrderUpdate)
+                    }
+                }
+                if (maybeAddedCells) {
+                    if (cellOrderUpdate === undefined) {
+                        console.error("Got deleted cells", maybeDeletedCells, "but cellOrder didn't change! This is weird. Update:", update)
+                    } else {
+                        handleAddedCells(maybeAddedCells, cellOrderUpdate)
+                    }
                 }
             }
         }, "cellOrder") // in theory, this should make it so this observer only gets called when `cellOrder` changes.
@@ -154,7 +192,7 @@ export class Notebook extends Disposable {
         return div(['new-cell-divider'], []).click((evt) => {
             const self = evt.target as TagElement<"div">;
             const prevCell = Object.values(this.cells).reduce((acc: CellState, next) => {
-                if (self.previousElementSibling === next.cell.el) {
+                if (self.parentElement === next.cell.el) {
                     acc = next.handler.state
                 }
                 return acc;

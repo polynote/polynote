@@ -951,6 +951,18 @@ export class KeepAlive extends Message {
     }
 }
 
+export class MoveCell extends NotebookUpdate {
+    static codec = combined(uint32, uint32, uint16, int16).to(MoveCell);
+    static get msgTypeId() { return 33; }
+    static unapply(inst: MoveCell): ConstructorParameters<typeof MoveCell> {
+        return [inst.globalVersion, inst.localVersion, inst.cellId, inst.after];
+    }
+    constructor(readonly globalVersion: number, readonly localVersion: number, readonly cellId: number, readonly after: number) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 Message.codecs = [
     Error,            // 0
     LoadNotebook,     // 1
@@ -985,6 +997,7 @@ Message.codecs = [
     UpdateComment,    // 30
     DeleteComment,    // 31
     KeepAlive,        // 32
+    MoveCell          // 33
 ];
 
 

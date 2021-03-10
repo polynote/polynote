@@ -1,6 +1,5 @@
 package polynote.kernel
 
-
 import polynote.messages.{CellID, Notebook, NotebookUpdate}
 import zio.{IO, RIO, Task, UIO, ZIO}
 

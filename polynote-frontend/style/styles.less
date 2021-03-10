@@ -28,6 +28,10 @@
 
 @import "common";
 
+html {
+  overflow: hidden;
+}
+
 body {
   font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
   font-size: 10pt;
@@ -1240,6 +1244,42 @@ select {
   }
 }
 
+.cell-component {
+  position: relative;
+}
+
+.cell-and-divider.dragging {
+  position: absolute;
+  z-index: 999;
+}
+
+.cell-dragger {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ns-resize;
+  z-index: 2;
+
+  .inner {
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    top: 6px;
+    bottom: 6px;
+  }
+
+  &:hover .inner {
+    background: url(icons/grab_texture_opaque.png) repeat-y left top;
+  }
+}
+
+
+.cell-drag-placeholder {
+  background: #EEFFEE;
+}
+
 button {
 
   padding: 8px;
@@ -1332,6 +1372,7 @@ button.inspect.icon-button {
     padding: 12pt;
     padding-bottom: 50vh; // allow last cell to scroll up to midpoint
     overflow-y: auto;
+    position: relative;
   }
 
 }
@@ -1642,6 +1683,7 @@ button.inspect.icon-button {
     top: 0;
     bottom: 0;
     cursor: col-resize;
+    z-index: 5;
   }
 }
 

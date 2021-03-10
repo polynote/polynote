@@ -6,7 +6,7 @@ import fs2.concurrent.SignallingRef
 import polynote.app.{Args, MainArgs}
 import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
-import polynote.kernel.interpreter.CellExecutor
+import polynote.kernel.interpreter
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
 import polynote.kernel.{BaseEnv, CellEnv, Complete, ExecutionStatus, GlobalEnv, InterpreterEnv, KernelStatusUpdate, NotebookRef, Output, Result, TaskInfo}
@@ -151,12 +151,13 @@ object CurrentRuntime {
 object CurrentNotebook {
   def layer(ref: NotebookRef): ULayer[CurrentNotebook] = ZLayer.succeed(ref)
   def const(notebook: Notebook): ZLayer[Logging with Clock, Nothing, CurrentNotebook] = ZLayer.succeed(new NotebookRef.Const(notebook))
+  def access: URIO[CurrentNotebook, NotebookRef] = ZIO.access[CurrentNotebook](_.get)
   def get: URIO[CurrentNotebook, Notebook] = getVersioned.map(_._2)
   def path: URIO[CurrentNotebook, String] = get.map(_.path)
-  def getVersioned: URIO[CurrentNotebook, (Int, Notebook)] = ZIO.accessM[CurrentNotebook](_.get.getVersioned)
+  def getVersioned: URIO[CurrentNotebook, (Int, Notebook)] = access.flatMap(_.getVersioned)
 
   def getCell(id: CellID): RIO[CurrentNotebook, NotebookCell] = get.flatMap {
-    notebook => ZIO.fromOption(notebook.getCell(id)).mapError(_ => new NoSuchElementException(s"No such cell $id in notebook ${notebook.path}"))
+    notebook => ZIO.fromOption(notebook.getCell(id)).orElseFail(new NoSuchElementException(s"No such cell $id in notebook ${notebook.path}"))
   }
 
   def config: URIO[CurrentNotebook, NotebookConfig] = get.map(_.config.getOrElse(NotebookConfig.empty))

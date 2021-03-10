@@ -4,7 +4,7 @@ import {
     Disposable,
     EditString,
     IDisposable,
-    ImmediateDisposable,
+    ImmediateDisposable, MoveArrayValue,
     NoUpdate,
     ObjectStateHandler,
     setValue,
@@ -358,7 +358,15 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
 
         state.view("config").view("config", notReceiver)
             .addObserver(config => this.updateConfig(config))
-            .disposeWith(this)
+
+        state.view("cellOrder", notReceiver).addObserver((order, updateResult) => {
+            if (updateResult.update instanceof MoveArrayValue) {
+                const movedCell = updateResult.update.movedValue;
+                const myIndex = updateResult.update.toIndex;
+                const prev = order[myIndex - 1] ?? -1;
+                this.moveCell(movedCell, prev);
+            }
+        })
 
         state.view("cellOrder").addObserver((newOrder, update) => {
             for (const id of Object.values(update.addedValues ?? {})) {
@@ -375,7 +383,7 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
                 }
             }
 
-        }).disposeWith(this)
+        })
 
         this.onDispose.then(() => this.observers.splice(0, this.observers.length))
     }
@@ -405,6 +413,12 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
         this.localVersion++;
         const update = new messages.DeleteCell(this.globalVersion, this.localVersion, id)
         return this.requestUpdate(update)
+    }
+
+    moveCell(id: number, after: number) {
+        this.localVersion++;
+        const update = new messages.MoveCell(this.globalVersion, this.localVersion, id, after);
+        this.addUpdate(update);
     }
 
     updateCell(id: number, changed: {edits?: ContentEdit[], metadata?: CellMetadata}) {
