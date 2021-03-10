@@ -36,7 +36,7 @@ export class ValueInspector extends FullScreenModal {
         return ValueInspector.inst;
     }
 
-    inspect(dispatcher: NotebookMessageDispatcher, nbState: NotebookStateHandler, resultValue: ResultValue, whichTab?: string): Promise<void> {
+    inspect(nbState: NotebookStateHandler, resultValue: ResultValue, whichTab?: string): Promise<void> {
         this.content.innerHTML = "";
         let tabsPromise = Promise.resolve({} as Record<string, TagElement<any>>);
 
@@ -44,7 +44,11 @@ export class ValueInspector extends FullScreenModal {
             repr => tabsPromise = tabsPromise.then(tabs => {
                 match(repr)
                     .when(StringRepr, str => tabs['String'] = div(['plaintext'], [document.createTextNode(str)]))
-                    .when(MIMERepr, (mimeType, content) => displayContent(mimeType, content).then((el: TagElement<"div">) => tabs[contentTypeName(mimeType)] = el))
+                    .when(MIMERepr, (mimeType, content) => {
+                        const tabName = contentTypeName(mimeType);
+                        whichTab = whichTab || tabName
+                        return displayContent(mimeType, content).then((el: TagElement<"div">) => tabs[tabName] = el)
+                    })
                     .when(DataRepr, (dataType, data) => {
                         tabs[`Data(${resultValue.typeName})`] = displayData(dataType.decodeBuffer(new DataReader(data)))
                     })
@@ -62,9 +66,9 @@ export class ValueInspector extends FullScreenModal {
                         try {
                             if (dataType instanceof StructType) {
                                 tabs['Schema'] = displaySchema(dataType);
-                                tabs['Plot data'] = new PlotEditor(dispatcher, nbState, repr as StructStreamingDataRepr, resultValue.name, resultValue.sourceCell).container;
+                                //tabs['Plot data'] = new PlotEditor(dispatcher, nbState, repr as StructStreamingDataRepr, resultValue.name, resultValue.sourceCell).container;
                             }
-                            tabs['View data'] = TableView.create(dispatcher, nbState, repr).el;
+                            //tabs['View data'] = TableView.create(dispatcher, nbState, repr).el;
                         } catch(err) {
                             console.error(err);
                         }

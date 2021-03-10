@@ -188,7 +188,7 @@ export class VizSelector extends Disposable {
 
     set currentViz(viz: Viz) {
         this.viz = viz;
-        if (viz.type === 'plot' && this.plotSelector) {
+        if (viz.type === 'plot' && this.plotSelector && viz.plotDefinition) {
             this.plotSelector.setPlot(viz.plotDefinition);
         }
         this.tabNav.showItem(viewTitle(viz));

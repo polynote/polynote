@@ -27,7 +27,13 @@ import {ServerStateHandler} from "../../../state/server_state";
 import {KernelInfo, KernelState, KernelSymbols, KernelTasks, NotebookStateHandler} from "../../../state/notebook_state";
 import {ViewPreferences} from "../../../state/preferences";
 import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
-import {changedKeys} from "../../../util/helpers";
+import {changedKeys, findInstance} from "../../../util/helpers";
+import {remove} from "vega-lite/build/src/compositemark";
+import * as monaco from "monaco-editor";
+import {displayData} from "../../display/display_content";
+import {DataReader} from "../../../data/codec";
+import {DataRepr, StreamingDataRepr} from "../../../data/value_repr";
+import {ValueInspector} from "../value_inspector";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
 export class KernelPane extends Disposable {
@@ -415,6 +421,223 @@ interface ResultRow extends TableRowElement {
     }
 }
 
+class KernelSymbolViewWidget {
+    static instance: KernelSymbolViewWidget = new KernelSymbolViewWidget();
+
+    readonly el: TagElement<'div'>;
+    private content: TagElement<'div'>;
+
+    private pointer: TagElement<'div'>;
+    private buttons: TagElement<'div'>;
+    private viewDataButton: TagElement<'button'>;
+    private plotButton: TagElement<'button'>;
+    private visualizeButton: TagElement<'button'>;
+    private inspectButton: TagElement<'button'>;
+
+    private currentElement?: HTMLElement;
+    private currentValue?: ResultValue;
+    private currentHandler?: NotebookStateHandler;
+
+    private currentLayout?: DOMRect;
+
+    private hideTimeout: number = 0;
+    private readonly cancelHide: () => void = () => {
+        if (this.hideTimeout) {
+            window.clearTimeout(this.hideTimeout);
+            this.hideTimeout = 0;
+            this.el.style.opacity = '1.0';
+        }
+    }
+
+    private handleHide: () => void = () => {
+        this.cancelHide();
+        this.hideTimeout = window.setTimeout(() => {
+            this.el.style.opacity = '0';
+            this.hideTimeout = window.setTimeout(() => this.hide(), 250);
+        }, 180);
+    }
+
+    private relayout: () => void = () => {
+        const newLayout = this.el.getBoundingClientRect();
+        if (!this.currentLayout || this.currentLayout.height !== newLayout.height) {
+            this.layout(false);
+        }
+    }
+
+    constructor() {
+        this.el = div(['kernel-symbol-widget'], [
+            this.pointer = div(['pointer'], [div(['arrow'], [])]),
+            div(['inner'], [
+                this.content = div(['content'], []),
+                this.buttons = div(['buttons'], [
+                    this.viewDataButton = iconButton(['view-data'], 'View data', 'table', '[View]').click(() => this.browse()),
+                    this.plotButton = iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]').click(() => this.plot()),
+                    this.visualizeButton = iconButton(['create-cell'], 'Visualize', 'plus-circle', '[Visualize]').click(() => this.visualize()),
+                    this.inspectButton = iconButton(['inspect-value'], 'Quick look', 'search', '[Quick Look]').click(() => this.inspect())
+                ])
+            ])
+        ]);
+        this.el.addEventListener('mouseleave', this.handleHide);
+        this.el.addEventListener('mouseenter', this.cancelHide);
+        this.content.addEventListener('toggle', this.relayout);
+        window.addEventListener('resize', this.relayout);
+        this.el.style.opacity = '0';
+    }
+
+    private static contentFor(value: ResultValue) {
+        return monaco.editor.colorize(value.typeName, "scala", {}).then(typeHTML => {
+            const dataRepr = findInstance(value.reprs, DataRepr);
+            const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+            resultType.innerHTML = typeHTML;
+            // why do they put <br> elements in there?
+            [...resultType.getElementsByTagName('br')].forEach(br => br.parentNode?.removeChild(br));
+
+            if (dataRepr) {
+                return div(['data-content'], [
+                    span(['result-name-and-type'], [span(['result-name'], [value.name]), ': ', resultType, ' = ']),
+                    displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
+                ]);
+            }
+
+            return div(['string-content'], [
+                span(['result-name-and-type'], [span(['result-name'], [value.name]), ': ', resultType, ' = ']),
+                value.valueText
+            ]);
+        })
+    }
+
+    showFor(row: HTMLElement, value: ResultValue, handler: NotebookStateHandler) {
+        const rowDims = row.getBoundingClientRect();
+        this.cancelHide();
+
+        this.setFocus([row, value, handler]);
+
+        KernelSymbolViewWidget.contentFor(value).then(content => {
+            this.cancelHide();
+            this.content.innerHTML = '';
+            this.content.appendChild(content);
+
+            if (value.reprs.findIndex(repr => repr instanceof StreamingDataRepr) >= 0) {
+                this.plotButton.style.display = '';
+                this.viewDataButton.style.display = '';
+            } else {
+                this.plotButton.style.display = 'none';
+                this.viewDataButton.style.display = 'none';
+            }
+
+            this.layout();
+        }).then(() => window.requestAnimationFrame(() => this.el.style.opacity = '1.0'))
+
+    }
+
+    /**
+     * Layout the widget.
+     * @param canMove If true, the widget can be re-positioned to be centered when possible. If false, the widget won't
+     *                be repositioned (for example, if it is already visible but we are redoing its layout in response
+     *                to a toggle event in the content, then we don't want it to jump around)
+     * @private
+     */
+    private layout(canMove: boolean = true) {
+        if (this.currentElement) {
+            const targetEl = this.currentElement;
+            this.buttons.style.marginTop = '0';
+            const rowDims = targetEl.getBoundingClientRect();
+            const right = (document.body.clientWidth - rowDims.left);
+            this.el.style.right = right + 'px';
+            this.el.style.maxWidth = (document.body.clientWidth - right - 200) + 'px';
+
+            document.body.appendChild(this.el);
+
+            const widgetDims = this.el.getBoundingClientRect();
+            // center the widget vertically as much as possible
+            let top = (rowDims.y + (rowDims.height / 2) - (widgetDims.height / 2));
+            if (top >= 20 && (top + widgetDims.height + 20 < document.body.clientHeight) && canMove) {
+                this.el.classList.remove('floating');
+                this.el.style.top = top + 'px';
+                this.pointer.style.top = '';
+            } else {
+                // the widget is too large to properly center it vertically (or we can't move it vertically) – instead,
+                // we'll center it as closely as possible (if we can vertically move it) and move the arrow and buttons
+                // to be in line with the element we're pointing to.
+                this.el.classList.add('floating');
+                if (canMove) {
+                    // position the thing in the center of the whole screen
+                    top = (document.body.clientHeight / 2) - (widgetDims.height / 2);
+                    this.el.style.top = top + 'px';
+                    this.el.style.maxHeight = '90vh';
+                } else {
+                    top = widgetDims.y;
+                    this.el.style.maxHeight = (document.body.clientHeight - 20 - top) + 'px';
+                }
+                const arrowY = (rowDims.y + (rowDims.height / 2) - top);
+                this.pointer.style.top = arrowY + 'px';
+                this.buttons.style.marginTop = (arrowY - (this.buttons.clientHeight / 2)) + 'px';
+            }
+            this.currentLayout = this.el.getBoundingClientRect();
+        }
+    }
+
+    private plot() {
+        if (this.currentValue && this.currentHandler) {
+            this.currentHandler.insertInspectionCell(this.currentValue, 'plot');
+            this.hide();
+        }
+    }
+
+    private browse() {
+        if (this.currentValue && this.currentHandler) {
+            this.currentHandler.insertInspectionCell(this.currentValue, 'table');
+            this.hide();
+        }
+    }
+
+    private visualize() {
+        if (this.currentValue && this.currentHandler) {
+            this.currentHandler.insertInspectionCell(this.currentValue);
+            this.hide();
+        }
+    }
+
+    private inspect() {
+        if (this.currentValue && this.currentHandler) {
+            this.hide();
+            ValueInspector.get.inspect(this.currentHandler, this.currentValue);
+        }
+    }
+
+    private setFocus(focus?: [HTMLElement, ResultValue, NotebookStateHandler]) {
+        if (this.currentElement) {
+            this.currentElement?.removeEventListener('mouseleave', this.handleHide);
+            this.currentElement?.removeEventListener('mouseenter', this.cancelHide);
+        }
+        if (focus) {
+            const [targetEl, targetValue, targetHandler] = focus;
+            targetEl.addEventListener('mouseleave', this.handleHide);
+            targetEl.addEventListener('mouseenter', this.cancelHide);
+            this.currentElement = targetEl;
+            this.currentValue = targetValue;
+            this.currentHandler = targetHandler;
+        }
+    }
+
+    hide() {
+        if (this.hideTimeout) {
+            clearTimeout(this.hideTimeout);
+            this.hideTimeout = 0;
+        }
+        this.setFocus(undefined);
+        this.el.style.maxHeight = '90vh';
+        this.el.style.maxWidth = 'none';
+        this.buttons.style.marginTop = '0';
+        this.el.classList.remove('floating');
+        this.el.parentNode?.removeChild(this.el);
+        this.el.style.opacity = '0';
+        this.buttons.style.marginTop = '0';
+        this.content.innerHTML = '';
+        this.currentElement = this.currentValue = this.currentHandler = undefined;
+    }
+}
+
 class KernelSymbolsEl extends Disposable {
     readonly el: TagElement<"div">;
     private tableEl: TableElement;
@@ -442,15 +665,27 @@ class KernelSymbolsEl extends Disposable {
 
         const handleSymbols = (symbols: KernelSymbols, updateResult?: UpdateResult<KernelSymbols>) => {
             const cells = Object.keys(symbols)
-            if (cells.length > 0) {
-                const changedCells = updateResult ? UpdateResult.addedOrChangedKeys(updateResult) : Object.keys(symbols);
-                changedCells.forEach(cell => {
-                    Object.values(symbols[cell]).forEach(s => this.addSymbol(s));
+            if (cells.length > 0 || updateResult) {
+                const addedCellIds = updateResult ? Object.keys(updateResult.addedValues ?? {}) : Object.keys(symbols);
+                addedCellIds.forEach(cellId => Object.values(symbols[cellId]).forEach(s => this.addSymbol(s)))
+
+                const changedCellIds = Object.keys(updateResult?.changedValues ?? {});
+                changedCellIds.forEach(cellIdStr => {
+                    const cellId: number = parseInt(cellIdStr, 10);
+                    const fieldUpdates: UpdateResult<Record<string, ResultValue>> | undefined = updateResult?.fieldUpdates?.[cellIdStr]
+                    const addedSymbols = fieldUpdates?.addedValues ?? {};
+                    const removedSymbols = fieldUpdates?.removedValues ?? {};
+                    const changedSymbols = fieldUpdates?.changedValues ?? {};
+
+                    Object.values(addedSymbols).forEach(value => value ? this.addSymbol(value) : {});
+                    Object.values(changedSymbols).forEach(value => value ? this.addSymbol(value) : {});
+                    Object.keys(removedSymbols).forEach(name => this.removeSymbol(cellId, name));
                 })
+
+                const removedCellIds = Object.keys(updateResult?.removedValues ?? {});
+                removedCellIds.forEach(cellId => this.removeAllSymbols(parseInt(cellId, 10)));
             } else if (Object.values(this.symbols).length > 0) {
-                Object.entries(this.symbols).forEach(([cellId, syms]) => {
-                    Object.keys(syms).forEach(s => this.removeSymbol(parseInt(cellId), s))
-                })
+                Object.keys(this.symbols).forEach(cellId => this.removeAllSymbols(parseInt(cellId, 10)));
             }
         }
         handleSymbols(notebookState.state.kernel.symbols)
@@ -481,13 +716,20 @@ class KernelSymbolsEl extends Disposable {
             type: span([], [resultValue.typeName]).attr('title', resultValue.typeName)
         }, whichBody) as ResultRow;
         tr.onmousedown = (evt) => {
+            if (evt.button !== 0)
+                return; // only for primary mouse button
             evt.preventDefault();
             evt.stopPropagation();
             this.dispatcher.showValueInspector(tr.resultValue)
         };
+        tr.onmouseover = () => this.showPopupFor(tr, resultValue);
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;
         return tr;
+    }
+
+    private showPopupFor(row: HTMLElement, resultValue: ResultValue) {
+        KernelSymbolViewWidget.instance.showFor(row, resultValue, this.notebookState);
     }
 
     private addScopeRow(resultValue: ResultValue) {
@@ -585,5 +827,10 @@ class KernelSymbolsEl extends Disposable {
         if (existing.length > 0) {
             existing.forEach(tr => tr.parentNode!.removeChild(tr));
         }
+    }
+
+    private removeAllSymbols(cellId: number) {
+        const names = Object.keys(this.symbols[cellId] ?? {});
+        names.forEach(name => this.removeSymbol(cellId, name));
     }
 }

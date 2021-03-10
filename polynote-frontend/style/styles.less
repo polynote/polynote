@@ -1308,6 +1308,10 @@ button {
   &:disabled {
     pointer-events:none;
   }
+
+  .icon {
+    vertical-align: middle;
+  }
 }
 
 button.inspect.icon-button {
@@ -1618,6 +1622,66 @@ button.inspect.icon-button {
           width: 40%;
         }
       }
+    }
+  }
+}
+
+.kernel-symbol-widget {
+  position: fixed;
+  transition: opacity 0.25s;
+
+  z-index: 999;
+
+  padding-right: 16px;
+
+  .pointer {
+    position: absolute;
+    right: 1px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    margin-top: -8px;
+    overflow: hidden;
+    .arrow {
+      position: absolute;
+      left: -8px;
+      top: 0;
+      width: 13px;
+      height: 13px;
+      border-width: 1px 1px 0 0;
+      border-style: solid;
+      transform: rotate(45deg);
+    }
+  }
+
+  .inner {
+    border-style: solid;
+    border-width: 1px;
+    border-radius: 4px;
+    max-width: 600px;
+    display: grid;
+    align-items: center;
+    grid-template-columns: 1fr min-content;
+
+    .content {
+      font-family: @code-fonts;
+      padding: 1em;
+      .result-name-and-type {
+        white-space: nowrap;
+      }
+      max-height: 90vh;
+      overflow-y: auto;
+      box-sizing: border-box;
+    }
+
+    .buttons {
+      white-space: nowrap;
+    }
+  }
+
+  &.floating {
+    .inner {
+      align-items: start;
     }
   }
 }
