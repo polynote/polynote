@@ -137,7 +137,7 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
         }
         const elems = tag('ul', ['array-elements'], {}, []);
         const details = tag('details', ['array-display'], {}, [summary, elems]);
-
+        details.ontoggle = () => details.parentNode?.dispatchEvent(new CustomEvent('toggle', {bubbles: true}));  // the 'toggle' event doesn't bubble? Why?
         let count = 0;
         for (let elem of data) {
             if (count >= 99) {
@@ -158,7 +158,7 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
 
         const fields = tag('ul', ['object-fields'], {}, []);
         const details = tag('details', ['object-display'], expandObjects ? { open: 'open' } : {}, [summary, fields]);
-
+        details.ontoggle = () => details.parentNode?.dispatchEvent(new CustomEvent('toggle', {bubbles: true}));  // the 'toggle' event doesn't bubble? Why?
         for (let [key, val] of data) {
             fields.appendChild(tag('li', [], {}, [displayData(val, key, expandNext)]));
         }
@@ -180,7 +180,7 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
 
         const fields = tag('ul', ['object-fields'], {}, []);
         const details = tag('details', ['object-display'], expandObjects ? { open: 'open' } : {}, [summary, fields]);
-
+        details.ontoggle = () => details.parentNode?.dispatchEvent(new CustomEvent('toggle', {bubbles: true}));  // the 'toggle' event doesn't bubble? Why?
         for (let key of keys) {
             fields.appendChild(tag('li', [], {}, [displayData(data[key], key, expandNext)]));
         }
@@ -189,8 +189,8 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
         let result;
         if (data !== null && data !== undefined) {
             switch (typeof data) {
-                case "number": result = span(['number'], [truncate(data.toString())]); break;
-                case "boolean": result = span(['boolean'], [data.toString()]); break;
+                case "number": result = span(['number', 'mtk6'], [truncate(data.toString())]); break;
+                case "boolean": result = span(['boolean', 'mtk6'], [data.toString()]); break;
                 default: result = span(['string'], [data.toString()]);
             }
         } else if (data == null) {

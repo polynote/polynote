@@ -264,6 +264,20 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         )
     }
 
+    /**
+     * Helper for inserting an inspection cell
+     * @param result
+     * @param viewType
+     */
+    insertInspectionCell(result: ResultValue, viewType?: string) {
+        this.insertCell("below", {
+            id: result.sourceCell,
+            language: 'viz',
+            metadata: new CellMetadata(false, false, false),
+            content: JSON.stringify({type: viewType, value: result.name})
+        }).then(id => this.selectCell(id))
+    }
+
     deleteCell(id?: number, selectPrevCell: boolean = true): Promise<number | undefined> {
         if (id === undefined) {
             id = this.state.activeCellId;

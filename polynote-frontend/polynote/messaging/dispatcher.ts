@@ -146,12 +146,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
      *******************************/
     // TODO: move this out of dispatcher
     showValueInspector(result: ResultValue, viewType?: string) {
-        this.handler.insertCell("below", {
-            id: result.sourceCell,
-            language: 'viz',
-            metadata: new CellMetadata(false, false, false),
-            content: JSON.stringify({type: viewType, value: result.name})
-        }).then(id => this.handler.selectCell(id))
+        this.handler.insertInspectionCell(result, viewType);
     }
 
     // TODO: this is pointless now, remove once ValueInspector goes away

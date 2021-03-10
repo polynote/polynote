@@ -538,7 +538,7 @@ export class CodeCell extends Cell {
 
         let copyCellOutputBtn = iconButton(['copy-output'], 'Copy Output to Clipboard', 'copy', 'Copy Output to Clipboard').click(() => this.copyOutput())
         copyCellOutputBtn.style.display = "none";
-        let cellOutput = new CodeCellOutput(dispatcher, cellState, this.cellId, compileErrorsState, runtimeErrorState, copyCellOutputBtn);
+        let cellOutput = new CodeCellOutput(this.notebookState, cellState, this.cellId, compileErrorsState, runtimeErrorState, copyCellOutputBtn);
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
@@ -1126,7 +1126,7 @@ class CodeCellOutput extends Disposable {
     private cellErrorDisplay?: TagElement<"div">;
 
     constructor(
-        private dispatcher: NotebookMessageDispatcher,
+        private notebookState: NotebookStateHandler,
         private cellState: StateView<CellState>,
         private cellId: string,
         compileErrorsHandler: StateView<CompileErrors[]>,
@@ -1201,7 +1201,7 @@ class CodeCellOutput extends Disposable {
                     inspectIcon = [
                         iconButton(['inspect'], 'Inspect', 'search', 'Inspect').click(
                             evt => {
-                                this.dispatcher.showValueInspector(result)
+                                this.notebookState.insertInspectionCell(result)
                             }
                         )
                     ]
@@ -1275,11 +1275,11 @@ class CodeCellOutput extends Disposable {
                     h4(['result-name-and-type'], [
                         span(['result-name'], [result.name]), ': ', resultType,
                         iconButton(['view-data'], 'View data', 'table', '[View]')
-                            .click(_ => this.dispatcher.showValueInspector(result, 'table')),
+                            .click(_ => this.notebookState.insertInspectionCell(result, 'table')),
                         repr.dataType instanceof StructType
                             ? iconButton(['plot-data'], 'Plot data', 'chart-bar', '[Plot]')
                                 .click(_ => {
-                                    this.dispatcher.showValueInspector(result, 'plot')
+                                    this.notebookState.insertInspectionCell(result, 'plot')
                                 })
                             : undefined
                     ]),
@@ -1657,7 +1657,7 @@ export class VizCell extends Cell {
 
         const execInfoEl = div(["exec-info"], []);
 
-        this.cellOutput = new CodeCellOutput(dispatcher, cellState, this.cellId, cellState.view("compileErrors"), cellState.view("runtimeError"));
+        this.cellOutput = new CodeCellOutput(this.notebookState, cellState, this.cellId, cellState.view("compileErrors"), cellState.view("runtimeError"));
 
         // after the cell is run, cache the viz and result and hide input
         cellState.view('results').addObserver(results => {
