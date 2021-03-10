@@ -370,6 +370,8 @@ export const cellHotkeys = {
     [monaco.KeyCode.KEY_K]: ["MoveUpK", ""],
 };
 
+type PostKeyAction = "stopPropagation" | "preventDefault"
+
 abstract class Cell extends Disposable {
     protected id: number;
     protected cellId: string;
@@ -518,11 +520,9 @@ abstract class Cell extends Disposable {
             const range = this.getRange();
             const selection = this.getCurrentSelection();
 
-            const preventDefault = this.keyAction(key, pos, range, selection)
-            evt.stopPropagation();
-            if (preventDefault) {
-                evt.preventDefault();
-            }
+            const postKeyAction = this.keyAction(key, pos, range, selection)
+            if (postKeyAction?.includes("stopPropagation")) evt.stopPropagation();
+            if (postKeyAction?.includes("preventDefault")) evt.preventDefault();
         }
     }
 
@@ -534,8 +534,8 @@ abstract class Cell extends Disposable {
         }
     }
 
-    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string): boolean | undefined {
-        return matchS<boolean>(key)
+    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string): PostKeyAction[] | undefined {
+        return matchS<PostKeyAction[]>(key)
             .when("MoveUp", () => {
                 this.notebookState.selectCell(this.id, {relative: "above", editing: true})
             })
@@ -551,12 +551,12 @@ abstract class Cell extends Disposable {
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
                 this.selectOrInsertCell("below", false)
-                return true // preventDefault
+                return ["stopPropagation", "preventDefault"]
             })
             .when("RunAndInsertBelow", () => {
                 this.dispatcher.runActiveCell()
                 this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
-                return true // preventDefault
+                return ["stopPropagation", "preventDefault"]
             })
             .when("SelectPrevious", () => {
                 this.notebookState.selectCell(this.id, {relative: "above", editing: true})
@@ -1201,25 +1201,31 @@ export class CodeCell extends Cell {
         if (this.state.metadata.hideSource) { // if the source is hidden, this acts just like any other cell.
             return super.keyAction(key, pos, range, selection)
         } else {
-            const ifNoSuggestion = (fun: () => void) => () => {
+            const ifNoSuggestion: (fun: () => (PostKeyAction[] | undefined | void)) => () => (PostKeyAction[] | undefined) = (fun: () => (PostKeyAction[] | undefined)) => () => {
                 // this is really ugly, is there a better way to tell whether the widget is visible??
                 const suggestionsVisible = this.editor._contextKeyService.getContextKeyValue("suggestWidgetVisible")
                 if (!suggestionsVisible) { // don't do stuff when suggestions are visible
-                    fun()
+                    return fun() ?? undefined
+                } else {
+                    return undefined
                 }
             }
-            return matchS<boolean>(key)
+            return matchS<PostKeyAction[]>(key)
                 .when("MoveUp", ifNoSuggestion(() => {
                     if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
                         this.selectOrInsertCell("above")
+                        return ["stopPropagation"]
                     }
+                    return undefined
                 }))
                 .when("MoveUpK", ifNoSuggestion(() => {
                     if (!this.vim?.state.vim.insertMode) {
                         if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
                             this.notebookState.selectCell(this.id, {relative: "above", editing: true})
+                            return ["stopPropagation"]
                         }
                     }
+                    return undefined
                 }))
                 .when("MoveDown", ifNoSuggestion(() => {
                     let lastColumn = range.endColumn;
@@ -1228,15 +1234,19 @@ export class CodeCell extends Cell {
                     }
                     if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
                         this.selectOrInsertCell("below")
+                        return ["stopPropagation"]
                     }
+                    return undefined
                 }))
                 .when("MoveDownJ", ifNoSuggestion(() => {
                     if (!this.vim?.state.vim.insertMode) { // in normal/visual mode, the last column is never selected.
                         let lastColumn = range.endColumn - 1;
                         if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= lastColumn) {
                             this.notebookState.selectCell(this.id, {relative:"below", editing: true})
+                            return ["stopPropagation"]
                         }
                     }
+                    return undefined
                 }))
                 .when("SelectPrevious", ifNoSuggestion(() => {
                     this.notebookState.selectCell(this.id, {relative: "above", editing: true})
@@ -1813,7 +1823,7 @@ export class TextCell extends Cell {
     }
 
     protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
-        return matchS<boolean>(key)
+        return matchS<PostKeyAction[]>(key)
             .when("MoveUp", () => {
                 if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
                     this.notebookState.selectCell(this.id, {relative: "above", editing: true})
