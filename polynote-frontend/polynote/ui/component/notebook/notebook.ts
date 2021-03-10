@@ -109,7 +109,7 @@ export class Notebook extends Disposable {
                 const newNextCellId = cellOrderUpdate.newValue[newIndex + 1];
                 const targetCellId = cellOrderUpdate.update.movedValue;
 
-                if (targetCellId) {
+                if (targetCellId !== undefined) {
                     const targetCell = this.cells[targetCellId]?.el;
                     if (targetCell) {
                         const newNextCell = this.cells[newNextCellId]?.el;

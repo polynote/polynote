@@ -158,7 +158,7 @@ final case class Notebook(path: ShortString, cells: ShortList[NotebookCell], con
     if (srcIndex >= 0) {
       val cell = cells(srcIndex)
       val removed = cells.patch(srcIndex, Nil, 1)
-      val targetIndex = if (after < 0) 0 else cells.indexWhere(_.id == after) + 1
+      val targetIndex = if (after < 0) 0 else removed.indexWhere(_.id == after) + 1
       if (targetIndex >= 0) {
         copy(cells = removed.patch(targetIndex, List(cell), 0))
       } else this
