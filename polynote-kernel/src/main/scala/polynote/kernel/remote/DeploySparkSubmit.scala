@@ -57,11 +57,14 @@ object DeploySparkSubmit extends DeployCommand {
 
     val appName = sparkConfig.getOrElse("spark.app.name", s"Polynote ${BuildInfo.version}: $notebookPath")
 
+    val runtimeJars = raw"polynote-(spark-)?runtime".r
+
     Seq("spark-submit", "--class", mainClass, "--name", appName) ++
       Seq("--driver-java-options", allDriverOptions) ++
       sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
       (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++
-      sparkSubmitArgs ++ Seq("--jars", additionalJars.mkString(",")) ++
+      sparkSubmitArgs ++ Seq("--driver-class-path", additionalJars.mkString(File.pathSeparator)) ++
+      Seq("--jars", additionalJars.filter(url => runtimeJars.findFirstMatchIn(url.getPath).nonEmpty).mkString(",")) ++
       sparkArgs ++ Seq(jarLocation) ++ serverArgs
   }
 
