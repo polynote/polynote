@@ -65,7 +65,7 @@ object DeploySparkSubmit extends DeployCommand {
       Seq("--driver-java-options", allDriverOptions) ++
       sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
       (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++
-      sparkSubmitArgs ++ Seq("--driver-class-path", additionalJars.mkString(File.pathSeparator)) ++
+      sparkSubmitArgs ++ Seq("--driver-class-path", additionalJars.map(_.getPath).mkString(File.pathSeparator)) ++
       Seq("--jars", additionalJars.filter(url => runtimeJarsFilter.findFirstMatchIn(url.getPath).nonEmpty).mkString(",")) ++
       sparkArgs ++ Seq(applicationJar) ++ serverArgs
   }
