@@ -141,15 +141,20 @@ class Server {
       def serveFile(name: String, req: Request) = {
         val mimeType = Server.MimeTypes.get(name)
 
+        // allow content iframes to access the fonts
+        val headers = if (mimeType == "font/otf") {
+          ("Access-Control-Allow-Origin", "*") :: Nil
+        } else Nil
+
         val gzipped = if (watchUI) ZIO.fail(()) else staticFilePath(s"$name.gz", staticPath).flatMap {
-          path => Response.fromPath(path, req, contentType = mimeType, headers = List("Content-Encoding" -> "gzip")).map(_.withCacheControl)
+          path => Response.fromPath(path, req, contentType = mimeType, headers = List("Content-Encoding" -> "gzip") ++ headers).map(_.withCacheControl)
         }
 
         val nogzip = staticFilePath(name, staticPath).flatMap {
-          path => Response.fromPath(path, req, contentType = mimeType).map(_.withCacheControl)
+          path => Response.fromPath(path, req, contentType = mimeType, headers = headers).map(_.withCacheControl)
         }
 
-        val fromJar = Response.fromResource(name.drop(1), req, contentType = Server.MimeTypes.get(name)).map(_.withCacheControl)
+        val fromJar = Response.fromResource(name.drop(1), req, contentType = Server.MimeTypes.get(name), headers = headers).map(_.withCacheControl)
 
         gzipped orElse nogzip orElse fromJar
       }.catchAll {
@@ -219,6 +224,7 @@ object Server {
   object MimeTypes {
     private val fromSystem = MimeTable.getDefaultTable
     private val explicit = Map(
+      ".html" -> "text/html",
       ".png" -> "image/png",
       ".js" -> "application/javascript",
       ".map" -> "application/json",
