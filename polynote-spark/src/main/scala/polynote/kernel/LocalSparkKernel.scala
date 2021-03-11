@@ -65,41 +65,43 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     cp =>
       Config.access.flatMap {
         config =>
-          config.spark.flatMap(_.distClasspathFilter) match {
-            case None => ZIO.succeed(Nil)
-            case Some(pattern) =>
-              cp.split(File.pathSeparator).toList.map {
-                filepath =>
-                  val file = new File(filepath)
-                  file.getName match {
-                    case "*" | "*.jar" =>
-                      effectBlocking {
-                        if (file.getParentFile.exists())
-                          Files.newDirectoryStream(file.getParentFile.toPath, file.getName).iterator().asScala.toList.map(_.toFile)
-                        else
-                          Nil
-                      }.orDie
-                    case _ =>
-                      effectBlocking(if (file.exists()) List(file) else Nil).orDie
-                  }
-              }.sequence.map(_.flatten).map {
-                expandedFiles =>
-                  val reg = pattern.asPredicate()
-                  expandedFiles.filter(path => reg.test(path.getAbsolutePath) && path.getAbsolutePath.endsWith(".jar"))
-              }.tap {
-                extraJars =>
-                  if (extraJars.nonEmpty) {
-                    Logging.info(s"Adding these paths from SPARK_DIST_CLASSPATH: $extraJars")
-                  } else ZIO.unit
+          val requiredFilter = Pattern.compile("hadoop-(common|mapreduce)").asPredicate()
+          val filter = config.spark.flatMap(_.distClasspathFilter) match {
+            case None          => requiredFilter
+            case Some(pattern) => requiredFilter.or(pattern.asPredicate())
+          }
+
+          cp.split(File.pathSeparator).toList.map {
+            filepath =>
+              val file = new File(filepath)
+              file.getName match {
+                case "*" | "*.jar" =>
+                  effectBlocking {
+                    if (file.getParentFile.exists())
+                      Files.newDirectoryStream(file.getParentFile.toPath, file.getName).iterator().asScala.toList.map(_.toFile)
+                    else
+                      Nil
+                  }.orDie
+                case _ =>
+                  effectBlocking(if (file.exists()) List(file) else Nil).orDie
+              }
+          }.sequence.map(_.flatten).map {
+            expandedFiles =>
+              expandedFiles.filter {
+                path =>
+                  val pathStr = path.getAbsolutePath
+                  filter.test(pathStr) && pathStr.endsWith(".jar") && !pathStr.endsWith("-sources.jar")
               }
           }
+
       }
-  }
+  }.orElseSucceed(Nil)
 
   private def sparkClasspath = env("SPARK_HOME").orDie.get.flatMap {
     sparkHome =>
       for {
         fromSparkDist <- sparkDistClasspath
+        _             <- ZIO.when(fromSparkDist.nonEmpty)(Logging.info(s"Adding these paths from SPARK_DIST_CLASSPATH: $fromSparkDist"))
         fromSparkJars <- effectBlocking {
           val homeFile = new File(sparkHome)
           if (homeFile.exists()) {
@@ -107,7 +109,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
             Files.newDirectoryStream(jarsPath, "*.jar").iterator().asScala.toList.map(_.toFile)
           } else Nil
         }.orDie
-      } yield fromSparkDist ++ fromSparkJars
+      } yield (fromSparkDist ++ fromSparkJars).distinct
   }
 
   private def systemClasspath =
