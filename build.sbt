@@ -210,6 +210,7 @@ lazy val `polynote-spark-runtime` = project.settings(
 lazy val `polynote-spark` = project.settings(
   commonSettings,
   sparkSettings,
+  testOptions in Test += Tests.Argument("-oF"),
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   ),
