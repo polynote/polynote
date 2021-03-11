@@ -17,6 +17,10 @@ jobs:
       with:
         python-version: '3.7'
         architecture: 'x64'
+    - uses: actions/setup-java@v1
+      with:
+        java-version: 8
+        architecture: x64
     - name: Build
       run: |
         echo "Setting up Python dependencies"
@@ -43,7 +47,12 @@ jobs:
         wget -q https://archive.apache.org/dist/spark/spark-2.4.4/spark-2.4.4-bin-hadoop2.7.tgz
         tar xfz spark-2.4.4-bin-hadoop2.7.tgz
         rm spark-2.4.4-bin-hadoop2.7.tgz
-        export SPARK_HOME=`pwd`"/spark-2.4.4-bin-hadoop2.7"
+        wget -q https://archive.apache.org/dist/spark/spark-2.4.4/spark-2.4.4-bin-without-hadoop-scala-2.12.tgz
+        tar xfz spark-2.4.4-bin-without-hadoop-scala-2.12.tgz
+        rm spark-2.4.4-bin-without-hadoop-scala-2.12.tgz
+        for jar in `ls spark-2.4.4-bin-hadoop2.7/jars |grep -v '2\.11'`; do cp spark-2.4.4-bin-hadoop2.7/jars/$jar spark-2.4.4-bin-without-hadoop-scala-2.12/jars; done
+
+        export SPARK_HOME=`pwd`"/spark-2.4.4-bin-without-hadoop-scala-2.12"
         export PATH="$SPARK_HOME/bin:$PATH"
 
         echo "Testing with Scala 2.12"

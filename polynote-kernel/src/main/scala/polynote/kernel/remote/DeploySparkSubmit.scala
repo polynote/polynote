@@ -30,7 +30,7 @@ object DeploySparkSubmit extends DeployCommand {
     notebookPath: String,
     classPath: Seq[URL],
     mainClass: String = classOf[RemoteKernelClient].getName,
-    jarLocation: String = getClass.getProtectionDomain.getCodeSource.getLocation.getPath,
+    defaultJarLocation: String = getClass.getProtectionDomain.getCodeSource.getLocation.getPath,
     serverArgs: List[String] = Nil
   ): Seq[String] = {
 
@@ -57,12 +57,17 @@ object DeploySparkSubmit extends DeployCommand {
 
     val appName = sparkConfig.getOrElse("spark.app.name", s"Polynote ${BuildInfo.version}: $notebookPath")
 
+    val runtimeJarsFilter = raw"polynote-(spark-)?runtime".r
+
+    val applicationJar = additionalJars.find(_.getPath.contains("polynote-spark-assembly")).map(_.getPath).getOrElse(defaultJarLocation)
+
     Seq("spark-submit", "--class", mainClass, "--name", appName) ++
       Seq("--driver-java-options", allDriverOptions) ++
       sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
       (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++
-      sparkSubmitArgs ++ Seq("--jars", additionalJars.mkString(",")) ++
-      sparkArgs ++ Seq(jarLocation) ++ serverArgs
+      sparkSubmitArgs ++ Seq("--driver-class-path", additionalJars.map(_.getPath).mkString(File.pathSeparator)) ++
+      Seq("--jars", additionalJars.filter(url => runtimeJarsFilter.findFirstMatchIn(url.getPath).nonEmpty).mkString(",")) ++
+      sparkArgs ++ Seq(applicationJar) ++ serverArgs
   }
 
   override def apply(serverAddress: InetSocketAddress, classPath: Seq[Path]): RIO[Config with CurrentNotebook, Seq[String]] = for {

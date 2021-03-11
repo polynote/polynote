@@ -47,7 +47,8 @@ val commonSettings = Seq(
   scalacOptions ++= Seq(
     "-Ypartial-unification",
     "-language:higherKinds",
-    "-unchecked"
+    "-unchecked",
+    "-target:jvm-1.8"
   ),
   fork in Test := true,
   javaOptions in Test += s"-Djava.library.path=$nativeLibraryPath",
@@ -209,6 +210,7 @@ lazy val `polynote-spark-runtime` = project.settings(
 lazy val `polynote-spark` = project.settings(
   commonSettings,
   sparkSettings,
+  testOptions in Test += Tests.Argument("-oF"),
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   ),
