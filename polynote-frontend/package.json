@@ -3,6 +3,7 @@
   "dependencies": {
     "@iktakahiro/markdown-it-katex": "4.0.1",
     "@types/katex": "0.11.0",
+    "@types/resize-observer-browser": "0.1.5",
     "@types/tinycon": "0.6.1",
     "@types/uuid": "7.0.0",
     "acorn": "7.1.1",
