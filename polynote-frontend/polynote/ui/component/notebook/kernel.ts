@@ -600,8 +600,8 @@ class KernelSymbolViewWidget {
 
     private inspect() {
         if (this.currentValue && this.currentHandler) {
-            this.hide();
             ValueInspector.get.inspect(this.currentHandler, this.currentValue);
+            this.hide();
         }
     }
 
