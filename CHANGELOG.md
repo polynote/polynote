@@ -10,10 +10,15 @@
     * Cell status badges are shown after reload #449
     * When the editor is disconnected an obvious error is shown to the user #721 #701
     * Improvements to UI reconnection logic after server restarts #736
-* New **Plot Editor**! 
+* New **Plot Editor**! #1025
   * Brand new plot editor which supports re-editing plots, pie plots, bubble plots, native histogram, coloring by a dimension in many plots, faceted/trellis plots!
   * Data tables (from the data browser) and data views (expando-thingy) can also be embedded persistently in the notebook!
   * No more inspection modal! It’s a cell in the notebook!
+* You can now **Move Cells** #1068
+  * Mouse over the cell and select the handle that appears on the left. Drag the cell up or down. 
+  * The state of the cell is also carried along with it.
+* New **Quick Inspect** UI for Symbol Table #1075
+  * Simply hover over a row in the Symbol Table to see a menu with a representation of the value, type information, etc. 
 * New **Copy to Clipboard** button added to cells with output.
 * Support for **Multiple Scala Versions** at the same time! So far only 2.11 and 2.12, sorry. Blame Spark)
   * The Scala version can now be set per-notebook. It is no longer related to the server Scala version.
