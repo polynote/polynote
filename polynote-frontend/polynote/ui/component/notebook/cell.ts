@@ -658,6 +658,13 @@ export class CodeCell extends Cell {
         this.editor.layout();
         notebookState.loaded.then(() => this.editor.layout());
 
+        // watch for resize events
+        const resizeObs = new ResizeObserver(() => {
+            this.layout()
+        })
+        resizeObs.observe(this.editorEl)
+        this.onDispose.then(() => resizeObs.disconnect())
+
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
         });
@@ -1117,13 +1124,26 @@ export class CodeCell extends Cell {
         }
     }
 
+    /**
+     * Update the layout of the editor and cell. Height and Width are treated differently:
+     *      The height of the editor and cell expands to fit the text.
+     *          So, height data goes from editor -> cell.
+     *          No vertical scrollbar should be visible.
+     *      The width of the editor is based on the width of the cell, which is determined by the space available in the viewport.
+     *          So, width data goes from cell -> editor.
+     *          A horizontal scrollbar is necessary if the text content overflows.
+     */
     layout() {
-        const lineCount = this.editor.getModel()!.getLineCount();
-        const lastPos = this.editor.getTopForLineNumber(lineCount);
-        const lineHeight = this.editor.getOption(EditorOption.lineHeight);
-        const height = lastPos + lineHeight;
+        const editorLayout = this.editor.getLayoutInfo();
+        // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
+        const height = this.editor.getContentHeight() + editorLayout.horizontalScrollbarHeight;
+        // the editor width is determined by the container's width, but we subtract the decorations so it doesn't overflow.
+        const width = this.editorEl.clientWidth - editorLayout.decorationsWidth;
+
+        // Update height on the container element.
         this.editorEl.style.height = height + "px";
-        this.editor.layout({width: this.editorEl.clientWidth, height});
+        // Update height and width on the editor.
+        this.editor.layout({width, height});
     }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
