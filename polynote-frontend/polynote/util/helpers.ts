@@ -1,7 +1,7 @@
 'use strict';
 
 import * as fastEquals from 'fast-deep-equal/es6';
-import match, {Extractable, Matcher} from "./match";
+import match, {Matcher} from "./match";
 
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
     if ((a === undefined && b !== undefined) || (b === undefined && a !== undefined)) {

@@ -52,7 +52,7 @@ import {
 import match, {matchS, purematch} from "../../../util/match";
 import {CommentHandler} from "./comment";
 import {RichTextEditor} from "../../input/text_editor";
-import {DataRepr, MIMERepr, StreamingDataRepr} from "../../../data/value_repr";
+import {DataRepr, MIMERepr, StreamingDataRepr, StringRepr} from "../../../data/value_repr";
 import {DataReader} from "../../../data/codec";
 import {StructType} from "../../../data/data_type";
 import {FaviconHandler} from "../../../notification/favicon_handler";
@@ -61,7 +61,14 @@ import {VimStatus} from "./vim_status";
 import {availableResultValues, cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
-import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
+import {
+    collect,
+    collectInstances,
+    deepCopy,
+    deepEquals,
+    findInstance,
+    linePosAt
+} from "../../../util/helpers";
 import {
     CellPresenceState,
     CellState,
@@ -1106,21 +1113,25 @@ export class CodeCell extends Cell {
     }
 
     private copyOutput() {
-        const maybeOutput = this.cellState.state.output.find(o => o.contentType.startsWith('text'));
-        if (maybeOutput) {
-            console.log("copying to clipboard! ", maybeOutput.content.join(''))
-            //TODO: use https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/write once
-            //      browser support has solidified.
-            const task = new TaskInfo("Copy Task", "Copy Task", `Copying Cell ${this.id} Output`, TaskStatus.Queued, 0)
-            this.notebookState.updateField("kernel", () => ({tasks: updateProperty("Copy Task", task)}))
-            navigator.clipboard.writeText(maybeOutput.content.join(''))
-                .then(() => {
-                    this.notebookState.updateField("kernel", () => ({tasks: updateProperty("Copy Task", setValue({...task, progress: 25, status: TaskStatus.Running}))}))
-                    setTimeout(() => {
-                        this.notebookState.updateField("kernel", () => ({tasks: updateProperty("Copy Task", setValue({...task, progress: 255, status: TaskStatus.Complete}))}))
-                    }, 333)
-                })
-                .catch(err => console.error("Error while writing to clipboard", err))
+        const maybeOutput = collect(this.cellState.state.output, output => output.contentType.startsWith('text/plain') ? output.content.join('') : undefined)
+        if (maybeOutput.length > 0) {
+            const content = maybeOutput.join('')
+            copyToClipboard(content, this.notebookState)
+        } else if (this.cellState.state.results.length > 0) {
+            const maybeTextResults = collect(this.cellState.state.results, result => {
+                if (result instanceof ResultValue) {
+                    const maybeMIMERepr = result.reprs.find(repr => repr instanceof MIMERepr && repr.mimeType === "text/plain")
+                    if (maybeMIMERepr instanceof MIMERepr) {
+                        return maybeMIMERepr.content
+                    } else {
+                        const stringRepr = result.reprs.find(repr => repr instanceof StringRepr)
+                        return stringRepr instanceof StringRepr ? stringRepr.string : undefined
+                    }
+                } else return undefined
+            })
+            const content = maybeTextResults.join('')
+            copyToClipboard(content, this.notebookState)
+
         }
     }
 
@@ -1460,6 +1471,15 @@ class CodeCellOutput extends Disposable {
                     return this.displayRepr(result).then(display => {
                         const [mime, content] = display;
                         const [mimeType, args] = parseContentType(mime);
+                        if (this.copyOutputButton) {
+                            if (mimeType === "text/plain") {
+                                this.copyOutputButton.style.display = "unset";
+                            } else {
+                                if (!this.hasOutput) {
+                                    this.copyOutputButton.style.display = "none";
+                                }
+                            }
+                        }
                         this.buildOutput(mime, args, content).then((el: MIMEElement) => {
                             this.resultTabs.appendChild(el);
                             el.dispatchEvent(new CustomEvent('becameVisible'));
@@ -1613,8 +1633,11 @@ class CodeCellOutput extends Disposable {
         this.cellOutputDisplay.innerHTML = "";
         this.stdOutEl = null;
         this.stdOutDetails = null;
-        if (this.copyOutputButton)
-            this.copyOutputButton.style.display = 'none';
+        if (this.copyOutputButton) this.copyOutputButton.style.display = 'none';
+    }
+
+    get hasOutput() {
+        return this.cellOutputDisplay.classList.contains("output")
     }
 
     private clearErrors() {
@@ -1632,12 +1655,12 @@ class CodeCellOutput extends Disposable {
         });
     }
 
+
     private addOutput(contentType: string, content: string) {
         const [mimeType, args] = parseContentType(contentType);
         this.cellOutputDisplay.classList.add('output');
 
-        if (this.copyOutputButton)
-            this.copyOutputButton.style.display = "unset";
+        if (this.copyOutputButton && mimeType === "text/plain") this.copyOutputButton.style.display = "unset";
 
         if (mimeType === 'text/plain' && args.rel === 'stdout') {
             // first, strip ANSI control codes
@@ -1886,6 +1909,7 @@ export class VizCell extends Cell {
     private valueName: string;
     private resultValue?: ResultValue;
     private previousViews: Record<string, [Viz, Output | ClientResult]> = {};
+    private copyCellOutputBtn: TagElement<"button">;
 
     constructor(dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>, private path: string) {
         super(dispatcher, _notebookState, _cellState);
@@ -1913,7 +1937,10 @@ export class VizCell extends Cell {
 
         const execInfoEl = div(["exec-info"], []);
 
-        this.cellOutput = new CodeCellOutput(this.notebookState, cellState, this.cellId, cellState.view("compileErrors"), cellState.view("runtimeError"));
+        this.copyCellOutputBtn = iconButton(['copy-output'], 'Copy Output to Clipboard', 'copy', 'Copy Output to Clipboard').click(() => this.copyOutput())
+        this.copyCellOutputBtn.style.display = "none";
+
+        this.cellOutput = new CodeCellOutput(this.notebookState, cellState, this.cellId, cellState.view("compileErrors"), cellState.view("runtimeError"), this.copyCellOutputBtn);
 
         // after the cell is run, cache the viz and result and hide input
         cellState.view('results').addObserver(results => {
@@ -1939,6 +1966,7 @@ export class VizCell extends Cell {
                     execInfoEl,
                     div(["options"], [
                         button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
+                        this.copyCellOutputBtn
                     ])
                 ]),
                 this.editorEl
@@ -2025,6 +2053,15 @@ export class VizCell extends Cell {
         });
     }
 
+    // TODO: should be extracted from Viz and Code cells.
+    private copyOutput() {
+        const maybeOutput = collect(this.cellState.state.output, output => output.contentType.startsWith('text/plain') ? output.content.join('') : undefined)
+        if (maybeOutput.length > 0) {
+            const content = maybeOutput.join('')
+            copyToClipboard(content, this.notebookState)
+        }
+    }
+
     private setValue(value: ResultValue): void {
         this.resultValue = value;
         this.viz = this.viz || parseMaybeViz(this.cellState.state.content);
@@ -2049,7 +2086,15 @@ export class VizCell extends Cell {
             }
         });
 
-        this.editor.onChange(viz => this.updateViz(viz));
+        this.editor.onChange(viz => {
+            // only show copy button for string results (should we show on any other results?)
+            if (viz.type === "string" || viz.type === "mime" && viz.mimeType === "text/plain") {
+                this.copyCellOutputBtn.style.display = "unset";
+            } else {
+                this.copyCellOutputBtn.style.display = "none";
+            }
+            this.updateViz(viz)
+        });
 
         if (this.editorEl.parentNode) {
             this.editorEl.parentNode.replaceChild(this.editor.el, this.editorEl);
@@ -2174,4 +2219,26 @@ export class VizCell extends Cell {
         }
     }
 
+}
+
+
+/**
+ * Copy some text content to the clipboard.
+ * @param content   The content to copy
+ * @param nbState   Optionally, the NotebookStateHandler (purely to generate a Task for this process)
+ */
+export function copyToClipboard(content: string, notebookState?: NotebookStateHandler) {
+    console.log("copying to clipboard! ", content)
+    //TODO: use https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/write once
+    //      browser support has solidified.
+    const task = new TaskInfo("Copy Task", "Copy Task", `Copying Cell ${notebookState?.state.activeCellId} Output`, TaskStatus.Queued, 0)
+    notebookState?.updateField("kernel", () => ({tasks: updateProperty("Copy Task", task)}))
+    navigator.clipboard.writeText(content)
+        .then(() => {
+            notebookState?.updateField("kernel", () => ({tasks: updateProperty("Copy Task", setValue({...task, progress: 25, status: TaskStatus.Running}))}))
+            setTimeout(() => {
+                notebookState?.updateField("kernel", () => ({tasks: updateProperty("Copy Task", setValue({...task, progress: 255, status: TaskStatus.Complete}))}))
+            }, 333)
+        })
+        .catch(err => console.error("Error while writing to clipboard", err))
 }
