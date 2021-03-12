@@ -702,7 +702,8 @@ export class CodeCell extends Cell {
         (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
             foldingModel => foldingModel?.onDidChange(() => this.layout())
         );
-        this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
+        (this.editor.getModel() as any).onDidChangeContentFast((event: IModelContentChangedEvent) => this.onChangeModelContent(event));
+        //this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
         // we need to do this hack in order for completions to work :(
         (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
