@@ -9,7 +9,7 @@ import cats.syntax.traverse._
 import fs2.Stream
 import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.kernel.util.{Publish, RefMap}
-import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
+import polynote.kernel.environment.{CurrentNotebook, PublishMessage, PublishResult, PublishStatus}
 import polynote.messages.{CellID, CellResult, DeleteCell, Error, Message, Notebook, NotebookUpdate, ShortList}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
@@ -56,10 +56,8 @@ class KernelPublisher private (
   private def cellEnv(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, CellEnv] =
     baseLayer ++ ZLayer.succeed(interpreterState) ++ cellLayer(cellID, tapResults)
 
-  private val kernelFactoryEnv: ZLayer[Any, Nothing, CellEnv with NotebookUpdates] = {
-    val updates = broadcastUpdates.subscribe(128).unNone.map(_._2)
-    cellEnv(CellID(-1)) ++ ZLayer.succeed(updates)
-  }
+  private val kernelFactoryEnv: ZLayer[Any, Nothing, CellEnv] =
+    cellEnv(CellID(-1))
 
   private val nextSubscriberId = new AtomicInteger(0)
 
@@ -246,16 +244,49 @@ object KernelPublisher {
     interpState: InterpreterState.Service,
     versions: VersionBuffer[NotebookUpdate],
     publishUpdates: Publish[Task, (SubscriberId, NotebookUpdate)],
-    subscriberVersions: ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)])(
+    subscribers: RefMap[SubscriberId, KernelSubscriber])(
     subscriberId: SubscriberId,
     update: NotebookUpdate
-  ): TaskG[Unit] = {
-    interpState.updateStateWith(update) &> versionRef.updateAndGet(update).flatMap {
-      case (nextVer, notebook) =>
-        val newUpdate = update.withVersions(nextVer, update.localVersion)
-        publishUpdates.publish1((subscriberId, newUpdate)) *> ZIO(versions.add(nextVer, newUpdate))
-    }
+  ): TaskG[Unit] = interpState.updateStateWith(update) &> versionRef.getVersioned.flatMap {
+    case (globalVersion, notebook) =>
+      subscribers.get(subscriberId).someOrFail(new NoSuchElementException(s"No such subscriber $subscriberId")).flatMap {
+        subscriber =>
+          subscriber.getLastGlobalVersion.flatMap {
+            knownGlobal =>
+
+              // If this subscriber sent an update, that update became a global version. But, this subscriber doesn't
+              // know which global version it became, so its next update may report that it's based on an older
+              // global version. So we need to take the maximum of the global version reported by the update, and the
+              // latest global version that the subscriber is known (by the server) to have definitely received.
+
+              val lastGlobal = Math.max(knownGlobal, update.globalVersion)
+
+              def rebaseOnto(updates: List[NotebookUpdate], from: Int, to: Int) = {
+                updates.foldLeft(update) {
+                  (accum, next) =>
+                    val rebased = accum.rebase(next)
+                    rebased
+                }
+              }
+
+              val rebased = if (lastGlobal < globalVersion) {
+                rebaseOnto(
+                  versions.getRange(lastGlobal, globalVersion).dropWhile(_.globalVersion == lastGlobal),
+                  lastGlobal, globalVersion
+                )
+              } else update
+
+              versionRef.updateAndGet(rebased).flatMap {
+                case (nextVer, notebook) =>
+                  val newUpdate = rebased.withVersions(nextVer, rebased.localVersion + 1)
+                  subscriber.setLastGlobalVersion(nextVer) *>
+                    ZIO(versions.add(nextVer, newUpdate)) *>
+                    publishUpdates.publish1((subscriberId, newUpdate))
+              }
+          }
+      }
   }
+
 
   def apply(versionedRef: NotebookRef, broadcastMessage: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, KernelPublisher] = for {
     kernelFactory    <- Kernel.Factory.access
@@ -271,10 +302,9 @@ object KernelPublisher {
     kernelStarting   <- Semaphore.make(1)
     queueingCell     <- Semaphore.make(1)
     subscribing      <- Semaphore.make(1)
-    subscribers      <- RefMap.empty[Int, KernelSubscriber]
+    subscribers      <- RefMap.empty[SubscriberId, KernelSubscriber]
     kernel           <- Ref.make[Option[Kernel]](None)
     interpState      <- InterpreterState.empty
-    subscriberVersions = new ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)]()
     publisher = new KernelPublisher(
       versionedRef,
       versionBuffer,
@@ -295,7 +325,7 @@ object KernelPublisher {
     )
     env <- ZIO.environment[BaseEnv]
     _   <- updates.dequeue.unNoneTerminate
-      .evalMap((applyUpdate(versionedRef, interpState, versionBuffer, Publish(broadcastUpdates).some, subscriberVersions) _).tupled)
+      .evalMap((applyUpdate(versionedRef, interpState, versionBuffer, Publish(broadcastUpdates).some, subscribers) _).tupled)
       .compile.drain
       .catchAll {
         err =>

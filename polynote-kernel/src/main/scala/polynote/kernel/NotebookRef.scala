@@ -1,6 +1,7 @@
 package polynote.kernel
 
 import polynote.messages.{CellID, Notebook, NotebookUpdate}
+import zio.stream.ZStream
 import zio.{IO, RIO, Task, UIO, ZIO}
 
 /**
@@ -61,6 +62,12 @@ trait NotebookRef {
     * Wait for the ref to be closed. Succeeds with Unit if the ref closes normally; fails with error otherwise
     */
   def awaitClosed: Task[Unit]
+
+  /**
+    * Get a stream of notebook updates
+    * @return
+    */
+  def updates: ZStream[Any, Nothing, NotebookUpdate]
 }
 
 
@@ -81,6 +88,7 @@ object NotebookRef {
     override def rename(newPath: String): UIO[String] = ZIO.succeed(notebook.path)
     override val isOpen: UIO[Boolean] = ZIO.succeed(true)
     override def awaitClosed: Task[Unit] = ZIO.unit
+    override def updates: ZStream[Any, Nothing, NotebookUpdate] = ZStream.empty
   }
 
   case class AlreadyClosed(path: Option[String]) extends Throwable(s"Notebook ${path.map(_ + " ").getOrElse("")}is already closed")

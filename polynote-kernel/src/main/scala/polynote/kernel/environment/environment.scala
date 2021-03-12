@@ -163,15 +163,6 @@ object CurrentNotebook {
   def config: URIO[CurrentNotebook, NotebookConfig] = get.map(_.config.getOrElse(NotebookConfig.empty))
 }
 
-/**
-  * The capability to access a stream of changes to the notebook's content
-  */
-object NotebookUpdates {
-  def access: RIO[NotebookUpdates, Stream[Task, NotebookUpdate]] = ZIO.access[NotebookUpdates](_.get)
-  def empty: ULayer[NotebookUpdates] = ZLayer.succeed[Stream[Task, NotebookUpdate]](Stream.empty)
-}
-
-
 
 /**
   * Some utilities for enrichment of environment

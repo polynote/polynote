@@ -4,7 +4,7 @@ import polynote.config.PolynoteConfig
 import polynote.env.ops.Enrich
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, ResultValue, interpreter}
-import polynote.kernel.environment.{Config, Env, NotebookUpdates}
+import polynote.kernel.environment.{Config, Env}
 import interpreter.Interpreter
 import org.scalatest.{BeforeAndAfterAll, Suite}
 import polynote.kernel.logging.Logging
@@ -37,6 +37,9 @@ trait ZIOSpecBase[Env <: Has[_]] {
   implicit class IORunWithOps[R <: Has[_], A](val self: ZIO[R, Throwable, A]) {
     def runWith[R1](env: R1)(implicit ev: Env with Has[R1] <:< R, ev1: Tag[R1], ev2: Tag[Has[R1]], ev3: Tag[Env]): A =
       ZIOSpecBase.this.runIO(self.provideSomeLayer[Env](ZLayer.succeed(env)).provideSomeLayer[BaseEnv](envLayer))
+
+    def runWithLayer[R1 <: Has[_]](env: ZLayer[Env, Nothing, R1])(implicit ev: Env with R1 <:< R, ev1: Tag[R1], ev2: Tag[Has[R1]], ev3: Tag[Env]): A =
+      ZIOSpecBase.this.runIO(self.provideSomeLayer[Env](env).provideSomeLayer[BaseEnv](envLayer))
   }
 
   def runIO[A](io: ZIO[BaseEnv, Throwable, A]): A = runtime.unsafeRunSync(io).getOrElse {
