@@ -409,7 +409,7 @@ abstract class Cell extends Disposable {
                 this.onDeselected()
             }
         }
-        cellState.observeKey("selected", updateSelected);
+        notebookState.observeKey("activeCellId", activeCell => updateSelected(activeCell === this.id));
 
         cellState.onDispose.then(() => {
             this.dispose()
@@ -426,17 +426,21 @@ abstract class Cell extends Disposable {
         this.el?.parentElement?.classList.remove(name);
     }
 
+    get selected() {
+        return this.notebookState.state.activeCellId === this.id
+    }
+
     doSelect(){
-        if (! this.cellState.state.selected) {
+        if (! this.selected) {
             this.notebookState.selectCell(this.id)
         }
     }
 
     doDeselect(){
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
-            if (this.cellState.state.selected // prevent blurring a different cell
+            if (this.selected // prevent blurring a different cell
                 && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
-                this.cellState.updateField("selected", () => false)
+                this.notebookState.updateField("activeCellId", () => undefined)
             }
         }
     }
@@ -444,7 +448,7 @@ abstract class Cell extends Disposable {
     replace(oldCell: Cell): Promise<Cell> {
         return oldCell.dispose().then(() => {
             oldCell.el.replaceWith(this.el);
-            if (this.cellState.state.selected || oldCell.cellState.state.selected) {
+            if (this.selected || oldCell.selected) {
                 this.onSelected()
             }
             return Promise.resolve(this)
@@ -460,10 +464,6 @@ abstract class Cell extends Disposable {
         this.scroll()
         if (!document.location.hash.includes(this.cellId)) {
             this.setUrl();
-        }
-
-        if (this.notebookState.state.activeCellId !== this.id) {
-            this.notebookState.updateField("activeCellId", () => setValue(this.id))
         }
     }
 
