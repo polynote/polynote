@@ -342,11 +342,11 @@ export class CellContainer extends Disposable {
     private cellFor(lang: string) {
         switch (lang) {
             case "text":
-                return new TextCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+                return new TextCell(this.dispatcher, this.notebookState, this.cellState);
             case "viz":
-                return new VizCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+                return new VizCell(this.dispatcher, this.notebookState, this.cellState);
             default:
-                return new CodeCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+                return new CodeCell(this.dispatcher, this.notebookState, this.cellState);
         }
     }
 
@@ -618,7 +618,7 @@ export class CodeCell extends Cell {
 
     private errorMarkers: ErrorMarker[] = [];
 
-    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>, private path: string) {
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>) {
         super(dispatcher, notebookState, cell);
         const cellState = this.cellState;
         const langSelector = dropdown(['lang-selector'], ServerStateHandler.state.interpreters);
@@ -1316,6 +1316,10 @@ export class CodeCell extends Cell {
         return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
     }
 
+    get path() {
+        return this.notebookState.state.path
+    }
+
     get markerOwner() {
         return `${this.path}-${this.id}`
     }
@@ -1776,7 +1780,7 @@ export class TextCell extends Cell {
     private lastContent: string;
     private listeners: [string, (evt: Event) => void][];
 
-    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>, private path: string) {
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>) {
         super(dispatcher, notebookState, stateHandler)
 
         const editorEl = div(['cell-input-editor', 'markdown-body'], [])
@@ -1911,7 +1915,7 @@ export class VizCell extends Cell {
     private previousViews: Record<string, [Viz, Output | ClientResult]> = {};
     private copyCellOutputBtn: TagElement<"button">;
 
-    constructor(dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>, private path: string) {
+    constructor(dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>) {
         super(dispatcher, _notebookState, _cellState);
         const cellState = this.cellState;
         const notebookState = this.notebookState;
