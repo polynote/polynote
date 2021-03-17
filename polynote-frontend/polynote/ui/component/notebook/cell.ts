@@ -83,7 +83,6 @@ import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 import SignatureHelpResult = languages.SignatureHelpResult;
-import EditorOption = editor.EditorOption;
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
@@ -1012,6 +1011,12 @@ export class CodeCell extends Cell {
         }).then(({cell, offset, completions}) => {
             const len = completions.length;
             const indexStrLen = ("" + len).length;
+            const model = this.editor.getModel()!;
+            const p = model.getPositionAt(offset);
+            const word = model.getWordUntilPosition(p);
+            // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
+            const range = new Range(p.lineNumber, word.startColumn, p.lineNumber, word.endColumn);
+
             const completionResults = completions.map((candidate, index) => {
                 const isMethod = candidate.params.length > 0 || candidate.typeParams.length > 0;
 
@@ -1026,11 +1031,6 @@ export class CodeCell extends Cell {
                 const insertText =
                     candidate.insertText || candidate.name; //+ (params.length ? '($2)' : '');
 
-                // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
-                const model = this.editor.getModel()!;
-                const p = model.getPositionAt(offset);
-                const word = model.getWordUntilPosition(p);
-                const range = new Range(p.lineNumber, word.startColumn, p.lineNumber, word.endColumn);
                 return {
                     kind: isMethod ? 1 : 9,
                     label: label,

@@ -22,6 +22,8 @@ import {SocketStateHandler} from "./state/socket_state";
 import {ServerStateHandler} from "./state/server_state";
 import {OpenNotebooksHandler, RecentNotebooksHandler} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
+// @ts-ignore
+import * as modes from 'monaco-editor/esm/vs/editor/common/modes.js';
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -151,14 +153,14 @@ mainEl?.appendChild(Main.get.el);
 monaco.languages.registerCompletionItemProvider('scala', {
     triggerCharacters: ['.'],
     provideCompletionItems: (doc, pos, context, cancelToken) => {
-        return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
+        return doCompletions(doc, pos)
     }
 });
 
 monaco.languages.registerCompletionItemProvider('python', {
     triggerCharacters: ['.', "["],
     provideCompletionItems: (doc, pos, context, cancelToken) => {
-        return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
+        return doCompletions(doc, pos)
     }
 });
 
@@ -179,6 +181,28 @@ monaco.languages.registerSignatureHelpProvider('python', {
 monaco.languages.registerCompletionItemProvider('sql', {
     triggerCharacters: ['.'],
     provideCompletionItems: (doc, pos, context, cancelToken) => {
-        return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
+        return doCompletions(doc, pos)
     }
 });
+
+// Monaco doesn't provide a way to combine our code-based completions with the content-based completions it shows by default.
+// This function generates content-based completions and appends them to our completions.
+function getWordCompletions(model: monaco.editor.ITextModel, position: monaco.Position): Promise<monaco.languages.CompletionList> {
+    // get the default Monaco completer
+    const wordCompleter = modes.CompletionProviderRegistry
+        .all(model)
+        // @ts-ignore
+        .find(entry => entry.hasOwnProperty("_debugDisplayName") && entry._debugDisplayName === "wordbasedCompletions")
+    return wordCompleter.provideCompletionItems(model, position)
+}
+
+function doCompletions(model: monaco.editor.ITextModel, position: monaco.Position): Promise<monaco.languages.CompletionList> {
+    return getWordCompletions(model, position).then(wordCompletions => {
+        return (model as CodeCellModel).requestCompletion(model.getOffsetAt(position)).then(codeCompletions => {
+            return {
+                ...codeCompletions,
+                suggestions: codeCompletions.suggestions.concat(wordCompletions.suggestions),
+            }
+        })
+    })
+}
