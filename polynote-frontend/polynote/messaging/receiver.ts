@@ -488,7 +488,6 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             runtimeError: undefined,
             presence: {},
             editing: false,
-            selected: false,
             error: false,
             running: false,
             queued: false,

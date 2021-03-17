@@ -124,10 +124,10 @@ describe('NotebookStateHandler', () => {
         await expect(init).resolves.toEqual(3)
 
         const waitForSelect = (cellId: number) => new Promise(resolve => {
-            const view = nbState.view("cells").view(cellId)
-            const obs = view.addObserver(state => {
+            const view = nbState.view("activeCellId")
+            const obs = view.addObserver(id => {
                 obs.dispose()
-                resolve([cellId, state.selected])
+                resolve([cellId, id === cellId])
             })
         })
 
