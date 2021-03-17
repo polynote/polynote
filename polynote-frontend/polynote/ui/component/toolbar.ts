@@ -248,6 +248,11 @@ class CellToolbar extends ToolbarElement {
                     }
                     this.langSelector.setState(cell.language)
                 }
+
+                // watch for cell language changes
+                this.nbHandler?.cellsHandler.view(cellId).observeKey("language", lang => {
+                    this.langSelector.setState(lang)
+                }).disposeWith(this.enabled)
             }
         }).disposeWith(this.enabled)
         this.setDisabled(false);
