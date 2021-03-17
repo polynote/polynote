@@ -73,6 +73,9 @@ object PublishMessage extends (Message => RIO[PublishMessage, Unit]) {
     access.flatMap(_.publish1(message))
 
   def of(publish: Publish[Task, Message]): PublishMessage = Has(publish)
+  def ignore: PublishMessage = Has[Publish[Task, Message]](new Publish[Task, Message] {
+    override def publish1(t: Message): Task[Unit] = ZIO.unit
+  })
 }
 
 /**

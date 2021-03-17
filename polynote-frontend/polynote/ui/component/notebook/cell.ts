@@ -4,7 +4,7 @@ import {
     clearArray,
     Disposable,
     EditString,
-    editString, ImmediateDisposable, moveArrayValue,
+    editString, IDisposable, ImmediateDisposable, moveArrayValue,
     removeFromArray,
     SetValue,
     setValue,
@@ -972,6 +972,85 @@ export class CodeCell extends Cell {
             });
             this.editor.dispose()
         })
+
+        if (this.id == 1) {
+            let interval = 0;
+            let listener: IDisposable | undefined = undefined;
+            let remaining = 0;
+            const startIt = () => {
+                let loc = Math.floor(Math.random() * this.state.content.length)
+                function randomChar() {
+                    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+                    return chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                remaining = 5;
+
+                interval = window.setInterval(() => {
+                    const rand = Math.random()
+                    let edit: ContentEdit = new Insert(loc, randomChar());
+                    if (rand > 0.2) {
+                        loc++;
+                    } else {
+                        loc--;
+                        edit = new Delete(loc, 1);
+                    }
+                    this.cellState.updateField("content", content => {
+                        console.log("<", edit, edit.apply(content));
+                        return editString([edit]);
+                    }, this)
+
+                    this.applyEdits([edit]);
+                    remaining--;
+                    if (remaining < 0) {
+                        stopIt();
+                    }
+                }, 100);
+                listener = this.cellState.observeKey("content", (content, updateResult, src) => {
+                    if (src !== this) {
+                        const update = updateResult.update;
+                        if (update instanceof EditString) {
+                            update.edits.forEach(edit => {
+                                if (edit instanceof Insert && edit.pos <= loc) {
+                                    loc += edit.content.length;
+                                } else if (edit instanceof Delete && edit.pos <= loc) {
+                                    loc -= edit.length;
+                                }
+                            })
+                        }
+                    }
+                })
+
+            }
+
+            window.startIt = startIt;
+
+            const stopIt = () => {
+                if (interval)
+                    window.clearInterval(interval);
+                interval = 0;
+                if (listener)
+                    listener.dispose();
+                console.log(this.state.content);
+            }
+
+            let clone: Window | null = null;
+
+            window.addEventListener("keypress", event => {
+                if (event.key === "`" && !event.shiftKey) {
+                    if (interval)
+                        stopIt();
+                    else {
+                        startIt();
+                        if (clone) {
+                            (clone as any).startIt();
+                        }
+                    }
+                } else if (event.key === '~' || (event.key === "`" && event.shiftKey)) {
+                   clone = window.open(document.location.href);
+                }
+            })
+
+        }
     }
 
     private onChangeModelContent(event: IModelContentChangedEvent) {

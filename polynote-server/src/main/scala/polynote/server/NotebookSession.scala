@@ -84,10 +84,8 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
 
     case ClearOutput() => subscriber.publisher.clearResults()
 
-    case nv @ NotebookVersion(path, _) => for {
-      versioned  <- subscriber.publisher.latestVersion
-      _          <- PublishMessage(nv.copy(globalVersion = versioned._1))
-    } yield ()
+    case NotebookVersion(_, knownVersion) =>
+      ZIO.when(knownVersion >= 0)(subscriber.updateLastGlobalVersion(knownVersion))
 
     case CurrentSelection(cellID, range) => subscriber.setSelection(cellID, range)
 

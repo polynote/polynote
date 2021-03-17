@@ -145,6 +145,9 @@ export class NotebookUpdate extends Message {
             let accum = a;
             b.forEach(update => {
                 accum = NotebookUpdate.rebase(accum, update);
+                if ((update as any).edits && (accum as any).edits) {
+                    console.log((update as any).edits[0], "=>", (accum as any).edits);
+                }
             });
             return accum;
         }

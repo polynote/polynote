@@ -142,7 +142,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         });
 
         const cellsHandler = baseHandler.lens("cells");
-        const updateHandler = new NotebookUpdateHandler(baseHandler, cellsHandler, -1, 0, new EditBuffer())
+        const updateHandler = new NotebookUpdateHandler(baseHandler, cellsHandler, 0, 0, new EditBuffer())
         const handler = new NotebookStateHandler(baseHandler, cellsHandler, updateHandler);
         cellsHandler.disposeWith(handler);
         updateHandler.disposeWith(handler);
@@ -471,7 +471,10 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
             // discard edits before the local version from server – it will handle rebasing at least until that point
             this.edits = this.edits.discard(update.localVersion)
 
+            console.log("Rebasing", update, `to local version ${this.localVersion}`)
             update = messages.NotebookUpdate.rebase(update, prevUpdates)
+        } else {
+            console.log("No rebase required for", update)
         }
 
         return update

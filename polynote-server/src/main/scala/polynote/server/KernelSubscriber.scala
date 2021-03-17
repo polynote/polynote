@@ -14,6 +14,8 @@ import polynote.util.VersionBuffer
 import zio.{Fiber, Promise, RIO, Task, UIO, URIO, ZIO}
 import zio.interop.catz._
 
+import java.util.function.IntUnaryOperator
+
 
 class KernelSubscriber private[server] (
   val id: SubscriberId,
@@ -49,13 +51,12 @@ class KernelSubscriber private[server] (
 
   def selections: Stream[UIO, PresenceSelection] = currentSelection.discrete.unNone.interruptAndIgnoreWhen(closed)
 
-  private[server] val getLastLocalVersion = ZIO.effectTotal(lastLocalVersion.get())
-  private[server] def setLastLocalVersion(version: Int) = ZIO.effectTotal(lastLocalVersion.set(version))
   private[server] val getLastGlobalVersion = ZIO.effectTotal(lastGlobalVersion.get())
-  private[server] def setLastGlobalVersion(version: GlobalVersion) = ZIO.effectTotal(lastGlobalVersion.set(version))
-  private[server] def setVersions(globalVersion: GlobalVersion, localVersion: Int) = ZIO.effectTotal {
-    lastGlobalVersion.set(globalVersion)
-    lastLocalVersion.set(localVersion)
+  private[server] def setLastGlobalVersion(version: GlobalVersion): UIO[Unit] = ZIO.effectTotal(lastGlobalVersion.set(version))
+  private[server] def updateLastGlobalVersion(version: GlobalVersion): UIO[Unit] = ZIO.effectTotal {
+    lastGlobalVersion.updateAndGet(new IntUnaryOperator {
+      override def applyAsInt(operand: GlobalVersion): GlobalVersion = math.max(version, operand)
+    })
   }
 }
 

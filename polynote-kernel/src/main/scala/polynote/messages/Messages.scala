@@ -269,6 +269,25 @@ sealed trait NotebookUpdate extends Message {
 
   }
 
+  def rebaseAll(prev: List[NotebookUpdate], log: Option[StringBuilder] = None): (NotebookUpdate, List[NotebookUpdate]) = this match {
+    case UpdateCell(_, _, _, ContentEdits(ShortList.Nil), _) => (this, Nil)
+    case self@UpdateCell(_, _, id, myEdits, _) =>
+      val conflicting = prev.collect {
+        case update@UpdateCell(_, _, `id`, _, _) => update
+      }
+
+      val (result, updatedPrev) = conflicting.foldLeft((myEdits, List.empty[NotebookUpdate])) {
+        case ((myEdits, newUpdates), nextUpdate) =>
+          val (myRebased, theirRebased) = myEdits.rebaseBoth(nextUpdate.edits)
+          log.foreach(log => log ++= s"  $nextUpdate => $myRebased")
+          (myRebased, nextUpdate.copy(edits = ContentEdits(theirRebased)) :: newUpdates)
+      }
+
+      self.copy(edits = result) -> updatedPrev.reverse
+
+    case _ => (prev.foldLeft(this)(_ rebase _), Nil)
+  }
+
   def applyTo(notebook: Notebook): Notebook = this match {
     case InsertCell(_, _, cell, after) => notebook.insertCell(cell, after)
     case DeleteCell(_, _, id)          => notebook.deleteCell(id)
