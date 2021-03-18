@@ -36,7 +36,7 @@ class NotificationStorageHandler extends Disposable {
         }
         if (this.enabled && !document.hasFocus()) {
             return new Promise<void>((resolve, reject) => {
-                const n = new Notification(title, {body: body, icon: '/static/style/logo/polynote_small.png'});
+                const n = new Notification(title, {body: body, icon: FaviconHandler.get.faviconUrl});
                 n.addEventListener("click", (ev) => {
                     resolve()
                     n.close();

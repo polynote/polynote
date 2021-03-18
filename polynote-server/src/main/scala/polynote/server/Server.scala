@@ -159,6 +159,7 @@ class Server {
 
       val serveStatic: PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]] = {
         case req if req.uri.getPath == "/favicon.ico" => serveFile("/static/favicon.ico", req)
+        case req if req.uri.getPath == "/favicon.svg" => serveFile("/static/favicon.svg", req)
         case req if req.uri.getPath startsWith "/static/" => serveFile(req.uri.getPath, req)
       }
 
