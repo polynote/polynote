@@ -67,7 +67,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val kernel          = kernelPublisher.kernel.runWith(kernelFactory).asInstanceOf[RemoteKernel[InetSocketAddress]]
       val process         = kernel.transport.asInstanceOf[SocketTransportServer].process
 
-      val collectStatus = kernelPublisher.status.subscribe(5).interruptWhen(kernelPublisher.closed.await.either).compile.toList.forkDaemon.runIO()
+      val collectStatus = kernelPublisher.status.subscribe(5).terminateAfterEquals(KernelBusyState(false, false)).compile.toList.forkDaemon.runIO()
 
       process.kill().runIO()
       assert(process.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty)
@@ -80,7 +80,10 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
       assert(!(kernel2 eq kernel), "Kernel should have changed")
       kernelPublisher.close().runIO()
-      val statusUpdates = collectStatus.join.runIO()
+      val statusUpdates = collectStatus.join
+        .timeout(Duration(5, TimeUnit.SECONDS))
+        .someOrFail(new Exception("Timed out waiting for kernel busy state"))
+        .runIO()
 
       // should have gotten a notification that the kernel became dead
       statusUpdates should contain (KernelBusyState(busy = false, alive = false))
