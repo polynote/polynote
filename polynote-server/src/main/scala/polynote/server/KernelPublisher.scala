@@ -210,12 +210,13 @@ class KernelPublisher private (
     } yield ()
   } *> closeIfNoSubscribers.delay(5.seconds).forkDaemon.unit
 
-  def close(): TaskB[Unit] =
+  def close(): TaskB[Unit] = ZIO.unlessM(closed.isDone) {
+    closed.succeed(()).unit *>
       subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit *>
       shutdownKernel() *>
       taskManager.shutdown() *>
-      versionedNotebook.close() *>
-      closed.succeed(()).unit
+      versionedNotebook.close()
+  }
 
   private def createKernel(): TaskG[Kernel] = kernelFactory()
     .provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
