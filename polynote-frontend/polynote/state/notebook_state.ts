@@ -247,7 +247,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 }
             }
             const currentCell = state.cells[currentCellId];
-            anchor = {id: currentCellId, language: currentCell?.language ?? 'scala', metadata: currentCell?.metadata ?? new CellMetadata()};
+            anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: currentCell?.metadata ?? new CellMetadata()};
         }
         const anchorIdx = this.getCellIndex(anchor.id)!;
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;

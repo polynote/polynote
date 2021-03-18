@@ -4,7 +4,9 @@ import {
     clearArray,
     Disposable,
     EditString,
-    editString, ImmediateDisposable, moveArrayValue,
+    editString,
+    ImmediateDisposable,
+    moveArrayValue,
     removeFromArray,
     SetValue,
     setValue,
@@ -31,8 +33,10 @@ import {
     ClientResult,
     CompileErrors,
     ExecutionInfo,
+    KernelReport,
     MIMEClientResult,
     Output,
+    Position,
     PosRange,
     ResultValue,
     RuntimeError
@@ -61,14 +65,7 @@ import {VimStatus} from "./vim_status";
 import {availableResultValues, cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
-import {
-    collect,
-    collectInstances,
-    deepCopy,
-    deepEquals,
-    findInstance,
-    linePosAt
-} from "../../../util/helpers";
+import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
 import {
     CellPresenceState,
     CellState,
@@ -83,7 +80,6 @@ import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 import SignatureHelpResult = languages.SignatureHelpResult;
-import EditorOption = editor.EditorOption;
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
@@ -1923,9 +1919,14 @@ export class VizCell extends Cell {
         } else if (initialViz && initialViz.value) {
             this.valueName = initialViz.value;
         } else {
-            throw new window.Error("No value defined for viz cell");
+            console.error("No value defined for viz cell!")
+            this.cellState.updateField("compileErrors", () => setValue([new CompileErrors([
+                new KernelReport(
+                    new Position(`Cell ${this.id}`, 0, 0, 0),
+                    "No value defined for viz cell! This should never happen. If you see this error, please report it to the Polynote team along with the contents of your browser console. Thank you!",
+                    2)
+            ])]))
         }
-
 
         this.editorEl = div(['viz-selector', 'loading'], 'Notebook is loading...');
 
