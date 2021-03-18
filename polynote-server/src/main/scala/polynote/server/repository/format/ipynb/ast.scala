@@ -264,9 +264,11 @@ object JupyterNotebook {
     NotebookContent(cells, config)
   }
 
+  val excludedLanguages: Set[String] = Set("text", "markdown", "html", "viz")
+
   def fromNotebook(notebook: NotebookContent): JupyterNotebook = {
     val languages = notebook.cells.collect {
-      case cell if cell.language != "text" && cell.language != "markdown" && cell.language != "html" => cell.language
+      case cell if !excludedLanguages(cell.language) => cell.language
     }
 
     val mostUsedLanguage = languages.groupBy(identity)
