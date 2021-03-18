@@ -80,10 +80,10 @@ class KernelPublisher private (
     kernel.awaitClosed.catchAllCause {
       err => publishStatus.publish1(KernelError(err.squash)) *> Logging.error(s"Kernel closed with error", err)
     } *>
+      publishStatus.publish1(KernelBusyState(busy = false, alive = false)) *>
       Logging.info("Kernel closed") *>
       kernelRef.set(None) *>
-      closeIfNoSubscribers *>
-      publishStatus.publish1(KernelBusyState(busy = false, alive = false))
+      closeIfNoSubscribers
 
   val kernel: RIO[BaseEnv with GlobalEnv, Kernel] = kernelRef.get.flatMap {
     case Some(kernel) =>
