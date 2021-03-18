@@ -193,7 +193,7 @@ class KernelPublisher private (
   }
 
   private def closeIfNoSubscribers: TaskB[Unit] =
-    ZIO.whenM(kernelStarting.withPermit(kernelRef.get.map(_.nonEmpty)) && subscribers.isEmpty) {
+    ZIO.whenM(kernelStarting.withPermit(kernelRef.get.map(_.isEmpty)) && subscribers.isEmpty) {
       for {
         path <- latestVersion.map(_._2.path)
         _    <- Logging.info(s"Closing $path (idle with no more subscribers)")
