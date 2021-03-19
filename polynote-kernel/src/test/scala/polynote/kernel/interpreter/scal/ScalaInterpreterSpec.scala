@@ -363,7 +363,7 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
   "completions" - {
     def completionsMap(code: String, pos: Int, state: State = cellState) =
-      interpreter.completionsAt(code, pos, state).runIO().groupBy(_.name.toString)
+      interpreter.completionsAt(code, if (pos < 0) code.length else pos, state).runIO().groupBy(_.name.toString)
 
     "complete class defined in cell" in {
       val code = """class Foo() {
@@ -390,6 +390,18 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
         someMethod.completionType shouldEqual CompletionType.Method
         someMethod.resultType shouldEqual "Int"
       }
+    }
+
+    "importing a root package" in {
+      val completions = completionsMap("import sc", -1, State.Root)
+      val List(scala) = completions("scala")
+      scala.completionType shouldEqual CompletionType.Package
+    }
+
+    "importing a method from a stable object" in {
+      val completions = completionsMap("import scala.util.Random.", -1, State.Root)
+      val List(scala) = completions("nextGaussian")
+      scala.completionType shouldEqual CompletionType.Method
     }
 
     "imported method" in {
