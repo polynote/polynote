@@ -84,6 +84,7 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
+import {UserPreferencesHandler} from "../../../state/preferences";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -356,21 +357,28 @@ export class CellContainer extends Disposable {
     }
 }
 
-export const cellHotkeys = {
-    [monaco.KeyCode.UpArrow]: ["MoveUp", "Move to previous cell."],
-    [monaco.KeyCode.DownArrow]: ["MoveDown", "Move to next cell. If there is no cell below, create it."],
-    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: ["RunAndSelectNext", "Run cell and select the next cell. If there is no cell, create one."],
-    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: ["RunAndInsertBelow", "Run cell and insert a new cell below it."],
-    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: ["SelectPrevious", "Move to previous."],
-    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: ["SelectNext", "Move to next cell. If there is no cell below, create it."],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A]: ["InsertAbove", "Insert a cell above this cell"],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B]: ["InsertBelow", "Insert a cell below this cell"],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D]: ["Delete", "Delete this cell"],
-    [monaco.KeyMod.Shift | monaco.KeyCode.F10]: ["RunAll", "Run all cells."],
-    [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: ["RunToCursor", "Run to cursor."],
+export interface HotkeyInfo {
+    key: string,
+    description: string,
+    hide?: boolean,
+    vimOnly?: boolean
+}
+
+export const cellHotkeys: Record<string, HotkeyInfo> = {
+    [monaco.KeyCode.UpArrow]: {key: "MoveUp", description: "Move to previous cell."},
+    [monaco.KeyCode.DownArrow]: {key: "MoveDown", description: "Move to next cell. If there is no cell below, create it."},
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: {key: "RunAndSelectNext", description: "Run cell and select the next cell. If there is no cell, create one."},
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: {key: "RunAndInsertBelow", description: "Run cell and insert a new cell below it."},
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: {key: "SelectPrevious", description: "Move to previous."},
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: {key: "SelectNext", description: "Move to next cell. If there is no cell below, create it."},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A]: {key: "InsertAbove", description: "Insert a cell above this cell"},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B]: {key: "InsertBelow", description: "Insert a cell below this cell"},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D]: {key: "Delete", description: "Delete this cell"},
+    [monaco.KeyMod.Shift | monaco.KeyCode.F10]: {key: "RunAll", description: "Run all cells."},
+    [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: {key: "RunToCursor", description: "Run to cursor."},
     // Special hotkeys to support VIM movement across cells. They are not displayed in the hotkey list
-    [monaco.KeyCode.KEY_J]: ["MoveDownJ", ""],
-    [monaco.KeyCode.KEY_K]: ["MoveUpK", ""],
+    [monaco.KeyCode.KEY_J]: {key: "MoveDownJ", description: "", hide: true, vimOnly: true},
+    [monaco.KeyCode.KEY_K]: {key: "MoveUpK", description: "", hide: true, vimOnly: true},
 };
 
 type PostKeyAction = "stopPropagation" | "preventDefault"
@@ -517,8 +525,8 @@ abstract class Cell extends Disposable {
             keybinding = new StandardKeyboardEvent(evt)._asKeybinding;
         }
         const hotkey = cellHotkeys[keybinding]
-        if (hotkey && hotkey.length > 0) {
-            const key = hotkey[0];
+        if (hotkey && (!hotkey.vimOnly || UserPreferencesHandler.state['vim'].value)) {
+            const key = hotkey.key;
             const pos = this.getPosition();
             const range = this.getRange();
             const selection = this.getCurrentSelection();
@@ -1796,7 +1804,6 @@ export class TextCell extends Cell {
             ['blur', () => {
                 this.doDeselect();
             }],
-            ['keydown', (evt: KeyboardEvent) => this.onKeyDown(evt)],
             ['input', (evt: KeyboardEvent) => this.onInput()]
         ]
         this.listeners.forEach(([k, fn]) => {
