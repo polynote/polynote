@@ -83,7 +83,6 @@ import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 import SignatureHelpResult = languages.SignatureHelpResult;
-import EditorOption = editor.EditorOption;
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
@@ -639,7 +638,7 @@ export class CodeCell extends Cell {
         this.editor = monaco.editor.create(this.editorEl, {
             value: this.state.content,
             language: highlightLanguage,
-            automaticLayout: true, // this used to poll but it looks like it doesn't any more? https://github.com/microsoft/vscode/pull/90111/files
+            automaticLayout: false,
             codeLens: false,
             dragAndDrop: true,
             minimap: { enabled: false },
@@ -654,16 +653,13 @@ export class CodeCell extends Cell {
             lineDecorationsWidth: 0,
             renderLineHighlight: "none",
             scrollbar: {
-                alwaysConsumeMouseWheel: false
-            }
+                alwaysConsumeMouseWheel: false,
+                vertical: "hidden",
+                verticalScrollbarSize: 0,
+            },
         });
 
-        this.editorEl.style.height = (this.editor.getScrollHeight()) + "px";
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
-
-        // layout now, and again after notebook loading (in case a scrollbar was introduced)
-        this.editor.layout();
-        notebookState.loaded.then(() => this.editor.layout());
 
         // watch for resize events
         const resizeObs = new ResizeObserver(() => {
@@ -1147,12 +1143,13 @@ export class CodeCell extends Cell {
     layout() {
         const editorLayout = this.editor.getLayoutInfo();
         // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
-        const height = this.editor.getContentHeight() + editorLayout.horizontalScrollbarHeight;
-        // the editor width is determined by the container's width, but we subtract the decorations so it doesn't overflow.
-        const width = this.editorEl.clientWidth - editorLayout.decorationsWidth;
+        const lineHeight = this.editor.getOption(editor.EditorOption.lineHeight);
+        // if the editor height is less than one line we need to initialize the height with both the content height as well as the horizontal scrollbar height.
+        const shouldAddScrollbarHeight = editorLayout.height < lineHeight;
+        const height = this.editor.getContentHeight() + (shouldAddScrollbarHeight ? editorLayout.horizontalScrollbarHeight : 0);
+        // the editor width is determined by the container's width.
+        const width = this.editorEl.clientWidth;
 
-        // Update height on the container element.
-        this.editorEl.style.height = height + "px";
         // Update height and width on the editor.
         this.editor.layout({width, height});
     }
