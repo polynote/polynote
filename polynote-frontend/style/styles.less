@@ -81,7 +81,8 @@ select {
   height: @toolbar-height;
   border-bottom-width: 1px;
   border-bottom-style: solid;
-  z-index: 2;
+  z-index: 50;
+  position: relative;
 
   user-select: none;
 
@@ -1332,6 +1333,13 @@ button.inspect.icon-button {
   opacity: 1.0;
 }
 
+.monaco-overflow {
+  position: absolute !important;
+  visibility: hidden;
+  .visible {
+    visibility: visible !important;
+  }
+}
 
 .dependencies .icon {
   transform: scale(1, -1);

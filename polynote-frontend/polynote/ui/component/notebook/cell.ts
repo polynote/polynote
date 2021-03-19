@@ -621,6 +621,7 @@ export class CodeCell extends Cell {
     private commentHandler: CommentHandler;
 
     private errorMarkers: ErrorMarker[] = [];
+    private overflowDomNode: TagElement<"div">;
 
     constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>) {
         super(dispatcher, notebookState, cell);
@@ -637,6 +638,17 @@ export class CodeCell extends Cell {
         const execInfoEl = div(["exec-info"], []);
 
         this.editorEl = div(['cell-input-editor'], [])
+
+        this.overflowDomNode = div(['monaco-overflow', 'monaco-editor', this.cellId], []);
+        this.notebookState.loaded.then(() => {
+            this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode)
+            this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', () => {
+                this.layout()
+            })
+        })
+        this.onDispose.then(() => {
+            this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode)
+        })
 
         const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
         // set up editor and content
@@ -662,6 +674,7 @@ export class CodeCell extends Cell {
                 vertical: "hidden",
                 verticalScrollbarSize: 0,
             },
+            overflowWidgetsDomNode: this.overflowDomNode
         });
 
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
@@ -1157,6 +1170,17 @@ export class CodeCell extends Cell {
 
         // Update height and width on the editor.
         this.editor.layout({width, height});
+
+        // update overflow widget node
+        const editorNode = this.editor.getDomNode()
+        if (editorNode) {
+            const r = editorNode.getBoundingClientRect()
+            this.overflowDomNode.style.top = r.top + "px";
+            this.overflowDomNode.style.left = r.left + "px";
+            this.overflowDomNode.style.height = r.height + "px"
+            this.overflowDomNode.style.width = r.width + "px"
+        }
+
     }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
