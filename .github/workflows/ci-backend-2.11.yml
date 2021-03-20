@@ -1,0 +1,44 @@
+name: Build 2.11
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v1
+    - uses: actions/setup-python@v1
+      with:
+        python-version: '3.7'
+        architecture: 'x64'
+    - uses: actions/setup-java@v1
+      with:
+        java-version: 8
+        architecture: x64
+    - name: Build
+      run: |
+        echo "Setting up Python dependencies"
+        pip install -r ./requirements.txt
+        jep_site_packages_path=`pip show jep | grep "^Location:" | cut -d ':' -f 2 | cut -d ' ' -f 2`
+        jep_path=${jep_site_packages_path}/jep
+        jep_lib_path=`realpath ${jep_site_packages_path}/../../`
+        export LD_LIBRARY_PATH=${jep_path}:${jep_site_packages_path}:${jep_lib_path}:${LD_LIBRARY_PATH}
+        export LD_PRELOAD=${jep_lib_path}/libpython3.so
+
+        echo "Downloading Spark 2.1.1"
+        wget -q https://archive.apache.org/dist/spark/spark-2.1.1/spark-2.1.1-bin-hadoop2.7.tgz
+        tar xfz spark-2.1.1-bin-hadoop2.7.tgz
+        rm spark-2.1.1-bin-hadoop2.7.tgz
+        export SPARK_HOME=`pwd`"/spark-2.1.1-bin-hadoop2.7"
+        export PATH="$SPARK_HOME/bin:$PATH"
+
+        echo "Testing with Scala 2.11"
+        pushd $GITHUB_WORKSPACE
+          sbt ++2.11.12 test
+        popd
