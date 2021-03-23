@@ -351,10 +351,10 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
             val min = values.min
             val max = values.max
             val binWidth = (max - min) / binCount;
-            val boundaries = (min to max by binWidth).dropRight(1) :+ max
+            val boundaries = (0 until binCount).map(_ * binWidth + min) :+ max
 
             val binned = values.groupBy {
-              value => math.floor((value - min) / binWidth).toInt
+              value => math.floor((value - min) / binWidth).toInt // TODO: this isn't very accurate. Better to search boundaries instead?
             }.mapValues(_.size)
 
             boundaries.sliding(2, 1).zipWithIndex.toSeq.map {

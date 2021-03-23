@@ -13,7 +13,7 @@ import {
 } from "../data/result";
 import embed, {Result} from "vega-embed";
 import {DataStream} from "../messaging/datastream";
-import {parsePlotDefinition, plotToVega, plotToVegaCode, PlotValidationErrors} from "../ui/input/plot_selector";
+import {parsePlotDefinition, plotToVegaCode, PlotValidationErrors, validatePlot} from "../ui/input/plot_selector";
 import {CellContext, IClientInterpreter} from "./client_interpreter";
 import {collectFirstMatch, deepCopy, Deferred, findInstance, positionIn} from "../util/helpers";
 import {div} from "../ui/tags";
@@ -93,6 +93,7 @@ export function vizResult(id: number, viz: Viz, result: ResultValue, cellContext
             }
 
             try {
+                validatePlot(plotDef);
                 return VegaInterpreter.interpret(plotToVegaCode(plotDef, streamRepr.dataType), cellContext);
             } catch (e) {
                 if (e instanceof PlotValidationErrors) {

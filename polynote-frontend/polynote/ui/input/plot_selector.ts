@@ -2,7 +2,7 @@ import {
     button,
     checkbox,
     div,
-    dropdown,
+    dropdown, DropdownElement,
     h3,
     h4,
     iconButton,
@@ -114,7 +114,7 @@ export interface PlotDefinition {
     facet?: Facet
 }
 
-interface ValidPlotDefinition extends PlotDefinition {
+export interface ValidPlotDefinition extends PlotDefinition {
     plot: Plot
 }
 
@@ -152,7 +152,7 @@ export const PlotDefinition = {
 /**
  * Validate the given plot definition, throwing a PlotValidationErrors error if it is not valid.
  */
-function validatePlot(plotDefinition: PlotDefinition): asserts plotDefinition is ValidPlotDefinition {
+export function validatePlot(plotDefinition: PlotDefinition): asserts plotDefinition is ValidPlotDefinition {
     const errs = PlotDefinition.validationErrors(plotDefinition);
     if (errs.length) {
         throw new PlotValidationErrors(errs);
@@ -227,9 +227,7 @@ export function savePlotDefinition(plotDef: PlotDefinition) {
     return JSON.stringify(plotDef)
 }
 
-function plotToSpec(plotDef: PlotDefinition, schema: StructType): TopLevelSpec {
-    validatePlot(plotDef);
-
+function plotToSpec(plotDef: ValidPlotDefinition, schema: StructType): TopLevelSpec {
     const spec = (() => {
         const plot: Plot = plotDef.plot;
         switch (plot.type) {
@@ -319,19 +317,19 @@ function tableOps(plotDef: PlotDefinition): TableOp[] {
     }
 }
 
-export function plotToVega(plotDef: PlotDefinition, schema: StructType): TopLevelSpec {
+export function plotToVega(plotDef: ValidPlotDefinition, schema: StructType): TopLevelSpec {
     const spec = plotToSpec(plotDef, schema) as any;
     spec.width = 'container';
     return spec as TopLevelSpec;
 }
 
-export function plotToVegaCode(plotDef: PlotDefinition, schema: StructType): string {
+export function plotToVegaCode(plotDef: ValidPlotDefinition, schema: StructType): string {
     const spec = plotToVega(plotDef, schema) as any;
     spec.data.values = '$DATA_STREAM$';
     const ops = tableOps(plotDef);
     let streamSpec = `${plotDef.value}.useUnsafeLongs()`;
     ops.forEach(op => streamSpec = op.streamCode(streamSpec));
-    return JSON.stringify(spec).replace('"$DATA_STREAM$"', streamSpec);
+    return JSON.stringify(spec, undefined, 2).replace('"$DATA_STREAM$"', streamSpec);
 }
 
 function seriesName(series: PlotSeries) {
@@ -703,6 +701,9 @@ function histogramPlot(plotDef: PlotDefinition, plot: HistogramPlot, schema: Str
         throw new Error(`Field ${plot.x.field} is not in the schema`);
     }
 
+    // TODO: Bins would look nicer if the "step" could be calculated from the data as (max - min) / binCount.
+    //       But, vega-lite isn't capable of that (requires the `extent` transform from vega). Should this be
+    //       rewritten as a vega spec instead of vega-lite? It's quite a bit more complicated...
     return {
         $schema: 'https://vega.github.io/schema/vega-lite/v4.json',
         title: plotDef.title,
@@ -715,7 +716,7 @@ function histogramPlot(plotDef: PlotDefinition, plot: HistogramPlot, schema: Str
             x: {
                 field: "start",
                 type: "quantitative",
-                bin: "binned",
+                bin: {binned: true},
                 axis: {
                     title: plot.x.title,
                     tickCount: plot.binCount
@@ -744,6 +745,11 @@ const plotTypes = {
     histogram: "Histogram"
 }
 
+const noDimensionPlotTypes = {
+    xy: "XY Scatter",
+    histogram: "Histogram"
+}
+
 function deepFields(fields: StructField[], predicate: (type: DataType) => boolean, path?: string): StructField[] {
     const currentPath = path ? `${path}.` : "";
     return fields.flatMap(field =>
@@ -757,8 +763,8 @@ function deepFields(fields: StructField[], predicate: (type: DataType) => boolea
     );
 }
 
-function deepNumericFields(fields: StructField[]): StructField[] {
-    return deepFields(fields, type => NumericTypes.indexOf(type) >= 0);
+function deepMeasureFields(fields: StructField[]): StructField[] {
+    return deepFields(fields, type => NumericTypes.indexOf(type) >= 0 || type === StringType);
 }
 
 function deepDimensionFields(fields: StructField[]): StructField[] {
@@ -776,6 +782,10 @@ const Measures = {
     quartiles: "Median & error"
 }
 
+const NonNumericMeasures = {
+    count: "Count"
+}
+
 class MeasurePicker {
     readonly el: HTMLDivElement;
     private readonly popup: HTMLDivElement;
@@ -789,7 +799,7 @@ class MeasurePicker {
                 span(['indicator'], '▸')
             ]),
             this.popup = div(['measures-popup', 'dropdown', 'open'], [
-                ...Object.entries(Measures).map(
+                ...Object.entries(field.dataType.isNumeric ? Measures : NonNumericMeasures).map(
                     pair => button([pair[0]], {name: pair[0]}, pair[1]).click(evt => this.trigger(pair[0]))
                 )
             ])
@@ -1014,6 +1024,7 @@ export class PlotSelector extends Disposable {
     private readonly stateHandler: StateHandler<PlotSelectorState>;
     private listeners: ((newPlot: PlotDefinition, oldPlot?: PlotDefinition) => any)[] = [];
 
+    private typeSelector: DropdownElement;
     private dimensionFields: StructField[];
     private measuresUI: MeasuresUI;
     private xField: TagElement<'select'>;
@@ -1027,16 +1038,22 @@ export class PlotSelector extends Disposable {
         super();
         const dimensionFields = this.dimensionFields = deepDimensionFields(schema.fields);
 
-        if (dimensionFields.length === 0) {
-            throw new Error("No possible dimension fields");
+        const dimensionOptions = Object.fromEntries(dimensionFields.map(field => [field.name, field.name]));
+        const measureFields    = deepMeasureFields(schema.fields);
+        const numericMeasures  = measureFields.filter(field => field.dataType.isNumeric);
+        const measureOptions   = Object.fromEntries(numericMeasures.map(field => [field.name, field.name]));
+
+
+        if (dimensionFields.length === 0 && measureFields.length === 0) {
+            throw new Error("No dimension or measure fields in schema!");
         }
 
-        const dimensionOptions = Object.fromEntries(dimensionFields.map(field => [field.name, field.name]));
-        const measureFields    = deepNumericFields(schema.fields);
-        const measureOptions   = Object.fromEntries(measureFields.map(field => [field.name, field.name]));
-
-        const state = initialState ? PlotSelectorState.fromPlotDef(initialState, dimensionFields[0].name) : PlotSelectorState.empty(name, dimensionFields[0].name, name);
-        const stateHandler = this.stateHandler = StateHandler.from(state).disposeWith(this);
+        const hasDimensions       = dimensionFields.length > 0;
+        const defaultX            = dimensionFields[0]?.name ?? measureFields[0].name;
+        const defaultType         = hasDimensions ? "bar" : "xy";
+        const state               = initialState ? PlotSelectorState.fromPlotDef(initialState, defaultX)
+                                                 : PlotSelectorState.empty(name, defaultX, defaultType, name);
+        const stateHandler        = this.stateHandler = StateHandler.from(state).disposeWith(this);
 
         const typeHandler         = stateHandler.lens("type");
         const facetHandler        = stateHandler.lensOpt("facet");
@@ -1053,12 +1070,14 @@ export class PlotSelector extends Disposable {
                 this.listeners.forEach(l => l(newState.toPlotDef(), result.oldValue?.toPlotDef()))
         });
         stateHandler.addObserver(newState => {
-            if (newState.facet) {
-                this.el.classList.add('facet');
-                this.facetCheckbox.querySelector('input')!.checked = true;
-            } else {
-                this.el.classList.remove('facet');
-                this.facetCheckbox.querySelector('input')!.checked = false;
+            if (hasDimensions) {
+                if (newState.facet) {
+                    this.el.classList.add('facet');
+                    this.facetCheckbox.querySelector('input')!.checked = true;
+                } else {
+                    this.el.classList.remove('facet');
+                    this.facetCheckbox.querySelector('input')!.checked = false;
+                }
             }
         });
 
@@ -1067,21 +1086,21 @@ export class PlotSelector extends Disposable {
                 h3(['table-name'], 'Plot'),
                 div(['type-selector'], [
                     label([], "Type",
-                        dropdown(['plot-type'], plotTypes, state.type).bind(typeHandler))
+                        this.typeSelector = dropdown(['plot-type'], hasDimensions ? plotTypes : noDimensionPlotTypes, state.type).bind(typeHandler))
                 ]),
                 div(['title-input'], [
                     label([], "Title",
                         textbox([], "Plot title", initialState?.title || initialState?.value || "")
                             .bindWithDefault(stateHandler.lens('title'), ""))
                 ]),
-                this.facetCheckbox = checkbox(['facet'], 'Facet', !!(state.facet)).onValueChange<boolean>(checked => {
+                hasDimensions ? this.facetCheckbox = checkbox(['facet'], 'Facet', !!(state.facet)).onValueChange<boolean>(checked => {
                     if (checked) {
                         this.el.classList.add('facet');
                     } else {
                         this.el.classList.remove('facet');
                     }
-                }),
-                div(['facet-options'], [
+                }) : undefined,
+                hasDimensions ? div(['facet-options'], [
                     label(['facet-row'], "Facet row",
                         dropdown([], { "": "None", ...dimensionOptions}, state.facet?.row || undefined)
                             .bindWithDefault(facetHandler.lens("row"), "")),
@@ -1096,16 +1115,16 @@ export class PlotSelector extends Disposable {
                         numberbox([], "Height", state.facet?.height)
                             .bindWithDefault(facetHandler.lens("height"), 50)
                             .attr("step", "1"))
-                ])
+                ]) : undefined
             ]),
             div(['x-axis-config'], [
                 h3([], "X Axis"),
                 label(['title'], "Title",
                     textbox([], "Axis title", initialState?.plot?.x.title)
                         .bindWithDefault(xHandler.lens("title"), "")),
-                label(['dimension-field'], "Dimension",
+                hasDimensions ? label(['dimension-field'], "Dimension",
                     this.xDimension = dropdown([], dimensionOptions, initialState?.plot?.x.field)
-                        .bind(xHandler.lens("field"))),
+                        .bind(xHandler.lens("field"))) : undefined,
                 label(['x-field'], "Field",
                     this.xField = dropdown([], measureOptions, initialState?.plot?.x.field)
                         .bind(xHandler.lens("field")))
@@ -1154,6 +1173,8 @@ export class PlotSelector extends Disposable {
                 ])
             ])
         ]);
+
+        this.onSetType(this.typeSelector.getSelectedValue())
 
         this.onDispose.then(() => {
             this.listeners = [];
@@ -1241,8 +1262,8 @@ class PlotSelectorState {
         public facet: Facet | undefined = undefined
     ) {}
 
-    public static empty(name: string, defaultX: string, title?: string) {
-        return new PlotSelectorState(name, "bar", title, { field: defaultX })
+    public static empty(name: string, defaultX: string, type?: "bar" | "xy", title?: string) {
+        return new PlotSelectorState(name, type ?? "bar", title, { field: defaultX })
     }
 
     static fromPlotDef(plotDef: PlotDefinition, defaultX: string): PlotSelectorState {
