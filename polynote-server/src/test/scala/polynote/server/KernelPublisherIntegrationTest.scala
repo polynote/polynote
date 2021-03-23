@@ -3,7 +3,7 @@ package polynote.server
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 import fs2.concurrent.Topic
-import org.scalacheck.{Gen, Arbitrary, Shrink}
+import org.scalacheck.{Arbitrary, Gen, Shrink}
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers}
 import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
@@ -25,11 +25,12 @@ import zio.duration.Duration
 import zio.stream.{Take, ZStream}
 import zio.{Chunk, Fiber, Has, Promise, Queue, RIO, Ref, Semaphore, Tag, Task, UIO, ULayer, URIO, ZIO, ZLayer}
 import zio.interop.catz.taskConcurrentInstance
-import zio.random, random.Random
+import zio.random
+import random.Random
 
 import scala.collection.mutable.ListBuffer
-
 import KernelPublisherIntegrationTest._
+import polynote.data.Rope
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory with ScalaCheckDrivenPropertyChecks {
   val tagged: Tag[Interpreter.Factories] = implicitly
@@ -48,7 +49,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
   private val bq = mock[Topic[Task, Option[Message]]]
 
   implicit override val generatorDrivenConfig: PropertyCheckConfiguration =
-    PropertyCheckConfiguration(minSize = 0, sizeRange = 5, minSuccessful = 50)
+    PropertyCheckConfiguration(minSize = 10, sizeRange = 10, minSuccessful = 50)
 
   "KernelPublisher" - {
 
@@ -155,7 +156,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
         val kernelFactory   = Kernel.Factory.const(kernel)
         val cell = NotebookCell(
           CellID(0), "scala",
-          """text in cell""".stripMargin
+          initialText
         )
         val notebook        = Notebook("/i/am/fake.ipynb", ShortList(List(cell)), None)
         val ref             = MockNotebookRef(notebook).runIO()
@@ -202,6 +203,17 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
             (client1.log ++ client2.log ++ serverLog).sortBy(_._1).foreach {
               case (t, log) => println(log)
             }
+
+            println("\n===LOGS===")
+            println(s"${client1.outLog.size} ${client2.inLog.size} ${client2.outLog.size} ${client1.inLog.size}")
+            client1.outLog.zipAll(client2.inLog, "", "").zipAll(client2.outLog, "", "").zipAll(client1.inLog, "", "").foreach {
+              case (((out1, in2), out2), in1) =>
+                println(s"< 1: $out1")
+                println(s"< 2: $out2")
+                println(s"> 1: $in1")
+                println(s"> 2: $in2")
+                println()
+            }
           }
           res1 shouldEqual serv
           res2 shouldEqual serv
@@ -236,6 +248,8 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
     private val edits = new ListBuffer[ContentEdit]
     private val allUpdates = new ListBuffer[ContentEdits]
     val log = new ListBuffer[(Long, String)]
+    val outLog = new ListBuffer[String]
+    val inLog = new ListBuffer[String]
     val globalVersions = new ListBuffer[(Int, String)]
 
     def content: String = notebook.get.runIO().cells.head.content.toString
@@ -249,8 +263,8 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
         case update: NotebookUpdate =>
           var logStr = new StringBuilder
           ZIO.sleep(Duration.fromMillis(latencies.next())) *> js.withPermit {
-            ZIO.effectTotal(logStr ++= s"""> ${subscriber.id} $update\n""") *>
             notebook.get.flatMap { prev =>
+              ZIO.effectTotal(logStr ++= s"""> ${subscriber.id} $update "${prev.cells.head.content}"\n""") *>
               localVersionRef.get.flatMap {
                 localVersion =>
                   val currentTime = System.currentTimeMillis()
@@ -258,19 +272,40 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
                   val rebased = if (update.localVersion < localVersion) {
                     logStr ++= s"""  rebasing $update from L${update.localVersion} to L$localVersion on "${prev.cells.head.content}"\n"""
 
-                    versionBuffer.rebaseThrough(update.withVersions(update.localVersion, update.localVersion), 1, localVersion, Some(logStr), reverse = true)
-//                    val rebaseOnto = versionBuffer.getRange(update.localVersion + 1, localVersion)
-//                    rebaseOnto.foldLeft(update) {
-//                      case (accum, (_, next@UpdateCell(_, _, _, edits, _))) =>
-//                        val rebased = accum.rebase(next)
-//                        val rebasedEdits = rebased.asInstanceOf[UpdateCell].edits
-//                        logStr ++= s"  ${next} => ${rebased}\n"
-//                        rebased
-//                    }
+//                    versionBuffer.rebaseThrough(update.withVersions(update.localVersion, update.localVersion), 1, localVersion, Some(logStr), reverse = true, updateBuffer = false)
+                    val rebaseOnto = versionBuffer.getRange(update.localVersion + 1, localVersion)
+                    var content = prev.cells.head.content
+                    rebaseOnto.foldLeft(update) {
+                      case (accum, (_, next@UpdateCell(_, _, _, edits, _))) =>
+                        val rebased = accum.rebase(next)
+                        val rebasedEdits = rebased.asInstanceOf[UpdateCell].edits
+                        logStr ++= s"  ${next} => ${rebased}\n"
+                        rebased
+                    }
                     //update.rebaseAll(rebaseOnto, Some(logStr))._1
                   } else {
                     update
                   }
+                  inLog += (rebased match {
+                    case UpdateCell(_, _, _, edits, _) if edits.edits.nonEmpty =>
+                      val editLog = new ListBuffer[String]
+                      edits.edits.foldLeft(prev.cells.head.content) {
+                        (content, edit) =>
+                          editLog += edit.action(content.toString)
+                          edit.applyTo(content)
+                      }
+                      editLog.mkString("\n     ")
+
+                    case UpdateCell(_, _, _, edits, _) =>
+                      val editLog = new ListBuffer[String]
+                      editLog += "[Eliminated:]"
+                      update.asInstanceOf[UpdateCell].edits.edits.foldLeft(prev.cells.head.content) {
+                        (content, edit) =>
+                          editLog += edit.action(content.toString)
+                          edit.applyTo(content)
+                      }
+                      editLog.mkString("\n     ")
+                  })
                   globalVersionRef.set(rebased.globalVersion) *>
                     notebook.updateAndGet(nb => rebased.applyTo(nb)).tap {
                       nb => ZIO.effectTotal {
@@ -286,7 +321,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
                             allUpdates += ce
                             edits.foldLeft(currentOffset) {
                               case (currentOffset, Insert(pos, content)) if pos <= currentOffset => currentOffset + content.length
-                              case (currentOffset, Delete(pos, length)) if pos <= currentOffset => currentOffset - length
+                              case (currentOffset, Delete(pos, length)) if pos < currentOffset => currentOffset - length
                               case (currentOffset, _) => currentOffset
                             }
                           case _ => currentOffset
@@ -332,8 +367,9 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
           nb            <- notebook.updateAndGet(update.applyTo)
           _              = versionBuffer.add(localVersion, (0, update))
           content        = nb.cells.head.content.toString
-          str = s"""< ${subscriber.id} $edit "$prevContent" -> "$content""""
+          str = s"""< ${subscriber.id} $update "$prevContent" -> "$content""""
           _              = log += ((System.currentTimeMillis(), str))
+          _ = outLog += edit.action(prevContent)
           //_ = println(str)
         } yield update
       }.uninterruptible
@@ -365,10 +401,13 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
 object KernelPublisherIntegrationTest {
 
+  val initialText = "ABCDEFHIJKLMNOPQRSTUVWXYZ"
 
   sealed trait Op
   final case object Backspace extends Op
-  final case class Keystroke(char: Char) extends Op
+  final case class Keystroke(char: String) extends Op
+  final case class HighlightAndDelete(pos: Int, len: Int) extends Op
+  final case class HighlightAndPaste(pos: Int, len: Int, str: String) extends Ops
 
   case class Init(
     initialOffset: Int,
@@ -377,8 +416,16 @@ object KernelPublisherIntegrationTest {
     outboundLatencies: Stream[Long]
   )
 
-  val genKeypress: Gen[(Long, Op)] = delay(Gen.alphaNumChar.map(Keystroke))
+  val genKeypress: Gen[(Long, Op)] = delay(Gen.alphaLowerChar.map(_.toString).map(Keystroke))
   val genBackspace: Gen[(Long, Op)] = delay(Gen.const(Backspace))
+  val genPaste: Gen[(Long, Op)] = delay(Gen.alphaLowerStr.map(Keystroke))
+  def genDelete(len: Int): Gen[(Long, Op)] = delay {
+    for {
+      a <- Gen.choose(0, len - 1)
+      b <- Gen.choose(0, len - 1)
+      if a != b
+    } yield HighlightAndDelete(math.min(a, b), math.max(a, b))
+  }
 
   // delays for simulated network latency and simulated keyboard WPM. So that checking 100 scenarios doesn't take
   // hours, the time scale is compressed.
@@ -393,31 +440,16 @@ object KernelPublisherIntegrationTest {
   def genKeypressesFor(offset: Int, n: Int): Gen[List[(Long, Op)]] = if (n == 0) Gen.const(List.empty) else offset match {
     case 0 => genKeypress.flatMap(op => genKeypressesFor(offset + 1, n - 1).map(rest => op :: rest))
     case _ => Gen.frequency(
-      5 -> genKeypress.flatMap(op => genKeypressesFor(offset + 1, n - 1).map(rest => op :: rest)),
-      5 -> genBackspace.flatMap(op => genKeypressesFor(offset - 1, n - 1).map(rest => op :: rest))
+      9 -> genKeypress.flatMap(op => genKeypressesFor(offset + 1, n - 1).map(rest => op :: rest)),
+      2 -> genBackspace.flatMap(op => genKeypressesFor(offset - 1, n - 1).map(rest => op :: rest))
     )
   }
 
-//  val genDelayedKeypress: Gen[(Long, Op)] = for {
-//    delay    <- Gen.choose(30, 50)
-//    keypress <- genKeypress
-//  } yield (delay, keypress)
-//
-//  val genKeypresses: Gen[List[(Long, Op)]] = Gen.listOf(genDelayedKeypress)
-
-//  implicit val arbKeypresses: Arbitrary[List[(Long, Op)]] = Arbitrary(genKeypresses)
-//  private def smallerKeypresses(keypresses: List[(Long, Op)]): Stream[List[(Long, Op)]] = keypresses match {
-//    case Nil       => Stream.empty
-//    case _ :: Nil  => Stream.empty
-//    case _ :: rest => rest #:: smallerKeypresses(rest)
-//  }
-//
-//  implicit val shrinkKeypresses: Shrink[List[(Long, Op)]] = Shrink(smallerKeypresses)
 
   implicit val arbInit: Arbitrary[Init] = Arbitrary {
     Gen.sized {
       size => for {
-        initialOffset <- Gen.choose(0, "text in cell".length)
+        initialOffset <- Gen.choose(0, initialText.length)
         ops           <- genKeypressesFor(initialOffset, size)
         inbound       <- genLatencies
         outbound      <- genLatencies

@@ -392,7 +392,7 @@ final class SubscriberUpdateBuffer extends VersionBuffer[(SubscriberId, Notebook
     * go through that version.
     * @return
     */
-  def rebaseThrough(update: NotebookUpdate, subscriberId: SubscriberId, targetVersion: GlobalVersion, log: Option[StringBuilder] = None, reverse: Boolean = false): NotebookUpdate = update match {
+  def rebaseThrough(update: NotebookUpdate, subscriberId: SubscriberId, targetVersion: GlobalVersion, log: Option[StringBuilder] = None, reverse: Boolean = false, updateBuffer: Boolean = true): NotebookUpdate = update match {
     case update@UpdateCell(sourceVersion, _, cellId, sourceEdits, _) =>
       synchronized {
         var index = versionIndex(sourceVersion + 1)
@@ -410,19 +410,15 @@ final class SubscriberUpdateBuffer extends VersionBuffer[(SubscriberId, Notebook
           }
           while (currentVersion <= targetVersion && index < size) {
             val elem = versionedValueAt(index)
+            currentVersion = elem._1
             if (elem._2._1 != subscriberId) {
               val prevUpdateTuple@(_, prevUpdate) = elem._2
               prevUpdate match {
                 case prevUpdate@UpdateCell(_, _, `cellId`, targetEdits, _) =>
-                  if (reverse) {
-                    val (targetRebased, sourceRebased) = targetEdits.rebaseBoth(sourceEdits)
-                    rebasedEdits = ContentEdits(sourceRebased)
-                    log.foreach(_ ++= s"  $prevUpdate => $sourceRebased\n")
-                    setValueAt(index, prevUpdateTuple.copy(_2 = prevUpdate.copy(edits = targetRebased)))
-                  } else {
-                    val (sourceRebased, targetRebased) = rebasedEdits.rebaseBoth(targetEdits)
-                    rebasedEdits = sourceRebased
-                    log.foreach(_ ++= s"  $prevUpdate => $sourceRebased\n")
+                  val (sourceRebased, targetRebased) = rebasedEdits.rebaseBoth(targetEdits, reverse)
+                  rebasedEdits = sourceRebased
+                  log.foreach(_ ++= s"  $prevUpdate => $sourceRebased\n")
+                  if (updateBuffer) {
                     setValueAt(index, prevUpdateTuple.copy(_2 = prevUpdate.copy(edits = ContentEdits(targetRebased))))
                   }
                 case _ =>
