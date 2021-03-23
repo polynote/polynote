@@ -4,7 +4,10 @@ import {
     clearArray,
     Disposable,
     EditString,
-    editString, IDisposable, ImmediateDisposable, moveArrayValue,
+    editString,
+    IDisposable,
+    ImmediateDisposable,
+    moveArrayValue,
     removeFromArray,
     SetValue,
     setValue,
@@ -31,8 +34,10 @@ import {
     ClientResult,
     CompileErrors,
     ExecutionInfo,
+    KernelReport,
     MIMEClientResult,
     Output,
+    Position,
     PosRange,
     ResultValue,
     RuntimeError
@@ -61,14 +66,7 @@ import {VimStatus} from "./vim_status";
 import {availableResultValues, cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
-import {
-    collect,
-    collectInstances,
-    deepCopy,
-    deepEquals,
-    findInstance,
-    linePosAt
-} from "../../../util/helpers";
+import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
 import {
     CellPresenceState,
     CellState,
@@ -83,11 +81,11 @@ import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import CompletionList = languages.CompletionList;
 import SignatureHelp = languages.SignatureHelp;
 import SignatureHelpResult = languages.SignatureHelpResult;
-import EditorOption = editor.EditorOption;
 import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
+import {UserPreferencesHandler} from "../../../state/preferences";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -342,11 +340,11 @@ export class CellContainer extends Disposable {
     private cellFor(lang: string) {
         switch (lang) {
             case "text":
-                return new TextCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+                return new TextCell(this.dispatcher, this.notebookState, this.cellState);
             case "viz":
-                return new VizCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+                return new VizCell(this.dispatcher, this.notebookState, this.cellState);
             default:
-                return new CodeCell(this.dispatcher, this.notebookState, this.cellState, this.path);
+                return new CodeCell(this.dispatcher, this.notebookState, this.cellState);
         }
     }
 
@@ -360,21 +358,28 @@ export class CellContainer extends Disposable {
     }
 }
 
-export const cellHotkeys = {
-    [monaco.KeyCode.UpArrow]: ["MoveUp", "Move to previous cell."],
-    [monaco.KeyCode.DownArrow]: ["MoveDown", "Move to next cell. If there is no cell below, create it."],
-    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: ["RunAndSelectNext", "Run cell and select the next cell. If there is no cell, create one."],
-    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: ["RunAndInsertBelow", "Run cell and insert a new cell below it."],
-    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: ["SelectPrevious", "Move to previous."],
-    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: ["SelectNext", "Move to next cell. If there is no cell below, create it."],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A]: ["InsertAbove", "Insert a cell above this cell"],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B]: ["InsertBelow", "Insert a cell below this cell"],
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D]: ["Delete", "Delete this cell"],
-    [monaco.KeyMod.Shift | monaco.KeyCode.F10]: ["RunAll", "Run all cells."],
-    [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: ["RunToCursor", "Run to cursor."],
+export interface HotkeyInfo {
+    key: string,
+    description: string,
+    hide?: boolean,
+    vimOnly?: boolean
+}
+
+export const cellHotkeys: Record<string, HotkeyInfo> = {
+    [monaco.KeyCode.UpArrow]: {key: "MoveUp", description: "Move to previous cell."},
+    [monaco.KeyCode.DownArrow]: {key: "MoveDown", description: "Move to next cell. If there is no cell below, create it."},
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: {key: "RunAndSelectNext", description: "Run cell and select the next cell. If there is no cell, create one."},
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: {key: "RunAndInsertBelow", description: "Run cell and insert a new cell below it."},
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: {key: "SelectPrevious", description: "Move to previous."},
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: {key: "SelectNext", description: "Move to next cell. If there is no cell below, create it."},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A]: {key: "InsertAbove", description: "Insert a cell above this cell"},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B]: {key: "InsertBelow", description: "Insert a cell below this cell"},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D]: {key: "Delete", description: "Delete this cell"},
+    [monaco.KeyMod.Shift | monaco.KeyCode.F10]: {key: "RunAll", description: "Run all cells."},
+    [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: {key: "RunToCursor", description: "Run to cursor."},
     // Special hotkeys to support VIM movement across cells. They are not displayed in the hotkey list
-    [monaco.KeyCode.KEY_J]: ["MoveDownJ", ""],
-    [monaco.KeyCode.KEY_K]: ["MoveUpK", ""],
+    [monaco.KeyCode.KEY_J]: {key: "MoveDownJ", description: "", hide: true, vimOnly: true},
+    [monaco.KeyCode.KEY_K]: {key: "MoveUpK", description: "", hide: true, vimOnly: true},
 };
 
 type PostKeyAction = "stopPropagation" | "preventDefault"
@@ -409,7 +414,7 @@ abstract class Cell extends Disposable {
                 this.onDeselected()
             }
         }
-        cellState.observeKey("selected", updateSelected);
+        notebookState.observeKey("activeCellId", activeCell => updateSelected(activeCell === this.id));
 
         cellState.onDispose.then(() => {
             this.dispose()
@@ -426,17 +431,21 @@ abstract class Cell extends Disposable {
         this.el?.parentElement?.classList.remove(name);
     }
 
+    get selected() {
+        return this.notebookState.state.activeCellId === this.id
+    }
+
     doSelect(){
-        if (! this.cellState.state.selected) {
+        if (! this.selected) {
             this.notebookState.selectCell(this.id)
         }
     }
 
     doDeselect(){
         if (document.body.contains(this.el)) { // prevent a blur call when a cell gets deleted.
-            if (this.cellState.state.selected // prevent blurring a different cell
+            if (this.selected // prevent blurring a different cell
                 && ! VimStatus.currentlyActive) {  // don't blur if Vim statusbar has been selected
-                this.cellState.updateField("selected", () => false)
+                this.notebookState.updateField("activeCellId", () => undefined)
             }
         }
     }
@@ -444,7 +453,7 @@ abstract class Cell extends Disposable {
     replace(oldCell: Cell): Promise<Cell> {
         return oldCell.dispose().then(() => {
             oldCell.el.replaceWith(this.el);
-            if (this.cellState.state.selected || oldCell.cellState.state.selected) {
+            if (this.selected || oldCell.selected) {
                 this.onSelected()
             }
             return Promise.resolve(this)
@@ -460,10 +469,6 @@ abstract class Cell extends Disposable {
         this.scroll()
         if (!document.location.hash.includes(this.cellId)) {
             this.setUrl();
-        }
-
-        if (this.notebookState.state.activeCellId !== this.id) {
-            this.notebookState.updateField("activeCellId", () => setValue(this.id))
         }
     }
 
@@ -521,8 +526,8 @@ abstract class Cell extends Disposable {
             keybinding = new StandardKeyboardEvent(evt)._asKeybinding;
         }
         const hotkey = cellHotkeys[keybinding]
-        if (hotkey && hotkey.length > 0) {
-            const key = hotkey[0];
+        if (hotkey && (!hotkey.vimOnly || UserPreferencesHandler.state['vim'].value)) {
+            const key = hotkey.key;
             const pos = this.getPosition();
             const range = this.getRange();
             const selection = this.getCurrentSelection();
@@ -618,7 +623,7 @@ export class CodeCell extends Cell {
 
     private errorMarkers: ErrorMarker[] = [];
 
-    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>, private path: string) {
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>) {
         super(dispatcher, notebookState, cell);
         const cellState = this.cellState;
         const langSelector = dropdown(['lang-selector'], ServerStateHandler.state.interpreters);
@@ -702,8 +707,7 @@ export class CodeCell extends Cell {
         (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
             foldingModel => foldingModel?.onDidChange(() => this.layout())
         );
-        (this.editor.getModel() as any).onDidChangeContentFast((event: IModelContentChangedEvent) => this.onChangeModelContent(event));
-        //this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
+        this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
         // we need to do this hack in order for completions to work :(
         (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
@@ -1396,6 +1400,10 @@ export class CodeCell extends Cell {
         return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
     }
 
+    get path() {
+        return this.notebookState.state.path
+    }
+
     get markerOwner() {
         return `${this.path}-${this.id}`
     }
@@ -1856,7 +1864,7 @@ export class TextCell extends Cell {
     private lastContent: string;
     private listeners: [string, (evt: Event) => void][];
 
-    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>, private path: string) {
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>) {
         super(dispatcher, notebookState, stateHandler)
 
         const editorEl = div(['cell-input-editor', 'markdown-body'], [])
@@ -1876,7 +1884,6 @@ export class TextCell extends Cell {
             ['blur', () => {
                 this.doDeselect();
             }],
-            ['keydown', (evt: KeyboardEvent) => this.onKeyDown(evt)],
             ['input', (evt: KeyboardEvent) => this.onInput()]
         ]
         this.listeners.forEach(([k, fn]) => {
@@ -1991,7 +1998,7 @@ export class VizCell extends Cell {
     private previousViews: Record<string, [Viz, Output | ClientResult]> = {};
     private copyCellOutputBtn: TagElement<"button">;
 
-    constructor(dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>, private path: string) {
+    constructor(dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>) {
         super(dispatcher, _notebookState, _cellState);
         const cellState = this.cellState;
         const notebookState = this.notebookState;
@@ -2003,9 +2010,14 @@ export class VizCell extends Cell {
         } else if (initialViz && initialViz.value) {
             this.valueName = initialViz.value;
         } else {
-            throw new window.Error("No value defined for viz cell");
+            console.error("No value defined for viz cell!")
+            this.cellState.updateField("compileErrors", () => setValue([new CompileErrors([
+                new KernelReport(
+                    new Position(`Cell ${this.id}`, 0, 0, 0),
+                    "No value defined for viz cell! This should never happen. If you see this error, please report it to the Polynote team along with the contents of your browser console. Thank you!",
+                    2)
+            ])]))
         }
-
 
         this.editorEl = div(['viz-selector', 'loading'], 'Notebook is loading...');
 

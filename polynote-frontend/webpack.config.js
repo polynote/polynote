@@ -47,6 +47,7 @@ module.exports = {
         { from: 'style', to: 'style' },
         { from: 'vendor', to: 'vendor' },
         { from: 'favicon.ico', to: 'favicon.ico' },
+        { from: 'favicon.svg', to: 'favicon.svg' },
       ]
     })
   ],

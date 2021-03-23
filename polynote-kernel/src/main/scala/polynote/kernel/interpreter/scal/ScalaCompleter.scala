@@ -89,8 +89,11 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
           case Some(sel) => sel.name
         }
 
+        def isImportable(sym: Symbol): Boolean =
+          isVisibleSymbol(sym) && (sym.decodedName == sym.encodedName) && sym.name.startsWith(searchName)
+
         ZIO {
-          qual.tpe.members.filter(isVisibleSymbol).filter(_.isDefinedInPackage).filter(_.name.startsWith(searchName))
+          qual.tpe.members.filter(isImportable)
             .toList
             .sorted(importOrdering)
             .groupBy(_.name.decoded).values.map(_.head).toList
@@ -98,7 +101,22 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
         }
 
       case Import(Ident(name), List(ImportSelector(TermName("<error>"), _, _, _))) =>
-        indexCompletions(name.toString)
+
+        val rootPackages = ZIO {
+          val symbols = compiler.global.rootMirror.RootPackage.info.members.collect {
+            case sym: ModuleSymbol if !sym.isRootPackage && !sym.isEmptyPackage && sym.hasPackageFlag && sym.name.startsWith(name) => sym
+          }
+          symbols.toList.map {
+            sym =>
+              Completion(sym.name.toString, Nil, Nil, "", CompletionType.Package)
+          }
+        }
+
+        val fromIndex = indexCompletions(name.toString)
+
+        (rootPackages <&> fromIndex).map {
+          case (rootPackages, fromIndex) => rootPackages ++ fromIndex
+        }
       case _ => ZIO.succeed(Nil)
     }
 
@@ -144,8 +162,11 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 
   private val importOrdering: Ordering[Symbol] = new Ordering[Symbol] {
     def compare(x: Symbol, y: Symbol): Int = Ordering.Boolean.compare(y.hasPackageFlag, x.hasPackageFlag) match {
-      case 0 => Ordering.Boolean.compare(x.name.isOperatorName, y.name.isOperatorName) match {
-        case 0 => Ordering.String.compare(x.name.decoded, y.name.decoded)
+      case 0 => Ordering.Int.compare(y.ownerChain.length, x.ownerChain.length) match {
+        case 0 => Ordering.Boolean.compare(x.name.isOperatorName, y.name.isOperatorName) match {
+          case 0 => Ordering.String.compare(x.name.decoded, y.name.decoded)
+          case s => s
+        }
         case s => s
       }
       case s => s

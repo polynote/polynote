@@ -20,11 +20,11 @@ interface Keybinding {
 export function getHotkeys() {
     const hotkeys: Record<string, string> = {};
 
-    Object.entries(cellHotkeys).forEach(([code, [key, desc]]) => {
-        if (desc.length > 0) {
+    Object.entries(cellHotkeys).forEach(([code, keyInfo]) => {
+        if (!keyInfo.hide) {
             const simpleKeybinding: Keybinding = createSimpleKeybinding(code, OS);
             const keyCombo = keybindingToString(simpleKeybinding);
-            hotkeys[keyCombo] = desc;
+            hotkeys[keyCombo] = keyInfo.description;
         }
     })
 

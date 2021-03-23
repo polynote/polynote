@@ -49,7 +49,6 @@ export interface CellState {
     // ephemeral states
     presence: Record<number, CellPresenceState>;
     editing: boolean,
-    selected: boolean,
     error: boolean,
     running: boolean
     queued: boolean,
@@ -216,10 +215,9 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 activeCellId: id,
                 cells: id === undefined ? {} : {
                     [id]: {
-                        selected: true,
                         editing: options?.editing ?? false
                     },
-                    ...((prev === undefined && prev !== id) ? {} : {[prev]: {selected: false, editing: false}})
+                    ...((prev === undefined && prev !== id) ? {} : {[prev]: {editing: false}})
                 }
             };
             return update;
@@ -249,7 +247,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 }
             }
             const currentCell = state.cells[currentCellId];
-            anchor = {id: currentCellId, language: currentCell?.language ?? 'scala', metadata: currentCell?.metadata ?? new CellMetadata()};
+            anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: currentCell?.metadata ?? new CellMetadata()};
         }
         const anchorIdx = this.getCellIndex(anchor.id)!;
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;

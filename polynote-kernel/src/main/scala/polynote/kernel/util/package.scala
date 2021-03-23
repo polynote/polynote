@@ -28,4 +28,5 @@ package object util {
       val arr = paths.toArray(NewPathArray)
       arr.toSeq
   }
+
 }
