@@ -1,4 +1,4 @@
-import {blockquote, button, div, dropdown, h4, iconButton, span, tag, TagElement} from "../../tags";
+import {blockquote, button, div, dropdown, h4, iconButton, img, span, tag, TagElement} from "../../tags";
 import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
     clearArray,
@@ -85,6 +85,7 @@ import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
 import {UserPreferencesHandler} from "../../../state/preferences";
+import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -1939,6 +1940,7 @@ export class VizCell extends Cell {
     private resultValue?: ResultValue;
     private previousViews: Record<string, [Viz, Output | ClientResult]> = {};
     private copyCellOutputBtn: TagElement<"button">;
+    private convertToVegaBtn: TagElement<"button">;
 
     constructor(dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>) {
         super(dispatcher, _notebookState, _cellState);
@@ -2000,7 +2002,10 @@ export class VizCell extends Cell {
                     execInfoEl,
                     div(["options"], [
                         button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
-                        this.copyCellOutputBtn
+                        this.copyCellOutputBtn,
+                        this.convertToVegaBtn = button(['icon-button', 'convert-to-vega'], {title: "Convert to Vega cell"}, [
+                            span(['icon'], img([], "static/style/icons/vega-logo.svg", "Vega"))
+                        ]).click(() => this.convertToVega())
                     ])
                 ]),
                 this.editorEl
@@ -2142,6 +2147,8 @@ export class VizCell extends Cell {
                 this.dispatcher.setCellOutput(this.cellState.state.id, result);
             }
         }
+
+        this.onChangeViz();
     }
 
     private selectDefaultViz(resultValue: ResultValue): Viz {
@@ -2178,6 +2185,38 @@ export class VizCell extends Cell {
                 }
             }
 
+        }
+        this.onChangeViz();
+    }
+
+    private onChangeViz() {
+        const viz = this.viz;
+        if(viz.type === 'plot') {
+            try {
+                validatePlot(viz.plotDefinition);
+                this.convertToVegaBtn.style.display = 'inline';
+            } catch (err) {
+                this.convertToVegaBtn.style.display = 'none';
+            }
+        } else {
+            this.convertToVegaBtn.style.display = 'none';
+        }
+    }
+
+    private convertToVega() {
+        const viz = this.viz;
+        const streaming = collectInstances(this.resultValue?.reprs ?? [], StreamingDataRepr)[0];
+        if(viz.type === 'plot' && streaming && streaming.dataType instanceof StructType) {
+            try {
+                validatePlot(viz.plotDefinition);
+                const vegaCode = plotToVegaCode(viz.plotDefinition, streaming.dataType);
+                this.notebookState.insertCell("below", {id: this.id, language: "vega", metadata: new CellMetadata(), content: vegaCode})
+                    .then(id => this.notebookState.selectCell(id));
+            } catch (err) {
+                this.convertToVegaBtn.style.display = 'none';
+            }
+        } else {
+            this.convertToVegaBtn.style.display = 'none';
         }
     }
 
