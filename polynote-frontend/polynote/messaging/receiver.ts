@@ -20,7 +20,7 @@ import {
 import * as messages from "../data/messages";
 import {Identity, Message, TaskInfo, TaskStatus} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
-import {purematch} from "../util/match";
+import match, {purematch} from "../util/match";
 import {ContentEdit} from "../data/content_edit";
 import {
     ClearResults,
@@ -435,12 +435,10 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     })
                     .otherwise(NoUpdate)
             } else {
-                let symbols: UpdateOf<KernelSymbols> = NoUpdate;
-                if (['busy', 'idle'].includes(s.kernel.status) && result instanceof ResultValue) {
-                    if (symbols === NoUpdate)
-                        symbols = {[cellId]: {}} as UpdateOf<KernelSymbols>;
-                    (symbols as any)[cellId][result.name] = result;
-                }
+                const symbols = match(result).typed<UpdateOf<KernelSymbols>>()
+                    .whenInstance(ResultValue, r => ['busy', 'idle'].includes(s.kernel.status) ? {[cellId]: {[r.name]: setValue(r)}} : NoUpdate)
+                    .whenInstance(ClearResults, _ => ({[cellId]: setValue({})}))
+                    .otherwise(NoUpdate)
 
                 const cells = cellId < 0 ? NoUpdate : { [cellId]: this.parseResult(s.cells[cellId], result) }
                 return {
