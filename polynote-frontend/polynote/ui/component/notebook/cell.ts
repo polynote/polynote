@@ -1479,11 +1479,7 @@ class CodeCellOutput extends Disposable {
                 // clear results
                 this.resultTabs.innerHTML = '';
 
-                if (result.name !== "Out" && result.reprs.length > 1) {
-                    // TODO: hover for result text?
-                    //       Note: tried a "content widget" to bring up the value inspector. It just kinda got in the way.
-                    return Promise.resolve();
-                } else if (result.reprs.length > 0) {
+                if (result.name === 'Out' && result.reprs.length > 0) {
                     let inspectIcon: TagElement<"button">[] = [];
                     if (result.reprs.length > 1) {
                         inspectIcon = [
@@ -1660,6 +1656,8 @@ class CodeCellOutput extends Disposable {
 
     clearOutput() {
         this.clearErrors();
+        this.cellOutputDisplay.classList.remove('output');
+        this.cellOutputTools.classList.remove('output');
         [...this.cellOutputDisplay.children].forEach(child => this.cellOutputDisplay.removeChild(child));
         this.cellOutputDisplay.innerHTML = "";
         this.stdOutEl = null;
@@ -1672,6 +1670,7 @@ class CodeCellOutput extends Disposable {
     }
 
     private clearErrors() {
+        this.cellOutputDisplay.classList.remove('errors');
         if (this.cellErrorDisplay) {
             this.cellOutputDisplay.removeChild(this.cellErrorDisplay)
         }
