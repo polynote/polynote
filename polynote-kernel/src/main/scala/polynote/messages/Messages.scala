@@ -404,7 +404,7 @@ final case class ServerHandshake(
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 
-final case class CancelTasks(path: ShortString) extends Message
+final case class CancelTasks(path: ShortString, taskId: Option[TinyString]) extends Message
 object CancelTasks extends MessageCompanion[CancelTasks](18)
 
 final case class ClearOutput() extends Message

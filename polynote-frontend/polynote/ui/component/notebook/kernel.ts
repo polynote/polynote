@@ -233,7 +233,7 @@ class KernelTasksEl extends Disposable {
     private notebookPathHandler: StateView<string>
     private kernelTasksHandler: StateHandler<KernelTasks>
 
-    constructor(dispatcher: NotebookMessageDispatcher,
+    constructor(private dispatcher: NotebookMessageDispatcher,
                 notebookPathHandler: StateView<string>,
                 kernelTasksHandler: StateHandler<KernelTasks>) {
         super()
@@ -247,6 +247,8 @@ class KernelTasksEl extends Disposable {
             ]),
             this.taskContainer = div(['task-container'], [])
         ]);
+
+        this.el.addEventListener('mousedown', evt => evt.preventDefault())
 
         this.notebookPath = notebookPathHandler.state
         notebookPathHandler.addObserver(path => this.notebookPath = path)
@@ -317,7 +319,7 @@ class KernelTasksEl extends Disposable {
         }
     }
 
-    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.removeTask(id)) {
+    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.dispatcher.cancelTask(id)) {
         // short-circuit if the task coming in is already completed.
         if (status === TaskStatus.Complete) {
             remove()

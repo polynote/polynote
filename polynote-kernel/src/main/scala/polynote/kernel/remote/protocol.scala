@@ -98,8 +98,8 @@ object ReleaseHandleRequest extends RemoteRequestCompanion[ReleaseHandleRequest]
 final case class ListTasksRequest(reqId: Int) extends RemoteRequest
 object ListTasksRequest extends RemoteRequestCompanion[ListTasksRequest](11)
 
-final case class CancelAllRequest(reqId: Int) extends RemoteRequest
-object CancelAllRequest extends RemoteRequestCompanion[CancelAllRequest](12)
+final case class CancelRequest(reqId: Int, taskId: Option[TinyString]) extends RemoteRequest
+object CancelRequest extends RemoteRequestCompanion[CancelRequest](12)
 
 final case class KernelInfoRequest(reqId: Int) extends RemoteRequest
 object KernelInfoRequest extends RemoteRequestCompanion[KernelInfoRequest](13)

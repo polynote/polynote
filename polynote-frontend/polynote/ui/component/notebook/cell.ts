@@ -314,7 +314,7 @@ export class CellContainer extends Disposable {
             newCellDivider
         ]).dataAttr('data-cellid', id.toString());
 
-        this.el.click(evt => this.cell.doSelect());
+        this.el.mousedown(evt => this.cell.doSelect());
         cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
             if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
@@ -692,7 +692,7 @@ export class CodeCell extends Cell {
         });
         this.editor.onDidBlurEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "none" });
-            if (!this.commentHandler.activeComment()) {
+            if (!this.commentHandler.activeComment() && !this.el.contains(document.getSelection()?.anchorNode ?? null)) {
                 this.doDeselect();
             }
         });

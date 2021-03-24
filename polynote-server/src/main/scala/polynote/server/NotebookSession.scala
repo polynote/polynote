@@ -80,7 +80,8 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
       _      <- PublishMessage(req)
     } yield ()
 
-    case CancelTasks(path) => subscriber.publisher.cancelAll()
+    case CancelTasks(path, None)         => subscriber.publisher.cancelAll()
+    case CancelTasks(path, Some(taskId)) => subscriber.publisher.cancelTask(taskId)
 
     case ClearOutput() => subscriber.publisher.clearResults()
 

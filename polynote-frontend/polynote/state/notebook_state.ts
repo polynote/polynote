@@ -6,7 +6,7 @@ import {
     IDisposable,
     ImmediateDisposable, MoveArrayValue,
     NoUpdate,
-    ObjectStateHandler,
+    ObjectStateHandler, OptionalStateView,
     setValue,
     StateHandler,
     StateView,
@@ -32,6 +32,7 @@ import {deepEquals, diffArray, Deferred} from "../util/helpers";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {availableResultValues} from "../interpreter/client_interpreter";
 import {notReceiver} from "../messaging/receiver";
+import {ConstView, ProxyStateView} from "./state_handler";
 
 
 export type CellPresenceState = {id: number, name: string, color: string, range: PosRange, avatar?: string};
@@ -91,6 +92,7 @@ export interface NotebookState {
 
 export class NotebookStateHandler extends BaseHandler<NotebookState> {
     readonly loaded: Promise<void>;
+    private lazyActiveCellView?: StateView<CellState | undefined>;
 
     constructor(
         parent: StateHandler<NotebookState>,
@@ -119,6 +121,35 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         }
 
         this.loaded.then(_ => this.updateHandler.localVersion = 0)
+    }
+
+    /**
+     * A (lazily-created) view which gives update on whatever the focused cell is (if a cell is focused)
+     */
+    get activeCellView(): OptionalStateView<CellState> {
+        if (!this.lazyActiveCellView) {
+            const noActiveState: StateView<CellState | undefined> = new ConstView(undefined);
+            let currentState = this.state.activeCellId !== undefined ? this.cellsHandler.view(this.state.activeCellId) : noActiveState;
+            const view = new ProxyStateView(currentState);
+            this.lazyActiveCellView = view;
+
+            this.observeKey("activeCellId", activeCellId => {
+                if (activeCellId !== undefined && (!view.state || view.state.id !== activeCellId)) {
+                    if (currentState !== noActiveState) {
+                        currentState.dispose();
+                    }
+                    currentState = this.cellsHandler.view(activeCellId);
+                    view.setParent(currentState);
+                } else if (activeCellId === undefined && view.state) {
+                    if (currentState !== noActiveState) {
+                        currentState.dispose();
+                    }
+                    currentState = noActiveState;
+                    view.setParent(noActiveState);
+                }
+            });
+        }
+        return this.lazyActiveCellView;
     }
 
     static forPath(path: string) {
@@ -303,7 +334,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         } else return Promise.resolve(undefined)
     }
 
-    setCellLanguage(id: number, language: string) {
+    setCellLanguage(id: number, language: string, source?: any) {
         const cell = this.cellsHandler.state[id];
         this.cellsHandler.updateField(id, () => ({
             language,
@@ -313,7 +344,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             error: language === "text" ? false : NoUpdate,
             compileErrors: language === "text" ? clearArray() : NoUpdate,
             runtimeError: language === "text" ? setValue(undefined) : NoUpdate,
-        }))
+        }), source)
     }
 
     // wait for cell to transition to a specific state
