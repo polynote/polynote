@@ -76,6 +76,10 @@ package object messages {
     else
       str.asInstanceOf[TinyString]
 
+    def truncatePretty(str: String): TinyString = if (str.length > 255) {
+      (str.substring(0, 254) + "…").asInstanceOf[TinyString]
+    } else str.asInstanceOf[TinyString]
+
     def unapply(str: TinyString): Option[String] = Option(str)
   }
 

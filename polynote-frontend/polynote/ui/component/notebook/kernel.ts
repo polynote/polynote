@@ -544,7 +544,8 @@ class KernelSymbolViewWidget {
             const rowDims = targetEl.getBoundingClientRect();
             const right = (document.body.clientWidth - rowDims.left);
             this.el.style.right = right + 'px';
-            this.el.style.maxWidth = (document.body.clientWidth - right - 200) + 'px';
+            this.el.style.maxWidth =
+                ((document.querySelector('.tab-view')?.clientWidth ?? document.body.clientWidth - right - 184) - 16) + 'px';
 
             document.body.appendChild(this.el);
 
