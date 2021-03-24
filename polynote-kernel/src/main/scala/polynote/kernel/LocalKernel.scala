@@ -14,7 +14,7 @@ import polynote.kernel.interpreter.{CellExecutor, Interpreter, InterpreterState,
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.RefMap
-import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
+import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, TinyString, Updating, truncateTinyString}
 import polynote.runtime._
 import scodec.bits.ByteVector
 import zio.blocking.{Blocking, effectBlocking}
@@ -234,7 +234,7 @@ class LocalKernel private[kernel] (
         }.toMap
 
         def updateValue(value: ResultValue): RIO[Blocking with Logging, ResultValue] = {
-          def stringRepr = StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
+          def stringRepr = StringRepr(TinyString.truncatePretty(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
           if (value.value != null) {
             ZIO.effectTotal(instanceMap.get(value.name)).flatMap {
               case Some(instance) =>

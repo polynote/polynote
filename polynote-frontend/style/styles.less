@@ -1645,13 +1645,13 @@ button.inspect.icon-button {
 
   z-index: 999;
 
-  padding-right: 16px;
+  padding-right: 8px;
 
   .pointer {
     position: absolute;
     right: 1px;
     top: 50%;
-    width: 16px;
+    width: 8px;
     height: 16px;
     margin-top: -8px;
     overflow: hidden;
@@ -1671,20 +1671,24 @@ button.inspect.icon-button {
     border-style: solid;
     border-width: 1px;
     border-radius: 4px;
-    max-width: 600px;
     display: grid;
     align-items: center;
-    grid-template-columns: 1fr min-content;
+    grid-template-columns: auto min-content;
 
     .content {
       font-family: @code-fonts;
       padding: 1em;
-      .result-name-and-type {
-        white-space: nowrap;
-      }
       max-height: 90vh;
       overflow-y: auto;
       box-sizing: border-box;
+
+      > .string-content {
+        word-break: break-all;
+      }
+
+      .result-name-and-type {
+        white-space: nowrap;
+      }
     }
 
     .buttons {
