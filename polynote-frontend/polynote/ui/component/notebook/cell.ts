@@ -641,14 +641,24 @@ export class CodeCell extends Cell {
         this.editorEl = div(['cell-input-editor'], [])
 
         this.overflowDomNode = div(['monaco-overflow', 'monaco-editor', this.cellId], []);
-        this.notebookState.loaded.then(() => {
+        this.onDispose.then(() => {
+            this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode)
+        })
+
+        notebookState.loaded.then(() => {
+            this.layout()
+
             this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode)
             this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', () => {
                 this.layout()
             })
-        })
-        this.onDispose.then(() => {
-            this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode)
+
+            // watch for resize events
+            const resizeObs = new ResizeObserver(() => {
+                this.layout()
+            })
+            resizeObs.observe(this.editorEl)
+            this.onDispose.then(() => resizeObs.disconnect())
         })
 
         const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
@@ -679,13 +689,6 @@ export class CodeCell extends Cell {
         });
 
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
-
-        // watch for resize events
-        const resizeObs = new ResizeObserver(() => {
-            this.layout()
-        })
-        resizeObs.observe(this.editorEl)
-        this.onDispose.then(() => resizeObs.disconnect())
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
@@ -1160,6 +1163,7 @@ export class CodeCell extends Cell {
      *          A horizontal scrollbar is necessary if the text content overflows.
      */
     layout() {
+        if (this.notebookState.isLoading) return; // nothing to do while nb is loading
         const editorLayout = this.editor.getLayoutInfo();
         // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
         const lineHeight = this.editor.getOption(editor.EditorOption.lineHeight);
