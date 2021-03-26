@@ -86,6 +86,7 @@ import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
 import {UserPreferencesHandler} from "../../../state/preferences";
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
+import {VoidPromiseLike} from "../../../state/disposable";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -319,9 +320,9 @@ export class CellContainer extends Disposable {
             // Need to create a whole new cell if the language switches between code and text
             if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
                 const newCell = this.cellFor(newLang)
-                newCell.replace(this.cell).then(cell => {
-                    this.cell = cell
-                    this.layout()
+                newCell.replace(this.cell).then(() => {
+                    this.cell = newCell;
+                    this.layout();
                 })
             }
         });
@@ -450,13 +451,12 @@ abstract class Cell extends Disposable {
         }
     }
 
-    replace(oldCell: Cell): Promise<Cell> {
+    replace(oldCell: Cell): VoidPromiseLike {
         return oldCell.dispose().then(() => {
             oldCell.el.replaceWith(this.el);
             if (this.selected || oldCell.selected) {
                 this.onSelected()
             }
-            return Promise.resolve(this)
         })
     }
 

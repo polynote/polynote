@@ -1,16 +1,21 @@
 import {Deferred} from "../util/helpers";
 
+export interface VoidPromiseLike {
+    then(fn: () => void): VoidPromiseLike
+    abort(fn: () => void): void
+}
+
 export interface IDisposable {
-    onDispose: Promise<void>
-    dispose(): Promise<void>
-    tryDispose(): Promise<void>
+    onDispose: VoidPromiseLike
+    dispose(): VoidPromiseLike
+    tryDispose(): VoidPromiseLike
     isDisposed: boolean
     disposeWith(that: IDisposable): this
 }
 
 export function mkDisposable<T>(t: T, onDispose: () => void = () => {}): T & IDisposable {
-    const deferred: Deferred<void> = new Deferred()
-    const doDispose: () => Promise<void> = () => {
+    const deferred: VoidPromise = new VoidPromise()
+    const doDispose: () => VoidPromiseLike = () => {
         if (!deferred.isSettled) {
             deferred.resolve();
             onDispose();
@@ -23,22 +28,67 @@ export function mkDisposable<T>(t: T, onDispose: () => void = () => {}): T & IDi
         isDisposed: { value: () => !deferred.isSettled },
         onDispose: { value: deferred },
         disposeWith: { value: (that: IDisposable) => {
-                Promise.race([deferred, that.onDispose]).then(doDispose);
+                let weakThat: IDisposable | undefined = that;
+                const l = () => {
+                    doDispose();
+                    if (weakThat) {
+                        weakThat.onDispose.abort(l);
+                        weakThat = undefined;
+                    }
+                }
+                that.onDispose.then(l);
+                deferred.then(l);
                 return t;
             }}
     });
     return t as T & IDisposable;
 }
 
-export class Disposable implements IDisposable {
-    private deferred: Deferred<void> = new Deferred()
-    onDispose: Promise<void> = this.deferred
+/**
+ * This is a fake "Promise" that does everything synchronously. It just captures observers in the `then` method, and
+ * when it's settled, it invokes them.
+ */
+class VoidPromise implements VoidPromiseLike {
+    private _isSettled: boolean = false;
+    get isSettled(): boolean { return this._isSettled }
 
-    dispose(): Promise<void> {
+    private observers: (() => void)[] = [];
+
+    then(onfulfilled: () => void): VoidPromiseLike {
+        if (this._isSettled) {
+            onfulfilled();
+        } else {
+            this.observers.push(onfulfilled);
+        }
+        return this;
+    }
+
+    abort(fn: () => void): void {
+        const idx = this.observers.indexOf(fn);
+        if (idx >= 0) {
+            this.observers.splice(idx, 1);
+        }
+    }
+
+    resolve() {
+        if (!this._isSettled) {
+            this._isSettled = true;
+            this.observers.forEach(fn => fn());
+            this.observers.slice();
+        }
+    }
+
+}
+
+export class Disposable implements IDisposable {
+    private deferred: VoidPromise = new VoidPromise()
+    readonly onDispose: VoidPromiseLike = this.deferred
+
+    dispose(): VoidPromiseLike {
         return this.tryDispose()
     };
 
-    tryDispose(): Promise<void> {
+    tryDispose(): VoidPromiseLike {
         if (!this.isDisposed) {
             this.deferred.resolve();
         }
@@ -50,7 +100,17 @@ export class Disposable implements IDisposable {
     }
 
     disposeWith(that: IDisposable): this {
-        Promise.race([this.deferred, that.onDispose]).then(() => this.tryDispose());
+        // Promise.race([this.deferred, that.onDispose]).then(() => this.tryDispose());
+        let weakThat: IDisposable | undefined = that;
+        const l = () => {
+            this.dispose();
+            if (weakThat) {
+                weakThat.onDispose.abort(l);
+                weakThat = undefined;
+            }
+        }
+        that.onDispose.then(l);
+        this.deferred.then(l);
         return this;
     }
 }
@@ -64,11 +124,11 @@ export class ImmediateDisposable extends Disposable {
         super();
     }
 
-    dispose(): Promise<void> {
+    dispose(): VoidPromiseLike {
         return this.tryDispose();
     }
 
-    tryDispose(): Promise<void> {
+    tryDispose(): VoidPromiseLike {
         const disposed = this.isDisposed;
         const promise = super.tryDispose();
         if (!disposed) {

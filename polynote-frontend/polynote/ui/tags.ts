@@ -177,7 +177,7 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
                 }
             });
             self.addEventListener(eventType, listener);
-            state.onDispose.then(_ => self.removeEventListener(eventType, listener));
+            state.onDispose.then(() => self.removeEventListener(eventType, listener));
             return result;
         },
         bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T> {
@@ -193,7 +193,7 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
                 }
             );
             self.addEventListener(eventType, listener);
-            state.onDispose.then(_ => self.removeEventListener(eventType, listener));
+            state.onDispose.then(() => self.removeEventListener(eventType, listener));
             return result;
         },
         bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T> {
@@ -210,7 +210,7 @@ function mkBindable<ValueType, E extends TagElement<K, T>, K extends keyof HTMLE
                 }
             );
             self.addEventListener(eventType, listener);
-            state.onDispose.then(_ => self.removeEventListener(eventType, listener));
+            state.onDispose.then(() => self.removeEventListener(eventType, listener));
             return result;
         }
     }) as unknown as E & BindableTagElement<ValueType, K, T>;
