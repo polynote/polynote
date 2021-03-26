@@ -65,7 +65,15 @@ import {VimStatus} from "./vim_status";
 import {availableResultValues, cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
-import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
+import {
+    collect,
+    collectInstances,
+    deepCopy,
+    deepEquals,
+    Deferred,
+    findInstance,
+    linePosAt
+} from "../../../util/helpers";
 import {
     CellPresenceState,
     CellState,
@@ -206,10 +214,12 @@ class CellDragHandle extends ImmediateDisposable {
 
             const notified = newPrev !== initialPrev ? notifyMoved(newPrev?.getAttribute('data-cellid') ?? null) : Promise.resolve();
             notified.then(() => {
-                draggingEl.classList.remove('dragging');
-                draggingEl.style.top = '';
-                draggingEl.style.left = '';
-                draggingEl.style.width = '';
+                requestAnimationFrame(() => {
+                    draggingEl.classList.remove('dragging');
+                    draggingEl.style.top = '';
+                    draggingEl.style.left = '';
+                    draggingEl.style.width = '';
+                })
             });
 
             this.draggingEl = undefined;
@@ -237,13 +247,15 @@ class CellDragHandle extends ImmediateDisposable {
             initialScroll = draggingEl.parentElement!.scrollTop;
             initialPrev = draggingEl.previousElementSibling;
             initialY = draggingEl.offsetTop;
-            this.placeholderEl = div(['cell-drag-placeholder'], []);
-            this.placeholderEl.style.height = draggingEl.offsetHeight + 'px';
-            draggingEl.style.top = draggingEl.offsetTop + 'px';
-            draggingEl.style.left = draggingEl.offsetLeft + 'px';
-            draggingEl.style.width = draggingEl.offsetWidth + 'px';
-            draggingEl.classList.add('dragging');
-            draggingEl.parentElement!.insertBefore(this.placeholderEl, draggingEl);
+            const placeholderEl = this.placeholderEl = div(['cell-drag-placeholder'], []);
+            requestAnimationFrame(() => {
+                placeholderEl.style.height = draggingEl.offsetHeight + 'px';
+                draggingEl.style.top = draggingEl.offsetTop + 'px';
+                draggingEl.style.left = draggingEl.offsetLeft + 'px';
+                draggingEl.style.width = draggingEl.offsetWidth + 'px';
+                draggingEl.classList.add('dragging');
+                draggingEl.parentElement!.insertBefore(placeholderEl, draggingEl);
+            })
         }
 
         this.el = div(['cell-dragger'], [div(['inner'], [])]);
@@ -611,8 +623,10 @@ abstract class Cell extends Disposable {
 
 type ErrorMarker = {error: CompileErrors | RuntimeError, markers: IMarkerData[]};
 
+let cellWidthGuess = 0;
+
 export class CodeCell extends Cell {
-    private readonly editor: IStandaloneCodeEditor;
+    private editor?: IStandaloneCodeEditor;
     private readonly editorEl: TagElement<"div">;
     private cellInputTools: TagElement<"div">;
     private applyingServerEdits: boolean;
@@ -645,8 +659,183 @@ export class CodeCell extends Cell {
             this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode)
         })
 
+        // Guess the size of the container
+        const numLines = this.state.content.split("\n").length
+        const height = numLines * editor.EditorOption.lineHeight;
+        if (cellWidthGuess === 0) cellWidthGuess = document.querySelector(".notebook-cells")?.clientWidth || document.documentElement.clientWidth / 2
+        const width = cellWidthGuess; // just a guess for now, to avoid measurement
+
+        const placeholderEl = div(['cell-placeholder'], [this.cellId]);
+        placeholderEl.style.height = height + "px";
+        placeholderEl.style.width = width + "px";
+        placeholderEl.style.background = "lightgreen";
+
+        this.el = div(['cell-container', this.state.language, 'code-cell'], [placeholderEl]);
+
+        const visible = new Deferred()
         notebookState.loaded.then(() => {
-            this.layout()
+            // defer monaco instantiation until cell is scrolled into view
+            const intersectionObserver = new IntersectionObserver(entries => {
+                // If intersectionRatio is 0, the target is out of view
+                // and we do not need to do anything.
+                if (entries[0].intersectionRatio <= 0) return;
+                visible.resolve()
+                intersectionObserver.disconnect()
+            })
+            intersectionObserver.observe(this.el)
+        })
+
+        visible.then(() => {
+            const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
+
+            // set up editor and content
+            const editorInst = this.editor = monaco.editor.create(this.editorEl, {
+                value: this.state.content,
+                language: highlightLanguage,
+                dimension: {height, width},
+                automaticLayout: false,
+                codeLens: false,
+                dragAndDrop: true,
+                minimap: {enabled: false},
+                parameterHints: {enabled: true},
+                scrollBeyondLastLine: false,
+                fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
+                fontSize: 15,
+                fontLigatures: true,
+                fixedOverflowWidgets: false,
+                lineNumbers: 'on',
+                lineNumbersMinChars: 1,
+                lineDecorationsWidth: 0,
+                renderLineHighlight: "none",
+                scrollbar: {
+                    alwaysConsumeMouseWheel: false,
+                    vertical: "hidden",
+                    verticalScrollbarSize: 0,
+                },
+                overflowWidgetsDomNode: this.overflowDomNode
+            });
+
+            this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
+
+            editorInst.onDidFocusEditorWidget(() => {
+                editorInst.updateOptions({renderLineHighlight: "all"});
+            });
+            editorInst.onDidBlurEditorWidget(() => {
+                editorInst.updateOptions({renderLineHighlight: "none"});
+                if (!this.commentHandler.activeComment()) {
+                    this.doDeselect();
+                }
+            });
+            editorInst.onDidChangeCursorSelection(evt => {
+                if (this.applyingServerEdits) return // ignore when applying server edits.
+
+                // deep link - we only care if the user has selected more than a single character
+                if ([0, 3].includes(evt.reason)) { // 0 -> NotSet, 3 -> Explicit
+                    this.setUrl(evt.selection);
+                }
+
+                const model = editorInst.getModel();
+                if (model) {
+                    const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
+                    if (evt.selection.getDirection() === SelectionDirection.RTL) {
+                        this.cellState.updateField("currentSelection", () => range.reversed)
+                    } else {
+                        this.cellState.updateField("currentSelection", () => range)
+                    }
+                }
+            });
+            (editorInst.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
+                foldingModel => foldingModel?.onDidChange(() => this.layout())
+            );
+            editorInst.onDidChangeModelContent(event => this.onChangeModelContent(event));
+
+            // we need to do this hack in order for completions to work :(
+            (editorInst.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
+            (editorInst.getModel() as CodeCellModel).requestSignatureHelp = this.requestSignatureHelp.bind(this);
+
+            // NOTE: this uses some private monaco APIs. If this ever ends up breaking after we update monaco it's a signal
+            //       we'll need to rethink this stuff.
+            editorInst.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
+
+            cellState.observeKey("editing", editing => {
+                if (editing) {
+                    editorInst.focus()
+                }
+            })
+
+            const compileErrorsState = cellState.view("compileErrors");
+            compileErrorsState.addObserver(errors => {
+                if (errors.length > 0) {
+                    errors.forEach(error => {
+                        const model = editorInst.getModel()!;
+                        const reportInfos = collect(error.reports, (report) => {
+                            if (report.position) {
+                                const startPos = model.getPositionAt(report.position.start ?? report.position.point);
+                                const endPos = model.getPositionAt(report.position.end ?? report.position.point);
+                                const severity = report.severity * 4;
+                                return {
+                                    message: report.message,
+                                    startLineNumber: startPos.lineNumber,
+                                    startColumn: startPos.column,
+                                    endLineNumber: endPos.lineNumber,
+                                    endColumn: endPos.column,
+                                    severity: severity,
+                                    originalSeverity: report.severity
+                                };
+                            } else return undefined;
+                        });
+
+                        this.setErrorMarkers(error, reportInfos)
+                    })
+                } else {
+                    this.clearErrorMarkers("compiler")
+                }
+            })
+
+            const runtimeErrorState = cellState.view("runtimeError")
+            runtimeErrorState.addObserver(runtimeError => {
+                if (runtimeError) {
+                    const cellLine = getErrorLine(runtimeError.error, this.cellId);
+                    if (cellLine !== undefined && cellLine >= 0) {
+                        const model = editorInst.getModel()!;
+                        this.setErrorMarkers(runtimeError, [{
+                            message: runtimeError.error.message, //err.summary.message,
+                            startLineNumber: cellLine,
+                            endLineNumber: cellLine,
+                            startColumn: model.getLineMinColumn(cellLine),
+                            endColumn: model.getLineMaxColumn(cellLine),
+                            severity: 8
+                        }])
+                    }
+                } else {
+                    this.clearErrorMarkers("runtime")
+                }
+            })
+
+            let copyCellOutputBtn = iconButton(['copy-output'], 'Copy Output to Clipboard', 'copy', 'Copy Output to Clipboard').click(() => this.copyOutput())
+            copyCellOutputBtn.style.display = "none";
+            let cellOutput = new CodeCellOutput(this.notebookState, cellState, this.cellId, compileErrorsState, runtimeErrorState, copyCellOutputBtn);
+
+            this.el.replaceChild(
+                div(['cell-input'], [
+                    this.cellInputTools = div(['cell-input-tools'], [
+                        iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
+                            dispatcher.runCells([this.state.id])
+                        }),
+                        div(['cell-label'], [this.state.id.toString()]),
+                        div(['lang-selector'], [langSelector]),
+                        execInfoEl,
+                        div(["options"], [
+                            button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
+                            iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput()),
+                            copyCellOutputBtn
+                        ])
+                    ]),
+                    this.editorEl
+                ]),
+                placeholderEl
+            )
+            this.el.appendChild(cellOutput.el)
 
             this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode)
             this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', () => {
@@ -658,336 +847,191 @@ export class CodeCell extends Cell {
                 this.layout()
             })
             resizeObs.observe(this.editorEl)
+
             this.onDispose.then(() => resizeObs.disconnect())
-        })
 
-        const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
-        // set up editor and content
-        this.editor = monaco.editor.create(this.editorEl, {
-            value: this.state.content,
-            language: highlightLanguage,
-            automaticLayout: false,
-            codeLens: false,
-            dragAndDrop: true,
-            minimap: { enabled: false },
-            parameterHints: {enabled: true},
-            scrollBeyondLastLine: false,
-            fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
-            fontSize: 15,
-            fontLigatures: true,
-            fixedOverflowWidgets: false,
-            lineNumbers: 'on',
-            lineNumbersMinChars: 1,
-            lineDecorationsWidth: 0,
-            renderLineHighlight: "none",
-            scrollbar: {
-                alwaysConsumeMouseWheel: false,
-                vertical: "hidden",
-                verticalScrollbarSize: 0,
-            },
-            overflowWidgetsDomNode: this.overflowDomNode
-        });
-
-        this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
-
-        this.editor.onDidFocusEditorWidget(() => {
-            this.editor.updateOptions({ renderLineHighlight: "all" });
-        });
-        this.editor.onDidBlurEditorWidget(() => {
-            this.editor.updateOptions({ renderLineHighlight: "none" });
-            if (!this.commentHandler.activeComment()) {
-                this.doDeselect();
-            }
-        });
-        this.editor.onDidChangeCursorSelection(evt => {
-            if (this.applyingServerEdits) return // ignore when applying server edits.
-
-            // deep link - we only care if the user has selected more than a single character
-            if ([0, 3].includes(evt.reason)) { // 0 -> NotSet, 3 -> Explicit
-                this.setUrl(evt.selection);
-            }
-
-            const model = this.editor.getModel();
-            if (model) {
-                const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
-                if (evt.selection.getDirection() === SelectionDirection.RTL) {
-                    this.cellState.updateField("currentSelection", () => range.reversed)
+            cellState.observeKey("language", (newLang, update) => {
+                const oldLang = update.oldValue;
+                const newHighlightLang = ClientInterpreters[newLang]?.highlightLanguage ?? newLang;
+                if (oldLang) {
+                    const oldHighlightLang = ClientInterpreters[oldLang]?.highlightLanguage ?? oldLang;
+                    this.el.classList.replace(oldHighlightLang, newHighlightLang);
                 } else {
-                    this.cellState.updateField("currentSelection", () => range)
+                    this.el.classList.add(newHighlightLang)
+                }
+                langSelector.setSelectedValue(newHighlightLang);
+                monaco.editor.setModelLanguage(editorInst.getModel()!, newHighlightLang)
+            })
+
+            const updateMetadata = (metadata: CellMetadata) => {
+                if (metadata.hideSource) {
+                    this.el.classList.add("hide-code")
+                } else {
+                    this.el.classList.remove("hide-code");
+                    this.layout();
+                }
+
+                if (metadata.hideOutput) {
+                    this.el.classList.add("hide-output");
+                } else {
+                    this.el.classList.remove("hide-output");
+                }
+
+                if (metadata.executionInfo) {
+                    this.setExecutionInfo(execInfoEl, metadata.executionInfo)
                 }
             }
-        });
-        (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
-            foldingModel => foldingModel?.onDidChange(() => this.layout())
-        );
-        this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
+            updateMetadata(this.state.metadata);
+            cellState.observeKey("metadata", metadata => updateMetadata(metadata));
 
-        // we need to do this hack in order for completions to work :(
-        (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
-        (this.editor.getModel() as CodeCellModel).requestSignatureHelp = this.requestSignatureHelp.bind(this);
+            cellState.observeKey("content", (content, updateResult, src) => {
+                if (src === this)   // ignore edits that originated from monaco
+                    return;
 
-        // NOTE: this uses some private monaco APIs. If this ever ends up breaking after we update monaco it's a signal
-        //       we'll need to rethink this stuff.
-        this.editor.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
+                const edits = purematch<UpdateLike<string>, ContentEdit[]>(updateResult.update)
+                    .when(EditString, edits => edits)
+                    .whenInstance(SetValue, update => updateResult.oldValue ? diffEdits(updateResult.oldValue as string, update.value as string) : [])
+                    .otherwiseThrow
 
-        cellState.observeKey("editing", editing => {
-            if (editing) {
-                this.editor.focus()
-            }
-        })
-
-        const compileErrorsState = cellState.view("compileErrors");
-        compileErrorsState.addObserver(errors => {
-            if (errors.length > 0) {
-                errors.forEach(error => {
-                    const model = this.editor.getModel()!;
-                    const reportInfos = collect(error.reports, (report) => {
-                        if (report.position) {
-                            const startPos = model.getPositionAt(report.position.start ?? report.position.point);
-                            const endPos = model.getPositionAt(report.position.end ?? report.position.point);
-                            const severity = report.severity * 4;
-                            return {
-                                message: report.message,
-                                startLineNumber: startPos.lineNumber,
-                                startColumn: startPos.column,
-                                endLineNumber: endPos.lineNumber,
-                                endColumn: endPos.column,
-                                severity: severity,
-                                originalSeverity: report.severity
-                            };
-                        } else return undefined;
-                    });
-
-                    this.setErrorMarkers(error, reportInfos)
-                })
-            } else {
-                this.clearErrorMarkers("compiler")
-            }
-        })
-
-        const runtimeErrorState = cellState.view("runtimeError")
-        runtimeErrorState.addObserver(runtimeError => {
-            if (runtimeError) {
-                const cellLine = getErrorLine(runtimeError.error, this.cellId);
-                if (cellLine !== undefined && cellLine >= 0) {
-                    const model = this.editor.getModel()!;
-                    this.setErrorMarkers(runtimeError, [{
-                        message: runtimeError.error.message, //err.summary.message,
-                        startLineNumber: cellLine,
-                        endLineNumber: cellLine,
-                        startColumn: model.getLineMinColumn(cellLine),
-                        endColumn: model.getLineMaxColumn(cellLine),
-                        severity: 8
-                    }])
+                if (edits && edits.length > 0) {
+                    // console.log("applying edits", edits)
+                    this.applyEdits(edits);
                 }
-            } else {
-                this.clearErrorMarkers("runtime")
-            }
-        })
+            })
 
-        let copyCellOutputBtn = iconButton(['copy-output'], 'Copy Output to Clipboard', 'copy', 'Copy Output to Clipboard').click(() => this.copyOutput())
-        copyCellOutputBtn.style.display = "none";
-        let cellOutput = new CodeCellOutput(this.notebookState, cellState, this.cellId, compileErrorsState, runtimeErrorState, copyCellOutputBtn);
-
-        this.el = div(['cell-container', this.state.language, 'code-cell'], [
-            div(['cell-input'], [
-                this.cellInputTools = div(['cell-input-tools'], [
-                    iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
-                        dispatcher.runCells([this.state.id])
-                    }),
-                    div(['cell-label'], [this.state.id.toString()]),
-                    div(['lang-selector'], [langSelector]),
-                    execInfoEl,
-                    div(["options"], [
-                        button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
-                        iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput()),
-                        copyCellOutputBtn
-                    ])
-                ]),
-                this.editorEl
-            ]),
-            cellOutput.el
-        ]);
-
-        cellState.observeKey("language", (newLang, update) => {
-            const oldLang = update.oldValue;
-            const newHighlightLang = ClientInterpreters[newLang]?.highlightLanguage ?? newLang;
-            if (oldLang) {
-                const oldHighlightLang = ClientInterpreters[oldLang]?.highlightLanguage ?? oldLang;
-                this.el.classList.replace(oldHighlightLang, newHighlightLang);
-            } else {
-                this.el.classList.add(newHighlightLang)
-            }
-            langSelector.setSelectedValue(newHighlightLang);
-            monaco.editor.setModelLanguage(this.editor.getModel()!, newHighlightLang)
-        })
-
-        const updateMetadata = (metadata: CellMetadata) => {
-            if (metadata.hideSource) {
-                this.el.classList.add("hide-code")
-            } else {
-                this.el.classList.remove("hide-code");
-                this.layout();
-            }
-
-            if (metadata.hideOutput) {
-                this.el.classList.add("hide-output");
-            } else {
-                this.el.classList.remove("hide-output");
-            }
-
-            if (metadata.executionInfo) {
-                this.setExecutionInfo(execInfoEl, metadata.executionInfo)
-            }
-        }
-        updateMetadata(this.state.metadata);
-        cellState.observeKey("metadata", metadata => updateMetadata(metadata));
-
-        cellState.observeKey("content", (content, updateResult, src) => {
-            if (src === this)   // ignore edits that originated from monaco
-                return;
-
-            const edits = purematch<UpdateLike<string>, ContentEdit[]>(updateResult.update)
-                .when(EditString, edits => edits)
-                .whenInstance(SetValue, update => updateResult.oldValue ? diffEdits(updateResult.oldValue as string, update.value as string) : [])
-                .otherwiseThrow
-
-            if (edits && edits.length > 0) {
-                // console.log("applying edits", edits)
-                this.applyEdits(edits);
-            }
-        })
-
-        const updateError = (error: boolean | undefined) => {
-            if (error) {
-                this.addCellClass("error");
-            } else {
-                this.removeCellClass("error");
-            }
-        }
-        updateError(this.state.error)
-        cellState.observeKey("error", error => updateError(error));
-
-        const updateRunning = (running: boolean | undefined, previously?: boolean) => {
-            if (running) {
-                this.addCellClass("running");
-                // clear results when a cell starts running:
-                this.cellState.updateField("results", () => clearArray())
-
-                // update Execution Status (in case this is an initial load)
-                if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
-
-            } else {
-                this.removeCellClass("running");
-                if (previously) {
-                    const status = this.state.error ? "Error" : "Complete"
-                    NotificationHandler.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
-                        this.notebookState.selectCell(this.id)
-                    })
-                    // clear the execution duration updater if it hasn't been cleared already.
-                    if (this.execDurationUpdater) {
-                        window.clearInterval(this.execDurationUpdater);
-                        delete this.execDurationUpdater;
-                    }
+            const updateError = (error: boolean | undefined) => {
+                if (error) {
+                    this.addCellClass("error");
+                } else {
+                    this.removeCellClass("error");
                 }
             }
-        }
-        updateRunning(this.state.running);
-        cellState.view("running").addObserver((curr, update) => updateRunning(curr, update.oldValue));
+            updateError(this.state.error)
+            cellState.observeKey("error", error => updateError(error));
 
-        const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
-            if (queued) {
-                this.addCellClass("queued");
-                if (!previously) {
-                    FaviconHandler.inc()
-                }
-            } else {
-                this.removeCellClass("queued");
-                if (previously) {
-                    FaviconHandler.dec()
-                }
-            }
-        }
-        updateQueued(this.state.queued)
-        cellState.view("queued").addObserver((curr, update) => updateQueued(curr, update.oldValue));
+            const updateRunning = (running: boolean | undefined, previously?: boolean) => {
+                if (running) {
+                    this.addCellClass("running");
+                    // clear results when a cell starts running:
+                    this.cellState.updateField("results", () => clearArray())
 
-        const updateHighlight = (h: { range: PosRange , className: string} | undefined) => {
-            if (h) {
-                const oldExecutionPos = this.highlightDecorations ?? [];
-                const model = this.editor.getModel()!;
-                const startPos = model.getPositionAt(h.range.start);
-                const endPos = model.getPositionAt(h.range.end);
-                this.highlightDecorations = this.editor.deltaDecorations(oldExecutionPos, [
-                    {
-                        range: monaco.Range.fromPositions(startPos, endPos),
-                        options: { className: h.className }
-                    }
-                ]);
-            } else if (this.highlightDecorations.length > 0) {
-                this.editor.deltaDecorations(this.highlightDecorations, []);
-                this.highlightDecorations = [];
-            }
-        }
-        updateHighlight(this.state.currentHighlight)
-        cellState.observeKey("currentHighlight", h => updateHighlight(h));
+                    // update Execution Status (in case this is an initial load)
+                    if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
 
-        const presenceMarkers: Record<number, string[]> = {};
-        const updatePresence = (id: number, name: string, color: string, range: PosRange) => {
-            const model = this.editor.getModel();
-            if (model) {
-                const old = presenceMarkers[id] ?? [];
-                const startPos = model.getPositionAt(range.start);
-                const endPos = model.getPositionAt(range.end);
-                const newDecorations = [
-                    {
-                        range: monaco.Range.fromPositions(endPos, endPos),
-                        options: {
-                            className: `ppc ${color}`,
-                            stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-                            hoverMessage: { value: name }
+                } else {
+                    this.removeCellClass("running");
+                    if (previously) {
+                        const status = this.state.error ? "Error" : "Complete"
+                        NotificationHandler.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
+                            this.notebookState.selectCell(this.id)
+                        })
+                        // clear the execution duration updater if it hasn't been cleared already.
+                        if (this.execDurationUpdater) {
+                            window.clearInterval(this.execDurationUpdater);
+                            delete this.execDurationUpdater;
                         }
                     }
-                ];
-                if (range.start != range.end) {
-                    newDecorations.unshift({
-                        range: monaco.Range.fromPositions(startPos, endPos),
-                        options: {
-                            className: `${color}`,
-                            stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-                            hoverMessage: { value: name }
-                        }
-                    });
                 }
-                presenceMarkers[id] = this.editor.deltaDecorations(old, newDecorations);
             }
-        }
-        Object.values(cellState.state.presence).forEach(p => updatePresence(p.id, p.name, p.color, p.range))
-        cellState.observeKey("presence", (newPresence, updateResult) => {
-            const removed = Object.values(updateResult.removedValues ?? {}) as CellPresenceState[];
-            removed.forEach(p => {
-                const marker = presenceMarkers[p.id]
-                if (marker) {
-                    this.editor.deltaDecorations(marker, [])
+            updateRunning(this.state.running);
+            cellState.view("running").addObserver((curr, update) => updateRunning(curr, update.oldValue));
+
+            const updateQueued = (queued: boolean | undefined, previously?: boolean) => {
+                if (queued) {
+                    this.addCellClass("queued");
+                    if (!previously) {
+                        FaviconHandler.inc()
+                    }
+                } else {
+                    this.removeCellClass("queued");
+                    if (previously) {
+                        FaviconHandler.dec()
+                    }
                 }
-                delete presenceMarkers[p.id]
-            });
+            }
+            updateQueued(this.state.queued)
+            cellState.view("queued").addObserver((curr, update) => updateQueued(curr, update.oldValue));
 
-            const added = Object.values(updateResult.addedValues ?? {}) as CellPresenceState[];
-            added.forEach(p => updatePresence(p.id, p.name, p.color, p.range));
+            const updateHighlight = (h: { range: PosRange, className: string } | undefined) => {
+                if (h) {
+                    const oldExecutionPos = this.highlightDecorations ?? [];
+                    const model = editorInst.getModel()!;
+                    const startPos = model.getPositionAt(h.range.start);
+                    const endPos = model.getPositionAt(h.range.end);
+                    this.highlightDecorations = editorInst.deltaDecorations(oldExecutionPos, [
+                        {
+                            range: monaco.Range.fromPositions(startPos, endPos),
+                            options: {className: h.className}
+                        }
+                    ]);
+                } else if (this.highlightDecorations.length > 0) {
+                    editorInst.deltaDecorations(this.highlightDecorations, []);
+                    this.highlightDecorations = [];
+                }
+            }
+            updateHighlight(this.state.currentHighlight)
+            cellState.observeKey("currentHighlight", h => updateHighlight(h));
 
-            const changed = Object.values(updateResult.changedValues ?? {}) as CellPresenceState[];
-            changed.forEach(p => updatePresence(p.id, p.name, p.color, p.range));
-        })
+            const presenceMarkers: Record<number, string[]> = {};
+            const updatePresence = (id: number, name: string, color: string, range: PosRange) => {
+                const model = editorInst.getModel();
+                if (model) {
+                    const old = presenceMarkers[id] ?? [];
+                    const startPos = model.getPositionAt(range.start);
+                    const endPos = model.getPositionAt(range.end);
+                    const newDecorations = [
+                        {
+                            range: monaco.Range.fromPositions(endPos, endPos),
+                            options: {
+                                className: `ppc ${color}`,
+                                stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                                hoverMessage: {value: name}
+                            }
+                        }
+                    ];
+                    if (range.start != range.end) {
+                        newDecorations.unshift({
+                            range: monaco.Range.fromPositions(startPos, endPos),
+                            options: {
+                                className: `${color}`,
+                                stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                                hoverMessage: {value: name}
+                            }
+                        });
+                    }
+                    presenceMarkers[id] = editorInst.deltaDecorations(old, newDecorations);
+                }
+            }
+            Object.values(cellState.state.presence).forEach(p => updatePresence(p.id, p.name, p.color, p.range))
+            cellState.observeKey("presence", (newPresence, updateResult) => {
+                const removed = Object.values(updateResult.removedValues ?? {}) as CellPresenceState[];
+                removed.forEach(p => {
+                    const marker = presenceMarkers[p.id]
+                    if (marker) {
+                        editorInst.deltaDecorations(marker, [])
+                    }
+                    delete presenceMarkers[p.id]
+                });
 
-        // make sure to create the comment handler.
-        this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), this.editor);
+                const added = Object.values(updateResult.addedValues ?? {}) as CellPresenceState[];
+                added.forEach(p => updatePresence(p.id, p.name, p.color, p.range));
 
-        this.onDispose.then(() => {
-            this.commentHandler.dispose()
-            this.getModelMarkers()?.forEach(marker => {
-                this.setModelMarkers([], marker.owner)
-            });
-            this.editor.dispose()
+                const changed = Object.values(updateResult.changedValues ?? {}) as CellPresenceState[];
+                changed.forEach(p => updatePresence(p.id, p.name, p.color, p.range));
+            })
+
+            // make sure to create the comment handler.
+            this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), editorInst);
+
+            this.onDispose.then(() => {
+                this.commentHandler.dispose()
+                this.getModelMarkers()?.forEach(marker => {
+                    this.setModelMarkers([], marker.owner)
+                });
+                editorInst?.dispose()
+            })
+
+            this.layout()
         })
     }
 
@@ -1045,7 +1089,7 @@ export class CodeCell extends Cell {
                     candidate.insertText || candidate.name; //+ (params.length ? '($2)' : '');
 
                 // Calculating Range (TODO: Maybe we should try to standardize our range / position / offset usage across the codebase, it's a pain to keep converting back and forth).
-                const model = this.editor.getModel()!;
+                const model = this.editor?.getModel()!;
                 const p = model.getPositionAt(offset);
                 const word = model.getWordUntilPosition(p);
                 const range = new Range(p.lineNumber, word.startColumn, p.lineNumber, word.endColumn);
@@ -1164,26 +1208,28 @@ export class CodeCell extends Cell {
      */
     layout() {
         if (this.notebookState.isLoading) return; // nothing to do while nb is loading
-        const editorLayout = this.editor.getLayoutInfo();
+        const editorLayout = this.editor!.getLayoutInfo();
         // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
-        const lineHeight = this.editor.getOption(editor.EditorOption.lineHeight);
+        const lineHeight = this.editor!.getOption(editor.EditorOption.lineHeight);
         // if the editor height is less than one line we need to initialize the height with both the content height as well as the horizontal scrollbar height.
         const shouldAddScrollbarHeight = editorLayout.height < lineHeight;
-        const height = this.editor.getContentHeight() + (shouldAddScrollbarHeight ? editorLayout.horizontalScrollbarHeight : 0);
+        const height = this.editor!.getContentHeight() + (shouldAddScrollbarHeight ? editorLayout.horizontalScrollbarHeight : 0);
         // the editor width is determined by the container's width.
         const width = this.editorEl.clientWidth;
 
         // Update height and width on the editor.
-        this.editor.layout({width, height});
+        this.editor!.layout({width, height});
 
         // update overflow widget node
-        const editorNode = this.editor.getDomNode()
+        const editorNode = this.editor!.getDomNode()
         if (editorNode) {
             const r = editorNode.getBoundingClientRect()
-            this.overflowDomNode.style.top = r.top + "px";
-            this.overflowDomNode.style.left = r.left + "px";
-            this.overflowDomNode.style.height = r.height + "px"
-            this.overflowDomNode.style.width = r.width + "px"
+            requestAnimationFrame(() => {
+                this.overflowDomNode.style.top = r.top + "px";
+                this.overflowDomNode.style.left = r.left + "px";
+                this.overflowDomNode.style.height = r.height + "px"
+                this.overflowDomNode.style.width = r.width + "px"
+            })
         }
 
     }
@@ -1221,7 +1267,7 @@ export class CodeCell extends Cell {
 
         try {
             const monacoEdits: IIdentifiedSingleEditOperation[] = [];
-            const model = this.editor.getModel()!;
+            const model = this.editor!.getModel()!;
             edits.forEach((edit) => {
                 if (edit.isEmpty()) {
                     return;
@@ -1243,20 +1289,20 @@ export class CodeCell extends Cell {
                 }
             });
 
-            //this.editor.getModel().applyEdits(monacoEdits);
+            //this.editor!.getModel().applyEdits(monacoEdits);
             // TODO: above API call won't put the edits on the undo stack. Should other people's edits go on my undo stack?
             //       below calls implement that. It is weird to have other peoples' edits in your undo stack, but it
             //       also gets weird when they aren't – your undos get out of sync with the document.
             //       Maybe there's something different that can be done with undo stops – I don't really know what they
             //       are because it's not well documented (JS)
-            this.editor.pushUndoStop();
-            this.editor.executeEdits("Anonymous", monacoEdits);
-            this.editor.pushUndoStop();
+            this.editor!.pushUndoStop();
+            this.editor!.executeEdits("Anonymous", monacoEdits);
+            this.editor!.pushUndoStop();
             // TODO: should show some UI thing to indicate whose edits they are, rather than just having them appear
         } finally {
             this.applyingServerEdits = false;
         }
-        // this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
+        // this.editListener = this.editor!.onDidChangeModelContent(event => this.onChangeModelContent(event));
     }
 
     protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
@@ -1265,7 +1311,7 @@ export class CodeCell extends Cell {
         } else {
             const ifNoSuggestion: (fun: () => (PostKeyAction[] | undefined | void)) => () => (PostKeyAction[] | undefined) = (fun: () => (PostKeyAction[] | undefined)) => () => {
                 // this is really ugly, is there a better way to tell whether the widget is visible??
-                const suggestionsVisible = this.editor._contextKeyService.getContextKeyValue("suggestWidgetVisible")
+                const suggestionsVisible = this.editor!._contextKeyService.getContextKeyValue("suggestWidgetVisible")
                 if (!suggestionsVisible) { // don't do stuff when suggestions are visible
                     return fun() ?? undefined
                 } else {
@@ -1336,15 +1382,15 @@ export class CodeCell extends Cell {
     }
 
     getPosition() {
-        return this.editor.getPosition()!;
+        return this.editor!.getPosition()!;
     }
 
     getRange() {
-        return this.editor.getModel()!.getFullModelRange();
+        return this.editor!.getModel()!.getFullModelRange();
     }
 
     getCurrentSelection() {
-        return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
+        return this.editor!.getModel()!.getValueInRange(this.editor!.getSelection()!)
     }
 
     get path() {
@@ -1356,12 +1402,12 @@ export class CodeCell extends Cell {
     }
 
     getModelMarkers(): editor.IMarker[] | undefined {
-        const model = this.editor.getModel()
+        const model = this.editor!.getModel()
         return model ? monaco.editor.getModelMarkers({resource: model.uri}) : undefined
     }
 
     setModelMarkers(markers: IMarkerData[], owner: string = this.markerOwner): void {
-        const model = this.editor.getModel()
+        const model = this.editor!.getModel()
         if (model) {
             monaco.editor.setModelMarkers(model, owner, markers)
         }
@@ -1369,18 +1415,18 @@ export class CodeCell extends Cell {
 
     protected onSelected() {
         super.onSelected()
-        this.vim = VimStatus.get.activate(this.editor)
+        this.vim = VimStatus.get.activate(this.editor!)
     }
 
     protected onDeselected() {
         super.onDeselected();
         this.commentHandler.hide()
         // hide parameter hints on blur
-        this.editor.trigger('keyboard', 'closeParameterHints', null);
+        this.editor!!.trigger('keyboard', 'closeParameterHints', null);
     }
 
     setDisabled(disabled: boolean) {
-        this.editor.updateOptions({readOnly: disabled});
+        this.editor?.updateOptions({readOnly: disabled});
         if (disabled) {
             this.cellInputTools.classList.add("disabled")
         } else {
@@ -1390,13 +1436,13 @@ export class CodeCell extends Cell {
 
     delete() {
         super.delete()
-        VimStatus.get.deactivate(this.editor.getId())
+        VimStatus.get.deactivate(this.editor!.getId())
     }
 
     protected calculateHash(maybeSelection?: Range): URL {
         const currentURL = super.calculateHash(maybeSelection);
 
-        const model = this.editor.getModel()
+        const model = this.editor!.getModel()
         if (model && maybeSelection && !maybeSelection.isEmpty()) {
             const pos = PosRange.fromRange(maybeSelection, model)
             currentURL.hash += `,${pos.rangeStr}`
@@ -1833,19 +1879,19 @@ export class TextCell extends Cell {
             ['input', (evt: KeyboardEvent) => this.onInput()]
         ]
         this.listeners.forEach(([k, fn]) => {
-            this.editor.element.addEventListener(k, fn);
+            this.editor!.element.addEventListener(k, fn);
         })
 
         this.onDispose.then(() => {
             this.listeners.forEach(([k, fn]) => {
-                this.editor.element.removeEventListener(k, fn)
+                this.editor!.element.removeEventListener(k, fn)
             })
         })
     }
 
     // not private because it is also used by latex-editor
     onInput() {
-        const newContent = this.editor.markdownContent;
+        const newContent = this.editor!.markdownContent;
         const edits: ContentEdit[] = diffEdits(this.lastContent, newContent)
         this.lastContent = newContent;
 
@@ -1862,13 +1908,13 @@ export class TextCell extends Cell {
         // ok, now we just care about the current cursor location
         let selectedNode = selection.focusNode;
         let selectionCol = selection.focusOffset;
-        if (selectedNode === this.editor.element) { // this means we need to find the selected node using the offset
-            selectedNode = this.editor.element.childNodes[selectionCol];
+        if (selectedNode === this.editor!.element) { // this means we need to find the selected node using the offset
+            selectedNode = this.editor!.element.childNodes[selectionCol];
             selectionCol = 0;
         }
         // ok, now which line number?
         let selectionLineNum = -1;
-        const contentNodes = this.editor.contentNodes;
+        const contentNodes = this.editor!.contentNodes;
         contentNodes.forEach((node, idx) => {
             if (node === selectedNode || node.contains(selectedNode)) {
                 selectionLineNum = idx;
@@ -1881,7 +1927,7 @@ export class TextCell extends Cell {
     }
 
     getRange() {
-        const contentLines = this.editor.contentNodes
+        const contentLines = this.editor!.contentNodes
 
         const lastLine = contentLines[contentLines.length - 1]?.textContent || "";
 
@@ -1921,11 +1967,11 @@ export class TextCell extends Cell {
 
     protected onSelected() {
         super.onSelected()
-        this.editor.focus()
+        this.editor!.focus()
     }
 
     setDisabled(disabled: boolean) {
-        this.editor.disabled = disabled
+        this.editor!.disabled = disabled
     }
 }
 
@@ -2263,7 +2309,7 @@ export class VizCell extends Cell {
 
     setDisabled(disabled: boolean): void {
         if (this.editor)
-            this.editor.disabled = disabled;
+            this.editor!.disabled = disabled;
     }
 
     private toggleCode(hide?: boolean) {
