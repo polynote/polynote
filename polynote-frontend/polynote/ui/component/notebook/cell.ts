@@ -1167,14 +1167,15 @@ export class CodeCell extends Cell {
     }
 
     private layoutWidgets() {
-        // update overflow widget node
-        const editorNode = this.editor.getDomNode()
-        if (editorNode) {
-            const r = editorNode.getBoundingClientRect()
-            this.overflowDomNode.style.top = r.top + "px";
-            this.overflowDomNode.style.left = r.left + "px";
-            this.overflowDomNode.style.height = r.height + "px"
-            this.overflowDomNode.style.width = r.width + "px"
+        if (this.overflowDomNode.parentNode) {
+            const editorNode = this.editor.getDomNode()
+            if (editorNode) {
+                const r = editorNode.getBoundingClientRect()
+                this.overflowDomNode.style.top = r.top + "px";
+                this.overflowDomNode.style.left = r.left + "px";
+                this.overflowDomNode.style.height = r.height + "px"
+                this.overflowDomNode.style.width = r.width + "px"
+            }
         }
     }
 
