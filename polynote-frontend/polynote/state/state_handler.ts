@@ -137,8 +137,10 @@ function combineFilters(first?: (source: any) => boolean, second?: (source: any)
     return first || second
 }
 
-function cleanPath(path: string[]): string[] {
-    if (path.length && path[path.length - 1] === '') {
+function cleanPath(pathStr: string): string[] {
+    if (pathStr.length === 0) return []
+    let path = pathStr.split('.')
+    if (path[path.length - 1] === '') {
         path = path.slice(0, path.length - 1);
     }
     return path;
@@ -151,7 +153,7 @@ class ObserverDict<T> {
     constructor(private path: string[] = []) {}
 
     add(observer: T, path: string): IDisposable {
-        return this.addAt(observer, cleanPath(path.split('.')));
+        return this.addAt(observer, cleanPath(path))
     }
 
     private addAt(observer: T, path: string[]): IDisposable {
@@ -174,8 +176,8 @@ class ObserverDict<T> {
         }
     }
 
-    forEach(path: string, fn: (observer: T) => void): void {
-        this.forEachAt(cleanPath(path.split('.')), fn);
+    forEach(path: string[], fn: (observer: T) => void): void {
+        this.forEachAt(path, fn);
     }
 
     private forEachAt(path: string[], fn: (observer: T) => void): void {
@@ -201,7 +203,7 @@ class ObserverDict<T> {
         }
     }
 
-    collect<U>(path: string, fn: (observer: T) => U): U[] {
+    collect<U>(path: string[], fn: (observer: T) => U): U[] {
         const result: U[] = [];
         this.forEach(path, obs => result.push(fn(obs)));
         return result;
@@ -252,9 +254,9 @@ export class ObjectStateHandler<S extends object> extends Disposable implements 
     }
 
     private isUpdating: boolean = false;
-    private updateQueue: [(state: Readonly<S>) => UpdateOf<S>, any, string, Deferred<Readonly<S>> | undefined][] = [];
+    private updateQueue: [(state: Readonly<S>) => UpdateOf<S>, any, string[], Deferred<Readonly<S>> | undefined][] = [];
 
-    protected handleUpdate(updateFn: (state: Readonly<S>) => UpdateOf<S>, updateSource: any, updatePath: string, promise?: Deferred<Readonly<S>>): void {
+    protected handleUpdate(updateFn: (state: Readonly<S>) => UpdateOf<S>, updateSource: any, updatePath: string[], promise?: Deferred<Readonly<S>>): void {
         const update = valueToUpdate(updateFn(this.state));
 
         if (update === NoUpdate) {
@@ -303,13 +305,13 @@ export class ObjectStateHandler<S extends object> extends Disposable implements 
     }
 
     update(updateFn: (state: S) => UpdateOf<S>, updateSource?: any, updatePath?: string): void {
-        this.updateQueue.push([updateFn, updateSource, updatePath ?? this.path, undefined]);
+        this.updateQueue.push([updateFn, updateSource, cleanPath(updatePath ?? this.path), undefined]);
         this.runUpdates();
     }
 
     updateAsync(updateFn: (state: S) => UpdateOf<S>, updateSource?: any, updatePath?: string): Promise<Readonly<S>> {
         const promise = new Deferred<Readonly<S>>();
-        this.updateQueue.push([updateFn, updateSource, updatePath ?? this.path, promise]);
+        this.updateQueue.push([updateFn, updateSource, cleanPath(updatePath ?? this.path), promise]);
         this.runUpdates();
         return promise;
     }
