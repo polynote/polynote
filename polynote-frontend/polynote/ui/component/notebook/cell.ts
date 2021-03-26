@@ -419,6 +419,8 @@ abstract class Cell extends Disposable {
         cellState.onDispose.then(() => {
             this.dispose()
         })
+
+        this.onDispose.then(() => this.onDisposed())
     }
 
     protected addCellClass(name: string) {
@@ -474,6 +476,10 @@ abstract class Cell extends Disposable {
 
     protected onDeselected() {
         this.removeCellClass("active");
+    }
+
+    protected onDisposed() {
+
     }
 
     protected scroll() {
@@ -620,6 +626,7 @@ export class CodeCell extends Cell {
     private highlightDecorations: string[] = [];
     private vim?: any;
     private commentHandler: CommentHandler;
+    private resizeObs: ResizeObserver;
 
     private errorMarkers: ErrorMarker[] = [];
     private overflowDomNode: TagElement<"div">;
@@ -641,15 +648,6 @@ export class CodeCell extends Cell {
         this.editorEl = div(['cell-input-editor'], [])
 
         this.overflowDomNode = div(['monaco-overflow', 'monaco-editor', this.cellId], []);
-        this.notebookState.loaded.then(() => {
-            this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode)
-            this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', () => {
-                this.layout()
-            })
-        })
-        this.onDispose.then(() => {
-            this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode)
-        })
 
         const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
         // set up editor and content
@@ -681,11 +679,10 @@ export class CodeCell extends Cell {
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
 
         // watch for resize events
-        const resizeObs = new ResizeObserver(() => {
+        this.resizeObs = new ResizeObserver(() => {
             this.layout()
         })
-        resizeObs.observe(this.editorEl)
-        this.onDispose.then(() => resizeObs.disconnect())
+        this.resizeObs.observe(this.editorEl)
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
@@ -979,13 +976,6 @@ export class CodeCell extends Cell {
         // make sure to create the comment handler.
         this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), this.editor);
 
-        this.onDispose.then(() => {
-            this.commentHandler.dispose()
-            this.getModelMarkers()?.forEach(marker => {
-                this.setModelMarkers([], marker.owner)
-            });
-            this.editor.dispose()
-        })
     }
 
     private onChangeModelContent(event: IModelContentChangedEvent) {
@@ -1172,6 +1162,11 @@ export class CodeCell extends Cell {
         // Update height and width on the editor.
         this.editor.layout({width, height});
 
+        this.layoutWidgets();
+
+    }
+
+    private layoutWidgets() {
         // update overflow widget node
         const editorNode = this.editor.getDomNode()
         if (editorNode) {
@@ -1181,7 +1176,6 @@ export class CodeCell extends Cell {
             this.overflowDomNode.style.height = r.height + "px"
             this.overflowDomNode.style.width = r.width + "px"
         }
-
     }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
@@ -1363,13 +1357,19 @@ export class CodeCell extends Cell {
         }
     }
 
+    private scrollListener: () => void = () => this.layoutWidgets();
+
     protected onSelected() {
-        super.onSelected()
+        super.onSelected();
+        this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode)
+        this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', this.scrollListener);
         this.vim = VimStatus.get.activate(this.editor)
     }
 
     protected onDeselected() {
         super.onDeselected();
+        this.overflowDomNode.parentNode?.removeChild(this.overflowDomNode)
+        this.editorEl.closest('.notebook-cells')?.removeEventListener('scroll', this.scrollListener);
         this.commentHandler.hide()
         // hide parameter hints on blur
         this.editor.trigger('keyboard', 'closeParameterHints', null);
@@ -1398,6 +1398,17 @@ export class CodeCell extends Cell {
             currentURL.hash += `,${pos.rangeStr}`
         }
         return currentURL
+    }
+
+    protected onDisposed() {
+        super.onDisposed();
+        this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode);
+        this.resizeObs.disconnect();
+        this.commentHandler.dispose();
+        this.getModelMarkers()?.forEach(marker => {
+            this.setModelMarkers([], marker.owner)
+        });
+        this.editor.dispose();
     }
 }
 
@@ -1832,11 +1843,6 @@ export class TextCell extends Cell {
             this.editor.element.addEventListener(k, fn);
         })
 
-        this.onDispose.then(() => {
-            this.listeners.forEach(([k, fn]) => {
-                this.editor.element.removeEventListener(k, fn)
-            })
-        })
     }
 
     // not private because it is also used by latex-editor
@@ -1918,6 +1924,13 @@ export class TextCell extends Cell {
     protected onSelected() {
         super.onSelected()
         this.editor.focus()
+    }
+
+    protected onDisposed() {
+        super.onDisposed();
+        this.listeners.forEach(([k, fn]) => {
+            this.editor.element.removeEventListener(k, fn)
+        });
     }
 
     setDisabled(disabled: boolean) {
