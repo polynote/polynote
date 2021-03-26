@@ -86,6 +86,7 @@ import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
 import {UserPreferencesHandler} from "../../../state/preferences";
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
+import {Main} from "../../../main";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -348,8 +349,8 @@ export class CellContainer extends Disposable {
         }
     }
 
-    layout() {
-        this.cell.layout()
+    layout(width?: number) {
+        this.cell.layout(width)
     }
 
     delete() {
@@ -612,7 +613,7 @@ abstract class Cell extends Disposable {
         this.dispose()
     }
 
-    layout() {}
+    layout(width?: number) {}
 }
 
 type ErrorMarker = {error: CompileErrors | RuntimeError, markers: IMarkerData[]};
@@ -626,7 +627,6 @@ export class CodeCell extends Cell {
     private highlightDecorations: string[] = [];
     private vim?: any;
     private commentHandler: CommentHandler;
-    private resizeObs: ResizeObserver;
 
     private errorMarkers: ErrorMarker[] = [];
     private overflowDomNode: TagElement<"div">;
@@ -677,12 +677,6 @@ export class CodeCell extends Cell {
         });
 
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
-
-        // watch for resize events
-        this.resizeObs = new ResizeObserver(() => {
-            this.layout()
-        })
-        this.resizeObs.observe(this.editorEl)
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
@@ -819,7 +813,7 @@ export class CodeCell extends Cell {
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
                 this.el.classList.add("hide-code")
-            } else {
+            } else if (this.el.classList.contains('hide-code')) {
                 this.el.classList.remove("hide-code");
                 this.layout();
             }
@@ -1149,19 +1143,27 @@ export class CodeCell extends Cell {
      *          So, width data goes from cell -> editor.
      *          A horizontal scrollbar is necessary if the text content overflows.
      */
-    layout() {
+    private previousHeight: number = 0;
+    layout(forceWidth?: number) {
+        if (!this.el.parentNode) {
+            return;
+        }
         const editorLayout = this.editor.getLayoutInfo();
         // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
         const lineHeight = this.editor.getOption(editor.EditorOption.lineHeight);
         // if the editor height is less than one line we need to initialize the height with both the content height as well as the horizontal scrollbar height.
         const shouldAddScrollbarHeight = editorLayout.height < lineHeight;
         const height = this.editor.getContentHeight() + (shouldAddScrollbarHeight ? editorLayout.horizontalScrollbarHeight : 0);
+        if (this.previousHeight === height) {
+            return;
+        }
+        this.previousHeight = height;
         // the editor width is determined by the container's width.
-        const width = this.editorEl.clientWidth;
+        const width = forceWidth ?? Main.get.splitView.centerWidth - 66;
+        console.log('layout cell', width, this.id);
 
         // Update height and width on the editor.
         this.editor.layout({width, height});
-
         this.layoutWidgets();
 
     }
@@ -1404,7 +1406,6 @@ export class CodeCell extends Cell {
     protected onDisposed() {
         super.onDisposed();
         this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode);
-        this.resizeObs.disconnect();
         this.commentHandler.dispose();
         this.getModelMarkers()?.forEach(marker => {
             this.setModelMarkers([], marker.owner)

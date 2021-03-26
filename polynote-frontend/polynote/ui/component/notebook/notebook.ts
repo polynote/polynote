@@ -1,6 +1,6 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {Disposable, MoveArrayValue, NoUpdate, setValue, StateHandler, UpdateResult} from "../../../state";
+import {Disposable, IDisposable, MoveArrayValue, NoUpdate, setValue, StateHandler, UpdateResult} from "../../../state";
 import {CellMetadata} from "../../../data/data";
 import {CellContainer} from "./cell";
 import {NotebookConfigEl} from "./notebookconfig";
@@ -9,12 +9,14 @@ import {PosRange} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {NotebookScrollLocationsHandler} from "../../../state/preferences";
 import {ServerStateHandler} from "../../../state/server_state";
+import {Main} from "../../../main";
 
 type CellInfo = {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">};
 
 export class Notebook extends Disposable {
     readonly el: TagElement<"div">;
     readonly cells: Record<number, CellInfo> = {};
+    private resizeObserver: IDisposable;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         super()
@@ -161,6 +163,18 @@ export class Notebook extends Disposable {
                 VimStatus.get.hide()
             }
         }).disposeWith(this)
+
+        this.notebookState.loaded.then(() => {
+            this.resizeObserver = Main.get.splitView.onResize(width => {
+                if (ServerStateHandler.state.currentNotebook === path) {
+                    const cellWidth = width - 66;
+                    console.log('Layout', cellWidth);
+                    Object.values(this.cells).forEach(({cell, handler, el}) => {
+                        cell.layout(cellWidth)
+                    })
+                }
+            }).disposeWith(this);
+        })
 
         // select cell + highlight based on the current hash
         const hash = document.location.hash;

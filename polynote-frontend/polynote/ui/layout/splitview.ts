@@ -1,5 +1,5 @@
 import {div, TagElement} from "../tags";
-import {Disposable, setProperty, updateProperty} from "../../state";
+import {Disposable, IDisposable, mkDisposable, setProperty, updateProperty} from "../../state";
 import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 
 /**
@@ -9,12 +9,29 @@ import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 export type Pane = { header: TagElement<"h2">, el: TagElement<"div">}
 export class SplitView extends Disposable {
     readonly el: TagElement<"div">;
+    private _centerWidth: number = 0;
+    get centerWidth(): number { return this._centerWidth; }
+
+    private observers: (((width: number) => void) & IDisposable)[] = [];
+
     constructor(leftPane: Pane, center: TagElement<"div">, rightPane: Pane) {
         super()
 
         const leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
-        const triggerResize = () => window.dispatchEvent(new CustomEvent('resize'));
+        const triggerResize = () => {
+            const width = center.clientWidth;
+            this.triggerResize(width);
+            window.dispatchEvent(new CustomEvent('resize'));
+        }
+        const resizeObserver = new ResizeObserver(([entry]) => this.triggerResize(entry.contentRect.width));
+        resizeObserver.observe(center);
+
+        this.onDispose.then(() => {
+            resizeObserver.disconnect();
+            this.observers.forEach(obs => obs.dispose());
+            this.observers = [];
+        })
 
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
@@ -52,7 +69,10 @@ export class SplitView extends Disposable {
                 left.style.width = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX)) + "px";
             }
         });
-        leftDragger.addEventListener('dragend', () => ViewPrefsHandler.updateField("leftPane", () => setProperty("size", left.style.width)));
+        leftDragger.addEventListener('dragend', () => {
+            ViewPrefsHandler.updateField("leftPane", () => setProperty("size", left.style.width));
+            this.triggerResize(center.clientWidth);
+        });
 
         // right pane
         right.classList.add('right');
@@ -78,7 +98,10 @@ export class SplitView extends Disposable {
                 right.style.width = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
             }
         });
-        rightDragger.addEventListener('dragend', evt => ViewPrefsHandler.updateField("rightPane", () => setProperty("size", right.style.width)));
+        rightDragger.addEventListener('dragend', evt => {
+            ViewPrefsHandler.updateField("rightPane", () => setProperty("size", right.style.width));
+            this.triggerResize(center.clientWidth);
+        });
 
         this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
 
@@ -96,5 +119,28 @@ export class SplitView extends Disposable {
         }
         collapseStatus(initialPrefs)
         ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this)
+    }
+
+    onResize(fn: (width: number) => void): IDisposable {
+        const disposable = mkDisposable(fn, () => this.removeObserver(fn));
+        this.observers.push(disposable);
+        return disposable;
+    }
+
+    removeObserver(fn: (width: number) => void): void {
+        const idx = this.observers.indexOf(fn as any);
+        if (idx >= 0) {
+            this.observers.splice(idx, 1);
+        }
+    }
+
+    triggerResize(width: number, notify: boolean = true): void {
+        if (this._centerWidth === width)
+            return;
+
+        this._centerWidth = width;
+        if (notify) {
+            this.observers.forEach(obs => obs(width));
+        }
     }
 }

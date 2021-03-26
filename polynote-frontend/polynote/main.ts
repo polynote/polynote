@@ -27,9 +27,11 @@ import {ThemeHandler} from "./state/theme";
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
  * other components.
  */
-class Main {
+export class Main {
     public el: TagElement<"div">;
     private receiver: ServerMessageReceiver;
+
+    readonly splitView: SplitView;
 
     private constructor(socket: SocketStateHandler) {
 
@@ -59,7 +61,7 @@ class Main {
 
         this.el = div(['main-ui'], [
             div(['header'], [new Toolbar(dispatcher).el]),
-            div(['body'], [new SplitView(leftPane, center, rightPane).el]),
+            div(['body'], [this.splitView = new SplitView(leftPane, center, rightPane)]),
             div(['footer'], []) // no footer yet!
         ]);
 
