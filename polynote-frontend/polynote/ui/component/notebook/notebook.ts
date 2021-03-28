@@ -16,7 +16,6 @@ type CellInfo = {cell: CellContainer, handler: StateHandler<CellState>, el: TagE
 export class Notebook extends Disposable {
     readonly el: TagElement<"div">;
     readonly cells: Record<number, CellInfo> = {};
-    private resizeObserver: IDisposable;
 
     constructor(private dispatcher: NotebookMessageDispatcher, private notebookState: NotebookStateHandler) {
         super()
@@ -30,6 +29,19 @@ export class Notebook extends Disposable {
 
         this.el = div(['notebook-content'], [cellsEl]);
 
+        let needLayout = false;
+        const layoutCells = () => {
+            // console.time("Layout cells")
+            const cells = Object.values(this.cells);
+            const layoutCell = cellsEl.querySelector('.code-cell .cell-input-editor');
+            if (cells.length) {
+                const width = cells[0].cell.cell.editorEl.clientWidth;
+                cells.forEach(cellInfo => cellInfo.cell.layout(width));
+                needLayout = false;
+            }
+            // console.timeEnd("Layout cells")
+        }
+
         const handleVisibility = (currentNotebook: string | undefined) => {
             if (currentNotebook === path) {
                 // when this notebook becomes visible, scroll to the saved location (if present)
@@ -38,10 +50,9 @@ export class Notebook extends Disposable {
                     cellsEl.scrollTop = maybeScrollLocation
                 }
 
-                // layout cells
-                Object.values(this.cells).forEach(({cell, handler, el}) => {
-                    cell.layout()
-                })
+                if (!notebookState.isLoading) {
+                    layoutCells();
+                }
             } else {
                 // deselect cells.
                 this.notebookState.selectCell(undefined)
@@ -53,6 +64,10 @@ export class Notebook extends Disposable {
         const cellsHandler = notebookState.cellsHandler
 
         const handleAddedCells = (added: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
+
+            // if no cells exist yet, we'll need to do an initial layout after adding the cells.
+            const needLayout = Object.keys(this.cells).length === 0;
+
             Object.entries(cellOrderUpdate.addedValues!).forEach(([idx, id]) => {
                 const handler = cellsHandler.lens(id)
                 const cell = new CellContainer(this.newCellDivider(), dispatcher, notebookState, handler);
@@ -70,6 +85,10 @@ export class Notebook extends Disposable {
                     cellsEl.appendChild(el);
                 }
             })
+
+            if (needLayout) {
+                window.requestAnimationFrame(layoutCells);
+            }
         }
 
         const handleDeletedCells = (deletedPartial: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
@@ -165,13 +184,9 @@ export class Notebook extends Disposable {
         }).disposeWith(this)
 
         this.notebookState.loaded.then(() => {
-            this.resizeObserver = Main.get.splitView.onResize(width => {
+            Main.get.splitView.onEndResize(width => {
                 if (ServerStateHandler.state.currentNotebook === path) {
-                    const cellWidth = width - 66;
-                    console.log('Layout', cellWidth);
-                    Object.values(this.cells).forEach(({cell, handler, el}) => {
-                        cell.layout(cellWidth)
-                    })
+                    layoutCells();
                 }
             }).disposeWith(this);
         })
