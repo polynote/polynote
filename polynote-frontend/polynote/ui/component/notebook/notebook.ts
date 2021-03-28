@@ -29,8 +29,10 @@ export class Notebook extends Disposable {
 
         this.el = div(['notebook-content'], [cellsEl]);
 
-        let needLayout = false;
+        let needLayout = true;
         const layoutCells = () => {
+            if (!needLayout)
+                return;
             // console.time("Layout cells")
             const cells = Object.values(this.cells);
             const layoutCell = cellsEl.querySelector('.code-cell .cell-input-editor');
@@ -185,6 +187,7 @@ export class Notebook extends Disposable {
 
         this.notebookState.loaded.then(() => {
             Main.get.splitView.onEndResize(width => {
+                needLayout = true;
                 if (ServerStateHandler.state.currentNotebook === path) {
                     layoutCells();
                 }
