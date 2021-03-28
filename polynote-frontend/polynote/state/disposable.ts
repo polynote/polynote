@@ -64,6 +64,10 @@ class VoidPromise implements VoidPromiseLike {
     }
 
     abort(fn: () => void): void {
+        if (this._isSettled) {
+            return;
+        }
+
         const idx = this.observers.indexOf(fn);
         if (idx >= 0) {
             this.observers.splice(idx, 1);
@@ -73,8 +77,8 @@ class VoidPromise implements VoidPromiseLike {
     resolve() {
         if (!this._isSettled) {
             this._isSettled = true;
-            this.observers.forEach(fn => fn());
-            this.observers.slice();
+            this.observers.forEach(obs => obs());
+            this.observers = [];
         }
     }
 
@@ -103,11 +107,11 @@ export class Disposable implements IDisposable {
         // Promise.race([this.deferred, that.onDispose]).then(() => this.tryDispose());
         let weakThat: IDisposable | undefined = that;
         const l = () => {
-            this.dispose();
             if (weakThat) {
                 weakThat.onDispose.abort(l);
                 weakThat = undefined;
             }
+            this.dispose();
         }
         that.onDispose.then(l);
         this.deferred.then(l);
@@ -130,10 +134,9 @@ export class ImmediateDisposable extends Disposable {
 
     tryDispose(): VoidPromiseLike {
         const disposed = this.isDisposed;
-        const promise = super.tryDispose();
         if (!disposed) {
             this.callback();
         }
-        return promise;
+        return super.tryDispose();
     }
 }

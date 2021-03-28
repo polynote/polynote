@@ -120,8 +120,10 @@ describe("ObjectStateHandler", () => {
 
             const disposed = jest.fn()
             obs.onDispose.then(disposed).then(done).then(() => {
-                expect(disposed).toHaveBeenCalledTimes(1)
-                expect(handler.observerCount).toEqual(0)
+                Promise.resolve().then(() => {
+                    expect(disposed).toHaveBeenCalledTimes(1)
+                    expect(handler.observerCount).toEqual(0)
+                });
             })
 
             const oldNum = handler.state.num
