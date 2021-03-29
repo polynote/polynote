@@ -144,7 +144,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
     }
 
     /**
-     * Initialize a new NotebookState and create a NotebookMessageReceiver for that notebook.
+     * Initialize a new NotebookState for a notebook.
      */
     static getOrCreateNotebook(path: string): NotebookInfo {
         const maybeExists = ServerStateHandler.notebooks[path]

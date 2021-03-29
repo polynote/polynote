@@ -29,9 +29,9 @@ import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/d
 import {ContentEdit, diffEdits} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
 import {deepEquals, diffArray, Deferred} from "../util/helpers";
-import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {availableResultValues} from "../interpreter/client_interpreter";
 import {notReceiver} from "../messaging/receiver";
+import {ServerStateHandler} from "./server_state";
 
 
 export type CellPresenceState = {id: number, name: string, color: string, range: PosRange, avatar?: string};
@@ -330,7 +330,8 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
     }
 
     get isLoading(): boolean {
-        return !!(this.state.kernel.tasks[this.state.path] ?? false)
+        const nbLoaded = ServerStateHandler.getNotebook(this.state.path)?.loaded
+        return nbLoaded === undefined || !nbLoaded || !!(this.state.kernel.tasks[this.state.path] ?? false)
     }
 
     fork(disposeContext?: IDisposable): NotebookStateHandler {
