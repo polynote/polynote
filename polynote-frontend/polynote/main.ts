@@ -74,8 +74,10 @@ class Main {
             const notebookBase = 'notebook/';
             if (path.startsWith(notebookBase)) {
                 const nbPath = path.substring(notebookBase.length)
-                ServerStateHandler.loadNotebook(nbPath, true).then(() => {
-                    ServerStateHandler.selectNotebook(nbPath)
+                ServerStateHandler.loadNotebook(nbPath, true).then(nbInfo => {
+                    nbInfo.handler.loaded.then(() => {
+                        ServerStateHandler.selectNotebook(nbPath)
+                    })
                 })
             }
         })
