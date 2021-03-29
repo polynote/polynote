@@ -676,8 +676,9 @@ export class CodeCell extends Cell {
             lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
             renderLineHighlight: "none",
-            renderIndentGuides: false,
-            cursorStyle: 'block',
+            // // NOTE: these next two improve performance, but not necessarily enough to be worth it.
+            // renderIndentGuides: false,
+            // cursorStyle: 'block',
             scrollbar: {
                 alwaysConsumeMouseWheel: false,
                 vertical: "hidden",
