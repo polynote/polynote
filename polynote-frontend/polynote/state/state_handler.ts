@@ -1,4 +1,4 @@
-import {collect, Deferred} from "../util/helpers";
+import {collect, Deferred, safeForEach} from "../util/helpers";
 import {Disposable, IDisposable, ImmediateDisposable, mkDisposable} from "./disposable";
 import {
     childResult,
@@ -185,14 +185,13 @@ class ObserverDict<T> {
     private forEachAt(path: string[], fn: (observer: T) => void): void {
         // NOTE: iterating through observers backwards because observers sometimes remove themselves from this list
         //       during iteration.
-        for (let idx = this.observers.length - 1; idx >= 0; idx--) {
-            const t = this.observers[idx];
+        safeForEach(this.observers, t => {
             try {
                 fn(t)
             } catch (e) {
-                console.error(e)
+                console.error(e);
             }
-        }
+        });
         if (path.length === 0) {
             for (const child of Object.values(this.children)) {
                 child.forEachAt(path, fn);

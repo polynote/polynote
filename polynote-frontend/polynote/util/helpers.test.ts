@@ -20,6 +20,7 @@ import {
     parseQuotedArgs,
     partition,
     removeKeys,
+    safeForEach,
     unzip,
     unzip3
 } from "./helpers";
@@ -530,4 +531,30 @@ describe("linePosAt", () => {
         expect(linePosAt("abc\ndef\nghi", -1)).toEqual([0, 0])
         expect(linePosAt("abc\ndef\nghi", 100)).toEqual([2, 2])
     })
+})
+
+describe("safeForEach", () => {
+
+    it("iterates the elements in reverse order", () => {
+        const arr: number[] = [1, 2, 3, 4, 5]
+        const arr2: number[] = [];
+
+        safeForEach(arr, elem => arr2.push(elem));
+
+        expect(arr2).toEqual([5, 4, 3, 2, 1]);
+    })
+
+    it("works even if current item gets removed", () => {
+
+        const arr: number[] = [1, 2, 3, 4, 5];
+        const arr2: number[] = [];
+
+        safeForEach(arr, elem => {
+            arr2.push(elem);
+            arr.splice(arr.indexOf(elem), 1);
+        });
+
+        expect(arr2).toEqual([5, 4, 3, 2, 1]);
+    })
+
 })
