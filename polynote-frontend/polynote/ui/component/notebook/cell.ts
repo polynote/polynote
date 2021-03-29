@@ -271,7 +271,13 @@ class CellDragHandle extends ImmediateDisposable {
 export class CellContainer extends Disposable {
     readonly el: TagElement<"div">;
     private readonly cellId: string;
-    private cell: Cell;
+
+    private _cell: Cell;
+
+    get cell(): Cell {
+        return this._cell;
+    }
+
     private path: string;
     private cellState: StateHandler<CellState>;
 
@@ -285,7 +291,7 @@ export class CellContainer extends Disposable {
         const cellState = this.cellState = state.fork(this);
         const id = cellState.state.id;
         this.cellId = `Cell${id}`;
-        this.cell = this.cellFor(cellState.state.language);
+        this._cell = this.cellFor(cellState.state.language);
         this.path = notebookState.state.path;
 
         const dragHandle = new CellDragHandle(
@@ -311,27 +317,27 @@ export class CellContainer extends Disposable {
         })
 
         this.el = div(['cell-and-divider'], [
-            div(['cell-component'], [dragHandle, this.cell.el]),
+            div(['cell-component'], [dragHandle, this._cell.el]),
             newCellDivider
         ]).dataAttr('data-cellid', id.toString());
 
-        this.el.click(evt => this.cell.doSelect());
+        this.el.click(evt => this._cell.doSelect());
         cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
             if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
                 const newCell = this.cellFor(newLang)
-                newCell.replace(this.cell).then(() => {
-                    this.cell = newCell;
-                    this.layout();
+                newCell.replace(this._cell).then(cell => {
+                    this._cell = cell
+                    this.layout()
                 })
             }
         });
 
         ServerStateHandler.view("connectionStatus").addObserver(currentStatus => {
             if (currentStatus === "disconnected") {
-                this.cell.setDisabled(true)
+                this._cell.setDisabled(true)
             } else {
-                this.cell.setDisabled(false)
+                this._cell.setDisabled(false)
             }
         }).disposeWith(this)
 
@@ -349,13 +355,13 @@ export class CellContainer extends Disposable {
         }
     }
 
-    layout() {
-        this.cell.layout()
+    layout(width?: number) {
+        this._cell.layout(width)
     }
 
     delete() {
         this.cellState.dispose()
-        this.cell.delete()
+        this._cell.delete()
     }
 }
 
@@ -389,6 +395,8 @@ abstract class Cell extends Disposable {
     protected id: number;
     protected cellId: string;
     public el: TagElement<"div">;
+    abstract get editorEl(): TagElement<'div'>;
+
     protected readonly cellState: StateHandler<CellState>;
     protected readonly notebookState: NotebookStateHandler;
 
@@ -420,6 +428,8 @@ abstract class Cell extends Disposable {
         cellState.onDispose.then(() => {
             this.dispose()
         })
+
+        this.onDispose.then(() => this.onDisposed())
     }
 
     protected addCellClass(name: string) {
@@ -474,6 +484,10 @@ abstract class Cell extends Disposable {
 
     protected onDeselected() {
         this.removeCellClass("active");
+    }
+
+    protected onDisposed() {
+
     }
 
     protected scroll() {
@@ -606,14 +620,14 @@ abstract class Cell extends Disposable {
         this.dispose()
     }
 
-    layout() {}
+    layout(width?: number) {}
 }
 
 type ErrorMarker = {error: CompileErrors | RuntimeError, markers: IMarkerData[]};
 
 export class CodeCell extends Cell {
     private readonly editor: IStandaloneCodeEditor;
-    private readonly editorEl: TagElement<"div">;
+    readonly editorEl: TagElement<"div">;
     private cellInputTools: TagElement<"div">;
     private applyingServerEdits: boolean;
     private execDurationUpdater?: number;
@@ -641,15 +655,6 @@ export class CodeCell extends Cell {
         this.editorEl = div(['cell-input-editor'], [])
 
         this.overflowDomNode = div(['monaco-overflow', 'monaco-editor', this.cellId], []);
-        this.notebookState.loaded.then(() => {
-            this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode)
-            this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', () => {
-                this.layout()
-            })
-        })
-        this.onDispose.then(() => {
-            this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode)
-        })
 
         const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
         // set up editor and content
@@ -670,6 +675,9 @@ export class CodeCell extends Cell {
             lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
             renderLineHighlight: "none",
+            // // NOTE: these next two improve performance, but not necessarily enough to be worth it.
+            // renderIndentGuides: false,
+            // cursorStyle: 'block',
             scrollbar: {
                 alwaysConsumeMouseWheel: false,
                 vertical: "hidden",
@@ -679,13 +687,6 @@ export class CodeCell extends Cell {
         });
 
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
-
-        // watch for resize events
-        const resizeObs = new ResizeObserver(() => {
-            this.layout()
-        })
-        resizeObs.observe(this.editorEl)
-        this.onDispose.then(() => resizeObs.disconnect())
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
@@ -715,7 +716,7 @@ export class CodeCell extends Cell {
             }
         });
         (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
-            foldingModel => foldingModel?.onDidChange(() => this.layout())
+            foldingModel => foldingModel?.onDidChange(() => this.layout(this.previousWidth))
         );
         this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
@@ -822,9 +823,9 @@ export class CodeCell extends Cell {
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
                 this.el.classList.add("hide-code")
-            } else {
+            } else if (this.el.classList.contains('hide-code')) {
                 this.el.classList.remove("hide-code");
-                this.layout();
+                this.layout(this.previousWidth, true);
             }
 
             if (metadata.hideOutput) {
@@ -837,7 +838,7 @@ export class CodeCell extends Cell {
                 this.setExecutionInfo(execInfoEl, metadata.executionInfo)
             }
         }
-        updateMetadata(this.state.metadata);
+        // updateMetadata(this.state.metadata);
         cellState.observeKey("metadata", metadata => updateMetadata(metadata));
 
         cellState.observeKey("content", (content, updateResult, src) => {
@@ -979,17 +980,10 @@ export class CodeCell extends Cell {
         // make sure to create the comment handler.
         this.commentHandler = new CommentHandler(cellState.lens("comments"), cellState.view("currentSelection"), this.editor);
 
-        this.onDispose.then(() => {
-            this.commentHandler.dispose()
-            this.getModelMarkers()?.forEach(marker => {
-                this.setModelMarkers([], marker.owner)
-            });
-            this.editor.dispose()
-        })
     }
 
     private onChangeModelContent(event: IModelContentChangedEvent) {
-        this.layout();
+        this.layout(this.previousWidth, true);
         if (this.applyingServerEdits)
             return;
 
@@ -1159,29 +1153,52 @@ export class CodeCell extends Cell {
      *          So, width data goes from cell -> editor.
      *          A horizontal scrollbar is necessary if the text content overflows.
      */
-    layout() {
+    private previousHeight: number = 0;
+    private previousWidth: number = 0;
+    layout(forceWidth?: number, onlyHeight?: boolean) {
+        if (!this.el.parentNode) {
+            return;
+        }
         const editorLayout = this.editor.getLayoutInfo();
         // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
         const lineHeight = this.editor.getOption(editor.EditorOption.lineHeight);
         // if the editor height is less than one line we need to initialize the height with both the content height as well as the horizontal scrollbar height.
         const shouldAddScrollbarHeight = editorLayout.height < lineHeight;
         const height = this.editor.getContentHeight() + (shouldAddScrollbarHeight ? editorLayout.horizontalScrollbarHeight : 0);
+
+        // avoid measuring width if only height changes are to be considered
+        if (onlyHeight && this.previousHeight === height) {
+            return;
+        }
+
         // the editor width is determined by the container's width.
-        const width = this.editorEl.clientWidth;
+        // if the width was passed from above, we can avoid measuring the width of the container (which forces a reflow)
+        const width = forceWidth ?? (onlyHeight ? this.previousWidth : this.editorEl.clientWidth);
+
+        // avoid doing a layout if size hasn't changed
+        if (this.previousHeight === height && this.previousWidth === width) {
+            return;
+        }
+        this.previousHeight = height;
+        this.previousWidth = width;
 
         // Update height and width on the editor.
         this.editor.layout({width, height});
+        this.layoutWidgets();
 
-        // update overflow widget node
-        const editorNode = this.editor.getDomNode()
-        if (editorNode) {
-            const r = editorNode.getBoundingClientRect()
-            this.overflowDomNode.style.top = r.top + "px";
-            this.overflowDomNode.style.left = r.left + "px";
-            this.overflowDomNode.style.height = r.height + "px"
-            this.overflowDomNode.style.width = r.width + "px"
+    }
+
+    private layoutWidgets() {
+        if (this.overflowDomNode.parentNode) {
+            const editorNode = this.editor.getDomNode()
+            if (editorNode) {
+                const r = editorNode.getBoundingClientRect()
+                this.overflowDomNode.style.top = r.top + "px";
+                this.overflowDomNode.style.left = r.left + "px";
+                this.overflowDomNode.style.height = r.height + "px"
+                this.overflowDomNode.style.width = r.width + "px"
+            }
         }
-
     }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
@@ -1363,13 +1380,19 @@ export class CodeCell extends Cell {
         }
     }
 
+    private scrollListener: () => void = () => this.layoutWidgets();
+
     protected onSelected() {
-        super.onSelected()
+        super.onSelected();
+        this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode)
+        this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', this.scrollListener);
         this.vim = VimStatus.get.activate(this.editor)
     }
 
     protected onDeselected() {
         super.onDeselected();
+        this.overflowDomNode.parentNode?.removeChild(this.overflowDomNode)
+        this.editorEl.closest('.notebook-cells')?.removeEventListener('scroll', this.scrollListener);
         this.commentHandler.hide()
         // hide parameter hints on blur
         this.editor.trigger('keyboard', 'closeParameterHints', null);
@@ -1398,6 +1421,16 @@ export class CodeCell extends Cell {
             currentURL.hash += `,${pos.rangeStr}`
         }
         return currentURL
+    }
+
+    protected onDisposed() {
+        super.onDisposed();
+        this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode);
+        this.commentHandler.dispose();
+        this.getModelMarkers()?.forEach(marker => {
+            this.setModelMarkers([], marker.owner)
+        });
+        this.editor.dispose();
     }
 }
 
@@ -1803,13 +1836,14 @@ class CodeCellOutput extends Disposable {
 
 export class TextCell extends Cell {
     private editor: RichTextEditor;
+    readonly editorEl: TagElement<'div'>;
     private lastContent: string;
     private listeners: [string, (evt: Event) => void][];
 
     constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>) {
         super(dispatcher, notebookState, stateHandler)
 
-        const editorEl = div(['cell-input-editor', 'markdown-body'], [])
+        const editorEl = this.editorEl = div(['cell-input-editor', 'markdown-body'], [])
 
         const content = stateHandler.state.content;
         this.editor = new RichTextEditor(editorEl, content)
@@ -1832,11 +1866,6 @@ export class TextCell extends Cell {
             this.editor.element.addEventListener(k, fn);
         })
 
-        this.onDispose.then(() => {
-            this.listeners.forEach(([k, fn]) => {
-                this.editor.element.removeEventListener(k, fn)
-            })
-        })
     }
 
     // not private because it is also used by latex-editor
@@ -1920,6 +1949,13 @@ export class TextCell extends Cell {
         this.editor.focus()
     }
 
+    protected onDisposed() {
+        super.onDisposed();
+        this.listeners.forEach(([k, fn]) => {
+            this.editor.element.removeEventListener(k, fn)
+        });
+    }
+
     setDisabled(disabled: boolean) {
         this.editor.disabled = disabled
     }
@@ -1929,7 +1965,10 @@ export class TextCell extends Cell {
 export class VizCell extends Cell {
 
     private editor: VizSelector;
-    private editorEl: TagElement<'div'>;
+
+    private _editorEl: TagElement<'div'>;
+    get editorEl(): TagElement<'div'> { return this._editorEl }
+
     private cellInputTools: TagElement<'div'>;
     private execDurationUpdater?: number;
     private viz: Viz;
@@ -1962,7 +2001,7 @@ export class VizCell extends Cell {
             ])]))
         }
 
-        this.editorEl = div(['viz-selector', 'loading'], 'Notebook is loading...');
+        this._editorEl = div(['viz-selector', 'loading'], 'Notebook is loading...');
 
         if (cellState.state.output.length > 0) {
             this.previousViews[this.viz.type] = [this.viz, cellState.state.output[0]];
@@ -2007,7 +2046,7 @@ export class VizCell extends Cell {
                         ]).click(() => this.convertToVega())
                     ])
                 ]),
-                this.editorEl
+                this._editorEl
             ]),
             this.cellOutput.el
         ]);
@@ -2044,8 +2083,8 @@ export class VizCell extends Cell {
                     //       exactly which cell to wait for. Right now, if the value was declared and then re-declared,
                     //       we'll get the first one (which could be bad). Alternatively, if we had stable cell IDs
                     //       (e.g. UUID) then the viz could refer to the stable source cell of the value being visualized.
-                    if (this.editorEl.classList.contains('loading')) {
-                        this.editorEl.innerHTML = `Waiting for value <code>${this.valueName}</code>...`;
+                    if (this._editorEl.classList.contains('loading')) {
+                        this._editorEl.innerHTML = `Waiting for value <code>${this.valueName}</code>...`;
                     }
                 }
                 watchValues();
@@ -2134,10 +2173,10 @@ export class VizCell extends Cell {
             this.updateViz(viz)
         });
 
-        if (this.editorEl.parentNode) {
-            this.editorEl.parentNode.replaceChild(this.editor.el, this.editorEl);
+        if (this._editorEl.parentNode) {
+            this._editorEl.parentNode.replaceChild(this.editor.el, this._editorEl);
         }
-        this.editorEl = this.editor.el;
+        this._editorEl = this.editor.el;
 
         if (!this.cellState.state.output.length || this.viz.type !== 'plot') {
             const result = this.vizResult(this.viz);
