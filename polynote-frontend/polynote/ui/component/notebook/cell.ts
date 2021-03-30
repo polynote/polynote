@@ -326,8 +326,8 @@ export class CellContainer extends Disposable {
             // Need to create a whole new cell if the language switches between code and text
             if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
                 const newCell = this.cellFor(newLang)
-                newCell.replace(this._cell).then(cell => {
-                    this._cell = cell
+                newCell.replace(this._cell).then(() => {
+                    this._cell = newCell
                     this.layout()
                 })
             }
