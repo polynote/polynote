@@ -48,13 +48,13 @@ export function mkDisposable<T>(t: T, onDispose: () => void = () => {}): T & IDi
  * This is a fake "Promise" that does everything synchronously. It just captures observers in the `then` method, and
  * when it's settled, it invokes them.
  */
-class VoidPromise implements VoidPromiseLike {
+export class VoidPromise implements VoidPromiseLike {
     private _isSettled: boolean = false;
     get isSettled(): boolean { return this._isSettled }
 
     private observers: (() => void)[] = [];
 
-    then(onfulfilled: () => void): VoidPromiseLike {
+    then(onfulfilled: () => void): VoidPromise {
         if (this._isSettled) {
             onfulfilled();
         } else {
