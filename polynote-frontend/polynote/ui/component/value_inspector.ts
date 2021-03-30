@@ -10,15 +10,11 @@ import {
     MIMERepr,
     StreamingDataRepr,
     StringRepr,
-    StructStreamingDataRepr
 } from "../../data/value_repr";
 import {contentTypeName, displayContent, displayData, displaySchema} from "../display/display_content";
 import {DataReader} from "../../data/codec";
 import {StructType} from "../../data/data_type";
 import {TabNav} from "../layout/tab_nav";
-import {PlotEditor} from "./plot_editor";
-import {TableView} from "../layout/table_view";
-import {NotebookMessageDispatcher} from "../../messaging/dispatcher";
 import {NotebookStateHandler} from "../../state/notebook_state";
 
 export class ValueInspector extends FullScreenModal {
