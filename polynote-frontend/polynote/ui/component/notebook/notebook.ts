@@ -37,9 +37,11 @@ export class Notebook extends Disposable {
             const cells = Object.values(this.cells);
             const layoutCell = cellsEl.querySelector('.code-cell .cell-input-editor');
             if (cells.length) {
-                const width = cells[0].cell.cell.editorEl.clientWidth;
-                cells.forEach(cellInfo => cellInfo.cell.layout(width));
-                needLayout = false;
+                const width = layoutCell?.clientWidth || cells[0].cell.cell.editorEl.clientWidth;
+                const didLayoutCells = cells.map(cellInfo => {
+                    return cellInfo.cell.layout(width)
+                });
+                needLayout = !didLayoutCells.every(x => x);
             }
             // console.timeEnd("Layout cells")
         }
@@ -68,7 +70,10 @@ export class Notebook extends Disposable {
         const handleAddedCells = (added: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
 
             // if no cells exist yet, we'll need to do an initial layout after adding the cells.
-            const needLayout = Object.keys(this.cells).length === 0;
+            const layoutAllCells = Object.keys(this.cells).length === 0;
+
+            // layout each new cell because we're no longer initializing.
+            const layoutNewCells = cellsEl.isConnected; // if cellsEl is in the DOM it means we're done initializing.
 
             Object.entries(cellOrderUpdate.addedValues!).forEach(([idx, id]) => {
                 const handler = cellsHandler.lens(id)
@@ -86,9 +91,13 @@ export class Notebook extends Disposable {
                     // index not found, must be at the end
                     cellsEl.appendChild(el);
                 }
+
+                if (layoutNewCells) {
+                    cell.layout()
+                }
             })
 
-            if (needLayout) {
+            if (layoutAllCells) {
                 window.requestAnimationFrame(layoutCells);
             }
         }
