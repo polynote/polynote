@@ -73,7 +73,7 @@ export class Notebook extends Disposable {
             const layoutAllCells = Object.keys(this.cells).length === 0;
 
             // layout each new cell because we're no longer initializing.
-            const layoutNewCells = cellsEl.isConnected; // if cellsEl is in the DOM it means we're done initializing.
+            const layoutNewCells = !layoutAllCells && cellsEl.isConnected; // if cellsEl is in the DOM it means we're done initializing.
 
             Object.entries(cellOrderUpdate.addedValues!).forEach(([idx, id]) => {
                 const handler = cellsHandler.lens(id)
