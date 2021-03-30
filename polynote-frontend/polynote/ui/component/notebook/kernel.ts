@@ -716,6 +716,11 @@ class KernelSymbolsEl extends Disposable {
             name: resultValue.name,
             type: span([], [resultValue.typeName]).attr('title', resultValue.typeName)
         }, whichBody) as ResultRow;
+        tr.onmousedown = (evt) => {
+            if (evt.button !== 0)
+                return; // only for primary mouse button
+            evt.stopPropagation();
+        };
         tr.onmouseover = () => this.showPopupFor(tr, resultValue);
         tr.data = {name: resultValue.name, type: resultValue.typeName};
         tr.resultValue = resultValue;
