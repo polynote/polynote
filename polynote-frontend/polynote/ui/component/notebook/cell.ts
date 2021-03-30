@@ -355,8 +355,8 @@ export class CellContainer extends Disposable {
         }
     }
 
-    layout(width?: number) {
-        this._cell.layout(width)
+    layout(width?: number): boolean {
+        return this._cell.layout(width)
     }
 
     delete() {
@@ -621,7 +621,9 @@ abstract class Cell extends Disposable {
         this.dispose()
     }
 
-    layout(width?: number) {}
+    layout(width?: number): boolean {
+        return true
+    }
 }
 
 type ErrorMarker = {error: CompileErrors | RuntimeError, markers: IMarkerData[]};
@@ -1153,12 +1155,15 @@ export class CodeCell extends Cell {
      *      The width of the editor is based on the width of the cell, which is determined by the space available in the viewport.
      *          So, width data goes from cell -> editor.
      *          A horizontal scrollbar is necessary if the text content overflows.
+     *
+     *      Returns whether a layout was triggered.
      */
     private previousHeight: number = 0;
     private previousWidth: number = 0;
-    layout(forceWidth?: number, onlyHeight?: boolean) {
-        if (!this.el.parentNode) {
-            return;
+    layout(forceWidth?: number, onlyHeight?: boolean): boolean {
+        // no point in doing anything if we're not in the DOM.
+        if (!this.el.isConnected) {
+            return false;
         }
         const editorLayout = this.editor.getLayoutInfo();
         // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
@@ -1169,7 +1174,7 @@ export class CodeCell extends Cell {
 
         // avoid measuring width if only height changes are to be considered
         if (onlyHeight && this.previousHeight === height) {
-            return;
+            return false;
         }
 
         // the editor width is determined by the container's width.
@@ -1178,7 +1183,7 @@ export class CodeCell extends Cell {
 
         // avoid doing a layout if size hasn't changed
         if (this.previousHeight === height && this.previousWidth === width) {
-            return;
+            return false;
         }
         this.previousHeight = height;
         this.previousWidth = width;
@@ -1187,6 +1192,7 @@ export class CodeCell extends Cell {
         this.editor.layout({width, height});
         this.layoutWidgets();
 
+        return true
     }
 
     private layoutWidgets() {
