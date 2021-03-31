@@ -639,7 +639,9 @@ export class CodeCell extends Cell {
     private commentHandler: CommentHandler;
 
     private errorMarkers: ErrorMarker[] = [];
-    private overflowDomNode: TagElement<"div">;
+
+    // TODO (overflow widgets)
+    // private overflowDomNode: TagElement<"div">;
 
     constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>) {
         super(dispatcher, notebookState, cell);
@@ -657,7 +659,8 @@ export class CodeCell extends Cell {
 
         this.editorEl = div(['cell-input-editor'], [])
 
-        this.overflowDomNode = div(['monaco-overflow', 'monaco-editor', this.cellId], []);
+        // TODO (overflow widgets)
+        // this.overflowDomNode = div(['monaco-overflow', 'monaco-editor', this.cellId], []);
 
         const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
         // set up editor and content
@@ -673,7 +676,9 @@ export class CodeCell extends Cell {
             fontFamily: 'Hasklig, Fira Code, Menlo, Monaco, fixed',
             fontSize: 15,
             fontLigatures: true,
-            fixedOverflowWidgets: false,
+            // TODO (overflow widgets)
+            // fixedOverflowWidgets: false,
+            fixedOverflowWidgets: true,
             lineNumbers: 'on',
             lineNumbersMinChars: 1,
             lineDecorationsWidth: 0,
@@ -686,13 +691,15 @@ export class CodeCell extends Cell {
                 vertical: "hidden",
                 verticalScrollbarSize: 0,
             },
-            overflowWidgetsDomNode: this.overflowDomNode
+            // TODO (overflow widgets)
+            // overflowWidgetsDomNode: this.overflowDomNode
         });
 
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
+            this.doSelect();
         });
         this.editor.onDidBlurEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "none" });
@@ -1190,23 +1197,26 @@ export class CodeCell extends Cell {
 
         // Update height and width on the editor.
         this.editor.layout({width, height});
-        this.layoutWidgets();
+
+        // TODO (overflow widgets)
+        // this.layoutWidgets();
 
         return true
     }
 
-    private layoutWidgets() {
-        if (this.overflowDomNode.parentNode) {
-            const editorNode = this.editor.getDomNode()
-            if (editorNode) {
-                const r = editorNode.getBoundingClientRect()
-                this.overflowDomNode.style.top = r.top + "px";
-                this.overflowDomNode.style.left = r.left + "px";
-                this.overflowDomNode.style.height = r.height + "px"
-                this.overflowDomNode.style.width = r.width + "px"
-            }
-        }
-    }
+    // TODO (overflow widgets)
+    // private layoutWidgets() {
+    //     if (this.overflowDomNode.parentNode) {
+    //         const editorNode = this.editor.getDomNode()
+    //         if (editorNode) {
+    //             const r = editorNode.getBoundingClientRect()
+    //             this.overflowDomNode.style.top = r.top + "px";
+    //             this.overflowDomNode.style.left = r.left + "px";
+    //             this.overflowDomNode.style.height = r.height + "px"
+    //             this.overflowDomNode.style.width = r.width + "px"
+    //         }
+    //     }
+    // }
 
     private setExecutionInfo(el: TagElement<"div">, executionInfo: ExecutionInfo) {
         const start = new Date(Number(executionInfo.startTs));
@@ -1387,19 +1397,23 @@ export class CodeCell extends Cell {
         }
     }
 
-    private scrollListener: () => void = () => this.layoutWidgets();
+    // TODO (overflow widgets)
+    // private scrollListener: () => void = () => this.layoutWidgets();
+
 
     protected onSelected() {
         super.onSelected();
-        this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode)
-        this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', this.scrollListener);
+        // TODO (overflow widgets)
+        // this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode);
+        // this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', this.scrollListener);
         this.vim = VimStatus.get.activate(this.editor)
     }
 
     protected onDeselected() {
         super.onDeselected();
-        this.overflowDomNode.parentNode?.removeChild(this.overflowDomNode)
-        this.editorEl.closest('.notebook-cells')?.removeEventListener('scroll', this.scrollListener);
+        // TODO (overflow widgets)
+        // this.overflowDomNode.parentNode?.removeChild(this.overflowDomNode)
+        // this.editorEl.closest('.notebook-cells')?.removeEventListener('scroll', this.scrollListener);
         this.commentHandler.hide()
         // hide parameter hints on blur
         this.editor.trigger('keyboard', 'closeParameterHints', null);
@@ -1432,7 +1446,8 @@ export class CodeCell extends Cell {
 
     protected onDisposed() {
         super.onDisposed();
-        this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode);
+        // TODO (overflow widgets)
+        // this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode);
         this.commentHandler.dispose();
         this.getModelMarkers()?.forEach(marker => {
             this.setModelMarkers([], marker.owner)
