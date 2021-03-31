@@ -699,7 +699,7 @@ export class CodeCell extends Cell {
 
         this.editor.onDidFocusEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "all" });
-            notebookState.updateField("activeCellId", () => setValue(this.id));
+            this.doSelect();
         });
         this.editor.onDidBlurEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "none" });
