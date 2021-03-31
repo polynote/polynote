@@ -32,7 +32,7 @@ import match from "../../util/match";
 import {GroupAgg, Histogram, Select, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {collect, collectDefined, deepCopy, deepEquals, diffArray, isDescendant} from "../../util/helpers";
-import {Disposable, Observer, StateHandler} from "../../state";
+import {Disposable, NoUpdate, Observer, setValue, StateHandler} from "../../state";
 import {CompileErrors} from "../../data/result";
 
 export interface DimensionAxis {
@@ -1096,6 +1096,7 @@ export class PlotSelector extends Disposable {
                 hasDimensions ? this.facetCheckbox = checkbox(['facet'], 'Facet', !!(state.facet)).onValueChange<boolean>(checked => {
                     if (checked) {
                         this.el.classList.add('facet');
+                        this.stateHandler.updateField("facet", s => s === undefined ? setValue({}) : NoUpdate )
                     } else {
                         this.el.classList.remove('facet');
                     }
@@ -1103,17 +1104,17 @@ export class PlotSelector extends Disposable {
                 hasDimensions ? div(['facet-options'], [
                     label(['facet-row'], "Facet row",
                         dropdown([], { "": "None", ...dimensionOptions}, state.facet?.row || undefined)
-                            .bindWithDefault(facetHandler.lens("row"), "")),
+                            .bindWithDefault(facetHandler.lensOpt("row"), "")),
                     label(['facet-col'], "Facet column",
                         dropdown([], { "": "None", ...dimensionOptions}, state.facet?.col || undefined)
-                            .bindWithDefault(facetHandler.lens("col"), "")),
+                            .bindWithDefault(facetHandler.lensOpt("col"), "")),
                     label(['facet-width'], "Width",
                         numberbox([], "Width", state.facet?.width)
-                            .bindWithDefault(facetHandler.lens("width"), 50)
+                            .bindWithDefault(facetHandler.lensOpt("width"), 50)
                             .attr("step", "1")),
                     label(['facet-width'], "Height",
                         numberbox([], "Height", state.facet?.height)
-                            .bindWithDefault(facetHandler.lens("height"), 50)
+                            .bindWithDefault(facetHandler.lensOpt("height"), 50)
                             .attr("step", "1"))
                 ]) : undefined
             ]),
