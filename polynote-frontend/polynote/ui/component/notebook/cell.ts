@@ -1446,7 +1446,8 @@ export class CodeCell extends Cell {
 
     protected onDisposed() {
         super.onDisposed();
-        this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode);
+        // TODO (overflow widgets)
+        // this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode);
         this.commentHandler.dispose();
         this.getModelMarkers()?.forEach(marker => {
             this.setModelMarkers([], marker.owner)
