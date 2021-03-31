@@ -79,8 +79,10 @@ describe('NotebookStateHandler', () => {
         expect(nbState.state.cellOrder).toEqual([0, 1, 2])
 
         const waitForDelete = waitForNextUpdate()
-        await expect(nbState.deleteCell(1)).resolves.toEqual(1)
+        const deleteCell = nbState.deleteCell(1)
         await expect(waitForDelete).resolves.toEqual(new DeleteCell(0, 4, 1))
+        nbState.clearUndoablyDeletedCell(1)
+        await expect(deleteCell).resolves.toEqual(1)
 
         expect(Object.keys(nbState.state.cells)).toHaveLength(2)
         expect(nbState.state.cellOrder).toEqual([0, 2])

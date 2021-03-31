@@ -338,9 +338,13 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     .when(messages.DeleteCell, (g, l, id: number) => {
                         const idx = s.cellOrder.indexOf(id)
                         if (idx > -1) {
+                            // "soft" delete cell in client so it can be undone
                             return {
-                                cells: removeKey(id),
-                                cellOrder: removeIndex(s.cellOrder, idx),
+                                cells: {
+                                    [id]: {
+                                        undoablyDeleted: true
+                                    }
+                                },
                                 activeCellId: s.activeCellId === id ? undefined : s.activeCellId // clear activeCellId if it was deleted.
                             }
                         } else return s
@@ -489,6 +493,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             error: false,
             running: false,
             queued: false,
+            undoablyDeleted: false,
             currentSelection: undefined,
             currentHighlight: undefined,
         }

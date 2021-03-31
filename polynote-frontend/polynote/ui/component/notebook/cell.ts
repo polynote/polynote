@@ -1,4 +1,4 @@
-import {blockquote, button, div, dropdown, h4, iconButton, img, span, tag, TagElement} from "../../tags";
+import {blockquote, button, div, dropdown, h4, icon, iconButton, img, span, tag, TagElement} from "../../tags";
 import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
     clearArray,
@@ -321,7 +321,11 @@ export class CellContainer extends Disposable {
             newCellDivider
         ]).dataAttr('data-cellid', id.toString());
 
-        this.el.click(evt => this._cell.doSelect());
+        this.el.click(evt => {
+            if (this._cell.el.isConnected) {
+                this._cell.doSelect()
+            }
+        });
         cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
             if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
@@ -359,9 +363,12 @@ export class CellContainer extends Disposable {
         return this._cell.layout(width)
     }
 
-    delete() {
-        this.cellState.dispose()
-        this._cell.delete()
+    dispose() {
+        this.el.remove()
+        return Promise.all([
+            this.cellState.dispose(),
+            this._cell.dispose()
+        ]).then(() => {})
     }
 }
 
@@ -425,6 +432,12 @@ abstract class Cell extends Disposable {
         }
         notebookState.observeKey("activeCellId", activeCell => updateSelected(activeCell === this.id));
 
+        cellState.observeKey("undoablyDeleted", (deleted, updateResult) => {
+            if (deleted) {
+                this.undoableDeleteCell()
+            }
+        })
+
         cellState.onDispose.then(() => {
             this.dispose()
         })
@@ -471,6 +484,28 @@ abstract class Cell extends Disposable {
         })
     }
 
+    protected undoableDeleteCell() {
+        const undoEl = div(['undo-delete'], [
+            icon(['close-button'], 'times', 'close icon').click(evt => {
+                // really delete the cell
+                this.notebookState.clearUndoablyDeletedCell(this.id)
+
+                undoEl.parentNode!.removeChild(undoEl);
+            }),
+            span(['undo-message'], [
+                'Cell deleted. ',
+                span(['undo-link'], ['Undo']).click(evt => {
+                    this.notebookState.unDeleteCell(this.id)
+                    undoEl.remove()
+                })
+            ])
+        ])
+        this.el.replaceWith(undoEl)
+
+        // select next cell
+        this.notebookState.selectCell(this.id, {relative: "below"})
+    }
+
     protected onSelected() {
         this.addCellClass("active");
         if (document.activeElement instanceof HTMLElement && !this.el.contains(document.activeElement)){
@@ -488,7 +523,7 @@ abstract class Cell extends Disposable {
     }
 
     protected onDisposed() {
-
+        this.el.remove()
     }
 
     protected scroll() {
@@ -616,10 +651,6 @@ abstract class Cell extends Disposable {
     protected abstract getCurrentSelection(): string
 
     abstract setDisabled(disabled: boolean): void
-
-    delete() {
-        this.dispose()
-    }
 
     layout(width?: number): boolean {
         return true
@@ -1428,9 +1459,9 @@ export class CodeCell extends Cell {
         }
     }
 
-    delete() {
-        super.delete()
-        VimStatus.get.deactivate(this.editor.getId())
+    dispose() {
+        VimStatus.get.deactivate(this.editor.getId());
+        return super.dispose()
     }
 
     protected calculateHash(maybeSelection?: Range): URL {

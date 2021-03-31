@@ -4,9 +4,9 @@ import {
     Disposable,
     EditString,
     IDisposable,
-    ImmediateDisposable, MoveArrayValue,
+    ImmediateDisposable, MoveArrayValue, noUpdate,
     NoUpdate,
-    ObjectStateHandler,
+    ObjectStateHandler, removeIndex, RemoveKey, removeKey,
     setValue,
     StateHandler,
     StateView,
@@ -52,6 +52,7 @@ export interface CellState {
     error: boolean,
     running: boolean
     queued: boolean,
+    undoablyDeleted: boolean, // deleted but still in the DOM
     currentSelection: PosRange | undefined,
     currentHighlight: { range: PosRange, className: string} | undefined
 }
@@ -276,28 +277,51 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         }).then(id => this.selectCell(id))
     }
 
-    deleteCell(id?: number, selectPrevCell: boolean = true): Promise<number | undefined> {
+    // clear a deleted cell from the state (because deletion can no longer be undone)
+    clearUndoablyDeletedCell(id: number) {
+        this.update(s => {
+            const idx = s.cellOrder.indexOf(id);
+            if (idx > -1) {
+                return {
+                    cells: removeKey(id),
+                    cellOrder: removeIndex(s.cellOrder, idx),
+                    activeCellId: s.activeCellId === id ? undefined : s.activeCellId // clear activeCellId if it was deleted.
+                }
+            } else return noUpdate()
+        })
+    }
+
+    // undo delete for cell by removing the deleted cell from the state and triggering a cell insert
+    unDeleteCell(id: number) {
+        const deletedCell = this.cellsHandler.state[id];
+        let prevCellId = this.getPreviousCellId(deletedCell.id)
+        let prevCell = prevCellId !== undefined ? this.state.cells[prevCellId] : undefined;
+        while (prevCell !== undefined && prevCell.undoablyDeleted) {
+            prevCellId = this.getPreviousCellId(prevCell.id)
+            prevCell = prevCellId !== undefined ? this.state.cells[prevCellId] : undefined;
+        }
+
+        return this.insertCell("below", {id: prevCellId ?? -1, language: deletedCell.language, metadata: deletedCell.metadata, content: deletedCell.content})
+            .then(newCellId => {
+                this.clearUndoablyDeletedCell(id)
+                this.selectCell(newCellId)
+            })
+    }
+
+    deleteCell(id?: number): Promise<number | undefined> {
         if (id === undefined) {
             id = this.state.activeCellId;
         }
         if (id !== undefined) {
             const waitForDelete = new Promise<number>(resolve => {
-                const cellOrder = this.view("cellOrder")
-                const obs = cellOrder.addObserver(order => {
-                    if (! order.includes(id!)) {
+                const cellsView = this.view("cells")
+                const obs = cellsView.addObserver((cells, upd) => {
+                    if (upd.update instanceof RemoveKey && upd.update.key === id) {
                         resolve(id!);
                         obs.dispose();
                     }
                 }).disposeWith(this)
             })
-            if (selectPrevCell) {
-                const nextId = this.getNextCellId(id) ?? this.getPreviousCellId(id)
-                waitForDelete.then(deletedId => {
-                    if (deletedId !== undefined && nextId !== undefined) {
-                        this.selectCell(nextId)
-                    }
-                })
-            }
             this.updateHandler.deleteCell(id);
             return waitForDelete
         } else return Promise.resolve(undefined)

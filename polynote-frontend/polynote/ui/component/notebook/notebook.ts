@@ -84,7 +84,7 @@ export class Notebook extends Disposable {
                 const nextCellIdAtIdx = cellOrderUpdate.newValue[cellIdx + 1];
                 if (nextCellIdAtIdx !== undefined && this.cells[nextCellIdAtIdx] !== undefined) {
                     // there's a different cell at this index. we need to insert this cell above the existing cell
-                    const nextCellEl = this.cells[nextCellIdAtIdx].el;
+                    const nextCellEl = this.cells[nextCellIdAtIdx].cell.el;
                     // note that inserting a node that is already in the DOM will move it from its current location to here.
                     cellsEl.insertBefore(el, nextCellEl);
                 } else {
@@ -104,27 +104,8 @@ export class Notebook extends Disposable {
 
         const handleDeletedCells = (deletedPartial: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
             Object.entries(cellOrderUpdate.removedValues!).forEach(([idx, id]) => {
-                const deletedCell = deletedPartial[id]!;
-                const deletedIdx = parseInt(idx);
-                const cellEl = this.cells[id].el!;
-
-                const prevCellId = cellOrderUpdate.newValue[deletedIdx - 1] ?? -1;
-                const undoEl = div(['undo-delete'], [
-                    icon(['close-button'], 'times', 'close icon').click(evt => {
-                        undoEl.parentNode!.removeChild(undoEl)
-                    }),
-                    span(['undo-message'], [
-                        'Cell deleted. ',
-                        span(['undo-link'], ['Undo']).click(evt => {
-                            this.insertCell(prevCellId, deletedCell.language, deletedCell.content, deletedCell.metadata)
-                            undoEl.parentNode!.removeChild(undoEl);
-                        })
-                    ])
-                ])
-
-                cellEl.replaceWith(undoEl)
                 this.cells[id].handler.dispose()
-                this.cells[id].cell.delete();
+                this.cells[id].cell.dispose();
                 delete this.cells[id];
             })
         }
@@ -180,7 +161,7 @@ export class Notebook extends Disposable {
                 }
                 if (maybeAddedCells) {
                     if (cellOrderUpdate === undefined) {
-                        console.error("Got deleted cells", maybeDeletedCells, "but cellOrder didn't change! This is weird. Update:", update)
+                        console.error("Got added cells", maybeDeletedCells, "but cellOrder didn't change! This is weird. Update:", update)
                     } else {
                         handleAddedCells(maybeAddedCells, cellOrderUpdate)
                     }
