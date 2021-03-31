@@ -109,6 +109,7 @@ export class Notebook extends Disposable {
                 const cellEl = this.cells[id].el!;
 
                 const prevCellId = cellOrderUpdate.newValue[deletedIdx - 1] ?? -1;
+                const prevCellIdx = notebookState.getCellIndex(prevCellId);
                 const undoEl = div(['undo-delete'], [
                     icon(['close-button'], 'times', 'close icon').click(evt => {
                         undoEl.parentNode!.removeChild(undoEl)
@@ -116,7 +117,7 @@ export class Notebook extends Disposable {
                     span(['undo-message'], [
                         'Cell deleted. ',
                         span(['undo-link'], ['Undo']).click(evt => {
-                            this.insertCell(prevCellId, deletedCell.language, deletedCell.content, deletedCell.metadata)
+                            this.insertCell({idx: prevCellIdx}, deletedCell.language, deletedCell.content, deletedCell.metadata)
                             undoEl.parentNode!.removeChild(undoEl);
                         })
                     ])
@@ -241,12 +242,14 @@ export class Notebook extends Disposable {
 
             const lang = prevCell?.language && prevCell.language !== "text" && prevCell.language !== "viz" ? prevCell.language : "scala"; // TODO: make this configurable
 
-            this.insertCell(prevCell?.id ?? -1, lang, '');
+            const idx = prevCell?.id !== undefined ? this.notebookState.getCellIndex(prevCell.id) : -1;
+
+            this.insertCell({ idx: idx}, lang, '');
         });
     }
 
-    private insertCell(prev: number, language: string, content: string, metadata?: CellMetadata) {
-        this.notebookState.insertCell("below", {id: prev, language, content, metadata: metadata ?? new CellMetadata()})
+    private insertCell(prev: {idx: number, id?: undefined} | {id: number, idx?: undefined}, language: string, content: string, metadata?: CellMetadata) {
+        this.notebookState.insertCell("below", {id: prev.id ?? -1, language, content, metadata: metadata ?? new CellMetadata(), idx: prev.idx})
             .then(newCellId => {
                 this.notebookState.selectCell(newCellId)
             })

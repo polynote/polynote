@@ -156,7 +156,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         return availableResultValues(this.state.kernel.symbols, this.state.cellOrder, id);
     }
 
-    getCellIndex(cellId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
+    getCellIndex(cellId: number, cellOrder: number[] = this.state.cellOrder): number {
         return cellOrder.indexOf(cellId)
     }
 
@@ -166,12 +166,12 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
 
     getPreviousCellId(anchorId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
         const anchorIdx = this.getCellIndex(anchorId, cellOrder)
-        return anchorIdx !== undefined ? cellOrder[anchorIdx - 1] : undefined
+        return anchorIdx !== -1 ? cellOrder[anchorIdx - 1] : undefined
     }
 
     getNextCellId(anchorId: number, cellOrder: number[] = this.state.cellOrder): number | undefined {
         const anchorIdx = this.getCellIndex(anchorId, cellOrder)
-        return anchorIdx !== undefined ? cellOrder[anchorIdx + 1] : undefined
+        return anchorIdx !== -1 ? cellOrder[anchorIdx + 1] : undefined
     }
 
     /**
@@ -235,7 +235,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
      *                   The anchor is used to determine the location, language, and metadata to supply to the new cell.
      * @return           A Promise that resolves with the inserted cell's id.
      */
-    insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string}): Promise<number> {
+    insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string, idx?: number}): Promise<number> {
         const state = this.state;
         let currentCellId = state.activeCellId;
         if (anchor === undefined) {
@@ -249,12 +249,40 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             const currentCell = state.cells[currentCellId];
             anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: currentCell?.metadata ?? new CellMetadata()};
         }
-        const anchorIdx = this.getCellIndex(anchor.id)!;
+        const anchorIdx = anchor.idx ?? this.getCellIndex(anchor.id);
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
-        const maybePrevId = state.cellOrder[prevIdx] ?? -1;
+        let maybePrevId: number | undefined = state.cellOrder[prevIdx];
+        if (prevIdx === -1) { // insertion at the top
+            maybePrevId = -1
+        }
+        if (maybePrevId === undefined) {
+            // look for the previous ID
+            const checkAbove = () => {
+                let idx = prevIdx;
+                while (maybePrevId === undefined && idx >= 0) {
+                    idx--;
+                    maybePrevId = state.cellOrder[idx];
+                }
+            }
+            const checkBelow = () => {
+                let idx = prevIdx;
+                while (maybePrevId === undefined && idx <= state.cellOrder.length - 1) {
+                    idx++;
+                    maybePrevId = state.cellOrder[idx];
+                }
+            }
+
+            if (direction === "above") {
+                checkAbove()
+                if (maybePrevId === undefined) checkBelow()
+            } else {
+                checkBelow()
+                if (maybePrevId === undefined) checkAbove()
+            }
+        }
+        maybePrevId = maybePrevId ?? -1; // if there are no cells in the notebook.
         // generate the max ID here. Note that there is a possible race condition if another client is inserting a cell at the same time.
         const maxId = state.cellOrder.reduce((acc, cellId) => acc > cellId ? acc : cellId, -1)
-        const cellTemplate = {id: maxId + 1, language: anchor.language, content: anchor.content ?? '', metadata: anchor.metadata, prev: maybePrevId}
 
         // trigger the insert
         return this.updateHandler.insertCell(maxId + 1, anchor.language, anchor.content ?? '', anchor.metadata, maybePrevId).then(

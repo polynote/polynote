@@ -64,7 +64,7 @@ export class ClientInterpreter {
         // we want to run the cell in order, so we need to find any cells above this one that are currently running/queued
         // and wait for them to complete
         const nbState = this.notebookState.state
-        const cellIdx = this.notebookState.getCellIndex(id)!
+        const cellIdx = this.notebookState.getCellIndex(id)
         const cell = nbState.cells[id]!;
 
         // first, queue up the cell, waiting for another cell to queue if necessary
