@@ -8,7 +8,7 @@ import {
     destroy,
     Disposable,
     editString,
-    insert,
+    insert, moveArrayValue,
     NoUpdate,
     removeIndex,
     removeKey,
@@ -405,6 +405,14 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                     comments: removeKey(commentId)
                                 }
                             }
+                        }
+                    })
+                    .when(messages.MoveCell, (g, l, id, after) => {
+                        const currentIndex = s.cellOrder.indexOf(id);
+                        const afterIndex = s.cellOrder.indexOf(after);
+                        const toIndex = currentIndex <= afterIndex ? afterIndex : afterIndex + 1;
+                        return {
+                            cellOrder: moveArrayValue(currentIndex, toIndex)
                         }
                     }).otherwiseThrow ?? s;
 
