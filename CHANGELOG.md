@@ -1,4 +1,6 @@
 # Unreleased
+
+# 0.4.0 (Mar 31, 2021)
 * **Frontend Rewrite** The frontend has been rewritten from the ground up. This change should be mostly transparent to 
   users, but puts us on a much better footing for future improvements. The rewrite did resolve a few longstanding issues 
   and add a few minor features:
