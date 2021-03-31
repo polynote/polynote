@@ -98,6 +98,7 @@ export class Notebook extends Disposable {
             })
 
             if (layoutAllCells) {
+                needLayout = true;
                 window.requestAnimationFrame(layoutCells);
             }
         }
