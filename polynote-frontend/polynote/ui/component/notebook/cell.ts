@@ -2086,12 +2086,12 @@ export class VizCell extends Cell {
 
         const watchValues = () => {
             this.notebookState.view("kernel").view("symbols").observeMapped(
-                symbols => availableResultValues(symbols, this.notebookState.state.cellOrder, cellState.state.id),
+                symbols => availableResultValues(symbols, this.notebookState.state.cellOrder, this.id),
                 updateValues
             );
 
             this.notebookState.observeKey("cellOrder", (order, update) => updateValues(
-                availableResultValues(this.notebookState.state.kernel.symbols, order, cellState.state.id)
+                availableResultValues(this.notebookState.state.kernel.symbols, order, this.id)
             ));
         }
 
@@ -2099,7 +2099,7 @@ export class VizCell extends Cell {
             // wait until the notebook is done loading before populating the result, to make sure we have the result
             // and that it's the correct one.
             notebookState.loaded.then(() => {
-                if (!updateValues(notebookState.availableValuesAt(cellState.state.id))) {
+                if (!updateValues(notebookState.availableValuesAt(this.id))) {
                     // notebook isn't live. We should wait for the value to become available.
                     // TODO: once we have metadata about which names a cell declares, we can be smarter about
                     //       exactly which cell to wait for. Right now, if the value was declared and then re-declared,
