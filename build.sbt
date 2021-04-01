@@ -271,7 +271,9 @@ val dist = Command.command(
     }
 
     scalaBinaryVersions.foreach {
-      binaryVersion => (distDir / "polynote" / "plugins" / binaryVersion).mkdirs()
+      binaryVersion =>
+        (distDir / "polynote" / "plugins" / binaryVersion).mkdirs()
+        (distDir / "polynote" / "plugins.d" / binaryVersion).mkdirs()
     }
 
     IO.copy(resolvedFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
