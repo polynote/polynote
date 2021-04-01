@@ -80,8 +80,15 @@ class LocalKernel private[kernel] (
         }
       }
 
-      PublishStatus(CellStatusUpdate(id, Queued)) *>
-      queueTask.map(_.onInterrupt(_ => publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie))
+      PublishStatus(CellStatusUpdate(id, Queued)) *> queueTask.map {
+        queueTask => queueTask.ensuring {
+          val i = id
+          ZIO.effectTotal(System.err.println(s"Done cell $id")) *>
+          publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie
+        }//.ensuring(publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie)
+      }
+//      queueTask.map(_.onInterrupt(_ =>
+//        publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie))
   }
 
   private def latestPredef(state: State) = state.rewindWhile(_.id >= 0) match {

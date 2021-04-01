@@ -89,9 +89,11 @@ export class ClientInterpreter {
 
             if (waitCellId !== undefined) {
                 return new Promise<void>(resolve => {
-                    const disposable = this.notebookState.addObserver(state => {
-                        const maybeCellReady = state.cells[waitCellId!];
-                        if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
+                    const disposable = this.notebookState.view("cells").view(waitCellId!).addObserver(state => {
+                        if (id === 6) {
+                            console.log("Finished waiting for", waitCellId)
+                        }
+                        if (!(state?.running || state?.queued)) {
                             disposable.dispose();
                             resolve();
                         }

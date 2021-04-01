@@ -13,7 +13,7 @@ val versions = new {
   val fs2        = "1.0.5"
   val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC5-6"
-  val zio        = "1.0.2"
+  val zio        = "1.0.5"
   val zioInterop = "2.0.0.0-RC12"
 }
 

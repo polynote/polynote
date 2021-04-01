@@ -9,7 +9,7 @@ import polynote.kernel.environment.{CurrentTask, PublishStatus}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
 import polynote.messages.TinyString
-import zio.{Cause, Exit, Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
+import zio.{Cause, Exit, Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Supervisor, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.interop.catz._
@@ -36,7 +36,13 @@ package object task {
         * Note that status updates are sent somewhat lazily, and for a series of rapid updates to the task status only the
         * last update might get sent.
         */
-      def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]]
+      def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](
+        id: String,
+        label: String = "",
+        detail: String = "",
+        errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause),
+        onCancel: UIO[Unit] = ZIO.unit
+      )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]]
 
       /**
         * This overload is more useful if the return type needs to be inferred
@@ -128,7 +134,12 @@ package object task {
 
       private def lbl(id: String, label: String) = if (label.isEmpty) id else label
 
-      override def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo)(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] = queueing.withPermit {
+      override def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](
+        id: String, label: String = "",
+        detail: String = "",
+        errorWith: Cause[Throwable] => TaskInfo => TaskInfo,
+        onCancel: UIO[Unit] = ZIO.unit
+      )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] = queueing.withPermit {
         for {
           statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Queued))
           remove         = ZIO.effectTotal(tasks.remove(id))
@@ -245,7 +256,7 @@ package object task {
       queueing <- Semaphore.make(1)
       queue    <- Queue.unbounded[QueuedTask]
       run      <- (ZIO.yieldNow *> ZIO.allowInterrupt *> queue.take).flatMap {
-        case QueuedTask(_, ready, done) => ready.succeed(()) *> done.await
+        case QueuedTask(_, ready, done) => ready.succeed(()) *> done.await.run
       }.forever.forkDaemon
     } yield new Impl(queueing, statusUpdates, queue, run)
 
