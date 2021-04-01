@@ -107,12 +107,12 @@ export class SplitView extends Disposable {
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
                 leftPane.header.click(() => this.togglePanel(leftView)),
-                div(['ui-panel-content'], [leftPane.el])])]);
+                div(['ui-panel-content', 'left'], [leftPane.el])])]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
                 rightPane.header.click(() => this.togglePanel(rightView)),
-                div(['ui-panel-content'], [rightPane.el])])]);
+                div(['ui-panel-content', 'right'], [rightPane.el])])]);
 
         const initialPrefs = ViewPrefsHandler.state;
 

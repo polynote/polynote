@@ -1452,9 +1452,8 @@ button.inspect.icon-button {
   width: 100%;
 
   .ui-panel-content {
-    display: inline-block;
     grid-area: body;
-    overflow-y: auto;
+    overflow: hidden;
     border-width: 1px;
     border-style: solid;
   }
@@ -1464,10 +1463,10 @@ button.inspect.icon-button {
   max-height: 100%;
   width: 100%;
   box-sizing: border-box;
-  > .ui-panel-content {
-    grid-template-areas: "info" "symbols" "tasks";
-    grid-template-rows:   auto   auto      1fr;
-  }
+  display: grid;
+  grid-template-areas: "info" "symbols"       "tasks";
+  grid-template-rows:   auto   minmax(0, 2fr) 1fr;
+
 
   h2 {
     position: relative;
@@ -1481,6 +1480,7 @@ button.inspect.icon-button {
 
   .kernel-tasks {
     grid-area: tasks;
+    overflow-y: auto;
     h3 button {
       font-size: inherit;
       padding: 0;
@@ -1601,6 +1601,7 @@ button.inspect.icon-button {
   .kernel-symbols {
     position: relative;
     grid-area: symbols;
+    overflow-y: auto;
   }
 
   .kernel-info {
