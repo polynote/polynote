@@ -3,6 +3,7 @@ name: Release artifact
 on:
   release:
     types: [published]
+  pull_request:
 
 jobs:
   build:
@@ -23,7 +24,11 @@ jobs:
           npm run dist
           cd $GITHUB_WORKSPACE
           sbt dist
+
+          # make sure the dist file exists
+          test -f target/polynote-dist.tar.gz
       - name: Add archive to release
+        if: ${{ github.event_name == 'release' }}
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -36,16 +41,27 @@ jobs:
           export POLYNOTE_VERSION=${GITHUB_REF#refs/tags/}
           export SCALA_VERSION="2.11"
           docker build --build-arg POLYNOTE_VERSION --build-arg SCALA_VERSION -t polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION} docker/base/
-          docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}
           docker build --build-arg POLYNOTE_VERSION --build-arg SCALA_VERSION -t polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4 docker/spark-2.4
-          docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4
-          docker tag polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4 polynote/polynote:latest
-          docker push polynote/polynote:latest
+
+          if test "${GITHUB_EVENT_NAME}" = "release"; then
+            docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}
+            docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4
+            docker tag polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4 polynote/polynote:latest
+            docker push polynote/polynote:latest
+          else
+            echo "${SCALA_VERSION} Not a release (got ${GITHUB_EVENT_NAME} instead); not pushing docker image."
+          fi
+
           export SCALA_VERSION="2.12"
           docker build --build-arg POLYNOTE_VERSION --build-arg SCALA_VERSION -t polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION} docker/base/
-          docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}
           docker build --build-arg POLYNOTE_VERSION --build-arg SCALA_VERSION -t polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4 docker/spark-2.4
-          docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4
+
+          if test "${GITHUB_EVENT_NAME}" = "release"; then
+            docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}
+            docker push polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}-spark2.4
+          else
+            echo "${SCALA_VERSION} Not a release (got ${GITHUB_EVENT_NAME} instead); not pushing docker image."
+          fi
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
