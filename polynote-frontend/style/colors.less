@@ -734,8 +734,10 @@ button.dialog-button {
   }
 
   tbody {
-    &.results {
-      border-bottom-color: black;
+    &.results tr:last-child {
+      th, td {
+        border-bottom-color: black;
+      }
     }
 
     background: @ui-table-bg;
