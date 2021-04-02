@@ -41,7 +41,7 @@ package object task {
         label: String = "",
         detail: String = "",
         errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause),
-        onCancel: UIO[Unit] = ZIO.unit
+        onUnqueue: UIO[Unit] = ZIO.unit
       )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]]
 
       /**
@@ -138,12 +138,14 @@ package object task {
         id: String, label: String = "",
         detail: String = "",
         errorWith: Cause[Throwable] => TaskInfo => TaskInfo,
-        onCancel: UIO[Unit] = ZIO.unit
+        onUnqueue: UIO[Unit] = ZIO.unit
       )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] = queueing.withPermit {
         for {
           statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Queued))
           remove         = ZIO.effectTotal(tasks.remove(id))
-          fail           = (err: Cause[Throwable]) => statusRef.update(errorWith(err)).ensuring(remove).uninterruptible.orDie
+          myTurn        <- Promise.make[Throwable, Unit]
+          imDone        <- Promise.make[Throwable, Unit]
+          fail           = (err: Cause[Throwable]) => statusRef.update(errorWith(err)).ensuring(remove &> imDone.interrupt).uninterruptible.orDie
           complete       = statusRef.update(_.completed).ensuring(remove).uninterruptible.orDie
           updater       <- statusRef.discrete
             .terminateAfter(_.status.isDone)
@@ -154,12 +156,11 @@ package object task {
               .either
               .tap(_.fold(err => fail(Cause.fail(err)), _ => complete)) <* updater.join
           }
-          myTurn        <- Promise.make[Throwable, Unit]
-          imDone        <- Promise.make[Throwable, Unit]
           _             <- readyQueue.offer(QueuedTask(id, myTurn, imDone))
-          runTask        = (myTurn.await.onInterrupt(imDone.interrupt.unit) *> statusRef.update(_.running) *> taskBody)
-            .ensuring(imDone.succeed(()))
+          wait           = myTurn.await.onInterrupt(imDone.interrupt *> onUnqueue)
+          runTask        = (wait *> statusRef.update(_.running) *> taskBody)
             .onTermination(fail)
+            .ensuring(imDone.succeed(()))
           taskFiber     <- runTask.ensuring(remove).forkDaemon
           descriptor     = TaskDescriptor(id, statusRef, taskFiber, taskCounter.getAndIncrement(), Some(myTurn))
           _             <- Option(tasks.put(id, descriptor)).map(_.cancel).getOrElse(ZIO.unit)
@@ -271,8 +272,14 @@ package object task {
 
     def of(service: Service): TaskManager = Has(service)
 
-    def queue[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] =
-      access.flatMap(_.queue[R, A, R1](id, label, detail, errorWith)(task))
+    def queue[R <: CurrentTask, A, R1 >: R <: TaskManager](
+      id: String,
+      label: String = "",
+      detail: String = "",
+      errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause),
+      onUnqueue: UIO[Unit] = ZIO.unit
+    )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] =
+      access.flatMap(_.queue[R, A, R1](id, label, detail, errorWith, onUnqueue)(task))
 
     def run[R <: TaskManager, A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[CurrentTask with R, A]): RIO[R, A] =
       access.flatMap(_.run[R, A](id, label, detail, errorWith)(task))
