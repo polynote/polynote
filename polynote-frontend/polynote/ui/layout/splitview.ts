@@ -1,29 +1,117 @@
 import {div, TagElement} from "../tags";
-import {Disposable, setProperty, updateProperty} from "../../state";
+import {Disposable, IDisposable, mkDisposable, setProperty, StateHandler, updateProperty} from "../../state";
 import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
+import {safeForEach} from "../../util/helpers";
 
 /**
  * Holds a classic three-pane display, where the left and right panes can be both resized and collapsed.
  */
 
 export type Pane = { header: TagElement<"h2">, el: TagElement<"div">}
+
+class Dragger extends Disposable {
+    readonly el: TagElement<'div'>;
+    private initialX: number = 0;
+    private initialWidth: number = 0;
+    dragging: boolean = false;
+    
+    constructor(private side: 'left' | 'right', private state: StateHandler<{size: string}>, private panel: TagElement<'div'>, private parent: SplitView) {
+        super();
+        this.disposeWith(parent);
+        
+        const el = this.el = div(['drag-handle', side], [
+            div(['inner'], [])
+        ]);
+
+
+        el.style.gridArea = 'leftdrag';
+
+        el.addEventListener('mousedown', evt => {
+            this.initialX = evt.clientX;
+            this.dragging = true;
+            this.initialWidth = panel.offsetWidth;
+            parent.triggerStartResize();
+
+            const onRelease: () => void = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onRelease);
+                window.removeEventListener('blur', onRelease);
+                state.update(() => setProperty("size", panel.style.width));
+                this.dragging = false;
+                parent.triggerEndResize();
+            };
+
+            const onMove: (evt: MouseEvent) => void = (evt) => {
+                evt.preventDefault();
+                if (evt.clientX > 0) {
+                    currentWidth = updateWidth(evt.clientX);
+                    if (dragTimeout === 0) {
+                        dragTimeout = window.setTimeout(() => {
+                            dragTimeout = 0;
+                            window.requestAnimationFrame(() => {
+                                panel.style.width = currentWidth + "px";
+                            })
+                        }, 10);
+                    }
+                }
+            };
+
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onRelease);
+            window.addEventListener('blur', onRelease);
+        })
+
+        let currentWidth = 0;
+        let dragTimeout = 0;
+
+        const updateWidth: (mouseX: number) => number =
+            side === 'left' ? (mouseX => (this.initialWidth + (mouseX - this.initialX)))
+                            : (mouseX => (this.initialWidth - (mouseX - this.initialX)))
+
+        el.style.gridArea = `${side}drag`;
+    }
+
+}
+
 export class SplitView extends Disposable {
     readonly el: TagElement<"div">;
-    constructor(leftPane: Pane, center: TagElement<"div">, rightPane: Pane) {
+    private _centerWidth: number = 0;
+    get centerWidth(): number { return this._centerWidth; }
+
+    private resizeObservers: (((width: number) => void) & IDisposable)[] = [];
+    private startResizeObservers: (((width: number) => void) & IDisposable)[] = [];
+    private endResizeObservers: (((width: number) => void) & IDisposable)[] = [];
+    private centerResizeObserver: ResizeObserver;
+    private leftDragger: Dragger;
+    private rightDragger: Dragger;
+
+    constructor(leftPane: Pane, private center: TagElement<"div">, rightPane: Pane) {
         super()
 
         const leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
-        const triggerResize = () => window.dispatchEvent(new CustomEvent('resize'));
+
+        const resizeObserver = this.centerResizeObserver = new ResizeObserver(([entry]) => this.triggerResize(entry.contentRect.width));
+        resizeObserver.observe(center);
+
+        this.onDispose.then(() => {
+            resizeObserver.disconnect();
+            this.resizeObservers.forEach(obs => obs.dispose());
+            this.resizeObservers = [];
+            this.startResizeObservers.forEach(obs => obs.dispose());
+            this.startResizeObservers = [];
+            this.endResizeObservers.forEach(obs => obs.dispose());
+            this.endResizeObservers = [];
+        })
 
         const left = div(['grid-shell'], [
             div(['ui-panel'], [
-                leftPane.header.click(evt => leftView.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(triggerResize)),
+                leftPane.header.click(() => this.togglePanel(leftView)),
                 div(['ui-panel-content'], [leftPane.el])])]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
-                rightPane.header.click(evt => rightView.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(triggerResize)),
+                rightPane.header.click(() => this.togglePanel(rightView)),
                 div(['ui-panel-content'], [rightPane.el])])]);
 
         const initialPrefs = ViewPrefsHandler.state;
@@ -33,26 +121,12 @@ export class SplitView extends Disposable {
         left.style.gridArea = 'left';
         left.style.width = initialPrefs.leftPane.size;
 
+        let dragTimeout = 0;
+        let leftX = 0;
+        let rightX = 0;
+
         // left dragger
-        const leftDragger = Object.assign(
-            div(['drag-handle', 'left'], [
-                div(['inner'], []).attr('draggable', 'true')
-            ]), {
-                initialX: 0,
-                initialWidth: 0
-            });
-        leftDragger.style.gridArea = 'leftdrag';
-        leftDragger.addEventListener('dragstart', (evt) => {
-            leftDragger.initialX = evt.clientX;
-            leftDragger.initialWidth = left.offsetWidth;
-        });
-        leftDragger.addEventListener('drag', (evt) => {
-            evt.preventDefault();
-            if (evt.clientX > 0) {
-                left.style.width = (leftDragger.initialWidth + (evt.clientX - leftDragger.initialX)) + "px";
-            }
-        });
-        leftDragger.addEventListener('dragend', () => ViewPrefsHandler.updateField("leftPane", () => setProperty("size", left.style.width)));
+        const leftDragger = this.leftDragger = new Dragger('left', leftView, left, this);
 
         // right pane
         right.classList.add('right');
@@ -60,25 +134,7 @@ export class SplitView extends Disposable {
         right.style.width = initialPrefs.rightPane.size;
 
         // right dragger
-        const rightDragger = Object.assign(
-            div(['drag-handle', 'right'], [
-                div(['inner'], []).attr('draggable', 'true')
-            ]), {
-                initialX: 0,
-                initialWidth: 0
-            });
-        rightDragger.style.gridArea = 'rightdrag';
-        rightDragger.addEventListener('dragstart', (evt) => {
-            rightDragger.initialX = evt.clientX;
-            rightDragger.initialWidth = right.offsetWidth;
-        });
-        rightDragger.addEventListener('drag', (evt) => {
-            evt.preventDefault();
-            if (evt.clientX > 0) {
-                right.style.width = (rightDragger.initialWidth - (evt.clientX - rightDragger.initialX)) + "px";
-            }
-        });
-        rightDragger.addEventListener('dragend', evt => ViewPrefsHandler.updateField("rightPane", () => setProperty("size", right.style.width)));
+        const rightDragger = this.rightDragger = new Dragger('right', rightView, right, this);
 
         this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
 
@@ -96,5 +152,62 @@ export class SplitView extends Disposable {
         }
         collapseStatus(initialPrefs)
         ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this)
+    }
+
+    private togglePanel(state: StateHandler<{collapsed: boolean}>): void {
+        this.triggerStartResize(this.centerWidth);
+        state.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(() => {
+            window.dispatchEvent(new CustomEvent('resize'));
+        })
+    }
+
+    onResize(fn: (width: number) => void): IDisposable {
+        const disposable = mkDisposable(fn, () => SplitView.removeObserver(this.resizeObservers, fn));
+        this.resizeObservers.push(disposable);
+        return disposable;
+    }
+
+    onStartResize(fn: (width: number) => void): IDisposable {
+        const disposable = mkDisposable(fn, () => SplitView.removeObserver(this.startResizeObservers, fn));
+        this.startResizeObservers.push(disposable);
+        return disposable;
+    }
+
+    onEndResize(fn: (width: number) => void): IDisposable {
+        const disposable = mkDisposable(fn, () => SplitView.removeObserver(this.endResizeObservers, fn));
+        this.endResizeObservers.push(disposable);
+        return disposable;
+    }
+
+    private static removeObserver(observers: ((width: number) => void)[], obs: (width: number) => void): void {
+        const idx = observers.indexOf(obs);
+        if (idx >= 0) {
+            observers.splice(idx, 1);
+        }
+    }
+
+    triggerResize(width: number, notify: boolean = true): void {
+        if (this._centerWidth === width)
+            return;
+
+        this._centerWidth = width;
+        if (notify) {
+            safeForEach(this.resizeObservers, obs => obs(width));
+        }
+
+        if (!this.leftDragger.dragging && !this.rightDragger.dragging) {
+            this.triggerEndResize(width);
+        }
+    }
+
+    triggerStartResize(w?: number): void {
+        const width = w ?? (this.centerWidth || this.center.clientWidth);
+        safeForEach(this.startResizeObservers, obs => obs(width));
+    }
+
+    triggerEndResize(w?: number) {
+        const width = w ?? (this.centerWidth || this.center.clientWidth);
+        this._centerWidth = width;
+        safeForEach(this.endResizeObservers, obs => obs(width));
     }
 }

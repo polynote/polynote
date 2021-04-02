@@ -145,20 +145,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
     }
 
     /*******************************
-     ** UI methods (which don't   **
-     ** really belong here)       **
-     *******************************/
-    // TODO: move this out of dispatcher
-    showValueInspector(result: ResultValue, viewType?: string) {
-        this.handler.insertInspectionCell(result, viewType);
-    }
-
-    // TODO: this is pointless now, remove once ValueInspector goes away
-    hideValueInspector() {
-        ValueInspector.get.hide()
-    }
-
-    /*******************************
      ** Notebook management methods **
      *******************************/
 

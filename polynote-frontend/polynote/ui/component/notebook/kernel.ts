@@ -721,9 +721,7 @@ class KernelSymbolsEl extends Disposable {
         tr.onmousedown = (evt) => {
             if (evt.button !== 0)
                 return; // only for primary mouse button
-            evt.preventDefault();
             evt.stopPropagation();
-            this.dispatcher.showValueInspector(tr.resultValue)
         };
         tr.onmouseover = () => this.showPopupFor(tr, resultValue);
         tr.data = {name: resultValue.name, type: resultValue.typeName};

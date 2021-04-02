@@ -38,7 +38,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.4.0-SNAPSHOT",
+  version := "0.4.0",
   publishTo := sonatypePublishToBundle.value,
   developers := List(
     Developer(id = "jeremyrsmith", name = "Jeremy Smith", email = "", url = url("https://github.com/jeremyrsmith")),
@@ -271,7 +271,9 @@ val dist = Command.command(
     }
 
     scalaBinaryVersions.foreach {
-      binaryVersion => (distDir / "polynote" / "plugins" / binaryVersion).mkdirs()
+      binaryVersion =>
+        (distDir / "polynote" / "plugins" / binaryVersion).mkdirs()
+        (distDir / "polynote" / "plugins.d" / binaryVersion).mkdirs()
     }
 
     IO.copy(resolvedFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
